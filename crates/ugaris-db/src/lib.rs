@@ -1,8 +1,13 @@
+pub mod anticheat;
 pub mod area;
 pub mod character;
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
+pub use anticheat::{
+    AntiCheatCounters, AntiCheatEvent, AntiCheatFingerprint, AntiCheatRepository,
+    AntiCheatSessionCreate, PgAntiCheatRepository,
+};
 pub use area::{AreaRepository, PgAreaRepository};
 pub use character::{
     CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
@@ -38,5 +43,9 @@ impl Database {
 
     pub fn areas(&self) -> PgAreaRepository {
         PgAreaRepository::new(self.pool.clone())
+    }
+
+    pub fn anticheat(&self) -> PgAntiCheatRepository {
+        PgAntiCheatRepository::new(self.pool.clone())
     }
 }
