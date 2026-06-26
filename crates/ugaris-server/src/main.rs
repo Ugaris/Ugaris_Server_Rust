@@ -1926,6 +1926,48 @@ fn map_diff_payloads(
     payloads
 }
 
+fn queue_periodic_player_frames(runtime: &mut ServerRuntime, world: &World) -> (usize, usize) {
+    let sessions: Vec<_> = runtime
+        .players
+        .iter()
+        .filter_map(|(&session_id, player)| {
+            if player.state != PlayerConnectionState::Normal {
+                return None;
+            }
+            Some((session_id, player.character_id?, player.view_distance))
+        })
+        .collect();
+
+    let mut diff_sessions = 0;
+    let mut empty_frames = 0;
+    for (session_id, character_id, view_distance) in sessions {
+        let Some(character) = world.characters.get(&character_id) else {
+            continue;
+        };
+        let payloads = match runtime.map_caches.get_mut(&session_id) {
+            Some(cache) => map_diff_payloads(world, character, view_distance, cache),
+            None => {
+                let payloads = map_refresh_payloads(world, character, view_distance);
+                runtime.map_caches.insert(
+                    session_id,
+                    visible_map_cache(world, character, view_distance),
+                );
+                payloads
+            }
+        };
+
+        if payloads.is_empty() {
+            if runtime.send_to_session(session_id, bytes::BytesMut::new()) {
+                empty_frames += 1;
+            }
+        } else if runtime.send_many_to_session(session_id, payloads) {
+            diff_sessions += 1;
+        }
+    }
+
+    (diff_sessions, empty_frames)
+}
+
 fn look_map_payloads(world: &World, area_id: u16, request: LookMapRequest) -> Vec<bytes::BytesMut> {
     if !request.visible {
         return vec![ugaris_protocol::packet::system_text(
@@ -5225,6 +5267,15 @@ async fn main() -> anyhow::Result<()> {
                     if refreshed_sessions != 0 {
                         info!(refreshed_sessions, tick = world.tick.0, "queued map refreshes for completed actions");
                     }
+                }
+
+                let (periodic_diff_sessions, periodic_empty_frames) =
+                    queue_periodic_player_frames(&mut runtime, &world);
+                if periodic_diff_sessions != 0 {
+                    info!(periodic_diff_sessions, tick = world.tick.0, "queued periodic map/action diffs");
+                }
+                if periodic_empty_frames != 0 {
+                    tracing::trace!(periodic_empty_frames, tick = world.tick.0, "queued empty legacy tick frames");
                 }
             }
             Some(event) = events_rx.recv() => {

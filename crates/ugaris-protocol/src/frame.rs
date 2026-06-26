@@ -36,6 +36,12 @@ mod tests {
     }
 
     #[test]
+    fn encodes_empty_payload_like_c_pflush() {
+        let frame = encode_tick_frame(&[]).unwrap();
+        assert_eq!(&frame[..], &[0x40]);
+    }
+
+    #[test]
     fn encodes_long_payload_big_endian() {
         let payload = vec![0xaa; 64];
         let frame = encode_tick_frame(&payload).unwrap();
