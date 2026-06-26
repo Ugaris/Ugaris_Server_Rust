@@ -11,6 +11,7 @@ use crate::{
     ids::{CharacterId, ItemId},
     legacy::{action, profession},
     map::{MapFlags, MapGrid},
+    spell::{heal_spend, magicshield_spend, pulse_spend, spell_power},
     tick::TICKS_PER_SECOND,
 };
 
@@ -353,6 +354,136 @@ pub fn do_attack(
     Ok(())
 }
 
+pub fn do_magicshield(character: &mut Character) -> Result<(), DoError> {
+    if character.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character.flags.contains(CharacterFlags::NOMAGIC)
+        && !character.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+
+    let skill = character_value(character, CharacterValue::MagicShield);
+    if skill == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    let Some(spend) = magicshield_spend(skill, character.lifeshield, character.mana) else {
+        return Err(if character.mana < POWERSCALE {
+            DoError::ManaLow
+        } else {
+            DoError::NoEffect
+        });
+    };
+
+    character.mana -= spend.mana_cost;
+    character.action = action::MAGICSHIELD;
+    character.act1 = spend.amount;
+    character.duration = speed_ticks(
+        character_value(character, CharacterValue::Speed),
+        character.speed_mode,
+        DUR_MAGIC_ACTION,
+    );
+    if character.speed_mode == SpeedMode::Fast {
+        character.endurance -= endurance_cost(character);
+    }
+    character.dir = bigdir(character.dir);
+    Ok(())
+}
+
+pub fn do_pulse(character: &mut Character) -> Result<(), DoError> {
+    if character.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character.flags.contains(CharacterFlags::NOMAGIC)
+        && !character.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+
+    let pulse_power = spell_power(
+        character_value(character, CharacterValue::Pulse),
+        character_value(character, CharacterValue::Tactics),
+    );
+    if character_value(character, CharacterValue::Pulse) == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    let Some(spend) = pulse_spend(pulse_power, character.mana) else {
+        return Err(DoError::ManaLow);
+    };
+
+    character.mana -= spend.mana_cost;
+    character.action = action::PULSE;
+    character.act1 = spend.amount;
+    character.duration = speed_ticks(
+        character_value(character, CharacterValue::Speed),
+        character.speed_mode,
+        DUR_MAGIC_ACTION,
+    );
+    if character.speed_mode == SpeedMode::Fast {
+        character.endurance -= endurance_cost(character);
+    }
+    character.dir = bigdir(character.dir);
+    Ok(())
+}
+
+pub fn do_heal(
+    caster: &mut Character,
+    target: &Character,
+    direction: Option<u8>,
+) -> Result<(), DoError> {
+    if caster.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if caster.flags.contains(CharacterFlags::NOMAGIC)
+        && !caster.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+    if target.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character_value(caster, CharacterValue::Heal) == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    let missing_hp = character_value(target, CharacterValue::Hp) * POWERSCALE - target.hp;
+    let Some(spend) = heal_spend(
+        character_value(caster, CharacterValue::Heal),
+        missing_hp,
+        caster.mana,
+    ) else {
+        return Err(if caster.mana < POWERSCALE {
+            DoError::ManaLow
+        } else {
+            DoError::NoEffect
+        });
+    };
+
+    caster.mana -= spend.mana_cost;
+    caster.act1 = target.id.0 as i32;
+    caster.act2 = spend.amount;
+    caster.dir = direction.unwrap_or_else(|| bigdir(caster.dir));
+    if caster.id == target.id {
+        caster.action = action::HEAL_SELF;
+        caster.duration = speed_ticks(
+            character_value(caster, CharacterValue::Speed),
+            caster.speed_mode,
+            DUR_MAGIC_ACTION,
+        );
+    } else {
+        caster.action = action::HEAL1;
+        caster.duration = speed_ticks(
+            character_value(caster, CharacterValue::Speed),
+            caster.speed_mode,
+            DUR_MAGIC_ACTION / 2,
+        );
+    }
+    if caster.speed_mode == SpeedMode::Fast {
+        caster.endurance -= endurance_cost(caster);
+    }
+    Ok(())
+}
+
 pub fn act_walk(character: &mut Character, map: &mut MapGrid) -> bool {
     let from_x = usize::from(character.x);
     let from_y = usize::from(character.y);
@@ -542,6 +673,32 @@ pub fn act_attack(
     })
 }
 
+pub fn act_magicshield(character: &mut Character) -> bool {
+    if character.act1 < 1 {
+        return false;
+    }
+    if character.flags.contains(CharacterFlags::NOMAGIC)
+        && !character.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return false;
+    }
+    let max_lifeshield = character_value(character, CharacterValue::MagicShield) * POWERSCALE;
+    character.lifeshield = max_lifeshield.min(character.lifeshield + character.act1);
+    true
+}
+
+pub fn act_heal(caster: &Character, target: &mut Character) -> bool {
+    if caster.act1 != target.id.0 as i32 || caster.act2 < 1 {
+        return false;
+    }
+    if target.flags.contains(CharacterFlags::DEAD) {
+        return false;
+    }
+    let max_hp = character_value(target, CharacterValue::Hp) * POWERSCALE;
+    target.hp = max_hp.min(target.hp + caster.act2);
+    true
+}
+
 pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> bool {
     if defender.id == attacker.id || defender.flags.is_empty() {
         return false;
@@ -713,6 +870,15 @@ fn character_value(character: &Character, value: CharacterValue) -> i32 {
         .copied()
         .map(i32::from)
         .unwrap_or_default()
+}
+
+fn bigdir(direction: u8) -> u8 {
+    match Direction::try_from(direction) {
+        Ok(Direction::RightUp | Direction::RightDown) => Direction::Right as u8,
+        Ok(Direction::LeftUp | Direction::LeftDown) => Direction::Left as u8,
+        Ok(direction) => direction as u8,
+        Err(_) => direction,
+    }
 }
 
 fn offset(value: usize, delta: i16) -> Option<usize> {

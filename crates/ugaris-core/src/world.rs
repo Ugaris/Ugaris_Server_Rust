@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use crate::{
     direction::Direction,
     do_action::{
-        act_attack, act_drop, act_take, act_use, act_walk, advance_action_step, do_attack, do_drop,
-        do_idle, do_take, do_use, do_walk, endurance_cost, reset_action_after_act, speed_ticks,
+        act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
+        advance_action_step, do_attack, do_drop, do_heal, do_idle, do_magicshield, do_pulse,
+        do_take, do_use, do_walk, endurance_cost, reset_action_after_act, speed_ticks,
         ItemUseRequest, DUR_MISC_ACTION,
     },
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode},
@@ -1397,8 +1398,59 @@ impl World {
                     self.set_player_idle(player, character_id)
                 }
             }
+            PlayerActionCode::MagicShield => {
+                self.characters
+                    .get_mut(&character_id)
+                    .is_some_and(|character| do_magicshield(character).is_ok())
+                    || self.set_player_idle(player, character_id)
+            }
+            PlayerActionCode::Pulse => {
+                self.characters
+                    .get_mut(&character_id)
+                    .is_some_and(|character| do_pulse(character).is_ok())
+                    || self.set_player_idle(player, character_id)
+            }
+            PlayerActionCode::Heal => {
+                let target_id = CharacterId(player.action.arg1 as u32);
+                if self.setup_heal_spell(character_id, target_id) {
+                    true
+                } else {
+                    self.set_player_idle(player, character_id)
+                }
+            }
             _ => false,
         }
+    }
+
+    fn setup_heal_spell(&mut self, caster_id: CharacterId, target_id: CharacterId) -> bool {
+        if caster_id == target_id {
+            let Some(target) = self.characters.get(&target_id).cloned() else {
+                return false;
+            };
+            return self
+                .characters
+                .get_mut(&caster_id)
+                .is_some_and(|caster| do_heal(caster, &target, None).is_ok());
+        }
+
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        let Some(caster) = self.characters.get(&caster_id) else {
+            return false;
+        };
+        let Some(direction) = offset_to_direction(
+            usize::from(caster.x),
+            usize::from(caster.y),
+            usize::from(target.x),
+            usize::from(target.y),
+        ) else {
+            return false;
+        };
+
+        self.characters
+            .get_mut(&caster_id)
+            .is_some_and(|caster| do_heal(caster, &target, Some(direction as u8)).is_ok())
     }
 
     fn setup_give(
@@ -1696,6 +1748,18 @@ impl World {
                         (character.act1 > 0).then_some(CharacterId(character.act1 as u32))
                     })
                     .is_some_and(|receiver_id| self.complete_give(character_id, receiver_id)),
+                action::MAGICSHIELD => self
+                    .characters
+                    .get_mut(&character_id)
+                    .is_some_and(act_magicshield),
+                action::PULSE => true,
+                action::HEAL_SELF | action::HEAL1 | action::HEAL2 => self
+                    .characters
+                    .get(&character_id)
+                    .and_then(|character| {
+                        (character.act1 > 0).then_some(CharacterId(character.act1 as u32))
+                    })
+                    .is_some_and(|target_id| self.complete_heal(character_id, target_id)),
                 _ => false,
             };
 
@@ -1719,6 +1783,27 @@ impl World {
         }
 
         completed
+    }
+}
+
+impl World {
+    fn complete_heal(&mut self, caster_id: CharacterId, target_id: CharacterId) -> bool {
+        if caster_id == target_id {
+            let Some(caster) = self.characters.get(&caster_id).cloned() else {
+                return false;
+            };
+            return self
+                .characters
+                .get_mut(&target_id)
+                .is_some_and(|target| act_heal(&caster, target));
+        }
+
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        self.characters
+            .get_mut(&target_id)
+            .is_some_and(|target| act_heal(&caster, target))
     }
 }
 
@@ -1960,7 +2045,7 @@ impl Default for Tick {
 mod tests {
     use crate::{
         direction::Direction,
-        entity::{CharacterFlags, ItemFlags, SpeedMode, MAX_MODIFIERS},
+        entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_DOOR, IDR_ENCHANTITEM, IDR_FLAMETHROW,
             IDR_NIGHTLIGHT, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
@@ -3543,6 +3628,78 @@ mod tests {
         assert_eq!(character.action, 0);
         assert_eq!(character.duration, 0);
         assert_eq!(character.step, 0);
+    }
+
+    #[test]
+    fn player_magicshield_spell_sets_up_and_completes_lifeshield_gain() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.mana = 10 * POWERSCALE;
+        character.values[0][CharacterValue::MagicShield as usize] = 8;
+        character.values[0][CharacterValue::Speed as usize] = 24;
+        world.add_character(character);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::MagicShield,
+            arg1: 0,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.action, action::MAGICSHIELD);
+        assert_eq!(character.act1, 8 * POWERSCALE);
+        assert_eq!(character.mana, 6 * POWERSCALE);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        let completed = world.tick_basic_actions();
+
+        assert_eq!(completed.len(), 1);
+        assert!(completed[0].ok);
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.lifeshield, 8 * POWERSCALE);
+        assert_eq!(character.action, 0);
+    }
+
+    #[test]
+    fn player_heal_spell_restores_target_hp_on_completion() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.x = 10;
+        caster.y = 10;
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Heal as usize] = 10;
+        caster.values[0][CharacterValue::Speed as usize] = 24;
+        let mut target = character(2);
+        target.x = 11;
+        target.y = 10;
+        target.hp = 5 * POWERSCALE;
+        target.values[0][CharacterValue::Hp as usize] = 10;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 11, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Heal,
+            arg1: 2,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::HEAL1);
+        assert_eq!(caster.dir, Direction::Right as u8);
+        assert_eq!(caster.act2, 5 * POWERSCALE);
+        assert_eq!(caster.mana, 15 * POWERSCALE / 2);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        let completed = world.tick_basic_actions();
+
+        assert_eq!(completed.len(), 1);
+        assert!(completed[0].ok);
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 10 * POWERSCALE);
     }
 
     fn character(id: u32) -> Character {
