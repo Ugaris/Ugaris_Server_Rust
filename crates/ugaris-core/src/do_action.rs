@@ -15,7 +15,7 @@ use crate::{
     map::{MapFlags, MapGrid},
     spell::{
         heal_spend, magicshield_spend, may_add_spell, pulse_spend, spell_power, BLESS_COST,
-        FLASH_COST, FREEZE_COST, IDR_BLESS, IDR_FLASH, IDR_WARCRY,
+        FIREBALL_COST, FLASH_COST, FREEZE_COST, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_WARCRY,
     },
     tick::TICKS_PER_SECOND,
 };
@@ -531,6 +531,46 @@ pub fn do_flash(
 
     character.mana -= FLASH_COST;
     character.action = action::FLASH;
+    character.duration = speed_ticks(
+        character_value(character, CharacterValue::Speed),
+        character.speed_mode,
+        DUR_MAGIC_ACTION,
+    );
+    if character.speed_mode == SpeedMode::Fast {
+        character.endurance -= endurance_cost(character);
+    }
+    character.dir = bigdir(character.dir);
+    Ok(())
+}
+
+pub fn do_firering(
+    character: &mut Character,
+    items: &HashMap<ItemId, Item>,
+    current_tick: u32,
+) -> Result<(), DoError> {
+    if character.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character.flags.contains(CharacterFlags::NOMAGIC)
+        && !character.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+    if warcried(character, items) {
+        return Err(DoError::Unconscious);
+    }
+    if character_value(character, CharacterValue::Fireball) == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    if character.mana < FIREBALL_COST {
+        return Err(DoError::ManaLow);
+    }
+    if may_add_spell(character, items, IDR_FIRERING, current_tick).is_none() {
+        return Err(DoError::AlreadyWorking);
+    }
+
+    character.mana -= FIREBALL_COST;
+    character.action = action::FIRERING;
     character.duration = speed_ticks(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
