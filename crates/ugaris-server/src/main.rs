@@ -66,6 +66,7 @@ struct Args {
 struct ServerRuntime {
     players: HashMap<u64, PlayerRuntime>,
     sessions: HashMap<u64, mpsc::Sender<SessionCommand>>,
+    map_caches: HashMap<u64, VisibleMapCache>,
     action_queue: VecDeque<(u64, ClientAction)>,
     next_character_id: u32,
 }
@@ -104,6 +105,7 @@ impl ServerRuntime {
     fn disconnect(&mut self, session_id: u64) -> Option<PlayerRuntime> {
         let player = self.players.remove(&session_id);
         self.sessions.remove(&session_id);
+        self.map_caches.remove(&session_id);
         self.action_queue.retain(|(id, _)| *id != session_id);
         player
     }
@@ -191,6 +193,20 @@ impl ServerRuntime {
             .values()
             .find(|player| player.character_id == Some(character_id))
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VisibleMapCell {
+    tile_packet: Vec<u8>,
+    character_packet: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VisibleMapCache {
+    center_x: u16,
+    center_y: u16,
+    view_distance: usize,
+    cells: HashMap<u16, VisibleMapCell>,
 }
 
 const LOGIN_SPAWN_X: usize = 128;
@@ -1815,6 +1831,99 @@ fn map_refresh_payloads(
     payloads
 }
 
+fn visible_map_cache(
+    world: &World,
+    character: &Character,
+    view_distance: usize,
+) -> VisibleMapCache {
+    let cells = legacy_diamond_positions(character, view_distance)
+        .filter_map(|(client_pos, map_x, map_y)| {
+            let tile = world.map.tile(map_x, map_y)?;
+            let character_packet = tile_character(world, tile)
+                .map(|character| map_character_packet(character, client_pos).to_vec());
+            Some((
+                client_pos,
+                VisibleMapCell {
+                    tile_packet: map_tile_packet(world, tile, client_pos).to_vec(),
+                    character_packet,
+                },
+            ))
+        })
+        .collect();
+
+    VisibleMapCache {
+        center_x: character.x,
+        center_y: character.y,
+        view_distance,
+        cells,
+    }
+}
+
+fn map_diff_payloads(
+    world: &World,
+    character: &Character,
+    view_distance: usize,
+    cache: &mut VisibleMapCache,
+) -> Vec<bytes::BytesMut> {
+    if cache.center_x != character.x
+        || cache.center_y != character.y
+        || cache.view_distance != view_distance
+    {
+        *cache = visible_map_cache(world, character, view_distance);
+        return map_refresh_payloads(world, character, view_distance);
+    }
+
+    let next_cache = visible_map_cache(world, character, view_distance);
+    let mut payloads = Vec::new();
+    let mut current = bytes::BytesMut::new();
+
+    for (client_pos, next_cell) in &next_cache.cells {
+        match cache.cells.get(client_pos) {
+            Some(previous) if previous.tile_packet == next_cell.tile_packet => {}
+            _ => append_map_packet(
+                &mut payloads,
+                &mut current,
+                bytes::BytesMut::from(&next_cell.tile_packet[..]),
+            ),
+        }
+
+        let previous_character = cache
+            .cells
+            .get(client_pos)
+            .and_then(|cell| cell.character_packet.as_ref());
+        match (previous_character, next_cell.character_packet.as_ref()) {
+            (Some(previous), Some(next)) if previous == next => {}
+            (_, Some(next)) => append_map_packet(
+                &mut payloads,
+                &mut current,
+                bytes::BytesMut::from(&next[..]),
+            ),
+            (Some(_), None) => append_map_packet(
+                &mut payloads,
+                &mut current,
+                map_character_clear_packet(*client_pos),
+            ),
+            (None, None) => {}
+        }
+    }
+
+    for client_pos in cache.cells.keys() {
+        if !next_cache.cells.contains_key(client_pos) {
+            append_map_packet(
+                &mut payloads,
+                &mut current,
+                map_character_clear_packet(*client_pos),
+            );
+        }
+    }
+
+    if !current.is_empty() {
+        payloads.push(current);
+    }
+    *cache = next_cache;
+    payloads
+}
+
 fn look_map_payloads(world: &World, area_id: u16, request: LookMapRequest) -> Vec<bytes::BytesMut> {
     if !request.visible {
         return vec![ugaris_protocol::packet::system_text(
@@ -2909,6 +3018,75 @@ mod tests {
                 | MAP_TILE_ISPRITE
                 | MAP_TILE_FLAGS
         );
+    }
+
+    #[test]
+    fn map_diff_payloads_send_only_changed_same_origin_cells() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut world = World::default();
+        assert!(world.spawn_character(character.clone(), 10, 10));
+        let mut cache = visible_map_cache(&world, &character, 1);
+
+        world.map.tile_mut(11, 10).unwrap().ground_sprite = 777;
+        let payloads = map_diff_payloads(&world, &character, 1, &mut cache);
+
+        assert_eq!(payloads.len(), 1);
+        let payload = &payloads[0];
+        assert_ne!(payload.first().copied(), Some(SV_ORIGIN));
+        assert!(payload.windows(17).any(|window| {
+            window
+                == [
+                    SV_MAP11
+                        | SV_MAPPOS
+                        | MAP_TILE_GSPRITE
+                        | MAP_TILE_FSPRITE
+                        | MAP_TILE_ISPRITE
+                        | MAP_TILE_FLAGS,
+                    5,
+                    0,
+                    9,
+                    3,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    17,
+                    0,
+                ]
+        }));
+        assert!(map_diff_payloads(&world, &character, 1, &mut cache).is_empty());
+    }
+
+    #[test]
+    fn map_diff_payloads_clear_removed_visible_character() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut other = login_character(CharacterId(8), &login, 1, 11, 10);
+        other.x = 11;
+        other.y = 10;
+        let mut world = World::default();
+        assert!(world.spawn_character(character.clone(), 10, 10));
+        assert!(world.spawn_character(other, 11, 10));
+        let mut cache = visible_map_cache(&world, &character, 1);
+
+        world.remove_character(CharacterId(8));
+        let payloads = map_diff_payloads(&world, &character, 1, &mut cache);
+
+        assert_eq!(payloads.len(), 1);
+        assert!(payloads[0]
+            .windows(3)
+            .any(|window| { window == [SV_MAP10 | SV_MAPPOS | MAP_CHARACTER_CLEAR, 5, 0] }));
     }
 
     #[test]
@@ -4801,7 +4979,7 @@ async fn main() -> anyhow::Result<()> {
                             let mut payloads = if completion.ok
                                 && completion.action_id == ugaris_core::legacy::action::WALK
                             {
-                                movement_scroll_payload(
+                                let payloads = movement_scroll_payload(
                                     &world,
                                     character,
                                     completion.old_x,
@@ -4809,9 +4987,30 @@ async fn main() -> anyhow::Result<()> {
                                     view_distance,
                                 )
                                 .map(|payload| vec![payload])
-                                .unwrap_or_else(|| map_refresh_payloads(&world, character, view_distance))
+                                .unwrap_or_else(|| map_refresh_payloads(&world, character, view_distance));
+                                runtime.map_caches.insert(
+                                    session_id,
+                                    visible_map_cache(&world, character, view_distance),
+                                );
+                                payloads
                             } else {
-                                map_refresh_payloads(&world, character, view_distance)
+                                match runtime.map_caches.get_mut(&session_id) {
+                                    Some(cache) => map_diff_payloads(
+                                        &world,
+                                        character,
+                                        view_distance,
+                                        cache,
+                                    ),
+                                    None => {
+                                        let payloads =
+                                            map_refresh_payloads(&world, character, view_distance);
+                                        runtime.map_caches.insert(
+                                            session_id,
+                                            visible_map_cache(&world, character, view_distance),
+                                        );
+                                        payloads
+                                    }
+                                }
                             };
                             if completion.action_id != ugaris_core::legacy::action::WALK {
                                 payloads.push(inventory_snapshot_payload(&world, character));
@@ -4923,6 +5122,10 @@ async fn main() -> anyhow::Result<()> {
                             .characters
                             .get(&character_id)
                             .map(|character| {
+                                runtime.map_caches.insert(
+                                    id.0,
+                                    visible_map_cache(&world, character, view_distance),
+                                );
                                 login_bootstrap_payloads(
                                     &world,
                                     character,
@@ -4932,15 +5135,20 @@ async fn main() -> anyhow::Result<()> {
                                 )
                             })
                             .unwrap_or_else(|| {
+                                let fallback_character = login_character(
+                                    character_id,
+                                    &login,
+                                    config.area_id,
+                                    spawn_tile.0,
+                                    spawn_tile.1,
+                                );
+                                runtime.map_caches.insert(
+                                    id.0,
+                                    visible_map_cache(&world, &fallback_character, view_distance),
+                                );
                                 login_bootstrap_payloads(
                                     &world,
-                                    &login_character(
-                                        character_id,
-                                        &login,
-                                        config.area_id,
-                                        spawn_tile.0,
-                                        spawn_tile.1,
-                                    ),
+                                    &fallback_character,
                                     config.mirror_id,
                                     world.tick.0,
                                     view_distance,
