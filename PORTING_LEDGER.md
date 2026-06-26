@@ -113,7 +113,7 @@ cargo test --workspace
 cargo build -p ugaris-server
 ```
 
-Last verified after the first random-chest slice:
+Last verified after the `IDR_ASSEMBLE` slice:
 
 - `cargo test --workspace`: passed.
 - `cargo build -p ugaris-server`: passed.
@@ -162,6 +162,7 @@ Current implemented slices:
 - `PlayerRuntime` now has a fixed-layout C-compatible `DRD_TREASURE_CHEST_PPD` byte codec matching `struct treasure_chest_ppd { int last_access[200]; }`, decodes/encodes it through the same outer PPD blob framing, replaces existing blocks, appends when runtime chest cooldowns exist, and preserves unknown PPD blocks with tests.
 - The server now retains DB snapshot `ppd_blob`/subscriber blobs in `PlayerRuntime`, decodes loaded keyring and treasure-chest PPD blocks on optional PostgreSQL-backed login, and re-encodes those blocks into the logout snapshot save request together with carried inventory/cursor items.
 - `IDR_CITY_RECALL = 159` now dispatches from the base item-driver path, maps legacy scroll types 0..12 to fixed city coordinates from `src/module/base.c`, blocks Teufelheim arena use, preserves carried/dying no-op behavior, decrements `drdata[1]` stack counts or consumes the final scroll, teleports same-area destinations, and returns typed cross-area handoff outcomes with focused tests.
+- `IDR_ASSEMBLE = 29` now dispatches from the base item-driver path, ports the legacy sun amulet and staff blue/green/red key combination matrix from `src/module/base.c`, emits the legacy no-cursor/does-not-fit/bug feedback messages, instantiates the combined item template, consumes the cursor component, and replaces the used carried item with focused core and server tests.
 
 Chest gaps still to port:
 

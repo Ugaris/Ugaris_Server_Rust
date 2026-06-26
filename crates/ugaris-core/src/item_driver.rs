@@ -17,6 +17,7 @@ pub const IDR_CHEST: u16 = 5;
 pub const IDR_TELEPORT: u16 = 10;
 pub const IDR_RECALL: u16 = 13;
 pub const IDR_STATSCROLL: u16 = 19;
+pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_FOOD: u16 = 64;
@@ -39,9 +40,53 @@ pub enum DoorKeySource {
     Keyring,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AssembleTemplate {
+    SunAmulet12,
+    SunAmulet13,
+    SunAmulet23,
+    SunAmulet123,
+    WarrBluekey12,
+    WarrBluekey13,
+    WarrBluekey23,
+    WarrBluekey123,
+    WarrGreenkey12,
+    WarrGreenkey13,
+    WarrGreenkey23,
+    WarrGreenkey123,
+    WarrRedkey12,
+    WarrRedkey13,
+    WarrRedkey23,
+    WarrRedkey123,
+}
+
+impl AssembleTemplate {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SunAmulet12 => "sun_amulet12",
+            Self::SunAmulet13 => "sun_amulet13",
+            Self::SunAmulet23 => "sun_amulet23",
+            Self::SunAmulet123 => "sun_amulet123",
+            Self::WarrBluekey12 => "warr_bluekey12",
+            Self::WarrBluekey13 => "warr_bluekey13",
+            Self::WarrBluekey23 => "warr_bluekey23",
+            Self::WarrBluekey123 => "warr_bluekey123",
+            Self::WarrGreenkey12 => "warr_greenkey12",
+            Self::WarrGreenkey13 => "warr_greenkey13",
+            Self::WarrGreenkey23 => "warr_greenkey23",
+            Self::WarrGreenkey123 => "warr_greenkey123",
+            Self::WarrRedkey12 => "warr_redkey12",
+            Self::WarrRedkey13 => "warr_redkey13",
+            Self::WarrRedkey23 => "warr_redkey23",
+            Self::WarrRedkey123 => "warr_redkey123",
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemDriverContext {
     pub door_key: Option<DoorKeyAccess>,
+    pub cursor_template_id: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,6 +201,24 @@ pub enum ItemDriverOutcome {
         value: u8,
         raised: u8,
         exp_cost: u32,
+    },
+    AssembleItem {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        template: AssembleTemplate,
+    },
+    AssembleNeedsCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    AssembleDoesNotFit {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    AssembleUnknownItem {
+        item_id: ItemId,
+        character_id: CharacterId,
     },
     BlockedByRequirements {
         item_id: ItemId,
@@ -274,6 +337,7 @@ pub fn execute_item_driver_with_context(
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
+                IDR_ASSEMBLE => assemble_driver(character, item, context),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
                 IDR_TELEPORT => teleport_driver(character, item),
@@ -330,6 +394,219 @@ fn keyring_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+const DEV_ID_DB: u32 = 0x01;
+const DEV_ID_WARR: u32 = 0x06;
+
+const fn make_item_id(dev_id: u32, nr: u32) -> u32 {
+    (dev_id << 24) | nr
+}
+
+const IID_AREA2_SUN1: u32 = make_item_id(DEV_ID_DB, 0x00003A);
+const IID_AREA2_SUN2: u32 = make_item_id(DEV_ID_DB, 0x00003B);
+const IID_AREA2_SUN3: u32 = make_item_id(DEV_ID_DB, 0x00003C);
+const IID_AREA2_SUN12: u32 = make_item_id(DEV_ID_DB, 0x00003D);
+const IID_AREA2_SUN13: u32 = make_item_id(DEV_ID_DB, 0x00003E);
+const IID_AREA2_SUN23: u32 = make_item_id(DEV_ID_DB, 0x00003F);
+
+const IID_STAFF_BLUEKEY1: u32 = make_item_id(DEV_ID_WARR, 0x00000A);
+const IID_STAFF_BLUEKEY2: u32 = make_item_id(DEV_ID_WARR, 0x00000B);
+const IID_STAFF_BLUEKEY3: u32 = make_item_id(DEV_ID_WARR, 0x00000C);
+const IID_STAFF_BLUEKEY12: u32 = make_item_id(DEV_ID_WARR, 0x00000D);
+const IID_STAFF_BLUEKEY13: u32 = make_item_id(DEV_ID_WARR, 0x00000E);
+const IID_STAFF_BLUEKEY23: u32 = make_item_id(DEV_ID_WARR, 0x00000F);
+
+const IID_STAFF_GREENKEY1: u32 = make_item_id(DEV_ID_WARR, 0x000011);
+const IID_STAFF_GREENKEY2: u32 = make_item_id(DEV_ID_WARR, 0x000012);
+const IID_STAFF_GREENKEY3: u32 = make_item_id(DEV_ID_WARR, 0x000013);
+const IID_STAFF_GREENKEY12: u32 = make_item_id(DEV_ID_WARR, 0x000014);
+const IID_STAFF_GREENKEY13: u32 = make_item_id(DEV_ID_WARR, 0x000015);
+const IID_STAFF_GREENKEY23: u32 = make_item_id(DEV_ID_WARR, 0x000016);
+
+const IID_STAFF_REDKEY1: u32 = make_item_id(DEV_ID_WARR, 0x000018);
+const IID_STAFF_REDKEY2: u32 = make_item_id(DEV_ID_WARR, 0x000019);
+const IID_STAFF_REDKEY3: u32 = make_item_id(DEV_ID_WARR, 0x00001A);
+const IID_STAFF_REDKEY12: u32 = make_item_id(DEV_ID_WARR, 0x00001B);
+const IID_STAFF_REDKEY13: u32 = make_item_id(DEV_ID_WARR, 0x00001C);
+const IID_STAFF_REDKEY23: u32 = make_item_id(DEV_ID_WARR, 0x00001D);
+
+fn assemble_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::AssembleNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    if !is_assemblable_primary(item.template_id) {
+        return ItemDriverOutcome::AssembleUnknownItem {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    let Some(template) = assemble_template(item.template_id, context.cursor_template_id) else {
+        return ItemDriverOutcome::AssembleDoesNotFit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::AssembleItem {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        template,
+    }
+}
+
+fn is_assemblable_primary(primary_id: u32) -> bool {
+    matches!(
+        primary_id,
+        IID_AREA2_SUN1
+            | IID_AREA2_SUN2
+            | IID_AREA2_SUN3
+            | IID_AREA2_SUN12
+            | IID_AREA2_SUN13
+            | IID_AREA2_SUN23
+            | IID_STAFF_BLUEKEY1
+            | IID_STAFF_BLUEKEY2
+            | IID_STAFF_BLUEKEY3
+            | IID_STAFF_BLUEKEY12
+            | IID_STAFF_BLUEKEY13
+            | IID_STAFF_BLUEKEY23
+            | IID_STAFF_GREENKEY1
+            | IID_STAFF_GREENKEY2
+            | IID_STAFF_GREENKEY3
+            | IID_STAFF_GREENKEY12
+            | IID_STAFF_GREENKEY13
+            | IID_STAFF_GREENKEY23
+            | IID_STAFF_REDKEY1
+            | IID_STAFF_REDKEY2
+            | IID_STAFF_REDKEY3
+            | IID_STAFF_REDKEY12
+            | IID_STAFF_REDKEY13
+            | IID_STAFF_REDKEY23
+    )
+}
+
+pub fn assemble_template(primary_id: u32, cursor_id: Option<u32>) -> Option<AssembleTemplate> {
+    let cursor_id = cursor_id?;
+    match primary_id {
+        IID_AREA2_SUN1 => match cursor_id {
+            IID_AREA2_SUN2 => Some(AssembleTemplate::SunAmulet12),
+            IID_AREA2_SUN3 => Some(AssembleTemplate::SunAmulet13),
+            IID_AREA2_SUN23 => Some(AssembleTemplate::SunAmulet123),
+            _ => None,
+        },
+        IID_AREA2_SUN2 => match cursor_id {
+            IID_AREA2_SUN1 => Some(AssembleTemplate::SunAmulet12),
+            IID_AREA2_SUN3 => Some(AssembleTemplate::SunAmulet23),
+            IID_AREA2_SUN13 => Some(AssembleTemplate::SunAmulet123),
+            _ => None,
+        },
+        IID_AREA2_SUN3 => match cursor_id {
+            IID_AREA2_SUN1 => Some(AssembleTemplate::SunAmulet13),
+            IID_AREA2_SUN2 => Some(AssembleTemplate::SunAmulet23),
+            IID_AREA2_SUN12 => Some(AssembleTemplate::SunAmulet123),
+            _ => None,
+        },
+        IID_AREA2_SUN12 => (cursor_id == IID_AREA2_SUN3).then_some(AssembleTemplate::SunAmulet123),
+        IID_AREA2_SUN13 => (cursor_id == IID_AREA2_SUN2).then_some(AssembleTemplate::SunAmulet123),
+        IID_AREA2_SUN23 => (cursor_id == IID_AREA2_SUN1).then_some(AssembleTemplate::SunAmulet123),
+
+        IID_STAFF_BLUEKEY1 => match cursor_id {
+            IID_STAFF_BLUEKEY2 => Some(AssembleTemplate::WarrBluekey12),
+            IID_STAFF_BLUEKEY3 => Some(AssembleTemplate::WarrBluekey13),
+            IID_STAFF_BLUEKEY23 => Some(AssembleTemplate::WarrBluekey123),
+            _ => None,
+        },
+        IID_STAFF_BLUEKEY2 => match cursor_id {
+            IID_STAFF_BLUEKEY1 => Some(AssembleTemplate::WarrBluekey12),
+            IID_STAFF_BLUEKEY3 => Some(AssembleTemplate::WarrBluekey23),
+            IID_STAFF_BLUEKEY13 => Some(AssembleTemplate::WarrBluekey123),
+            _ => None,
+        },
+        IID_STAFF_BLUEKEY3 => match cursor_id {
+            IID_STAFF_BLUEKEY1 => Some(AssembleTemplate::WarrBluekey13),
+            IID_STAFF_BLUEKEY2 => Some(AssembleTemplate::WarrBluekey23),
+            IID_STAFF_BLUEKEY12 => Some(AssembleTemplate::WarrBluekey123),
+            _ => None,
+        },
+        IID_STAFF_BLUEKEY12 => {
+            (cursor_id == IID_STAFF_BLUEKEY3).then_some(AssembleTemplate::WarrBluekey123)
+        }
+        IID_STAFF_BLUEKEY13 => {
+            (cursor_id == IID_STAFF_BLUEKEY2).then_some(AssembleTemplate::WarrBluekey123)
+        }
+        IID_STAFF_BLUEKEY23 => {
+            (cursor_id == IID_STAFF_BLUEKEY1).then_some(AssembleTemplate::WarrBluekey123)
+        }
+
+        IID_STAFF_GREENKEY1 => match cursor_id {
+            IID_STAFF_GREENKEY2 => Some(AssembleTemplate::WarrGreenkey12),
+            IID_STAFF_GREENKEY3 => Some(AssembleTemplate::WarrGreenkey13),
+            IID_STAFF_GREENKEY23 => Some(AssembleTemplate::WarrGreenkey123),
+            _ => None,
+        },
+        IID_STAFF_GREENKEY2 => match cursor_id {
+            IID_STAFF_GREENKEY1 => Some(AssembleTemplate::WarrGreenkey12),
+            IID_STAFF_GREENKEY3 => Some(AssembleTemplate::WarrGreenkey23),
+            IID_STAFF_GREENKEY13 => Some(AssembleTemplate::WarrGreenkey123),
+            _ => None,
+        },
+        IID_STAFF_GREENKEY3 => match cursor_id {
+            IID_STAFF_GREENKEY1 => Some(AssembleTemplate::WarrGreenkey13),
+            IID_STAFF_GREENKEY2 => Some(AssembleTemplate::WarrGreenkey23),
+            IID_STAFF_GREENKEY12 => Some(AssembleTemplate::WarrGreenkey123),
+            _ => None,
+        },
+        IID_STAFF_GREENKEY12 => {
+            (cursor_id == IID_STAFF_GREENKEY3).then_some(AssembleTemplate::WarrGreenkey123)
+        }
+        IID_STAFF_GREENKEY13 => {
+            (cursor_id == IID_STAFF_GREENKEY2).then_some(AssembleTemplate::WarrGreenkey123)
+        }
+        IID_STAFF_GREENKEY23 => {
+            (cursor_id == IID_STAFF_GREENKEY1).then_some(AssembleTemplate::WarrGreenkey123)
+        }
+
+        IID_STAFF_REDKEY1 => match cursor_id {
+            IID_STAFF_REDKEY2 => Some(AssembleTemplate::WarrRedkey12),
+            IID_STAFF_REDKEY3 => Some(AssembleTemplate::WarrRedkey13),
+            IID_STAFF_REDKEY23 => Some(AssembleTemplate::WarrRedkey123),
+            _ => None,
+        },
+        IID_STAFF_REDKEY2 => match cursor_id {
+            IID_STAFF_REDKEY1 => Some(AssembleTemplate::WarrRedkey12),
+            IID_STAFF_REDKEY3 => Some(AssembleTemplate::WarrRedkey23),
+            IID_STAFF_REDKEY13 => Some(AssembleTemplate::WarrRedkey123),
+            _ => None,
+        },
+        IID_STAFF_REDKEY3 => match cursor_id {
+            IID_STAFF_REDKEY1 => Some(AssembleTemplate::WarrRedkey13),
+            IID_STAFF_REDKEY2 => Some(AssembleTemplate::WarrRedkey23),
+            IID_STAFF_REDKEY12 => Some(AssembleTemplate::WarrRedkey123),
+            _ => None,
+        },
+        IID_STAFF_REDKEY12 => {
+            (cursor_id == IID_STAFF_REDKEY3).then_some(AssembleTemplate::WarrRedkey123)
+        }
+        IID_STAFF_REDKEY13 => {
+            (cursor_id == IID_STAFF_REDKEY2).then_some(AssembleTemplate::WarrRedkey123)
+        }
+        IID_STAFF_REDKEY23 => {
+            (cursor_id == IID_STAFF_REDKEY1).then_some(AssembleTemplate::WarrRedkey123)
+        }
+        _ => None,
     }
 }
 
@@ -1109,6 +1386,7 @@ mod tests {
                 name: "Copper Key".to_string(),
                 source: DoorKeySource::Keyring,
             }),
+            cursor_template_id: None,
         };
 
         assert_eq!(
@@ -1126,6 +1404,105 @@ mod tests {
                 key_id: 0x1122_3344,
                 source: DoorKeySource::Keyring,
                 locking: true,
+            }
+        );
+    }
+
+    #[test]
+    fn execute_assemble_driver_maps_legacy_combinations() {
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        character.cursor_item = Some(ItemId(8));
+        let mut item = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_ASSEMBLE);
+        item.carried_by = Some(CharacterId(1));
+        item.template_id = IID_AREA2_SUN1;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ASSEMBLE,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            door_key: None,
+            cursor_template_id: Some(IID_AREA2_SUN23),
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut item,
+                request,
+                1,
+                false,
+                &context
+            ),
+            ItemDriverOutcome::AssembleItem {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(8),
+                template: AssembleTemplate::SunAmulet123,
+            }
+        );
+
+        item.template_id = IID_STAFF_REDKEY2;
+        let context = ItemDriverContext {
+            door_key: None,
+            cursor_template_id: Some(IID_STAFF_REDKEY13),
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut item,
+                request,
+                1,
+                false,
+                &context
+            ),
+            ItemDriverOutcome::AssembleItem {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(8),
+                template: AssembleTemplate::WarrRedkey123,
+            }
+        );
+    }
+
+    #[test]
+    fn execute_assemble_driver_reports_legacy_failures() {
+        let mut character = character(1);
+        let mut item = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_ASSEMBLE);
+        item.carried_by = Some(CharacterId(1));
+        item.template_id = IID_AREA2_SUN1;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ASSEMBLE,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut item, request, 1, false),
+            ItemDriverOutcome::AssembleNeedsCursor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.cursor_item = Some(ItemId(8));
+        assert_eq!(
+            execute_item_driver(&mut character, &mut item, request, 1, false),
+            ItemDriverOutcome::AssembleDoesNotFit {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        item.template_id = 0xDEAD_BEEF;
+        assert_eq!(
+            execute_item_driver(&mut character, &mut item, request, 1, false),
+            ItemDriverOutcome::AssembleUnknownItem {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
             }
         );
     }

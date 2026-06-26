@@ -220,6 +220,14 @@ enum ChestTreasureApplyResult {
     MissingPlayer,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AssembleApplyResult {
+    Assembled,
+    MissingPlayer,
+    MissingItem,
+    TemplateUnavailable,
+}
+
 fn apply_character_snapshot(
     world: &mut World,
     player: &mut PlayerRuntime,
@@ -948,6 +956,18 @@ fn item_driver_context_for_request(
     else {
         return ugaris_core::item_driver::ItemDriverContext::default();
     };
+    if *driver == ugaris_core::item_driver::IDR_ASSEMBLE {
+        let cursor_template_id = world
+            .characters
+            .get(character_id)
+            .and_then(|character| character.cursor_item)
+            .and_then(|cursor_item_id| world.items.get(&cursor_item_id))
+            .map(|item| item.template_id);
+        return ugaris_core::item_driver::ItemDriverContext {
+            door_key: None,
+            cursor_template_id,
+        };
+    }
     if *driver != ugaris_core::item_driver::IDR_DOOR {
         return ugaris_core::item_driver::ItemDriverContext::default();
     }
@@ -962,6 +982,7 @@ fn item_driver_context_for_request(
 
     ugaris_core::item_driver::ItemDriverContext {
         door_key: door_key_access(world, player, *character_id, required_key_id),
+        cursor_template_id: None,
     }
 }
 
@@ -1204,6 +1225,53 @@ fn grant_template_item_to_cursor(
     character.flags.insert(CharacterFlags::ITEMS);
     world.add_item(item);
     Some(item_name)
+}
+
+fn apply_assemble_item(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    item_id: ItemId,
+    character_id: CharacterId,
+    cursor_item_id: ItemId,
+    template: &str,
+) -> AssembleApplyResult {
+    let Some(character) = world.characters.get(&character_id) else {
+        return AssembleApplyResult::MissingPlayer;
+    };
+    if character.cursor_item != Some(cursor_item_id) {
+        return AssembleApplyResult::MissingItem;
+    }
+    let Some(slot) = character
+        .inventory
+        .iter()
+        .position(|slot_item| *slot_item == Some(item_id))
+    else {
+        return AssembleApplyResult::MissingItem;
+    };
+    if world
+        .items
+        .get(&item_id)
+        .is_none_or(|item| item.carried_by != Some(character_id))
+        || !world.items.contains_key(&cursor_item_id)
+    {
+        return AssembleApplyResult::MissingItem;
+    }
+
+    let Ok(new_item) = loader.instantiate_item_template(template, Some(character_id)) else {
+        return AssembleApplyResult::TemplateUnavailable;
+    };
+    let new_item_id = new_item.id;
+
+    world.items.remove(&cursor_item_id);
+    world.items.remove(&item_id);
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return AssembleApplyResult::MissingPlayer;
+    };
+    character.cursor_item = None;
+    character.inventory[slot] = Some(new_item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(new_item);
+    AssembleApplyResult::Assembled
 }
 
 fn grant_money_to_cursor(
@@ -2851,6 +2919,49 @@ mod tests {
     }
 
     #[test]
+    fn apply_assemble_item_replaces_used_item_and_consumes_cursor() {
+        let character_id = CharacterId(7);
+        let used_id = ItemId(70);
+        let cursor_id = ItemId(71);
+        let mut character = login_character(character_id, &login_block("Assembler"), 1, 10, 10);
+        character.inventory[30] = Some(used_id);
+        character.cursor_item = Some(cursor_id);
+
+        let mut world = World::default();
+        world.add_character(character);
+        let mut used = test_item(used_id, 100, ItemFlags::USED | ItemFlags::USE);
+        used.carried_by = Some(character_id);
+        world.add_item(used);
+        let mut cursor = test_item(cursor_id, 101, ItemFlags::USED | ItemFlags::TAKE);
+        cursor.carried_by = Some(character_id);
+        world.add_item(cursor);
+
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"sun_amulet123: name="Sun Amulet" sprite=444 ;"#)
+            .unwrap();
+
+        assert_eq!(
+            apply_assemble_item(
+                &mut world,
+                &mut loader,
+                used_id,
+                character_id,
+                cursor_id,
+                "sun_amulet123",
+            ),
+            AssembleApplyResult::Assembled
+        );
+
+        let character = world.characters.get(&character_id).unwrap();
+        let new_id = character.inventory[30].unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert!(!world.items.contains_key(&used_id));
+        assert!(!world.items.contains_key(&cursor_id));
+        assert_eq!(world.items.get(&new_id).unwrap().name, "Sun Amulet");
+    }
+
+    #[test]
     fn apply_keyring_add_cursor_item_stores_key_and_consumes_cursor() {
         let mut world = World::default();
         let character_id = CharacterId(7);
@@ -4119,6 +4230,45 @@ async fn main() -> anyhow::Result<()> {
                                                     failed += 1;
                                                 }
                                             }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::AssembleItem {
+                                            item_id,
+                                            character_id,
+                                            cursor_item_id,
+                                            template,
+                                        } => {
+                                            match apply_assemble_item(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                item_id,
+                                                character_id,
+                                                cursor_item_id,
+                                                template.as_str(),
+                                            ) {
+                                                AssembleApplyResult::Assembled => {
+                                                    executed += 1;
+                                                }
+                                                AssembleApplyResult::TemplateUnavailable => {
+                                                    feedback.push((character_id, "That doesn't seem to fit.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                AssembleApplyResult::MissingPlayer
+                                                | AssembleApplyResult::MissingItem => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::AssembleNeedsCursor { character_id, .. } => {
+                                            feedback.push((character_id, "You can only use this item with another item.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::AssembleDoesNotFit { character_id, .. } => {
+                                            feedback.push((character_id, "That doesn't seem to fit.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::AssembleUnknownItem { character_id, .. } => {
+                                            feedback.push((character_id, "Bug # 42556".to_string()));
+                                            failed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::EmptyPotionTemplateNeeded { .. } => {
                                             deferred_templates += 1;
