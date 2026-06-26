@@ -201,6 +201,15 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    BallTrapProjectile {
+        item_id: ItemId,
+        character_id: CharacterId,
+        start_x: u16,
+        start_y: u16,
+        target_x: u16,
+        target_y: u16,
+        power: u8,
+    },
     TriggerMapItem {
         item_id: ItemId,
         character_id: CharacterId,
@@ -414,6 +423,7 @@ pub fn execute_item_driver_with_context(
                 },
                 IDR_POTION => potion_driver(character, item, area_id, in_arena),
                 IDR_DOOR => door_driver(character, item, context),
+                IDR_BALLTRAP => balltrap_driver(character, item),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
                 IDR_CHEST => chest_driver(character, item),
@@ -450,6 +460,29 @@ pub fn execute_item_driver_with_context(
             item_id,
             character_id,
         },
+    }
+}
+
+fn balltrap_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let dx = i16::from(drdata(item, 0)) - 128;
+    let dy = i16::from(drdata(item, 1)) - 128;
+    let dxs = dx.signum();
+    let dys = dy.signum();
+    let item_x = i32::from(item.x);
+    let item_y = i32::from(item.y);
+
+    ItemDriverOutcome::BallTrapProjectile {
+        item_id: item.id,
+        character_id: character.id,
+        start_x: clamp_legacy_coordinate(item_x + i32::from(dxs)),
+        start_y: clamp_legacy_coordinate(item_y + i32::from(dys)),
+        target_x: clamp_legacy_coordinate(item_x + i32::from(dx)),
+        target_y: clamp_legacy_coordinate(item_y + i32::from(dy)),
+        power: drdata(item, 2),
     }
 }
 
@@ -1426,6 +1459,10 @@ fn max_value(character: &Character, value: CharacterValue) -> i32 {
 
 fn drdata(item: &Item, idx: usize) -> u8 {
     item.driver_data.get(idx).copied().unwrap_or_default()
+}
+
+fn clamp_legacy_coordinate(value: i32) -> u16 {
+    value.clamp(0, i32::from(u16::MAX)) as u16
 }
 
 #[cfg(test)]
@@ -2436,6 +2473,68 @@ mod tests {
                 anti: true,
                 special: true,
             }
+        );
+    }
+
+    #[test]
+    fn balltrap_non_player_launches_projectile_from_driver_data() {
+        let mut character = character(1);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_BALLTRAP);
+        trap.x = 100;
+        trap.y = 100;
+        trap.driver_data = vec![131, 126, 42];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_BALLTRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::BallTrapProjectile {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                start_x: 101,
+                start_y: 99,
+                target_x: 103,
+                target_y: 98,
+                power: 42,
+            }
+        );
+    }
+
+    #[test]
+    fn balltrap_ignores_timer_and_player_triggers() {
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_BALLTRAP);
+        trap.x = 100;
+        trap.y = 100;
+        trap.driver_data = vec![131, 126, 42];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BALLTRAP,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let mut timer_character = character(0);
+        assert_eq!(
+            execute_item_driver(&mut timer_character, &mut trap, request, 1, false),
+            ItemDriverOutcome::Noop
+        );
+
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        assert_eq!(
+            execute_item_driver(&mut player, &mut trap, request, 1, false),
+            ItemDriverOutcome::Noop
         );
     }
 

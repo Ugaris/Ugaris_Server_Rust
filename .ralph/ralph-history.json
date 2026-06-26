@@ -778,19 +778,47 @@
         "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
       ]
+    },
+    {
+      "iteration": 30,
+      "startedAt": "2026-06-26T17:31:46.755Z",
+      "endedAt": "2026-06-26T17:37:46.443Z",
+      "durationMs": 359421,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/item_driver.rs:",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 180 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test result: ok. 182 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 15542476,
+  "totalDurationMs": 15901897,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
-      "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 25,
+      "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
       "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
       "test result: ok. 132 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 21,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 22,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error; 1 warning emitted": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error; 1 warning emitted": 1,
       "test result: ok. 133 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -823,7 +851,7 @@
       "test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 44 filtered out; finished in 0.00s": 1,
       "test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
-      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 17,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 46 filtered out; finished in 0.00s": 1,
       "test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 3,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 138 filtered out; finished in 0.00s": 1,
@@ -844,7 +872,7 @@
       "\u001b[91m\u001b[1mError: \u001b[0mTool execution aborted": 1,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error": 2,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 2,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 11,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 12,
       "test result: ok. 151 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 153 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 4,
@@ -884,10 +912,12 @@
       "test result: ok. 174 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 168 filtered out; finished in 0.00s": 1,
       "test result: ok. 176 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
+      "test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 3,
       "-- `IDR_NIGHTLIGHT = 11`, `IDR_TORCH = 12`, and `IDR_TOYLIGHT = 117` now dispatch from the base item": 1,
       "test result: ok. 180 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 1
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 2,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 180 filtered out; finished in 0.00s": 1,
+      "test result: ok. 182 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
