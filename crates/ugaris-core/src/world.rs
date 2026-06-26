@@ -40,6 +40,7 @@ pub struct LookMapRequest {
     pub character_id: CharacterId,
     pub x: usize,
     pub y: usize,
+    pub character_level: u32,
     pub visible: bool,
 }
 
@@ -654,6 +655,7 @@ impl World {
                     character_id,
                     x: target_x,
                     y: target_y,
+                    character_level: character.level,
                     visible,
                 });
                 self.set_player_idle(player, character_id)
@@ -1913,6 +1915,7 @@ mod tests {
                 character_id: CharacterId(1),
                 x: 13,
                 y: 9,
+                character_level: 1,
                 visible: true,
             }]
         );

@@ -1,3 +1,4 @@
+pub mod area_section;
 pub mod attack;
 pub mod combat;
 pub mod config;

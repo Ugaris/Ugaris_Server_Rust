@@ -9,6 +9,7 @@ use tokio::{sync::mpsc, time};
 use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
+    area_section::section_look_text,
     entity::{Character, CharacterFlags, CharacterValue, ItemFlags, SpeedMode, POWERSCALE},
     ids::{CharacterId, ItemId},
     map::{MapFlags, MapTile},
@@ -1073,7 +1074,7 @@ fn map_refresh_payloads(
     payloads
 }
 
-fn look_map_payloads(world: &World, request: LookMapRequest) -> Vec<bytes::BytesMut> {
+fn look_map_payloads(world: &World, area_id: u16, request: LookMapRequest) -> Vec<bytes::BytesMut> {
     if !request.visible {
         return vec![ugaris_protocol::packet::system_text(
             "Too far away or hidden.",
@@ -1081,7 +1082,12 @@ fn look_map_payloads(world: &World, request: LookMapRequest) -> Vec<bytes::Bytes
     }
 
     let mut messages = Vec::new();
-    messages.push(format!("({},{})", request.x, request.y));
+    messages.push(section_look_text(
+        area_id,
+        request.x,
+        request.y,
+        request.character_level,
+    ));
 
     if let Some(tile) = world.map.tile(request.x, request.y) {
         if tile.flags.contains(MapFlags::RESTAREA) {
@@ -1745,10 +1751,12 @@ mod tests {
     fn look_map_payload_hidden_target_matches_legacy_feedback() {
         let payloads = look_map_payloads(
             &World::default(),
+            1,
             LookMapRequest {
                 character_id: CharacterId(7),
                 x: 12,
                 y: 13,
+                character_level: 0,
                 visible: false,
             },
         );
@@ -1767,10 +1775,12 @@ mod tests {
 
         let payloads = look_map_payloads(
             &world,
+            99,
             LookMapRequest {
                 character_id: CharacterId(7),
                 x: 12,
                 y: 13,
+                character_level: 0,
                 visible: true,
             },
         );
@@ -1784,6 +1794,26 @@ mod tests {
                 "This place is an arena.",
                 "This place is a peaceful zone.",
             ]
+        );
+    }
+
+    #[test]
+    fn look_map_payload_visible_area1_section_reports_name_and_difficulty() {
+        let payloads = look_map_payloads(
+            &World::default(),
+            1,
+            LookMapRequest {
+                character_id: CharacterId(7),
+                x: 146,
+                y: 115,
+                character_level: 7,
+                visible: true,
+            },
+        );
+
+        assert_eq!(
+            text_payloads(&payloads),
+            vec!["Skellie I. This area is too easy for you. (146,115)"]
         );
     }
 
@@ -2849,7 +2879,7 @@ async fn main() -> anyhow::Result<()> {
                 if !look_map_requests.is_empty() {
                     let mut look_sessions = 0;
                     for request in look_map_requests {
-                        let payloads = look_map_payloads(&world, request);
+                        let payloads = look_map_payloads(&world, config.area_id, request);
                         for (session_id, _) in runtime.sessions_for_character(request.character_id) {
                             if runtime.send_many_to_session(session_id, payloads.clone()) {
                                 look_sessions += 1;
