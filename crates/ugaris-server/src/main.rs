@@ -199,6 +199,7 @@ const CHEST_KEY_REQUIRED_MESSAGE: &str = "You need a key to open this chest.";
 const RANDCHEST_CURSOR_OCCUPIED_MESSAGE: &str = "Please empty your hand (mouse cursor) first.";
 const RANDCHEST_EMPTY_MESSAGE: &str = "You didn't find anything.";
 const TORCH_UNDERWATER_MESSAGE: &str = "Obviously, thou canst not light thy torch under water.";
+const TORCH_HISS_MESSAGE: &str = "Your hear your torch hiss.";
 const MAP_BOOTSTRAP_CHUNK_TARGET: usize = MAX_LEGACY_TICK_PAYLOAD - 512;
 const DEFAULT_PLAYER_TEMPLATE: &str = "new_warrior_m";
 const IID_KEY_RING: u32 = (59 << 24) | 0x000002;
@@ -915,6 +916,37 @@ fn is_torch_item(world: &World, item_id: ItemId) -> bool {
         .items
         .get(&item_id)
         .is_some_and(|item| item.driver == IDR_TORCH)
+}
+
+fn timer_outcome_feedback(
+    outcomes: &[ugaris_core::item_driver::ItemDriverOutcome],
+) -> Vec<(CharacterId, String)> {
+    outcomes
+        .iter()
+        .filter_map(|outcome| match outcome {
+            ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater {
+                character_id,
+                ..
+            } => Some((*character_id, TORCH_HISS_MESSAGE.to_string())),
+            ugaris_core::item_driver::ItemDriverOutcome::TorchExpired {
+                character_id,
+                item_name,
+                ..
+            } => Some((
+                *character_id,
+                format!("Your {} expired.", outcome_item_name_text(item_name)),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+fn outcome_item_name_text(bytes: &[u8]) -> String {
+    let len = bytes
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..len]).into_owned()
 }
 
 fn chest_required_key_id(item: &ugaris_core::entity::Item) -> u32 {
@@ -2044,6 +2076,30 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn timer_outcome_feedback_matches_legacy_torch_messages() {
+        let feedback = timer_outcome_feedback(&[
+            ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                schedule_after_ticks: 30 * ugaris_core::tick::TICKS_PER_SECOND,
+            },
+            ugaris_core::item_driver::ItemDriverOutcome::TorchExpired {
+                item_id: ItemId(8),
+                character_id: CharacterId(2),
+                item_name: ugaris_core::item_driver::outcome_item_name("torch"),
+            },
+        ]);
+
+        assert_eq!(
+            feedback,
+            vec![
+                (CharacterId(1), TORCH_HISS_MESSAGE.to_string()),
+                (CharacterId(2), "Your torch expired.".to_string()),
+            ]
+        );
+    }
 
     #[test]
     fn login_payload_sends_legacy_session_start_packets() {
@@ -3921,6 +3977,19 @@ async fn main() -> anyhow::Result<()> {
                 if !timer_outcomes.is_empty() {
                     info!(count = timer_outcomes.len(), tick = world.tick.0, "processed timer callbacks");
                 }
+                let timer_feedback = timer_outcome_feedback(&timer_outcomes);
+                if !timer_feedback.is_empty() {
+                    let mut feedback_sessions = 0;
+                    for (character_id, message) in timer_feedback {
+                        let payload = ugaris_protocol::packet::system_text(&message);
+                        for (session_id, _) in runtime.sessions_for_character(character_id) {
+                            if runtime.send_to_session(session_id, payload.clone()) {
+                                feedback_sessions += 1;
+                            }
+                        }
+                    }
+                    info!(feedback_sessions, tick = world.tick.0, "queued timer feedback");
+                }
                 let due_tasks = world.scheduler.due_tasks(world.tick.0);
                 if !due_tasks.is_empty() {
                     info!(count = due_tasks.len(), tick = world.tick.0, "scheduled tasks are due");
@@ -4185,6 +4254,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {

@@ -35,6 +35,7 @@ pub const IDR_KEY_RING: u16 = 200;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
 const V_LIGHT: i16 = 9;
 const LIGHT_TIMER_TICKS: u64 = TICKS_PER_SECOND * 30;
+pub const OUTCOME_ITEM_NAME_BYTES: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DoorKeyAccess {
@@ -216,9 +217,15 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         schedule_after_ticks: Option<u64>,
     },
+    TorchExtinguishedUnderwater {
+        item_id: ItemId,
+        character_id: CharacterId,
+        schedule_after_ticks: u64,
+    },
     TorchExpired {
         item_id: ItemId,
         character_id: CharacterId,
+        item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
     },
     StatScrollUsed {
         item_id: ItemId,
@@ -1130,10 +1137,10 @@ fn torch_driver(
         if context.character_underwater {
             extinguish_torch(item);
             character.flags.insert(CharacterFlags::ITEMS);
-            return ItemDriverOutcome::LightChanged {
+            return ItemDriverOutcome::TorchExtinguishedUnderwater {
                 item_id: item.id,
                 character_id: character.id,
-                schedule_after_ticks: Some(LIGHT_TIMER_TICKS),
+                schedule_after_ticks: LIGHT_TIMER_TICKS,
             };
         }
 
@@ -1142,6 +1149,7 @@ fn torch_driver(
             return ItemDriverOutcome::TorchExpired {
                 item_id: item.id,
                 character_id: character.id,
+                item_name: outcome_item_name(&item.name),
             };
         }
         set_torch_light(item);
@@ -1208,6 +1216,14 @@ fn set_torch_light(item: &mut Item) {
     let light = base.min(base * max_burn / (burn + 1) / 2);
     item.modifier_index[0] = V_LIGHT;
     item.modifier_value[0] = light as i16;
+}
+
+pub fn outcome_item_name(name: &str) -> [u8; OUTCOME_ITEM_NAME_BYTES] {
+    let mut bytes = [0; OUTCOME_ITEM_NAME_BYTES];
+    let source = name.as_bytes();
+    let len = source.len().min(OUTCOME_ITEM_NAME_BYTES);
+    bytes[..len].copy_from_slice(&source[..len]);
+    bytes
 }
 
 fn food_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
@@ -2224,6 +2240,7 @@ mod tests {
             ItemDriverOutcome::TorchExpired {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
+                item_name: outcome_item_name("Item"),
             }
         );
     }

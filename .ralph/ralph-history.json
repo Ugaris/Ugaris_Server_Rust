@@ -607,9 +607,38 @@
         "test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 24,
+      "startedAt": "2026-06-26T16:34:12.505Z",
+      "endedAt": "2026-06-26T16:43:45.848Z",
+      "durationMs": 573164,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: could not compile `ugaris-core` (lib) due to 1 previous error",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/item_driver.rs:",
+        "error: could not compile `ugaris-core` (lib) due to 4 previous errors",
+        "error: could not compile `ugaris-core` (lib test) due to 4 previous errors",
+        "test item_driver::tests::torch_timer_burns_down_marks_special_and_expires ... FAILED",
+        "test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 158 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.00s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 158 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 12105635,
+  "totalDurationMs": 12678799,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -619,7 +648,7 @@
       "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
       "test result: ok. 132 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 15,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 16,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error; 1 warning emitted": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error; 1 warning emitted": 1,
       "test result: ok. 133 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -629,7 +658,7 @@
       "test area_section::tests::area1_section_lookup_uses_legacy_order ... FAILED": 1,
       "test world::tests::world_applies_player_look_map_as_immediate_request ... FAILED": 1,
       "test result: FAILED. 134 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 3,
       "test result: ok. 136 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 132 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s": 1,
@@ -671,14 +700,14 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 147 filtered out; finished in 0.00s": 1,
       "test result: ok. 149 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "\u001b[91m\u001b[1mError: \u001b[0mTool execution aborted": 1,
-      "error: could not compile `ugaris-core` (lib) due to 1 previous error": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 1,
+      "error: could not compile `ugaris-core` (lib) due to 1 previous error": 2,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 2,
       "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 6,
       "test result: ok. 151 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 153 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 4,
       "error: unexpected argument 'item_driver::tests::nightlight_timer_follows_daylight_threshold_and_resc": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 2,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 155 filtered out; finished in 0.00s": 1,
       "test result: ok. 157 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -689,7 +718,12 @@
       "test result: ok. 162 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "error: unexpected argument 'world_timer_extinguishes_burning_torch_underwater' found": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 162 filtered out; finished in 0.00s": 1,
-      "test result: ok. 164 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
+      "test result: ok. 164 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 1,
+      "test item_driver::tests::torch_timer_burns_down_marks_special_and_expires ... FAILED": 1,
+      "test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 158 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.00s": 1,
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 158 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

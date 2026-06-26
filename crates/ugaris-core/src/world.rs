@@ -378,6 +378,14 @@ impl World {
                 }
                 outcome
             }
+            ItemDriverOutcome::TorchExtinguishedUnderwater {
+                item_id,
+                character_id,
+                schedule_after_ticks,
+            } => {
+                self.schedule_item_driver_timer(item_id, character_id, schedule_after_ticks);
+                outcome
+            }
             ItemDriverOutcome::TorchExpired { item_id, .. } => {
                 if self.destroy_item(item_id) {
                     outcome
@@ -1635,7 +1643,7 @@ mod tests {
         assert_eq!(outcomes.len(), 1);
         assert!(matches!(
             outcomes[0],
-            ItemDriverOutcome::TorchExpired { .. }
+            ItemDriverOutcome::TorchExpired { item_name: _, .. }
         ));
         assert!(!world.items.contains_key(&ItemId(7)));
         let character = world.characters.get(&CharacterId(1)).unwrap();
@@ -1724,10 +1732,10 @@ mod tests {
 
         assert_eq!(
             outcome,
-            ItemDriverOutcome::LightChanged {
+            ItemDriverOutcome::TorchExtinguishedUnderwater {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
-                schedule_after_ticks: Some(30 * crate::tick::TICKS_PER_SECOND),
+                schedule_after_ticks: 30 * crate::tick::TICKS_PER_SECOND,
             }
         );
         let torch = world.items.get(&ItemId(7)).unwrap();
