@@ -10,8 +10,26 @@ pub const MAX_SCROLLBACK: usize = 8192;
 pub const MAX_PLAYER_EFFECTS: usize = 64;
 pub const COMMAND_QUEUE_SIZE: usize = 16;
 pub const KEYRING_MAX_KEYS: usize = 100;
+pub const KEYRING_KEY_NAME_LEN: usize = 40;
+pub const KEYRING_KEY_DESC_LEN: usize = 80;
 pub const KEYRING_KEY_DRDATA_LEN: usize = 16;
+pub const LEGACY_KEYRING_PPD_SIZE: usize = 15_912;
 pub const RANDCHEST_MAX_ENTRIES: usize = 100;
+
+const KEYRING_PPD_COUNT_OFFSET: usize = 0;
+const KEYRING_PPD_KEYS_OFFSET: usize = 4;
+const KEYRING_PPD_NAMES_OFFSET: usize = KEYRING_PPD_KEYS_OFFSET + KEYRING_MAX_KEYS * 4;
+const KEYRING_PPD_DESCS_OFFSET: usize =
+    KEYRING_PPD_NAMES_OFFSET + KEYRING_MAX_KEYS * KEYRING_KEY_NAME_LEN;
+const KEYRING_PPD_SPRITES_OFFSET: usize =
+    KEYRING_PPD_DESCS_OFFSET + KEYRING_MAX_KEYS * KEYRING_KEY_DESC_LEN;
+const KEYRING_PPD_FLAGS_OFFSET: usize = KEYRING_PPD_SPRITES_OFFSET + KEYRING_MAX_KEYS * 4 + 4;
+const KEYRING_PPD_VALUES_OFFSET: usize = KEYRING_PPD_FLAGS_OFFSET + KEYRING_MAX_KEYS * 8;
+const KEYRING_PPD_DRIVERS_OFFSET: usize = KEYRING_PPD_VALUES_OFFSET + KEYRING_MAX_KEYS * 4;
+const KEYRING_PPD_DRDATA_OFFSET: usize = KEYRING_PPD_DRIVERS_OFFSET + KEYRING_MAX_KEYS * 2;
+const KEYRING_PPD_EXPIRE_OFFSET: usize =
+    KEYRING_PPD_DRDATA_OFFSET + KEYRING_MAX_KEYS * KEYRING_KEY_DRDATA_LEN;
+const KEYRING_PPD_AUTO_ADD_OFFSET: usize = KEYRING_PPD_EXPIRE_OFFSET + KEYRING_MAX_KEYS;
 
 pub const DEFERRED_ACHIEVEMENTS: u32 = 1 << 0;
 pub const DEFERRED_MOTD: u32 = 1 << 1;
@@ -178,6 +196,94 @@ impl PlayerRuntime {
     pub fn mark_chest_access(&mut self, treasure_index: u8, realtime_seconds: u64) {
         self.chest_last_access_seconds
             .insert(treasure_index, realtime_seconds);
+    }
+
+    pub fn encode_legacy_keyring_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_KEYRING_PPD_SIZE];
+        let count = self.keyring.len().min(KEYRING_MAX_KEYS);
+        write_i32(&mut bytes, KEYRING_PPD_COUNT_OFFSET, count as i32);
+
+        for (index, key) in self.keyring.iter().take(KEYRING_MAX_KEYS).enumerate() {
+            write_u32(
+                &mut bytes,
+                KEYRING_PPD_KEYS_OFFSET + index * 4,
+                key.template_id,
+            );
+            write_c_string(
+                &mut bytes,
+                KEYRING_PPD_NAMES_OFFSET + index * KEYRING_KEY_NAME_LEN,
+                KEYRING_KEY_NAME_LEN,
+                &key.name,
+            );
+            write_c_string(
+                &mut bytes,
+                KEYRING_PPD_DESCS_OFFSET + index * KEYRING_KEY_DESC_LEN,
+                KEYRING_KEY_DESC_LEN,
+                &key.description,
+            );
+            write_i32(
+                &mut bytes,
+                KEYRING_PPD_SPRITES_OFFSET + index * 4,
+                key.sprite,
+            );
+            write_u64(&mut bytes, KEYRING_PPD_FLAGS_OFFSET + index * 8, key.flags);
+            write_u32(&mut bytes, KEYRING_PPD_VALUES_OFFSET + index * 4, key.value);
+            write_u16(
+                &mut bytes,
+                KEYRING_PPD_DRIVERS_OFFSET + index * 2,
+                key.driver,
+            );
+
+            let drdata_offset = KEYRING_PPD_DRDATA_OFFSET + index * KEYRING_KEY_DRDATA_LEN;
+            let drdata_len = key.driver_data.len().min(KEYRING_KEY_DRDATA_LEN);
+            bytes[drdata_offset..drdata_offset + drdata_len]
+                .copy_from_slice(&key.driver_data[..drdata_len]);
+            bytes[KEYRING_PPD_EXPIRE_OFFSET + index] = key.expire_serial as u8;
+        }
+
+        write_i32(
+            &mut bytes,
+            KEYRING_PPD_AUTO_ADD_OFFSET,
+            i32::from(self.keyring_auto_add),
+        );
+        bytes
+    }
+
+    pub fn decode_legacy_keyring_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_KEYRING_PPD_SIZE {
+            return false;
+        }
+
+        let raw_count = read_i32(bytes, KEYRING_PPD_COUNT_OFFSET);
+        let count = raw_count.clamp(0, KEYRING_MAX_KEYS as i32) as usize;
+        let mut keyring = Vec::with_capacity(count);
+        for index in 0..count {
+            let driver_data_offset = KEYRING_PPD_DRDATA_OFFSET + index * KEYRING_KEY_DRDATA_LEN;
+            keyring.push(KeyringEntry {
+                template_id: read_u32(bytes, KEYRING_PPD_KEYS_OFFSET + index * 4),
+                name: read_c_string(
+                    bytes,
+                    KEYRING_PPD_NAMES_OFFSET + index * KEYRING_KEY_NAME_LEN,
+                    KEYRING_KEY_NAME_LEN,
+                ),
+                description: read_c_string(
+                    bytes,
+                    KEYRING_PPD_DESCS_OFFSET + index * KEYRING_KEY_DESC_LEN,
+                    KEYRING_KEY_DESC_LEN,
+                ),
+                sprite: read_i32(bytes, KEYRING_PPD_SPRITES_OFFSET + index * 4),
+                flags: read_u64(bytes, KEYRING_PPD_FLAGS_OFFSET + index * 8),
+                value: read_u32(bytes, KEYRING_PPD_VALUES_OFFSET + index * 4),
+                driver: read_u16(bytes, KEYRING_PPD_DRIVERS_OFFSET + index * 2),
+                driver_data: bytes[driver_data_offset..driver_data_offset + KEYRING_KEY_DRDATA_LEN]
+                    .to_vec(),
+                expire_serial: u32::from(bytes[KEYRING_PPD_EXPIRE_OFFSET + index]),
+            });
+        }
+
+        self.keyring = keyring;
+        self.keyring_auto_add = read_i32(bytes, KEYRING_PPD_AUTO_ADD_OFFSET) != 0;
+        true
     }
 
     pub fn add_keyring_key(
@@ -466,6 +572,51 @@ impl PlayerRuntime {
     }
 }
 
+fn write_i32(bytes: &mut [u8], offset: usize, value: i32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u32(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u64(bytes: &mut [u8], offset: usize, value: u64) {
+    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_c_string(bytes: &mut [u8], offset: usize, len: usize, value: &str) {
+    let max_len = len.saturating_sub(1);
+    let value_bytes = value.as_bytes();
+    let copy_len = value_bytes.len().min(max_len);
+    bytes[offset..offset + copy_len].copy_from_slice(&value_bytes[..copy_len]);
+}
+
+fn read_i32(bytes: &[u8], offset: usize) -> i32 {
+    i32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
+}
+
+fn read_u16(bytes: &[u8], offset: usize) -> u16 {
+    u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap())
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
+}
+
+fn read_u64(bytes: &[u8], offset: usize) -> u64 {
+    u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap())
+}
+
+fn read_c_string(bytes: &[u8], offset: usize, len: usize) -> String {
+    let raw = &bytes[offset..offset + len];
+    let end = raw.iter().position(|byte| *byte == 0).unwrap_or(raw.len());
+    String::from_utf8_lossy(&raw[..end]).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -572,6 +723,53 @@ mod tests {
         assert!(!player.keyring_auto_add());
         player.set_keyring_auto_add(true);
         assert!(player.keyring_auto_add());
+    }
+
+    #[test]
+    fn keyring_ppd_codec_matches_legacy_c_layout() {
+        assert_eq!(KEYRING_PPD_FLAGS_OFFSET % 8, 0);
+        assert_eq!(KEYRING_PPD_AUTO_ADD_OFFSET + 4, LEGACY_KEYRING_PPD_SIZE);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_keyring_auto_add(true);
+        assert_eq!(
+            player.add_keyring_entry(KeyringEntry {
+                template_id: 0x1122_3344,
+                name: "A name that is deliberately longer than forty bytes".to_string(),
+                description: "Opens a door and has a long legacy description".to_string(),
+                sprite: -123,
+                flags: 0x0102_0304_0506_0708,
+                value: 99,
+                driver: 77,
+                driver_data: (0..32).collect(),
+                expire_serial: 0x1234,
+            }),
+            KeyringAddResult::Added
+        );
+
+        let bytes = player.encode_legacy_keyring_ppd();
+        assert_eq!(bytes.len(), LEGACY_KEYRING_PPD_SIZE);
+        assert_eq!(read_i32(&bytes, KEYRING_PPD_COUNT_OFFSET), 1);
+        assert_eq!(read_u32(&bytes, KEYRING_PPD_KEYS_OFFSET), 0x1122_3344);
+        assert_eq!(
+            bytes[KEYRING_PPD_NAMES_OFFSET + KEYRING_KEY_NAME_LEN - 1],
+            0
+        );
+        assert_eq!(read_i32(&bytes, KEYRING_PPD_AUTO_ADD_OFFSET), 1);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_keyring_ppd(&bytes));
+        assert!(decoded.keyring_auto_add());
+        assert_eq!(decoded.keyring.len(), 1);
+        assert_eq!(decoded.keyring[0].template_id, 0x1122_3344);
+        assert_eq!(
+            decoded.keyring[0].name,
+            "A name that is deliberately longer than"
+        );
+        assert_eq!(decoded.keyring[0].sprite, -123);
+        assert_eq!(decoded.keyring[0].flags, 0x0102_0304_0506_0708);
+        assert_eq!(decoded.keyring[0].driver_data, (0..16).collect::<Vec<_>>());
+        assert_eq!(decoded.keyring[0].expire_serial, 0x34);
     }
 
     #[test]
