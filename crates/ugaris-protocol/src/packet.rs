@@ -534,6 +534,69 @@ pub fn character_name(
     out
 }
 
+pub fn client_effect(slot: u8, body: &[u8]) -> BytesMut {
+    let mut out = BytesMut::with_capacity(body.len() + 2);
+    out.put_u8(SV_CEFFECT);
+    out.put_u8(slot);
+    out.extend_from_slice(body);
+    out
+}
+
+pub fn used_effects(mask: u64) -> [u8; 9] {
+    let mut out = [0; 9];
+    out[0] = SV_UEFFECT;
+    out[1..].copy_from_slice(&mask.to_le_bytes());
+    out
+}
+
+pub fn ceffect_ball(
+    effect_id: i32,
+    start: i32,
+    from_x: i32,
+    from_y: i32,
+    to_x: i32,
+    to_y: i32,
+) -> BytesMut {
+    let mut out = BytesMut::with_capacity(24);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(2);
+    out.put_i32_le(start);
+    out.put_i32_le(from_x);
+    out.put_i32_le(from_y);
+    out.put_i32_le(to_x);
+    out.put_i32_le(to_y);
+    out
+}
+
+pub fn ceffect_strike(effect_id: i32, character: i32, x: i32, y: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(20);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(3);
+    out.put_i32_le(character);
+    out.put_i32_le(x);
+    out.put_i32_le(y);
+    out
+}
+
+pub fn ceffect_fireball(
+    effect_id: i32,
+    start: i32,
+    from_x: i32,
+    from_y: i32,
+    to_x: i32,
+    to_y: i32,
+) -> BytesMut {
+    let mut out = BytesMut::with_capacity(24);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(4);
+    out.put_i32_le(start);
+    out.put_i32_le(from_x);
+    out.put_i32_le(from_y);
+    out.put_i32_le(to_x);
+    out.put_i32_le(to_y);
+    out
+}
+
 pub fn action(action: u16, x: u16, y: u16) -> [u8; 7] {
     let mut out = [0; 7];
     out[0] = SV_ACT;
@@ -707,6 +770,29 @@ mod tests {
             set_cursor_item(0x01020304, 0xa0b0c0d0),
             [SV_SETCITEM, 4, 3, 2, 1, 0xd0, 0xc0, 0xb0, 0xa0]
         );
+    }
+
+    #[test]
+    fn effect_packets_match_legacy_ceffect_layouts() {
+        assert_eq!(
+            &used_effects(0x0102_0304_0506_0708)[..],
+            &[SV_UEFFECT, 8, 7, 6, 5, 4, 3, 2, 1]
+        );
+
+        let ball = ceffect_ball(0x11, 0x22, 0x33, 0x44, 0x55, 0x66);
+        assert_eq!(
+            &client_effect(7, &ball)[..],
+            &[
+                SV_CEFFECT, 7, 0x11, 0, 0, 0, 2, 0, 0, 0, 0x22, 0, 0, 0, 0x33, 0, 0, 0, 0x44, 0, 0,
+                0, 0x55, 0, 0, 0, 0x66, 0, 0, 0,
+            ]
+        );
+
+        assert_eq!(
+            &ceffect_strike(0x11, 0x22, 0x33, 0x44)[..],
+            &[0x11, 0, 0, 0, 3, 0, 0, 0, 0x22, 0, 0, 0, 0x33, 0, 0, 0, 0x44, 0, 0, 0]
+        );
+        assert_eq!(&ceffect_fireball(1, 2, 3, 4, 5, 6)[4..8], &[4, 0, 0, 0]);
     }
 
     #[test]

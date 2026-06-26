@@ -11,6 +11,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
+    effect::Effect,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
         CHARACTER_VALUE_NAMES, POWERSCALE,
@@ -23,6 +24,7 @@ use ugaris_core::{
     player::{
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
     },
+    spell::{EF_BALL, EF_FIREBALL, EF_STRIKE},
     text::COL_DARK_GRAY,
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
@@ -69,6 +71,7 @@ struct ServerRuntime {
     players: HashMap<u64, PlayerRuntime>,
     sessions: HashMap<u64, mpsc::Sender<SessionCommand>>,
     map_caches: HashMap<u64, VisibleMapCache>,
+    effect_caches: HashMap<u64, ClientEffectCache>,
     action_queue: VecDeque<(u64, ClientAction)>,
     next_character_id: u32,
 }
@@ -108,6 +111,7 @@ impl ServerRuntime {
         let player = self.players.remove(&session_id);
         self.sessions.remove(&session_id);
         self.map_caches.remove(&session_id);
+        self.effect_caches.remove(&session_id);
         self.action_queue.retain(|(id, _)| *id != session_id);
         player
     }
@@ -211,6 +215,28 @@ struct VisibleMapCache {
     cells: HashMap<u16, VisibleMapCell>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClientEffectSlot {
+    effect_id: u32,
+    serial: i32,
+    body: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClientEffectCache {
+    slots: Vec<Option<ClientEffectSlot>>,
+    used_mask: u64,
+}
+
+impl Default for ClientEffectCache {
+    fn default() -> Self {
+        Self {
+            slots: vec![None; MAX_CLIENT_EFFECTS],
+            used_mask: 0,
+        }
+    }
+}
+
 const LOGIN_SPAWN_X: usize = 128;
 const LOGIN_SPAWN_Y: usize = 128;
 const LOGIN_ACCEPTED_MESSAGE: &str = "Rust Ugaris compatibility login accepted.";
@@ -222,6 +248,7 @@ const RANDCHEST_EMPTY_MESSAGE: &str = "You didn't find anything.";
 const TORCH_UNDERWATER_MESSAGE: &str = "Obviously, thou canst not light thy torch under water.";
 const TORCH_HISS_MESSAGE: &str = "Your hear your torch hiss.";
 const MAP_BOOTSTRAP_CHUNK_TARGET: usize = MAX_LEGACY_TICK_PAYLOAD - 512;
+const MAX_CLIENT_EFFECTS: usize = 64;
 const DEFAULT_PLAYER_TEMPLATE: &str = "new_warrior_m";
 const IID_KEY_RING: u32 = (59 << 24) | 0x000002;
 const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
@@ -1926,6 +1953,141 @@ fn map_diff_payloads(
     payloads
 }
 
+fn client_effect_payloads(
+    world: &World,
+    viewer: &Character,
+    view_distance: usize,
+    cache: &mut ClientEffectCache,
+) -> Vec<bytes::BytesMut> {
+    let mut visible_effects: Vec<_> = world
+        .effects
+        .iter()
+        .filter_map(|(&effect_id, effect)| {
+            visible_client_effect_body(effect_id, effect, viewer, view_distance).map(|body| {
+                (
+                    effect_id,
+                    effect.serial,
+                    body.into_iter().collect::<Vec<u8>>(),
+                )
+            })
+        })
+        .collect();
+    visible_effects.sort_by_key(|(effect_id, _, _)| *effect_id);
+    visible_effects.truncate(MAX_CLIENT_EFFECTS);
+
+    let mut payloads = Vec::new();
+    let mut used = vec![false; cache.slots.len()];
+    let mut pending = Vec::new();
+
+    for (effect_id, serial, body) in visible_effects {
+        if let Some(slot_index) = cache.slots.iter().position(|slot| {
+            slot.as_ref()
+                .is_some_and(|slot| slot.effect_id == effect_id)
+        }) {
+            used[slot_index] = true;
+            let slot = cache.slots[slot_index].as_mut().expect("slot exists");
+            if slot.serial != serial || slot.body != body {
+                payloads.push(ugaris_protocol::packet::client_effect(
+                    slot_index as u8,
+                    &body,
+                ));
+                slot.serial = serial;
+                slot.body = body;
+            }
+        } else {
+            pending.push((effect_id, serial, body));
+        }
+    }
+
+    for (effect_id, serial, body) in pending {
+        let Some(slot_index) = used.iter().position(|used| !*used) else {
+            break;
+        };
+        used[slot_index] = true;
+        cache.slots[slot_index] = Some(ClientEffectSlot {
+            effect_id,
+            serial,
+            body: body.clone(),
+        });
+        payloads.push(ugaris_protocol::packet::client_effect(
+            slot_index as u8,
+            &body,
+        ));
+    }
+
+    let used_mask =
+        used.iter().enumerate().fold(
+            0_u64,
+            |mask, (index, used)| {
+                if *used {
+                    mask | (1_u64 << index)
+                } else {
+                    mask
+                }
+            },
+        );
+    if used_mask != cache.used_mask {
+        cache.used_mask = used_mask;
+        payloads.push(bytes::BytesMut::from(
+            &ugaris_protocol::packet::used_effects(used_mask)[..],
+        ));
+    }
+
+    payloads
+}
+
+fn visible_client_effect_body(
+    effect_id: u32,
+    effect: &Effect,
+    viewer: &Character,
+    view_distance: usize,
+) -> Option<bytes::BytesMut> {
+    if !effect_visible_to_viewer(effect, viewer, view_distance) {
+        return None;
+    }
+
+    match effect.effect_type {
+        EF_BALL => Some(ugaris_protocol::packet::ceffect_ball(
+            effect_id as i32,
+            effect.start_tick,
+            effect.from_x,
+            effect.from_y,
+            effect.to_x,
+            effect.to_y,
+        )),
+        EF_FIREBALL => Some(ugaris_protocol::packet::ceffect_fireball(
+            effect_id as i32,
+            effect.start_tick,
+            effect.from_x,
+            effect.from_y,
+            effect.to_x,
+            effect.to_y,
+        )),
+        EF_STRIKE => Some(ugaris_protocol::packet::ceffect_strike(
+            effect_id as i32,
+            effect
+                .target_character
+                .map(|character_id| character_id.0 as i32)
+                .unwrap_or_default(),
+            effect.x,
+            effect.y,
+        )),
+        _ => None,
+    }
+}
+
+fn effect_visible_to_viewer(effect: &Effect, viewer: &Character, view_distance: usize) -> bool {
+    let (x, y) = match effect.effect_type {
+        EF_BALL | EF_FIREBALL => (effect.x / 1024, effect.y / 1024),
+        EF_STRIKE => (effect.x, effect.y),
+        _ => return false,
+    };
+    let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
+        return false;
+    };
+    map_position_in_diamond(x, y, viewer.x, viewer.y, view_distance)
+}
+
 fn queue_periodic_player_frames(runtime: &mut ServerRuntime, world: &World) -> (usize, usize) {
     let sessions: Vec<_> = runtime
         .players
@@ -1944,7 +2106,7 @@ fn queue_periodic_player_frames(runtime: &mut ServerRuntime, world: &World) -> (
         let Some(character) = world.characters.get(&character_id) else {
             continue;
         };
-        let payloads = match runtime.map_caches.get_mut(&session_id) {
+        let mut payloads = match runtime.map_caches.get_mut(&session_id) {
             Some(cache) => map_diff_payloads(world, character, view_distance, cache),
             None => {
                 let payloads = map_refresh_payloads(world, character, view_distance);
@@ -1955,6 +2117,12 @@ fn queue_periodic_player_frames(runtime: &mut ServerRuntime, world: &World) -> (
                 payloads
             }
         };
+        payloads.extend(client_effect_payloads(
+            world,
+            character,
+            view_distance,
+            runtime.effect_caches.entry(session_id).or_default(),
+        ));
 
         if payloads.is_empty() {
             if runtime.send_to_session(session_id, bytes::BytesMut::new()) {
@@ -3207,6 +3375,62 @@ mod tests {
         assert!(payloads[0]
             .windows(3)
             .any(|window| { window == [SV_MAP10 | SV_MAPPOS | MAP_CHARACTER_CLEAR, 5, 0] }));
+    }
+
+    #[test]
+    fn client_effect_payloads_send_visible_effect_records_and_used_mask() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut world = World::default();
+        let mut effect = Effect::new(EF_FIREBALL, 123, 55, 65);
+        effect.from_x = 10;
+        effect.from_y = 10;
+        effect.to_x = 12;
+        effect.to_y = 10;
+        effect.x = 11 * 1024 + 512;
+        effect.y = 10 * 1024 + 512;
+        world.effects.insert(123, effect);
+        let mut cache = ClientEffectCache::default();
+
+        let payloads = client_effect_payloads(&world, &character, 2, &mut cache);
+
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[0][0], ugaris_protocol::packet::SV_CEFFECT);
+        assert_eq!(payloads[0][1], 0);
+        assert_eq!(&payloads[0][2..10], &[123, 0, 0, 0, 4, 0, 0, 0]);
+        assert_eq!(
+            &payloads[1][..],
+            &ugaris_protocol::packet::used_effects(1)[..]
+        );
+        assert!(client_effect_payloads(&world, &character, 2, &mut cache).is_empty());
+
+        world.effects.clear();
+        let payloads = client_effect_payloads(&world, &character, 2, &mut cache);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(
+            &payloads[0][..],
+            &ugaris_protocol::packet::used_effects(0)[..]
+        );
+    }
+
+    #[test]
+    fn client_effect_payloads_skip_effects_outside_visible_diamond() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut world = World::default();
+        let mut effect = Effect::new(EF_BALL, 124, 55, 65);
+        effect.x = 20 * 1024 + 512;
+        effect.y = 20 * 1024 + 512;
+        world.effects.insert(124, effect);
+
+        assert!(
+            client_effect_payloads(&world, &character, 2, &mut ClientEffectCache::default())
+                .is_empty()
+        );
     }
 
     #[test]
