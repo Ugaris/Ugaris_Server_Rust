@@ -1,0 +1,8 @@
+/target/
+/.env
+/.env.*
+/ugaris_data
+*.log
+*.tmp
+core
+core.*
