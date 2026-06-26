@@ -26,7 +26,8 @@ use crate::{
     spell::{
         freeze_speed_modifier, is_timed_spell_driver, may_add_spell, read_spell_expire_tick,
         spell_power, warcry_damage, warcry_speed_modifier, BLESS_DURATION, FLASH_DURATION,
-        FREEZE_DURATION, IDR_BLESS, IDR_FLASH, IDR_FREEZE, IDR_WARCRY, WARCRY_DURATION,
+        FREEZE_DURATION, IDR_BLESS, IDR_FLASH, IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_WARCRY,
+        POISON_DURATION, WARCRY_DURATION,
     },
     Tick,
 };
@@ -55,6 +56,7 @@ pub struct LookMapRequest {
 
 const ITEM_DRIVER_TIMER: &str = "item_driver";
 const REMOVE_SPELL_TIMER: &str = "remove_spell";
+const POISON_CALLBACK_TIMER: &str = "poison_callback";
 
 #[derive(Debug, Default)]
 pub struct World {
@@ -133,6 +135,20 @@ impl World {
                         continue;
                     }
                     self.remove_spell_from_timer(
+                        CharacterId(character_id as u32),
+                        ItemId(item_id as u32),
+                        slot as usize,
+                        character_serial as u32,
+                        item_serial as u32,
+                    );
+                }
+                POISON_CALLBACK_TIMER => {
+                    let [character_id, item_id, slot, character_serial, item_serial] =
+                        event.payload.0;
+                    if character_id <= 0 || item_id <= 0 || slot < 0 {
+                        continue;
+                    }
+                    self.poison_callback_from_timer(
                         CharacterId(character_id as u32),
                         ItemId(item_id as u32),
                         slot as usize,
@@ -2225,6 +2241,140 @@ impl World {
         }
     }
 
+    pub fn poison_character(
+        &mut self,
+        character_id: CharacterId,
+        power: u16,
+        poison_type: u16,
+    ) -> bool {
+        if poison_type > 3 {
+            return false;
+        }
+        let driver = IDR_POISON0 + poison_type;
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let Some(slot) = may_add_spell(&character, &self.items, driver, self.tick.0 as u32) else {
+            return false;
+        };
+
+        let item_id = self.next_runtime_item_id();
+        let start_tick = self.tick.0 as u32;
+        let expire_tick = start_tick.wrapping_add(POISON_DURATION as u32);
+        let mut driver_data = Vec::with_capacity(12);
+        driver_data.extend_from_slice(&expire_tick.to_le_bytes());
+        driver_data.extend_from_slice(&start_tick.to_le_bytes());
+        driver_data.extend_from_slice(&power.to_le_bytes());
+        driver_data.extend_from_slice(&9_u16.to_le_bytes());
+
+        let item = Item {
+            id: item_id,
+            name: "Poison".to_string(),
+            description: "A Spell of Poison.".to_string(),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [CharacterValue::Hp as i16, 0, 0, 0, 0],
+            modifier_value: [-1, 0, 0, 0, 0],
+            x: 0,
+            y: 0,
+            carried_by: Some(character_id),
+            contained_in: None,
+            content_id: 0,
+            driver,
+            driver_data,
+            serial: item_id.0,
+        };
+
+        self.items.insert(item_id, item);
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            if character.inventory.len() <= slot {
+                self.items.remove(&item_id);
+                return false;
+            }
+            character.inventory[slot] = Some(item_id);
+            let character_serial = character.id.0;
+            character
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            self.schedule_spell_remove_timer(
+                character_id,
+                item_id,
+                slot,
+                character_serial,
+                item_id.0,
+            );
+            self.schedule_poison_callback_timer(
+                self.tick.0 + crate::tick::TICKS_PER_SECOND,
+                character_id,
+                item_id,
+                slot,
+                character_serial,
+                item_id.0,
+            );
+            true
+        } else {
+            self.items.remove(&item_id);
+            false
+        }
+    }
+
+    pub fn remove_poison(&mut self, character_id: CharacterId, poison_type: u16) -> bool {
+        if poison_type > 3 {
+            return false;
+        }
+        self.remove_poison_by_driver(character_id, IDR_POISON0 + poison_type)
+    }
+
+    pub fn remove_all_poison(&mut self, character_id: CharacterId) -> bool {
+        let mut removed = false;
+        for driver in IDR_POISON0..=IDR_POISON3 {
+            removed |= self.remove_poison_by_driver(character_id, driver);
+        }
+        removed
+    }
+
+    fn remove_poison_by_driver(&mut self, character_id: CharacterId, driver: u16) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let slots: Vec<(usize, ItemId)> = character
+            .inventory
+            .iter()
+            .copied()
+            .enumerate()
+            .skip(crate::spell::SPELL_SLOT_START)
+            .take(crate::spell::SPELL_SLOT_END - crate::spell::SPELL_SLOT_START)
+            .filter_map(|(slot, item_id)| {
+                let item_id = item_id?;
+                self.items
+                    .get(&item_id)
+                    .is_some_and(|item| item.driver == driver)
+                    .then_some((slot, item_id))
+            })
+            .collect();
+        if slots.is_empty() {
+            return false;
+        }
+        let character = self
+            .characters
+            .get_mut(&character_id)
+            .expect("checked above");
+        for (slot, item_id) in slots {
+            character.inventory[slot] = None;
+            self.items.remove(&item_id);
+        }
+        character
+            .flags
+            .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+        true
+    }
+
     pub fn schedule_existing_spell_timers(&mut self) -> usize {
         let mut spells = Vec::new();
         for (&character_id, character) in &self.characters {
@@ -2321,6 +2471,83 @@ impl World {
         )
     }
 
+    fn schedule_poison_callback_timer(
+        &mut self,
+        due: u64,
+        character_id: CharacterId,
+        item_id: ItemId,
+        slot: usize,
+        character_serial: u32,
+        item_serial: u32,
+    ) -> bool {
+        let Ok(slot) = i32::try_from(slot) else {
+            return false;
+        };
+        self.timers.set_timer(
+            due,
+            POISON_CALLBACK_TIMER,
+            TimerPayload([
+                character_id.0 as i32,
+                item_id.0 as i32,
+                slot,
+                character_serial as i32,
+                item_serial as i32,
+            ]),
+        )
+    }
+
+    fn poison_callback_from_timer(
+        &mut self,
+        character_id: CharacterId,
+        item_id: ItemId,
+        slot: usize,
+        character_serial: u32,
+        item_serial: u32,
+    ) -> bool {
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        if !character.flags.contains(CharacterFlags::USED) || character.id.0 != character_serial {
+            return false;
+        }
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.serial != item_serial || !matches!(item.driver, IDR_POISON0..=IDR_POISON3) {
+            return false;
+        }
+        if character.inventory.get(slot).copied().flatten() != Some(item_id) {
+            return false;
+        }
+        let Some(mut power) = read_poison_power(&item.driver_data) else {
+            return false;
+        };
+        let Some(mut tick) = read_poison_tick(&item.driver_data) else {
+            return false;
+        };
+        power = power.clamp(1, 20);
+
+        if tick == 0 {
+            item.modifier_value[0] = item.modifier_value[0].saturating_sub(1).max(-1000);
+            character.flags.insert(CharacterFlags::UPDATE);
+        }
+        character.hp = character.hp.saturating_sub(crate::entity::POWERSCALE / 3);
+        character.flags.insert(CharacterFlags::UPDATE);
+
+        tick = if tick == 0 { 9 } else { tick - 1 };
+        write_poison_tick(&mut item.driver_data, tick);
+        let due = self.tick.0 + (crate::tick::TICKS_PER_SECOND * 2 / u64::from(power));
+        self.schedule_poison_callback_timer(
+            due,
+            character_id,
+            item_id,
+            slot,
+            character_serial,
+            item_serial,
+        );
+        true
+    }
+
     fn remove_spell_from_timer(
         &mut self,
         character_id: CharacterId,
@@ -2383,6 +2610,21 @@ impl World {
             .get_mut(&target_id)
             .is_some_and(|target| act_heal(&caster, target))
     }
+}
+
+fn read_poison_power(driver_data: &[u8]) -> Option<u16> {
+    let bytes = driver_data.get(8..10)?;
+    Some(u16::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn read_poison_tick(driver_data: &[u8]) -> Option<u16> {
+    let bytes = driver_data.get(10..12)?;
+    Some(u16::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn write_poison_tick(driver_data: &mut Vec<u8>, tick: u16) {
+    driver_data.resize(12, 0);
+    driver_data[10..12].copy_from_slice(&tick.to_le_bytes());
 }
 
 fn valid_map_coords(x: i32, y: i32) -> Option<(usize, usize)> {
@@ -2650,6 +2892,7 @@ mod tests {
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
+        spell::IDR_POISON2,
         tick::TICKS_PER_SECOND,
     };
 
@@ -4596,6 +4839,86 @@ mod tests {
             world.items.get(&new_spell_id).unwrap().modifier_value[0],
             20
         );
+    }
+
+    #[test]
+    fn poison_character_installs_legacy_timed_poison_spell() {
+        let mut world = World::default();
+        world.tick = Tick(500);
+        let mut character = character(1);
+        character.hp = 10 * POWERSCALE;
+        world.add_character(character);
+
+        assert!(world.poison_character(CharacterId(1), 7, 2));
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.name, "Poison");
+        assert_eq!(spell.driver, IDR_POISON2);
+        assert_eq!(spell.carried_by, Some(CharacterId(1)));
+        assert_eq!(spell.modifier_index[0], CharacterValue::Hp as i16);
+        assert_eq!(spell.modifier_value[0], -1);
+        assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(173_300));
+        assert_eq!(read_poison_power(&spell.driver_data), Some(7));
+        assert_eq!(read_poison_tick(&spell.driver_data), Some(9));
+        assert_eq!(world.timers.used_timers(), 2);
+    }
+
+    #[test]
+    fn poison_callback_damages_and_reschedules_while_spell_is_carried() {
+        let mut world = World::default();
+        world.tick = Tick(1_000);
+        let mut character = character(1);
+        character.hp = 10 * POWERSCALE;
+        world.add_character(character);
+        assert!(world.poison_character(CharacterId(1), 4, 0));
+        let spell_id = world.characters[&CharacterId(1)].inventory[29].unwrap();
+
+        world.tick = Tick(1_000 + TICKS_PER_SECOND);
+        world.process_due_timers(1);
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.hp, 10 * POWERSCALE - POWERSCALE / 3);
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(read_poison_tick(&spell.driver_data), Some(8));
+        assert_eq!(spell.modifier_value[0], -1);
+        assert_eq!(world.timers.used_timers(), 2);
+    }
+
+    #[test]
+    fn poison_callback_weakens_hp_modifier_every_tenth_tick() {
+        let mut world = World::default();
+        world.tick = Tick(2_000);
+        let mut character = character(1);
+        character.hp = 10 * POWERSCALE;
+        world.add_character(character);
+        assert!(world.poison_character(CharacterId(1), 20, 3));
+        let spell_id = world.characters[&CharacterId(1)].inventory[29].unwrap();
+        write_poison_tick(&mut world.items.get_mut(&spell_id).unwrap().driver_data, 0);
+
+        world.tick = Tick(2_000 + TICKS_PER_SECOND);
+        world.process_due_timers(1);
+
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_POISON3);
+        assert_eq!(spell.modifier_value[0], -2);
+        assert_eq!(read_poison_tick(&spell.driver_data), Some(9));
+    }
+
+    #[test]
+    fn remove_poison_helpers_clear_spell_slots() {
+        let mut world = World::default();
+        world.add_character(character(1));
+        assert!(world.poison_character(CharacterId(1), 5, 1));
+        let spell_id = world.characters[&CharacterId(1)].inventory[29].unwrap();
+
+        assert!(world.remove_poison(CharacterId(1), 1));
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[29], None);
+        assert!(!world.items.contains_key(&spell_id));
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
     }
 
     fn character(id: u32) -> Character {

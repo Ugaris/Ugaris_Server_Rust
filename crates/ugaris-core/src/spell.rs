@@ -17,6 +17,7 @@ pub const WARCRY_DURATION: i32 = TICKS_PER_SECOND as i32 * 4;
 pub const BLESS_DURATION: i32 = TICKS_PER_SECOND as i32 * 60 * 2;
 pub const FLASH_DURATION: i32 = TICKS_PER_SECOND as i32 * 2;
 pub const FREEZE_DURATION: i32 = TICKS_PER_SECOND as i32 * 4;
+pub const POISON_DURATION: i32 = TICKS_PER_SECOND as i32 * 60 * 60 * 2;
 pub const DURATION_DIVISOR: i32 = 35;
 
 pub const IDR_FIREBALL: u16 = 15;
