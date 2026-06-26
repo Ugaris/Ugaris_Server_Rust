@@ -920,44 +920,74 @@ impl World {
             return false;
         }
 
-        let Some(item) = self.items.get_mut(&item_id) else {
-            return false;
-        };
-        item.driver_data.resize(40, 0);
-        let Some(tile) = self.map.tile_mut(x, y) else {
-            return false;
+        let extended_door = {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            item.driver_data.resize(40, 0);
+            let Some(tile) = self.map.tile_mut(x, y) else {
+                return false;
+            };
+
+            if is_open {
+                let restored = door_stored_flags(item);
+                item.flags.insert(restored);
+                apply_door_tile_flags(tile, item.flags);
+                item.driver_data[0] = 0;
+                item.sprite -= 1;
+            } else {
+                let stored = item.flags
+                    & (ItemFlags::MOVEBLOCK
+                        | ItemFlags::SIGHTBLOCK
+                        | ItemFlags::DOOR
+                        | ItemFlags::SOUNDBLOCK);
+                store_door_flags(item, stored);
+                item.flags.remove(
+                    ItemFlags::MOVEBLOCK
+                        | ItemFlags::SIGHTBLOCK
+                        | ItemFlags::DOOR
+                        | ItemFlags::SOUNDBLOCK,
+                );
+                tile.flags.remove(
+                    MapFlags::TMOVEBLOCK
+                        | MapFlags::TSIGHTBLOCK
+                        | MapFlags::DOOR
+                        | MapFlags::TSOUNDBLOCK,
+                );
+                item.driver_data[0] = 1;
+                item.sprite += 1;
+            }
+
+            item.driver_data[7] != 0
         };
 
-        if is_open {
-            let restored = door_stored_flags(item);
-            item.flags.insert(restored);
-            apply_door_tile_flags(tile, item.flags);
-            item.driver_data[0] = 0;
-            item.sprite -= 1;
-        } else {
-            let stored = item.flags
-                & (ItemFlags::MOVEBLOCK
-                    | ItemFlags::SIGHTBLOCK
-                    | ItemFlags::DOOR
-                    | ItemFlags::SOUNDBLOCK);
-            store_door_flags(item, stored);
-            item.flags.remove(
-                ItemFlags::MOVEBLOCK
-                    | ItemFlags::SIGHTBLOCK
-                    | ItemFlags::DOOR
-                    | ItemFlags::SOUNDBLOCK,
-            );
-            tile.flags.remove(
-                MapFlags::TMOVEBLOCK
-                    | MapFlags::TSIGHTBLOCK
-                    | MapFlags::DOOR
-                    | MapFlags::TSOUNDBLOCK,
-            );
-            item.driver_data[0] = 1;
-            item.sprite += 1;
+        if extended_door {
+            self.shift_extended_door_foregrounds(x, y, if is_open { -1 } else { 1 });
         }
 
         true
+    }
+
+    fn shift_extended_door_foregrounds(&mut self, x: usize, y: usize, delta: i32) {
+        for (tile_x, tile_y) in [
+            (x.saturating_add(1), y),
+            (x.saturating_sub(1), y),
+            (x, y.saturating_add(1)),
+            (x, y.saturating_sub(1)),
+        ] {
+            let Some(tile) = self.map.tile_mut(tile_x, tile_y) else {
+                continue;
+            };
+            if tile.foreground_sprite == 0 {
+                continue;
+            }
+            if delta.is_negative() {
+                tile.foreground_sprite =
+                    tile.foreground_sprite.saturating_sub(delta.unsigned_abs());
+            } else {
+                tile.foreground_sprite = tile.foreground_sprite.saturating_add(delta as u32);
+            }
+        }
     }
 
     fn toggle_double_door(&mut self, item_id: ItemId) -> bool {
@@ -3317,6 +3347,47 @@ mod tests {
         let door = world.items.get(&ItemId(7)).unwrap();
         assert_eq!(door.driver_data[0], 1);
         assert_eq!(door.sprite, 101);
+    }
+
+    #[test]
+    fn world_shifts_extended_door_foreground_sprites() {
+        let mut world = World::default();
+        world.add_character(character(1));
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::DOOR);
+        door.driver = crate::item_driver::IDR_DOOR;
+        door.sprite = 100;
+        door.driver_data.resize(8, 0);
+        door.driver_data[7] = 1;
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        for (x, y, sprite) in [(11, 10, 20), (9, 10, 21), (10, 11, 22), (10, 9, 23)] {
+            world.map.tile_mut(x, y).unwrap().foreground_sprite = sprite;
+        }
+        world.add_item(door);
+
+        let request = ItemDriverRequest::Driver {
+            driver: crate::item_driver::IDR_DOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert!(matches!(
+            world.execute_item_driver_request(request, 1),
+            ItemDriverOutcome::DoorToggle { .. }
+        ));
+        assert_eq!(world.map.tile(11, 10).unwrap().foreground_sprite, 21);
+        assert_eq!(world.map.tile(9, 10).unwrap().foreground_sprite, 22);
+        assert_eq!(world.map.tile(10, 11).unwrap().foreground_sprite, 23);
+        assert_eq!(world.map.tile(10, 9).unwrap().foreground_sprite, 24);
+
+        assert!(matches!(
+            world.execute_item_driver_request(request, 1),
+            ItemDriverOutcome::DoorToggle { .. }
+        ));
+        assert_eq!(world.map.tile(11, 10).unwrap().foreground_sprite, 20);
+        assert_eq!(world.map.tile(9, 10).unwrap().foreground_sprite, 21);
+        assert_eq!(world.map.tile(10, 11).unwrap().foreground_sprite, 22);
+        assert_eq!(world.map.tile(10, 9).unwrap().foreground_sprite, 23);
     }
 
     #[test]
