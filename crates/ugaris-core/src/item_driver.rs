@@ -25,6 +25,7 @@ pub const IDR_STATSCROLL: u16 = 19;
 pub const IDR_FLAMETHROW: u16 = 24;
 pub const IDR_STEPTRAP: u16 = 25;
 pub const IDR_SPIKETRAP: u16 = 26;
+pub const IDR_EXTINGUISH: u16 = 28;
 pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
@@ -230,6 +231,11 @@ pub enum ItemDriverOutcome {
     },
     SpikeTrapReset {
         item_id: ItemId,
+    },
+    Extinguish {
+        item_id: ItemId,
+        character_id: CharacterId,
+        extinguished: bool,
     },
     TriggerMapItem {
         item_id: ItemId,
@@ -450,6 +456,7 @@ pub fn execute_item_driver_with_context(
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
                 IDR_SPIKETRAP => spiketrap_driver(character, item, context),
+                IDR_EXTINGUISH => extinguish_driver(character, item),
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
@@ -547,6 +554,18 @@ fn flamethrow_driver(
         character_id: character.id,
         schedule_after_ticks: (delay_seconds != 0)
             .then_some(TICKS_PER_SECOND.saturating_mul(u64::from(delay_seconds))),
+    }
+}
+
+fn extinguish_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::Extinguish {
+        item_id: item.id,
+        character_id: character.id,
+        extinguished: false,
     }
 }
 

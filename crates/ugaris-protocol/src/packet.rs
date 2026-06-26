@@ -578,6 +578,15 @@ pub fn ceffect_strike(effect_id: i32, character: i32, x: i32, y: i32) -> BytesMu
     out
 }
 
+pub fn ceffect_burn(effect_id: i32, character: i32, stop: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(16);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(12);
+    out.put_i32_le(character);
+    out.put_i32_le(stop);
+    out
+}
+
 pub fn ceffect_fireball(
     effect_id: i32,
     start: i32,
@@ -791,6 +800,10 @@ mod tests {
         assert_eq!(
             &ceffect_strike(0x11, 0x22, 0x33, 0x44)[..],
             &[0x11, 0, 0, 0, 3, 0, 0, 0, 0x22, 0, 0, 0, 0x33, 0, 0, 0, 0x44, 0, 0, 0]
+        );
+        assert_eq!(
+            &ceffect_burn(0x11, 0x22, 0x33)[..],
+            &[0x11, 0, 0, 0, 12, 0, 0, 0, 0x22, 0, 0, 0, 0x33, 0, 0, 0]
         );
         assert_eq!(&ceffect_fireball(1, 2, 3, 4, 5, 6)[4..8], &[4, 0, 0, 0]);
     }

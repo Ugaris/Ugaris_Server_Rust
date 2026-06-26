@@ -24,7 +24,7 @@ use ugaris_core::{
     player::{
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
     },
-    spell::{EF_BALL, EF_FIREBALL, EF_STRIKE},
+    spell::{EF_BALL, EF_BURN, EF_FIREBALL, EF_STRIKE},
     text::COL_DARK_GRAY,
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
@@ -2100,6 +2100,14 @@ fn visible_client_effect_body(
             effect.x,
             effect.y,
         )),
+        EF_BURN => Some(ugaris_protocol::packet::ceffect_burn(
+            effect_id as i32,
+            effect
+                .target_character
+                .map(|character_id| character_id.0 as i32)
+                .unwrap_or_default(),
+            effect.stop_tick,
+        )),
         _ => None,
     }
 }
@@ -2108,6 +2116,15 @@ fn effect_visible_to_viewer(effect: &Effect, viewer: &Character, view_distance: 
     let (x, y) = match effect.effect_type {
         EF_BALL | EF_FIREBALL => (effect.x / 1024, effect.y / 1024),
         EF_STRIKE => (effect.x, effect.y),
+        EF_BURN => {
+            let Some(character_id) = effect.target_character else {
+                return false;
+            };
+            if character_id.0 > u32::from(u16::MAX) {
+                return false;
+            }
+            (effect.x, effect.y)
+        }
         _ => return false,
     };
     let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
@@ -5394,6 +5411,22 @@ async fn main() -> anyhow::Result<()> {
                                             for message in keyring_show_messages(runtime.player_for_character(character_id)) {
                                                 feedback.push((character_id, message));
                                             }
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Extinguish {
+                                            character_id,
+                                            extinguished,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                if extinguished {
+                                                    "You extinguish the flames."
+                                                } else {
+                                                    "Ahh. Sweet and refreshing."
+                                                }
+                                                .to_string(),
+                                            ));
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::KeyedDoorToggle {

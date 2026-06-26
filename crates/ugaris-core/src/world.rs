@@ -12,7 +12,7 @@ use crate::{
     },
     drvlib::char_dist,
     effect::Effect,
-    entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode},
+    entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
     game_time::GameDate,
     ids::{CharacterId, ItemId},
     item_driver::{
@@ -31,7 +31,7 @@ use crate::{
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
-        BLESS_DURATION, EF_BALL, EF_FIREBALL, EF_STRIKE, FLASH_DURATION, FREEZE_DURATION,
+        BLESS_DURATION, EF_BALL, EF_BURN, EF_FIREBALL, EF_STRIKE, FLASH_DURATION, FREEZE_DURATION,
         IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_WARCRY,
         POISON_DURATION, WARCRY_DURATION,
     },
@@ -274,8 +274,19 @@ impl World {
                 Some(EF_FIREBALL) => self.tick_fireball_effect(effect_id),
                 Some(EF_BALL) => self.tick_ball_effect(effect_id),
                 Some(EF_STRIKE) => self.tick_strike_effect(effect_id),
+                Some(EF_BURN) => self.tick_burn_effect(effect_id),
                 _ => {}
             }
+        }
+    }
+
+    fn tick_burn_effect(&mut self, effect_id: u32) {
+        if self
+            .effects
+            .get(&effect_id)
+            .is_some_and(|effect| self.tick.0 >= effect.stop_tick as u64)
+        {
+            self.effects.remove(&effect_id);
         }
     }
 
@@ -1084,6 +1095,18 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::SpikeTrapReset { .. } => outcome,
+            ItemDriverOutcome::Extinguish {
+                item_id,
+                character_id,
+                ..
+            } => {
+                let extinguished = self.remove_character_burn_effect(character_id);
+                ItemDriverOutcome::Extinguish {
+                    item_id,
+                    character_id,
+                    extinguished,
+                }
+            }
             ItemDriverOutcome::FlameThrowerPulse {
                 item_id,
                 direction,
@@ -1432,10 +1455,48 @@ impl World {
             }) else {
                 continue;
             };
-            if let Some(character) = self.characters.get_mut(&character_id) {
-                character.flags.insert(CharacterFlags::UPDATE);
-            }
+            self.burn_character(character_id);
         }
+    }
+
+    pub fn burn_character(&mut self, character_id: CharacterId) -> bool {
+        if self.effects.values().any(|effect| {
+            effect.effect_type == EF_BURN && effect.target_character == Some(character_id)
+        }) {
+            return false;
+        }
+
+        let effect_id = self.next_effect_id();
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        let mut effect = Effect::new(
+            EF_BURN,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(TICKS_PER_SECOND * 60) as i32,
+        );
+        effect.light = 250;
+        effect.strength = 1;
+        effect.target_character = Some(character_id);
+        effect.x = i32::from(character.x);
+        effect.y = i32::from(character.y);
+        character.hp = character.hp.saturating_sub(20 * POWERSCALE);
+        character.flags.insert(CharacterFlags::UPDATE);
+        self.effects.insert(effect_id, effect);
+        true
+    }
+
+    pub fn remove_character_burn_effect(&mut self, character_id: CharacterId) -> bool {
+        let Some(effect_id) = self.effects.iter().find_map(|(&effect_id, effect)| {
+            (effect.effect_type == EF_BURN && effect.target_character == Some(character_id))
+                .then_some(effect_id)
+        }) else {
+            return false;
+        };
+        self.remove_effect_from_map(effect_id);
+        self.effects.remove(&effect_id);
+        true
     }
 
     fn destroy_item(&mut self, item_id: ItemId) -> bool {
@@ -4032,7 +4093,7 @@ mod tests {
     }
 
     #[test]
-    fn world_flamethrower_timer_marks_forward_characters_and_reschedules() {
+    fn world_flamethrower_timer_burns_forward_characters_and_reschedules() {
         let mut world = World::default();
         let mut trap = item(7, ItemFlags::USED | ItemFlags::USE);
         trap.driver = IDR_FLAMETHROW;
@@ -4074,7 +4135,95 @@ mod tests {
             .unwrap()
             .flags
             .contains(CharacterFlags::UPDATE));
+        assert_eq!(world.effects.len(), 2);
+        assert!(world.effects.values().any(|effect| {
+            effect.effect_type == EF_BURN && effect.target_character == Some(CharacterId(1))
+        }));
+        assert!(world.effects.values().any(|effect| {
+            effect.effect_type == EF_BURN && effect.target_character == Some(CharacterId(2))
+        }));
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn burn_character_suppresses_duplicates_and_expires() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.hp = 50 * POWERSCALE;
+        world.add_character(character);
+
+        assert!(world.burn_character(CharacterId(1)));
+        assert!(!world.burn_character(CharacterId(1)));
+        assert_eq!(world.effects.len(), 1);
+        assert_eq!(
+            world.characters.get(&CharacterId(1)).unwrap().hp,
+            30 * POWERSCALE
+        );
+
+        world.tick = Tick(TICKS_PER_SECOND * 60);
+        world.tick_effects();
+
+        assert!(world.effects.is_empty());
+    }
+
+    #[test]
+    fn extinguish_driver_removes_burn_effect() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.hp = 50 * POWERSCALE;
+        world.add_character(character);
+        let mut water = item(7, ItemFlags::USED | ItemFlags::USE);
+        water.driver = crate::item_driver::IDR_EXTINGUISH;
+        world.add_item(water);
+        assert!(world.burn_character(CharacterId(1)));
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_EXTINGUISH,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            2,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::Extinguish {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                extinguished: true,
+            }
+        );
+        assert!(world.effects.is_empty());
+    }
+
+    #[test]
+    fn extinguish_driver_reports_refreshing_when_not_burning() {
+        let mut world = World::default();
+        world.add_character(character(1));
+        let mut water = item(7, ItemFlags::USED | ItemFlags::USE);
+        water.driver = crate::item_driver::IDR_EXTINGUISH;
+        world.add_item(water);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_EXTINGUISH,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            2,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::Extinguish {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                extinguished: false,
+            }
+        );
     }
 
     #[test]
