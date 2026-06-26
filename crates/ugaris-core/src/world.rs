@@ -4,8 +4,8 @@ use crate::{
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
-        advance_action_step, do_attack, do_drop, do_heal, do_idle, do_magicshield, do_pulse,
-        do_take, do_use, do_walk, endurance_cost, reset_action_after_act, speed_ticks,
+        advance_action_step, do_attack, do_bless, do_drop, do_heal, do_idle, do_magicshield,
+        do_pulse, do_take, do_use, do_walk, endurance_cost, reset_action_after_act, speed_ticks,
         ItemUseRequest, DUR_MISC_ACTION,
     },
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode},
@@ -22,6 +22,7 @@ use crate::{
     path::{pathfinder, pathfinder_ignore_characters},
     player::{PlayerActionCode, PlayerRuntime},
     scheduler::{TaskScheduler, TimerPayload, TimerQueue},
+    spell::{may_add_spell, BLESS_DURATION, IDR_BLESS},
     Tick,
 };
 
@@ -1410,6 +1411,14 @@ impl World {
                     .is_some_and(|character| do_pulse(character).is_ok())
                     || self.set_player_idle(player, character_id)
             }
+            PlayerActionCode::Bless => {
+                let target_id = CharacterId(player.action.arg1 as u32);
+                if self.setup_bless_spell(character_id, target_id) {
+                    true
+                } else {
+                    self.set_player_idle(player, character_id)
+                }
+            }
             PlayerActionCode::Heal => {
                 let target_id = CharacterId(player.action.arg1 as u32);
                 if self.setup_heal_spell(character_id, target_id) {
@@ -1420,6 +1429,45 @@ impl World {
             }
             _ => false,
         }
+    }
+
+    fn setup_bless_spell(&mut self, caster_id: CharacterId, target_id: CharacterId) -> bool {
+        if caster_id == target_id {
+            let Some(target) = self.characters.get(&target_id).cloned() else {
+                return false;
+            };
+            let current_tick = self.tick.0 as u32;
+            return self.characters.get_mut(&caster_id).is_some_and(|caster| {
+                do_bless(caster, &target, &self.items, current_tick, None).is_ok()
+            });
+        }
+
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        let Some(caster) = self.characters.get(&caster_id) else {
+            return false;
+        };
+        let Some(direction) = offset_to_direction(
+            usize::from(caster.x),
+            usize::from(caster.y),
+            usize::from(target.x),
+            usize::from(target.y),
+        ) else {
+            return false;
+        };
+        let current_tick = self.tick.0 as u32;
+
+        self.characters.get_mut(&caster_id).is_some_and(|caster| {
+            do_bless(
+                caster,
+                &target,
+                &self.items,
+                current_tick,
+                Some(direction as u8),
+            )
+            .is_ok()
+        })
     }
 
     fn setup_heal_spell(&mut self, caster_id: CharacterId, target_id: CharacterId) -> bool {
@@ -1753,6 +1801,13 @@ impl World {
                     .get_mut(&character_id)
                     .is_some_and(act_magicshield),
                 action::PULSE => true,
+                action::BLESS_SELF | action::BLESS1 | action::BLESS2 => self
+                    .characters
+                    .get(&character_id)
+                    .and_then(|character| {
+                        (character.act1 > 0).then_some(CharacterId(character.act1 as u32))
+                    })
+                    .is_some_and(|target_id| self.complete_bless(character_id, target_id)),
                 action::HEAL_SELF | action::HEAL1 | action::HEAL2 => self
                     .characters
                     .get(&character_id)
@@ -1787,6 +1842,114 @@ impl World {
 }
 
 impl World {
+    fn complete_bless(&mut self, caster_id: CharacterId, target_id: CharacterId) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        if caster.flags.contains(CharacterFlags::NOMAGIC)
+            && !caster.flags.contains(CharacterFlags::NONOMAGIC)
+        {
+            return false;
+        }
+        if caster.act1 != target_id.0 as i32 {
+            return false;
+        }
+        let strength = character_value(&caster, CharacterValue::Bless);
+        if strength <= 0 {
+            return false;
+        }
+        let duration = spell_duration_ticks(&caster, BLESS_DURATION);
+        self.install_bless_spell(target_id, strength, duration)
+    }
+
+    fn install_bless_spell(
+        &mut self,
+        target_id: CharacterId,
+        strength: i32,
+        duration: i32,
+    ) -> bool {
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        let Some(slot) = may_add_spell(&target, &self.items, IDR_BLESS, self.tick.0 as u32) else {
+            return false;
+        };
+        let old_item_id = target.inventory.get(slot).copied().flatten();
+        if let Some(item_id) = old_item_id {
+            self.items.remove(&item_id);
+        }
+
+        let item_id = self.next_runtime_item_id();
+        let mut driver_data = Vec::with_capacity(12);
+        let start_tick = self.tick.0 as u32;
+        let expire_tick = start_tick.wrapping_add(duration.max(0) as u32);
+        driver_data.extend_from_slice(&expire_tick.to_le_bytes());
+        driver_data.extend_from_slice(&start_tick.to_le_bytes());
+        driver_data.extend_from_slice(&strength.to_le_bytes());
+
+        let item = Item {
+            id: item_id,
+            name: "Bless".to_string(),
+            description: "A Spell of Bless.".to_string(),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [
+                CharacterValue::Intelligence as i16,
+                CharacterValue::Wisdom as i16,
+                CharacterValue::Agility as i16,
+                CharacterValue::Strength as i16,
+                0,
+            ],
+            modifier_value: [
+                (strength / 4) as i16,
+                (strength / 4) as i16,
+                (strength / 4) as i16,
+                (strength / 4) as i16,
+                0,
+            ],
+            x: 0,
+            y: 0,
+            carried_by: Some(target_id),
+            contained_in: None,
+            content_id: 0,
+            driver: IDR_BLESS,
+            driver_data,
+            serial: item_id.0,
+        };
+
+        self.items.insert(item_id, item);
+        if let Some(target) = self.characters.get_mut(&target_id) {
+            if target.inventory.len() <= slot {
+                return false;
+            }
+            target.inventory[slot] = Some(item_id);
+            target
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn next_runtime_item_id(&self) -> ItemId {
+        let next = self
+            .items
+            .keys()
+            .map(|item_id| item_id.0)
+            .max()
+            .unwrap_or_default()
+            .saturating_add(1)
+            .max(1);
+        ItemId(next)
+    }
+
     fn complete_heal(&mut self, caster_id: CharacterId, target_id: CharacterId) -> bool {
         if caster_id == target_id {
             let Some(caster) = self.characters.get(&caster_id).cloned() else {
@@ -1832,6 +1995,25 @@ fn character_value(character: &Character, value: CharacterValue) -> i32 {
         .and_then(|values| values.get(value as usize))
         .copied()
         .unwrap_or_default() as i32
+}
+
+fn character_value_present(character: &Character, value: CharacterValue) -> i32 {
+    character
+        .values
+        .get(1)
+        .and_then(|values| values.get(value as usize))
+        .copied()
+        .unwrap_or_default() as i32
+}
+
+fn spell_duration_ticks(character: &Character, base_duration: i32) -> i32 {
+    if character_value_present(character, CharacterValue::Duration) != 0 {
+        base_duration + base_duration * character_value(character, CharacterValue::Duration) / 35
+    } else if character.flags.contains(CharacterFlags::ARCH) {
+        base_duration + base_duration * character.level as i32 / 35 / 2
+    } else {
+        base_duration
+    }
 }
 
 fn adjacent_direction(from_x: u16, from_y: u16, to_x: usize, to_y: usize) -> Option<Direction> {
@@ -3700,6 +3882,87 @@ mod tests {
         assert!(completed[0].ok);
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 10 * POWERSCALE);
+    }
+
+    #[test]
+    fn player_bless_spell_installs_carried_spell_item_on_completion() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.mana = 10 * POWERSCALE;
+        character.values[0][CharacterValue::Bless as usize] = 40;
+        world.add_character(character);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Bless,
+            arg1: 1,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.action, action::BLESS_SELF);
+        assert_eq!(character.act1, 1);
+        assert_eq!(character.mana, 8 * POWERSCALE);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        let completed = world.tick_basic_actions();
+
+        assert_eq!(completed.len(), 1);
+        assert!(completed[0].ok);
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.name, "Bless");
+        assert_eq!(spell.driver, IDR_BLESS);
+        assert_eq!(spell.carried_by, Some(CharacterId(1)));
+        assert_eq!(spell.modifier_index[..4], [4, 3, 5, 6]);
+        assert_eq!(spell.modifier_value[..4], [10, 10, 10, 10]);
+        assert_eq!(
+            u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
+            2_980
+        );
+        assert_eq!(
+            u32::from_le_bytes(spell.driver_data[4..8].try_into().unwrap()),
+            100
+        );
+        assert_eq!(
+            i32::from_le_bytes(spell.driver_data[8..12].try_into().unwrap()),
+            40
+        );
+    }
+
+    #[test]
+    fn player_bless_spell_replaces_near_expired_spell_in_same_slot() {
+        let mut world = World::default();
+        world.tick = Tick(1_000);
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.mana = 10 * POWERSCALE;
+        character.values[0][CharacterValue::Bless as usize] = 80;
+        character.inventory[18] = Some(ItemId(7));
+        let mut old_spell = item(7, ItemFlags::USED);
+        old_spell.driver = IDR_BLESS;
+        old_spell.carried_by = Some(CharacterId(1));
+        old_spell.driver_data = vec![0; 12];
+        old_spell.driver_data[0..4].copy_from_slice(&1_100_u32.to_le_bytes());
+        world.add_character(character);
+        world.add_item(old_spell);
+
+        assert!(world.setup_bless_spell(CharacterId(1), CharacterId(1)));
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(world.tick_basic_actions()[0].ok);
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let new_spell_id = character.inventory[18].unwrap();
+        assert_ne!(new_spell_id, ItemId(7));
+        assert!(!world.items.contains_key(&ItemId(7)));
+        assert_eq!(
+            world.items.get(&new_spell_id).unwrap().modifier_value[0],
+            20
+        );
     }
 
     fn character(id: u32) -> Character {

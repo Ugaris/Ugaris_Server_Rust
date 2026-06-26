@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -11,7 +13,10 @@ use crate::{
     ids::{CharacterId, ItemId},
     legacy::{action, profession},
     map::{MapFlags, MapGrid},
-    spell::{heal_spend, magicshield_spend, pulse_spend, spell_power},
+    spell::{
+        heal_spend, magicshield_spend, may_add_spell, pulse_spend, spell_power, BLESS_COST,
+        IDR_BLESS,
+    },
     tick::TICKS_PER_SECOND,
 };
 
@@ -472,6 +477,71 @@ pub fn do_heal(
         );
     } else {
         caster.action = action::HEAL1;
+        caster.duration = speed_ticks(
+            character_value(caster, CharacterValue::Speed),
+            caster.speed_mode,
+            DUR_MAGIC_ACTION / 2,
+        );
+    }
+    if caster.speed_mode == SpeedMode::Fast {
+        caster.endurance -= endurance_cost(caster);
+    }
+    Ok(())
+}
+
+pub fn do_bless(
+    caster: &mut Character,
+    target: &Character,
+    items: &HashMap<ItemId, Item>,
+    current_tick: u32,
+    direction: Option<u8>,
+) -> Result<(), DoError> {
+    if caster.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if caster.flags.contains(CharacterFlags::NOMAGIC)
+        && !caster.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+    if target.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character_value(caster, CharacterValue::Bless) == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    if caster.mana < BLESS_COST {
+        return Err(DoError::ManaLow);
+    }
+    if caster.flags.contains(CharacterFlags::PLAYER)
+        && !target
+            .flags
+            .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
+    {
+        return Err(DoError::NotPlayer);
+    }
+    if may_add_spell(target, items, IDR_BLESS, current_tick).is_none() {
+        return Err(DoError::AlreadyWorking);
+    }
+    if caster.id != target.id
+        && caster.flags.contains(CharacterFlags::PLAYER)
+        && target.flags.contains(CharacterFlags::NOBLESS)
+    {
+        return Err(DoError::IllegalAttack);
+    }
+
+    caster.mana -= BLESS_COST;
+    caster.act1 = target.id.0 as i32;
+    caster.dir = direction.unwrap_or_else(|| bigdir(caster.dir));
+    if caster.id == target.id {
+        caster.action = action::BLESS_SELF;
+        caster.duration = speed_ticks(
+            character_value(caster, CharacterValue::Speed),
+            caster.speed_mode,
+            DUR_MAGIC_ACTION,
+        );
+    } else {
+        caster.action = action::BLESS1;
         caster.duration = speed_ticks(
             character_value(caster, CharacterValue::Speed),
             caster.speed_mode,
