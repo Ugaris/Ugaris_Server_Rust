@@ -17,12 +17,14 @@ pub const LEGACY_KEYRING_PPD_SIZE: usize = 15_912;
 pub const TREASURE_CHEST_PPD_ENTRIES: usize = 200;
 pub const LEGACY_TREASURE_CHEST_PPD_SIZE: usize = TREASURE_CHEST_PPD_ENTRIES * 4;
 pub const RANDCHEST_MAX_ENTRIES: usize = 100;
+pub const LEGACY_RANDCHEST_PPD_SIZE: usize = RANDCHEST_MAX_ENTRIES * 4 * 2;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
 pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAYER_DATA);
+pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 
 pub const fn make_drd(dev_id: u32, nr: u32) -> u32 {
@@ -43,6 +45,8 @@ const KEYRING_PPD_DRDATA_OFFSET: usize = KEYRING_PPD_DRIVERS_OFFSET + KEYRING_MA
 const KEYRING_PPD_EXPIRE_OFFSET: usize =
     KEYRING_PPD_DRDATA_OFFSET + KEYRING_MAX_KEYS * KEYRING_KEY_DRDATA_LEN;
 const KEYRING_PPD_AUTO_ADD_OFFSET: usize = KEYRING_PPD_EXPIRE_OFFSET + KEYRING_MAX_KEYS;
+const RANDCHEST_PPD_IDS_OFFSET: usize = 0;
+const RANDCHEST_PPD_LAST_USED_OFFSET: usize = RANDCHEST_PPD_IDS_OFFSET + RANDCHEST_MAX_ENTRIES * 4;
 
 pub const DEFERRED_ACHIEVEMENTS: u32 = 1 << 0;
 pub const DEFERRED_MOTD: u32 = 1 << 1;
@@ -337,6 +341,47 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_randchest_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_RANDCHEST_PPD_SIZE];
+        for (index, entry) in self
+            .random_chests
+            .iter()
+            .take(RANDCHEST_MAX_ENTRIES)
+            .enumerate()
+        {
+            write_i32(
+                &mut bytes,
+                RANDCHEST_PPD_IDS_OFFSET + index * 4,
+                entry.location_id.min(i32::MAX as u32) as i32,
+            );
+            write_i32(
+                &mut bytes,
+                RANDCHEST_PPD_LAST_USED_OFFSET + index * 4,
+                entry.last_used_seconds.min(i32::MAX as u64) as i32,
+            );
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_randchest_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_RANDCHEST_PPD_SIZE {
+            return false;
+        }
+
+        self.random_chests.clear();
+        for index in 0..RANDCHEST_MAX_ENTRIES {
+            let location_id = read_i32(bytes, RANDCHEST_PPD_IDS_OFFSET + index * 4);
+            let last_used_seconds = read_i32(bytes, RANDCHEST_PPD_LAST_USED_OFFSET + index * 4);
+            if location_id > 0 && last_used_seconds > 0 {
+                self.random_chests.push(RandomChestAccess {
+                    location_id: location_id as u32,
+                    last_used_seconds: last_used_seconds as u64,
+                });
+            }
+        }
+        true
+    }
+
     pub fn decode_legacy_ppd_blob(&mut self, bytes: &[u8]) -> bool {
         for block in LegacyPpdBlocks::parse(bytes) {
             let Some(block) = block else {
@@ -353,6 +398,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_RANDCHEST_PPD => {
+                    if !self.decode_legacy_randchest_ppd(block.data) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -363,6 +413,7 @@ impl PlayerRuntime {
         let mut encoded = Vec::with_capacity(existing.len().max(LEGACY_KEYRING_PPD_SIZE + 8));
         let mut had_keyring = false;
         let mut had_treasure_chest = false;
+        let mut had_randchest = false;
         let mut existing_was_valid = true;
 
         for block in LegacyPpdBlocks::parse(existing) {
@@ -387,6 +438,13 @@ impl PlayerRuntime {
                     DRD_TREASURE_CHEST_PPD,
                     &self.encode_legacy_treasure_chest_ppd(),
                 );
+            } else if block.id == DRD_RANDCHEST_PPD {
+                had_randchest = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_RANDCHEST_PPD,
+                    &self.encode_legacy_randchest_ppd(),
+                );
             } else {
                 write_ppd_block(&mut encoded, block.id, block.data);
             }
@@ -407,6 +465,15 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_TREASURE_CHEST_PPD,
                     &self.encode_legacy_treasure_chest_ppd(),
+                );
+            }
+        }
+        if !had_randchest && (existing_was_valid || existing.is_empty()) {
+            if !self.random_chests.is_empty() {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_RANDCHEST_PPD,
+                    &self.encode_legacy_randchest_ppd(),
                 );
             }
         }
@@ -818,8 +885,10 @@ mod tests {
         assert_eq!(MAX_PLAYER_EFFECTS, 64);
         assert_eq!(DRD_JUNK_PPD, 0x8100_0072);
         assert_eq!(DRD_TREASURE_CHEST_PPD, 0x8100_0011);
+        assert_eq!(DRD_RANDCHEST_PPD, 0x8100_003f);
         assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
+        assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
     }
 
     #[test]
@@ -980,6 +1049,35 @@ mod tests {
     }
 
     #[test]
+    fn randchest_ppd_codec_matches_legacy_c_layout() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_random_chest_used(0x0001_0506, 1234);
+        player.mark_random_chest_used(0x0001_0708, i32::MAX as u64 + 99);
+
+        let bytes = player.encode_legacy_randchest_ppd();
+        assert_eq!(bytes.len(), LEGACY_RANDCHEST_PPD_SIZE);
+        assert_eq!(read_i32(&bytes, 0), 0x0001_0506);
+        assert_eq!(read_i32(&bytes, 4), 0x0001_0708);
+        assert_eq!(read_i32(&bytes, RANDCHEST_PPD_LAST_USED_OFFSET), 1234);
+        assert_eq!(
+            read_i32(&bytes, RANDCHEST_PPD_LAST_USED_OFFSET + 4),
+            i32::MAX
+        );
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_randchest_ppd(&bytes));
+        assert_eq!(
+            decoded.random_chest_last_used_seconds(0x0001_0506),
+            Some(1234)
+        );
+        assert_eq!(
+            decoded.random_chest_last_used_seconds(0x0001_0708),
+            Some(i32::MAX as u64)
+        );
+        assert_eq!(decoded.random_chest_last_used_seconds(0x0001_090a), None);
+    }
+
+    #[test]
     fn keyring_ppd_blob_round_trips_with_legacy_block_framing() {
         let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
         let mut existing = Vec::new();
@@ -1046,6 +1144,52 @@ mod tests {
         assert_eq!(read_u32(&encoded, 0), DRD_TREASURE_CHEST_PPD);
         assert_eq!(read_u32(&encoded, 4), LEGACY_TREASURE_CHEST_PPD_SIZE as u32);
         assert_eq!(read_i32(&encoded, 8 + 5 * 4), 55);
+    }
+
+    #[test]
+    fn randchest_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_randchest = vec![0; LEGACY_RANDCHEST_PPD_SIZE];
+        write_i32(
+            &mut existing_randchest,
+            RANDCHEST_PPD_IDS_OFFSET,
+            0x0001_0203,
+        );
+        write_i32(&mut existing_randchest, RANDCHEST_PPD_LAST_USED_OFFSET, 44);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_RANDCHEST_PPD, &existing_randchest);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_random_chest_used(0x0001_0506, 777);
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_RANDCHEST_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_RANDCHEST_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20), 0x0001_0506);
+        assert_eq!(read_i32(&encoded, 20 + RANDCHEST_PPD_LAST_USED_OFFSET), 777);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(
+            decoded.random_chest_last_used_seconds(0x0001_0506),
+            Some(777)
+        );
+        assert_eq!(decoded.random_chest_last_used_seconds(0x0001_0203), None);
+    }
+
+    #[test]
+    fn ppd_blob_appends_randchests_without_existing_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_random_chest_used(0x0001_0203, 55);
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_RANDCHEST_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_RANDCHEST_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 8), 0x0001_0203);
+        assert_eq!(read_i32(&encoded, 8 + RANDCHEST_PPD_LAST_USED_OFFSET), 55);
     }
 
     #[test]

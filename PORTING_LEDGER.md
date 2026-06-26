@@ -162,6 +162,7 @@ Current implemented slices:
 - `PlayerRuntime` now decodes and encodes the legacy outer persistent-player-data blob framing for `DRD_KEYRING_PPD`, preserves unknown PPD blocks, skips `DRD_JUNK_PPD`, rejects malformed blobs, and verifies the C `MAKE_DRD` IDs for keyring persistence with tests.
 - `PlayerRuntime` now has a fixed-layout C-compatible `DRD_TREASURE_CHEST_PPD` byte codec matching `struct treasure_chest_ppd { int last_access[200]; }`, decodes/encodes it through the same outer PPD blob framing, replaces existing blocks, appends when runtime chest cooldowns exist, and preserves unknown PPD blocks with tests.
 - The server now retains DB snapshot `ppd_blob`/subscriber blobs in `PlayerRuntime`, decodes loaded keyring and treasure-chest PPD blocks on optional PostgreSQL-backed login, and re-encodes those blocks into the logout snapshot save request together with carried inventory/cursor items.
+- `PlayerRuntime` now has a fixed-layout C-compatible `DRD_RANDCHEST_PPD` byte codec matching `struct randchest_ppd { int ID[100]; int last_used[100]; }`, decodes/encodes it through the same outer PPD blob framing, replaces existing blocks, appends when runtime random chest access exists, preserves unknown PPD blocks, and keeps the legacy random-chest location ID shape `x + (y << 8) + (areaID << 16)` covered by focused tests.
 - `IDR_CITY_RECALL = 159` now dispatches from the base item-driver path, maps legacy scroll types 0..12 to fixed city coordinates from `src/module/base.c`, blocks Teufelheim arena use, preserves carried/dying no-op behavior, decrements `drdata[1]` stack counts or consumes the final scroll, teleports same-area destinations, and returns typed cross-area handoff outcomes with focused tests.
 - `IDR_ASSEMBLE = 29` now dispatches from the base item-driver path, ports the legacy sun amulet and staff blue/green/red key combination matrix from `src/module/base.c`, emits the legacy no-cursor/does-not-fit/bug feedback messages, instantiates the combined item template, consumes the cursor component, and replaces the used carried item with focused core and server tests.
 - `IDR_DOUBLE_DOOR = 187` now dispatches from the base item-driver path, returns a typed double-door outcome, toggles the used door through the existing door state machinery, and synchronizes adjacent north/south/east/west doors whose open-state differs, with focused core/world tests.
@@ -171,13 +172,13 @@ Chest gaps still to port:
 
 - Live PostgreSQL migration/data smoke verification for `DRD_KEYRING_PPD` and `DRD_TREASURE_CHEST_PPD` persistence across logout/server restart.
 - Achievement persistence/protocol sending beyond runtime marker updates.
-- `IDR_RANDCHEST = 34` persistent `DRD_RANDCHEST_PPD`, exact RNG parity, and full live-data smoke coverage.
+- `IDR_RANDCHEST = 34` exact RNG parity and full live-data smoke coverage.
 
 Recommended next chest steps:
 
 1. Verify treasure chest cooldowns survive logout/server restart against PostgreSQL-backed character snapshots.
 2. Persist/runtime-load chest achievement state and send achievement protocol updates.
-3. Persist/runtime-load `IDR_RANDCHEST` daily access state and verify full loot table behavior against live data.
+3. Verify `IDR_RANDCHEST` daily access persistence against PostgreSQL-backed snapshots and full loot table behavior against live data.
 4. Replace scaffold fallback with robust client-facing DB login rejection/transfer behavior once password verification and selection are complete.
 
 ### Other High-Value Next Steps
