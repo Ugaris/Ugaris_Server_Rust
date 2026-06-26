@@ -10,6 +10,7 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
+    area_sound::area_sound_special,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
         CHARACTER_VALUE_NAMES, POWERSCALE,
@@ -2004,6 +2005,27 @@ fn section_music_special(section_id: u16) -> Option<u32> {
     }
 }
 
+fn area_sound_payload(
+    area_id: u16,
+    character: &Character,
+    hour: i64,
+    random_seed: u64,
+) -> Option<[u8; 13]> {
+    let section = section_at(area_id, usize::from(character.x), usize::from(character.y))?;
+    let sound = area_sound_special(
+        section.id,
+        hour,
+        legacy_random(random_seed, 100),
+        legacy_random(random_seed.wrapping_add(1), 1000),
+        legacy_random(random_seed.wrapping_add(2), 10000),
+    )?;
+    Some(ugaris_protocol::packet::special(
+        sound.special_type,
+        sound.opt1 as u32,
+        sound.opt2 as u32,
+    ))
+}
+
 fn movement_scroll_payload(
     world: &World,
     character: &Character,
@@ -2402,7 +2424,7 @@ mod tests {
         MAP_CHARACTER_ACTION, MAP_CHARACTER_SPRITE, MAP_CHARACTER_STATUS, MAP_TILE_FLAGS,
         MAP_TILE_FSPRITE, MAP_TILE_GSPRITE, MAP_TILE_ISPRITE, SV_LOGINDONE, SV_MAP10, SV_MAP11,
         SV_MAPPOS, SV_MIRROR, SV_ORIGIN, SV_PROTOCOL, SV_SETCITEM, SV_SETHP, SV_SETITEM,
-        SV_SETVAL0, SV_SETVAL1, SV_TEXT, SV_TICKER,
+        SV_SETVAL0, SV_SETVAL1, SV_SPECIAL, SV_TEXT, SV_TICKER,
     };
 
     use super::*;
@@ -3248,6 +3270,37 @@ mod tests {
         assert_eq!(section_music_special(58), Some(1004));
         assert_eq!(section_music_special(60), Some(1002));
         assert_eq!(section_music_special(114), None);
+    }
+
+    #[test]
+    fn area_sound_payload_uses_section_and_legacy_special_layout() {
+        let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 146, 115);
+        character.x = 146;
+        character.y = 115;
+        let seed = seed_for_legacy_random(100, 10);
+
+        let payload = area_sound_payload(1, &character, 12, seed).unwrap();
+
+        assert_eq!(payload[0], SV_SPECIAL);
+        assert_eq!(u32::from_le_bytes(payload[1..5].try_into().unwrap()), 14);
+        assert_eq!(
+            i32::from_le_bytes(payload[5..9].try_into().unwrap()),
+            -(legacy_random(seed.wrapping_add(1), 1000) as i32 + 100)
+        );
+        assert_eq!(
+            i32::from_le_bytes(payload[9..13].try_into().unwrap()),
+            5000 - legacy_random(seed.wrapping_add(2), 10000) as i32
+        );
+    }
+
+    #[test]
+    fn area_sound_payload_is_silent_outside_ambient_sections() {
+        let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 12, 13);
+        character.x = 12;
+        character.y = 13;
+        let seed = seed_for_legacy_random(100, 10);
+
+        assert_eq!(area_sound_payload(99, &character, 12, seed), None);
     }
 
     fn text_payloads(payloads: &[bytes::BytesMut]) -> Vec<String> {
@@ -5138,6 +5191,18 @@ async fn main() -> anyhow::Result<()> {
                             }
                             if let Some(payload) = &walk_section_payload {
                                 payloads.push(payload.clone());
+                            }
+                            if completion.ok {
+                                if let Some(payload) = area_sound_payload(
+                                    config.area_id,
+                                    character,
+                                    world.date.hour,
+                                    world.tick
+                                        .0
+                                        .wrapping_add(u64::from(completion.character_id.0) << 32),
+                                ) {
+                                    payloads.push(bytes::BytesMut::from(&payload[..]));
+                                }
                             }
                             if runtime.send_many_to_session(session_id, payloads) {
                                 refreshed_sessions += 1;
