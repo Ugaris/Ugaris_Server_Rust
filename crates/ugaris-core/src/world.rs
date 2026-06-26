@@ -1644,6 +1644,103 @@ mod tests {
     }
 
     #[test]
+    fn world_blocks_lighting_torch_underwater() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.x = 10;
+        character.y = 10;
+        character.inventory[30] = Some(ItemId(7));
+        let mut torch = item(7, ItemFlags::USED | ItemFlags::USE);
+        torch.carried_by = Some(CharacterId(1));
+        torch.driver = IDR_TORCH;
+        torch.driver_data = vec![0, 0, 10, 20];
+        world.add_character(character);
+        world.add_item(torch);
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::UNDERWATER);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_TORCH,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::BlockedByRequirements {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        let torch = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(torch.driver_data[0], 0);
+        assert_eq!(torch.modifier_value[0], 0);
+        assert!(!torch.flags.contains(ItemFlags::NODECAY));
+    }
+
+    #[test]
+    fn world_timer_extinguishes_burning_torch_underwater() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.x = 10;
+        character.y = 10;
+        character.inventory[30] = Some(ItemId(7));
+        let mut torch = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::NODECAY);
+        torch.carried_by = Some(CharacterId(1));
+        torch.driver = IDR_TORCH;
+        torch.driver_data = vec![1, 0, 10, 20];
+        torch.modifier_value[0] = 20;
+        torch.sprite = -1;
+        world.add_character(character);
+        world.add_item(torch);
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::UNDERWATER);
+
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: IDR_TORCH,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                schedule_after_ticks: Some(30 * crate::tick::TICKS_PER_SECOND),
+            }
+        );
+        let torch = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(torch.driver_data[0], 0);
+        assert_eq!(torch.modifier_value[0], 0);
+        assert_eq!(torch.sprite, 0);
+        assert!(!torch.flags.contains(ItemFlags::NODECAY));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
     fn world_enchants_cursor_equipment_and_consumes_orb() {
         let mut world = World::default();
         let mut character = character(1);

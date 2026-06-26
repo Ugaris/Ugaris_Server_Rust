@@ -12,7 +12,7 @@ use ugaris_core::{
     area_section::section_look_text,
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
     ids::{CharacterId, ItemId},
-    item_driver::IDR_KEY_RING,
+    item_driver::{IDR_KEY_RING, IDR_TORCH},
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
     map::{MapFlags, MapTile},
@@ -198,6 +198,7 @@ const CHEST_CURSOR_OCCUPIED_MESSAGE: &str = "Please empty your 'hand' (mouse cur
 const CHEST_KEY_REQUIRED_MESSAGE: &str = "You need a key to open this chest.";
 const RANDCHEST_CURSOR_OCCUPIED_MESSAGE: &str = "Please empty your hand (mouse cursor) first.";
 const RANDCHEST_EMPTY_MESSAGE: &str = "You didn't find anything.";
+const TORCH_UNDERWATER_MESSAGE: &str = "Obviously, thou canst not light thy torch under water.";
 const MAP_BOOTSTRAP_CHUNK_TARGET: usize = MAX_LEGACY_TICK_PAYLOAD - 512;
 const DEFAULT_PLAYER_TEMPLATE: &str = "new_warrior_m";
 const IID_KEY_RING: u32 = (59 << 24) | 0x000002;
@@ -907,6 +908,13 @@ fn chest_blocked_message(
         return CHEST_CURSOR_OCCUPIED_MESSAGE;
     }
     CHEST_EMPTY_MESSAGE
+}
+
+fn is_torch_item(world: &World, item_id: ItemId) -> bool {
+    world
+        .items
+        .get(&item_id)
+        .is_some_and(|item| item.driver == IDR_TORCH)
 }
 
 fn chest_required_key_id(item: &ugaris_core::entity::Item) -> u32 {
@@ -4289,6 +4297,12 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByArea { .. } => {
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
+                                            if is_torch_item(&world, item_id) =>
+                                        {
+                                            feedback.push((character_id, TORCH_UNDERWATER_MESSAGE.to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { .. } => {
                                             blocked += 1;
                                         }
@@ -4299,7 +4313,7 @@ async fn main() -> anyhow::Result<()> {
                                             unsupported += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::TorchExpired { .. } => {
-                                            unsupported += 1;
+                                            executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::Noop => {
                                             failed += 1;
