@@ -9,23 +9,29 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_ops::consume_item,
     legacy::action,
+    tick::TICKS_PER_SECOND,
 };
 
 pub const IDR_POTION: u16 = 1;
 pub const IDR_DOOR: u16 = 2;
 pub const IDR_CHEST: u16 = 5;
 pub const IDR_TELEPORT: u16 = 10;
+pub const IDR_NIGHTLIGHT: u16 = 11;
+pub const IDR_TORCH: u16 = 12;
 pub const IDR_RECALL: u16 = 13;
 pub const IDR_STATSCROLL: u16 = 19;
 pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_FOOD: u16 = 64;
+pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_CITY_RECALL: u16 = 159;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_KEY_RING: u16 = 200;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
+const V_LIGHT: i16 = 9;
+const LIGHT_TIMER_TICKS: u64 = TICKS_PER_SECOND * 30;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DoorKeyAccess {
@@ -87,6 +93,9 @@ impl AssembleTemplate {
 pub struct ItemDriverContext {
     pub door_key: Option<DoorKeyAccess>,
     pub cursor_template_id: Option<u32>,
+    pub timer_call: bool,
+    pub daylight: u8,
+    pub character_underwater: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,6 +207,15 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         key_item_id: ItemId,
+    },
+    LightChanged {
+        item_id: ItemId,
+        character_id: CharacterId,
+        schedule_after_ticks: Option<u64>,
+    },
+    TorchExpired {
+        item_id: ItemId,
+        character_id: CharacterId,
     },
     StatScrollUsed {
         item_id: ItemId,
@@ -346,7 +364,10 @@ pub fn execute_item_driver_with_context(
                 IDR_DOUBLE_DOOR => double_door_driver(character, item),
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
                 IDR_TELEPORT => teleport_driver(character, item),
+                IDR_NIGHTLIGHT => nightlight_driver(character, item, context),
+                IDR_TORCH => torch_driver(character, item, context),
                 IDR_FOOD => food_driver(character, item),
+                IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
                     driver,
@@ -967,6 +988,160 @@ fn drdata_u16(item: &Item, idx: usize) -> u16 {
     lo | (hi << 8)
 }
 
+fn toylight_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    item.driver_data.resize(2, 0);
+    if item.driver_data[0] != 0 {
+        item.driver_data[0] = 0;
+        item.modifier_value[0] = 0;
+        item.sprite -= 1;
+    } else {
+        let light = i16::from(item.driver_data[1]);
+        item.driver_data[0] = 1;
+        item.modifier_index[0] = V_LIGHT;
+        item.modifier_value[0] = light;
+        item.sprite += 1;
+    }
+
+    ItemDriverOutcome::LightChanged {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: None,
+    }
+}
+
+fn nightlight_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if !context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    item.driver_data.resize(2, 0);
+    let was_on = item.driver_data[0] != 0;
+    if was_on && context.daylight > 80 {
+        item.driver_data[0] = 0;
+        item.modifier_value[0] = 0;
+        item.sprite -= 1;
+    } else if !was_on && context.daylight < 80 {
+        let light = i16::from(item.driver_data[1]);
+        item.driver_data[0] = 1;
+        item.modifier_index[0] = V_LIGHT;
+        item.modifier_value[0] = light;
+        item.sprite += 1;
+    }
+
+    ItemDriverOutcome::LightChanged {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: Some(LIGHT_TIMER_TICKS),
+    }
+}
+
+fn torch_driver(
+    character: &mut Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(4, 0);
+
+    if context.timer_call {
+        mark_special_modified_torch(item);
+        if item.driver_data[0] == 0 {
+            return ItemDriverOutcome::Noop;
+        }
+        if context.character_underwater {
+            extinguish_torch(item);
+            character.flags.insert(CharacterFlags::ITEMS);
+            return ItemDriverOutcome::LightChanged {
+                item_id: item.id,
+                character_id: character.id,
+                schedule_after_ticks: Some(LIGHT_TIMER_TICKS),
+            };
+        }
+
+        item.driver_data[1] = item.driver_data[1].saturating_add(1);
+        if item.driver_data[1] > item.driver_data[2] {
+            return ItemDriverOutcome::TorchExpired {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+        set_torch_light(item);
+        character.flags.insert(CharacterFlags::ITEMS);
+        return ItemDriverOutcome::LightChanged {
+            item_id: item.id,
+            character_id: character.id,
+            schedule_after_ticks: Some(LIGHT_TIMER_TICKS),
+        };
+    }
+
+    if item.x != 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if item.driver_data[0] != 0 {
+        extinguish_torch(item);
+    } else {
+        if context.character_underwater {
+            return ItemDriverOutcome::BlockedByRequirements {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+        item.driver_data[0] = 1;
+        set_torch_light(item);
+        item.sprite -= 1;
+        item.flags.insert(ItemFlags::NODECAY);
+    }
+    character.flags.insert(CharacterFlags::ITEMS);
+
+    ItemDriverOutcome::LightChanged {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: (item.driver_data[0] != 0).then_some(LIGHT_TIMER_TICKS),
+    }
+}
+
+fn mark_special_modified_torch(item: &mut Item) {
+    if item.min_level == 200 {
+        return;
+    }
+    if item
+        .modifier_index
+        .iter()
+        .zip(item.modifier_value.iter())
+        .any(|(&index, &value)| index != V_LIGHT && index >= 0 && value > 0)
+    {
+        item.min_level = 200;
+    }
+}
+
+fn extinguish_torch(item: &mut Item) {
+    item.driver_data[0] = 0;
+    item.modifier_value[0] = 0;
+    item.sprite += 1;
+    item.flags.remove(ItemFlags::NODECAY);
+}
+
+fn set_torch_light(item: &mut Item) {
+    let burn = i32::from(item.driver_data[1]);
+    let max_burn = i32::from(item.driver_data[2]);
+    let base = i32::from(item.driver_data[3]);
+    let light = base.min(base * max_burn / (burn + 1) / 2);
+    item.modifier_index[0] = V_LIGHT;
+    item.modifier_value[0] = light as i16;
+}
+
 fn food_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
     if item.carried_by != Some(character.id) {
         return ItemDriverOutcome::Noop;
@@ -1403,6 +1578,7 @@ mod tests {
                 source: DoorKeySource::Keyring,
             }),
             cursor_template_id: None,
+            ..ItemDriverContext::default()
         };
 
         assert_eq!(
@@ -1469,6 +1645,7 @@ mod tests {
         let context = ItemDriverContext {
             door_key: None,
             cursor_template_id: Some(IID_AREA2_SUN23),
+            ..ItemDriverContext::default()
         };
 
         assert_eq!(
@@ -1492,6 +1669,7 @@ mod tests {
         let context = ItemDriverContext {
             door_key: None,
             cursor_template_id: Some(IID_STAFF_REDKEY13),
+            ..ItemDriverContext::default()
         };
         assert_eq!(
             execute_item_driver_with_context(
@@ -1820,6 +1998,162 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut character, &mut item, request, 1, false),
             ItemDriverOutcome::BlockedByRequirements {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn toylight_toggles_light_state_on_character_use() {
+        let mut character = character(1);
+        let mut light = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_TOYLIGHT);
+        light.driver_data = vec![0, 12];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TOYLIGHT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut light, request, 1, false),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                schedule_after_ticks: None,
+            }
+        );
+        assert_eq!(light.driver_data[0], 1);
+        assert_eq!(light.modifier_index[0], V_LIGHT);
+        assert_eq!(light.modifier_value[0], 12);
+        assert_eq!(light.sprite, 1);
+
+        execute_item_driver(&mut character, &mut light, request, 1, false);
+        assert_eq!(light.driver_data[0], 0);
+        assert_eq!(light.modifier_value[0], 0);
+        assert_eq!(light.sprite, 0);
+    }
+
+    #[test]
+    fn nightlight_timer_follows_daylight_threshold_and_reschedules() {
+        let mut character = character(1);
+        let mut light = item(7, ItemFlags::USED, 0, IDR_NIGHTLIGHT);
+        light.driver_data = vec![0, 9];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_NIGHTLIGHT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let mut context = ItemDriverContext {
+            timer_call: true,
+            daylight: 79,
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut light,
+                request,
+                1,
+                false,
+                &context
+            ),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                schedule_after_ticks: Some(LIGHT_TIMER_TICKS),
+            }
+        );
+        assert_eq!(light.driver_data[0], 1);
+        assert_eq!(light.modifier_value[0], 9);
+        assert_eq!(light.sprite, 1);
+
+        context.daylight = 81;
+        execute_item_driver_with_context(&mut character, &mut light, request, 1, false, &context);
+        assert_eq!(light.driver_data[0], 0);
+        assert_eq!(light.modifier_value[0], 0);
+        assert_eq!(light.sprite, 0);
+    }
+
+    #[test]
+    fn torch_user_use_lights_and_extinguishes_carried_torch() {
+        let mut character = character(1);
+        let mut torch = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_TORCH);
+        torch.carried_by = Some(CharacterId(1));
+        torch.driver_data = vec![0, 0, 10, 20];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TORCH,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        execute_item_driver(&mut character, &mut torch, request, 1, false);
+        assert_eq!(torch.driver_data[0], 1);
+        assert_eq!(torch.modifier_index[0], V_LIGHT);
+        assert_eq!(torch.modifier_value[0], 20.min(20 * 10 / 1 / 2));
+        assert_eq!(torch.sprite, -1);
+        assert!(torch.flags.contains(ItemFlags::NODECAY));
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+
+        execute_item_driver(&mut character, &mut torch, request, 1, false);
+        assert_eq!(torch.driver_data[0], 0);
+        assert_eq!(torch.modifier_value[0], 0);
+        assert_eq!(torch.sprite, 0);
+        assert!(!torch.flags.contains(ItemFlags::NODECAY));
+    }
+
+    #[test]
+    fn torch_timer_burns_down_marks_special_and_expires() {
+        let mut character = character(1);
+        let mut torch = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_TORCH);
+        torch.carried_by = Some(CharacterId(1));
+        torch.driver_data = vec![1, 1, 2, 20];
+        torch.modifier_index[1] = CharacterValue::Speed as i16;
+        torch.modifier_value[1] = 1;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TORCH,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut torch,
+                request,
+                1,
+                false,
+                &context
+            ),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                schedule_after_ticks: Some(LIGHT_TIMER_TICKS),
+            }
+        );
+        assert_eq!(torch.min_level, 200);
+        assert_eq!(torch.driver_data[1], 2);
+        assert_eq!(torch.modifier_value[0], 20.min(20 * 2 / 3 / 2));
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut torch,
+                request,
+                1,
+                false,
+                &context
+            ),
+            ItemDriverOutcome::TorchExpired {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }

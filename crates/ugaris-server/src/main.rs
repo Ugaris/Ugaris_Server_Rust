@@ -966,6 +966,7 @@ fn item_driver_context_for_request(
         return ugaris_core::item_driver::ItemDriverContext {
             door_key: None,
             cursor_template_id,
+            ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
     if *driver != ugaris_core::item_driver::IDR_DOOR {
@@ -983,6 +984,7 @@ fn item_driver_context_for_request(
     ugaris_core::item_driver::ItemDriverContext {
         door_key: door_key_access(world, player, *character_id, required_key_id),
         cursor_template_id: None,
+        ..ugaris_core::item_driver::ItemDriverContext::default()
     }
 }
 
@@ -4171,6 +4173,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
                                             executed += 1;
                                         }
@@ -4284,6 +4287,9 @@ async fn main() -> anyhow::Result<()> {
                                             unsupported += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::UnsupportedSpecialFood { .. } => {
+                                            unsupported += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TorchExpired { .. } => {
                                             unsupported += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::Noop => {

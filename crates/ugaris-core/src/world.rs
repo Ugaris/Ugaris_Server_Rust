@@ -213,22 +213,36 @@ impl World {
                 item_id,
             } => (character_id, item_id),
         };
-        let in_arena = self
+        let character_tile_flags = self
             .characters
             .get(&character_id)
             .and_then(|character| {
                 self.map
                     .tile(usize::from(character.x), usize::from(character.y))
             })
-            .is_some_and(|tile| tile.flags.contains(MapFlags::ARENA));
+            .map(|tile| tile.flags)
+            .unwrap_or_else(MapFlags::empty);
+        let in_arena = character_tile_flags.contains(MapFlags::ARENA);
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
         let Some(item) = self.items.get_mut(&item_id) else {
             return ItemDriverOutcome::Noop;
         };
-        let outcome =
-            execute_item_driver_with_context(character, item, request, area_id, in_arena, context);
+        let mut effective_context = context.clone();
+        effective_context.character_underwater |=
+            character_tile_flags.contains(MapFlags::UNDERWATER);
+        effective_context.daylight = effective_context
+            .daylight
+            .max(self.date.daylight.clamp(0, 255) as u8);
+        let outcome = execute_item_driver_with_context(
+            character,
+            item,
+            request,
+            area_id,
+            in_arena,
+            &effective_context,
+        );
         self.apply_item_driver_outcome(outcome, area_id)
     }
 

@@ -164,6 +164,7 @@ Current implemented slices:
 - `IDR_CITY_RECALL = 159` now dispatches from the base item-driver path, maps legacy scroll types 0..12 to fixed city coordinates from `src/module/base.c`, blocks Teufelheim arena use, preserves carried/dying no-op behavior, decrements `drdata[1]` stack counts or consumes the final scroll, teleports same-area destinations, and returns typed cross-area handoff outcomes with focused tests.
 - `IDR_ASSEMBLE = 29` now dispatches from the base item-driver path, ports the legacy sun amulet and staff blue/green/red key combination matrix from `src/module/base.c`, emits the legacy no-cursor/does-not-fit/bug feedback messages, instantiates the combined item template, consumes the cursor component, and replaces the used carried item with focused core and server tests.
 - `IDR_DOUBLE_DOOR = 187` now dispatches from the base item-driver path, returns a typed double-door outcome, toggles the used door through the existing door state machinery, and synchronizes adjacent north/south/east/west doors whose open-state differs, with focused core/world tests.
+- `IDR_NIGHTLIGHT = 11`, `IDR_TORCH = 12`, and `IDR_TOYLIGHT = 117` now dispatch from the base item-driver path for core state transitions: toy lights toggle `drdata[0]`/sprite/light modifier, nightlights respond to timer/daylight threshold context and request 30-second rescheduling, torches light/extinguish carried items, set `IF_NODECAY`, use the legacy light fade formula, mark modified torches with `min_level = 200`, handle underwater block/extinguish context, and return typed expiration outcomes with focused core tests. Runtime timer callback dispatch, item-light map invalidation, character stat recomputation, orb extraction from modified torches, expiration removal/destruction, and client feedback text remain.
 
 Chest gaps still to port:
 
@@ -186,6 +187,7 @@ Recommended next chest steps:
 - Port combat action execution: `PAC_KILL`, `do_attack`, `act_attack`, hurt/death integration.
 - Port spell queue execution and spell setup/completion.
 - Continue door family details: keyed doors/keyring checks, auto-close timers, and extended/multi-tile door foreground shifts.
+- Finish runtime integration for `IDR_NIGHTLIGHT`, `IDR_TORCH`, and `IDR_TOYLIGHT`: timer dispatch, map light invalidation, update-char/stat recomputation, torch expiration destruction, torch modifier orb extraction, and exact feedback text.
 - Implement actual cross-area transfer execution for `IDR_RECALL`, `IDR_CITY_RECALL`, and teleport outcomes; Rust currently returns typed handoff outcomes for callers.
 
 ## Pending Priority Order
