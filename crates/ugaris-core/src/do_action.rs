@@ -647,6 +647,70 @@ pub fn do_fireball(
     Ok(())
 }
 
+pub fn do_ball(
+    character: &mut Character,
+    items: &HashMap<ItemId, Item>,
+    target_x: usize,
+    target_y: usize,
+    current_tick: u32,
+) -> Result<(), DoError> {
+    if character.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character.flags.contains(CharacterFlags::NOMAGIC)
+        && !character.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+    if warcried(character, items) {
+        return Err(DoError::Unconscious);
+    }
+    if character_value(character, CharacterValue::Flash) == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    if target_x < 1 || target_x >= MAX_MAP - 1 || target_y < 1 || target_y >= MAX_MAP - 1 {
+        return Err(DoError::IllegalCoords);
+    }
+    if character.mana < FLASH_COST {
+        return Err(DoError::ManaLow);
+    }
+
+    let direction = offset_to_direction(
+        usize::from(character.x),
+        usize::from(character.y),
+        target_x,
+        target_y,
+    );
+    if let Some(direction) = direction {
+        character.action = action::BALL1;
+        character.act1 = target_x as i32;
+        character.act2 = target_y as i32;
+        character.duration = speed_ticks(
+            character_value(character, CharacterValue::Speed),
+            character.speed_mode,
+            DUR_MAGIC_ACTION / 2,
+        );
+        character.dir = direction as u8;
+    } else {
+        if may_add_spell(character, items, IDR_FLASH, current_tick).is_none() {
+            return Err(DoError::AlreadyWorking);
+        }
+        character.action = action::FLASH;
+        character.duration = speed_ticks(
+            character_value(character, CharacterValue::Speed),
+            character.speed_mode,
+            DUR_MAGIC_ACTION,
+        );
+        character.dir = bigdir(character.dir);
+    }
+
+    character.mana -= FLASH_COST;
+    if character.speed_mode == SpeedMode::Fast {
+        character.endurance -= endurance_cost(character);
+    }
+    Ok(())
+}
+
 pub fn do_heal(
     caster: &mut Character,
     target: &Character,

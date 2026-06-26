@@ -5,9 +5,10 @@ use crate::{
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
-        advance_action_step, can_attack, do_attack, do_bless, do_drop, do_fireball, do_flash,
-        do_freeze, do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk, do_warcry,
-        endurance_cost, reset_action_after_act, speed_ticks, ItemUseRequest, DUR_MISC_ACTION,
+        advance_action_step, can_attack, do_attack, do_ball, do_bless, do_drop, do_fireball,
+        do_flash, do_freeze, do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk,
+        do_warcry, endurance_cost, reset_action_after_act, speed_ticks, ItemUseRequest,
+        DUR_MISC_ACTION,
     },
     drvlib::char_dist,
     effect::Effect,
@@ -29,9 +30,10 @@ use crate::{
     sector::SoundSectors,
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell,
-        read_spell_expire_tick, spell_power, warcry_damage, warcry_speed_modifier, BLESS_DURATION,
-        EF_FIREBALL, FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH,
-        IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
+        read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
+        BLESS_DURATION, EF_BALL, EF_FIREBALL, FLASH_DURATION, FREEZE_DURATION, IDR_BLESS,
+        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_WARCRY, POISON_DURATION,
+        WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -194,15 +196,186 @@ impl World {
         effect_id
     }
 
+    fn create_ball_effect(&mut self, caster: &Character) -> u32 {
+        let effect_id = self.next_effect_id();
+        let power = spell_power(
+            character_value(caster, CharacterValue::Flash),
+            character_value(caster, CharacterValue::Tactics),
+        );
+        let mut effect = Effect::new(
+            EF_BALL,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(TICKS_PER_SECOND * 5) as i32,
+        );
+        effect.strength = power;
+        effect.light = 80;
+        effect.from_x = i32::from(caster.x);
+        effect.from_y = i32::from(caster.y);
+        effect.to_x = caster.act1;
+        effect.to_y = caster.act2;
+        effect.caster = Some(caster.id);
+        effect.caster_serial = caster.id.0 as i32;
+        effect.x = i32::from(caster.x) * 1024 + 512;
+        effect.y = i32::from(caster.y) * 1024 + 512;
+        self.effects.insert(effect_id, effect);
+        effect_id
+    }
+
     pub fn tick_effects(&mut self) {
         let effect_ids: Vec<u32> = self.effects.keys().copied().collect();
         for effect_id in effect_ids {
-            if self
+            match self
                 .effects
                 .get(&effect_id)
-                .is_some_and(|effect| effect.effect_type == EF_FIREBALL)
+                .map(|effect| effect.effect_type)
             {
-                self.tick_fireball_effect(effect_id);
+                Some(EF_FIREBALL) => self.tick_fireball_effect(effect_id),
+                Some(EF_BALL) => self.tick_ball_effect(effect_id),
+                _ => {}
+            }
+        }
+    }
+
+    fn tick_ball_effect(&mut self, effect_id: u32) {
+        let Some(effect) = self.effects.get(&effect_id).cloned() else {
+            return;
+        };
+
+        if effect.caster.is_some_and(|caster_id| {
+            !self
+                .characters
+                .get(&caster_id)
+                .is_some_and(|caster| caster.flags.contains(CharacterFlags::USED))
+        }) || self.tick.0 >= effect.stop_tick as u64
+        {
+            self.remove_effect_from_map(effect_id);
+            self.effects.remove(&effect_id);
+            return;
+        }
+
+        let old_x = effect.x / 1024;
+        let old_y = effect.y / 1024;
+        let raw_dx = effect.to_x - effect.from_x;
+        let raw_dy = effect.to_y - effect.from_y;
+        if raw_dx == 0 && raw_dy == 0 {
+            self.remove_effect_from_map(effect_id);
+            self.effects.remove(&effect_id);
+            return;
+        }
+
+        let (step_x, step_y) = if raw_dx.abs() > raw_dy.abs() {
+            (raw_dx * 128 / raw_dx.abs(), raw_dy * 128 / raw_dx.abs())
+        } else {
+            (raw_dx * 128 / raw_dy.abs(), raw_dy * 128 / raw_dy.abs())
+        };
+        let x = effect.x + step_x;
+        let y = effect.y + step_y;
+        let tile_x = x / 1024;
+        let tile_y = y / 1024;
+
+        if self.fire_map_blocked(tile_x, tile_y)
+            && !effect
+                .caster
+                .and_then(|caster_id| self.characters.get(&caster_id))
+                .is_some_and(|caster| {
+                    (i32::from(caster.x), i32::from(caster.y)) == (tile_x, tile_y)
+                })
+        {
+            self.remove_effect_from_map(effect_id);
+            self.effects.remove(&effect_id);
+            return;
+        }
+
+        if let Some(effect) = self.effects.get_mut(&effect_id) {
+            effect.x = x;
+            effect.y = y;
+            effect.last_x = old_x;
+            effect.last_y = old_y;
+        }
+        if old_x != tile_x || old_y != tile_y {
+            self.remove_effect_from_map(effect_id);
+            self.set_effect_on_map(effect_id, tile_x, tile_y);
+        }
+        self.apply_ball_strikes(effect_id, tile_x, tile_y);
+    }
+
+    fn apply_ball_strikes(&mut self, effect_id: u32, x: i32, y: i32) {
+        let Some(effect) = self.effects.get(&effect_id).cloned() else {
+            return;
+        };
+        let Some(caster_id) = effect.caster else {
+            return;
+        };
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return;
+        };
+
+        let mut targets = Vec::new();
+        let min_x = (x - 5).max(1);
+        let min_y = (y - 5).max(1);
+        let max_x = (x + 5).min(self.map.width().saturating_sub(2) as i32);
+        let max_y = (y + 5).min(self.map.height().saturating_sub(2) as i32);
+        for target_y in min_y..max_y {
+            for target_x in min_x..max_x {
+                let (Ok(target_x_usize), Ok(target_y_usize)) =
+                    (usize::try_from(target_x), usize::try_from(target_y))
+                else {
+                    continue;
+                };
+                let Some(target_id) =
+                    self.map
+                        .tile(target_x_usize, target_y_usize)
+                        .and_then(|tile| {
+                            (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+                        })
+                else {
+                    continue;
+                };
+                if target_id == caster_id {
+                    continue;
+                }
+                let Some(target) = self.characters.get(&target_id) else {
+                    continue;
+                };
+                if !can_attack(&caster, target, &self.map) {
+                    continue;
+                }
+                let (Ok(ball_x), Ok(ball_y)) = (usize::try_from(x), usize::try_from(y)) else {
+                    continue;
+                };
+                if !self
+                    .map
+                    .can_see(ball_x, ball_y, target_x_usize, target_y_usize, 5)
+                {
+                    continue;
+                }
+                if self.tick.0 & 3 == 0 {
+                    let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+                    let damage = strike_damage(
+                        effect.strength,
+                        character_value(target, CharacterValue::Immunity),
+                        character_value(target, CharacterValue::Tactics),
+                        has_tactics,
+                    ) * ball_target_damage_multiplier(effect.number_of_enemies)
+                        / (25 * TICKS_PER_SECOND as i32 * 2);
+                    targets.push((target_id, damage));
+                } else {
+                    targets.push((target_id, 0));
+                }
+            }
+        }
+
+        if let Some(effect) = self.effects.get_mut(&effect_id) {
+            effect.number_of_enemies = targets.len() as i32;
+        }
+        for (target_id, damage) in targets {
+            if damage == 0 {
+                continue;
+            }
+            if let Some(target) = self.characters.get_mut(&target_id) {
+                target.hp = target.hp.saturating_sub(damage);
+                target.flags.insert(CharacterFlags::UPDATE);
             }
         }
     }
@@ -1811,6 +1984,26 @@ impl World {
                 self.setup_fireball_character(character_id, target_id, target_serial)
                     || self.set_player_idle(player, character_id)
             }
+            PlayerActionCode::Ball => {
+                let Some((target_x, target_y)) =
+                    valid_map_coords(player.action.arg1, player.action.arg2)
+                else {
+                    return self.set_player_idle(player, character_id);
+                };
+                let current_tick = self.tick.0 as u32;
+                self.characters
+                    .get_mut(&character_id)
+                    .is_some_and(|character| {
+                        do_ball(character, &self.items, target_x, target_y, current_tick).is_ok()
+                    })
+                    || self.set_player_idle(player, character_id)
+            }
+            PlayerActionCode::BallCharacter => {
+                let target_id = CharacterId(player.action.arg1 as u32);
+                let target_serial = player.action.arg2 as u32;
+                self.setup_ball_character(character_id, target_id, target_serial)
+                    || self.set_player_idle(player, character_id)
+            }
             PlayerActionCode::Bless => {
                 let target_id = CharacterId(player.action.arg1 as u32);
                 if self.setup_bless_spell(character_id, target_id) {
@@ -1827,7 +2020,6 @@ impl World {
                     self.set_player_idle(player, character_id)
                 }
             }
-            _ => false,
         }
     }
 
@@ -1854,6 +2046,35 @@ impl World {
         let current_tick = self.tick.0 as u32;
         self.characters.get_mut(&caster_id).is_some_and(|caster| {
             do_fireball(caster, &self.items, target_x, target_y, current_tick).is_ok()
+        })
+    }
+
+    fn setup_ball_character(
+        &mut self,
+        caster_id: CharacterId,
+        target_id: CharacterId,
+        target_serial: u32,
+    ) -> bool {
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        if !target.flags.contains(CharacterFlags::USED) {
+            return false;
+        }
+        if target_serial != 0 && target.id.0 != target_serial {
+            return false;
+        }
+
+        let current_tick = self.tick.0 as u32;
+        self.characters.get_mut(&caster_id).is_some_and(|caster| {
+            do_ball(
+                caster,
+                &self.items,
+                usize::from(target.x),
+                usize::from(target.y),
+                current_tick,
+            )
+            .is_ok()
         })
     }
 
@@ -2229,6 +2450,8 @@ impl World {
                 action::PULSE => true,
                 action::FIREBALL1 => self.complete_fireball(character_id),
                 action::FIREBALL2 => true,
+                action::BALL1 => self.complete_ball(character_id),
+                action::BALL2 => true,
                 action::FIRERING => self.complete_firering(character_id),
                 action::FREEZE => self.complete_freeze(character_id),
                 action::FLASH => self.complete_flash(character_id),
@@ -2326,6 +2549,24 @@ impl World {
         self.create_fireball_effect(&caster);
         if let Some(caster) = self.characters.get_mut(&caster_id) {
             caster.action = action::FIREBALL2;
+            caster.step = 0;
+        }
+        true
+    }
+
+    fn complete_ball(&mut self, caster_id: CharacterId) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        if caster.flags.contains(CharacterFlags::NOMAGIC)
+            && !caster.flags.contains(CharacterFlags::NONOMAGIC)
+        {
+            return false;
+        }
+
+        self.create_ball_effect(&caster);
+        if let Some(caster) = self.characters.get_mut(&caster_id) {
+            caster.action = action::BALL2;
             caster.step = 0;
         }
         true
@@ -3230,6 +3471,21 @@ fn predicted_fireball_target(caster: &Character, target: &Character) -> (usize, 
     }
 
     (usize::from(target.x), usize::from(target.y))
+}
+
+fn ball_target_damage_multiplier(enemy_count: i32) -> i32 {
+    match enemy_count.clamp(1, 10) {
+        1 => 100,
+        2 => 95,
+        3 => 90,
+        4 => 85,
+        5 => 80,
+        6 => 75,
+        7 => 70,
+        8 => 65,
+        9 => 60,
+        _ => 55,
+    }
 }
 
 fn adjacent_direction(from_x: u16, from_y: u16, to_x: usize, to_y: usize) -> Option<Direction> {
@@ -5343,6 +5599,76 @@ mod tests {
         assert_eq!(world.map.tile(11, 10).unwrap().effects, [0; 4]);
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 14_100);
+        assert!(target.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn targeted_ball_sets_up_projectile_action() {
+        let mut world = World::default();
+        world.tick = Tick(300);
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Flash as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
+        world.spawn_character(caster, 10, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Ball,
+            arg1: 15,
+            arg2: 10,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::BALL1);
+        assert_eq!((caster.act1, caster.act2), (15, 10));
+        assert_eq!(caster.dir, Direction::Right as u8);
+        assert_eq!(caster.mana, 7 * POWERSCALE);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(world.tick_basic_actions()[0].ok);
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::BALL2);
+        assert_eq!(caster.step, 0);
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_BALL);
+        assert_eq!(effect.stop_tick, 300 + TICKS_PER_SECOND as i32 * 5);
+        assert_eq!(effect.strength, 53);
+        assert_eq!(effect.light, 80);
+        assert_eq!((effect.from_x, effect.from_y), (10, 10));
+        assert_eq!((effect.to_x, effect.to_y), (15, 10));
+    }
+
+    #[test]
+    fn ball_effect_moves_slowly_and_strikes_nearby_targets() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 15;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Flash as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.hp = 30 * POWERSCALE;
+        target.values[0][CharacterValue::Immunity as usize] = 20;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        let effect_id = world.create_ball_effect(&caster);
+
+        world.tick_effects();
+
+        let effect = world.effects.get(&effect_id).unwrap();
+        assert_eq!((effect.x, effect.y), (10 * 1024 + 640, 10 * 1024 + 512));
+        assert_eq!(effect.number_of_enemies, 1);
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 28_675);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
     }
 

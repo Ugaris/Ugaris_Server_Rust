@@ -265,6 +265,15 @@ pub fn fireball_damage(
     immunity_reduction(spell_power, immunity, tactics, has_tactics_skill) * FIREBALL_DAMAGE
 }
 
+pub fn strike_damage(
+    spell_power: i32,
+    immunity: i32,
+    tactics: i32,
+    has_tactics_skill: bool,
+) -> i32 {
+    immunity_reduction(spell_power, immunity, tactics, has_tactics_skill) * FIREBALL_DAMAGE
+}
+
 pub fn warcry_damage(
     spell_power: i32,
     immunity: i32,
