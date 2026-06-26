@@ -157,10 +157,11 @@ Current implemented slices:
 - Keyring auto-add now runs after successful `TAKE` action completion for registered keys when enabled, stores full key metadata, consumes the cursor key on success, leaves duplicate/full keys on the cursor/inventory path, and emits legacy-shaped feedback text with focused tests.
 - Admin `#keyring addallkeys`/`/keyring addallkeys` now requires `CF_GOD` or `CF_STAFF`, instantiates loaded templates from the registered legacy key-ID list, stores matching key metadata up to the 100-key cap, and emits the legacy-shaped start/summary feedback with focused tests.
 - `PlayerRuntime` now has a fixed-layout C-compatible `DRD_KEYRING_PPD` byte codec matching `src/module/keyring/keyring.h`: 100 key slots, 40-byte names, 80-byte descriptions, 16-byte drdata, C struct padding/alignment, one-byte expire serials, and `auto_add`, with layout/truncation/round-trip tests.
+- `PlayerRuntime` now decodes and encodes the legacy outer persistent-player-data blob framing for `DRD_KEYRING_PPD`, preserves unknown PPD blocks, skips `DRD_JUNK_PPD`, rejects malformed blobs, and verifies the C `MAKE_DRD` IDs for keyring persistence with tests.
 
 Chest gaps still to port:
 
-- Persistent `DRD_KEYRING_PPD` DB/snapshot load/save hookup using the ported fixed-layout codec.
+- Runtime DB login/logout save hookup for `DRD_KEYRING_PPD` using the ported fixed-layout and outer PPD blob codecs.
 - Achievement persistence/protocol sending beyond runtime marker updates.
 - Exact persistent PPD storage behavior for chest access across logout/server restart.
 - `IDR_RANDCHEST = 34` persistent `DRD_RANDCHEST_PPD`, exact RNG parity, and full live-data smoke coverage.

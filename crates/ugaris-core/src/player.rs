@@ -15,6 +15,16 @@ pub const KEYRING_KEY_DESC_LEN: usize = 80;
 pub const KEYRING_KEY_DRDATA_LEN: usize = 16;
 pub const LEGACY_KEYRING_PPD_SIZE: usize = 15_912;
 pub const RANDCHEST_MAX_ENTRIES: usize = 100;
+pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
+pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
+pub const DEV_ID_DB: u32 = 1;
+pub const DEV_ID_ED: u32 = 59;
+pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
+pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
+
+pub const fn make_drd(dev_id: u32, nr: u32) -> u32 {
+    (dev_id << 24) | nr
+}
 
 const KEYRING_PPD_COUNT_OFFSET: usize = 0;
 const KEYRING_PPD_KEYS_OFFSET: usize = 4;
@@ -284,6 +294,56 @@ impl PlayerRuntime {
         self.keyring = keyring;
         self.keyring_auto_add = read_i32(bytes, KEYRING_PPD_AUTO_ADD_OFFSET) != 0;
         true
+    }
+
+    pub fn decode_legacy_ppd_blob(&mut self, bytes: &[u8]) -> bool {
+        for block in LegacyPpdBlocks::parse(bytes) {
+            let Some(block) = block else {
+                return false;
+            };
+            if block.id == DRD_KEYRING_PPD && !self.decode_legacy_keyring_ppd(block.data) {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn encode_legacy_ppd_blob(&self, existing: &[u8]) -> Vec<u8> {
+        let mut encoded = Vec::with_capacity(existing.len().max(LEGACY_KEYRING_PPD_SIZE + 8));
+        let mut had_keyring = false;
+        let mut existing_was_valid = true;
+
+        for block in LegacyPpdBlocks::parse(existing) {
+            let Some(block) = block else {
+                existing_was_valid = false;
+                break;
+            };
+            if block.id == DRD_JUNK_PPD {
+                continue;
+            }
+            if block.id == DRD_KEYRING_PPD {
+                had_keyring = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_KEYRING_PPD,
+                    &self.encode_legacy_keyring_ppd(),
+                );
+            } else {
+                write_ppd_block(&mut encoded, block.id, block.data);
+            }
+        }
+
+        if !had_keyring && (existing_was_valid || existing.is_empty()) {
+            if !self.keyring.is_empty() || self.keyring_auto_add {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_KEYRING_PPD,
+                    &self.encode_legacy_keyring_ppd(),
+                );
+            }
+        }
+
+        encoded
     }
 
     pub fn add_keyring_key(
@@ -572,6 +632,60 @@ impl PlayerRuntime {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LegacyPpdBlock<'a> {
+    id: u32,
+    data: &'a [u8],
+}
+
+struct LegacyPpdBlocks<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+    failed: bool,
+}
+
+impl<'a> LegacyPpdBlocks<'a> {
+    fn parse(bytes: &'a [u8]) -> Self {
+        Self {
+            bytes,
+            offset: 0,
+            failed: false,
+        }
+    }
+}
+
+impl<'a> Iterator for LegacyPpdBlocks<'a> {
+    type Item = Option<LegacyPpdBlock<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.failed || self.offset == self.bytes.len() {
+            return None;
+        }
+        if self.bytes.len().saturating_sub(self.offset) < 8 {
+            self.failed = true;
+            return Some(None);
+        }
+
+        let id = read_u32(self.bytes, self.offset);
+        let size = read_u32(self.bytes, self.offset + 4) as usize;
+        self.offset += 8;
+        if self.bytes.len().saturating_sub(self.offset) < size {
+            self.failed = true;
+            return Some(None);
+        }
+
+        let data = &self.bytes[self.offset..self.offset + size];
+        self.offset += size;
+        Some(Some(LegacyPpdBlock { id, data }))
+    }
+}
+
+fn write_ppd_block(bytes: &mut Vec<u8>, id: u32, data: &[u8]) {
+    bytes.extend_from_slice(&id.to_le_bytes());
+    bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(data);
+}
+
 fn write_i32(bytes: &mut [u8], offset: usize, value: i32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
@@ -634,6 +748,8 @@ mod tests {
         assert_eq!(PlayerConnectionState::Exit as u8, 3);
         assert_eq!(PlayerActionCode::WalkDir as u8, 20);
         assert_eq!(MAX_PLAYER_EFFECTS, 64);
+        assert_eq!(DRD_JUNK_PPD, 0x8100_0072);
+        assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
     }
 
     #[test]
@@ -770,6 +886,47 @@ mod tests {
         assert_eq!(decoded.keyring[0].flags, 0x0102_0304_0506_0708);
         assert_eq!(decoded.keyring[0].driver_data, (0..16).collect::<Vec<_>>());
         assert_eq!(decoded.keyring[0].expire_serial, 0x34);
+    }
+
+    #[test]
+    fn keyring_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_JUNK_PPD, &[9, 9, 9]);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_keyring_auto_add(true);
+        assert_eq!(
+            player.add_keyring_key(0x1122_3344, "Copper Key"),
+            KeyringAddResult::Added
+        );
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 4), 4);
+        assert_eq!(&encoded[8..12], &[1, 2, 3, 4]);
+        assert_eq!(read_u32(&encoded, 12), DRD_KEYRING_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_KEYRING_PPD_SIZE as u32);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert!(decoded.keyring_auto_add());
+        assert_eq!(decoded.keyring_key_name(0x1122_3344), Some("Copper Key"));
+        assert!(!encoded
+            .windows(4)
+            .any(|window| window == DRD_JUNK_PPD.to_le_bytes()));
+    }
+
+    #[test]
+    fn malformed_ppd_blob_is_rejected() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut malformed = Vec::new();
+        malformed.extend_from_slice(&DRD_KEYRING_PPD.to_le_bytes());
+        malformed.extend_from_slice(&(LEGACY_KEYRING_PPD_SIZE as u32).to_le_bytes());
+        malformed.extend_from_slice(&[0; 7]);
+
+        assert!(!player.decode_legacy_ppd_blob(&malformed));
     }
 
     #[test]
