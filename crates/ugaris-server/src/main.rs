@@ -1985,7 +1985,23 @@ fn walk_section_payload(
     let mut bytes = Vec::with_capacity(COL_DARK_GRAY.len() + message.len());
     bytes.extend_from_slice(COL_DARK_GRAY);
     bytes.extend_from_slice(message.as_bytes());
-    Some(ugaris_protocol::packet::system_text_bytes(&bytes))
+    let mut payload = ugaris_protocol::packet::system_text_bytes(&bytes);
+    if let Some(section) = next_section {
+        if let Some(music) = section_music_special(section.id) {
+            payload.extend_from_slice(&ugaris_protocol::packet::special(music, u32::MAX, 0));
+        }
+    }
+    Some(payload)
+}
+
+fn section_music_special(section_id: u16) -> Option<u32> {
+    match section_id {
+        4 | 17 | 18 | 19 | 29..=44 | 46..=48 | 50 => Some(1003),
+        57 | 59 => Some(1010),
+        58 | 68..=70 => Some(1004),
+        60..=66 => Some(1002),
+        _ => None,
+    }
 }
 
 fn movement_scroll_payload(
@@ -3201,6 +3217,7 @@ mod tests {
             text_payload_bytes(&payload),
             b"\xb0c1Now entering Skellie I."
         );
+        assert_eq!(special_payload(&payload), Some((1003, u32::MAX, 0)));
         assert_eq!(player.current_section_id, 46);
         assert!(walk_section_payload(1, &mut player, &character).is_none());
     }
@@ -3220,7 +3237,17 @@ mod tests {
             text_payload_bytes(&payload),
             b"\xb0c1Now leaving Skellie I."
         );
+        assert_eq!(special_payload(&payload), None);
         assert_eq!(player.current_section_id, 0);
+    }
+
+    #[test]
+    fn section_music_special_matches_legacy_music_switch() {
+        assert_eq!(section_music_special(4), Some(1003));
+        assert_eq!(section_music_special(57), Some(1010));
+        assert_eq!(section_music_special(58), Some(1004));
+        assert_eq!(section_music_special(60), Some(1002));
+        assert_eq!(section_music_special(114), None);
     }
 
     fn text_payloads(payloads: &[bytes::BytesMut]) -> Vec<String> {
@@ -3238,6 +3265,21 @@ mod tests {
         assert_eq!(payload[0], SV_TEXT);
         let len = u16::from_le_bytes([payload[1], payload[2]]) as usize;
         payload[3..3 + len].to_vec()
+    }
+
+    fn special_payload(payload: &[u8]) -> Option<(u32, u32, u32)> {
+        let text_len = u16::from_le_bytes([payload[1], payload[2]]) as usize;
+        let start = 3 + text_len;
+        if payload.len() == start {
+            return None;
+        }
+        assert_eq!(payload.len(), start + 13);
+        assert_eq!(payload[start], ugaris_protocol::packet::SV_SPECIAL);
+        Some((
+            u32::from_le_bytes(payload[start + 1..start + 5].try_into().unwrap()),
+            u32::from_le_bytes(payload[start + 5..start + 9].try_into().unwrap()),
+            u32::from_le_bytes(payload[start + 9..start + 13].try_into().unwrap()),
+        ))
     }
 
     #[test]

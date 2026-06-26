@@ -173,7 +173,7 @@ Current implemented slices:
 - `PAC_KILL` now participates in the primitive player action bridge: adjacent targets set up timed `AC_ATTACK1`, distant targets path toward attack range, `do_attack` validates legacy 3x3 target reachability around the faced tile plus dead/peace/no-attack/playerlike guards, and timed `AC_ATTACK1..3` completion applies deterministic hit/miss and direct HP/lifeshield damage through the ported attack formulas. Focused core/world tests cover setup, walking toward targets, strict hit roll behavior, and HP damage. Exact C RNG parity, full `sub_attack` side effects, death/hurt/notify/rage/surround integration, clan/hate/group attack policy, and fightback state remain.
 - Client-visible map updates now keep a per-session visible-diamond cache in the server runtime. Login/full refresh/one-step scroll paths update the cache, and same-origin non-walk completed actions compare cached tile/character packets against the current world to send only changed `SV_MAP11`/`SV_MAP10` cells, including character-clear packets, instead of always replaying the full visible diamond. Focused server tests cover changed tile diffs and removed-character clears. Remaining cache parity gaps are map effects, name/known-name packets, exact light/dark/LOS behavior, sector skip optimization, and using cache-driven inventory deltas instead of the coarse post-action inventory snapshot.
 - `PAC_LOOK_MAP` section-name/level output now uses the legacy `src/system/area.c` `section[]` and non-empty `area_sector[]` coverage for areas 1-26, 29, 31-34, and 36, keeping coordinate fallback for empty/unknown area tables. Focused core tests cover representative non-area-1 look output.
-- Successful walk completions now reuse the same area-section tables for C `walk_section_msg` parity: each `PlayerRuntime` tracks the current section id, sends dark-gray legacy `SV_TEXT` for `Now entering <section>.` and `Now leaving <section>.` only when the section changes, and suppresses duplicate same-section messages. Focused server tests cover entry, duplicate suppression, and leaving text.
+- Successful walk completions now reuse the same area-section tables for C `walk_section_msg` parity: each `PlayerRuntime` tracks the current section id, sends dark-gray legacy `SV_TEXT` for `Now entering <section>.` and `Now leaving <section>.` only when the section changes, suppresses duplicate same-section messages, and sends the legacy `SV_SPECIAL` looping music packet from `play_music_by_section` on section entry. Focused protocol/server tests cover `player_special` packet layout, entry text/music, duplicate suppression, leaving text without music, and the section music switch.
 
 Chest gaps still to port:
 
@@ -191,7 +191,7 @@ Recommended next chest steps:
 ### Other High-Value Next Steps
 
 - Continue the per-session map cache toward exact `player.c` parity: effects, known-name packets, light/dark/LOS changes, sector skip optimization, and broader runtime invalidation coverage.
-- Port music/special sound side effects for section changes.
+- Port randomized ambient `area_sound` special effects and broader positional `sound_area` fan-out.
 - Integrate PostgreSQL-backed login/character selection and logout save instead of the temporary `new_warrior_m` scaffold.
 - Continue combat action execution: exact RNG parity, full `sub_attack` side effects, hurt/death integration, rage/surround hits, fightback state, and clan/hate/group `can_attack` policy.
 - Port spell queue execution and spell setup/completion.

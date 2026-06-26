@@ -176,6 +176,10 @@ impl PacketBuilder {
         self.raw(&protocol(version))
     }
 
+    pub fn special(&mut self, special_type: u32, opt1: u32, opt2: u32) -> &mut Self {
+        self.raw(&special(special_type, opt1, opt2))
+    }
+
     pub fn exit(&mut self, reason: &str) -> &mut Self {
         let bytes = reason.as_bytes();
         let len = bytes.len().min(200);
@@ -636,6 +640,15 @@ pub fn system_text_bytes(bytes: &[u8]) -> BytesMut {
     out
 }
 
+pub fn special(special_type: u32, opt1: u32, opt2: u32) -> [u8; 13] {
+    let mut out = [0; 13];
+    out[0] = SV_SPECIAL;
+    out[1..5].copy_from_slice(&special_type.to_le_bytes());
+    out[5..9].copy_from_slice(&opt1.to_le_bytes());
+    out[9..13].copy_from_slice(&opt2.to_le_bytes());
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,6 +676,14 @@ mod tests {
     fn system_text_bytes_preserves_legacy_color_marker() {
         let packet = system_text_bytes(&[0xb0, b'c', b'3', b'H', b'i']);
         assert_eq!(&packet[..], &[SV_TEXT, 5, 0, 0xb0, b'c', b'3', b'H', b'i']);
+    }
+
+    #[test]
+    fn special_packet_matches_player_special_layout() {
+        assert_eq!(
+            special(0x11223344, 0xffff_ffff, 0x55667788),
+            [SV_SPECIAL, 0x44, 0x33, 0x22, 0x11, 0xff, 0xff, 0xff, 0xff, 0x88, 0x77, 0x66, 0x55,]
+        );
     }
 
     #[test]
