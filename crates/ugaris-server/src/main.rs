@@ -2353,7 +2353,7 @@ fn action_to_queued(action: &ClientAction) -> Option<QueuedAction> {
         ClientAction::Kill { character } => queued1(PlayerActionCode::Kill, *character),
         ClientAction::UseMap { x, y } => queued(PlayerActionCode::Use, *x, *y),
         ClientAction::CharacterSpell { spell, character } => {
-            queued1(spell_to_player_action(*spell, false), *character)
+            queued1(spell_to_player_action(*spell, true), *character)
         }
         ClientAction::MapSpell { spell, x, y } => {
             if *x == 0 {
@@ -2428,6 +2428,18 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn character_fireball_command_queues_character_target_action() {
+        let queued = action_to_queued(&ClientAction::CharacterSpell {
+            spell: SpellAction::Fireball,
+            character: 42,
+        })
+        .unwrap();
+
+        assert_eq!(queued.action, PlayerActionCode::FireballCharacter);
+        assert_eq!((queued.arg1, queued.arg2), (42, 0));
+    }
 
     #[test]
     fn timer_outcome_feedback_matches_legacy_torch_messages() {

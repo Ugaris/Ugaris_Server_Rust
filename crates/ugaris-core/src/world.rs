@@ -8,6 +8,7 @@ use crate::{
         do_freeze, do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk, do_warcry,
         endurance_cost, reset_action_after_act, speed_ticks, ItemUseRequest, DUR_MISC_ACTION,
     },
+    drvlib::char_dist,
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode},
     game_time::GameDate,
     ids::{CharacterId, ItemId},
@@ -1481,6 +1482,12 @@ impl World {
                     })
                     || self.set_player_idle(player, character_id)
             }
+            PlayerActionCode::FireballCharacter => {
+                let target_id = CharacterId(player.action.arg1 as u32);
+                let target_serial = player.action.arg2 as u32;
+                self.setup_fireball_character(character_id, target_id, target_serial)
+                    || self.set_player_idle(player, character_id)
+            }
             PlayerActionCode::Bless => {
                 let target_id = CharacterId(player.action.arg1 as u32);
                 if self.setup_bless_spell(character_id, target_id) {
@@ -1499,6 +1506,32 @@ impl World {
             }
             _ => false,
         }
+    }
+
+    fn setup_fireball_character(
+        &mut self,
+        caster_id: CharacterId,
+        target_id: CharacterId,
+        target_serial: u32,
+    ) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        if !target.flags.contains(CharacterFlags::USED) {
+            return false;
+        }
+        if target_serial != 0 && target.id.0 != target_serial {
+            return false;
+        }
+
+        let (target_x, target_y) = predicted_fireball_target(&caster, &target);
+        let current_tick = self.tick.0 as u32;
+        self.characters.get_mut(&caster_id).is_some_and(|caster| {
+            do_fireball(caster, &self.items, target_x, target_y, current_tick).is_ok()
+        })
     }
 
     fn setup_bless_spell(&mut self, caster_id: CharacterId, target_id: CharacterId) -> bool {
@@ -2838,6 +2871,41 @@ fn spell_duration_ticks(character: &Character, base_duration: i32) -> i32 {
     } else {
         base_duration
     }
+}
+
+fn predicted_fireball_target(caster: &Character, target: &Character) -> (usize, usize) {
+    if target.action != action::WALK {
+        return (usize::from(target.x), usize::from(target.y));
+    }
+
+    let Some(direction) = Direction::try_from(target.dir).ok() else {
+        return (usize::from(target.x), usize::from(target.y));
+    };
+    let (dx, dy) = direction.delta();
+    let mut eta = char_dist(caster, target) / 2
+        + speed_ticks(
+            character_value(caster, CharacterValue::Speed),
+            caster.speed_mode,
+            8,
+        );
+
+    eta -= target.duration - target.step;
+    if eta <= 0 {
+        return (usize::from(target.x), usize::from(target.y));
+    }
+
+    for n in 1..6 {
+        eta -= target.duration;
+        if eta <= 0 {
+            let target_x =
+                offset_coordinate(usize::from(target.x), dx * n).unwrap_or(usize::from(target.x));
+            let target_y =
+                offset_coordinate(usize::from(target.y), dy * n).unwrap_or(usize::from(target.y));
+            return (target_x, target_y);
+        }
+    }
+
+    (usize::from(target.x), usize::from(target.y))
 }
 
 fn adjacent_direction(from_x: u16, from_y: u16, to_x: usize, to_y: usize) -> Option<Direction> {
@@ -4833,6 +4901,88 @@ mod tests {
         let caster = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(caster.action, action::FIREBALL2);
         assert_eq!(caster.step, 0);
+    }
+
+    #[test]
+    fn character_fireball_targets_stationary_character_position() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        let target = character(2);
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 15, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::FireballCharacter,
+            arg1: 2,
+            arg2: 2,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::FIREBALL1);
+        assert_eq!((caster.act1, caster.act2), (15, 10));
+        assert_eq!(caster.dir, Direction::Right as u8);
+        assert_eq!(caster.mana, 7 * POWERSCALE);
+    }
+
+    #[test]
+    fn character_fireball_predicts_moving_target_like_c_fireball_driver() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        let mut target = character(2);
+        target.action = action::WALK;
+        target.dir = Direction::Right as u8;
+        target.duration = 8;
+        target.step = 1;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 18, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::FireballCharacter,
+            arg1: 2,
+            arg2: 2,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::FIREBALL1);
+        assert_eq!((caster.act1, caster.act2), (20, 10));
+        assert_eq!(caster.dir, Direction::Right as u8);
+    }
+
+    #[test]
+    fn character_fireball_rejects_stale_serial_guard() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        let target = character(2);
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 15, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::FireballCharacter,
+            arg1: 2,
+            arg2: 99,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::IDLE);
+        assert_eq!(caster.mana, 10 * POWERSCALE);
     }
 
     #[test]
