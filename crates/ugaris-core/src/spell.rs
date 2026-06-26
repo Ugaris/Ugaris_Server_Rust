@@ -24,12 +24,21 @@ pub const IDR_BLESS: u16 = 1000;
 pub const IDR_FREEZE: u16 = 1001;
 pub const IDR_FLASH: u16 = 1002;
 pub const IDR_WARCRY: u16 = 1003;
+pub const IDR_ARMOR: u16 = 1004;
+pub const IDR_WEAPON: u16 = 1005;
+pub const IDR_MANA: u16 = 1006;
+pub const IDR_HP: u16 = 1007;
+pub const IDR_POTION_SP: u16 = 1009;
 pub const IDR_CURSE: u16 = 1010;
 pub const IDR_POISON0: u16 = 1011;
 pub const IDR_POISON1: u16 = 1012;
 pub const IDR_POISON2: u16 = 1013;
 pub const IDR_POISON3: u16 = 1014;
 pub const IDR_FIRERING: u16 = 1015;
+pub const IDR_INFRARED: u16 = 1016;
+pub const IDR_NONOMAGIC: u16 = 1017;
+pub const IDR_OXYGEN: u16 = 1018;
+pub const IDR_UWTALK: u16 = 1019;
 
 pub const SPELL_SLOT_START: usize = 12;
 pub const SPELL_SLOT_END: usize = 30;
@@ -186,9 +195,34 @@ pub fn add_same_spell_slot(
     free_slot
 }
 
-fn read_spell_expire_tick(driver_data: &[u8]) -> Option<u32> {
+pub fn read_spell_expire_tick(driver_data: &[u8]) -> Option<u32> {
     let bytes = driver_data.get(..4)?;
     Some(u32::from_le_bytes(bytes.try_into().ok()?))
+}
+
+pub fn is_timed_spell_driver(driver: u16) -> bool {
+    matches!(
+        driver,
+        IDR_BLESS
+            | IDR_WARCRY
+            | IDR_FREEZE
+            | IDR_FLASH
+            | IDR_ARMOR
+            | IDR_WEAPON
+            | IDR_HP
+            | IDR_MANA
+            | IDR_POTION_SP
+            | IDR_CURSE
+            | IDR_POISON0
+            | IDR_POISON1
+            | IDR_POISON2
+            | IDR_POISON3
+            | IDR_NONOMAGIC
+            | IDR_FIRERING
+            | IDR_INFRARED
+            | IDR_OXYGEN
+            | IDR_UWTALK
+    )
 }
 
 pub fn effective_immunity(immunity: i32, tactics: i32, has_tactics_skill: bool) -> i32 {
@@ -307,11 +341,48 @@ mod tests {
         assert_eq!(IDR_FREEZE, 1001);
         assert_eq!(IDR_FLASH, 1002);
         assert_eq!(IDR_WARCRY, 1003);
+        assert_eq!(IDR_ARMOR, 1004);
+        assert_eq!(IDR_WEAPON, 1005);
+        assert_eq!(IDR_MANA, 1006);
+        assert_eq!(IDR_HP, 1007);
+        assert_eq!(IDR_POTION_SP, 1009);
         assert_eq!(IDR_CURSE, 1010);
         assert_eq!(IDR_POISON0, 1011);
         assert_eq!(IDR_POISON3, 1014);
         assert_eq!(IDR_FIRERING, 1015);
+        assert_eq!(IDR_INFRARED, 1016);
+        assert_eq!(IDR_NONOMAGIC, 1017);
+        assert_eq!(IDR_OXYGEN, 1018);
+        assert_eq!(IDR_UWTALK, 1019);
         assert_eq!(EF_PULSEBACK, 22);
+    }
+
+    #[test]
+    fn timed_spell_driver_classifier_matches_create_spell_timer_core_cases() {
+        for driver in [
+            IDR_BLESS,
+            IDR_WARCRY,
+            IDR_FREEZE,
+            IDR_FLASH,
+            IDR_ARMOR,
+            IDR_WEAPON,
+            IDR_HP,
+            IDR_MANA,
+            IDR_POTION_SP,
+            IDR_CURSE,
+            IDR_POISON0,
+            IDR_POISON1,
+            IDR_POISON2,
+            IDR_POISON3,
+            IDR_NONOMAGIC,
+            IDR_FIRERING,
+            IDR_INFRARED,
+            IDR_OXYGEN,
+            IDR_UWTALK,
+        ] {
+            assert!(is_timed_spell_driver(driver));
+        }
+        assert!(!is_timed_spell_driver(IDR_FIREBALL));
     }
 
     #[test]

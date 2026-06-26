@@ -22,7 +22,9 @@ use crate::{
     path::{pathfinder, pathfinder_ignore_characters},
     player::{PlayerActionCode, PlayerRuntime},
     scheduler::{TaskScheduler, TimerPayload, TimerQueue},
-    spell::{may_add_spell, BLESS_DURATION, IDR_BLESS},
+    spell::{
+        is_timed_spell_driver, may_add_spell, read_spell_expire_tick, BLESS_DURATION, IDR_BLESS,
+    },
     Tick,
 };
 
@@ -49,6 +51,7 @@ pub struct LookMapRequest {
 }
 
 const ITEM_DRIVER_TIMER: &str = "item_driver";
+const REMOVE_SPELL_TIMER: &str = "remove_spell";
 
 #[derive(Debug, Default)]
 pub struct World {
@@ -97,33 +100,47 @@ impl World {
     }
 
     pub fn process_due_timers(&mut self, area_id: u16) -> Vec<ItemDriverOutcome> {
-        self.timers
-            .tick(self.tick.0)
-            .into_iter()
-            .filter_map(|event| {
-                if event.name != ITEM_DRIVER_TIMER {
-                    return None;
+        let mut outcomes = Vec::new();
+        for event in self.timers.tick(self.tick.0) {
+            match event.name.as_str() {
+                ITEM_DRIVER_TIMER => {
+                    let [driver, item_id, character_id, _, _] = event.payload.0;
+                    if driver <= 0 || item_id <= 0 || character_id < 0 {
+                        continue;
+                    }
+                    let request = ItemDriverRequest::Driver {
+                        driver: driver as u16,
+                        item_id: ItemId(item_id as u32),
+                        character_id: CharacterId(character_id as u32),
+                        spec: 0,
+                    };
+                    outcomes.push(self.execute_item_driver_timer_request(
+                        request,
+                        area_id,
+                        &ItemDriverContext {
+                            timer_call: true,
+                            ..ItemDriverContext::default()
+                        },
+                    ));
                 }
-                let [driver, item_id, character_id, _, _] = event.payload.0;
-                if driver <= 0 || item_id <= 0 || character_id < 0 {
-                    return None;
+                REMOVE_SPELL_TIMER => {
+                    let [character_id, item_id, slot, character_serial, item_serial] =
+                        event.payload.0;
+                    if character_id <= 0 || item_id <= 0 || slot < 0 {
+                        continue;
+                    }
+                    self.remove_spell_from_timer(
+                        CharacterId(character_id as u32),
+                        ItemId(item_id as u32),
+                        slot as usize,
+                        character_serial as u32,
+                        item_serial as u32,
+                    );
                 }
-                let request = ItemDriverRequest::Driver {
-                    driver: driver as u16,
-                    item_id: ItemId(item_id as u32),
-                    character_id: CharacterId(character_id as u32),
-                    spec: 0,
-                };
-                Some(self.execute_item_driver_timer_request(
-                    request,
-                    area_id,
-                    &ItemDriverContext {
-                        timer_call: true,
-                        ..ItemDriverContext::default()
-                    },
-                ))
-            })
-            .collect()
+                _ => {}
+            }
+        }
+        outcomes
     }
 
     pub fn schedule_existing_light_timers(&mut self) -> usize {
@@ -1929,13 +1946,143 @@ impl World {
                 return false;
             }
             target.inventory[slot] = Some(item_id);
+            let character_serial = target.id.0;
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             true
         } else {
             false
         }
+    }
+
+    pub fn schedule_existing_spell_timers(&mut self) -> usize {
+        let mut spells = Vec::new();
+        for (&character_id, character) in &self.characters {
+            for (slot, item_id) in character.inventory.iter().copied().enumerate() {
+                let Some(item_id) = item_id else {
+                    continue;
+                };
+                let Some(item) = self.items.get(&item_id) else {
+                    continue;
+                };
+                if !is_timed_spell_driver(item.driver) {
+                    continue;
+                }
+                let Some(due) = read_spell_expire_tick(&item.driver_data) else {
+                    continue;
+                };
+                spells.push((
+                    character_id,
+                    item_id,
+                    slot,
+                    character.id.0,
+                    item.serial,
+                    due as u64,
+                ));
+            }
+        }
+
+        spells
+            .into_iter()
+            .filter(
+                |&(character_id, item_id, slot, character_serial, item_serial, due)| {
+                    self.set_spell_remove_timer(
+                        due,
+                        character_id,
+                        item_id,
+                        slot,
+                        character_serial,
+                        item_serial,
+                    )
+                },
+            )
+            .count()
+    }
+
+    fn schedule_spell_remove_timer(
+        &mut self,
+        character_id: CharacterId,
+        item_id: ItemId,
+        slot: usize,
+        character_serial: u32,
+        item_serial: u32,
+    ) -> bool {
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        let Some(due) = read_spell_expire_tick(&item.driver_data) else {
+            return false;
+        };
+        if !is_timed_spell_driver(item.driver) {
+            return false;
+        }
+        self.set_spell_remove_timer(
+            due as u64,
+            character_id,
+            item_id,
+            slot,
+            character_serial,
+            item_serial,
+        )
+    }
+
+    fn set_spell_remove_timer(
+        &mut self,
+        due: u64,
+        character_id: CharacterId,
+        item_id: ItemId,
+        slot: usize,
+        character_serial: u32,
+        item_serial: u32,
+    ) -> bool {
+        let Ok(slot) = i32::try_from(slot) else {
+            return false;
+        };
+        self.timers.set_timer(
+            due,
+            REMOVE_SPELL_TIMER,
+            TimerPayload([
+                character_id.0 as i32,
+                item_id.0 as i32,
+                slot,
+                character_serial as i32,
+                item_serial as i32,
+            ]),
+        )
+    }
+
+    fn remove_spell_from_timer(
+        &mut self,
+        character_id: CharacterId,
+        item_id: ItemId,
+        slot: usize,
+        character_serial: u32,
+        item_serial: u32,
+    ) -> bool {
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        if !character.flags.contains(CharacterFlags::USED) || character.id.0 != character_serial {
+            return false;
+        }
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        if item.serial != item_serial {
+            return false;
+        }
+        if character.inventory.get(slot).copied().flatten() != Some(item_id) {
+            return false;
+        }
+
+        character.inventory[slot] = None;
+        character
+            .flags
+            .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+        self.items.remove(&item_id);
+        true
     }
 
     fn next_runtime_item_id(&self) -> ItemId {
@@ -3932,6 +4079,60 @@ mod tests {
             i32::from_le_bytes(spell.driver_data[8..12].try_into().unwrap()),
             40
         );
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_spell_timer_removes_carried_spell_at_expiry() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.mana = 10 * POWERSCALE;
+        character.values[0][CharacterValue::Bless as usize] = 40;
+        world.add_character(character);
+
+        assert!(world.setup_bless_spell(CharacterId(1), CharacterId(1)));
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(world.tick_basic_actions()[0].ok);
+        let spell_id = world.characters.get(&CharacterId(1)).unwrap().inventory[29].unwrap();
+
+        world.tick = Tick(2_979);
+        assert!(world.process_due_timers(1).is_empty());
+        assert!(world.items.contains_key(&spell_id));
+        world.tick = Tick(2_980);
+        assert!(world.process_due_timers(1).is_empty());
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[29], None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
+        assert!(!world.items.contains_key(&spell_id));
+    }
+
+    #[test]
+    fn world_spell_timer_serial_guard_preserves_refreshed_spell() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[12] = Some(ItemId(7));
+        let mut stale_spell = item(7, ItemFlags::USED);
+        stale_spell.driver = IDR_BLESS;
+        stale_spell.carried_by = Some(CharacterId(1));
+        stale_spell.serial = 7;
+        stale_spell.driver_data = 10_u32.to_le_bytes().to_vec();
+        world.add_character(character);
+        world.add_item(stale_spell);
+
+        assert_eq!(world.schedule_existing_spell_timers(), 1);
+        world.items.get_mut(&ItemId(7)).unwrap().serial = 8;
+        world.tick = Tick(10);
+        assert!(world.process_due_timers(1).is_empty());
+
+        assert_eq!(
+            world.characters.get(&CharacterId(1)).unwrap().inventory[12],
+            Some(ItemId(7))
+        );
+        assert!(world.items.contains_key(&ItemId(7)));
     }
 
     #[test]
