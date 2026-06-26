@@ -4633,6 +4633,10 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerPulse { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerExtinguished { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapTriggered { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapReset { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TriggerMapItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StepTrapDiscoverTarget { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }

@@ -12,7 +12,8 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
-        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_NIGHTLIGHT, IDR_STEPTRAP, IDR_TORCH,
+        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_FLAMETHROW, IDR_NIGHTLIGHT,
+        IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY},
@@ -130,6 +131,7 @@ impl World {
             .filter_map(|(&item_id, item)| match item.driver {
                 IDR_NIGHTLIGHT => Some(item_id),
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
+                IDR_FLAMETHROW => Some(item_id),
                 _ => None,
             })
             .collect();
@@ -457,6 +459,40 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::SpikeTrapTriggered {
+                item_id,
+                character_id,
+                damage,
+                reset_after_ticks,
+            } => {
+                if let Some(character) = self.characters.get_mut(&character_id) {
+                    character.hp = character.hp.saturating_sub(damage);
+                    character.flags.insert(CharacterFlags::UPDATE);
+                }
+                self.schedule_item_driver_timer(item_id, CharacterId(0), reset_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::SpikeTrapReset { .. } => outcome,
+            ItemDriverOutcome::FlameThrowerPulse {
+                item_id,
+                direction,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.mark_flamethrower_targets_for_burn(item_id, direction);
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::FlameThrowerExtinguished {
+                item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
+                }
+                outcome
+            }
             ItemDriverOutcome::LightChanged {
                 item_id,
                 character_id,
@@ -757,6 +793,38 @@ impl World {
         item.driver_data[0] = x as u8;
         item.driver_data[1] = y as u8;
         true
+    }
+
+    fn mark_flamethrower_targets_for_burn(&mut self, item_id: ItemId, direction: u8) {
+        let Some(item) = self.items.get(&item_id) else {
+            return;
+        };
+        let Some(direction) = Direction::try_from(direction).ok() else {
+            return;
+        };
+        let (dx, dy) = direction.delta();
+        let origin_x = usize::from(item.x);
+        let origin_y = usize::from(item.y);
+
+        for distance in [1_i16, 2] {
+            let Some(x) = offset_coordinate(origin_x, dx * distance) else {
+                continue;
+            };
+            let Some(y) = offset_coordinate(origin_y, dy * distance) else {
+                continue;
+            };
+            if !self.map.legacy_inner_bounds(x, y) {
+                continue;
+            }
+            let Some(character_id) = self.map.tile(x, y).and_then(|tile| {
+                (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+            }) else {
+                continue;
+            };
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                character.flags.insert(CharacterFlags::UPDATE);
+            }
+        }
     }
 
     fn destroy_item(&mut self, item_id: ItemId) -> bool {
@@ -1783,8 +1851,8 @@ mod tests {
         direction::Direction,
         entity::{CharacterFlags, ItemFlags, SpeedMode, MAX_MODIFIERS},
         item_driver::{
-            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_DOOR, IDR_ENCHANTITEM, IDR_NIGHTLIGHT,
-            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_DOOR, IDR_ENCHANTITEM, IDR_FLAMETHROW,
+            IDR_NIGHTLIGHT, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
@@ -1966,6 +2034,90 @@ mod tests {
         );
         let trap = world.items.get(&ItemId(7)).unwrap();
         assert_eq!(&trap.driver_data[..2], &[11, 10]);
+    }
+
+    #[test]
+    fn world_spiketrap_damages_and_resets_on_timer() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.hp = 10_000;
+        world.add_character(character);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE);
+        trap.driver = IDR_SPIKETRAP;
+        trap.driver_data = vec![0, 4];
+        world.add_item(trap);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_SPIKETRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::SpikeTrapTriggered { .. }
+        ));
+        assert_eq!(world.characters.get(&CharacterId(1)).unwrap().hp, 6_000);
+        assert_eq!(world.items.get(&ItemId(7)).unwrap().driver_data[0], 1);
+        for _ in 0..TICKS_PER_SECOND {
+            world.advance();
+        }
+        let outcomes = world.process_due_timers(1);
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::SpikeTrapReset { item_id: ItemId(7) }]
+        );
+        assert_eq!(world.items.get(&ItemId(7)).unwrap().driver_data[0], 0);
+    }
+
+    #[test]
+    fn world_flamethrower_timer_marks_forward_characters_and_reschedules() {
+        let mut world = World::default();
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE);
+        trap.driver = IDR_FLAMETHROW;
+        trap.x = 10;
+        trap.y = 10;
+        trap.driver_data = vec![1, 3, 0, 0];
+        let mut first = character(1);
+        first.x = 10;
+        first.y = 11;
+        let mut second = character(2);
+        second.x = 10;
+        second.y = 12;
+        world.add_item(trap);
+        world.add_character(first);
+        world.add_character(second);
+        world.map.tile_mut(10, 10).unwrap().item = 7;
+        world.map.tile_mut(10, 11).unwrap().character = 1;
+        world.map.tile_mut(10, 12).unwrap().character = 2;
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+
+        world.advance();
+        let outcomes = world.process_due_timers(1);
+
+        assert_eq!(outcomes.len(), 1);
+        assert!(matches!(
+            outcomes[0],
+            ItemDriverOutcome::FlameThrowerPulse { .. }
+        ));
+        assert_eq!(world.items.get(&ItemId(7)).unwrap().driver_data[0], 0);
+        assert!(world
+            .characters
+            .get(&CharacterId(1))
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::UPDATE));
+        assert!(world
+            .characters
+            .get(&CharacterId(2))
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::UPDATE));
+        assert_eq!(world.timers.used_timers(), 1);
     }
 
     #[test]

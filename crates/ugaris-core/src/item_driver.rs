@@ -210,6 +210,26 @@ pub enum ItemDriverOutcome {
         target_y: u16,
         power: u8,
     },
+    FlameThrowerPulse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        direction: u8,
+        schedule_after_ticks: u64,
+    },
+    FlameThrowerExtinguished {
+        item_id: ItemId,
+        character_id: CharacterId,
+        schedule_after_ticks: Option<u64>,
+    },
+    SpikeTrapTriggered {
+        item_id: ItemId,
+        character_id: CharacterId,
+        damage: i32,
+        reset_after_ticks: u64,
+    },
+    SpikeTrapReset {
+        item_id: ItemId,
+    },
     TriggerMapItem {
         item_id: ItemId,
         character_id: CharacterId,
@@ -424,8 +444,10 @@ pub fn execute_item_driver_with_context(
                 IDR_POTION => potion_driver(character, item, area_id, in_arena),
                 IDR_DOOR => door_driver(character, item, context),
                 IDR_BALLTRAP => balltrap_driver(character, item),
+                IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
+                IDR_SPIKETRAP => spiketrap_driver(character, item, context),
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
@@ -483,6 +505,75 @@ fn balltrap_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         target_x: clamp_legacy_coordinate(item_x + i32::from(dx)),
         target_y: clamp_legacy_coordinate(item_y + i32::from(dy)),
         power: drdata(item, 2),
+    }
+}
+
+fn flamethrow_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if !context.timer_call || character.id.0 != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let fire = drdata(item, 0);
+    if fire != 0 {
+        set_drdata(item, 0, fire.saturating_sub(1));
+        if drdata(item, 2) == 0 {
+            item.sprite += 1;
+            set_drdata(item, 2, 1);
+            item.modifier_index[4] = V_LIGHT;
+            item.modifier_value[4] = 250;
+        }
+        return ItemDriverOutcome::FlameThrowerPulse {
+            item_id: item.id,
+            character_id: character.id,
+            direction: drdata(item, 1),
+            schedule_after_ticks: 1,
+        };
+    }
+
+    item.sprite -= 1;
+    set_drdata(item, 0, TICKS_PER_SECOND as u8);
+    set_drdata(item, 2, 0);
+    item.modifier_index[4] = 0;
+    item.modifier_value[4] = 0;
+    let delay_seconds = drdata(item, 3);
+
+    ItemDriverOutcome::FlameThrowerExtinguished {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: (delay_seconds != 0)
+            .then_some(TICKS_PER_SECOND.saturating_mul(u64::from(delay_seconds))),
+    }
+}
+
+fn spiketrap_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if context.timer_call || character.id.0 == 0 {
+        if drdata(item, 0) != 0 {
+            item.sprite -= 1;
+            set_drdata(item, 0, 0);
+            return ItemDriverOutcome::SpikeTrapReset { item_id: item.id };
+        }
+        return ItemDriverOutcome::Noop;
+    }
+
+    if drdata(item, 0) != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    item.sprite += 1;
+    set_drdata(item, 0, 1);
+    ItemDriverOutcome::SpikeTrapTriggered {
+        item_id: item.id,
+        character_id: character.id,
+        damage: i32::from(drdata(item, 1)) * crate::entity::POWERSCALE,
+        reset_after_ticks: TICKS_PER_SECOND,
     }
 }
 
@@ -1459,6 +1550,13 @@ fn max_value(character: &Character, value: CharacterValue) -> i32 {
 
 fn drdata(item: &Item, idx: usize) -> u8 {
     item.driver_data.get(idx).copied().unwrap_or_default()
+}
+
+fn set_drdata(item: &mut Item, idx: usize, value: u8) {
+    if item.driver_data.len() <= idx {
+        item.driver_data.resize(idx + 1, 0);
+    }
+    item.driver_data[idx] = value;
 }
 
 fn clamp_legacy_coordinate(value: i32) -> u16 {
@@ -2535,6 +2633,140 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut player, &mut trap, request, 1, false),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn flamethrower_timer_pulses_light_and_reschedules() {
+        let mut character = character(0);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLAMETHROW);
+        trap.driver_data = vec![2, 3, 0, 5];
+
+        let outcome = execute_item_driver_with_context(
+            &mut character,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_FLAMETHROW,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            1,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(trap.driver_data[0], 1);
+        assert_eq!(trap.driver_data[2], 1);
+        assert_eq!(trap.sprite, 1);
+        assert_eq!(trap.modifier_index[4], V_LIGHT);
+        assert_eq!(trap.modifier_value[4], 250);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::FlameThrowerPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                direction: 3,
+                schedule_after_ticks: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn flamethrower_timer_extinguishes_and_uses_interval() {
+        let mut character = character(0);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLAMETHROW);
+        trap.sprite = 10;
+        trap.modifier_index[4] = V_LIGHT;
+        trap.modifier_value[4] = 250;
+        trap.driver_data = vec![0, 3, 1, 5];
+
+        let outcome = execute_item_driver_with_context(
+            &mut character,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_FLAMETHROW,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            1,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(trap.sprite, 9);
+        assert_eq!(&trap.driver_data[..3], &[TICKS_PER_SECOND as u8, 3, 0]);
+        assert_eq!(trap.modifier_index[4], 0);
+        assert_eq!(trap.modifier_value[4], 0);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::FlameThrowerExtinguished {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 5),
+            }
+        );
+    }
+
+    #[test]
+    fn spiketrap_triggers_once_and_timer_resets() {
+        let mut actor = character(1);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPIKETRAP);
+        trap.driver_data = vec![0, 4];
+
+        let outcome = execute_item_driver(
+            &mut actor,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_SPIKETRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+        assert_eq!(trap.sprite, 1);
+        assert_eq!(trap.driver_data[0], 1);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SpikeTrapTriggered {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                damage: 4 * crate::entity::POWERSCALE,
+                reset_after_ticks: TICKS_PER_SECOND,
+            }
+        );
+
+        let mut timer_character = character(0);
+        let outcome = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_SPIKETRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            1,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(trap.sprite, 0);
+        assert_eq!(trap.driver_data[0], 0);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SpikeTrapReset { item_id: ItemId(7) }
         );
     }
 
