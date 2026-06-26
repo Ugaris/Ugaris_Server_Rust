@@ -859,6 +859,7 @@ pub fn act_walk(character: &mut Character, map: &mut MapGrid) -> bool {
 
     if let Some(tile) = map.tile_mut(to_x, to_y) {
         tile.character = character.id.0 as u16;
+        tile.flags.insert(MapFlags::TMOVEBLOCK);
         if tile.flags.contains(MapFlags::NOMAGIC) {
             character.flags.insert(CharacterFlags::NOMAGIC);
         } else {

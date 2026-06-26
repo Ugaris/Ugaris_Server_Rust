@@ -22,7 +22,10 @@ use crate::{
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD},
-    light::{add_effect_light, add_item_light, remove_effect_light, remove_item_light},
+    light::{
+        add_character_light, add_effect_light, add_item_light, remove_character_light,
+        remove_effect_light, remove_item_light,
+    },
     log_text::LOG_TALK,
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},
@@ -100,6 +103,13 @@ impl World {
     }
 
     pub fn add_character(&mut self, character: Character) {
+        if self
+            .map
+            .tile(usize::from(character.x), usize::from(character.y))
+            .is_some_and(|tile| tile.character == character.id.0 as u16)
+        {
+            add_character_light(&mut self.map, &character);
+        }
         self.characters.insert(character.id, character);
     }
 
@@ -116,6 +126,7 @@ impl World {
 
     pub fn remove_character(&mut self, character_id: CharacterId) -> Option<Character> {
         let mut character = self.characters.remove(&character_id)?;
+        remove_character_light(&mut self.map, &character);
         self.map.remove_char(&mut character);
         Some(character)
     }
@@ -785,7 +796,10 @@ impl World {
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        act_walk(character, &mut self.map)
+        remove_character_light(&mut self.map, character);
+        let walked = act_walk(character, &mut self.map);
+        add_character_light(&mut self.map, character);
+        walked
     }
 
     pub fn complete_take(
@@ -1733,6 +1747,7 @@ impl World {
         };
         let old_x = usize::from(character.x);
         let old_y = usize::from(character.y);
+        remove_character_light(&mut self.map, character);
         self.map.remove_char(character);
         character.action = 0;
         character.step = 0;
@@ -1746,8 +1761,10 @@ impl World {
         };
         if !placed {
             let _ = self.map.drop_char(character, old_x, old_y);
+            add_character_light(&mut self.map, character);
             return false;
         }
+        add_character_light(&mut self.map, character);
         true
     }
 
@@ -4025,6 +4042,32 @@ mod tests {
 
         assert!(world.complete_drop(CharacterId(1), ItemId(7)));
         assert_eq!(world.map.tile(11, 10).unwrap().light, 16);
+    }
+
+    #[test]
+    fn world_updates_map_light_when_character_spawns_walks_and_leaves() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.values[0][CharacterValue::Light as usize] = 16;
+
+        assert!(world.spawn_character(character, 10, 10));
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 16);
+
+        let character = world.characters.get_mut(&CharacterId(1)).unwrap();
+        character.tox = 12;
+        character.toy = 10;
+        assert!(world.complete_walk(CharacterId(1)));
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 3);
+        assert_eq!(world.map.tile(12, 10).unwrap().light, 16);
+        assert!(world
+            .map
+            .tile(12, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK));
+
+        assert!(world.remove_character(CharacterId(1)).is_some());
+        assert_eq!(world.map.tile(12, 10).unwrap().light, 0);
     }
 
     #[test]
