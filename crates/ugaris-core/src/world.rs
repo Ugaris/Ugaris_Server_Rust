@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+    area_sound::AreaSoundSpecial,
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
@@ -20,6 +21,7 @@ use crate::{
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD},
+    log_text::LOG_TALK,
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},
     player::{PlayerActionCode, PlayerRuntime},
@@ -55,6 +57,12 @@ pub struct LookMapRequest {
     pub y: usize,
     pub character_level: u32,
     pub visible: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorldSoundSpecial {
+    pub character_id: CharacterId,
+    pub special: AreaSoundSpecial,
 }
 
 const ITEM_DRIVER_TIMER: &str = "item_driver";
@@ -98,6 +106,58 @@ impl World {
         let mut character = self.characters.remove(&character_id)?;
         self.map.remove_char(&mut character);
         Some(character)
+    }
+
+    pub fn sound_area_specials(
+        &self,
+        x: usize,
+        y: usize,
+        sound_type: u32,
+    ) -> Vec<WorldSoundSpecial> {
+        let min_x = x.saturating_sub(16);
+        let max_x = x.saturating_add(16).min(self.map.width().saturating_sub(1));
+        let min_y = y.saturating_sub(16);
+        let max_y = y
+            .saturating_add(16)
+            .min(self.map.height().saturating_sub(1));
+        let sectors = (sound_type == u32::from(LOG_TALK)).then(|| SoundSectors::build(&self.map));
+
+        let mut specials = Vec::new();
+        for character in self.characters.values() {
+            if !character
+                .flags
+                .contains(CharacterFlags::USED | CharacterFlags::PLAYER)
+            {
+                continue;
+            }
+            let character_x = usize::from(character.x);
+            let character_y = usize::from(character.y);
+            if character_x < min_x
+                || character_x > max_x
+                || character_y < min_y
+                || character_y > max_y
+            {
+                continue;
+            }
+            if sectors.as_ref().is_some_and(|sectors| {
+                !sectors.sector_hear(&self.map, x, y, character_x, character_y)
+            }) {
+                continue;
+            }
+
+            let dist_x = i32::from(character.x) - x as i32;
+            let dist_y = i32::from(character.y) - y as i32;
+            let dist = (dist_x * dist_x + dist_y * dist_y) * 10;
+            specials.push(WorldSoundSpecial {
+                character_id: character.id,
+                special: AreaSoundSpecial {
+                    special_type: sound_type,
+                    opt1: -dist,
+                    opt2: dist_x * 100,
+                },
+            });
+        }
+        specials
     }
 
     pub fn add_item(&mut self, item: Item) {
@@ -3412,6 +3472,58 @@ mod tests {
         assert_eq!(character.action, 0);
         assert_eq!(character.duration, 0);
         assert_eq!(character.step, 0);
+    }
+
+    #[test]
+    fn sound_area_specials_match_legacy_distance_and_pan() {
+        let mut world = World {
+            map: MapGrid::new(40, 40),
+            ..World::default()
+        };
+        let mut nearby = character(1);
+        nearby.flags.insert(CharacterFlags::PLAYER);
+        nearby.x = 13;
+        nearby.y = 14;
+        let mut outside = character(2);
+        outside.flags.insert(CharacterFlags::PLAYER);
+        outside.x = 31;
+        outside.y = 10;
+        let mut npc = character(3);
+        npc.x = 12;
+        npc.y = 10;
+
+        world.add_character(nearby);
+        world.add_character(outside);
+        world.add_character(npc);
+
+        let specials = world.sound_area_specials(10, 10, 7);
+
+        assert_eq!(specials.len(), 1);
+        assert_eq!(specials[0].character_id, CharacterId(1));
+        assert_eq!(specials[0].special.special_type, 7);
+        assert_eq!(specials[0].special.opt1, -250);
+        assert_eq!(specials[0].special.opt2, 300);
+    }
+
+    #[test]
+    fn sound_area_talk_type_is_sound_sector_gated() {
+        let mut world = World {
+            map: MapGrid::new(12, 12),
+            ..World::default()
+        };
+        for y in 0..12 {
+            world.map.set_flags(6, y, MapFlags::SOUNDBLOCK);
+        }
+        let mut listener = character(1);
+        listener.flags.insert(CharacterFlags::PLAYER);
+        listener.x = 8;
+        listener.y = 4;
+        world.add_character(listener);
+
+        assert!(world
+            .sound_area_specials(4, 4, u32::from(LOG_TALK))
+            .is_empty());
+        assert_eq!(world.sound_area_specials(4, 4, 7).len(), 1);
     }
 
     #[test]
