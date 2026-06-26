@@ -18,6 +18,7 @@ pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_FOOD: u16 = 64;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
+pub const IDR_KEY_RING: u16 = 200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UseItemError {
@@ -101,6 +102,15 @@ pub enum ItemDriverOutcome {
     RandomChest {
         item_id: ItemId,
         character_id: CharacterId,
+    },
+    KeyringShow {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    KeyringAddCursorItem {
+        item_id: ItemId,
+        character_id: CharacterId,
+        key_item_id: ItemId,
     },
     BlockedByRequirements {
         item_id: ItemId,
@@ -203,6 +213,7 @@ pub fn execute_item_driver(
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
                 IDR_TELEPORT => teleport_driver(character, item),
                 IDR_FOOD => food_driver(character, item),
+                IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
                     driver,
                     item_id,
@@ -240,6 +251,20 @@ fn randchest_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     ItemDriverOutcome::RandomChest {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn keyring_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    match character.cursor_item {
+        Some(key_item_id) => ItemDriverOutcome::KeyringAddCursorItem {
+            item_id: item.id,
+            character_id: character.id,
+            key_item_id,
+        },
+        None => ItemDriverOutcome::KeyringShow {
+            item_id: item.id,
+            character_id: character.id,
+        },
     }
 }
 
@@ -784,6 +809,36 @@ mod tests {
             ItemDriverOutcome::RandomChest {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_keyring_driver_shows_or_requests_cursor_key_add() {
+        let mut character = character(1);
+        let mut keyring = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_KEY_RING);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_KEY_RING,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut keyring, request, 1, false),
+            ItemDriverOutcome::KeyringShow {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.cursor_item = Some(ItemId(99));
+        assert_eq!(
+            execute_item_driver(&mut character, &mut keyring, request, 1, false),
+            ItemDriverOutcome::KeyringAddCursorItem {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                key_item_id: ItemId(99),
             }
         );
     }

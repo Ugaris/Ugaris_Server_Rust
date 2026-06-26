@@ -2847,8 +2847,12 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::Teleport { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { .. } => {
                                             executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::KeyringAddCursorItem { .. } => {
+                                            deferred_templates += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::EmptyPotionTemplateNeeded { .. } => {
                                             deferred_templates += 1;

@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ids::CharacterId, legacy::DIST_OLD};
+use crate::{entity::Item, ids::CharacterId, legacy::DIST_OLD};
 
 pub const MAX_PLAYERS: usize = 512;
 pub const OUTPUT_BUFFER_SIZE: usize = 16_384 * 2;
@@ -10,6 +10,7 @@ pub const MAX_SCROLLBACK: usize = 8192;
 pub const MAX_PLAYER_EFFECTS: usize = 64;
 pub const COMMAND_QUEUE_SIZE: usize = 16;
 pub const KEYRING_MAX_KEYS: usize = 100;
+pub const KEYRING_KEY_DRDATA_LEN: usize = 16;
 pub const RANDCHEST_MAX_ENTRIES: usize = 100;
 
 pub const DEFERRED_ACHIEVEMENTS: u32 = 1 << 0;
@@ -61,6 +62,20 @@ pub struct QueuedAction {
 pub struct KeyringEntry {
     pub template_id: u32,
     pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub sprite: i32,
+    #[serde(default)]
+    pub flags: u64,
+    #[serde(default)]
+    pub value: u32,
+    #[serde(default)]
+    pub driver: u16,
+    #[serde(default)]
+    pub driver_data: Vec<u8>,
+    #[serde(default)]
+    pub expire_serial: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +135,8 @@ pub struct PlayerRuntime {
     pub keyring: Vec<KeyringEntry>,
     pub random_chests: Vec<RandomChestAccess>,
     pub achievements: AchievementState,
+    #[serde(default)]
+    pub keyring_auto_add: bool,
 }
 
 impl PlayerRuntime {
@@ -147,6 +164,7 @@ impl PlayerRuntime {
             keyring: Vec::new(),
             random_chests: Vec::new(),
             achievements: AchievementState::default(),
+            keyring_auto_add: false,
         }
     }
 
@@ -167,21 +185,55 @@ impl PlayerRuntime {
         template_id: u32,
         name: impl Into<String>,
     ) -> KeyringAddResult {
+        self.add_keyring_entry(KeyringEntry {
+            template_id,
+            name: name.into(),
+            description: String::new(),
+            sprite: 0,
+            flags: 0,
+            value: 0,
+            driver: 0,
+            driver_data: Vec::new(),
+            expire_serial: 0,
+        })
+    }
+
+    pub fn add_keyring_item(&mut self, item: &Item) -> KeyringAddResult {
+        let driver_data_len = item.driver_data.len().min(KEYRING_KEY_DRDATA_LEN);
+        self.add_keyring_entry(KeyringEntry {
+            template_id: item.template_id,
+            name: item.name.clone(),
+            description: item.description.clone(),
+            sprite: item.sprite,
+            flags: item.flags.bits(),
+            value: item.value,
+            driver: item.driver,
+            driver_data: item.driver_data[..driver_data_len].to_vec(),
+            expire_serial: item.serial,
+        })
+    }
+
+    pub fn add_keyring_entry(&mut self, entry: KeyringEntry) -> KeyringAddResult {
         if self
             .keyring
             .iter()
-            .any(|key| key.template_id == template_id)
+            .any(|key| key.template_id == entry.template_id)
         {
             return KeyringAddResult::Duplicate;
         }
         if self.keyring.len() >= KEYRING_MAX_KEYS {
             return KeyringAddResult::Full;
         }
-        self.keyring.push(KeyringEntry {
-            template_id,
-            name: name.into(),
-        });
+        self.keyring.push(entry);
         KeyringAddResult::Added
+    }
+
+    pub fn keyring_auto_add(&self) -> bool {
+        self.keyring_auto_add
+    }
+
+    pub fn set_keyring_auto_add(&mut self, enabled: bool) {
+        self.keyring_auto_add = enabled;
     }
 
     pub fn keyring_key_name(&self, template_id: u32) -> Option<&str> {
@@ -382,6 +434,11 @@ impl PlayerRuntime {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        entity::{ItemFlags, MAX_MODIFIERS},
+        ids::ItemId,
+    };
+
     use super::*;
 
     #[test]
@@ -432,6 +489,55 @@ mod tests {
             player.add_keyring_key(0x5566_7788, "Overflow"),
             KeyringAddResult::Full
         );
+    }
+
+    #[test]
+    fn keyring_item_storage_keeps_legacy_recreation_metadata() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let item = Item {
+            id: ItemId(7),
+            name: "Copper Key".into(),
+            description: "Opens a copper lock".into(),
+            flags: ItemFlags::USED | ItemFlags::TAKE | ItemFlags::QUEST,
+            sprite: 1234,
+            value: 55,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0x1122_3344,
+            owner_id: 0,
+            modifier_index: [0; MAX_MODIFIERS],
+            modifier_value: [0; MAX_MODIFIERS],
+            x: 0,
+            y: 0,
+            carried_by: None,
+            contained_in: None,
+            content_id: 0,
+            driver: 77,
+            driver_data: (0..32).collect(),
+            serial: 9,
+        };
+
+        assert_eq!(player.add_keyring_item(&item), KeyringAddResult::Added);
+
+        let stored = &player.keyring[0];
+        assert_eq!(stored.template_id, 0x1122_3344);
+        assert_eq!(stored.name, "Copper Key");
+        assert_eq!(stored.description, "Opens a copper lock");
+        assert_eq!(stored.sprite, 1234);
+        assert_eq!(stored.flags, item.flags.bits());
+        assert_eq!(stored.value, 55);
+        assert_eq!(stored.driver, 77);
+        assert_eq!(stored.driver_data, (0..16).collect::<Vec<_>>());
+        assert_eq!(stored.expire_serial, 9);
+    }
+
+    #[test]
+    fn keyring_auto_add_setting_round_trips() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(!player.keyring_auto_add());
+        player.set_keyring_auto_add(true);
+        assert!(player.keyring_auto_add());
     }
 
     #[test]
