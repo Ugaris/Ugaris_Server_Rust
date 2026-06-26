@@ -12,6 +12,7 @@ use ugaris_core::{
     area_section::section_look_text,
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
     ids::{CharacterId, ItemId},
+    item_driver::IDR_KEY_RING,
     item_ops::consume_item,
     map::{MapFlags, MapTile},
     player::{
@@ -197,7 +198,9 @@ const RANDCHEST_CURSOR_OCCUPIED_MESSAGE: &str = "Please empty your hand (mouse c
 const RANDCHEST_EMPTY_MESSAGE: &str = "You didn't find anything.";
 const MAP_BOOTSTRAP_CHUNK_TARGET: usize = MAX_LEGACY_TICK_PAYLOAD - 512;
 const DEFAULT_PLAYER_TEMPLATE: &str = "new_warrior_m";
+const IID_KEY_RING: u32 = (59 << 24) | 0x000002;
 const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
+const INVENTORY_KEY_START_SLOT: usize = 30;
 const RANDCHEST_COOLDOWN_SECONDS: u64 = 60 * 60 * 24;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -228,6 +231,12 @@ enum KeyringAddApplyResult {
     Full,
     MissingPlayer,
     MissingCursorItem,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct KeyringCommandResult {
+    messages: Vec<String>,
+    inventory_changed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -352,6 +361,140 @@ fn keyring_show_messages(player: Option<&PlayerRuntime>) -> Vec<String> {
     player
         .map(PlayerRuntime::keyring_display_lines)
         .unwrap_or_else(|| vec!["Your keyring is empty.".to_string()])
+}
+
+fn cursor_holds_keyring(world: &World, character: &Character) -> bool {
+    character
+        .cursor_item
+        .and_then(|item_id| world.items.get(&item_id))
+        .is_some_and(|item| item.template_id == IID_KEY_RING || item.driver == IDR_KEY_RING)
+}
+
+fn is_runtime_keyring_candidate(item: &Item) -> bool {
+    item.template_id != 0
+        && item.template_id != IID_KEY_RING
+        && item.driver != IDR_KEY_RING
+        && item.name.to_ascii_lowercase().contains("key")
+}
+
+fn normalize_text_command(bytes: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(bytes)
+        .ok()?
+        .trim_matches(char::from(0))
+        .trim();
+    if text.is_empty() {
+        return None;
+    }
+    Some(text.to_ascii_lowercase())
+}
+
+fn apply_keyring_command(
+    world: &mut World,
+    player: &mut PlayerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let rest = command
+        .strip_prefix("#keyring")
+        .or_else(|| command.strip_prefix("/keyring"))?;
+    let rest = rest.trim();
+
+    let Some(character) = world.characters.get(&character_id) else {
+        return Some(KeyringCommandResult::default());
+    };
+    if !cursor_holds_keyring(world, character) {
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "You need to hold a keyring on your cursor to use this command.".to_string(),
+            ],
+            inventory_changed: false,
+        });
+    }
+
+    if rest.is_empty() {
+        let mut messages = player.keyring_display_lines();
+        if player.keyring.is_empty() {
+            messages.push("Use '#keyring addall' to add all keys from inventory.".to_string());
+        }
+        return Some(KeyringCommandResult {
+            messages,
+            inventory_changed: false,
+        });
+    }
+
+    let mut words = rest.split_whitespace();
+    match words.next().unwrap_or_default() {
+        "remove" => {
+            let Some(number) = words.next().and_then(|word| word.parse::<usize>().ok()) else {
+                return Some(KeyringCommandResult {
+                    messages: vec!["Usage: #keyring remove <number>".to_string()],
+                    inventory_changed: false,
+                });
+            };
+            let Some(entry) = number
+                .checked_sub(1)
+                .and_then(|index| player.remove_keyring_key_at(index))
+            else {
+                return Some(KeyringCommandResult {
+                    messages: vec!["Invalid key number. Use #keyring to see the list.".to_string()],
+                    inventory_changed: false,
+                });
+            };
+            Some(KeyringCommandResult {
+                messages: vec![format!("Removed {} from your keyring.", entry.name)],
+                inventory_changed: false,
+            })
+        }
+        "addall" => {
+            let Some(character) = world.characters.get_mut(&character_id) else {
+                return Some(KeyringCommandResult::default());
+            };
+            let mut added_count = 0;
+            for slot in INVENTORY_KEY_START_SLOT..character.inventory.len() {
+                let Some(item_id) = character.inventory[slot] else {
+                    continue;
+                };
+                let Some(item) = world.items.get(&item_id).cloned() else {
+                    continue;
+                };
+                if !is_runtime_keyring_candidate(&item) {
+                    continue;
+                }
+                if player.add_keyring_item(&item) == KeyringAddResult::Added {
+                    character.inventory[slot] = None;
+                    character.flags.insert(CharacterFlags::ITEMS);
+                    world.items.remove(&item_id);
+                    added_count += 1;
+                }
+            }
+            let messages = if added_count > 0 {
+                vec![format!("Added {added_count} keys to your keyring.")]
+            } else {
+                vec!["No keys found to add.".to_string()]
+            };
+            Some(KeyringCommandResult {
+                messages,
+                inventory_changed: added_count > 0,
+            })
+        }
+        "auto" => {
+            let enabled = !player.keyring_auto_add();
+            player.set_keyring_auto_add(enabled);
+            let message = if enabled {
+                "Auto-add keys enabled. Keys will be automatically added to your keyring when picked up."
+            } else {
+                "Auto-add keys disabled. Keys will go to your inventory as normal."
+            };
+            Some(KeyringCommandResult {
+                messages: vec![message.to_string()],
+                inventory_changed: false,
+            })
+        }
+        _ => Some(KeyringCommandResult {
+            messages: vec!["Unknown keyring subcommand. Use: #keyring, #keyring remove <n>, #keyring addall, #keyring auto".to_string()],
+            inventory_changed: false,
+        }),
+    }
 }
 
 fn apply_keyring_add_cursor_item(
@@ -1708,6 +1851,111 @@ mod tests {
     }
 
     #[test]
+    fn keyring_command_requires_keyring_on_cursor() {
+        let login = login_block("Tester");
+        let character_id = CharacterId(7);
+        let character = login_character(character_id, &login, 1, 10, 10);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+
+        let result = apply_keyring_command(&mut world, &mut player, character_id, "#keyring")
+            .expect("keyring command should be recognized");
+
+        assert_eq!(
+            result.messages,
+            vec!["You need to hold a keyring on your cursor to use this command."]
+        );
+        assert!(!result.inventory_changed);
+    }
+
+    #[test]
+    fn keyring_command_addall_consumes_inventory_keys() {
+        let login = login_block("Tester");
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login, 1, 10, 10);
+        let keyring_id = ItemId(90);
+        let key_id = ItemId(91);
+        let potion_id = ItemId(92);
+        character.cursor_item = Some(keyring_id);
+        character.inventory[30] = Some(key_id);
+        character.inventory[31] = Some(potion_id);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut keyring = test_item(keyring_id, 500, ItemFlags::USE);
+        keyring.template_id = IID_KEY_RING;
+        keyring.driver = IDR_KEY_RING;
+        let mut key = test_item(key_id, 501, ItemFlags::TAKE);
+        key.template_id = 0x1122_3344;
+        key.name = "Copper Key".to_string();
+        let mut potion = test_item(potion_id, 502, ItemFlags::TAKE);
+        potion.template_id = 0x5566_7788;
+        potion.name = "Potion".to_string();
+        world.add_item(keyring);
+        world.add_item(key);
+        world.add_item(potion);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+
+        let result =
+            apply_keyring_command(&mut world, &mut player, character_id, "#keyring addall")
+                .expect("keyring command should be recognized");
+
+        assert_eq!(result.messages, vec!["Added 1 keys to your keyring."]);
+        assert!(result.inventory_changed);
+        assert_eq!(player.keyring_key_name(0x1122_3344), Some("Copper Key"));
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().inventory[30],
+            None
+        );
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().inventory[31],
+            Some(potion_id)
+        );
+        assert!(!world.items.contains_key(&key_id));
+        assert!(world.items.contains_key(&potion_id));
+    }
+
+    #[test]
+    fn keyring_command_remove_and_auto_match_legacy_feedback() {
+        let login = login_block("Tester");
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login, 1, 10, 10);
+        let keyring_id = ItemId(90);
+        character.cursor_item = Some(keyring_id);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut keyring = test_item(keyring_id, 500, ItemFlags::USE);
+        keyring.template_id = IID_KEY_RING;
+        keyring.driver = IDR_KEY_RING;
+        world.add_item(keyring);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+        assert_eq!(
+            player.add_keyring_key(0x1122_3344, "Copper Key"),
+            KeyringAddResult::Added
+        );
+
+        let removed =
+            apply_keyring_command(&mut world, &mut player, character_id, "#keyring remove 1")
+                .expect("keyring command should be recognized");
+        let auto = apply_keyring_command(&mut world, &mut player, character_id, "#keyring auto")
+            .expect("keyring command should be recognized");
+
+        assert_eq!(
+            removed.messages,
+            vec!["Removed Copper Key from your keyring."]
+        );
+        assert_eq!(player.keyring_key_name(0x1122_3344), None);
+        assert_eq!(
+            auto.messages,
+            vec!["Auto-add keys enabled. Keys will be automatically added to your keyring when picked up."]
+        );
+        assert!(player.keyring_auto_add());
+    }
+
+    #[test]
     fn initial_map_payloads_send_visible_diamond_and_center_character() {
         let login = login_block("Tester");
         let mut character =
@@ -2990,6 +3238,56 @@ async fn main() -> anyhow::Result<()> {
                 let queued = runtime.drain_actions_for_tick();
                 if !queued.is_empty() {
                     info!(count = queued.len(), tick = world.tick.0, "drained queued client actions");
+                }
+                let mut command_feedback = Vec::new();
+                let mut command_inventory_refresh = Vec::new();
+                for (session_id, action) in queued {
+                    let ClientAction::Text(bytes) = action else {
+                        continue;
+                    };
+                    let Some(command) = normalize_text_command(&bytes) else {
+                        continue;
+                    };
+                    let Some(player) = runtime.players.get_mut(&session_id) else {
+                        continue;
+                    };
+                    let Some(character_id) = player.character_id else {
+                        continue;
+                    };
+                    if let Some(result) = apply_keyring_command(&mut world, player, character_id, &command) {
+                        for message in result.messages {
+                            command_feedback.push((character_id, message));
+                        }
+                        if result.inventory_changed {
+                            command_inventory_refresh.push(character_id);
+                        }
+                    }
+                }
+                if !command_feedback.is_empty() || !command_inventory_refresh.is_empty() {
+                    let mut feedback_sessions = 0;
+                    for (character_id, message) in command_feedback {
+                        let payload = ugaris_protocol::packet::system_text(&message);
+                        for (session_id, _) in runtime.sessions_for_character(character_id) {
+                            if runtime.send_to_session(session_id, payload.clone()) {
+                                feedback_sessions += 1;
+                            }
+                        }
+                    }
+                    let mut inventory_sessions = 0;
+                    command_inventory_refresh.sort_unstable_by_key(|id| id.0);
+                    command_inventory_refresh.dedup();
+                    for character_id in command_inventory_refresh {
+                        let Some(character) = world.characters.get(&character_id) else {
+                            continue;
+                        };
+                        let payload = inventory_snapshot_payload(&world, character);
+                        for (session_id, _) in runtime.sessions_for_character(character_id) {
+                            if runtime.send_to_session(session_id, payload.clone()) {
+                                inventory_sessions += 1;
+                            }
+                        }
+                    }
+                    info!(feedback_sessions, inventory_sessions, tick = world.tick.0, "processed text commands");
                 }
                 let setup_count = runtime.setup_world_actions(&mut world, config.area_id);
                 if setup_count != 0 {

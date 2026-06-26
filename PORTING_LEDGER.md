@@ -151,17 +151,18 @@ Current implemented slices:
 - Runtime keyring add keeps duplicate/full semantics, 100-key cap, and the auto-add setting shape used by legacy `DRD_KEYRING_PPD`.
 - Keyring item use now shows legacy-shaped keyring contents through `SV_TEXT`, adds the cursor key into runtime keyring state, consumes the cursor key item, and reports duplicate/full/add feedback with tests.
 - Keyed doors now use carried exact-key/skeleton-key plus runtime keyring lookup and emit the legacy keyring door feedback text.
+- `#keyring`/`/keyring` text commands now require a keyring on the cursor, show contents, remove runtime entries, add key-like inventory-slot 30+ candidates to the runtime keyring, toggle auto-add, emit legacy-shaped `SV_TEXT` feedback, and refresh inventory after `addall`, with focused tests. Exact registered-key filtering remains pending.
 
 Chest gaps still to port:
 
-- Keyring `#keyring` commands, registered-key validation, auto-add pickup integration, removed-key item recreation, and persistent `DRD_KEYRING_PPD` load/save.
+- Keyring registered-key validation, auto-add pickup integration, removed-key item recreation, admin `addallkeys`, and persistent `DRD_KEYRING_PPD` load/save.
 - Achievement persistence/protocol sending beyond runtime marker updates.
 - Exact persistent PPD storage behavior for chest access across logout/server restart.
 - `IDR_RANDCHEST = 34` persistent `DRD_RANDCHEST_PPD`, exact RNG parity, and full live-data smoke coverage.
 
 Recommended next chest steps:
 
-1. Port keyring item driver/commands/auto-add and persistent `DRD_KEYRING_PPD` load/save.
+1. Port keyring registered-key validation, auto-add pickup integration, removed-key item recreation, and persistent `DRD_KEYRING_PPD` load/save.
 2. Add persistent PPD load/save for treasure chest last-access state so cooldowns survive logout/server restart.
 3. Persist/runtime-load chest achievement state and send achievement protocol updates.
 4. Persist/runtime-load `IDR_RANDCHEST` daily access state and verify full loot table behavior against live data.
