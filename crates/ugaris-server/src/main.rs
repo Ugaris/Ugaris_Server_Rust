@@ -14,6 +14,7 @@ use ugaris_core::{
     map::{MapFlags, MapTile},
     player::{PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction},
     tick::TICKS_PER_SECOND,
+    world::LookMapRequest,
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
 };
@@ -984,6 +985,37 @@ fn map_refresh_payloads(
     payloads
 }
 
+fn look_map_payloads(world: &World, request: LookMapRequest) -> Vec<bytes::BytesMut> {
+    if !request.visible {
+        return vec![ugaris_protocol::packet::system_text(
+            "Too far away or hidden.",
+        )];
+    }
+
+    let mut messages = Vec::new();
+    messages.push(format!("({},{})", request.x, request.y));
+
+    if let Some(tile) = world.map.tile(request.x, request.y) {
+        if tile.flags.contains(MapFlags::RESTAREA) {
+            messages.push("This place is a rest area.".to_string());
+        }
+        if tile.flags.contains(MapFlags::CLAN) {
+            messages.push("This is a clan area.".to_string());
+        }
+        if tile.flags.contains(MapFlags::ARENA) {
+            messages.push("This place is an arena.".to_string());
+        }
+        if tile.flags.contains(MapFlags::PEACE) {
+            messages.push("This place is a peaceful zone.".to_string());
+        }
+    }
+
+    messages
+        .into_iter()
+        .map(|message| ugaris_protocol::packet::system_text(&message))
+        .collect()
+}
+
 fn movement_scroll_payload(
     world: &World,
     character: &Character,
@@ -1619,6 +1651,63 @@ mod tests {
                 | MAP_TILE_ISPRITE
                 | MAP_TILE_FLAGS
         );
+    }
+
+    #[test]
+    fn look_map_payload_hidden_target_matches_legacy_feedback() {
+        let payloads = look_map_payloads(
+            &World::default(),
+            LookMapRequest {
+                character_id: CharacterId(7),
+                x: 12,
+                y: 13,
+                visible: false,
+            },
+        );
+
+        assert_eq!(text_payloads(&payloads), vec!["Too far away or hidden."]);
+    }
+
+    #[test]
+    fn look_map_payload_visible_tile_reports_coords_and_zone_flags() {
+        let mut world = World::default();
+        world.map.set_flags(
+            12,
+            13,
+            MapFlags::RESTAREA | MapFlags::CLAN | MapFlags::ARENA | MapFlags::PEACE,
+        );
+
+        let payloads = look_map_payloads(
+            &world,
+            LookMapRequest {
+                character_id: CharacterId(7),
+                x: 12,
+                y: 13,
+                visible: true,
+            },
+        );
+
+        assert_eq!(
+            text_payloads(&payloads),
+            vec![
+                "(12,13)",
+                "This place is a rest area.",
+                "This is a clan area.",
+                "This place is an arena.",
+                "This place is a peaceful zone.",
+            ]
+        );
+    }
+
+    fn text_payloads(payloads: &[bytes::BytesMut]) -> Vec<String> {
+        payloads
+            .iter()
+            .map(|payload| {
+                assert_eq!(payload[0], SV_TEXT);
+                let len = u16::from_le_bytes([payload[1], payload[2]]) as usize;
+                String::from_utf8(payload[3..3 + len].to_vec()).unwrap()
+            })
+            .collect()
     }
 
     #[test]
@@ -2632,7 +2721,16 @@ async fn main() -> anyhow::Result<()> {
                 }
                 let look_map_requests = world.drain_look_map_requests();
                 if !look_map_requests.is_empty() {
-                    info!(count = look_map_requests.len(), tick = world.tick.0, "look-map requests pending client output port");
+                    let mut look_sessions = 0;
+                    for request in look_map_requests {
+                        let payloads = look_map_payloads(&world, request);
+                        for (session_id, _) in runtime.sessions_for_character(request.character_id) {
+                            if runtime.send_many_to_session(session_id, payloads.clone()) {
+                                look_sessions += 1;
+                            }
+                        }
+                    }
+                    info!(look_sessions, tick = world.tick.0, "queued look-map feedback");
                 }
                 let completed_actions = world.tick_basic_actions();
                 if !completed_actions.is_empty() {
