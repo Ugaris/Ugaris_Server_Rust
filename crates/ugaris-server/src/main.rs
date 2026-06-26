@@ -13,7 +13,7 @@ use ugaris_core::{
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
     ids::{CharacterId, ItemId},
     item_driver::IDR_KEY_RING,
-    item_ops::consume_item,
+    item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::is_registered_key,
     map::{MapFlags, MapTile},
     player::{
@@ -201,6 +201,7 @@ const MAP_BOOTSTRAP_CHUNK_TARGET: usize = MAX_LEGACY_TICK_PAYLOAD - 512;
 const DEFAULT_PLAYER_TEMPLATE: &str = "new_warrior_m";
 const IID_KEY_RING: u32 = (59 << 24) | 0x000002;
 const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
+const IID_PLACEHOLDER_KEY: u32 = (59 << 24) | 0x000004;
 #[cfg(test)]
 const IID_AREA1_SKELKEY1: u32 = (1 << 24) | 0x000002;
 const INVENTORY_KEY_START_SLOT: usize = 30;
@@ -389,8 +390,84 @@ fn normalize_text_command(bytes: &[u8]) -> Option<String> {
     Some(text.to_ascii_lowercase())
 }
 
+fn keyring_entry_to_item(
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    entry: &ugaris_core::player::KeyringEntry,
+) -> Item {
+    if let Some(item) =
+        loader.instantiate_item_template_by_id(entry.template_id, Some(character_id))
+    {
+        return item;
+    }
+
+    if let Some(mut item) =
+        loader.instantiate_item_template_by_id(IID_PLACEHOLDER_KEY, Some(character_id))
+    {
+        item.template_id = entry.template_id;
+        item.name = entry.name.clone();
+        item.description = entry.description.clone();
+        item.sprite = entry.sprite;
+        item.flags = ItemFlags::from_bits_retain(entry.flags) | ItemFlags::USED;
+        item.value = entry.value;
+        item.driver = entry.driver;
+        item.driver_data = entry.driver_data.clone();
+        item.serial = entry.expire_serial;
+        return item;
+    }
+
+    Item {
+        id: loader.allocate_item_id(),
+        name: entry.name.clone(),
+        description: entry.description.clone(),
+        flags: ItemFlags::from_bits_retain(entry.flags) | ItemFlags::USED,
+        sprite: entry.sprite,
+        value: entry.value,
+        min_level: 0,
+        max_level: 0,
+        needs_class: 0,
+        template_id: entry.template_id,
+        owner_id: 0,
+        modifier_index: [0; ugaris_core::entity::MAX_MODIFIERS],
+        modifier_value: [0; ugaris_core::entity::MAX_MODIFIERS],
+        x: 0,
+        y: 0,
+        carried_by: Some(character_id),
+        contained_in: None,
+        content_id: 0,
+        driver: entry.driver,
+        driver_data: entry.driver_data.clone(),
+        serial: entry.expire_serial,
+    }
+}
+
+fn give_removed_keyring_entry(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    entry: &ugaris_core::player::KeyringEntry,
+) -> Result<(), &'static str> {
+    let mut item = keyring_entry_to_item(loader, character_id, entry);
+    let item_id = item.id;
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return Err("Failed to access keyring data.");
+    };
+    match give_item_to_character(character, &mut item, GiveItemFlags::NONE) {
+        GiveItemResult::Ok => {
+            world.add_item(item);
+            Ok(())
+        }
+        GiveItemResult::Full => Err("Your inventory is full."),
+        _ => {
+            world.items.remove(&item_id);
+            Err("Cannot remove this key here. Return to where you found it.")
+        }
+    }
+}
+
 fn apply_keyring_command(
     world: &mut World,
+    loader: &mut ZoneLoader,
     player: &mut PlayerRuntime,
     character_id: CharacterId,
     command: &str,
@@ -432,18 +509,28 @@ fn apply_keyring_command(
                     inventory_changed: false,
                 });
             };
-            let Some(entry) = number
-                .checked_sub(1)
-                .and_then(|index| player.remove_keyring_key_at(index))
-            else {
+            let Some(index) = number.checked_sub(1) else {
                 return Some(KeyringCommandResult {
                     messages: vec!["Invalid key number. Use #keyring to see the list.".to_string()],
                     inventory_changed: false,
                 });
             };
+            let Some(entry) = player.keyring.get(index).cloned() else {
+                return Some(KeyringCommandResult {
+                    messages: vec!["Invalid key number. Use #keyring to see the list.".to_string()],
+                    inventory_changed: false,
+                });
+            };
+            if let Err(message) = give_removed_keyring_entry(world, loader, character_id, &entry) {
+                return Some(KeyringCommandResult {
+                    messages: vec![message.to_string()],
+                    inventory_changed: false,
+                });
+            }
+            player.remove_keyring_key_at(index);
             Some(KeyringCommandResult {
                 messages: vec![format!("Removed {} from your keyring.", entry.name)],
-                inventory_changed: false,
+                inventory_changed: true,
             })
         }
         "addall" => {
@@ -1863,9 +1950,16 @@ mod tests {
         world.add_character(character);
         let mut player = PlayerRuntime::connected(1, 0);
         player.character_id = Some(character_id);
+        let mut loader = ZoneLoader::new();
 
-        let result = apply_keyring_command(&mut world, &mut player, character_id, "#keyring")
-            .expect("keyring command should be recognized");
+        let result = apply_keyring_command(
+            &mut world,
+            &mut loader,
+            &mut player,
+            character_id,
+            "#keyring",
+        )
+        .expect("keyring command should be recognized");
 
         assert_eq!(
             result.messages,
@@ -1901,10 +1995,16 @@ mod tests {
         world.add_item(potion);
         let mut player = PlayerRuntime::connected(1, 0);
         player.character_id = Some(character_id);
+        let mut loader = ZoneLoader::new();
 
-        let result =
-            apply_keyring_command(&mut world, &mut player, character_id, "#keyring addall")
-                .expect("keyring command should be recognized");
+        let result = apply_keyring_command(
+            &mut world,
+            &mut loader,
+            &mut player,
+            character_id,
+            "#keyring addall",
+        )
+        .expect("keyring command should be recognized");
 
         assert_eq!(result.messages, vec!["Added 1 keys to your keyring."]);
         assert!(result.inventory_changed);
@@ -1939,27 +2039,91 @@ mod tests {
         world.add_item(keyring);
         let mut player = PlayerRuntime::connected(1, 0);
         player.character_id = Some(character_id);
+        let mut loader = ZoneLoader::new();
         assert_eq!(
             player.add_keyring_key(0x1122_3344, "Copper Key"),
             KeyringAddResult::Added
         );
 
-        let removed =
-            apply_keyring_command(&mut world, &mut player, character_id, "#keyring remove 1")
-                .expect("keyring command should be recognized");
-        let auto = apply_keyring_command(&mut world, &mut player, character_id, "#keyring auto")
-            .expect("keyring command should be recognized");
+        let removed = apply_keyring_command(
+            &mut world,
+            &mut loader,
+            &mut player,
+            character_id,
+            "#keyring remove 1",
+        )
+        .expect("keyring command should be recognized");
+        let auto = apply_keyring_command(
+            &mut world,
+            &mut loader,
+            &mut player,
+            character_id,
+            "#keyring auto",
+        )
+        .expect("keyring command should be recognized");
 
         assert_eq!(
             removed.messages,
             vec!["Removed Copper Key from your keyring."]
         );
+        assert!(removed.inventory_changed);
         assert_eq!(player.keyring_key_name(0x1122_3344), None);
+        let character = world.characters.get(&character_id).unwrap();
+        let restored_key_id = character.inventory[30].expect("removed key should be restored");
+        let restored_key = world.items.get(&restored_key_id).unwrap();
+        assert_eq!(restored_key.template_id, 0x1122_3344);
+        assert_eq!(restored_key.name, "Copper Key");
+        assert_eq!(restored_key.carried_by, Some(character_id));
         assert_eq!(
             auto.messages,
             vec!["Auto-add keys enabled. Keys will be automatically added to your keyring when picked up."]
         );
         assert!(player.keyring_auto_add());
+    }
+
+    #[test]
+    fn keyring_command_remove_keeps_entry_when_inventory_is_full() {
+        let login = login_block("Tester");
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login, 1, 10, 10);
+        let keyring_id = ItemId(90);
+        character.cursor_item = Some(keyring_id);
+        for slot in 30..character.inventory.len() {
+            character.inventory[slot] = Some(ItemId(1_000 + slot as u32));
+        }
+        let mut world = World::default();
+        world.add_character(character);
+        let mut keyring = test_item(keyring_id, 500, ItemFlags::USE);
+        keyring.template_id = IID_KEY_RING;
+        keyring.driver = IDR_KEY_RING;
+        world.add_item(keyring);
+        for slot in 30..ugaris_core::entity::INVENTORY_SIZE {
+            world.add_item(test_item(
+                ItemId(1_000 + slot as u32),
+                10,
+                ItemFlags::USED | ItemFlags::TAKE,
+            ));
+        }
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+        let mut loader = ZoneLoader::new();
+        assert_eq!(
+            player.add_keyring_key(0x1122_3344, "Copper Key"),
+            KeyringAddResult::Added
+        );
+
+        let result = apply_keyring_command(
+            &mut world,
+            &mut loader,
+            &mut player,
+            character_id,
+            "#keyring remove 1",
+        )
+        .expect("keyring command should be recognized");
+
+        assert_eq!(result.messages, vec!["Your inventory is full."]);
+        assert!(!result.inventory_changed);
+        assert_eq!(player.keyring_key_name(0x1122_3344), Some("Copper Key"));
     }
 
     #[test]
@@ -3297,7 +3461,7 @@ async fn main() -> anyhow::Result<()> {
                     let Some(character_id) = player.character_id else {
                         continue;
                     };
-                    if let Some(result) = apply_keyring_command(&mut world, player, character_id, &command) {
+                    if let Some(result) = apply_keyring_command(&mut world, &mut zone_loader, player, character_id, &command) {
                         for message in result.messages {
                             command_feedback.push((character_id, message));
                         }

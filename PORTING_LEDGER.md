@@ -153,17 +153,18 @@ Current implemented slices:
 - Keyring item use and `#keyring addall` now gate additions through the legacy registered-key item-ID list from `src/module/keyring/key_registry.c`, reject non-registered key-like items with legacy feedback, and keep rejected cursor items unconsumed.
 - Keyed doors now use carried exact-key/skeleton-key plus runtime keyring lookup and emit the legacy keyring door feedback text.
 - `#keyring`/`/keyring` text commands now require a keyring on the cursor, show contents, remove runtime entries, add registered inventory-slot 30+ key candidates to the runtime keyring, toggle auto-add, emit legacy-shaped `SV_TEXT` feedback, and refresh inventory after `addall`, with focused tests.
+- `#keyring remove <n>` now recreates the removed key before deleting the runtime keyring entry: it first tries a loaded template by legacy item ID, then the placeholder-key template, then stored key metadata, gives the key to inventory/cursor, preserves the keyring entry on full inventory, and refreshes inventory on success.
 
 Chest gaps still to port:
 
-- Keyring auto-add pickup integration, removed-key item recreation, admin `addallkeys`, and persistent `DRD_KEYRING_PPD` load/save.
+- Keyring auto-add pickup integration, admin `addallkeys`, and persistent `DRD_KEYRING_PPD` load/save.
 - Achievement persistence/protocol sending beyond runtime marker updates.
 - Exact persistent PPD storage behavior for chest access across logout/server restart.
 - `IDR_RANDCHEST = 34` persistent `DRD_RANDCHEST_PPD`, exact RNG parity, and full live-data smoke coverage.
 
 Recommended next chest steps:
 
-1. Port keyring auto-add pickup integration, removed-key item recreation, and persistent `DRD_KEYRING_PPD` load/save.
+1. Port keyring auto-add pickup integration, admin `addallkeys`, and persistent `DRD_KEYRING_PPD` load/save.
 2. Add persistent PPD load/save for treasure chest last-access state so cooldowns survive logout/server restart.
 3. Persist/runtime-load chest achievement state and send achievement protocol updates.
 4. Persist/runtime-load `IDR_RANDCHEST` daily access state and verify full loot table behavior against live data.

@@ -160,6 +160,20 @@ impl ZoneLoader {
         self.create_item(key, carried_by)
     }
 
+    pub fn instantiate_item_template_by_id(
+        &mut self,
+        template_id: u32,
+        carried_by: Option<CharacterId>,
+    ) -> Option<Item> {
+        let key = self
+            .item_templates
+            .values()
+            .find(|template| template.template_id == template_id)?
+            .key
+            .clone();
+        self.create_item(&key, carried_by).ok()
+    }
+
     pub fn allocate_item_id(&mut self) -> ItemId {
         let id = ItemId(self.next_item_id);
         self.next_item_id = self.next_item_id.saturating_add(1).max(1);
