@@ -9,6 +9,7 @@ use crate::{
         endurance_cost, reset_action_after_act, speed_ticks, ItemUseRequest, DUR_MISC_ACTION,
     },
     drvlib::char_dist,
+    effect::Effect,
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode},
     game_time::GameDate,
     ids::{CharacterId, ItemId},
@@ -27,9 +28,10 @@ use crate::{
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell,
         read_spell_expire_tick, spell_power, warcry_damage, warcry_speed_modifier, BLESS_DURATION,
-        FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE,
-        IDR_POISON0, IDR_POISON3, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
+        EF_FIREBALL, FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH,
+        IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
     },
+    tick::TICKS_PER_SECOND,
     Tick,
 };
 
@@ -68,6 +70,7 @@ pub struct World {
     pub map: MapGrid,
     pub characters: HashMap<CharacterId, Character>,
     pub items: HashMap<ItemId, Item>,
+    pub effects: HashMap<u32, Effect>,
     pending_look_maps: Vec<LookMapRequest>,
 }
 
@@ -99,6 +102,36 @@ impl World {
 
     pub fn add_item(&mut self, item: Item) {
         self.items.insert(item.id, item);
+    }
+
+    fn next_effect_id(&self) -> u32 {
+        self.effects.keys().copied().max().unwrap_or(0) + 1
+    }
+
+    fn create_fireball_effect(&mut self, caster: &Character) -> u32 {
+        let effect_id = self.next_effect_id();
+        let power = spell_power(
+            character_value(caster, CharacterValue::Fireball),
+            character_value(caster, CharacterValue::Tactics),
+        );
+        let mut effect = Effect::new(
+            EF_FIREBALL,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(TICKS_PER_SECOND) as i32,
+        );
+        effect.strength = power;
+        effect.light = 200;
+        effect.from_x = i32::from(caster.x);
+        effect.from_y = i32::from(caster.y);
+        effect.to_x = caster.act1;
+        effect.to_y = caster.act2;
+        effect.caster = Some(caster.id);
+        effect.caster_serial = caster.id.0 as i32;
+        effect.x = i32::from(caster.x) * 1024 + 512;
+        effect.y = i32::from(caster.y) * 1024 + 512;
+        self.effects.insert(effect_id, effect);
+        effect_id
     }
 
     pub fn drain_look_map_requests(&mut self) -> Vec<LookMapRequest> {
@@ -2000,6 +2033,7 @@ impl World {
             return false;
         }
 
+        self.create_fireball_effect(&caster);
         if let Some(caster) = self.characters.get_mut(&caster_id) {
             caster.action = action::FIREBALL2;
             caster.step = 0;
@@ -4874,10 +4908,12 @@ mod tests {
     #[test]
     fn targeted_fireball_sets_up_projectile_action() {
         let mut world = World::default();
+        world.tick = Tick(240);
         let mut caster = character(1);
         caster.flags.insert(CharacterFlags::PLAYER);
         caster.mana = 10 * POWERSCALE;
         caster.values[0][CharacterValue::Fireball as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
         world.spawn_character(caster, 10, 10);
         let mut player = PlayerRuntime::connected(1, 0);
         player.character_id = Some(CharacterId(1));
@@ -4901,6 +4937,18 @@ mod tests {
         let caster = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(caster.action, action::FIREBALL2);
         assert_eq!(caster.step, 0);
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_FIREBALL);
+        assert_eq!(effect.serial, 1);
+        assert_eq!(effect.start_tick, 240);
+        assert_eq!(effect.stop_tick, 240 + TICKS_PER_SECOND as i32);
+        assert_eq!(effect.strength, 53);
+        assert_eq!(effect.light, 200);
+        assert_eq!(effect.caster, Some(CharacterId(1)));
+        assert_eq!(effect.caster_serial, 1);
+        assert_eq!((effect.from_x, effect.from_y), (10, 10));
+        assert_eq!((effect.to_x, effect.to_y), (15, 10));
+        assert_eq!((effect.x, effect.y), (10 * 1024 + 512, 10 * 1024 + 512));
     }
 
     #[test]
