@@ -17,7 +17,7 @@ use ugaris_core::{
         CHARACTER_VALUE_NAMES, POWERSCALE,
     },
     ids::{CharacterId, ItemId},
-    item_driver::{IDR_KEY_RING, IDR_TORCH},
+    item_driver::{IDR_ACCOUNT_DEPOT, IDR_KEY_RING, IDR_TORCH},
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
     map::{MapFlags, MapTile},
@@ -72,6 +72,7 @@ struct ServerRuntime {
     sessions: HashMap<u64, mpsc::Sender<SessionCommand>>,
     map_caches: HashMap<u64, VisibleMapCache>,
     effect_caches: HashMap<u64, ClientEffectCache>,
+    account_depots: HashMap<CharacterId, AccountDepotState>,
     action_queue: VecDeque<(u64, ClientAction)>,
     next_character_id: u32,
 }
@@ -113,6 +114,11 @@ impl ServerRuntime {
         self.map_caches.remove(&session_id);
         self.effect_caches.remove(&session_id);
         self.action_queue.retain(|(id, _)| *id != session_id);
+        if let Some(player) = &player {
+            if let Some(character_id) = player.character_id {
+                self.account_depots.remove(&character_id);
+            }
+        }
         player
     }
 
@@ -199,6 +205,31 @@ impl ServerRuntime {
             .values()
             .find(|player| player.character_id == Some(character_id))
     }
+
+    fn ensure_account_depot(&mut self, character_id: CharacterId) -> &mut AccountDepotState {
+        self.account_depots.entry(character_id).or_default()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AccountDepotState {
+    slots: Vec<Option<Item>>,
+}
+
+impl Default for AccountDepotState {
+    fn default() -> Self {
+        Self {
+            slots: vec![None; ugaris_core::entity::INVENTORY_SIZE],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AccountDepotCommandResult {
+    Ignored,
+    Changed,
+    Look(String),
+    Blocked(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1838,6 +1869,168 @@ fn inventory_snapshot_payload(world: &World, character: &Character) -> bytes::By
     builder.into_payload()
 }
 
+fn account_depot_payload(depot: &AccountDepotState) -> bytes::BytesMut {
+    let mut builder = PacketBuilder::new();
+    builder
+        .container_type(1)
+        .container_name("Your Account Depot")
+        .container_count(depot.slots.len().min(u8::MAX as usize) as u8);
+    for (slot, item) in depot.slots.iter().enumerate().take(u8::MAX as usize + 1) {
+        builder.container_item(
+            slot as u8,
+            item.as_ref()
+                .map(|item| item.sprite.max(0) as u32)
+                .unwrap_or(0),
+        );
+    }
+    builder.into_payload()
+}
+
+fn apply_account_depot_command(
+    world: &mut World,
+    depot: &mut AccountDepotState,
+    character_id: CharacterId,
+    action: &ClientAction,
+) -> AccountDepotCommandResult {
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return AccountDepotCommandResult::Ignored;
+    };
+    let Some(container_id) = character.current_container else {
+        return AccountDepotCommandResult::Ignored;
+    };
+    if world
+        .items
+        .get(&container_id)
+        .is_none_or(|item| item.driver != IDR_ACCOUNT_DEPOT)
+    {
+        return AccountDepotCommandResult::Ignored;
+    }
+
+    match *action {
+        ClientAction::Container { slot, fast } => {
+            let slot = usize::from(slot);
+            if slot >= depot.slots.len() {
+                return AccountDepotCommandResult::Ignored;
+            }
+            if fast && character.cursor_item.is_some() {
+                return account_depot_store_cursor(world, depot, character_id);
+            }
+            account_depot_swap_slot(world, depot, character_id, slot)
+        }
+        ClientAction::LookContainer { slot } => depot
+            .slots
+            .get(usize::from(slot))
+            .and_then(Option::as_ref)
+            .map(account_depot_look_text)
+            .map(AccountDepotCommandResult::Look)
+            .unwrap_or(AccountDepotCommandResult::Ignored),
+        _ => AccountDepotCommandResult::Ignored,
+    }
+}
+
+fn account_depot_swap_slot(
+    world: &mut World,
+    depot: &mut AccountDepotState,
+    character_id: CharacterId,
+    slot: usize,
+) -> AccountDepotCommandResult {
+    let cursor_id = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.cursor_item);
+    if let Some(cursor_id) = cursor_id {
+        if world
+            .items
+            .get(&cursor_id)
+            .is_some_and(|item| item.flags.intersects(ItemFlags::QUEST | ItemFlags::NODEPOT))
+        {
+            return AccountDepotCommandResult::Blocked(
+                "You cannot store this item in the depot.".to_string(),
+            );
+        }
+    }
+
+    let withdrawn = depot.slots[slot].take();
+    let stored = cursor_id.and_then(|item_id| world.items.remove(&item_id));
+
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.cursor_item = None;
+    } else {
+        return AccountDepotCommandResult::Ignored;
+    }
+    if let Some(mut item) = stored {
+        item.carried_by = None;
+        item.contained_in = world
+            .characters
+            .get(&character_id)
+            .and_then(|character| character.current_container);
+        item.x = 0;
+        item.y = 0;
+        depot.slots[slot] = Some(item);
+    }
+    if let Some(mut item) = withdrawn {
+        item.id = next_runtime_item_id(world);
+        item.carried_by = Some(character_id);
+        item.contained_in = None;
+        item.x = 0;
+        item.y = 0;
+        if let Some(character) = world.characters.get_mut(&character_id) {
+            character.cursor_item = Some(item.id);
+        }
+        world.items.insert(item.id, item);
+    }
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.flags.insert(CharacterFlags::ITEMS);
+    }
+    AccountDepotCommandResult::Changed
+}
+
+fn account_depot_store_cursor(
+    world: &mut World,
+    depot: &mut AccountDepotState,
+    character_id: CharacterId,
+) -> AccountDepotCommandResult {
+    let Some(empty_slot) = depot.slots.iter().position(Option::is_none) else {
+        return AccountDepotCommandResult::Ignored;
+    };
+    account_depot_swap_slot(world, depot, character_id, empty_slot)
+}
+
+fn account_depot_sort(depot: &mut AccountDepotState) {
+    depot.slots.sort_by(|left, right| match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (Some(left), Some(right)) => right
+            .sprite
+            .cmp(&left.sprite)
+            .then_with(|| right.value.cmp(&left.value))
+            .then_with(|| {
+                left.name[..left.name.len().min(35)].cmp(&right.name[..right.name.len().min(35)])
+            }),
+    });
+}
+
+fn account_depot_look_text(item: &Item) -> String {
+    if item.description.is_empty() {
+        item.name.clone()
+    } else {
+        format!("{}\n{}", item.name, item.description)
+    }
+}
+
+fn next_runtime_item_id(world: &World) -> ItemId {
+    let next = world
+        .items
+        .keys()
+        .map(|id| id.0)
+        .max()
+        .unwrap_or_default()
+        .saturating_add(1)
+        .max(1);
+    ItemId(next)
+}
+
 fn login_bootstrap_payloads(
     world: &World,
     character: &Character,
@@ -2708,9 +2901,9 @@ fn queued0(action: PlayerActionCode) -> QueuedAction {
 mod tests {
     use ugaris_protocol::packet::{
         MAP_CHARACTER_ACTION, MAP_CHARACTER_SPRITE, MAP_CHARACTER_STATUS, MAP_TILE_FLAGS,
-        MAP_TILE_FSPRITE, MAP_TILE_GSPRITE, MAP_TILE_ISPRITE, SV_LOGINDONE, SV_MAP10, SV_MAP11,
-        SV_MAPPOS, SV_MIRROR, SV_ORIGIN, SV_PROTOCOL, SV_SETCITEM, SV_SETHP, SV_SETITEM,
-        SV_SETVAL0, SV_SETVAL1, SV_SPECIAL, SV_TEXT, SV_TICKER,
+        MAP_TILE_FSPRITE, MAP_TILE_GSPRITE, MAP_TILE_ISPRITE, SV_CONCNT, SV_CONNAME, SV_CONTAINER,
+        SV_CONTYPE, SV_LOGINDONE, SV_MAP10, SV_MAP11, SV_MAPPOS, SV_MIRROR, SV_ORIGIN, SV_PROTOCOL,
+        SV_SETCITEM, SV_SETHP, SV_SETITEM, SV_SETVAL0, SV_SETVAL1, SV_SPECIAL, SV_TEXT, SV_TICKER,
     };
 
     use super::*;
@@ -2891,6 +3084,143 @@ mod tests {
             driver_data: Vec::new(),
             serial: 1,
         }
+    }
+
+    #[test]
+    fn account_depot_swap_moves_cursor_item_into_snapshot_slot() {
+        let character_id = CharacterId(7);
+        let cursor_id = ItemId(20);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.current_container = Some(ItemId(10));
+        character.cursor_item = Some(cursor_id);
+
+        let mut world = World::default();
+        world.add_character(character);
+        let mut depot_item = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        depot_item.driver = IDR_ACCOUNT_DEPOT;
+        world.add_item(depot_item);
+        let mut cursor = test_item(cursor_id, 1234, ItemFlags::USED | ItemFlags::TAKE);
+        cursor.carried_by = Some(character_id);
+        world.add_item(cursor);
+        let mut depot = AccountDepotState::default();
+
+        assert_eq!(
+            apply_account_depot_command(
+                &mut world,
+                &mut depot,
+                character_id,
+                &ClientAction::Container {
+                    slot: 3,
+                    fast: false,
+                },
+            ),
+            AccountDepotCommandResult::Changed
+        );
+
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert!(!world.items.contains_key(&cursor_id));
+        assert_eq!(depot.slots[3].as_ref().unwrap().sprite, 1234);
+        assert_eq!(
+            depot.slots[3].as_ref().unwrap().contained_in,
+            Some(ItemId(10))
+        );
+    }
+
+    #[test]
+    fn account_depot_swap_withdraws_snapshot_to_cursor_with_new_live_id() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.current_container = Some(ItemId(10));
+
+        let mut world = World::default();
+        world.add_character(character);
+        let mut depot_item = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        depot_item.driver = IDR_ACCOUNT_DEPOT;
+        world.add_item(depot_item);
+        let mut stored = test_item(ItemId(99), 2222, ItemFlags::USED | ItemFlags::TAKE);
+        stored.name = "Stored".to_string();
+        let mut depot = AccountDepotState::default();
+        depot.slots[4] = Some(stored);
+
+        assert_eq!(
+            apply_account_depot_command(
+                &mut world,
+                &mut depot,
+                character_id,
+                &ClientAction::Container {
+                    slot: 4,
+                    fast: false,
+                },
+            ),
+            AccountDepotCommandResult::Changed
+        );
+
+        let cursor_id = world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .cursor_item
+            .unwrap();
+        assert_ne!(cursor_id, ItemId(99));
+        let cursor = world.items.get(&cursor_id).unwrap();
+        assert_eq!(cursor.name, "Stored");
+        assert_eq!(cursor.carried_by, Some(character_id));
+        assert!(depot.slots[4].is_none());
+    }
+
+    #[test]
+    fn account_depot_blocks_quest_and_nodepot_items() {
+        let character_id = CharacterId(7);
+        let cursor_id = ItemId(20);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.current_container = Some(ItemId(10));
+        character.cursor_item = Some(cursor_id);
+
+        let mut world = World::default();
+        world.add_character(character);
+        let mut depot_item = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        depot_item.driver = IDR_ACCOUNT_DEPOT;
+        world.add_item(depot_item);
+        let mut cursor = test_item(cursor_id, 1234, ItemFlags::USED | ItemFlags::QUEST);
+        cursor.carried_by = Some(character_id);
+        world.add_item(cursor);
+        let mut depot = AccountDepotState::default();
+
+        assert_eq!(
+            apply_account_depot_command(
+                &mut world,
+                &mut depot,
+                character_id,
+                &ClientAction::Container {
+                    slot: 0,
+                    fast: false,
+                },
+            ),
+            AccountDepotCommandResult::Blocked(
+                "You cannot store this item in the depot.".to_string()
+            )
+        );
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().cursor_item,
+            Some(cursor_id)
+        );
+        assert!(depot.slots[0].is_none());
+    }
+
+    #[test]
+    fn account_depot_payload_matches_legacy_container_header_and_slots() {
+        let mut depot = AccountDepotState::default();
+        depot.slots[2] = Some(test_item(ItemId(99), 0x11223344, ItemFlags::USED));
+
+        let payload = account_depot_payload(&depot);
+
+        assert_eq!(&payload[..2], &[SV_CONTYPE, 1]);
+        assert_eq!(payload[2], SV_CONNAME);
+        assert!(payload.windows(2).any(|window| window == [SV_CONCNT, 110]));
+        assert!(payload
+            .windows(6)
+            .any(|window| { window == [SV_CONTAINER, 2, 0x44, 0x33, 0x22, 0x11] }));
     }
 
     #[test]
@@ -5075,29 +5405,62 @@ async fn main() -> anyhow::Result<()> {
                 }
                 let mut command_feedback = Vec::new();
                 let mut command_inventory_refresh = Vec::new();
+                let mut command_container_refresh = Vec::new();
                 for (session_id, action) in queued {
-                    let ClientAction::Text(bytes) = action else {
-                        continue;
-                    };
-                    let Some(command) = normalize_text_command(&bytes) else {
-                        continue;
-                    };
-                    let Some(player) = runtime.players.get_mut(&session_id) else {
+                    let Some(player) = runtime.players.get(&session_id) else {
                         continue;
                     };
                     let Some(character_id) = player.character_id else {
                         continue;
                     };
-                    if let Some(result) = apply_keyring_command(&mut world, &mut zone_loader, player, character_id, &command) {
-                        for message in result.messages {
-                            command_feedback.push((character_id, message));
+                    match action {
+                        ClientAction::Text(bytes) => {
+                            let Some(command) = normalize_text_command(&bytes) else {
+                                continue;
+                            };
+                            if command.eq_ignore_ascii_case("accountdepotsort") {
+                                if let Some(depot) = runtime.account_depots.get_mut(&character_id) {
+                                    account_depot_sort(depot);
+                                    command_container_refresh.push(character_id);
+                                    command_feedback.push((character_id, "Account depot sorted.".to_string()));
+                                } else {
+                                    command_feedback.push((character_id, "You must have the account depot open to use this command.".to_string()));
+                                }
+                                continue;
+                            }
+                            let Some(player) = runtime.players.get_mut(&session_id) else {
+                                continue;
+                            };
+                            if let Some(result) = apply_keyring_command(&mut world, &mut zone_loader, player, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                if result.inventory_changed {
+                                    command_inventory_refresh.push(character_id);
+                                }
+                            }
                         }
-                        if result.inventory_changed {
-                            command_inventory_refresh.push(character_id);
+                        ClientAction::Container { .. } | ClientAction::LookContainer { .. } => {
+                            let result = {
+                                let depot = runtime.ensure_account_depot(character_id);
+                                apply_account_depot_command(&mut world, depot, character_id, &action)
+                            };
+                            match result {
+                                AccountDepotCommandResult::Changed => {
+                                    command_inventory_refresh.push(character_id);
+                                    command_container_refresh.push(character_id);
+                                }
+                                AccountDepotCommandResult::Look(message)
+                                | AccountDepotCommandResult::Blocked(message) => {
+                                    command_feedback.push((character_id, message));
+                                }
+                                AccountDepotCommandResult::Ignored => {}
+                            }
                         }
+                        _ => {}
                     }
                 }
-                if !command_feedback.is_empty() || !command_inventory_refresh.is_empty() {
+                if !command_feedback.is_empty() || !command_inventory_refresh.is_empty() || !command_container_refresh.is_empty() {
                     let mut feedback_sessions = 0;
                     for (character_id, message) in command_feedback {
                         let payload = ugaris_protocol::packet::system_text(&message);
@@ -5121,7 +5484,21 @@ async fn main() -> anyhow::Result<()> {
                             }
                         }
                     }
-                    info!(feedback_sessions, inventory_sessions, tick = world.tick.0, "processed text commands");
+                    let mut container_sessions = 0;
+                    command_container_refresh.sort_unstable_by_key(|id| id.0);
+                    command_container_refresh.dedup();
+                    for character_id in command_container_refresh {
+                        let Some(depot) = runtime.account_depots.get(&character_id) else {
+                            continue;
+                        };
+                        let payload = account_depot_payload(depot);
+                        for (session_id, _) in runtime.sessions_for_character(character_id) {
+                            if runtime.send_to_session(session_id, payload.clone()) {
+                                container_sessions += 1;
+                            }
+                        }
+                    }
+                    info!(feedback_sessions, inventory_sessions, container_sessions, tick = world.tick.0, "processed text/container commands");
                 }
                 let setup_count = runtime.setup_world_actions(&mut world, config.area_id);
                 if setup_count != 0 {
@@ -5217,11 +5594,17 @@ async fn main() -> anyhow::Result<()> {
                         let mut failed = 0;
                         let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
                         let mut feedback = Vec::new();
+                        let mut container_refresh = Vec::new();
                         for request in item_use_requests {
+                            let use_character_id = request.character_id;
                             match world.use_item_request(request, true) {
                                 Ok(ugaris_core::item_driver::UseItemOutcome::OpenContainer { .. })
-                                | Ok(ugaris_core::item_driver::UseItemOutcome::OpenDepot { .. })
-                                | Ok(ugaris_core::item_driver::UseItemOutcome::OpenAccountDepot { .. }) => {
+                                | Ok(ugaris_core::item_driver::UseItemOutcome::OpenDepot { .. }) => {
+                                    opened += 1;
+                                }
+                                Ok(ugaris_core::item_driver::UseItemOutcome::OpenAccountDepot { .. }) => {
+                                    runtime.ensure_account_depot(use_character_id);
+                                    container_refresh.push(use_character_id);
                                     opened += 1;
                                 }
                                 Ok(ugaris_core::item_driver::UseItemOutcome::Dispatch(request)) => {
@@ -5567,7 +5950,21 @@ async fn main() -> anyhow::Result<()> {
                                 }
                             }
                         }
-                        info!(opened, executed, unsupported, deferred_templates, blocked, failed, feedback_sessions, tick = world.tick.0, "processed item-use requests");
+                        let mut container_sessions = 0;
+                        container_refresh.sort_unstable_by_key(|id| id.0);
+                        container_refresh.dedup();
+                        for character_id in container_refresh {
+                            let Some(depot) = runtime.account_depots.get(&character_id) else {
+                                continue;
+                            };
+                            let payload = account_depot_payload(depot);
+                            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                                if runtime.send_to_session(session_id, payload.clone()) {
+                                    container_sessions += 1;
+                                }
+                            }
+                        }
+                        info!(opened, executed, unsupported, deferred_templates, blocked, failed, feedback_sessions, container_sessions, tick = world.tick.0, "processed item-use requests");
                     }
                     let mut refreshed_sessions = 0;
                     for completion in &completed_actions {
