@@ -155,17 +155,18 @@ Current implemented slices:
 - `#keyring`/`/keyring` text commands now require a keyring on the cursor, show contents, remove runtime entries, add registered inventory-slot 30+ key candidates to the runtime keyring, toggle auto-add, emit legacy-shaped `SV_TEXT` feedback, and refresh inventory after `addall`, with focused tests.
 - `#keyring remove <n>` now recreates the removed key before deleting the runtime keyring entry: it first tries a loaded template by legacy item ID, then the placeholder-key template, then stored key metadata, gives the key to inventory/cursor, preserves the keyring entry on full inventory, and refreshes inventory on success.
 - Keyring auto-add now runs after successful `TAKE` action completion for registered keys when enabled, stores full key metadata, consumes the cursor key on success, leaves duplicate/full keys on the cursor/inventory path, and emits legacy-shaped feedback text with focused tests.
+- Admin `#keyring addallkeys`/`/keyring addallkeys` now requires `CF_GOD` or `CF_STAFF`, instantiates loaded templates from the registered legacy key-ID list, stores matching key metadata up to the 100-key cap, and emits the legacy-shaped start/summary feedback with focused tests.
 
 Chest gaps still to port:
 
-- Admin `addallkeys` and persistent `DRD_KEYRING_PPD` load/save.
+- Persistent `DRD_KEYRING_PPD` load/save.
 - Achievement persistence/protocol sending beyond runtime marker updates.
 - Exact persistent PPD storage behavior for chest access across logout/server restart.
 - `IDR_RANDCHEST = 34` persistent `DRD_RANDCHEST_PPD`, exact RNG parity, and full live-data smoke coverage.
 
 Recommended next chest steps:
 
-1. Port admin `addallkeys` and persistent `DRD_KEYRING_PPD` load/save.
+1. Add persistent `DRD_KEYRING_PPD` load/save.
 2. Add persistent PPD load/save for treasure chest last-access state so cooldowns survive logout/server restart.
 3. Persist/runtime-load chest achievement state and send achievement protocol updates.
 4. Persist/runtime-load `IDR_RANDCHEST` daily access state and verify full loot table behavior against live data.

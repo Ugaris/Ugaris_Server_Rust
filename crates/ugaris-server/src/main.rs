@@ -14,7 +14,7 @@ use ugaris_core::{
     ids::{CharacterId, ItemId},
     item_driver::IDR_KEY_RING,
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
-    key_registry::is_registered_key,
+    key_registry::{is_registered_key, REGISTERED_KEY_IDS},
     map::{MapFlags, MapTile},
     player::{
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
@@ -572,6 +572,46 @@ fn apply_keyring_command(
             Some(KeyringCommandResult {
                 messages,
                 inventory_changed: added_count > 0,
+            })
+        }
+        "addallkeys" => {
+            let Some(character) = world.characters.get(&character_id) else {
+                return Some(KeyringCommandResult::default());
+            };
+            if !character
+                .flags
+                .intersects(CharacterFlags::GOD | CharacterFlags::STAFF)
+            {
+                return Some(KeyringCommandResult {
+                    messages: vec!["This command requires staff privileges.".to_string()],
+                    inventory_changed: false,
+                });
+            }
+
+            let mut added_count = 0;
+            for template_id in REGISTERED_KEY_IDS {
+                let Some(item) = loader.instantiate_item_template_by_id(*template_id, Some(character_id))
+                else {
+                    continue;
+                };
+                if player.add_keyring_item(&item) == KeyringAddResult::Added {
+                    added_count += 1;
+                }
+                if player.keyring.len() >= ugaris_core::player::KEYRING_MAX_KEYS {
+                    break;
+                }
+            }
+
+            Some(KeyringCommandResult {
+                messages: vec![
+                    "Adding all registered keys to keyring...".to_string(),
+                    format!(
+                        "Added {added_count} keys to your keyring (total: {}/{}).",
+                        player.keyring.len(),
+                        ugaris_core::player::KEYRING_MAX_KEYS
+                    ),
+                ],
+                inventory_changed: false,
             })
         }
         "auto" => {
@@ -2071,6 +2111,82 @@ mod tests {
         );
         assert!(!world.items.contains_key(&key_id));
         assert!(world.items.contains_key(&potion_id));
+    }
+
+    #[test]
+    fn keyring_command_addallkeys_requires_staff_and_uses_registered_templates() {
+        let login = login_block("Tester");
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login, 1, 10, 10);
+        let keyring_id = ItemId(90);
+        character.cursor_item = Some(keyring_id);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut keyring = test_item(keyring_id, 500, ItemFlags::USE);
+        keyring.template_id = IID_KEY_RING;
+        keyring.driver = IDR_KEY_RING;
+        world.add_item(keyring);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"
+                CopperKey:
+                  name="Copper Key"
+                  ID=1000002
+                  flag=IF_TAKE
+                ;
+                UnregisteredKey:
+                  name="Unregistered Key"
+                  ID=55667788
+                  flag=IF_TAKE
+                ;
+                "#,
+            )
+            .unwrap();
+
+        let denied = apply_keyring_command(
+            &mut world,
+            &mut loader,
+            &mut player,
+            character_id,
+            "#keyring addallkeys",
+        )
+        .expect("keyring command should be recognized");
+        assert_eq!(
+            denied.messages,
+            vec!["This command requires staff privileges."]
+        );
+        assert_eq!(player.keyring.len(), 0);
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::STAFF);
+        let added = apply_keyring_command(
+            &mut world,
+            &mut loader,
+            &mut player,
+            character_id,
+            "#keyring addallkeys",
+        )
+        .expect("keyring command should be recognized");
+
+        assert_eq!(
+            added.messages,
+            vec![
+                "Adding all registered keys to keyring...",
+                "Added 1 keys to your keyring (total: 1/100).",
+            ]
+        );
+        assert_eq!(
+            player.keyring_key_name(IID_AREA1_SKELKEY1),
+            Some("Copper Key")
+        );
+        assert_eq!(player.keyring.len(), 1);
     }
 
     #[test]
