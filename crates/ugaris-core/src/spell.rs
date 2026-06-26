@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::{
     combat::FIREBALL_DAMAGE,
-    entity::{CharacterFlags, POWERSCALE},
+    entity::{Character, CharacterFlags, Item, POWERSCALE},
+    ids::ItemId,
     tick::TICKS_PER_SECOND,
 };
 
@@ -23,7 +25,15 @@ pub const IDR_FREEZE: u16 = 1001;
 pub const IDR_FLASH: u16 = 1002;
 pub const IDR_WARCRY: u16 = 1003;
 pub const IDR_CURSE: u16 = 1010;
+pub const IDR_POISON0: u16 = 1011;
+pub const IDR_POISON1: u16 = 1012;
+pub const IDR_POISON2: u16 = 1013;
+pub const IDR_POISON3: u16 = 1014;
 pub const IDR_FIRERING: u16 = 1015;
+
+pub const SPELL_SLOT_START: usize = 12;
+pub const SPELL_SLOT_END: usize = 30;
+pub const BLESS_REFRESH_WINDOW_TICKS: u32 = TICKS_PER_SECOND as u32 * 30;
 
 pub const EF_FIREBALL: i32 = 1;
 pub const EF_MAGICSHIELD: i32 = 2;
@@ -115,6 +125,70 @@ pub fn pulse_spend(pulse_power: i32, caster_mana: i32) -> Option<SpellSpend> {
         amount,
         mana_cost: amount * POWERSCALE / 8,
     })
+}
+
+pub fn may_add_spell(
+    character: &Character,
+    items: &HashMap<ItemId, Item>,
+    driver: u16,
+    current_tick: u32,
+) -> Option<usize> {
+    let mut free_slot = None;
+
+    for slot in SPELL_SLOT_START..SPELL_SLOT_END {
+        match character.inventory.get(slot).copied().flatten() {
+            Some(item_id) => {
+                if items
+                    .get(&item_id)
+                    .is_some_and(|item| item.driver == driver)
+                {
+                    if driver == IDR_BLESS {
+                        let expires_at = items
+                            .get(&item_id)
+                            .and_then(|item| read_spell_expire_tick(&item.driver_data));
+                        if expires_at.is_some_and(|tick| {
+                            tick.wrapping_sub(current_tick) < BLESS_REFRESH_WINDOW_TICKS
+                        }) {
+                            return Some(slot);
+                        }
+                    }
+                    return None;
+                }
+            }
+            None => free_slot = Some(slot),
+        }
+    }
+
+    free_slot
+}
+
+pub fn add_same_spell_slot(
+    character: &Character,
+    items: &HashMap<ItemId, Item>,
+    driver: u16,
+) -> Option<usize> {
+    let mut free_slot = None;
+
+    for slot in SPELL_SLOT_START..SPELL_SLOT_END {
+        match character.inventory.get(slot).copied().flatten() {
+            Some(item_id) => {
+                if items
+                    .get(&item_id)
+                    .is_some_and(|item| item.driver == driver)
+                {
+                    return Some(slot);
+                }
+            }
+            None => free_slot = Some(slot),
+        }
+    }
+
+    free_slot
+}
+
+fn read_spell_expire_tick(driver_data: &[u8]) -> Option<u32> {
+    let bytes = driver_data.get(..4)?;
+    Some(u32::from_le_bytes(bytes.try_into().ok()?))
 }
 
 pub fn effective_immunity(immunity: i32, tactics: i32, has_tactics_skill: bool) -> i32 {
@@ -214,6 +288,10 @@ pub fn warcry_speed_modifier(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        entity::{CharacterValue, ItemFlags, INVENTORY_SIZE, MAX_MODIFIERS},
+        ids::CharacterId,
+    };
 
     #[test]
     fn spell_constants_match_legacy_headers() {
@@ -226,8 +304,12 @@ mod tests {
         assert_eq!(FREEZE_DURATION, 96);
         assert_eq!(WARCRY_DURATION, 96);
         assert_eq!(IDR_BLESS, 1000);
+        assert_eq!(IDR_FREEZE, 1001);
+        assert_eq!(IDR_FLASH, 1002);
         assert_eq!(IDR_WARCRY, 1003);
         assert_eq!(IDR_CURSE, 1010);
+        assert_eq!(IDR_POISON0, 1011);
+        assert_eq!(IDR_POISON3, 1014);
         assert_eq!(IDR_FIRERING, 1015);
         assert_eq!(EF_PULSEBACK, 22);
     }
@@ -287,5 +369,128 @@ mod tests {
         assert_eq!(freeze_speed_modifier(50, 30, 26, true, true, 10, 13), -335);
         assert_eq!(warcry_speed_modifier(50, 30, 0, false), -220);
         assert_eq!(warcry_speed_modifier(50, 30, 26, true), -190);
+    }
+
+    #[test]
+    fn may_add_spell_returns_last_free_spell_slot() {
+        let character = test_character();
+        let items = HashMap::new();
+
+        assert_eq!(
+            may_add_spell(&character, &items, IDR_FLASH, 10_000),
+            Some(29)
+        );
+    }
+
+    #[test]
+    fn may_add_spell_blocks_duplicate_active_driver() {
+        let mut character = test_character();
+        character.inventory[12] = Some(ItemId(1));
+        character.inventory[29] = None;
+        let items = HashMap::from([(ItemId(1), test_item(ItemId(1), IDR_FREEZE, 0))]);
+
+        assert_eq!(may_add_spell(&character, &items, IDR_FREEZE, 10_000), None);
+        assert_eq!(
+            add_same_spell_slot(&character, &items, IDR_FREEZE),
+            Some(12)
+        );
+    }
+
+    #[test]
+    fn may_add_spell_allows_near_expired_bless_refresh() {
+        let mut character = test_character();
+        character.inventory[18] = Some(ItemId(1));
+        let items = HashMap::from([(ItemId(1), test_item(ItemId(1), IDR_BLESS, 10_500))]);
+
+        assert_eq!(
+            may_add_spell(&character, &items, IDR_BLESS, 10_000),
+            Some(18)
+        );
+    }
+
+    #[test]
+    fn may_add_spell_blocks_bless_with_long_remaining_duration() {
+        let mut character = test_character();
+        character.inventory[18] = Some(ItemId(1));
+        let items = HashMap::from([(ItemId(1), test_item(ItemId(1), IDR_BLESS, 11_000))]);
+
+        assert_eq!(may_add_spell(&character, &items, IDR_BLESS, 10_000), None);
+    }
+
+    #[test]
+    fn add_same_spell_slot_returns_free_slot_when_absent() {
+        let character = test_character();
+        let items = HashMap::new();
+
+        assert_eq!(
+            add_same_spell_slot(&character, &items, IDR_WARCRY),
+            Some(29)
+        );
+    }
+
+    fn test_character() -> Character {
+        let mut values = Character::empty_values();
+        values[0][CharacterValue::Hp as usize] = 10;
+        Character {
+            id: CharacterId(1),
+            name: "tester".to_string(),
+            description: String::new(),
+            flags: CharacterFlags::USED,
+            sprite: 0,
+            speed_mode: crate::entity::SpeedMode::Normal,
+            x: 0,
+            y: 0,
+            rest_area: 0,
+            rest_x: 0,
+            rest_y: 0,
+            tox: 0,
+            toy: 0,
+            dir: 4,
+            action: 0,
+            duration: 0,
+            step: 0,
+            act1: 0,
+            act2: 0,
+            hp: POWERSCALE * 10,
+            mana: POWERSCALE * 10,
+            endurance: POWERSCALE * 10,
+            lifeshield: 0,
+            level: 1,
+            exp: 0,
+            exp_used: 0,
+            gold: 0,
+            deaths: 0,
+            cursor_item: None,
+            current_container: None,
+            values,
+            professions: Character::empty_professions(),
+            inventory: vec![None; INVENTORY_SIZE],
+        }
+    }
+
+    fn test_item(id: ItemId, driver: u16, expires_at: u32) -> Item {
+        Item {
+            id,
+            name: "spell".to_string(),
+            description: String::new(),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [0; MAX_MODIFIERS],
+            modifier_value: [0; MAX_MODIFIERS],
+            x: 0,
+            y: 0,
+            carried_by: Some(CharacterId(1)),
+            contained_in: None,
+            content_id: 0,
+            driver,
+            driver_data: expires_at.to_le_bytes().to_vec(),
+            serial: 0,
+        }
     }
 }
