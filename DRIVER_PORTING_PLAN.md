@@ -53,7 +53,7 @@ Dispatch policy:
 
 ## Prioritized Drivers To Port Next
 
-1. Finish door family details: keyed doors/keyring checks, auto-close timers, extended/multi-tile foreground shifts, and `IDR_DOUBLE_DOOR` pairing.
+1. Finish door family details: keyed doors/keyring checks, auto-close timers, and extended/multi-tile foreground shifts.
 2. `IDR_TELE_DOOR`: same navigation impact as doors, but simpler than full door state. Builds on same-area teleport outcomes and player stop/update behavior.
 3. `IDR_CHEST` and `IDR_RANDCHEST`: high player-facing reward impact. Requires a reusable `CreateItemTemplate` plus cursor placement and per-player cooldown state.
 4. `IDR_ACCOUNT_DEPOT`: current Rust dispatch recognizes it but returns unsupported. Porting it unlocks a major storage path and validates database-backed item containers.

@@ -113,7 +113,7 @@ cargo test --workspace
 cargo build -p ugaris-server
 ```
 
-Last verified after the `IDR_ASSEMBLE` slice:
+Last verified after the `IDR_DOUBLE_DOOR` slice:
 
 - `cargo test --workspace`: passed.
 - `cargo build -p ugaris-server`: passed.
@@ -163,6 +163,7 @@ Current implemented slices:
 - The server now retains DB snapshot `ppd_blob`/subscriber blobs in `PlayerRuntime`, decodes loaded keyring and treasure-chest PPD blocks on optional PostgreSQL-backed login, and re-encodes those blocks into the logout snapshot save request together with carried inventory/cursor items.
 - `IDR_CITY_RECALL = 159` now dispatches from the base item-driver path, maps legacy scroll types 0..12 to fixed city coordinates from `src/module/base.c`, blocks Teufelheim arena use, preserves carried/dying no-op behavior, decrements `drdata[1]` stack counts or consumes the final scroll, teleports same-area destinations, and returns typed cross-area handoff outcomes with focused tests.
 - `IDR_ASSEMBLE = 29` now dispatches from the base item-driver path, ports the legacy sun amulet and staff blue/green/red key combination matrix from `src/module/base.c`, emits the legacy no-cursor/does-not-fit/bug feedback messages, instantiates the combined item template, consumes the cursor component, and replaces the used carried item with focused core and server tests.
+- `IDR_DOUBLE_DOOR = 187` now dispatches from the base item-driver path, returns a typed double-door outcome, toggles the used door through the existing door state machinery, and synchronizes adjacent north/south/east/west doors whose open-state differs, with focused core/world tests.
 
 Chest gaps still to port:
 
@@ -184,7 +185,7 @@ Recommended next chest steps:
 - Integrate PostgreSQL-backed login/character selection and logout save instead of the temporary `new_warrior_m` scaffold.
 - Port combat action execution: `PAC_KILL`, `do_attack`, `act_attack`, hurt/death integration.
 - Port spell queue execution and spell setup/completion.
-- Continue door family details: keyed doors/keyring checks, auto-close timers, extended/multi-tile door foreground shifts, and `IDR_DOUBLE_DOOR` pairing.
+- Continue door family details: keyed doors/keyring checks, auto-close timers, and extended/multi-tile door foreground shifts.
 - Implement actual cross-area transfer execution for `IDR_RECALL`, `IDR_CITY_RECALL`, and teleport outcomes; Rust currently returns typed handoff outcomes for callers.
 
 ## Pending Priority Order

@@ -177,6 +177,10 @@ pub enum ItemDriverOutcome {
         source: DoorKeySource,
         locking: bool,
     },
+    DoubleDoorToggle {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     ChestTreasure {
         item_id: ItemId,
         character_id: CharacterId,
@@ -339,6 +343,7 @@ pub fn execute_item_driver_with_context(
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
+                IDR_DOUBLE_DOOR => double_door_driver(character, item),
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
                 IDR_TELEPORT => teleport_driver(character, item),
                 IDR_FOOD => food_driver(character, item),
@@ -358,6 +363,17 @@ pub fn execute_item_driver_with_context(
             item_id,
             character_id,
         },
+    }
+}
+
+fn double_door_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if item.x == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::DoubleDoorToggle {
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -1405,6 +1421,34 @@ mod tests {
                 source: DoorKeySource::Keyring,
                 locking: true,
             }
+        );
+    }
+
+    #[test]
+    fn execute_double_door_driver_returns_typed_toggle() {
+        let mut character = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DOUBLE_DOOR);
+        door.x = 10;
+        door.y = 11;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_DOUBLE_DOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut door, request, 1, false),
+            ItemDriverOutcome::DoubleDoorToggle {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        door.x = 0;
+        assert_eq!(
+            execute_item_driver(&mut character, &mut door, request, 1, false),
+            ItemDriverOutcome::Noop
         );
     }
 

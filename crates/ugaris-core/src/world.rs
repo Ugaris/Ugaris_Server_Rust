@@ -315,6 +315,13 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::DoubleDoorToggle { item_id, .. } => {
+                if self.toggle_double_door(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             _ => outcome,
         }
     }
@@ -403,6 +410,45 @@ impl World {
         }
 
         true
+    }
+
+    fn toggle_double_door(&mut self, item_id: ItemId) -> bool {
+        let mut toggled = self.toggle_door(item_id);
+        let Some((x, y, open_state)) = self.items.get(&item_id).map(|item| {
+            (
+                usize::from(item.x),
+                usize::from(item.y),
+                door_open_state(item),
+            )
+        }) else {
+            return toggled;
+        };
+        if x == 0 || y == 0 {
+            return toggled;
+        }
+
+        for (adjacent_x, adjacent_y) in [
+            (x, y.saturating_add(1)),
+            (x, y.saturating_sub(1)),
+            (x.saturating_add(1), y),
+            (x.saturating_sub(1), y),
+        ] {
+            let Some(adjacent_item_id) = self
+                .map
+                .tile(adjacent_x, adjacent_y)
+                .and_then(|tile| (tile.item != 0).then_some(ItemId(tile.item)))
+            else {
+                continue;
+            };
+            let Some(adjacent_item) = self.items.get(&adjacent_item_id) else {
+                continue;
+            };
+            if door_open_state(adjacent_item) != open_state {
+                toggled |= self.toggle_door(adjacent_item_id);
+            }
+        }
+
+        toggled
     }
 
     fn teleport_character(
@@ -1164,6 +1210,10 @@ fn door_stored_flags(item: &Item) -> ItemFlags {
             .unwrap_or_default();
     }
     ItemFlags::from_bits_retain(u64::from_le_bytes(bytes))
+}
+
+fn door_open_state(item: &Item) -> bool {
+    item.driver_data.first().copied().unwrap_or_default() != 0
 }
 
 fn store_door_flags(item: &mut Item, flags: ItemFlags) {
@@ -1982,6 +2032,65 @@ mod tests {
         let door = world.items.get(&ItemId(7)).unwrap();
         assert_eq!(door.driver_data[0], 1);
         assert_eq!(door.sprite, 101);
+    }
+
+    #[test]
+    fn world_executes_double_door_and_syncs_adjacent_state() {
+        let mut world = World::default();
+        world.add_character(character(1));
+        let closed_flags = ItemFlags::USED
+            | ItemFlags::USE
+            | ItemFlags::MOVEBLOCK
+            | ItemFlags::SIGHTBLOCK
+            | ItemFlags::SOUNDBLOCK
+            | ItemFlags::DOOR;
+        let mut primary = item(7, closed_flags);
+        primary.driver = crate::item_driver::IDR_DOUBLE_DOOR;
+        primary.sprite = 100;
+        assert!(world.map.set_item_map(&mut primary, 10, 10));
+        world.add_item(primary);
+
+        let mut adjacent = item(8, closed_flags);
+        adjacent.driver = crate::item_driver::IDR_DOOR;
+        adjacent.sprite = 200;
+        assert!(world.map.set_item_map(&mut adjacent, 10, 11));
+        world.add_item(adjacent);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_DOUBLE_DOOR,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::DoubleDoorToggle {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        let primary = world.items.get(&ItemId(7)).unwrap();
+        let adjacent = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(primary.driver_data[0], 1);
+        assert_eq!(adjacent.driver_data[0], 1);
+        assert_eq!(primary.sprite, 101);
+        assert_eq!(adjacent.sprite, 201);
+        assert!(!world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK));
+        assert!(!world
+            .map
+            .tile(10, 11)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK));
     }
 
     #[test]
