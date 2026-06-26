@@ -33,6 +33,7 @@ pub const IDR_FOOD: u16 = 64;
 pub const IDR_ENCHANTITEM: u16 = 83;
 pub const IDR_ORBSPAWN: u16 = 84;
 pub const IDR_TOYLIGHT: u16 = 117;
+pub const IDR_DECAYITEM: u16 = 132;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_ANTIENCHANTITEM: u16 = 160;
 pub const IDR_SPECIALANTIENCHANTITEM: u16 = 161;
@@ -281,6 +282,17 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
     },
+    DecayItemToggled {
+        item_id: ItemId,
+        character_id: CharacterId,
+        active: bool,
+        schedule_after_ticks: Option<u64>,
+    },
+    DecayItemExpired {
+        item_id: ItemId,
+        character_id: CharacterId,
+        item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
+    },
     TorchExtractOrb {
         item_id: ItemId,
         character_id: CharacterId,
@@ -475,6 +487,7 @@ pub fn execute_item_driver_with_context(
                 IDR_ORBSPAWN => orbspawn_driver(character, item, false),
                 IDR_ANTIORBSPAWN => orbspawn_driver(character, item, true),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
+                IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
                     driver,
@@ -1297,6 +1310,11 @@ fn drdata_u16(item: &Item, idx: usize) -> u16 {
     lo | (hi << 8)
 }
 
+fn set_drdata_u16(item: &mut Item, idx: usize, value: u16) {
+    set_drdata(item, idx, value as u8);
+    set_drdata(item, idx + 1, (value >> 8) as u8);
+}
+
 fn toylight_driver(
     character: &Character,
     item: &mut Item,
@@ -1498,6 +1516,67 @@ fn food_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome 
         item_id: item.id,
         character_id: character.id,
         kind,
+    }
+}
+
+fn decaying_item_driver(
+    character: &mut Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(7, 0);
+
+    if context.timer_call {
+        if item.driver_data[0] == 0 {
+            return ItemDriverOutcome::Noop;
+        }
+
+        let age = drdata_u16(item, 3).saturating_add(1);
+        set_drdata_u16(item, 3, age);
+        if age > drdata_u16(item, 5) {
+            return ItemDriverOutcome::DecayItemExpired {
+                item_id: item.id,
+                character_id: item.carried_by.unwrap_or(character.id),
+                item_name: outcome_item_name(&item.name),
+            };
+        }
+
+        return ItemDriverOutcome::DecayItemToggled {
+            item_id: item.id,
+            character_id: item.carried_by.unwrap_or(character.id),
+            active: true,
+            schedule_after_ticks: Some(TICKS_PER_SECOND * 2),
+        };
+    }
+
+    if item.x != 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let activating = item.driver_data[0] == 0;
+    item.driver_data[0] = u8::from(activating);
+    let target_value = i16::from(if activating {
+        item.driver_data[2]
+    } else {
+        item.driver_data[1]
+    });
+    for value in &mut item.modifier_value {
+        if *value != 0 {
+            *value = target_value;
+        }
+    }
+    if activating {
+        item.sprite += 1;
+    } else {
+        item.sprite -= 1;
+    }
+    character.flags.insert(CharacterFlags::ITEMS);
+
+    ItemDriverOutcome::DecayItemToggled {
+        item_id: item.id,
+        character_id: character.id,
+        active: activating,
+        schedule_after_ticks: activating.then_some(TICKS_PER_SECOND * 2),
     }
 }
 
@@ -1800,6 +1879,119 @@ mod tests {
             }
         );
         assert!(special.flags.contains(ItemFlags::USED));
+    }
+
+    #[test]
+    fn execute_decaying_item_toggles_carried_modifiers_and_schedules_timer() {
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        let mut decaying = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DECAYITEM);
+        decaying.carried_by = Some(CharacterId(1));
+        decaying.sprite = 100;
+        decaying.modifier_value = [1, 0, 2, 0, 3];
+        decaying.driver_data = vec![0, 4, 9, 0, 0, 2, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_DECAYITEM,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut decaying, request, 1, false),
+            ItemDriverOutcome::DecayItemToggled {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                active: true,
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 2),
+            }
+        );
+        assert_eq!(decaying.driver_data[0], 1);
+        assert_eq!(decaying.sprite, 101);
+        assert_eq!(decaying.modifier_value, [9, 0, 9, 0, 9]);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut decaying, request, 1, false),
+            ItemDriverOutcome::DecayItemToggled {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                active: false,
+                schedule_after_ticks: None,
+            }
+        );
+        assert_eq!(decaying.driver_data[0], 0);
+        assert_eq!(decaying.sprite, 100);
+        assert_eq!(decaying.modifier_value, [4, 0, 4, 0, 4]);
+    }
+
+    #[test]
+    fn execute_decaying_item_timer_ages_active_item_until_expiry() {
+        let mut timer_character = character(0);
+        let mut decaying = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DECAYITEM);
+        decaying.name = "Vanishing Charm".into();
+        decaying.carried_by = Some(CharacterId(1));
+        decaying.driver_data = vec![1, 4, 9, 1, 0, 2, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_DECAYITEM,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut decaying,
+                request,
+                1,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::DecayItemToggled {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                active: true,
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 2),
+            }
+        );
+        assert_eq!(decaying.driver_data[3], 2);
+        assert_eq!(decaying.driver_data[4], 0);
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut decaying,
+                request,
+                1,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::DecayItemExpired {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                item_name: outcome_item_name("Vanishing Charm"),
+            }
+        );
+        assert_eq!(decaying.driver_data[3], 3);
+        assert_eq!(decaying.driver_data[4], 0);
+
+        decaying.driver_data[0] = 0;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut decaying,
+                request,
+                1,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::Noop
+        );
     }
 
     #[test]

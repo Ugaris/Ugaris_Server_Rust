@@ -5784,6 +5784,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::StepTrapDiscoverTarget { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::DecayItemToggled { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
@@ -5929,6 +5930,13 @@ async fn main() -> anyhow::Result<()> {
                                             unsupported += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::TorchExpired { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::DecayItemExpired { character_id, item_name, .. } => {
+                                            let item_name = String::from_utf8_lossy(&item_name)
+                                                .trim_end_matches('\0')
+                                                .to_string();
+                                            feedback.push((character_id, format!("Your {item_name} expired.")));
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::Noop => {

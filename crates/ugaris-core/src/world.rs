@@ -81,6 +81,7 @@ fn item_light_may_have_changed(outcome: &ItemDriverOutcome) -> bool {
         ItemDriverOutcome::LightChanged { .. }
             | ItemDriverOutcome::FlameThrowerPulse { .. }
             | ItemDriverOutcome::FlameThrowerExtinguished { .. }
+            | ItemDriverOutcome::DecayItemToggled { .. }
     )
 }
 
@@ -1292,6 +1293,24 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::TorchExpired { item_id, .. } => {
+                if self.destroy_item(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::DecayItemToggled {
+                item_id,
+                character_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, character_id, after_ticks);
+                }
+                outcome
+            }
+            ItemDriverOutcome::DecayItemExpired { item_id, .. } => {
                 if self.destroy_item(item_id) {
                     outcome
                 } else {
