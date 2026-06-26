@@ -3909,7 +3909,10 @@ async fn main() -> anyhow::Result<()> {
         tokio::select! {
             _ = tick.tick() => {
                 world.advance();
-                let _timer_events = world.timers.tick(world.tick.0);
+                let timer_outcomes = world.process_due_timers(config.area_id);
+                if !timer_outcomes.is_empty() {
+                    info!(count = timer_outcomes.len(), tick = world.tick.0, "processed timer callbacks");
+                }
                 let due_tasks = world.scheduler.due_tasks(world.tick.0);
                 if !due_tasks.is_empty() {
                     info!(count = due_tasks.len(), tick = world.tick.0, "scheduled tasks are due");

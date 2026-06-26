@@ -19,7 +19,7 @@ use crate::{
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},
     player::{PlayerActionCode, PlayerRuntime},
-    scheduler::{TaskScheduler, TimerQueue},
+    scheduler::{TaskScheduler, TimerPayload, TimerQueue},
     Tick,
 };
 
@@ -44,6 +44,8 @@ pub struct LookMapRequest {
     pub character_level: u32,
     pub visible: bool,
 }
+
+const ITEM_DRIVER_TIMER: &str = "item_driver";
 
 #[derive(Debug, Default)]
 pub struct World {
@@ -89,6 +91,36 @@ impl World {
 
     pub fn drain_look_map_requests(&mut self) -> Vec<LookMapRequest> {
         self.pending_look_maps.drain(..).collect()
+    }
+
+    pub fn process_due_timers(&mut self, area_id: u16) -> Vec<ItemDriverOutcome> {
+        self.timers
+            .tick(self.tick.0)
+            .into_iter()
+            .filter_map(|event| {
+                if event.name != ITEM_DRIVER_TIMER {
+                    return None;
+                }
+                let [driver, item_id, character_id, _, _] = event.payload.0;
+                if driver <= 0 || item_id <= 0 || character_id <= 0 {
+                    return None;
+                }
+                let request = ItemDriverRequest::Driver {
+                    driver: driver as u16,
+                    item_id: ItemId(item_id as u32),
+                    character_id: CharacterId(character_id as u32),
+                    spec: 0,
+                };
+                Some(self.execute_item_driver_request_with_context(
+                    request,
+                    area_id,
+                    &ItemDriverContext {
+                        timer_call: true,
+                        ..ItemDriverContext::default()
+                    },
+                ))
+            })
+            .collect()
     }
 
     pub fn advance_character_action(&mut self, character_id: CharacterId) -> Option<bool> {
@@ -336,8 +368,75 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::LightChanged {
+                item_id,
+                character_id,
+                schedule_after_ticks,
+            } => {
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, character_id, after_ticks);
+                }
+                outcome
+            }
+            ItemDriverOutcome::TorchExpired { item_id, .. } => {
+                if self.destroy_item(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             _ => outcome,
         }
+    }
+
+    fn schedule_item_driver_timer(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        after_ticks: u64,
+    ) -> bool {
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        if item.driver == 0 {
+            return false;
+        }
+        self.timers.set_timer(
+            self.tick.0.saturating_add(after_ticks),
+            ITEM_DRIVER_TIMER,
+            TimerPayload([
+                i32::from(item.driver),
+                item_id.0 as i32,
+                character_id.0 as i32,
+                0,
+                0,
+            ]),
+        )
+    }
+
+    fn destroy_item(&mut self, item_id: ItemId) -> bool {
+        let Some(mut item) = self.items.remove(&item_id) else {
+            return false;
+        };
+
+        if let Some(character_id) = item.carried_by {
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                if character.cursor_item == Some(item_id) {
+                    character.cursor_item = None;
+                }
+                for slot in &mut character.inventory {
+                    if *slot == Some(item_id) {
+                        *slot = None;
+                    }
+                }
+                character.flags.insert(CharacterFlags::ITEMS);
+            }
+        }
+
+        if item.x != 0 {
+            self.map.remove_item_map(&mut item);
+        }
+        true
     }
 
     fn consume_city_recall_scroll(&mut self, character_id: CharacterId, item_id: ItemId) {
@@ -1261,7 +1360,7 @@ mod tests {
     use crate::{
         direction::Direction,
         entity::{CharacterFlags, ItemFlags, SpeedMode, MAX_MODIFIERS},
-        item_driver::UseItemOutcome,
+        item_driver::{UseItemOutcome, IDR_TORCH},
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
@@ -1297,6 +1396,67 @@ mod tests {
         let removed = world.remove_character(CharacterId(1)).unwrap();
         assert_eq!(removed.id, CharacterId(1));
         assert_eq!(world.map.tile(10, 10).unwrap().character, 0);
+    }
+
+    #[test]
+    fn world_reschedules_light_timer_after_lighting_torch() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        let mut torch = item(7, ItemFlags::USED | ItemFlags::USE);
+        torch.carried_by = Some(CharacterId(1));
+        torch.driver = IDR_TORCH;
+        torch.driver_data = vec![0, 0, 10, 20];
+        world.add_character(character);
+        world.add_item(torch);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_TORCH,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::LightChanged { .. }));
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_timer_callback_expires_and_destroys_burned_out_torch() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        let mut torch = item(7, ItemFlags::USED | ItemFlags::USE);
+        torch.carried_by = Some(CharacterId(1));
+        torch.driver = IDR_TORCH;
+        torch.driver_data = vec![0, 1, 1, 20];
+        world.add_character(character);
+        world.add_item(torch);
+
+        world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_TORCH,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+        world.tick.0 = 30 * crate::tick::TICKS_PER_SECOND;
+        let outcomes = world.process_due_timers(1);
+
+        assert_eq!(outcomes.len(), 1);
+        assert!(matches!(
+            outcomes[0],
+            ItemDriverOutcome::TorchExpired { .. }
+        ));
+        assert!(!world.items.contains_key(&ItemId(7)));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[30], None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
     }
 
     #[test]
