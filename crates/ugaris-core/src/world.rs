@@ -385,8 +385,153 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::EnchantCursorItem {
+                item_id,
+                character_id,
+                cursor_item_id,
+                modifier,
+                amount,
+            } => {
+                if self.apply_enchant_cursor_item(
+                    item_id,
+                    character_id,
+                    cursor_item_id,
+                    modifier,
+                    amount,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::BlockedByRequirements {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
+            ItemDriverOutcome::AntiEnchantCursorItem {
+                item_id,
+                character_id,
+                cursor_item_id,
+                modifier,
+                amount,
+                extract_orb: _,
+            } => {
+                if self.apply_anti_enchant_cursor_item(
+                    item_id,
+                    character_id,
+                    cursor_item_id,
+                    modifier,
+                    amount,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::BlockedByRequirements {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             _ => outcome,
         }
+    }
+
+    fn apply_enchant_cursor_item(
+        &mut self,
+        orb_item_id: ItemId,
+        character_id: CharacterId,
+        target_item_id: ItemId,
+        modifier: i16,
+        amount: i16,
+    ) -> bool {
+        if amount <= 0 || !self.character_holds_cursor_item(character_id, target_item_id) {
+            return false;
+        }
+
+        let Some(target) = self.items.get(&target_item_id) else {
+            return false;
+        };
+        if !target.flags.intersects(ItemFlags::WEAR)
+            || target.flags.contains(ItemFlags::NOENHANCE)
+            || target.flags.contains(ItemFlags::WNLHAND)
+        {
+            return false;
+        }
+
+        let current = current_modifier_value(target, modifier).unwrap_or_default();
+        let new_value = current.saturating_add(amount);
+        if new_value > 20 {
+            return false;
+        }
+        if current == 0 && counted_enhancement_modifiers(target) >= 3 {
+            return false;
+        }
+        let Some(slot) = modifier_slot_for_write(target, modifier) else {
+            return false;
+        };
+
+        if !self.destroy_item(orb_item_id) {
+            return false;
+        }
+        let Some(target) = self.items.get_mut(&target_item_id) else {
+            return false;
+        };
+        target.modifier_index[slot] = modifier;
+        target.modifier_value[slot] = new_value;
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.flags.insert(CharacterFlags::ITEMS);
+        }
+        true
+    }
+
+    fn apply_anti_enchant_cursor_item(
+        &mut self,
+        anti_orb_item_id: ItemId,
+        character_id: CharacterId,
+        target_item_id: ItemId,
+        modifier: i16,
+        amount: i16,
+    ) -> bool {
+        if amount <= 0 || !self.character_holds_cursor_item(character_id, target_item_id) {
+            return false;
+        }
+        if matches!(modifier, x if x == CharacterValue::Armor as i16 || x == CharacterValue::Weapon as i16)
+        {
+            return false;
+        }
+
+        let Some(target) = self.items.get(&target_item_id) else {
+            return false;
+        };
+        if !target.flags.intersects(ItemFlags::WEAR) || target.flags.contains(ItemFlags::NOENHANCE)
+        {
+            return false;
+        }
+        let Some(slot) = modifier_slot_with_positive_value(target, modifier) else {
+            return false;
+        };
+
+        if !self.destroy_item(anti_orb_item_id) {
+            return false;
+        }
+        let Some(target) = self.items.get_mut(&target_item_id) else {
+            return false;
+        };
+        let new_value = target.modifier_value[slot] - amount;
+        if new_value <= 0 {
+            target.modifier_index[slot] = 0;
+            target.modifier_value[slot] = 0;
+        } else {
+            target.modifier_value[slot] = new_value;
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.flags.insert(CharacterFlags::ITEMS);
+        }
+        true
+    }
+
+    fn character_holds_cursor_item(&self, character_id: CharacterId, item_id: ItemId) -> bool {
+        self.characters
+            .get(&character_id)
+            .is_some_and(|character| character.cursor_item == Some(item_id))
     }
 
     fn schedule_item_driver_timer(
@@ -1329,6 +1474,45 @@ fn door_open_state(item: &Item) -> bool {
     item.driver_data.first().copied().unwrap_or_default() != 0
 }
 
+fn current_modifier_value(item: &Item, modifier: i16) -> Option<i16> {
+    item.modifier_index
+        .iter()
+        .zip(item.modifier_value.iter())
+        .find_map(|(index, value)| (*index == modifier).then_some(*value))
+}
+
+fn modifier_slot_for_write(item: &Item, modifier: i16) -> Option<usize> {
+    item.modifier_index
+        .iter()
+        .position(|index| *index == modifier)
+        .or_else(|| item.modifier_value.iter().position(|value| *value == 0))
+}
+
+fn modifier_slot_with_positive_value(item: &Item, modifier: i16) -> Option<usize> {
+    item.modifier_index
+        .iter()
+        .zip(item.modifier_value.iter())
+        .position(|(index, value)| *index == modifier && *value > 0)
+}
+
+fn counted_enhancement_modifiers(item: &Item) -> usize {
+    item.modifier_index
+        .iter()
+        .zip(item.modifier_value.iter())
+        .filter(|(index, value)| {
+            **value > 0
+                && **index >= 0
+                && !matches!(
+                    **index,
+                    x if x == CharacterValue::Weapon as i16
+                        || x == CharacterValue::Armor as i16
+                        || x == CharacterValue::Demon as i16
+                        || x == CharacterValue::Light as i16
+                )
+        })
+        .count()
+}
+
 fn store_door_flags(item: &mut Item, flags: ItemFlags) {
     item.driver_data.resize(40, 0);
     item.driver_data[30..38].copy_from_slice(&flags.bits().to_le_bytes());
@@ -1360,7 +1544,7 @@ mod tests {
     use crate::{
         direction::Direction,
         entity::{CharacterFlags, ItemFlags, SpeedMode, MAX_MODIFIERS},
-        item_driver::{UseItemOutcome, IDR_TORCH},
+        item_driver::{UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_ENCHANTITEM, IDR_TORCH},
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
@@ -1457,6 +1641,129 @@ mod tests {
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(character.inventory[30], None);
         assert!(character.flags.contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
+    fn world_enchants_cursor_equipment_and_consumes_orb() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(8));
+        character.inventory[30] = Some(ItemId(7));
+        let mut orb = item(7, ItemFlags::USED | ItemFlags::USE);
+        orb.carried_by = Some(CharacterId(1));
+        orb.driver = IDR_ENCHANTITEM;
+        orb.driver_data = vec![CharacterValue::Sword as u8, 3];
+        let equipment = item(8, ItemFlags::USED | ItemFlags::WNNECK);
+        world.add_character(character);
+        world.add_item(orb);
+        world.add_item(equipment);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_ENCHANTITEM,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::EnchantCursorItem { .. }
+        ));
+        assert!(!world.items.contains_key(&ItemId(7)));
+        let equipment = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(equipment.modifier_index[0], CharacterValue::Sword as i16);
+        assert_eq!(equipment.modifier_value[0], 3);
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[30], None);
+        assert_eq!(character.cursor_item, Some(ItemId(8)));
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
+    fn world_blocks_enchant_beyond_legacy_limits_without_consuming_orb() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(8));
+        character.inventory[30] = Some(ItemId(7));
+        let mut orb = item(7, ItemFlags::USED | ItemFlags::USE);
+        orb.carried_by = Some(CharacterId(1));
+        orb.driver = IDR_ENCHANTITEM;
+        orb.driver_data = vec![CharacterValue::Sword as u8, 2];
+        let mut equipment = item(8, ItemFlags::USED | ItemFlags::WNNECK);
+        equipment.modifier_index[0] = CharacterValue::Sword as i16;
+        equipment.modifier_value[0] = 19;
+        world.add_character(character);
+        world.add_item(orb);
+        world.add_item(equipment);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_ENCHANTITEM,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::BlockedByRequirements {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        assert!(world.items.contains_key(&ItemId(7)));
+        assert_eq!(world.items.get(&ItemId(8)).unwrap().modifier_value[0], 19);
+    }
+
+    #[test]
+    fn world_anti_enchant_reduces_or_removes_cursor_equipment_modifier() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(8));
+        character.inventory[30] = Some(ItemId(7));
+        character.inventory[31] = Some(ItemId(9));
+        let mut anti_orb = item(7, ItemFlags::USED | ItemFlags::USE);
+        anti_orb.carried_by = Some(CharacterId(1));
+        anti_orb.driver = IDR_ANTIENCHANTITEM;
+        anti_orb.driver_data = vec![CharacterValue::Sword as u8, 2];
+        let mut second_anti_orb = item(9, ItemFlags::USED | ItemFlags::USE);
+        second_anti_orb.carried_by = Some(CharacterId(1));
+        second_anti_orb.driver = IDR_ANTIENCHANTITEM;
+        second_anti_orb.driver_data = vec![CharacterValue::Sword as u8, 3];
+        let mut equipment = item(8, ItemFlags::USED | ItemFlags::WNNECK);
+        equipment.modifier_index[0] = CharacterValue::Sword as i16;
+        equipment.modifier_value[0] = 5;
+        world.add_character(character);
+        world.add_item(anti_orb);
+        world.add_item(second_anti_orb);
+        world.add_item(equipment);
+
+        let request = |item_id| ItemDriverRequest::Driver {
+            driver: IDR_ANTIENCHANTITEM,
+            item_id: ItemId(item_id),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        assert!(matches!(
+            world.execute_item_driver_request(request(7), 1),
+            ItemDriverOutcome::AntiEnchantCursorItem { .. }
+        ));
+        assert_eq!(world.items.get(&ItemId(8)).unwrap().modifier_value[0], 3);
+        assert!(!world.items.contains_key(&ItemId(7)));
+
+        assert!(matches!(
+            world.execute_item_driver_request(request(9), 1),
+            ItemDriverOutcome::AntiEnchantCursorItem { .. }
+        ));
+        let equipment = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(equipment.modifier_index[0], 0);
+        assert_eq!(equipment.modifier_value[0], 0);
+        assert!(!world.items.contains_key(&ItemId(9)));
     }
 
     #[test]

@@ -24,8 +24,11 @@ pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_FOOD: u16 = 64;
+pub const IDR_ENCHANTITEM: u16 = 83;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
+pub const IDR_ANTIENCHANTITEM: u16 = 160;
+pub const IDR_SPECIALANTIENCHANTITEM: u16 = 161;
 pub const IDR_CITY_RECALL: u16 = 159;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_KEY_RING: u16 = 200;
@@ -242,6 +245,25 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    EnchantCursorItem {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        modifier: i16,
+        amount: i16,
+    },
+    AntiEnchantCursorItem {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        modifier: i16,
+        amount: i16,
+        extract_orb: bool,
+    },
+    EnchantNeedsCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BlockedByRequirements {
         item_id: ItemId,
         character_id: CharacterId,
@@ -367,6 +389,9 @@ pub fn execute_item_driver_with_context(
                 IDR_NIGHTLIGHT => nightlight_driver(character, item, context),
                 IDR_TORCH => torch_driver(character, item, context),
                 IDR_FOOD => food_driver(character, item),
+                IDR_ENCHANTITEM => enchant_driver(character, item),
+                IDR_ANTIENCHANTITEM => anti_enchant_driver(character, item, false),
+                IDR_SPECIALANTIENCHANTITEM => anti_enchant_driver(character, item, true),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
@@ -431,6 +456,49 @@ fn keyring_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+fn enchant_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::EnchantNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::EnchantCursorItem {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        modifier: i16::from(drdata(item, 0)),
+        amount: i16::from(drdata(item, 1)),
+    }
+}
+
+fn anti_enchant_driver(character: &Character, item: &Item, extract_orb: bool) -> ItemDriverOutcome {
+    if item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::EnchantNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::AntiEnchantCursorItem {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        modifier: i16::from(drdata(item, 0)),
+        amount: i16::from(drdata(item, 1)),
+        extract_orb,
     }
 }
 
