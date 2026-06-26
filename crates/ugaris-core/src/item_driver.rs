@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     do_action::ItemUseRequest,
-    entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, POWERSCALE},
+    entity::{
+        Character, CharacterFlags, CharacterValue, Item, ItemFlags, CHARACTER_VALUE_COUNT,
+        POWERSCALE,
+    },
     ids::{CharacterId, ItemId},
     item_ops::consume_item,
     legacy::action,
@@ -13,6 +16,7 @@ pub const IDR_DOOR: u16 = 2;
 pub const IDR_CHEST: u16 = 5;
 pub const IDR_TELEPORT: u16 = 10;
 pub const IDR_RECALL: u16 = 13;
+pub const IDR_STATSCROLL: u16 = 19;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_FOOD: u16 = 64;
@@ -146,6 +150,13 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         key_item_id: ItemId,
     },
+    StatScrollUsed {
+        item_id: ItemId,
+        character_id: CharacterId,
+        value: u8,
+        raised: u8,
+        exp_cost: u32,
+    },
     BlockedByRequirements {
         item_id: ItemId,
         character_id: CharacterId,
@@ -262,6 +273,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
+                IDR_STATSCROLL => stat_scroll_driver(character, item),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
                 IDR_TELEPORT => teleport_driver(character, item),
@@ -318,6 +330,123 @@ fn keyring_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+fn stat_scroll_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
+    if item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.flags.contains(CharacterFlags::NOEXP) {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let value = usize::from(drdata(item, 0));
+    let requested = drdata(item, 1);
+    if requested == 0 || value >= CHARACTER_VALUE_COUNT || bare_value(character, value) <= 0 {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let mut raised = 0_u8;
+    let mut exp_cost = 0_u32;
+    for _ in 0..requested {
+        let Some(cost) = raise_value_exp(character, value) else {
+            break;
+        };
+        raised = raised.saturating_add(1);
+        exp_cost = exp_cost.saturating_add(cost);
+    }
+
+    if raised == 0 {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    consume_item(character, item);
+    ItemDriverOutcome::StatScrollUsed {
+        item_id: item.id,
+        character_id: character.id,
+        value: value as u8,
+        raised,
+        exp_cost,
+    }
+}
+
+fn raise_value_exp(character: &mut Character, value: usize) -> Option<u32> {
+    if value >= CHARACTER_VALUE_COUNT || skill_raise_cost_factor(value) == 0 {
+        return None;
+    }
+    let current = bare_value(character, value);
+    if current <= 0 || current >= skillmax(character) {
+        return None;
+    }
+    if value == CharacterValue::Profession as usize && current > 99 {
+        return None;
+    }
+
+    let seyan = character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE);
+    let cost = raise_cost(value, current, seyan);
+    character.exp_used = character.exp_used.saturating_add(cost);
+    character.exp = character.exp.saturating_add(cost);
+    character.values[1][value] = character.values[1][value].saturating_add(1);
+    if character.values[0][value] < character.values[1][value] {
+        character.values[0][value] = character.values[1][value];
+    }
+    Some(cost)
+}
+
+fn bare_value(character: &Character, value: usize) -> i16 {
+    character
+        .values
+        .get(1)
+        .and_then(|values| values.get(value))
+        .copied()
+        .unwrap_or_default()
+}
+
+fn skillmax(character: &Character) -> i16 {
+    if !character.flags.contains(CharacterFlags::ARCH) {
+        return 50;
+    }
+    if character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE)
+    {
+        110
+    } else {
+        125
+    }
+}
+
+fn raise_cost(value: usize, current: i16, seyan: bool) -> u32 {
+    let nr = i32::from(current) - skill_start(value) + 1 + 5;
+    let cost = nr * nr * nr * i32::from(skill_raise_cost_factor(value));
+    let cost = if seyan { cost * 4 / 30 } else { cost / 10 };
+    cost.max(1) as u32
+}
+
+fn skill_start(value: usize) -> i32 {
+    match value {
+        0..=6 => 10,
+        11..=42 => 1,
+        _ => -1,
+    }
+}
+
+fn skill_raise_cost_factor(value: usize) -> i16 {
+    match value {
+        0..=2 | 42 => 3,
+        3..=6 => 2,
+        11..=37 | 39 | 40 => 1,
+        _ => 0,
     }
 }
 
@@ -834,6 +963,92 @@ mod tests {
             }
         );
         assert!(special.flags.contains(ItemFlags::USED));
+    }
+
+    #[test]
+    fn execute_stat_scroll_raises_value_grants_exp_and_consumes_item() {
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        character.values[0][CharacterValue::Sword as usize] = 10;
+        character.values[1][CharacterValue::Sword as usize] = 10;
+        let mut scroll = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STATSCROLL);
+        scroll.carried_by = Some(CharacterId(1));
+        scroll.driver_data = vec![CharacterValue::Sword as u8, 2];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut scroll,
+            ItemDriverRequest::Driver {
+                driver: IDR_STATSCROLL,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::StatScrollUsed {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                value: CharacterValue::Sword as u8,
+                raised: 2,
+                exp_cost: 746,
+            }
+        );
+        assert_eq!(character.values[1][CharacterValue::Sword as usize], 12);
+        assert_eq!(character.values[0][CharacterValue::Sword as usize], 12);
+        assert_eq!(character.exp, 746);
+        assert_eq!(character.exp_used, 746);
+        assert_eq!(character.inventory[30], None);
+        assert!(!scroll.flags.contains(ItemFlags::USED));
+    }
+
+    #[test]
+    fn execute_stat_scroll_blocks_unusable_cases_without_consuming() {
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        character.values[0][CharacterValue::Armor as usize] = 10;
+        character.values[1][CharacterValue::Armor as usize] = 10;
+        let mut scroll = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STATSCROLL);
+        scroll.carried_by = Some(CharacterId(1));
+        scroll.driver_data = vec![CharacterValue::Armor as u8, 1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_STATSCROLL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut scroll, request, 1, false),
+            ItemDriverOutcome::BlockedByRequirements {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(character.inventory[30], Some(ItemId(7)));
+        assert!(scroll.flags.contains(ItemFlags::USED));
+
+        scroll.driver_data = vec![CharacterValue::Sword as u8, 1];
+        character.values[1][CharacterValue::Sword as usize] = 10;
+        character.flags.insert(CharacterFlags::NOEXP);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut scroll, request, 1, false),
+            ItemDriverOutcome::BlockedByRequirements {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.flags.remove(CharacterFlags::NOEXP);
+        scroll.carried_by = None;
+        assert_eq!(
+            execute_item_driver(&mut character, &mut scroll, request, 1, false),
+            ItemDriverOutcome::Noop
+        );
     }
 
     #[test]
