@@ -136,6 +136,7 @@ pub enum ItemDriverRequest {
 pub enum UseItemOutcome {
     OpenContainer { item_id: ItemId },
     OpenDepot { item_id: ItemId },
+    OpenAccountDepot { item_id: ItemId },
     Dispatch(ItemDriverRequest),
 }
 
@@ -343,6 +344,10 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    AccountDepotOpened {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     Noop,
     Unsupported {
         driver: u16,
@@ -377,10 +382,7 @@ pub fn use_item(
             return Err(UseItemError::AccountDepotUnavailable);
         }
         character.current_container = Some(item.id);
-        return Ok(UseItemOutcome::Dispatch(ItemDriverRequest::AccountDepot {
-            item_id: item.id,
-            character_id: character.id,
-        }));
+        return Ok(UseItemOutcome::OpenAccountDepot { item_id: item.id });
     }
 
     if item.content_id != 0 {
@@ -477,8 +479,7 @@ pub fn execute_item_driver_with_context(
         ItemDriverRequest::AccountDepot {
             item_id,
             character_id,
-        } => ItemDriverOutcome::Unsupported {
-            driver: IDR_ACCOUNT_DEPOT,
+        } => ItemDriverOutcome::AccountDepotOpened {
             item_id,
             character_id,
         },
@@ -1617,12 +1618,33 @@ mod tests {
         );
         assert_eq!(
             use_item(&mut character, &account_depot, request(1, 8, 0), true).unwrap(),
-            UseItemOutcome::Dispatch(ItemDriverRequest::AccountDepot {
-                item_id: ItemId(8),
-                character_id: CharacterId(1),
-            })
+            UseItemOutcome::OpenAccountDepot { item_id: ItemId(8) }
         );
         assert_eq!(character.current_container, Some(ItemId(8)));
+    }
+
+    #[test]
+    fn account_depot_driver_request_is_supported_for_non_use_paths() {
+        let mut character = character(1);
+        let mut depot = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_ACCOUNT_DEPOT);
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut depot,
+                ItemDriverRequest::AccountDepot {
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                },
+                1,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::AccountDepotOpened {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
     }
 
     #[test]

@@ -4857,9 +4857,10 @@ async fn main() -> anyhow::Result<()> {
                         let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
                         let mut feedback = Vec::new();
                         for request in item_use_requests {
-                            match world.use_item_request(request, false) {
+                            match world.use_item_request(request, true) {
                                 Ok(ugaris_core::item_driver::UseItemOutcome::OpenContainer { .. })
-                                | Ok(ugaris_core::item_driver::UseItemOutcome::OpenDepot { .. }) => {
+                                | Ok(ugaris_core::item_driver::UseItemOutcome::OpenDepot { .. })
+                                | Ok(ugaris_core::item_driver::UseItemOutcome::OpenAccountDepot { .. }) => {
                                     opened += 1;
                                 }
                                 Ok(ugaris_core::item_driver::UseItemOutcome::Dispatch(request)) => {
@@ -5041,6 +5042,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
                                             executed += 1;
                                         }
