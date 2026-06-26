@@ -14,12 +14,15 @@ pub const KEYRING_KEY_NAME_LEN: usize = 40;
 pub const KEYRING_KEY_DESC_LEN: usize = 80;
 pub const KEYRING_KEY_DRDATA_LEN: usize = 16;
 pub const LEGACY_KEYRING_PPD_SIZE: usize = 15_912;
+pub const TREASURE_CHEST_PPD_ENTRIES: usize = 200;
+pub const LEGACY_TREASURE_CHEST_PPD_SIZE: usize = TREASURE_CHEST_PPD_ENTRIES * 4;
 pub const RANDCHEST_MAX_ENTRIES: usize = 100;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
 pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
+pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 
 pub const fn make_drd(dev_id: u32, nr: u32) -> u32 {
@@ -208,6 +211,38 @@ impl PlayerRuntime {
             .insert(treasure_index, realtime_seconds);
     }
 
+    pub fn encode_legacy_treasure_chest_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_TREASURE_CHEST_PPD_SIZE];
+        for (&treasure_index, &last_access_seconds) in &self.chest_last_access_seconds {
+            let index = usize::from(treasure_index);
+            if index >= TREASURE_CHEST_PPD_ENTRIES {
+                continue;
+            }
+            write_i32(
+                &mut bytes,
+                index * 4,
+                last_access_seconds.min(i32::MAX as u64) as i32,
+            );
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_treasure_chest_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_TREASURE_CHEST_PPD_SIZE {
+            return false;
+        }
+
+        self.chest_last_access_seconds.clear();
+        for index in 0..TREASURE_CHEST_PPD_ENTRIES {
+            let last_access_seconds = read_i32(bytes, index * 4);
+            if last_access_seconds > 0 {
+                self.chest_last_access_seconds
+                    .insert(index as u8, last_access_seconds as u64);
+            }
+        }
+        true
+    }
+
     pub fn encode_legacy_keyring_ppd(&self) -> Vec<u8> {
         let mut bytes = vec![0; LEGACY_KEYRING_PPD_SIZE];
         let count = self.keyring.len().min(KEYRING_MAX_KEYS);
@@ -301,8 +336,18 @@ impl PlayerRuntime {
             let Some(block) = block else {
                 return false;
             };
-            if block.id == DRD_KEYRING_PPD && !self.decode_legacy_keyring_ppd(block.data) {
-                return false;
+            match block.id {
+                DRD_KEYRING_PPD => {
+                    if !self.decode_legacy_keyring_ppd(block.data) {
+                        return false;
+                    }
+                }
+                DRD_TREASURE_CHEST_PPD => {
+                    if !self.decode_legacy_treasure_chest_ppd(block.data) {
+                        return false;
+                    }
+                }
+                _ => {}
             }
         }
         true
@@ -311,6 +356,7 @@ impl PlayerRuntime {
     pub fn encode_legacy_ppd_blob(&self, existing: &[u8]) -> Vec<u8> {
         let mut encoded = Vec::with_capacity(existing.len().max(LEGACY_KEYRING_PPD_SIZE + 8));
         let mut had_keyring = false;
+        let mut had_treasure_chest = false;
         let mut existing_was_valid = true;
 
         for block in LegacyPpdBlocks::parse(existing) {
@@ -328,6 +374,13 @@ impl PlayerRuntime {
                     DRD_KEYRING_PPD,
                     &self.encode_legacy_keyring_ppd(),
                 );
+            } else if block.id == DRD_TREASURE_CHEST_PPD {
+                had_treasure_chest = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TREASURE_CHEST_PPD,
+                    &self.encode_legacy_treasure_chest_ppd(),
+                );
             } else {
                 write_ppd_block(&mut encoded, block.id, block.data);
             }
@@ -339,6 +392,15 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_KEYRING_PPD,
                     &self.encode_legacy_keyring_ppd(),
+                );
+            }
+        }
+        if !had_treasure_chest && (existing_was_valid || existing.is_empty()) {
+            if !self.chest_last_access_seconds.is_empty() {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TREASURE_CHEST_PPD,
+                    &self.encode_legacy_treasure_chest_ppd(),
                 );
             }
         }
@@ -749,7 +811,9 @@ mod tests {
         assert_eq!(PlayerActionCode::WalkDir as u8, 20);
         assert_eq!(MAX_PLAYER_EFFECTS, 64);
         assert_eq!(DRD_JUNK_PPD, 0x8100_0072);
+        assert_eq!(DRD_TREASURE_CHEST_PPD, 0x8100_0011);
         assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
+        assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
     }
 
     #[test]
@@ -889,6 +953,27 @@ mod tests {
     }
 
     #[test]
+    fn treasure_chest_ppd_codec_matches_legacy_c_layout() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_chest_access(0, 1234);
+        player.mark_chest_access(63, 86_400);
+        player.mark_chest_access(199, i32::MAX as u64 + 99);
+
+        let bytes = player.encode_legacy_treasure_chest_ppd();
+        assert_eq!(bytes.len(), LEGACY_TREASURE_CHEST_PPD_SIZE);
+        assert_eq!(read_i32(&bytes, 0), 1234);
+        assert_eq!(read_i32(&bytes, 63 * 4), 86_400);
+        assert_eq!(read_i32(&bytes, 199 * 4), i32::MAX);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_treasure_chest_ppd(&bytes));
+        assert_eq!(decoded.chest_last_access_seconds(0), 1234);
+        assert_eq!(decoded.chest_last_access_seconds(63), 86_400);
+        assert_eq!(decoded.chest_last_access_seconds(199), i32::MAX as u64);
+        assert_eq!(decoded.chest_last_access_seconds(1), 0);
+    }
+
+    #[test]
     fn keyring_ppd_blob_round_trips_with_legacy_block_framing() {
         let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
         let mut existing = Vec::new();
@@ -916,6 +1001,45 @@ mod tests {
         assert!(!encoded
             .windows(4)
             .any(|window| window == DRD_JUNK_PPD.to_le_bytes()));
+    }
+
+    #[test]
+    fn treasure_chest_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 222 | PERSISTENT_PLAYER_DATA);
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(
+            &mut existing,
+            DRD_TREASURE_CHEST_PPD,
+            &[0; LEGACY_TREASURE_CHEST_PPD_SIZE],
+        );
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_chest_access(17, 777);
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_TREASURE_CHEST_PPD);
+        assert_eq!(
+            read_u32(&encoded, 16),
+            LEGACY_TREASURE_CHEST_PPD_SIZE as u32
+        );
+        assert_eq!(read_i32(&encoded, 20 + 17 * 4), 777);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.chest_last_access_seconds(17), 777);
+    }
+
+    #[test]
+    fn ppd_blob_appends_treasure_chests_without_existing_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_chest_access(5, 55);
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_TREASURE_CHEST_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_TREASURE_CHEST_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 8 + 5 * 4), 55);
     }
 
     #[test]

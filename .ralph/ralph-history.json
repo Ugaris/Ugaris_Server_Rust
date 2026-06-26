@@ -341,9 +341,30 @@
         "+    failed: bool,",
         "+            failed: false,"
       ]
+    },
+    {
+      "iteration": 14,
+      "startedAt": "2026-06-26T14:55:31.118Z",
+      "endedAt": "2026-06-26T15:01:46.038Z",
+      "durationMs": 374722,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/player.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/player.rs:",
+        "error: unexpected argument 'player::tests::treasure_chest_ppd_blob_round_trips_with_legacy_block_framing' found",
+        "test result: ok. 144 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 6213237,
+  "totalDurationMs": 6587959,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -351,9 +372,9 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
       "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
       "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 10,
       "test result: ok. 132 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 8,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 9,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error; 1 warning emitted": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error; 1 warning emitted": 1,
       "test result: ok. 133 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -395,7 +416,9 @@
       "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 127 filtered out; finished in 0.00s": 1,
       "test result: ok. 141 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "+    failed: bool,": 1,
-      "+            failed: false,": 1
+      "+            failed: false,": 1,
+      "error: unexpected argument 'player::tests::treasure_chest_ppd_blob_round_trips_with_legacy_block_fra": 1,
+      "test result: ok. 144 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

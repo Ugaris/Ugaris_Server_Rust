@@ -158,18 +158,19 @@ Current implemented slices:
 - Admin `#keyring addallkeys`/`/keyring addallkeys` now requires `CF_GOD` or `CF_STAFF`, instantiates loaded templates from the registered legacy key-ID list, stores matching key metadata up to the 100-key cap, and emits the legacy-shaped start/summary feedback with focused tests.
 - `PlayerRuntime` now has a fixed-layout C-compatible `DRD_KEYRING_PPD` byte codec matching `src/module/keyring/keyring.h`: 100 key slots, 40-byte names, 80-byte descriptions, 16-byte drdata, C struct padding/alignment, one-byte expire serials, and `auto_add`, with layout/truncation/round-trip tests.
 - `PlayerRuntime` now decodes and encodes the legacy outer persistent-player-data blob framing for `DRD_KEYRING_PPD`, preserves unknown PPD blocks, skips `DRD_JUNK_PPD`, rejects malformed blobs, and verifies the C `MAKE_DRD` IDs for keyring persistence with tests.
+- `PlayerRuntime` now has a fixed-layout C-compatible `DRD_TREASURE_CHEST_PPD` byte codec matching `struct treasure_chest_ppd { int last_access[200]; }`, decodes/encodes it through the same outer PPD blob framing, replaces existing blocks, appends when runtime chest cooldowns exist, and preserves unknown PPD blocks with tests.
 
 Chest gaps still to port:
 
-- Runtime DB login/logout save hookup for `DRD_KEYRING_PPD` using the ported fixed-layout and outer PPD blob codecs.
+- Runtime DB login/logout save hookup for `DRD_KEYRING_PPD` and `DRD_TREASURE_CHEST_PPD` using the ported fixed-layout and outer PPD blob codecs.
 - Achievement persistence/protocol sending beyond runtime marker updates.
-- Exact persistent PPD storage behavior for chest access across logout/server restart.
+- Exact DB-backed persistent PPD storage behavior for chest access across logout/server restart.
 - `IDR_RANDCHEST = 34` persistent `DRD_RANDCHEST_PPD`, exact RNG parity, and full live-data smoke coverage.
 
 Recommended next chest steps:
 
-1. Add persistent `DRD_KEYRING_PPD` load/save.
-2. Add persistent PPD load/save for treasure chest last-access state so cooldowns survive logout/server restart.
+1. Add runtime DB login/logout load/save for the ported keyring and treasure chest PPD codecs.
+2. Verify treasure chest cooldowns survive logout/server restart against PostgreSQL-backed character snapshots.
 3. Persist/runtime-load chest achievement state and send achievement protocol updates.
 4. Persist/runtime-load `IDR_RANDCHEST` daily access state and verify full loot table behavior against live data.
 
