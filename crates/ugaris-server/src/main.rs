@@ -238,6 +238,15 @@ enum KeyringAddApplyResult {
     MissingCursorItem,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum KeyringAutoAddPickupResult {
+    Added { key_name: String },
+    Duplicate { key_name: String },
+    Full { key_name: String },
+    MissingPlayer,
+    MissingCursorItem,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct KeyringCommandResult {
     messages: Vec<String>,
@@ -620,6 +629,46 @@ fn apply_keyring_add_cursor_item(
         KeyringAddResult::Duplicate => KeyringAddApplyResult::Duplicate,
         KeyringAddResult::Full => KeyringAddApplyResult::Full,
     }
+}
+
+fn apply_keyring_auto_add_pickup(
+    world: &mut World,
+    player: Option<&mut PlayerRuntime>,
+    character_id: CharacterId,
+    key_item_id: ItemId,
+) -> Option<KeyringAutoAddPickupResult> {
+    let player = player?;
+    if !player.keyring_auto_add() {
+        return None;
+    }
+    let key_item = world.items.get(&key_item_id)?;
+    if !is_runtime_keyring_candidate(key_item) {
+        return None;
+    }
+    let key_snapshot: Item = key_item.clone();
+
+    Some(match player.add_keyring_item(&key_snapshot) {
+        KeyringAddResult::Added => {
+            let Some(character) = world.characters.get_mut(&character_id) else {
+                return Some(KeyringAutoAddPickupResult::MissingPlayer);
+            };
+            let Some(key_item) = world.items.get_mut(&key_item_id) else {
+                return Some(KeyringAutoAddPickupResult::MissingCursorItem);
+            };
+            if character.cursor_item != Some(key_item_id) || !consume_item(character, key_item) {
+                return Some(KeyringAutoAddPickupResult::MissingCursorItem);
+            }
+            KeyringAutoAddPickupResult::Added {
+                key_name: key_snapshot.name,
+            }
+        }
+        KeyringAddResult::Duplicate => KeyringAutoAddPickupResult::Duplicate {
+            key_name: key_snapshot.name,
+        },
+        KeyringAddResult::Full => KeyringAutoAddPickupResult::Full {
+            key_name: key_snapshot.name,
+        },
+    })
 }
 
 fn apply_chest_treasure(
@@ -2674,6 +2723,82 @@ mod tests {
     }
 
     #[test]
+    fn apply_keyring_auto_add_pickup_stores_registered_key_and_consumes_cursor() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let key_item_id = ItemId(44);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(key_item_id);
+        world.add_character(character);
+        let mut key = test_item(key_item_id, 1200, ItemFlags::USED | ItemFlags::TAKE);
+        key.name = "Copper Key".to_string();
+        key.template_id = IID_AREA1_SKELKEY1;
+        key.carried_by = Some(character_id);
+        world.add_item(key);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+        player.set_keyring_auto_add(true);
+
+        assert_eq!(
+            apply_keyring_auto_add_pickup(&mut world, Some(&mut player), character_id, key_item_id,),
+            Some(KeyringAutoAddPickupResult::Added {
+                key_name: "Copper Key".to_string(),
+            })
+        );
+
+        assert_eq!(
+            player.keyring_key_name(IID_AREA1_SKELKEY1),
+            Some("Copper Key")
+        );
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        let key = world.items.get(&key_item_id).unwrap();
+        assert_eq!(key.carried_by, None);
+        assert!(!key.flags.contains(ItemFlags::USED));
+    }
+
+    #[test]
+    fn apply_keyring_auto_add_pickup_leaves_duplicate_key_on_cursor() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let key_item_id = ItemId(44);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(key_item_id);
+        world.add_character(character);
+        let mut key = test_item(key_item_id, 1200, ItemFlags::USED | ItemFlags::TAKE);
+        key.name = "Copper Key".to_string();
+        key.template_id = IID_AREA1_SKELKEY1;
+        key.carried_by = Some(character_id);
+        world.add_item(key);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+        player.set_keyring_auto_add(true);
+        assert_eq!(
+            player.add_keyring_key(IID_AREA1_SKELKEY1, "Copper Key"),
+            KeyringAddResult::Added
+        );
+
+        assert_eq!(
+            apply_keyring_auto_add_pickup(&mut world, Some(&mut player), character_id, key_item_id,),
+            Some(KeyringAutoAddPickupResult::Duplicate {
+                key_name: "Copper Key".to_string(),
+            })
+        );
+
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().cursor_item,
+            Some(key_item_id)
+        );
+        assert!(world
+            .items
+            .get(&key_item_id)
+            .unwrap()
+            .flags
+            .contains(ItemFlags::USED));
+    }
+
+    #[test]
     fn apply_chest_treasure_tracks_legacy_hour_cooldown() {
         let mut loader = chest_loader();
         let mut world = World::default();
@@ -3516,6 +3641,67 @@ async fn main() -> anyhow::Result<()> {
                 let completed_actions = world.tick_basic_actions();
                 if !completed_actions.is_empty() {
                     info!(count = completed_actions.len(), tick = world.tick.0, "completed world actions");
+                    let mut auto_keyring_feedback = Vec::new();
+                    let mut auto_keyring_added = 0;
+                    let mut auto_keyring_kept = 0;
+                    let mut auto_keyring_failed = 0;
+                    for completion in &completed_actions {
+                        if !completion.ok
+                            || completion.action_id != ugaris_core::legacy::action::TAKE
+                        {
+                            continue;
+                        }
+                        let Some(item_id) = completion.action_item_id else {
+                            continue;
+                        };
+                        match apply_keyring_auto_add_pickup(
+                            &mut world,
+                            runtime.player_for_character_mut(completion.character_id),
+                            completion.character_id,
+                            item_id,
+                        ) {
+                            Some(KeyringAutoAddPickupResult::Added { key_name }) => {
+                                auto_keyring_feedback.push((
+                                    completion.character_id,
+                                    format!("{key_name} added to keyring."),
+                                ));
+                                auto_keyring_added += 1;
+                            }
+                            Some(KeyringAutoAddPickupResult::Duplicate { key_name }) => {
+                                auto_keyring_feedback.push((
+                                    completion.character_id,
+                                    format!("{key_name} already in keyring, added to inventory."),
+                                ));
+                                auto_keyring_kept += 1;
+                            }
+                            Some(KeyringAutoAddPickupResult::Full { key_name }) => {
+                                auto_keyring_feedback.push((
+                                    completion.character_id,
+                                    format!("Keyring full, {key_name} added to inventory."),
+                                ));
+                                auto_keyring_kept += 1;
+                            }
+                            Some(
+                                KeyringAutoAddPickupResult::MissingPlayer
+                                | KeyringAutoAddPickupResult::MissingCursorItem,
+                            ) => {
+                                auto_keyring_failed += 1;
+                            }
+                            None => {}
+                        }
+                    }
+                    if !auto_keyring_feedback.is_empty() {
+                        let mut feedback_sessions = 0;
+                        for (character_id, message) in auto_keyring_feedback {
+                            let payload = ugaris_protocol::packet::system_text(&message);
+                            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                                if runtime.send_to_session(session_id, payload.clone()) {
+                                    feedback_sessions += 1;
+                                }
+                            }
+                        }
+                        info!(auto_keyring_added, auto_keyring_kept, auto_keyring_failed, feedback_sessions, tick = world.tick.0, "processed keyring pickup auto-add");
+                    }
                     let item_use_requests: Vec<_> = completed_actions
                         .iter()
                         .filter_map(|completion| completion.item_use)

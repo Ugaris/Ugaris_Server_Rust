@@ -27,6 +27,7 @@ use crate::{
 pub struct WorldActionCompletion {
     pub character_id: CharacterId,
     pub action_id: u16,
+    pub action_item_id: Option<ItemId>,
     pub ok: bool,
     pub item_use: Option<ItemUseRequest>,
     pub old_x: u16,
@@ -944,6 +945,9 @@ impl World {
                 .get(&character_id)
                 .map(|character| character.action)
                 .unwrap_or_default();
+            let action_item_id = self.characters.get(&character_id).and_then(|character| {
+                (character.act1 > 0).then_some(ItemId(character.act1 as u32))
+            });
             let mut item_use = None;
             let (old_x, old_y) = self
                 .characters
@@ -953,26 +957,12 @@ impl World {
             let ok = match action_id {
                 action::IDLE => true,
                 action::WALK => self.complete_walk(character_id),
-                action::TAKE => self
-                    .characters
-                    .get(&character_id)
-                    .and_then(|character| {
-                        (character.act1 > 0).then_some(ItemId(character.act1 as u32))
-                    })
+                action::TAKE => action_item_id
                     .is_some_and(|item_id| self.complete_take(character_id, item_id, true)),
-                action::DROP => self
-                    .characters
-                    .get(&character_id)
-                    .and_then(|character| {
-                        (character.act1 > 0).then_some(ItemId(character.act1 as u32))
-                    })
-                    .is_some_and(|item_id| self.complete_drop(character_id, item_id)),
-                action::USE => self
-                    .characters
-                    .get(&character_id)
-                    .and_then(|character| {
-                        (character.act1 > 0).then_some(ItemId(character.act1 as u32))
-                    })
+                action::DROP => {
+                    action_item_id.is_some_and(|item_id| self.complete_drop(character_id, item_id))
+                }
+                action::USE => action_item_id
                     .and_then(|item_id| self.complete_use(character_id, item_id))
                     .is_some_and(|request| {
                         item_use = Some(request);
@@ -997,6 +987,7 @@ impl World {
             completed.push(WorldActionCompletion {
                 character_id,
                 action_id,
+                action_item_id,
                 ok,
                 item_use,
                 old_x,
