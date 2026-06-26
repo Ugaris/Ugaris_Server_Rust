@@ -31,9 +31,9 @@ use crate::{
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
-        BLESS_DURATION, EF_BALL, EF_FIREBALL, FLASH_DURATION, FREEZE_DURATION, IDR_BLESS,
-        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_WARCRY, POISON_DURATION,
-        WARCRY_DURATION,
+        BLESS_DURATION, EF_BALL, EF_FIREBALL, EF_STRIKE, FLASH_DURATION, FREEZE_DURATION,
+        IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_WARCRY,
+        POISON_DURATION, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -222,6 +222,47 @@ impl World {
         effect_id
     }
 
+    fn create_or_refresh_strike_effect(
+        &mut self,
+        target_id: CharacterId,
+        x: i32,
+        y: i32,
+        strength: i32,
+    ) -> u32 {
+        let effect_id = self
+            .effects
+            .iter()
+            .find_map(|(&effect_id, effect)| {
+                (effect.effect_type == EF_STRIKE
+                    && effect.target_character == Some(target_id)
+                    && effect.x == x
+                    && effect.y == y
+                    && effect.strength == strength)
+                    .then_some(effect_id)
+            })
+            .unwrap_or_else(|| {
+                let effect_id = self.next_effect_id();
+                let mut effect = Effect::new(
+                    EF_STRIKE,
+                    effect_id as i32,
+                    self.tick.0 as i32,
+                    self.tick.0.saturating_add(2) as i32,
+                );
+                effect.strength = strength;
+                effect.light = 50;
+                effect.x = x;
+                effect.y = y;
+                effect.target_character = Some(target_id);
+                self.effects.insert(effect_id, effect);
+                effect_id
+            });
+
+        if let Some(effect) = self.effects.get_mut(&effect_id) {
+            effect.stop_tick = self.tick.0.saturating_add(2) as i32;
+        }
+        effect_id
+    }
+
     pub fn tick_effects(&mut self) {
         let effect_ids: Vec<u32> = self.effects.keys().copied().collect();
         for effect_id in effect_ids {
@@ -232,8 +273,20 @@ impl World {
             {
                 Some(EF_FIREBALL) => self.tick_fireball_effect(effect_id),
                 Some(EF_BALL) => self.tick_ball_effect(effect_id),
+                Some(EF_STRIKE) => self.tick_strike_effect(effect_id),
                 _ => {}
             }
+        }
+    }
+
+    fn tick_strike_effect(&mut self, effect_id: u32) {
+        if self
+            .effects
+            .get(&effect_id)
+            .is_some_and(|effect| self.tick.0 >= effect.stop_tick as u64)
+        {
+            self.remove_effect_from_map(effect_id);
+            self.effects.remove(&effect_id);
         }
     }
 
@@ -370,6 +423,7 @@ impl World {
             effect.number_of_enemies = targets.len() as i32;
         }
         for (target_id, damage) in targets {
+            self.create_or_refresh_strike_effect(target_id, x, y, effect.strength);
             if damage == 0 {
                 continue;
             }
@@ -5667,9 +5721,42 @@ mod tests {
         let effect = world.effects.get(&effect_id).unwrap();
         assert_eq!((effect.x, effect.y), (10 * 1024 + 640, 10 * 1024 + 512));
         assert_eq!(effect.number_of_enemies, 1);
+        let strike = world
+            .effects
+            .values()
+            .find(|effect| effect.effect_type == EF_STRIKE)
+            .unwrap();
+        assert_eq!(strike.light, 50);
+        assert_eq!(strike.strength, 53);
+        assert_eq!(strike.target_character, Some(CharacterId(2)));
+        assert_eq!((strike.x, strike.y), (10, 10));
+        assert_eq!(strike.stop_tick, 2);
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 28_675);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn strike_effect_refreshes_matching_target_and_expires_after_two_ticks() {
+        let mut world = World::default();
+
+        let effect_id = world.create_or_refresh_strike_effect(CharacterId(2), 10, 11, 53);
+        assert_eq!(world.effects.len(), 1);
+        assert_eq!(world.effects.get(&effect_id).unwrap().stop_tick, 2);
+
+        world.tick = Tick(1);
+        let refreshed_id = world.create_or_refresh_strike_effect(CharacterId(2), 10, 11, 53);
+        assert_eq!(refreshed_id, effect_id);
+        assert_eq!(world.effects.len(), 1);
+        assert_eq!(world.effects.get(&effect_id).unwrap().stop_tick, 3);
+
+        world.tick = Tick(2);
+        world.tick_effects();
+        assert!(world.effects.contains_key(&effect_id));
+
+        world.tick = Tick(3);
+        world.tick_effects();
+        assert!(!world.effects.contains_key(&effect_id));
     }
 
     #[test]

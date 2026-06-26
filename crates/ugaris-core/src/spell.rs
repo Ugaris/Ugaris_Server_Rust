@@ -48,6 +48,7 @@ pub const BLESS_REFRESH_WINDOW_TICKS: u32 = TICKS_PER_SECOND as u32 * 30;
 pub const EF_FIREBALL: i32 = 1;
 pub const EF_MAGICSHIELD: i32 = 2;
 pub const EF_BALL: i32 = 3;
+pub const EF_STRIKE: i32 = 4;
 pub const EF_FLASH: i32 = 5;
 pub const EF_WARCRY: i32 = 8;
 pub const EF_BLESS: i32 = 9;
