@@ -189,6 +189,8 @@ pub struct PlayerRuntime {
     pub achievements: AchievementState,
     #[serde(default)]
     pub keyring_auto_add: bool,
+    #[serde(default)]
+    pub current_section_id: u16,
 }
 
 impl PlayerRuntime {
@@ -220,6 +222,7 @@ impl PlayerRuntime {
             orb_spawns: Vec::new(),
             achievements: AchievementState::default(),
             keyring_auto_add: false,
+            current_section_id: 0,
         }
     }
 

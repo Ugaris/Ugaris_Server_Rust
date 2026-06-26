@@ -9,7 +9,7 @@ use tokio::{sync::mpsc, time};
 use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
-    area_section::section_look_text,
+    area_section::{section_at, section_look_text, section_name_by_id},
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
         CHARACTER_VALUE_NAMES, POWERSCALE,
@@ -22,6 +22,7 @@ use ugaris_core::{
     player::{
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
     },
+    text::COL_DARK_GRAY,
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
     zone::ZoneLoader,
@@ -1960,6 +1961,33 @@ fn look_map_payloads(world: &World, area_id: u16, request: LookMapRequest) -> Ve
         .collect()
 }
 
+fn walk_section_payload(
+    area_id: u16,
+    player: &mut PlayerRuntime,
+    character: &Character,
+) -> Option<bytes::BytesMut> {
+    let next_section = section_at(area_id, usize::from(character.x), usize::from(character.y));
+    let next_section_id = next_section.map_or(0, |section| section.id);
+    if next_section_id == player.current_section_id {
+        return None;
+    }
+
+    let message = if let Some(section) = next_section {
+        format!("Now entering {}.", section.name)
+    } else if let Some(name) = section_name_by_id(player.current_section_id) {
+        format!("Now leaving {name}.")
+    } else {
+        player.current_section_id = next_section_id;
+        return None;
+    };
+
+    player.current_section_id = next_section_id;
+    let mut bytes = Vec::with_capacity(COL_DARK_GRAY.len() + message.len());
+    bytes.extend_from_slice(COL_DARK_GRAY);
+    bytes.extend_from_slice(message.as_bytes());
+    Some(ugaris_protocol::packet::system_text_bytes(&bytes))
+}
+
 fn movement_scroll_payload(
     world: &World,
     character: &Character,
@@ -3159,6 +3187,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn walk_section_payload_reports_entering_once_with_legacy_color() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 146, 115);
+        character.x = 146;
+        character.y = 115;
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let payload = walk_section_payload(1, &mut player, &character).unwrap();
+
+        assert_eq!(
+            text_payload_bytes(&payload),
+            b"\xb0c1Now entering Skellie I."
+        );
+        assert_eq!(player.current_section_id, 46);
+        assert!(walk_section_payload(1, &mut player, &character).is_none());
+    }
+
+    #[test]
+    fn walk_section_payload_reports_leaving_previous_section() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 99, 12, 13);
+        character.x = 12;
+        character.y = 13;
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.current_section_id = 1;
+
+        let payload = walk_section_payload(99, &mut player, &character).unwrap();
+
+        assert_eq!(
+            text_payload_bytes(&payload),
+            b"\xb0c1Now leaving Skellie I."
+        );
+        assert_eq!(player.current_section_id, 0);
+    }
+
     fn text_payloads(payloads: &[bytes::BytesMut]) -> Vec<String> {
         payloads
             .iter()
@@ -3168,6 +3232,12 @@ mod tests {
                 String::from_utf8(payload[3..3 + len].to_vec()).unwrap()
             })
             .collect()
+    }
+
+    fn text_payload_bytes(payload: &[u8]) -> Vec<u8> {
+        assert_eq!(payload[0], SV_TEXT);
+        let len = u16::from_le_bytes([payload[1], payload[2]]) as usize;
+        payload[3..3 + len].to_vec()
     }
 
     #[test]
@@ -4975,6 +5045,15 @@ async fn main() -> anyhow::Result<()> {
                         let Some(character) = world.characters.get(&completion.character_id) else {
                             continue;
                         };
+                        let walk_section_payload = if completion.ok
+                            && completion.action_id == ugaris_core::legacy::action::WALK
+                        {
+                            runtime
+                                .player_for_character_mut(completion.character_id)
+                                .and_then(|player| walk_section_payload(config.area_id, player, character))
+                        } else {
+                            None
+                        };
                         for (session_id, view_distance) in runtime.sessions_for_character(completion.character_id) {
                             let mut payloads = if completion.ok
                                 && completion.action_id == ugaris_core::legacy::action::WALK
@@ -5014,6 +5093,9 @@ async fn main() -> anyhow::Result<()> {
                             };
                             if completion.action_id != ugaris_core::legacy::action::WALK {
                                 payloads.push(inventory_snapshot_payload(&world, character));
+                            }
+                            if let Some(payload) = &walk_section_payload {
+                                payloads.push(payload.clone());
                             }
                             if runtime.send_many_to_session(session_id, payloads) {
                                 refreshed_sessions += 1;

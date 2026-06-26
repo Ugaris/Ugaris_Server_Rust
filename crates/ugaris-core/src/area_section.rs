@@ -254,6 +254,10 @@ fn section_by_id(id: u16) -> Option<AreaSection> {
     Some(AreaSection { id, name, level })
 }
 
+pub fn section_name_by_id(id: u16) -> Option<&'static str> {
+    section_by_id(id).map(|section| section.name)
+}
+
 const AREA1_SECTORS: &[SectorRect] = &[
     SectorRect {
         fx: 73,
@@ -759,6 +763,12 @@ mod tests {
             "Teufelheim, Worker District"
         );
         assert_eq!(section_at(36, 1, 1).unwrap().name, "Caligar Forest");
+    }
+
+    #[test]
+    fn section_name_lookup_returns_legacy_section_name() {
+        assert_eq!(section_name_by_id(1), Some("Skellie I"));
+        assert_eq!(section_name_by_id(0), None);
     }
 
     #[test]
