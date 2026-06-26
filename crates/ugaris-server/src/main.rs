@@ -4644,6 +4644,7 @@ async fn main() -> anyhow::Result<()> {
         tokio::select! {
             _ = tick.tick() => {
                 world.advance();
+                world.tick_effects();
                 let timer_outcomes = world.process_due_timers(config.area_id);
                 if !timer_outcomes.is_empty() {
                     info!(count = timer_outcomes.len(), tick = world.tick.0, "processed timer callbacks");

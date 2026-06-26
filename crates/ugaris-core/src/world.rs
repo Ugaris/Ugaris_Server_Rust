@@ -19,7 +19,7 @@ use crate::{
         IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
-    legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY},
+    legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD},
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},
     player::{PlayerActionCode, PlayerRuntime},
@@ -132,6 +132,236 @@ impl World {
         effect.y = i32::from(caster.y) * 1024 + 512;
         self.effects.insert(effect_id, effect);
         effect_id
+    }
+
+    pub fn tick_effects(&mut self) {
+        let effect_ids: Vec<u32> = self.effects.keys().copied().collect();
+        for effect_id in effect_ids {
+            if self
+                .effects
+                .get(&effect_id)
+                .is_some_and(|effect| effect.effect_type == EF_FIREBALL)
+            {
+                self.tick_fireball_effect(effect_id);
+            }
+        }
+    }
+
+    fn tick_fireball_effect(&mut self, effect_id: u32) {
+        let Some(effect) = self.effects.get(&effect_id).cloned() else {
+            return;
+        };
+
+        if effect.caster.is_some_and(|caster_id| {
+            !self
+                .characters
+                .get(&caster_id)
+                .is_some_and(|caster| caster.flags.contains(CharacterFlags::USED))
+        }) || self.tick.0 >= effect.stop_tick as u64
+        {
+            self.remove_effect_from_map(effect_id);
+            self.effects.remove(&effect_id);
+            return;
+        }
+
+        self.remove_effect_from_map(effect_id);
+
+        let raw_dx = effect.to_x - effect.from_x;
+        let raw_dy = effect.to_y - effect.from_y;
+        if raw_dx == 0 && raw_dy == 0 {
+            self.explode_fireball_effect(effect_id, effect.x / 1024, effect.y / 1024);
+            return;
+        }
+
+        let (step_x, step_y) = if raw_dx.abs() > raw_dy.abs() {
+            (raw_dx * 512 / raw_dx.abs(), raw_dy * 512 / raw_dx.abs())
+        } else {
+            (raw_dx * 512 / raw_dy.abs(), raw_dy * 512 / raw_dy.abs())
+        };
+
+        let mut x = effect.x;
+        let mut y = effect.y;
+        let mut last_x = effect.last_x;
+        let mut last_y = effect.last_y;
+        for _ in 0..2 {
+            last_x = x / 1024;
+            last_y = y / 1024;
+            x += step_x;
+            y += step_y;
+
+            let tile_x = x / 1024;
+            let tile_y = y / 1024;
+            if self.fire_map_blocked(tile_x, tile_y)
+                && !self.fire_tile_contains_caster(effect.caster, tile_x, tile_y)
+            {
+                if let Some(effect) = self.effects.get_mut(&effect_id) {
+                    effect.x = x;
+                    effect.y = y;
+                    effect.last_x = last_x;
+                    effect.last_y = last_y;
+                }
+                self.explode_fireball_effect(effect_id, tile_x, tile_y);
+                return;
+            }
+        }
+
+        if let Some(effect) = self.effects.get_mut(&effect_id) {
+            effect.x = x;
+            effect.y = y;
+            effect.last_x = last_x;
+            effect.last_y = last_y;
+        }
+        self.set_effect_on_map(effect_id, x / 1024, y / 1024);
+    }
+
+    fn fire_map_blocked(&self, x: i32, y: i32) -> bool {
+        let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
+            return true;
+        };
+        let Some(tile) = self.map.tile(x, y) else {
+            return true;
+        };
+        tile.flags.contains(MapFlags::TMOVEBLOCK)
+            || (!tile.flags.contains(MapFlags::FIRETHRU)
+                && tile.flags.contains(MapFlags::MOVEBLOCK))
+    }
+
+    fn fire_tile_contains_caster(&self, caster_id: Option<CharacterId>, x: i32, y: i32) -> bool {
+        let Some(caster_id) = caster_id else {
+            return false;
+        };
+        let Some(caster) = self.characters.get(&caster_id) else {
+            return false;
+        };
+        (i32::from(caster.x), i32::from(caster.y)) == (x, y)
+            || (i32::from(caster.tox), i32::from(caster.toy)) == (x, y)
+    }
+
+    fn set_effect_on_map(&mut self, effect_id: u32, x: i32, y: i32) -> bool {
+        if effect_id == 0 || effect_id > u32::from(u16::MAX) {
+            return false;
+        }
+        let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
+            return false;
+        };
+        if !self.map.legacy_inner_bounds(x, y) {
+            return false;
+        }
+        let Some(effect) = self.effects.get_mut(&effect_id) else {
+            return false;
+        };
+        if effect.fields.len() >= MAX_FIELD {
+            return false;
+        }
+        let Some(tile) = self.map.tile_mut(x, y) else {
+            return false;
+        };
+        let Some(slot) = tile.effects.iter_mut().find(|slot| **slot == 0) else {
+            return false;
+        };
+        *slot = effect_id as u16;
+        if let Some(index) = self.map.legacy_index(x, y) {
+            effect.fields.push(index as i32);
+        }
+        true
+    }
+
+    fn remove_effect_from_map(&mut self, effect_id: u32) {
+        let Some(effect) = self.effects.get_mut(&effect_id) else {
+            return;
+        };
+        let fields = std::mem::take(&mut effect.fields);
+        for index in fields {
+            if index < 0 {
+                continue;
+            }
+            let index = index as usize;
+            let x = index % self.map.width();
+            let y = index / self.map.width();
+            if let Some(tile) = self.map.tile_mut(x, y) {
+                for slot in &mut tile.effects {
+                    if *slot == effect_id as u16 {
+                        *slot = 0;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn explode_fireball_effect(&mut self, effect_id: u32, x: i32, y: i32) {
+        let Some(effect) = self.effects.get(&effect_id).cloned() else {
+            return;
+        };
+        self.remove_effect_from_map(effect_id);
+        self.effects.remove(&effect_id);
+
+        let Some(caster_id) = effect.caster else {
+            return;
+        };
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return;
+        };
+
+        let mut targets = Vec::new();
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let target_x = x + dx;
+                let target_y = y + dy;
+                let (Ok(target_x_usize), Ok(target_y_usize)) =
+                    (usize::try_from(target_x), usize::try_from(target_y))
+                else {
+                    continue;
+                };
+                if dx != 0 || dy != 0 {
+                    let (Ok(last_x), Ok(last_y)) = (
+                        usize::try_from(effect.last_x),
+                        usize::try_from(effect.last_y),
+                    ) else {
+                        continue;
+                    };
+                    if !self
+                        .map
+                        .can_see(last_x, last_y, target_x_usize, target_y_usize, 5)
+                    {
+                        continue;
+                    }
+                }
+                let Some(target_id) =
+                    self.map
+                        .tile(target_x_usize, target_y_usize)
+                        .and_then(|tile| {
+                            (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+                        })
+                else {
+                    continue;
+                };
+                if target_id == caster_id {
+                    continue;
+                }
+                let Some(target) = self.characters.get(&target_id) else {
+                    continue;
+                };
+                if !can_attack(&caster, target, &self.map) {
+                    return;
+                }
+                let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+                let damage = fireball_damage(
+                    effect.strength,
+                    character_value(target, CharacterValue::Immunity),
+                    character_value(target, CharacterValue::Tactics),
+                    has_tactics,
+                );
+                targets.push((target_id, damage));
+            }
+        }
+
+        for (target_id, damage) in targets {
+            if let Some(target) = self.characters.get_mut(&target_id) {
+                target.hp = target.hp.saturating_sub(damage);
+                target.flags.insert(CharacterFlags::UPDATE);
+            }
+        }
     }
 
     pub fn drain_look_map_requests(&mut self) -> Vec<LookMapRequest> {
@@ -4949,6 +5179,59 @@ mod tests {
         assert_eq!((effect.from_x, effect.from_y), (10, 10));
         assert_eq!((effect.to_x, effect.to_y), (15, 10));
         assert_eq!((effect.x, effect.y), (10 * 1024 + 512, 10 * 1024 + 512));
+    }
+
+    #[test]
+    fn fireball_effect_moves_one_tile_per_tick_and_marks_map_slot() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 13;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        world.spawn_character(caster, 10, 10);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        let effect_id = world.create_fireball_effect(&caster);
+
+        world.tick_effects();
+
+        let effect = world.effects.get(&effect_id).unwrap();
+        assert_eq!((effect.x, effect.y), (11 * 1024 + 512, 10 * 1024 + 512));
+        assert_eq!((effect.last_x, effect.last_y), (11, 10));
+        assert_eq!(effect.fields, vec![11 + 10 * world.map.width() as i32]);
+        assert_eq!(world.map.tile(11, 10).unwrap().effects[0], effect_id as u16);
+    }
+
+    #[test]
+    fn fireball_effect_explodes_on_character_block_and_applies_area_damage() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 15;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.hp = 30 * POWERSCALE;
+        target.values[0][CharacterValue::Immunity as usize] = 20;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        let effect_id = world.create_fireball_effect(&caster);
+
+        world.tick_effects();
+        world.tick_effects();
+
+        assert!(!world.effects.contains_key(&effect_id));
+        assert_eq!(world.map.tile(11, 10).unwrap().effects, [0; 4]);
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 14_100);
+        assert!(target.flags.contains(CharacterFlags::UPDATE));
     }
 
     #[test]
