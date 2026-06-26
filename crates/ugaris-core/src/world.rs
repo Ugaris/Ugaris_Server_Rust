@@ -11,8 +11,8 @@ use crate::{
     game_time::GameDate,
     ids::{CharacterId, ItemId},
     item_driver::{
-        execute_item_driver, use_item, ItemDriverOutcome, ItemDriverRequest, UseItemError,
-        UseItemOutcome,
+        execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
+        ItemDriverRequest, UseItemError, UseItemOutcome,
     },
     item_ops::consume_item,
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY},
@@ -187,6 +187,19 @@ impl World {
         request: ItemDriverRequest,
         area_id: u16,
     ) -> ItemDriverOutcome {
+        self.execute_item_driver_request_with_context(
+            request,
+            area_id,
+            &ItemDriverContext::default(),
+        )
+    }
+
+    pub fn execute_item_driver_request_with_context(
+        &mut self,
+        request: ItemDriverRequest,
+        area_id: u16,
+        context: &ItemDriverContext,
+    ) -> ItemDriverOutcome {
         let (character_id, item_id) = match request {
             ItemDriverRequest::Driver {
                 character_id,
@@ -212,7 +225,8 @@ impl World {
         let Some(item) = self.items.get_mut(&item_id) else {
             return ItemDriverOutcome::Noop;
         };
-        let outcome = execute_item_driver(character, item, request, area_id, in_arena);
+        let outcome =
+            execute_item_driver_with_context(character, item, request, area_id, in_arena, context);
         self.apply_item_driver_outcome(outcome, area_id)
     }
 
@@ -269,6 +283,13 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::DoorToggle { item_id, .. } => {
+                if self.toggle_door(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::KeyedDoorToggle { item_id, .. } => {
                 if self.toggle_door(item_id) {
                     outcome
                 } else {

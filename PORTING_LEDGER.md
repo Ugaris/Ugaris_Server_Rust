@@ -149,11 +149,11 @@ Current implemented slices:
 - `IDR_KEY_RING = 200` now dispatches to typed show/add-cursor outcomes.
 - `PlayerRuntime` keyring entries now store legacy key recreation metadata: ID, name, description, sprite, flags, value, driver, first 16 drdata bytes, and expire serial.
 - Runtime keyring add keeps duplicate/full semantics, 100-key cap, and the auto-add setting shape used by legacy `DRD_KEYRING_PPD`.
+- Keyed doors now use carried exact-key/skeleton-key plus runtime keyring lookup and emit the legacy keyring door feedback text.
 
 Chest gaps still to port:
 
 - Keyring commands, remove/show text integration, registered-key validation, auto-add pickup integration, and persistent `DRD_KEYRING_PPD` load/save.
-- Door keyring checks.
 - Achievement persistence/protocol sending beyond runtime marker updates.
 - Exact persistent PPD storage behavior for chest access across logout/server restart.
 - `IDR_RANDCHEST = 34` persistent `DRD_RANDCHEST_PPD`, exact RNG parity, and full live-data smoke coverage.
@@ -162,9 +162,8 @@ Recommended next chest steps:
 
 1. Port keyring item driver/commands/auto-add and persistent `DRD_KEYRING_PPD` load/save.
 2. Add persistent PPD load/save for treasure chest last-access state so cooldowns survive logout/server restart.
-3. Port door keyring checks using the same runtime/persistent keyring state.
-4. Persist/runtime-load chest achievement state and send achievement protocol updates.
-5. Persist/runtime-load `IDR_RANDCHEST` daily access state and verify full loot table behavior against live data.
+3. Persist/runtime-load chest achievement state and send achievement protocol updates.
+4. Persist/runtime-load `IDR_RANDCHEST` daily access state and verify full loot table behavior against live data.
 
 ### Other High-Value Next Steps
 

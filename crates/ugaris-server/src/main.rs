@@ -175,6 +175,12 @@ impl ServerRuntime {
             .values_mut()
             .find(|player| player.character_id == Some(character_id))
     }
+
+    fn player_for_character(&self, character_id: CharacterId) -> Option<&PlayerRuntime> {
+        self.players
+            .values()
+            .find(|player| player.character_id == Some(character_id))
+    }
 }
 
 const LOGIN_SPAWN_X: usize = 128;
@@ -471,6 +477,88 @@ fn chest_key_item_name(world: &World, item_id: ItemId, required_key_id: u32) -> 
     let item = world.items.get(&item_id)?;
     (item.template_id == required_key_id || item.template_id == IID_SKELETON_KEY)
         .then(|| item.name.clone())
+}
+
+fn item_driver_context_for_request(
+    world: &World,
+    player: Option<&PlayerRuntime>,
+    request: &ugaris_core::item_driver::ItemDriverRequest,
+) -> ugaris_core::item_driver::ItemDriverContext {
+    let ugaris_core::item_driver::ItemDriverRequest::Driver {
+        driver,
+        item_id,
+        character_id,
+        ..
+    } = request
+    else {
+        return ugaris_core::item_driver::ItemDriverContext::default();
+    };
+    if *driver != ugaris_core::item_driver::IDR_DOOR {
+        return ugaris_core::item_driver::ItemDriverContext::default();
+    }
+    let required_key_id = world
+        .items
+        .get(item_id)
+        .map(chest_required_key_id)
+        .unwrap_or_default();
+    if required_key_id == 0 {
+        return ugaris_core::item_driver::ItemDriverContext::default();
+    }
+
+    ugaris_core::item_driver::ItemDriverContext {
+        door_key: door_key_access(world, player, *character_id, required_key_id),
+    }
+}
+
+fn door_key_access(
+    world: &World,
+    player: Option<&PlayerRuntime>,
+    character_id: CharacterId,
+    required_key_id: u32,
+) -> Option<ugaris_core::item_driver::DoorKeyAccess> {
+    let character = world.characters.get(&character_id)?;
+    let inventory_items = character.inventory.iter().skip(30).flatten().copied();
+
+    for item_id in inventory_items.clone() {
+        if let Some(access) = carried_door_key_access(world, item_id, IID_SKELETON_KEY) {
+            return Some(access);
+        }
+    }
+    if let Some(item_id) = character.cursor_item {
+        if let Some(access) = carried_door_key_access(world, item_id, IID_SKELETON_KEY) {
+            return Some(access);
+        }
+    }
+    for item_id in inventory_items {
+        if let Some(access) = carried_door_key_access(world, item_id, required_key_id) {
+            return Some(access);
+        }
+    }
+    if let Some(item_id) = character.cursor_item {
+        if let Some(access) = carried_door_key_access(world, item_id, required_key_id) {
+            return Some(access);
+        }
+    }
+    player
+        .and_then(|player| player.keyring_key_name(required_key_id))
+        .map(|name| ugaris_core::item_driver::DoorKeyAccess {
+            key_id: required_key_id,
+            name: name.to_string(),
+            source: ugaris_core::item_driver::DoorKeySource::Keyring,
+        })
+}
+
+fn carried_door_key_access(
+    world: &World,
+    item_id: ItemId,
+    required_key_id: u32,
+) -> Option<ugaris_core::item_driver::DoorKeyAccess> {
+    let item = world.items.get(&item_id)?;
+    (item.template_id == required_key_id).then(|| ugaris_core::item_driver::DoorKeyAccess {
+        key_id: item.template_id,
+        name: item.name.clone(),
+        source: ugaris_core::item_driver::DoorKeySource::Carried,
+    })
 }
 
 fn apply_random_chest(
@@ -2187,6 +2275,44 @@ mod tests {
     }
 
     #[test]
+    fn item_driver_context_supplies_keyring_key_for_keyed_door() {
+        let mut world = World::default();
+        world.add_character(login_character(
+            CharacterId(7),
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut door = test_item(ItemId(10), 700, ItemFlags::USE);
+        door.driver = ugaris_core::item_driver::IDR_DOOR;
+        door.driver_data = vec![0, 0x44, 0x33, 0x22, 0x11];
+        world.add_item(door);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(7));
+        assert_eq!(
+            player.add_keyring_key(0x1122_3344, "Keyring Key"),
+            ugaris_core::player::KeyringAddResult::Added
+        );
+
+        let request = ugaris_core::item_driver::ItemDriverRequest::Driver {
+            driver: ugaris_core::item_driver::IDR_DOOR,
+            item_id: ItemId(10),
+            character_id: CharacterId(7),
+            spec: 0,
+        };
+
+        assert_eq!(
+            item_driver_context_for_request(&world, Some(&player), &request).door_key,
+            Some(ugaris_core::item_driver::DoorKeyAccess {
+                key_id: 0x1122_3344,
+                name: "Keyring Key".to_string(),
+                source: ugaris_core::item_driver::DoorKeySource::Keyring,
+            })
+        );
+    }
+
+    #[test]
     fn apply_chest_treasure_respects_death_gate() {
         let mut loader = chest_loader();
         let mut world = World::default();
@@ -2762,7 +2888,16 @@ async fn main() -> anyhow::Result<()> {
                                             ..
                                         }
                                     );
-                                    match world.execute_item_driver_request(request, config.area_id) {
+                                    let request_character_id = match request {
+                                        ugaris_core::item_driver::ItemDriverRequest::Driver { character_id, .. }
+                                        | ugaris_core::item_driver::ItemDriverRequest::AccountDepot { character_id, .. } => character_id,
+                                    };
+                                    let driver_context = item_driver_context_for_request(
+                                        &world,
+                                        runtime.player_for_character(request_character_id),
+                                        &request,
+                                    );
+                                    match world.execute_item_driver_request_with_context(request, config.area_id, &driver_context) {
                                         ugaris_core::item_driver::ItemDriverOutcome::ChestTreasure { item_id, character_id, treasure_index } => {
                                             match apply_chest_treasure(
                                                 &mut world,
@@ -2849,6 +2984,29 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::KeyedDoorToggle {
+                                            character_id,
+                                            key_id,
+                                            source,
+                                            locking,
+                                            ..
+                                        } => {
+                                            if source == ugaris_core::item_driver::DoorKeySource::Keyring {
+                                                let action = if locking { "lock" } else { "unlock" };
+                                                let key_name = driver_context
+                                                    .door_key
+                                                    .as_ref()
+                                                    .map(|key| key.name.as_str())
+                                                    .unwrap_or("a key");
+                                                feedback.push((
+                                                    character_id,
+                                                    format!(
+                                                        "You use {key_name} (ID: {key_id:08X}) from your keyring to {action} the door."
+                                                    ),
+                                                ));
+                                            }
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::KeyringAddCursorItem { .. } => {

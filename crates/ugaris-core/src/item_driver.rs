@@ -19,6 +19,25 @@ pub const IDR_FOOD: u16 = 64;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_KEY_RING: u16 = 200;
+pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DoorKeyAccess {
+    pub key_id: u32,
+    pub name: String,
+    pub source: DoorKeySource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DoorKeySource {
+    Carried,
+    Keyring,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemDriverContext {
+    pub door_key: Option<DoorKeyAccess>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UseItemError {
@@ -93,6 +112,13 @@ pub enum ItemDriverOutcome {
     DoorToggle {
         item_id: ItemId,
         character_id: CharacterId,
+    },
+    KeyedDoorToggle {
+        item_id: ItemId,
+        character_id: CharacterId,
+        key_id: u32,
+        source: DoorKeySource,
+        locking: bool,
     },
     ChestTreasure {
         item_id: ItemId,
@@ -190,6 +216,24 @@ pub fn execute_item_driver(
     area_id: u16,
     in_arena: bool,
 ) -> ItemDriverOutcome {
+    execute_item_driver_with_context(
+        character,
+        item,
+        request,
+        area_id,
+        in_arena,
+        &ItemDriverContext::default(),
+    )
+}
+
+pub fn execute_item_driver_with_context(
+    character: &mut Character,
+    item: &mut Item,
+    request: ItemDriverRequest,
+    area_id: u16,
+    in_arena: bool,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
     match request {
         ItemDriverRequest::Driver {
             driver,
@@ -206,7 +250,7 @@ pub fn execute_item_driver(
                     character_id,
                 },
                 IDR_POTION => potion_driver(character, item, area_id, in_arena),
-                IDR_DOOR => door_driver(character, item),
+                IDR_DOOR => door_driver(character, item, context),
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
@@ -313,12 +357,30 @@ fn teleport_door_driver(character: &Character, item: &Item) -> ItemDriverOutcome
     }
 }
 
-fn door_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+fn door_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
     if item.x == 0 {
         return ItemDriverOutcome::Noop;
     }
 
-    if door_required_key_id(item) != 0 {
+    let required_key_id = door_required_key_id(item);
+    if required_key_id != 0 {
+        if let Some(key) = context
+            .door_key
+            .as_ref()
+            .filter(|key| key.key_id == required_key_id || key.key_id == IID_SKELETON_KEY)
+        {
+            return ItemDriverOutcome::KeyedDoorToggle {
+                item_id: item.id,
+                character_id: character.id,
+                key_id: key.key_id,
+                source: key.source,
+                locking: drdata(item, 0) != 0,
+            };
+        }
         return ItemDriverOutcome::BlockedByRequirements {
             item_id: item.id,
             character_id: character.id,
@@ -747,6 +809,46 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut character, &mut door, request, 1, false),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn execute_door_driver_accepts_key_context() {
+        let mut character = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DOOR);
+        door.x = 10;
+        door.y = 11;
+        door.driver_data = vec![1, 0x44, 0x33, 0x22, 0x11];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_DOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            door_key: Some(DoorKeyAccess {
+                key_id: 0x1122_3344,
+                name: "Copper Key".to_string(),
+                source: DoorKeySource::Keyring,
+            }),
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut door,
+                request,
+                1,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::KeyedDoorToggle {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                key_id: 0x1122_3344,
+                source: DoorKeySource::Keyring,
+                locking: true,
+            }
         );
     }
 
