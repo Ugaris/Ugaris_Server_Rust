@@ -18,6 +18,8 @@ pub const TREASURE_CHEST_PPD_ENTRIES: usize = 200;
 pub const LEGACY_TREASURE_CHEST_PPD_SIZE: usize = TREASURE_CHEST_PPD_ENTRIES * 4;
 pub const RANDCHEST_MAX_ENTRIES: usize = 100;
 pub const LEGACY_RANDCHEST_PPD_SIZE: usize = RANDCHEST_MAX_ENTRIES * 4 * 2;
+pub const ORBSPAWN_MAX_ENTRIES: usize = 100;
+pub const LEGACY_ORBSPAWN_PPD_SIZE: usize = ORBSPAWN_MAX_ENTRIES * 4 * 2;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
@@ -25,6 +27,7 @@ pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
+pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 
 pub const fn make_drd(dev_id: u32, nr: u32) -> u32 {
@@ -47,6 +50,8 @@ const KEYRING_PPD_EXPIRE_OFFSET: usize =
 const KEYRING_PPD_AUTO_ADD_OFFSET: usize = KEYRING_PPD_EXPIRE_OFFSET + KEYRING_MAX_KEYS;
 const RANDCHEST_PPD_IDS_OFFSET: usize = 0;
 const RANDCHEST_PPD_LAST_USED_OFFSET: usize = RANDCHEST_PPD_IDS_OFFSET + RANDCHEST_MAX_ENTRIES * 4;
+const ORBSPAWN_PPD_IDS_OFFSET: usize = 0;
+const ORBSPAWN_PPD_LAST_USED_OFFSET: usize = ORBSPAWN_PPD_IDS_OFFSET + ORBSPAWN_MAX_ENTRIES * 4;
 
 pub const DEFERRED_ACHIEVEMENTS: u32 = 1 << 0;
 pub const DEFERRED_MOTD: u32 = 1 << 1;
@@ -120,6 +125,12 @@ pub struct RandomChestAccess {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrbSpawnAccess {
+    pub location_id: u32,
+    pub last_used_seconds: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyringAddResult {
     Added,
     Duplicate,
@@ -173,6 +184,8 @@ pub struct PlayerRuntime {
     pub chest_last_access_seconds: HashMap<u8, u64>,
     pub keyring: Vec<KeyringEntry>,
     pub random_chests: Vec<RandomChestAccess>,
+    #[serde(default)]
+    pub orb_spawns: Vec<OrbSpawnAccess>,
     pub achievements: AchievementState,
     #[serde(default)]
     pub keyring_auto_add: bool,
@@ -204,6 +217,7 @@ impl PlayerRuntime {
             chest_last_access_seconds: HashMap::new(),
             keyring: Vec::new(),
             random_chests: Vec::new(),
+            orb_spawns: Vec::new(),
             achievements: AchievementState::default(),
             keyring_auto_add: false,
         }
@@ -382,6 +396,47 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_orbspawn_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_ORBSPAWN_PPD_SIZE];
+        for (index, entry) in self
+            .orb_spawns
+            .iter()
+            .take(ORBSPAWN_MAX_ENTRIES)
+            .enumerate()
+        {
+            write_i32(
+                &mut bytes,
+                ORBSPAWN_PPD_IDS_OFFSET + index * 4,
+                entry.location_id.min(i32::MAX as u32) as i32,
+            );
+            write_i32(
+                &mut bytes,
+                ORBSPAWN_PPD_LAST_USED_OFFSET + index * 4,
+                entry.last_used_seconds.min(i32::MAX as u64) as i32,
+            );
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_orbspawn_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_ORBSPAWN_PPD_SIZE {
+            return false;
+        }
+
+        self.orb_spawns.clear();
+        for index in 0..ORBSPAWN_MAX_ENTRIES {
+            let location_id = read_i32(bytes, ORBSPAWN_PPD_IDS_OFFSET + index * 4);
+            let last_used_seconds = read_i32(bytes, ORBSPAWN_PPD_LAST_USED_OFFSET + index * 4);
+            if location_id > 0 && last_used_seconds > 0 {
+                self.orb_spawns.push(OrbSpawnAccess {
+                    location_id: location_id as u32,
+                    last_used_seconds: last_used_seconds as u64,
+                });
+            }
+        }
+        true
+    }
+
     pub fn decode_legacy_ppd_blob(&mut self, bytes: &[u8]) -> bool {
         for block in LegacyPpdBlocks::parse(bytes) {
             let Some(block) = block else {
@@ -403,6 +458,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_ORBSPAWN_PPD => {
+                    if !self.decode_legacy_orbspawn_ppd(block.data) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -414,6 +474,7 @@ impl PlayerRuntime {
         let mut had_keyring = false;
         let mut had_treasure_chest = false;
         let mut had_randchest = false;
+        let mut had_orbspawn = false;
         let mut existing_was_valid = true;
 
         for block in LegacyPpdBlocks::parse(existing) {
@@ -445,6 +506,13 @@ impl PlayerRuntime {
                     DRD_RANDCHEST_PPD,
                     &self.encode_legacy_randchest_ppd(),
                 );
+            } else if block.id == DRD_ORBSPAWN_PPD {
+                had_orbspawn = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_ORBSPAWN_PPD,
+                    &self.encode_legacy_orbspawn_ppd(),
+                );
             } else {
                 write_ppd_block(&mut encoded, block.id, block.data);
             }
@@ -474,6 +542,15 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_RANDCHEST_PPD,
                     &self.encode_legacy_randchest_ppd(),
+                );
+            }
+        }
+        if !had_orbspawn && (existing_was_valid || existing.is_empty()) {
+            if !self.orb_spawns.is_empty() {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_ORBSPAWN_PPD,
+                    &self.encode_legacy_orbspawn_ppd(),
                 );
             }
         }
@@ -626,6 +703,41 @@ impl PlayerRuntime {
             .min_by_key(|entry| entry.last_used_seconds)
         {
             *oldest = RandomChestAccess {
+                location_id,
+                last_used_seconds: realtime_seconds,
+            };
+        }
+    }
+
+    pub fn orb_spawn_last_used_seconds(&self, location_id: u32) -> Option<u64> {
+        self.orb_spawns
+            .iter()
+            .find(|entry| entry.location_id == location_id)
+            .map(|entry| entry.last_used_seconds)
+    }
+
+    pub fn mark_orb_spawn_used(&mut self, location_id: u32, realtime_seconds: u64) {
+        if let Some(entry) = self
+            .orb_spawns
+            .iter_mut()
+            .find(|entry| entry.location_id == location_id)
+        {
+            entry.last_used_seconds = realtime_seconds;
+            return;
+        }
+        if self.orb_spawns.len() < ORBSPAWN_MAX_ENTRIES {
+            self.orb_spawns.push(OrbSpawnAccess {
+                location_id,
+                last_used_seconds: realtime_seconds,
+            });
+            return;
+        }
+        if let Some(oldest) = self
+            .orb_spawns
+            .iter_mut()
+            .min_by_key(|entry| entry.last_used_seconds)
+        {
+            *oldest = OrbSpawnAccess {
                 location_id,
                 last_used_seconds: realtime_seconds,
             };
@@ -1078,6 +1190,32 @@ mod tests {
     }
 
     #[test]
+    fn orbspawn_ppd_codec_matches_legacy_c_layout() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_orb_spawn_used(0x0001_0506, 1234);
+        player.mark_orb_spawn_used(0x0001_0708, i32::MAX as u64 + 99);
+
+        let bytes = player.encode_legacy_orbspawn_ppd();
+        assert_eq!(bytes.len(), LEGACY_ORBSPAWN_PPD_SIZE);
+        assert_eq!(read_i32(&bytes, 0), 0x0001_0506);
+        assert_eq!(read_i32(&bytes, 4), 0x0001_0708);
+        assert_eq!(read_i32(&bytes, ORBSPAWN_PPD_LAST_USED_OFFSET), 1234);
+        assert_eq!(
+            read_i32(&bytes, ORBSPAWN_PPD_LAST_USED_OFFSET + 4),
+            i32::MAX
+        );
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_orbspawn_ppd(&bytes));
+        assert_eq!(decoded.orb_spawn_last_used_seconds(0x0001_0506), Some(1234));
+        assert_eq!(
+            decoded.orb_spawn_last_used_seconds(0x0001_0708),
+            Some(i32::MAX as u64)
+        );
+        assert_eq!(decoded.orb_spawn_last_used_seconds(0x0001_090a), None);
+    }
+
+    #[test]
     fn keyring_ppd_blob_round_trips_with_legacy_block_framing() {
         let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
         let mut existing = Vec::new();
@@ -1190,6 +1328,45 @@ mod tests {
         assert_eq!(read_u32(&encoded, 4), LEGACY_RANDCHEST_PPD_SIZE as u32);
         assert_eq!(read_i32(&encoded, 8), 0x0001_0203);
         assert_eq!(read_i32(&encoded, 8 + RANDCHEST_PPD_LAST_USED_OFFSET), 55);
+    }
+
+    #[test]
+    fn orbspawn_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_orbspawn = vec![0; LEGACY_ORBSPAWN_PPD_SIZE];
+        write_i32(&mut existing_orbspawn, ORBSPAWN_PPD_IDS_OFFSET, 0x0001_0203);
+        write_i32(&mut existing_orbspawn, ORBSPAWN_PPD_LAST_USED_OFFSET, 44);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_ORBSPAWN_PPD, &existing_orbspawn);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_orb_spawn_used(0x0001_0506, 777);
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_ORBSPAWN_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_ORBSPAWN_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20), 0x0001_0506);
+        assert_eq!(read_i32(&encoded, 20 + ORBSPAWN_PPD_LAST_USED_OFFSET), 777);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.orb_spawn_last_used_seconds(0x0001_0506), Some(777));
+        assert_eq!(decoded.orb_spawn_last_used_seconds(0x0001_0203), None);
+    }
+
+    #[test]
+    fn ppd_blob_appends_orbspawns_without_existing_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_orb_spawn_used(0x0001_0203, 55);
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_ORBSPAWN_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_ORBSPAWN_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 8), 0x0001_0203);
+        assert_eq!(read_i32(&encoded, 8 + ORBSPAWN_PPD_LAST_USED_OFFSET), 55);
     }
 
     #[test]

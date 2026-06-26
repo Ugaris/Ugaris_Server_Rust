@@ -10,7 +10,10 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
     area_section::section_look_text,
-    entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
+    entity::{
+        Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
+        CHARACTER_VALUE_NAMES, POWERSCALE,
+    },
     ids::{CharacterId, ItemId},
     item_driver::{IDR_KEY_RING, IDR_TORCH},
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
@@ -209,6 +212,7 @@ const IID_PLACEHOLDER_KEY: u32 = (59 << 24) | 0x000004;
 const IID_AREA1_SKELKEY1: u32 = (1 << 24) | 0x000002;
 const INVENTORY_KEY_START_SLOT: usize = 30;
 const RANDCHEST_COOLDOWN_SECONDS: u64 = 60 * 60 * 24;
+const ORBSPAWN_RESPAWN_SECONDS: u64 = 60 * 60 * 24 * 30;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ChestTreasureApplyResult {
@@ -325,6 +329,15 @@ enum KeyringAddApplyResult {
     NotAKey,
     MissingPlayer,
     MissingCursorItem,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OrbSpawnApplyResult {
+    Granted { item_name: String, special: bool },
+    Cooldown { days_left: String },
+    Nothing,
+    CursorOccupied,
+    MissingPlayer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -459,6 +472,150 @@ fn grant_chest_treasure(
     character.flags.insert(CharacterFlags::ITEMS);
     world.add_item(item);
     Some(item_name)
+}
+
+fn legacy_orb_value_from_seed(seed: u64) -> CharacterValue {
+    const VALUES: [CharacterValue; 32] = [
+        CharacterValue::Endurance,
+        CharacterValue::Hp,
+        CharacterValue::Mana,
+        CharacterValue::Wisdom,
+        CharacterValue::Intelligence,
+        CharacterValue::Agility,
+        CharacterValue::Strength,
+        CharacterValue::Barter,
+        CharacterValue::Percept,
+        CharacterValue::Stealth,
+        CharacterValue::Hand,
+        CharacterValue::Warcry,
+        CharacterValue::Surround,
+        CharacterValue::BodyControl,
+        CharacterValue::SpeedSkill,
+        CharacterValue::Heal,
+        CharacterValue::Fireball,
+        CharacterValue::Tactics,
+        CharacterValue::Duration,
+        CharacterValue::Rage,
+        CharacterValue::Bless,
+        CharacterValue::Freeze,
+        CharacterValue::MagicShield,
+        CharacterValue::Flash,
+        CharacterValue::Pulse,
+        CharacterValue::Dagger,
+        CharacterValue::Staff,
+        CharacterValue::Sword,
+        CharacterValue::TwoHand,
+        CharacterValue::Attack,
+        CharacterValue::Parry,
+        CharacterValue::Immunity,
+    ];
+    VALUES[(seed as usize) % VALUES.len()]
+}
+
+fn grant_orb_spawn_item(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    anti: bool,
+    special: bool,
+    seed: u64,
+) -> Option<String> {
+    if world
+        .characters
+        .get(&character_id)
+        .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return None;
+    }
+
+    let template = if anti { "empty_anti_orb" } else { "empty_orb" };
+    let Ok(mut item) = loader.instantiate_item_template(template, Some(character_id)) else {
+        return None;
+    };
+    let value = legacy_orb_value_from_seed(seed) as u8;
+    let value_name = CHARACTER_VALUE_NAMES[usize::from(value)];
+    if anti {
+        if special {
+            item.name = format!("Extracting Anti-Orb of {value_name}");
+            item.description =
+                format!("A dark orb that extracts {value_name} from items and crystallizes it.");
+            ensure_drdata_len(&mut item, 3);
+            item.driver_data[2] = 1;
+        } else {
+            item.name = format!("Anti-Orb of {value_name}");
+            item.description = format!("A dark orb that removes {value_name} from items.");
+            ensure_drdata_len(&mut item, 3);
+            item.driver_data[2] = 0;
+        }
+    } else {
+        item.name = format!("Orb of {value_name}");
+        ensure_drdata_len(&mut item, 2);
+    }
+    item.driver_data[0] = value;
+    item.driver_data[1] = 1;
+
+    let item_id = item.id;
+    let item_name = item.name.clone();
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return None;
+    };
+    if character.cursor_item.is_some() {
+        return None;
+    }
+    character.cursor_item = Some(item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(item);
+    Some(item_name)
+}
+
+fn ensure_drdata_len(item: &mut Item, len: usize) {
+    if item.driver_data.len() < len {
+        item.driver_data.resize(len, 0);
+    }
+}
+
+fn apply_orb_spawn(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    player: Option<&mut PlayerRuntime>,
+    spawn_item_id: ItemId,
+    character_id: CharacterId,
+    area_id: u16,
+    realtime_seconds: u64,
+    anti: bool,
+    special: bool,
+    random_seed: u64,
+) -> OrbSpawnApplyResult {
+    let Some(character) = world.characters.get(&character_id) else {
+        return OrbSpawnApplyResult::MissingPlayer;
+    };
+    if character.cursor_item.is_some() {
+        return OrbSpawnApplyResult::CursorOccupied;
+    }
+    let Some(player) = player else {
+        return OrbSpawnApplyResult::MissingPlayer;
+    };
+    let Some(spawner) = world.items.get(&spawn_item_id) else {
+        return OrbSpawnApplyResult::Nothing;
+    };
+    let location_id =
+        u32::from(spawner.x) + (u32::from(spawner.y) << 8) + (u32::from(area_id) << 16);
+    if let Some(last_used) = player.orb_spawn_last_used_seconds(location_id) {
+        if last_used.saturating_add(ORBSPAWN_RESPAWN_SECONDS) > realtime_seconds {
+            let remaining = last_used
+                .saturating_add(ORBSPAWN_RESPAWN_SECONDS)
+                .saturating_sub(realtime_seconds);
+            return OrbSpawnApplyResult::Cooldown {
+                days_left: format!("{:.2}", remaining as f64 / 60.0 / 60.0 / 24.0),
+            };
+        }
+    }
+
+    player.mark_orb_spawn_used(location_id, realtime_seconds);
+    match grant_orb_spawn_item(world, loader, character_id, anti, special, random_seed) {
+        Some(item_name) => OrbSpawnApplyResult::Granted { item_name, special },
+        None => OrbSpawnApplyResult::Nothing,
+    }
 }
 
 fn keyring_show_messages(player: Option<&PlayerRuntime>) -> Vec<String> {
@@ -2244,6 +2401,144 @@ mod tests {
             driver_data: Vec::new(),
             serial: 1,
         }
+    }
+
+    #[test]
+    fn apply_orb_spawn_grants_orb_and_records_cooldown() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::PAID);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut spawner = test_item(ItemId(77), 123, ItemFlags::USED | ItemFlags::USE);
+        spawner.x = 5;
+        spawner.y = 6;
+        world.add_item(spawner);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"empty_orb: name="Empty Orb" ;"#)
+            .unwrap();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+
+        assert_eq!(
+            apply_orb_spawn(
+                &mut world,
+                &mut loader,
+                Some(&mut player),
+                ItemId(77),
+                character_id,
+                1,
+                10_000,
+                false,
+                false,
+                0,
+            ),
+            OrbSpawnApplyResult::Granted {
+                item_name: "Orb of Endurance".to_string(),
+                special: false,
+            }
+        );
+        let character = world.characters.get(&character_id).unwrap();
+        let orb_id = character.cursor_item.expect("orb should be on cursor");
+        let orb = world.items.get(&orb_id).unwrap();
+        assert_eq!(orb.name, "Orb of Endurance");
+        assert_eq!(orb.driver_data[0], CharacterValue::Endurance as u8);
+        assert_eq!(orb.driver_data[1], 1);
+        assert_eq!(
+            player.orb_spawn_last_used_seconds(0x0001_0605),
+            Some(10_000)
+        );
+    }
+
+    #[test]
+    fn apply_orb_spawn_enforces_legacy_respawn_cooldown() {
+        let character_id = CharacterId(7);
+        let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut spawner = test_item(ItemId(77), 123, ItemFlags::USED | ItemFlags::USE);
+        spawner.x = 5;
+        spawner.y = 6;
+        world.add_item(spawner);
+        let mut loader = ZoneLoader::new();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+        player.mark_orb_spawn_used(0x0001_0605, 10_000);
+
+        assert_eq!(
+            apply_orb_spawn(
+                &mut world,
+                &mut loader,
+                Some(&mut player),
+                ItemId(77),
+                character_id,
+                1,
+                10_000 + 60 * 60 * 24,
+                false,
+                false,
+                1,
+            ),
+            OrbSpawnApplyResult::Cooldown {
+                days_left: "29.00".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn apply_anti_orb_spawn_marks_extracting_anti_orb() {
+        let character_id = CharacterId(7);
+        let mut world = World::default();
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut spawner = test_item(ItemId(77), 123, ItemFlags::USED | ItemFlags::USE);
+        spawner.x = 5;
+        spawner.y = 6;
+        world.add_item(spawner);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"empty_anti_orb: name="Empty Anti-Orb" ;"#)
+            .unwrap();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+
+        assert_eq!(
+            apply_orb_spawn(
+                &mut world,
+                &mut loader,
+                Some(&mut player),
+                ItemId(77),
+                character_id,
+                1,
+                10_000,
+                true,
+                true,
+                2,
+            ),
+            OrbSpawnApplyResult::Granted {
+                item_name: "Extracting Anti-Orb of Mana".to_string(),
+                special: true,
+            }
+        );
+        let orb_id = world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .cursor_item
+            .unwrap();
+        let orb = world.items.get(&orb_id).unwrap();
+        assert_eq!(orb.driver_data[0], CharacterValue::Mana as u8);
+        assert_eq!(orb.driver_data[1], 1);
+        assert_eq!(orb.driver_data[2], 1);
+        assert_eq!(
+            orb.description,
+            "A dark orb that extracts Mana from items and crystallizes it."
+        );
     }
 
     #[test]
@@ -4235,6 +4530,44 @@ async fn main() -> anyhow::Result<()> {
                                                     blocked += 1;
                                                 }
                                                 RandomChestApplyResult::MissingPlayer => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::OrbSpawn { item_id, character_id, anti, special } => {
+                                            let random_seed = world.tick.0
+                                                ^ (u64::from(item_id.0) << 16)
+                                                ^ u64::from(character_id.0);
+                                            match apply_orb_spawn(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                runtime.player_for_character_mut(character_id),
+                                                item_id,
+                                                character_id,
+                                                config.area_id,
+                                                realtime_seconds,
+                                                anti,
+                                                special,
+                                                random_seed,
+                                            ) {
+                                                OrbSpawnApplyResult::Granted { item_name, special } => {
+                                                    let prefix = if special { "An extracting" } else { "An" };
+                                                    feedback.push((character_id, format!("{prefix} {item_name} was created.")));
+                                                    executed += 1;
+                                                }
+                                                OrbSpawnApplyResult::Cooldown { days_left } => {
+                                                    feedback.push((character_id, format!("Nothing happens, days left: {days_left}")));
+                                                    blocked += 1;
+                                                }
+                                                OrbSpawnApplyResult::Nothing => {
+                                                    feedback.push((character_id, "Nothing happens.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                OrbSpawnApplyResult::CursorOccupied => {
+                                                    feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                OrbSpawnApplyResult::MissingPlayer => {
                                                     failed += 1;
                                                 }
                                             }

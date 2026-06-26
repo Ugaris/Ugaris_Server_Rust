@@ -25,11 +25,13 @@ pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_FOOD: u16 = 64;
 pub const IDR_ENCHANTITEM: u16 = 83;
+pub const IDR_ORBSPAWN: u16 = 84;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_ANTIENCHANTITEM: u16 = 160;
 pub const IDR_SPECIALANTIENCHANTITEM: u16 = 161;
 pub const IDR_CITY_RECALL: u16 = 159;
+pub const IDR_ANTIORBSPAWN: u16 = 162;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_KEY_RING: u16 = 200;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
@@ -267,6 +269,12 @@ pub enum ItemDriverOutcome {
         amount: i16,
         extract_orb: bool,
     },
+    OrbSpawn {
+        item_id: ItemId,
+        character_id: CharacterId,
+        anti: bool,
+        special: bool,
+    },
     EnchantNeedsCursor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -399,6 +407,8 @@ pub fn execute_item_driver_with_context(
                 IDR_ENCHANTITEM => enchant_driver(character, item),
                 IDR_ANTIENCHANTITEM => anti_enchant_driver(character, item, false),
                 IDR_SPECIALANTIENCHANTITEM => anti_enchant_driver(character, item, true),
+                IDR_ORBSPAWN => orbspawn_driver(character, item, false),
+                IDR_ANTIORBSPAWN => orbspawn_driver(character, item, true),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
@@ -416,6 +426,25 @@ pub fn execute_item_driver_with_context(
             item_id,
             character_id,
         },
+    }
+}
+
+fn orbspawn_driver(character: &Character, item: &Item, anti: bool) -> ItemDriverOutcome {
+    if character.cursor_item.is_some()
+        || character.level < u32::from(item.min_level)
+        || !character.flags.contains(CharacterFlags::PAID)
+    {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::OrbSpawn {
+        item_id: item.id,
+        character_id: character.id,
+        anti,
+        special: anti && drdata(item, 0) == 1,
     }
 }
 
@@ -2241,6 +2270,63 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
                 item_name: outcome_item_name("Item"),
+            }
+        );
+    }
+
+    #[test]
+    fn orbspawn_driver_returns_typed_spawn_for_paid_eligible_character() {
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PAID);
+        character.level = 10;
+        let mut spawner = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_ORBSPAWN);
+        spawner.min_level = 5;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ORBSPAWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut spawner, request, 1, false),
+            ItemDriverOutcome::OrbSpawn {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                anti: false,
+                special: false,
+            }
+        );
+    }
+
+    #[test]
+    fn anti_orbspawn_driver_blocks_unpaid_and_marks_special() {
+        let mut character = character(1);
+        let mut spawner = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_ANTIORBSPAWN);
+        spawner.driver_data = vec![1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ANTIORBSPAWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut spawner, request, 1, false),
+            ItemDriverOutcome::BlockedByRequirements {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.flags.insert(CharacterFlags::PAID);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut spawner, request, 1, false),
+            ItemDriverOutcome::OrbSpawn {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                anti: true,
+                special: true,
             }
         );
     }
