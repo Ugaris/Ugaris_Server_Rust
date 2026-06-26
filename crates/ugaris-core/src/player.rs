@@ -162,6 +162,10 @@ pub struct PlayerRuntime {
     pub login_tick: u64,
     pub deferred_init: u32,
     pub scrollback: Vec<u8>,
+    #[serde(default)]
+    pub ppd_blob: Vec<u8>,
+    #[serde(default)]
+    pub subscriber_blob: Vec<u8>,
     pub chest_last_access_seconds: HashMap<u8, u64>,
     pub keyring: Vec<KeyringEntry>,
     pub random_chests: Vec<RandomChestAccess>,
@@ -191,6 +195,8 @@ impl PlayerRuntime {
             login_tick: current_tick,
             deferred_init: 0,
             scrollback: Vec::with_capacity(MAX_SCROLLBACK),
+            ppd_blob: Vec::new(),
+            subscriber_blob: Vec::new(),
             chest_last_access_seconds: HashMap::new(),
             keyring: Vec::new(),
             random_chests: Vec::new(),

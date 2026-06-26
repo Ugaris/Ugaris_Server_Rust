@@ -24,6 +24,10 @@ use ugaris_core::{
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
 };
+use ugaris_db::{
+    CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
+    LoginRequest,
+};
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
 use ugaris_protocol::{
     packet::{
@@ -94,14 +98,11 @@ impl ServerRuntime {
         new_character_id
     }
 
-    fn disconnect(&mut self, session_id: u64) -> Option<CharacterId> {
-        let character_id = self
-            .players
-            .remove(&session_id)
-            .and_then(|player| player.character_id);
+    fn disconnect(&mut self, session_id: u64) -> Option<PlayerRuntime> {
+        let player = self.players.remove(&session_id);
         self.sessions.remove(&session_id);
         self.action_queue.retain(|(id, _)| *id != session_id);
-        character_id
+        player
     }
 
     fn send_to_session(&self, session_id: u64, payload: bytes::BytesMut) -> bool {
@@ -217,6 +218,84 @@ enum ChestTreasureApplyResult {
     KeyRequired,
     CursorOccupied,
     MissingPlayer,
+}
+
+fn apply_character_snapshot(
+    world: &mut World,
+    player: &mut PlayerRuntime,
+    snapshot: CharacterSnapshot,
+    fallback_x: usize,
+    fallback_y: usize,
+) -> bool {
+    let CharacterSnapshot {
+        mut character,
+        items,
+        ppd_blob,
+        subscriber_blob,
+        ..
+    } = snapshot;
+
+    player.ppd_blob = ppd_blob;
+    player.subscriber_blob = subscriber_blob;
+    let ppd_blob = player.ppd_blob.clone();
+    if !ppd_blob.is_empty() && !player.decode_legacy_ppd_blob(&ppd_blob) {
+        warn!(
+            character_id = character.id.0,
+            "failed to decode legacy PPD blob for DB character"
+        );
+    }
+
+    let spawn_x = usize::from(character.x).max(1);
+    let spawn_y = usize::from(character.y).max(1);
+    if !world.spawn_character(character.clone(), spawn_x, spawn_y) {
+        character.x = 0;
+        character.y = 0;
+        if !world.spawn_character(character, fallback_x, fallback_y) {
+            return false;
+        }
+    }
+
+    for item in items {
+        world.add_item(item);
+    }
+    true
+}
+
+fn character_snapshot_items(world: &World, character: &Character) -> Vec<Item> {
+    world
+        .items
+        .values()
+        .filter(|item| {
+            item.carried_by == Some(character.id)
+                || character.cursor_item == Some(item.id)
+                || character
+                    .inventory
+                    .iter()
+                    .any(|slot| *slot == Some(item.id))
+        })
+        .cloned()
+        .collect()
+}
+
+fn character_save_request(
+    world: &World,
+    player: &PlayerRuntime,
+    character: &Character,
+    area_id: u16,
+    mirror_id: u16,
+) -> CharacterSaveRequest {
+    CharacterSaveRequest {
+        character: character.clone(),
+        items: character_snapshot_items(world, character),
+        ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
+        subscriber_blob: player.subscriber_blob.clone(),
+        mode: CharacterSaveMode::Logout {
+            expected_current_area: i32::from(area_id),
+            expected_current_mirror: i32::from(mirror_id),
+            allowed_area: i32::from(area_id),
+            mirror: i32::from(mirror_id),
+        },
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2559,7 +2638,44 @@ mod tests {
         assert_eq!(player.character_id, Some(CharacterId(1)));
         assert_eq!(player.character_number, 1);
         assert_eq!(player.state, PlayerConnectionState::Normal);
-        assert_eq!(runtime.disconnect(5), Some(CharacterId(1)));
+        assert_eq!(
+            runtime.disconnect(5).and_then(|player| player.character_id),
+            Some(CharacterId(1))
+        );
+    }
+
+    #[test]
+    fn character_save_request_encodes_runtime_ppd_and_carried_items() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.inventory[30] = Some(ItemId(101));
+        character.cursor_item = Some(ItemId(102));
+
+        let mut inventory_item = test_item(ItemId(101), 1, ItemFlags::TAKE);
+        inventory_item.carried_by = Some(character.id);
+        let mut cursor_item = test_item(ItemId(102), 2, ItemFlags::TAKE);
+        cursor_item.carried_by = Some(character.id);
+        let ground_item = test_item(ItemId(103), 3, ItemFlags::TAKE);
+
+        let mut world = World::default();
+        world.add_character(character.clone());
+        world.add_item(inventory_item);
+        world.add_item(cursor_item);
+        world.add_item(ground_item);
+
+        let mut player = PlayerRuntime::connected(5, 0);
+        player.add_keyring_key(0x3b000001, "Copper Key");
+        player.mark_chest_access(9, 1234);
+
+        let request = character_save_request(&world, &player, &character, 1, 2);
+
+        assert_eq!(request.items.len(), 2);
+        assert!(request.items.iter().any(|item| item.id == ItemId(101)));
+        assert!(request.items.iter().any(|item| item.id == ItemId(102)));
+        let mut decoded = PlayerRuntime::connected(6, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&request.ppd_blob));
+        assert_eq!(decoded.keyring.len(), 1);
+        assert_eq!(decoded.chest_last_access_seconds(9), 1234);
     }
 
     #[test]
@@ -3600,13 +3716,15 @@ async fn main() -> anyhow::Result<()> {
         ..ServerConfig::default()
     };
 
-    if let Some(database_url) = args.database_url.as_deref() {
+    let character_repository = if let Some(database_url) = args.database_url.as_deref() {
         let db = ugaris_db::Database::connect(database_url, 8).await?;
         db.ping().await?;
         info!("connected to PostgreSQL");
+        Some(db.characters())
     } else {
         warn!("DATABASE_URL not set; starting without persistence");
-    }
+        None
+    };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
     let (listener_ready_tx, listener_ready_rx) = tokio::sync::oneshot::channel();
@@ -4077,8 +4195,58 @@ async fn main() -> anyhow::Result<()> {
                         info!(%id, %peer_addr, "session registered");
                     }
                     SessionEvent::Login { id, login } => {
-                        let character_id = runtime.login(id.0, &login, world.tick.0);
-                        if !world.characters.contains_key(&character_id) {
+                        let mut character_id = runtime.login(id.0, &login, world.tick.0);
+                        let mut loaded_from_database = false;
+                        if let Some(repository) = &character_repository {
+                            let request = LoginRequest {
+                                name: login.name.clone(),
+                                password: login.password.clone(),
+                                vendor: login.vendor,
+                                unique: login.unique,
+                                ip: login.his_ip,
+                                area_id: i32::from(config.area_id),
+                                mirror_id: i32::from(config.mirror_id),
+                                no_login: false,
+                            };
+                            match repository.begin_login(request).await {
+                                Ok(LoginOutcome::Ready { character_id: db_character_id, character_number, mirror, .. }) => {
+                                    character_id = db_character_id;
+                                    if let Some(player) = runtime.players.get_mut(&id.0) {
+                                        player.character_id = Some(db_character_id);
+                                        player.character_number = if character_number == 0 { db_character_id.0 } else { character_number };
+                                    }
+                                    match repository.load_character_snapshot(db_character_id).await {
+                                        Ok(Some(snapshot)) => {
+                                            if let Some(player) = runtime.players.get_mut(&id.0) {
+                                                loaded_from_database = apply_character_snapshot(
+                                                    &mut world,
+                                                    player,
+                                                    snapshot,
+                                                    spawn_tile.0,
+                                                    spawn_tile.1,
+                                                );
+                                            }
+                                            if loaded_from_database {
+                                                info!(%id, character_id = db_character_id.0, mirror, "loaded DB-backed character snapshot");
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            warn!(%id, character_id = db_character_id.0, "DB login succeeded but no character snapshot was available; using scaffold");
+                                        }
+                                        Err(err) => {
+                                            warn!(%id, character_id = db_character_id.0, error = %err, "failed to load DB character snapshot; using scaffold");
+                                        }
+                                    }
+                                }
+                                Ok(outcome) => {
+                                    warn!(%id, code = outcome.legacy_find_login_code(), "DB login did not return a local ready character; using scaffold");
+                                }
+                                Err(err) => {
+                                    warn!(%id, error = %err, "DB login failed; using scaffold");
+                                }
+                            }
+                        }
+                        if !loaded_from_database && !world.characters.contains_key(&character_id) {
                             let (character, inventory_items) = login_character_from_template(
                                 &mut zone_loader,
                                 character_id,
@@ -4151,8 +4319,32 @@ async fn main() -> anyhow::Result<()> {
                         info!(%id, command = command_kind, "action queued for gameplay port");
                     }
                     SessionEvent::Disconnected { id } => {
-                        if let Some(character_id) = runtime.disconnect(id.0) {
-                            world.remove_character(character_id);
+                        if let Some(player) = runtime.disconnect(id.0) {
+                            if let Some(character_id) = player.character_id {
+                                if let Some(repository) = &character_repository {
+                                    if let Some(character) = world.characters.get(&character_id) {
+                                        let request = character_save_request(
+                                            &world,
+                                            &player,
+                                            character,
+                                            config.area_id,
+                                            config.mirror_id,
+                                        );
+                                        match repository.save_character_snapshot(request).await {
+                                            Ok(true) => {
+                                                info!(%id, character_id = character_id.0, "saved DB-backed character snapshot on logout");
+                                            }
+                                            Ok(false) => {
+                                                warn!(%id, character_id = character_id.0, "DB character snapshot save was skipped by area guard");
+                                            }
+                                            Err(err) => {
+                                                warn!(%id, character_id = character_id.0, error = %err, "failed to save DB-backed character snapshot on logout");
+                                            }
+                                        }
+                                    }
+                                }
+                                world.remove_character(character_id);
+                            }
                         }
                         info!(%id, "session removed");
                     }
