@@ -15,7 +15,7 @@ use crate::{
     map::{MapFlags, MapGrid},
     spell::{
         heal_spend, magicshield_spend, may_add_spell, pulse_spend, spell_power, BLESS_COST,
-        FLASH_COST, FREEZE_COST, IDR_BLESS, IDR_FLASH,
+        FLASH_COST, FREEZE_COST, IDR_BLESS, IDR_FLASH, IDR_WARCRY,
     },
     tick::TICKS_PER_SECOND,
 };
@@ -430,6 +430,50 @@ pub fn do_pulse(character: &mut Character) -> Result<(), DoError> {
     }
     character.dir = bigdir(character.dir);
     Ok(())
+}
+
+pub fn do_warcry(character: &mut Character, items: &HashMap<ItemId, Item>) -> Result<(), DoError> {
+    if character.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character.flags.contains(CharacterFlags::NOMAGIC)
+        && !character.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+    if warcried(character, items) {
+        return Err(DoError::Unconscious);
+    }
+
+    let warcry = character_value(character, CharacterValue::Warcry);
+    if warcry == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    let warcry_endurance_cost = warcry * POWERSCALE / 3;
+    if character.endurance < warcry_endurance_cost {
+        return Err(DoError::ManaLow);
+    }
+
+    character.endurance -= warcry_endurance_cost;
+    character.action = action::WARCRY;
+    character.duration = speed_ticks(
+        character_value(character, CharacterValue::Speed),
+        character.speed_mode,
+        DUR_MAGIC_ACTION,
+    );
+    if character.speed_mode == SpeedMode::Fast {
+        character.endurance -= endurance_cost(character);
+    }
+    Ok(())
+}
+
+fn warcried(character: &Character, items: &HashMap<ItemId, Item>) -> bool {
+    character.inventory[12..30]
+        .iter()
+        .flatten()
+        .filter_map(|item_id| items.get(item_id))
+        .find(|item| item.driver == IDR_WARCRY)
+        .is_some_and(|item| item.modifier_value[0] < -100)
 }
 
 pub fn do_freeze(character: &mut Character) -> Result<(), DoError> {

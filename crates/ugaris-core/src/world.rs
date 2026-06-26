@@ -5,8 +5,8 @@ use crate::{
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
         advance_action_step, can_attack, do_attack, do_bless, do_drop, do_flash, do_freeze,
-        do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk, endurance_cost,
-        reset_action_after_act, speed_ticks, ItemUseRequest, DUR_MISC_ACTION,
+        do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk, do_warcry,
+        endurance_cost, reset_action_after_act, speed_ticks, ItemUseRequest, DUR_MISC_ACTION,
     },
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode},
     game_time::GameDate,
@@ -22,10 +22,11 @@ use crate::{
     path::{pathfinder, pathfinder_ignore_characters},
     player::{PlayerActionCode, PlayerRuntime},
     scheduler::{TaskScheduler, TimerPayload, TimerQueue},
+    sector::SoundSectors,
     spell::{
         freeze_speed_modifier, is_timed_spell_driver, may_add_spell, read_spell_expire_tick,
-        spell_power, BLESS_DURATION, FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FLASH,
-        IDR_FREEZE,
+        spell_power, warcry_damage, warcry_speed_modifier, BLESS_DURATION, FLASH_DURATION,
+        FREEZE_DURATION, IDR_BLESS, IDR_FLASH, IDR_FREEZE, IDR_WARCRY, WARCRY_DURATION,
     },
     Tick,
 };
@@ -1430,6 +1431,12 @@ impl World {
                     .is_some_and(|character| do_pulse(character).is_ok())
                     || self.set_player_idle(player, character_id)
             }
+            PlayerActionCode::Warcry => {
+                self.characters
+                    .get_mut(&character_id)
+                    .is_some_and(|character| do_warcry(character, &self.items).is_ok())
+                    || self.set_player_idle(player, character_id)
+            }
             PlayerActionCode::Freeze => {
                 self.characters
                     .get_mut(&character_id)
@@ -1835,6 +1842,7 @@ impl World {
                 action::PULSE => true,
                 action::FREEZE => self.complete_freeze(character_id),
                 action::FLASH => self.complete_flash(character_id),
+                action::WARCRY => self.complete_warcry(character_id),
                 action::BLESS_SELF | action::BLESS1 | action::BLESS2 => self
                     .characters
                     .get(&character_id)
@@ -1974,6 +1982,104 @@ impl World {
                 self.install_speed_spell(target_id, IDR_FREEZE, "Freeze", modifier, duration);
         }
         installed
+    }
+
+    fn complete_warcry(&mut self, caster_id: CharacterId) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        if caster.flags.contains(CharacterFlags::NOMAGIC)
+            && !caster.flags.contains(CharacterFlags::NONOMAGIC)
+        {
+            return false;
+        }
+
+        let caster_x = usize::from(caster.x);
+        let caster_y = usize::from(caster.y);
+        let min_x = caster_x.saturating_sub(10).max(1);
+        let max_x = caster_x
+            .saturating_add(10)
+            .min(self.map.width().saturating_sub(2));
+        let min_y = caster_y.saturating_sub(10).max(1);
+        let max_y = caster_y
+            .saturating_add(10)
+            .min(self.map.height().saturating_sub(2));
+        let sectors = SoundSectors::build(&self.map);
+        let power = spell_power(
+            character_value(&caster, CharacterValue::Warcry),
+            character_value(&caster, CharacterValue::Tactics),
+        );
+        let duration = spell_duration_ticks(&caster, WARCRY_DURATION);
+        let mut targets = Vec::new();
+
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let Some(target_id) = self.map.tile(x, y).and_then(|tile| {
+                    (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+                }) else {
+                    continue;
+                };
+                if target_id == caster_id
+                    || !sectors.sector_hear(&self.map, caster_x, caster_y, x, y)
+                {
+                    continue;
+                }
+                let Some(target) = self.characters.get(&target_id) else {
+                    continue;
+                };
+                if !can_attack(&caster, target, &self.map) {
+                    continue;
+                }
+
+                let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+                let modifier = warcry_speed_modifier(
+                    power,
+                    character_value(target, CharacterValue::Immunity),
+                    character_value(target, CharacterValue::Tactics),
+                    has_tactics,
+                );
+                if modifier >= 0 {
+                    continue;
+                }
+                let damage = warcry_damage(
+                    power,
+                    character_value(target, CharacterValue::Immunity),
+                    character_value(target, CharacterValue::Tactics),
+                    has_tactics,
+                );
+                targets.push((target_id, modifier, damage));
+            }
+        }
+
+        let mut affected = false;
+        for (target_id, modifier, damage) in targets {
+            if !self.install_speed_spell(target_id, IDR_WARCRY, "Warcry", modifier, duration) {
+                continue;
+            }
+            affected = true;
+            if damage > 0 {
+                if let Some(target) = self.characters.get_mut(&target_id) {
+                    target.hp = target.hp.saturating_sub(damage);
+                    target.flags.insert(CharacterFlags::UPDATE);
+                }
+            }
+        }
+
+        if character_value_present(&caster, CharacterValue::MagicShield) == 0 {
+            if let Some(caster) = self.characters.get_mut(&caster_id) {
+                let max_lifeshield = if character_value(caster, CharacterValue::MagicShield) != 0 {
+                    character_value(caster, CharacterValue::MagicShield)
+                } else {
+                    character_value(caster, CharacterValue::Warcry)
+                } * crate::entity::POWERSCALE;
+                let gain =
+                    character_value(caster, CharacterValue::Warcry) * crate::entity::POWERSCALE / 2;
+                caster.lifeshield = max_lifeshield.min(caster.lifeshield + gain);
+                caster.flags.insert(CharacterFlags::UPDATE);
+            }
+        }
+
+        affected
     }
 
     fn install_bless_spell(
@@ -4328,6 +4434,84 @@ mod tests {
             396
         );
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn player_warcry_sets_up_and_debuffs_sound_reachable_targets() {
+        let mut world = World::default();
+        world.tick = Tick(400);
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.endurance = 30 * POWERSCALE;
+        caster.values[0][CharacterValue::Warcry as usize] = 60;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.hp = 20 * POWERSCALE;
+        target.values[0][CharacterValue::Immunity as usize] = 20;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 13, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Warcry,
+            arg1: 0,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::WARCRY);
+        assert_eq!(caster.endurance, 10 * POWERSCALE);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(world.tick_basic_actions()[0].ok);
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.lifeshield, 30 * POWERSCALE);
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 16_400);
+        let spell_id = target.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_WARCRY);
+        assert_eq!(spell.modifier_index[0], CharacterValue::Speed as i16);
+        assert_eq!(spell.modifier_value[0], -340);
+        assert_eq!(spell.carried_by, Some(CharacterId(2)));
+        assert_eq!(
+            u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
+            496
+        );
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn player_warcry_does_not_pass_soundblocking_tiles() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.endurance = 30 * POWERSCALE;
+        caster.values[0][CharacterValue::Warcry as usize] = 60;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.values[0][CharacterValue::Immunity as usize] = 20;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 13, 10);
+        for y in 0..world.map.height() {
+            world.map.set_flags(11, y, MapFlags::SOUNDBLOCK);
+        }
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Warcry,
+            arg1: 0,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(!world.tick_basic_actions()[0].ok);
+
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert!(target.inventory[12..30].iter().all(Option::is_none));
     }
 
     #[test]
