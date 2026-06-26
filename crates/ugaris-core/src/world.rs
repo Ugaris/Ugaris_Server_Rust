@@ -12,7 +12,7 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
-        ItemDriverRequest, UseItemError, UseItemOutcome,
+        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_NIGHTLIGHT, IDR_TORCH,
     },
     item_ops::consume_item,
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY},
@@ -102,7 +102,7 @@ impl World {
                     return None;
                 }
                 let [driver, item_id, character_id, _, _] = event.payload.0;
-                if driver <= 0 || item_id <= 0 || character_id <= 0 {
+                if driver <= 0 || item_id <= 0 || character_id < 0 {
                     return None;
                 }
                 let request = ItemDriverRequest::Driver {
@@ -111,7 +111,7 @@ impl World {
                     character_id: CharacterId(character_id as u32),
                     spec: 0,
                 };
-                Some(self.execute_item_driver_request_with_context(
+                Some(self.execute_item_driver_timer_request(
                     request,
                     area_id,
                     &ItemDriverContext {
@@ -121,6 +121,30 @@ impl World {
                 ))
             })
             .collect()
+    }
+
+    pub fn schedule_existing_light_timers(&mut self) -> usize {
+        let item_ids: Vec<ItemId> = self
+            .items
+            .iter()
+            .filter_map(|(&item_id, item)| match item.driver {
+                IDR_NIGHTLIGHT => Some(item_id),
+                IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
+                _ => None,
+            })
+            .collect();
+
+        item_ids
+            .into_iter()
+            .filter(|&item_id| {
+                let character_id = self
+                    .items
+                    .get(&item_id)
+                    .and_then(|item| item.carried_by)
+                    .unwrap_or(CharacterId(0));
+                self.schedule_item_driver_timer(item_id, character_id, 1)
+            })
+            .count()
     }
 
     pub fn advance_character_action(&mut self, character_id: CharacterId) -> Option<bool> {
@@ -274,6 +298,46 @@ impl World {
             area_id,
             in_arena,
             &effective_context,
+        );
+        self.apply_item_driver_outcome(outcome, area_id)
+    }
+
+    fn execute_item_driver_timer_request(
+        &mut self,
+        request: ItemDriverRequest,
+        area_id: u16,
+        context: &ItemDriverContext,
+    ) -> ItemDriverOutcome {
+        let ItemDriverRequest::Driver {
+            driver,
+            item_id,
+            character_id,
+            spec,
+        } = request
+        else {
+            return self.execute_item_driver_request_with_context(request, area_id, context);
+        };
+
+        if character_id.0 != 0 {
+            return self.execute_item_driver_request_with_context(request, area_id, context);
+        }
+
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return ItemDriverOutcome::Noop;
+        };
+        let mut timer_character = timer_callback_character();
+        let outcome = execute_item_driver_with_context(
+            &mut timer_character,
+            item,
+            ItemDriverRequest::Driver {
+                driver,
+                item_id,
+                character_id,
+                spec,
+            },
+            area_id,
+            false,
+            context,
         );
         self.apply_item_driver_outcome(outcome, area_id)
     }
@@ -1541,6 +1605,44 @@ fn apply_door_tile_flags(tile: &mut crate::map::MapTile, item_flags: ItemFlags) 
     }
 }
 
+fn timer_callback_character() -> Character {
+    Character {
+        id: CharacterId(0),
+        name: String::new(),
+        description: String::new(),
+        flags: CharacterFlags::empty(),
+        sprite: 0,
+        speed_mode: SpeedMode::Normal,
+        x: 0,
+        y: 0,
+        rest_area: 0,
+        rest_x: 0,
+        rest_y: 0,
+        tox: 0,
+        toy: 0,
+        dir: 0,
+        action: 0,
+        duration: 0,
+        step: 0,
+        act1: 0,
+        act2: 0,
+        hp: 0,
+        mana: 0,
+        endurance: 0,
+        lifeshield: 0,
+        level: 0,
+        exp: 0,
+        exp_used: 0,
+        gold: 0,
+        deaths: 0,
+        cursor_item: None,
+        current_container: None,
+        values: Character::empty_values(),
+        professions: Character::empty_professions(),
+        inventory: Character::empty_inventory(),
+    }
+}
+
 impl Default for Tick {
     fn default() -> Self {
         Self(0)
@@ -1552,7 +1654,9 @@ mod tests {
     use crate::{
         direction::Direction,
         entity::{CharacterFlags, ItemFlags, SpeedMode, MAX_MODIFIERS},
-        item_driver::{UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_ENCHANTITEM, IDR_TORCH},
+        item_driver::{
+            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_ENCHANTITEM, IDR_NIGHTLIGHT, IDR_TORCH,
+        },
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
@@ -1613,6 +1717,54 @@ mod tests {
         );
 
         assert!(matches!(outcome, ItemDriverOutcome::LightChanged { .. }));
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_schedules_existing_timer_driven_light_items() {
+        let mut world = World::default();
+        let mut nightlight = item(7, ItemFlags::USED);
+        nightlight.driver = IDR_NIGHTLIGHT;
+        nightlight.driver_data = vec![0, 9];
+        let mut burning_torch = item(8, ItemFlags::USED | ItemFlags::NODECAY);
+        burning_torch.driver = IDR_TORCH;
+        burning_torch.driver_data = vec![1, 0, 10, 20];
+        let mut unlit_torch = item(9, ItemFlags::USED);
+        unlit_torch.driver = IDR_TORCH;
+        unlit_torch.driver_data = vec![0, 0, 10, 20];
+        world.add_item(nightlight);
+        world.add_item(burning_torch);
+        world.add_item(unlit_torch);
+
+        assert_eq!(world.schedule_existing_light_timers(), 2);
+        assert_eq!(world.timers.used_timers(), 2);
+    }
+
+    #[test]
+    fn world_processes_zero_character_nightlight_timer_callback() {
+        let mut world = World::default();
+        world.date.daylight = 40;
+        let mut nightlight = item(7, ItemFlags::USED);
+        nightlight.driver = IDR_NIGHTLIGHT;
+        nightlight.driver_data = vec![0, 9];
+        world.add_item(nightlight);
+        assert_eq!(world.schedule_existing_light_timers(), 1);
+
+        world.advance();
+        let outcomes = world.process_due_timers(1);
+
+        assert_eq!(outcomes.len(), 1);
+        assert!(matches!(
+            outcomes[0],
+            ItemDriverOutcome::LightChanged {
+                character_id: CharacterId(0),
+                ..
+            }
+        ));
+        let nightlight = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(nightlight.driver_data[0], 1);
+        assert_eq!(nightlight.modifier_value[0], 9);
+        assert_eq!(nightlight.sprite, 1);
         assert_eq!(world.timers.used_timers(), 1);
     }
 

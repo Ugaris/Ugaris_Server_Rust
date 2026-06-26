@@ -353,6 +353,7 @@ struct ZoneLoadSummary {
     placed_characters: usize,
     ground_tiles: usize,
     blocked_tiles: usize,
+    scheduled_light_timers: usize,
 }
 
 fn login_character(
@@ -1390,6 +1391,7 @@ fn load_area_zone(
     let map_text = std::fs::read_to_string(&map_file)?;
     let skipped_template_files = load_zone_templates(loader, zone_root, &area_dir)?;
     loader.apply_map_str(world, &map_text)?;
+    let scheduled_light_timers = world.schedule_existing_light_timers();
 
     let (ground_tiles, blocked_tiles) = map_tile_counts(world);
     Ok(ZoneLoadSummary {
@@ -1402,6 +1404,7 @@ fn load_area_zone(
         placed_characters: world.characters.len(),
         ground_tiles,
         blocked_tiles,
+        scheduled_light_timers,
     })
 }
 
@@ -3939,6 +3942,7 @@ async fn main() -> anyhow::Result<()> {
                     placed_characters = summary.placed_characters,
                     ground_tiles = summary.ground_tiles,
                     blocked_tiles = summary.blocked_tiles,
+                    scheduled_light_timers = summary.scheduled_light_timers,
                     "loaded area zone map"
                 );
             }
