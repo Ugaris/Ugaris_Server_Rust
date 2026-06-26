@@ -14,12 +14,17 @@ use crate::{
 
 pub const IDR_POTION: u16 = 1;
 pub const IDR_DOOR: u16 = 2;
+pub const IDR_BALLTRAP: u16 = 3;
 pub const IDR_CHEST: u16 = 5;
+pub const IDR_USETRAP: u16 = 6;
 pub const IDR_TELEPORT: u16 = 10;
 pub const IDR_NIGHTLIGHT: u16 = 11;
 pub const IDR_TORCH: u16 = 12;
 pub const IDR_RECALL: u16 = 13;
 pub const IDR_STATSCROLL: u16 = 19;
+pub const IDR_FLAMETHROW: u16 = 24;
+pub const IDR_STEPTRAP: u16 = 25;
+pub const IDR_SPIKETRAP: u16 = 26;
 pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
@@ -195,6 +200,17 @@ pub enum ItemDriverOutcome {
     DoubleDoorToggle {
         item_id: ItemId,
         character_id: CharacterId,
+    },
+    TriggerMapItem {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+        target_character_id: CharacterId,
+        delay_ticks: u64,
+    },
+    StepTrapDiscoverTarget {
+        item_id: ItemId,
     },
     ChestTreasure {
         item_id: ItemId,
@@ -398,6 +414,8 @@ pub fn execute_item_driver_with_context(
                 },
                 IDR_POTION => potion_driver(character, item, area_id, in_arena),
                 IDR_DOOR => door_driver(character, item, context),
+                IDR_USETRAP => usetrap_driver(character, item),
+                IDR_STEPTRAP => steptrap_driver(character, item, context),
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
@@ -432,6 +450,43 @@ pub fn execute_item_driver_with_context(
             item_id,
             character_id,
         },
+    }
+}
+
+fn usetrap_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::TriggerMapItem {
+        item_id: item.id,
+        character_id: character.id,
+        x: u16::from(drdata(item, 0)),
+        y: u16::from(drdata(item, 1)),
+        target_character_id: character.id,
+        delay_ticks: TICKS_PER_SECOND / 2,
+    }
+}
+
+fn steptrap_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if context.timer_call || character.id.0 == 0 {
+        if drdata(item, 0) == 0 {
+            return ItemDriverOutcome::StepTrapDiscoverTarget { item_id: item.id };
+        }
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::TriggerMapItem {
+        item_id: item.id,
+        character_id: character.id,
+        x: u16::from(drdata(item, 0)),
+        y: u16::from(drdata(item, 1)),
+        target_character_id: CharacterId(0),
+        delay_ticks: 1,
     }
 }
 
@@ -2380,6 +2435,91 @@ mod tests {
                 character_id: CharacterId(1),
                 anti: true,
                 special: true,
+            }
+        );
+    }
+
+    #[test]
+    fn usetrap_schedules_target_item_with_using_character() {
+        let mut character = character(1);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_USETRAP);
+        trap.driver_data = vec![20, 30];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_USETRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TriggerMapItem {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 20,
+                y: 30,
+                target_character_id: CharacterId(1),
+                delay_ticks: TICKS_PER_SECOND / 2,
+            }
+        );
+    }
+
+    #[test]
+    fn steptrap_timer_discovers_target_and_character_trigger_calls_target_without_character() {
+        let mut timer_character = character(0);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STEPTRAP);
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_STEPTRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            1,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::StepTrapDiscoverTarget { item_id: ItemId(7) }
+        );
+
+        let mut character = character(1);
+        trap.driver_data = vec![20, 30];
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_STEPTRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TriggerMapItem {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 20,
+                y: 30,
+                target_character_id: CharacterId(0),
+                delay_ticks: 1,
             }
         );
     }

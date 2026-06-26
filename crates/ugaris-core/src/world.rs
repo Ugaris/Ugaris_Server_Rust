@@ -12,7 +12,7 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
-        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_NIGHTLIGHT, IDR_TORCH,
+        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_NIGHTLIGHT, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY},
@@ -432,6 +432,31 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::TriggerMapItem {
+                x,
+                y,
+                target_character_id,
+                delay_ticks,
+                ..
+            } => {
+                if self.schedule_map_item_driver_timer(
+                    usize::from(x),
+                    usize::from(y),
+                    target_character_id,
+                    delay_ticks,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::StepTrapDiscoverTarget { item_id } => {
+                if self.discover_steptrap_target(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::LightChanged {
                 item_id,
                 character_id,
@@ -678,6 +703,60 @@ impl World {
                 0,
             ]),
         )
+    }
+
+    fn schedule_map_item_driver_timer(
+        &mut self,
+        x: usize,
+        y: usize,
+        character_id: CharacterId,
+        after_ticks: u64,
+    ) -> bool {
+        let Some(target_item_id) = self
+            .map
+            .tile(x, y)
+            .and_then(|tile| (tile.item != 0).then_some(ItemId(u32::from(tile.item))))
+        else {
+            return false;
+        };
+        self.schedule_item_driver_timer(target_item_id, character_id, after_ticks)
+    }
+
+    fn discover_steptrap_target(&mut self, item_id: ItemId) -> bool {
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        if item.driver != IDR_STEPTRAP || item.driver_data.first().copied().unwrap_or(0) != 0 {
+            return false;
+        }
+
+        let origin_x = usize::from(item.x);
+        let origin_y = usize::from(item.y);
+        let target = [1_u8, 3, 5, 7].into_iter().find_map(|dir| {
+            let direction = Direction::try_from(dir).ok()?;
+            let (dx, dy) = direction.delta();
+            [1_i16, 2].into_iter().find_map(|distance| {
+                let x = offset_coordinate(origin_x, dx * distance)?;
+                let y = offset_coordinate(origin_y, dy * distance)?;
+                if !self.map.legacy_inner_bounds(x, y) {
+                    return None;
+                }
+                let target_item_id = self.map.tile(x, y)?.item;
+                let target_item = self.items.get(&ItemId(u32::from(target_item_id)))?;
+                (target_item.driver != 0 && target_item.driver != IDR_STEPTRAP).then_some((x, y))
+            })
+        });
+
+        let Some((x, y)) = target else {
+            return false;
+        };
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        item.driver_data.resize(2, 0);
+        item.driver_data[0] = x as u8;
+        item.driver_data[1] = y as u8;
+        true
     }
 
     fn destroy_item(&mut self, item_id: ItemId) -> bool {
@@ -1704,11 +1783,13 @@ mod tests {
         direction::Direction,
         entity::{CharacterFlags, ItemFlags, SpeedMode, MAX_MODIFIERS},
         item_driver::{
-            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_ENCHANTITEM, IDR_NIGHTLIGHT, IDR_TORCH,
+            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_DOOR, IDR_ENCHANTITEM, IDR_NIGHTLIGHT,
+            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
+        tick::TICKS_PER_SECOND,
     };
 
     use super::*;
@@ -1815,6 +1896,76 @@ mod tests {
         assert_eq!(nightlight.modifier_value[0], 9);
         assert_eq!(nightlight.sprite, 1);
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_usetrap_schedules_target_item_driver_timer() {
+        let mut world = World::default();
+        world.add_character(character(1));
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE);
+        trap.driver = IDR_USETRAP;
+        trap.driver_data = vec![20, 30];
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_DOOR;
+        door.x = 20;
+        door.y = 30;
+        world.add_item(trap);
+        world.add_item(door);
+        world.map.tile_mut(20, 30).unwrap().item = 8;
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_USETRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::TriggerMapItem { .. }));
+        assert_eq!(world.timers.used_timers(), 1);
+        for _ in 0..(TICKS_PER_SECOND / 2) {
+            world.advance();
+        }
+        let outcomes = world.process_due_timers(1);
+        assert_eq!(outcomes.len(), 1);
+        assert!(matches!(
+            outcomes[0],
+            ItemDriverOutcome::DoorToggle {
+                item_id: ItemId(8),
+                character_id: CharacterId(1)
+            }
+        ));
+    }
+
+    #[test]
+    fn world_steptrap_timer_discovers_nearby_non_steptrap_target() {
+        let mut world = World::default();
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE);
+        trap.driver = IDR_STEPTRAP;
+        trap.x = 10;
+        trap.y = 10;
+        trap.driver_data = vec![0, 0];
+        let mut target = item(8, ItemFlags::USED | ItemFlags::USE);
+        target.driver = IDR_DOOR;
+        target.x = 11;
+        target.y = 10;
+        world.add_item(trap);
+        world.add_item(target);
+        world.map.tile_mut(10, 10).unwrap().item = 7;
+        world.map.tile_mut(11, 10).unwrap().item = 8;
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+
+        world.advance();
+        let outcomes = world.process_due_timers(1);
+
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::StepTrapDiscoverTarget { item_id: ItemId(7) }]
+        );
+        let trap = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(&trap.driver_data[..2], &[11, 10]);
     }
 
     #[test]

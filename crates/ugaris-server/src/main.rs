@@ -4632,6 +4632,8 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TriggerMapItem { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::StepTrapDiscoverTarget { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
