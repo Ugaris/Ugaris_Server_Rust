@@ -4,9 +4,9 @@ use crate::{
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
-        advance_action_step, do_attack, do_bless, do_drop, do_heal, do_idle, do_magicshield,
-        do_pulse, do_take, do_use, do_walk, endurance_cost, reset_action_after_act, speed_ticks,
-        ItemUseRequest, DUR_MISC_ACTION,
+        advance_action_step, can_attack, do_attack, do_bless, do_drop, do_flash, do_freeze,
+        do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk, endurance_cost,
+        reset_action_after_act, speed_ticks, ItemUseRequest, DUR_MISC_ACTION,
     },
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode},
     game_time::GameDate,
@@ -23,7 +23,9 @@ use crate::{
     player::{PlayerActionCode, PlayerRuntime},
     scheduler::{TaskScheduler, TimerPayload, TimerQueue},
     spell::{
-        is_timed_spell_driver, may_add_spell, read_spell_expire_tick, BLESS_DURATION, IDR_BLESS,
+        freeze_speed_modifier, is_timed_spell_driver, may_add_spell, read_spell_expire_tick,
+        spell_power, BLESS_DURATION, FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FLASH,
+        IDR_FREEZE,
     },
     Tick,
 };
@@ -1428,6 +1430,19 @@ impl World {
                     .is_some_and(|character| do_pulse(character).is_ok())
                     || self.set_player_idle(player, character_id)
             }
+            PlayerActionCode::Freeze => {
+                self.characters
+                    .get_mut(&character_id)
+                    .is_some_and(|character| do_freeze(character).is_ok())
+                    || self.set_player_idle(player, character_id)
+            }
+            PlayerActionCode::Flash => {
+                let current_tick = self.tick.0 as u32;
+                self.characters
+                    .get_mut(&character_id)
+                    .is_some_and(|character| do_flash(character, &self.items, current_tick).is_ok())
+                    || self.set_player_idle(player, character_id)
+            }
             PlayerActionCode::Bless => {
                 let target_id = CharacterId(player.action.arg1 as u32);
                 if self.setup_bless_spell(character_id, target_id) {
@@ -1818,6 +1833,8 @@ impl World {
                     .get_mut(&character_id)
                     .is_some_and(act_magicshield),
                 action::PULSE => true,
+                action::FREEZE => self.complete_freeze(character_id),
+                action::FLASH => self.complete_flash(character_id),
                 action::BLESS_SELF | action::BLESS1 | action::BLESS2 => self
                     .characters
                     .get(&character_id)
@@ -1877,6 +1894,86 @@ impl World {
         }
         let duration = spell_duration_ticks(&caster, BLESS_DURATION);
         self.install_bless_spell(target_id, strength, duration)
+    }
+
+    fn complete_flash(&mut self, caster_id: CharacterId) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        if caster.flags.contains(CharacterFlags::NOMAGIC)
+            && !caster.flags.contains(CharacterFlags::NONOMAGIC)
+        {
+            return false;
+        }
+        let duration = spell_duration_ticks(&caster, FLASH_DURATION);
+        self.install_speed_spell(caster_id, IDR_FLASH, "Flash", 100, duration)
+    }
+
+    fn complete_freeze(&mut self, caster_id: CharacterId) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        if caster.flags.contains(CharacterFlags::NOMAGIC)
+            && !caster.flags.contains(CharacterFlags::NONOMAGIC)
+        {
+            return false;
+        }
+
+        let caster_x = usize::from(caster.x);
+        let caster_y = usize::from(caster.y);
+        let min_x = caster_x.saturating_sub(3).max(1);
+        let max_x = caster_x
+            .saturating_add(3)
+            .min(self.map.width().saturating_sub(2));
+        let min_y = caster_y.saturating_sub(3).max(1);
+        let max_y = caster_y
+            .saturating_add(3)
+            .min(self.map.height().saturating_sub(2));
+        let mut targets = Vec::new();
+
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let Some(target_id) = self.map.tile(x, y).and_then(|tile| {
+                    (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+                }) else {
+                    continue;
+                };
+                if target_id == caster_id {
+                    continue;
+                }
+                let Some(target) = self.characters.get(&target_id) else {
+                    continue;
+                };
+                if !can_attack(&caster, target, &self.map)
+                    || !self.map.can_see(caster_x, caster_y, x, y, DIST_MAX)
+                {
+                    continue;
+                }
+                let modifier = freeze_speed_modifier(
+                    spell_power(
+                        character_value(&caster, CharacterValue::Freeze),
+                        character_value(&caster, CharacterValue::Tactics),
+                    ),
+                    character_value(target, CharacterValue::Immunity),
+                    character_value(target, CharacterValue::Tactics),
+                    character_value_present(target, CharacterValue::Tactics) != 0,
+                    caster.flags.contains(CharacterFlags::IDEMON),
+                    character_value_present(&caster, CharacterValue::Demon),
+                    character_value(target, CharacterValue::Cold),
+                );
+                if modifier < 0 {
+                    targets.push((target_id, modifier));
+                }
+            }
+        }
+
+        let duration = spell_duration_ticks(&caster, FREEZE_DURATION);
+        let mut installed = false;
+        for (target_id, modifier) in targets {
+            installed |=
+                self.install_speed_spell(target_id, IDR_FREEZE, "Freeze", modifier, duration);
+        }
+        installed
     }
 
     fn install_bless_spell(
@@ -1953,6 +2050,71 @@ impl World {
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             true
         } else {
+            false
+        }
+    }
+
+    fn install_speed_spell(
+        &mut self,
+        target_id: CharacterId,
+        driver: u16,
+        name: &str,
+        speed_modifier: i32,
+        duration: i32,
+    ) -> bool {
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        let Some(slot) = may_add_spell(&target, &self.items, driver, self.tick.0 as u32) else {
+            return false;
+        };
+
+        let item_id = self.next_runtime_item_id();
+        let start_tick = self.tick.0 as u32;
+        let expire_tick = start_tick.wrapping_add(duration.max(0) as u32);
+        let mut driver_data = Vec::with_capacity(8);
+        driver_data.extend_from_slice(&expire_tick.to_le_bytes());
+        driver_data.extend_from_slice(&start_tick.to_le_bytes());
+
+        let item = Item {
+            id: item_id,
+            name: name.to_string(),
+            description: format!("A Spell of {name}."),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [CharacterValue::Speed as i16, 0, 0, 0, 0],
+            modifier_value: [speed_modifier as i16, 0, 0, 0, 0],
+            x: 0,
+            y: 0,
+            carried_by: Some(target_id),
+            contained_in: None,
+            content_id: 0,
+            driver,
+            driver_data,
+            serial: item_id.0,
+        };
+
+        self.items.insert(item_id, item);
+        if let Some(target) = self.characters.get_mut(&target_id) {
+            if target.inventory.len() <= slot {
+                self.items.remove(&item_id);
+                return false;
+            }
+            target.inventory[slot] = Some(item_id);
+            let character_serial = target.id.0;
+            target
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+            true
+        } else {
+            self.items.remove(&item_id);
             false
         }
     }
@@ -4078,6 +4240,92 @@ mod tests {
         assert_eq!(
             i32::from_le_bytes(spell.driver_data[8..12].try_into().unwrap()),
             40
+        );
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn player_flash_spell_installs_timed_speed_spell_on_self() {
+        let mut world = World::default();
+        world.tick = Tick(200);
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.mana = 10 * POWERSCALE;
+        character.values[0][CharacterValue::Flash as usize] = 40;
+        world.add_character(character);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Flash,
+            arg1: 0,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.action, action::FLASH);
+        assert_eq!(character.mana, 7 * POWERSCALE);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(world.tick_basic_actions()[0].ok);
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_FLASH);
+        assert_eq!(spell.modifier_index[0], CharacterValue::Speed as i16);
+        assert_eq!(spell.modifier_value[0], 100);
+        assert_eq!(spell.carried_by, Some(CharacterId(1)));
+        assert_eq!(
+            u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
+            248
+        );
+        assert_eq!(
+            u32::from_le_bytes(spell.driver_data[4..8].try_into().unwrap()),
+            200
+        );
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn player_freeze_spell_installs_negative_speed_spell_on_nearby_target() {
+        let mut world = World::default();
+        world.tick = Tick(300);
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Freeze as usize] = 50;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::PLAYER);
+        target.values[0][CharacterValue::Immunity as usize] = 30;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Freeze,
+            arg1: 0,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::FREEZE);
+        assert_eq!(caster.mana, 8 * POWERSCALE);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(world.tick_basic_actions()[0].ok);
+
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        let spell_id = target.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_FREEZE);
+        assert_eq!(spell.modifier_index[0], CharacterValue::Speed as i16);
+        assert_eq!(spell.modifier_value[0], -420);
+        assert_eq!(spell.carried_by, Some(CharacterId(2)));
+        assert_eq!(
+            u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
+            396
         );
         assert_eq!(world.timers.used_timers(), 1);
     }

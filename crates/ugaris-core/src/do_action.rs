@@ -15,7 +15,7 @@ use crate::{
     map::{MapFlags, MapGrid},
     spell::{
         heal_spend, magicshield_spend, may_add_spell, pulse_spend, spell_power, BLESS_COST,
-        IDR_BLESS,
+        FLASH_COST, FREEZE_COST, IDR_BLESS, IDR_FLASH,
     },
     tick::TICKS_PER_SECOND,
 };
@@ -420,6 +420,73 @@ pub fn do_pulse(character: &mut Character) -> Result<(), DoError> {
     character.mana -= spend.mana_cost;
     character.action = action::PULSE;
     character.act1 = spend.amount;
+    character.duration = speed_ticks(
+        character_value(character, CharacterValue::Speed),
+        character.speed_mode,
+        DUR_MAGIC_ACTION,
+    );
+    if character.speed_mode == SpeedMode::Fast {
+        character.endurance -= endurance_cost(character);
+    }
+    character.dir = bigdir(character.dir);
+    Ok(())
+}
+
+pub fn do_freeze(character: &mut Character) -> Result<(), DoError> {
+    if character.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character.flags.contains(CharacterFlags::NOMAGIC)
+        && !character.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+    if character_value(character, CharacterValue::Freeze) == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    if character.mana < FREEZE_COST {
+        return Err(DoError::ManaLow);
+    }
+
+    character.mana -= FREEZE_COST;
+    character.action = action::FREEZE;
+    character.duration = speed_ticks(
+        character_value(character, CharacterValue::Speed),
+        character.speed_mode,
+        DUR_MAGIC_ACTION,
+    );
+    if character.speed_mode == SpeedMode::Fast {
+        character.endurance -= endurance_cost(character);
+    }
+    character.dir = bigdir(character.dir);
+    Ok(())
+}
+
+pub fn do_flash(
+    character: &mut Character,
+    items: &HashMap<ItemId, Item>,
+    current_tick: u32,
+) -> Result<(), DoError> {
+    if character.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character.flags.contains(CharacterFlags::NOMAGIC)
+        && !character.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+    if character_value(character, CharacterValue::Flash) == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    if character.mana < FLASH_COST {
+        return Err(DoError::ManaLow);
+    }
+    if may_add_spell(character, items, IDR_FLASH, current_tick).is_none() {
+        return Err(DoError::AlreadyWorking);
+    }
+
+    character.mana -= FLASH_COST;
+    character.action = action::FLASH;
     character.duration = speed_ticks(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
