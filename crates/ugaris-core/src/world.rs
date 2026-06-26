@@ -284,6 +284,23 @@ impl World {
                 }
                 outcome
             }
+            ItemDriverOutcome::CityRecall {
+                item_id,
+                character_id,
+                x,
+                y,
+                area_id,
+            } => {
+                self.consume_city_recall_scroll(character_id, item_id);
+                if area_id != current_area_id {
+                    return outcome;
+                }
+                if self.teleport_character(character_id, x, y, false) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::DoorToggle { item_id, .. } => {
                 if self.toggle_door(item_id) {
                     outcome
@@ -299,6 +316,27 @@ impl World {
                 }
             }
             _ => outcome,
+        }
+    }
+
+    fn consume_city_recall_scroll(&mut self, character_id: CharacterId, item_id: ItemId) {
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return;
+        };
+        item.driver_data.resize(2, 0);
+        if item.driver_data[1] > 1 {
+            item.driver_data[1] -= 1;
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                character.flags.insert(CharacterFlags::ITEMS);
+            }
+            return;
+        }
+
+        if let (Some(character), Some(item)) = (
+            self.characters.get_mut(&character_id),
+            self.items.get_mut(&item_id),
+        ) {
+            consume_item(character, item);
         }
     }
 
@@ -1753,6 +1791,98 @@ mod tests {
         assert_eq!(character.cursor_item, None);
         assert_eq!(world.map.tile(10, 10).unwrap().character, 0);
         assert_eq!(world.map.tile(30, 40).unwrap().character, 1);
+        assert!(!world
+            .items
+            .get(&ItemId(7))
+            .unwrap()
+            .flags
+            .contains(ItemFlags::USED));
+    }
+
+    #[test]
+    fn world_executes_same_area_city_recall_and_decrements_stack() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.x = 10;
+        character.y = 10;
+        character.inventory[30] = Some(ItemId(7));
+        world.map.tile_mut(10, 10).unwrap().character = 1;
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::TMOVEBLOCK);
+        world.add_character(character);
+        let mut item = item(7, ItemFlags::USED | ItemFlags::USE);
+        item.driver = crate::item_driver::IDR_CITY_RECALL;
+        item.carried_by = Some(CharacterId(1));
+        item.driver_data = vec![0, 3];
+        world.add_item(item);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_CITY_RECALL,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::CityRecall { .. }));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((character.x, character.y), (126, 179));
+        assert_eq!(character.inventory[30], Some(ItemId(7)));
+        assert_eq!(world.items.get(&ItemId(7)).unwrap().driver_data[1], 2);
+        assert_eq!(world.map.tile(10, 10).unwrap().character, 0);
+        assert_eq!(world.map.tile(126, 179).unwrap().character, 1);
+    }
+
+    #[test]
+    fn world_consumes_final_city_recall_before_cross_area_handoff() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.x = 10;
+        character.y = 10;
+        character.cursor_item = Some(ItemId(7));
+        world.map.tile_mut(10, 10).unwrap().character = 1;
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::TMOVEBLOCK);
+        world.add_character(character);
+        let mut item = item(7, ItemFlags::USED | ItemFlags::USE);
+        item.driver = crate::item_driver::IDR_CITY_RECALL;
+        item.carried_by = Some(CharacterId(1));
+        item.driver_data = vec![1, 1];
+        world.add_item(item);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_CITY_RECALL,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::CityRecall {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 167,
+                y: 188,
+                area_id: 3,
+            }
+        );
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((character.x, character.y), (10, 10));
+        assert_eq!(character.cursor_item, None);
         assert!(!world
             .items
             .get(&ItemId(7))

@@ -17,6 +17,7 @@ pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_FOOD: u16 = 64;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
+pub const IDR_CITY_RECALL: u16 = 159;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_KEY_RING: u16 = 200;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
@@ -103,6 +104,13 @@ pub enum ItemDriverOutcome {
         y: u16,
     },
     Recall {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+        area_id: u16,
+    },
+    CityRecall {
         item_id: ItemId,
         character_id: CharacterId,
         x: u16,
@@ -254,6 +262,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
+                IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
                 IDR_TELEPORT => teleport_driver(character, item),
                 IDR_FOOD => food_driver(character, item),
@@ -432,6 +441,60 @@ fn recall_driver(
         y: character.rest_y,
         area_id: character.rest_area,
     }
+}
+
+fn city_recall_driver(
+    character: &Character,
+    item: &Item,
+    area_id: u16,
+    in_arena: bool,
+) -> ItemDriverOutcome {
+    if item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.action == action::DIE {
+        return ItemDriverOutcome::Noop;
+    }
+    if area_id == 34 && in_arena {
+        return ItemDriverOutcome::BlockedByArea {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let Some((x, y, area_id)) = city_recall_destination(drdata(item, 0)) else {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::CityRecall {
+        item_id: item.id,
+        character_id: character.id,
+        x,
+        y,
+        area_id,
+    }
+}
+
+fn city_recall_destination(scroll_type: u8) -> Option<(u16, u16, u16)> {
+    Some(match scroll_type {
+        0 => (126, 179, 1),
+        1 => (167, 188, 3),
+        2 => (229, 94, 3),
+        3 => (236, 176, 3),
+        4 => (41, 250, 14),
+        5 => (231, 242, 12),
+        6 => (67, 108, 17),
+        7 => (203, 227, 29),
+        8 => (226, 164, 29),
+        9 => (27, 14, 37),
+        10 => (120, 120, 36),
+        11 => (210, 247, 31),
+        12 => (224, 248, 34),
+        _ => return None,
+    })
 }
 
 fn teleport_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
@@ -1074,6 +1137,50 @@ mod tests {
         );
 
         item.driver_data = vec![9];
+        assert_eq!(
+            execute_item_driver(&mut character, &mut item, request, 1, false),
+            ItemDriverOutcome::BlockedByRequirements {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_city_recall_driver_maps_scroll_types_and_blocks_arena() {
+        let mut character = character(1);
+        character.level = 99;
+        let mut item = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_CITY_RECALL);
+        item.carried_by = Some(CharacterId(1));
+        item.driver_data = vec![7, 3];
+
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_CITY_RECALL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut item, request, 1, false),
+            ItemDriverOutcome::CityRecall {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 203,
+                y: 227,
+                area_id: 29,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut item, request, 34, true),
+            ItemDriverOutcome::BlockedByArea {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        item.driver_data = vec![99, 3];
         assert_eq!(
             execute_item_driver(&mut character, &mut item, request, 1, false),
             ItemDriverOutcome::BlockedByRequirements {

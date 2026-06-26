@@ -160,6 +160,7 @@ Current implemented slices:
 - `PlayerRuntime` now decodes and encodes the legacy outer persistent-player-data blob framing for `DRD_KEYRING_PPD`, preserves unknown PPD blocks, skips `DRD_JUNK_PPD`, rejects malformed blobs, and verifies the C `MAKE_DRD` IDs for keyring persistence with tests.
 - `PlayerRuntime` now has a fixed-layout C-compatible `DRD_TREASURE_CHEST_PPD` byte codec matching `struct treasure_chest_ppd { int last_access[200]; }`, decodes/encodes it through the same outer PPD blob framing, replaces existing blocks, appends when runtime chest cooldowns exist, and preserves unknown PPD blocks with tests.
 - The server now retains DB snapshot `ppd_blob`/subscriber blobs in `PlayerRuntime`, decodes loaded keyring and treasure-chest PPD blocks on optional PostgreSQL-backed login, and re-encodes those blocks into the logout snapshot save request together with carried inventory/cursor items.
+- `IDR_CITY_RECALL = 159` now dispatches from the base item-driver path, maps legacy scroll types 0..12 to fixed city coordinates from `src/module/base.c`, blocks Teufelheim arena use, preserves carried/dying no-op behavior, decrements `drdata[1]` stack counts or consumes the final scroll, teleports same-area destinations, and returns typed cross-area handoff outcomes with focused tests.
 
 Chest gaps still to port:
 
@@ -182,6 +183,7 @@ Recommended next chest steps:
 - Port combat action execution: `PAC_KILL`, `do_attack`, `act_attack`, hurt/death integration.
 - Port spell queue execution and spell setup/completion.
 - Continue door family details: keyed doors/keyring checks, auto-close timers, extended/multi-tile door foreground shifts, and `IDR_DOUBLE_DOOR` pairing.
+- Implement actual cross-area transfer execution for `IDR_RECALL`, `IDR_CITY_RECALL`, and teleport outcomes; Rust currently returns typed handoff outcomes for callers.
 
 ## Pending Priority Order
 
