@@ -24,14 +24,14 @@ use crate::{
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD},
     light::{
         add_character_light, add_effect_light, add_item_light, remove_character_light,
-        remove_effect_light, remove_item_light,
+        remove_effect_light, remove_item_light, LIGHT_DISTANCE,
     },
     log_text::LOG_TALK,
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},
     player::{PlayerActionCode, PlayerRuntime},
     scheduler::{TaskScheduler, TimerPayload, TimerQueue},
-    sector::SoundSectors,
+    sector::{DirtySectors, SoundSectors},
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
@@ -84,6 +84,28 @@ fn item_light_may_have_changed(outcome: &ItemDriverOutcome) -> bool {
     )
 }
 
+fn item_light_value(item: &Item) -> i16 {
+    item.modifier_index
+        .iter()
+        .zip(item.modifier_value.iter())
+        .filter_map(|(&index, &value)| (index == CharacterValue::Light as i16).then_some(value))
+        .sum()
+}
+
+fn character_light_value(character: &Character) -> i16 {
+    character
+        .values
+        .first()
+        .and_then(|values| values.get(CharacterValue::Light as usize))
+        .copied()
+        .unwrap_or_default()
+}
+
+fn integer_sqrt_for_light(strength: i16) -> usize {
+    let strength = i32::from(strength).unsigned_abs().min(100) as usize;
+    (strength.saturating_sub(1) as f64).sqrt() as usize + 1
+}
+
 #[derive(Debug, Default)]
 pub struct World {
     pub tick: Tick,
@@ -91,6 +113,7 @@ pub struct World {
     pub timers: TimerQueue,
     pub scheduler: TaskScheduler,
     pub map: MapGrid,
+    pub dirty_sectors: DirtySectors,
     pub characters: HashMap<CharacterId, Character>,
     pub items: HashMap<ItemId, Item>,
     pub effects: HashMap<u32, Effect>,
@@ -109,6 +132,7 @@ impl World {
             .is_some_and(|tile| tile.character == character.id.0 as u16)
         {
             add_character_light(&mut self.map, &character);
+            self.mark_character_light_area(&character);
         }
         self.characters.insert(character.id, character);
     }
@@ -126,8 +150,12 @@ impl World {
 
     pub fn remove_character(&mut self, character_id: CharacterId) -> Option<Character> {
         let mut character = self.characters.remove(&character_id)?;
+        let old_x = usize::from(character.x);
+        let old_y = usize::from(character.y);
         remove_character_light(&mut self.map, &character);
+        self.mark_character_light_area(&character);
         self.map.remove_char(&mut character);
+        self.mark_dirty_sector(old_x, old_y);
         Some(character)
     }
 
@@ -186,9 +214,59 @@ impl World {
     pub fn add_item(&mut self, item: Item) {
         if let Some(old) = self.items.remove(&item.id) {
             remove_item_light(&mut self.map, &old);
+            self.mark_item_light_area(&old);
         }
         add_item_light(&mut self.map, &item);
+        self.mark_item_light_area(&item);
         self.items.insert(item.id, item);
+    }
+
+    pub fn skip_x_sector(&self, x: isize, y: isize, ticker: u64) -> usize {
+        self.dirty_sectors.skip_x_sector(x, y, ticker)
+    }
+
+    fn mark_dirty_sector(&mut self, x: usize, y: usize) {
+        self.dirty_sectors
+            .set_sector(x as isize, y as isize, self.tick.0.max(1) as u64);
+    }
+
+    fn mark_light_area(&mut self, x: usize, y: usize, strength: i16) {
+        if strength == 0 || self.map.tile(x, y).is_none() {
+            return;
+        }
+        let radius = integer_sqrt_for_light(strength).min(LIGHT_DISTANCE);
+        let min_x = x.saturating_sub(radius);
+        let min_y = y.saturating_sub(radius);
+        let max_x = x
+            .saturating_add(radius)
+            .min(self.map.width().saturating_sub(1));
+        let max_y = y
+            .saturating_add(radius)
+            .min(self.map.height().saturating_sub(1));
+        for ty in min_y..=max_y {
+            for tx in min_x..=max_x {
+                self.mark_dirty_sector(tx, ty);
+            }
+        }
+    }
+
+    fn mark_character_light_area(&mut self, character: &Character) {
+        self.mark_light_area(
+            usize::from(character.x),
+            usize::from(character.y),
+            character_light_value(character),
+        );
+    }
+
+    fn mark_item_light_area(&mut self, item: &Item) {
+        if item.x == 0 || item.y == 0 {
+            return;
+        }
+        self.mark_light_area(
+            usize::from(item.x),
+            usize::from(item.y),
+            item_light_value(item),
+        );
     }
 
     fn next_effect_id(&self) -> u32 {
@@ -588,6 +666,7 @@ impl World {
             effect.fields.push(index as i32);
         }
         add_effect_light(&mut self.map, x, y, light as i16);
+        self.mark_light_area(x, y, light as i16);
         true
     }
 
@@ -613,6 +692,7 @@ impl World {
                 }
             }
             remove_effect_light(&mut self.map, x, y, light as i16);
+            self.mark_light_area(x, y, light as i16);
         }
     }
 
@@ -796,9 +876,13 @@ impl World {
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
+        let before = character.clone();
         remove_character_light(&mut self.map, character);
         let walked = act_walk(character, &mut self.map);
         add_character_light(&mut self.map, character);
+        let after = character.clone();
+        self.mark_character_light_area(&before);
+        self.mark_character_light_area(&after);
         walked
     }
 
@@ -819,6 +903,7 @@ impl World {
             return false;
         }
         remove_item_light(&mut self.map, &before);
+        self.mark_item_light_area(&before);
         true
     }
 
@@ -832,7 +917,9 @@ impl World {
         if !act_drop(character, &mut self.map, item) {
             return false;
         }
+        let after = item.clone();
         add_item_light(&mut self.map, item);
+        self.mark_item_light_area(&after);
         true
     }
 
@@ -1017,8 +1104,11 @@ impl World {
 
     fn refresh_item_light_after_mutation(&mut self, before: &Item, item_id: ItemId) {
         remove_item_light(&mut self.map, before);
+        self.mark_item_light_area(before);
         if let Some(after) = self.items.get(&item_id) {
-            add_item_light(&mut self.map, after);
+            let after = after.clone();
+            add_item_light(&mut self.map, &after);
+            self.mark_item_light_area(&after);
         }
     }
 
@@ -1747,6 +1837,7 @@ impl World {
         };
         let old_x = usize::from(character.x);
         let old_y = usize::from(character.y);
+        let before = character.clone();
         remove_character_light(&mut self.map, character);
         self.map.remove_char(character);
         character.action = 0;
@@ -1762,9 +1853,15 @@ impl World {
         if !placed {
             let _ = self.map.drop_char(character, old_x, old_y);
             add_character_light(&mut self.map, character);
+            let after = character.clone();
+            self.mark_character_light_area(&before);
+            self.mark_character_light_area(&after);
             return false;
         }
         add_character_light(&mut self.map, character);
+        let after = character.clone();
+        self.mark_character_light_area(&before);
+        self.mark_character_light_area(&after);
         true
     }
 
@@ -4045,6 +4142,24 @@ mod tests {
     }
 
     #[test]
+    fn world_marks_dirty_sectors_for_lit_item_changes() {
+        let mut world = World::default();
+        let mut light_item = item(7, ItemFlags::USED | ItemFlags::TAKE);
+        light_item.x = 11;
+        light_item.y = 10;
+        light_item.modifier_index[0] = CharacterValue::Light as i16;
+        light_item.modifier_value[0] = 16;
+        world.map.tile_mut(11, 10).unwrap().item = 7;
+
+        assert!(world.skip_x_sector(11, 10, 1) > 0);
+        world.add_item(light_item);
+
+        assert_eq!(world.skip_x_sector(11, 10, 1), 0);
+        assert_eq!(world.skip_x_sector(12, 10, 1), 0);
+        assert!(world.skip_x_sector(40, 40, 1) > 0);
+    }
+
+    #[test]
     fn world_updates_map_light_when_character_spawns_walks_and_leaves() {
         let mut world = World::default();
         let mut character = character(1);
@@ -4071,6 +4186,24 @@ mod tests {
     }
 
     #[test]
+    fn world_marks_dirty_sectors_for_character_light_movement() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.values[0][CharacterValue::Light as usize] = 16;
+
+        assert!(world.spawn_character(character, 10, 10));
+        assert_eq!(world.skip_x_sector(10, 10, 1), 0);
+
+        let character = world.characters.get_mut(&CharacterId(1)).unwrap();
+        character.tox = 12;
+        character.toy = 10;
+        assert!(world.complete_walk(CharacterId(1)));
+
+        assert_eq!(world.skip_x_sector(10, 10, 1), 0);
+        assert_eq!(world.skip_x_sector(12, 10, 1), 0);
+    }
+
+    #[test]
     fn world_updates_map_light_when_effect_enters_and_leaves_tile() {
         let mut world = World::default();
         let mut effect = Effect::new(EF_BALL, 42, 0, 10);
@@ -4082,6 +4215,21 @@ mod tests {
 
         world.remove_effect_from_map(42);
         assert_eq!(world.map.tile(10, 10).unwrap().light, 0);
+    }
+
+    #[test]
+    fn world_marks_dirty_sectors_for_effect_light_changes() {
+        let mut world = World::default();
+        let mut effect = Effect::new(EF_BALL, 42, 0, 10);
+        effect.light = 30;
+        world.effects.insert(42, effect);
+
+        assert!(world.set_effect_on_map(42, 10, 10));
+        assert_eq!(world.skip_x_sector(10, 10, 1), 0);
+        assert_eq!(world.skip_x_sector(11, 10, 1), 0);
+
+        world.remove_effect_from_map(42);
+        assert_eq!(world.skip_x_sector(10, 10, 1), 0);
     }
 
     #[test]
