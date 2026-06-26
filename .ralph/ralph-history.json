@@ -163,19 +163,46 @@
         "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
       ]
+    },
+    {
+      "iteration": 7,
+      "startedAt": "2026-06-26T22:48:04.295Z",
+      "endedAt": "2026-06-26T22:53:35.093Z",
+      "durationMs": 330661,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/light.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The first test run exposed incorrect expected values in my new tests, not implementation failures: C’s `RANDOM(shadow / 2 + 1)` upper bound and the edge-case combined shadow sum were off by one in the",
+        "test light::tests::compute_shadow_handles_map_edges_like_legacy_bounds ... FAILED",
+        "test light::tests::compute_shadow_uses_legacy_foreground_tables_and_randomizer ... FAILED",
+        "test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.00s",
+        "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 234 filtered out; finished in 0.00s",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test result: ok. 245 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 3022139,
+  "totalDurationMs": 3352800,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 217 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 6,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 7,
       "test result: ok. 235 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 5,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 5,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 235 filtered out; finished in 0.00s": 1,
       "test result: ok. 237 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
@@ -190,7 +217,15 @@
       "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s": 1,
       "error: no library targets found in package `ugaris-server`": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 61 filtered out; finished in 0.00s": 1,
-      "test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
+      "test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "The first test run exposed incorrect expected values in my new tests, not implementation failures: C": 1,
+      "test light::tests::compute_shadow_handles_map_edges_like_legacy_bounds ... FAILED": 1,
+      "test light::tests::compute_shadow_uses_legacy_foreground_tables_and_randomizer ... FAILED": 1,
+      "test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.00s": 1,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.00s": 1,
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 234 filtered out; finished in 0.00s": 1,
+      "test result: ok. 245 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

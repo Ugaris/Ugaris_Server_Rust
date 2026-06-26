@@ -96,6 +96,75 @@ pub fn compute_groundlight(map: &mut MapGrid, x: usize, y: usize) {
     }
 }
 
+pub fn compute_shadow(map: &mut MapGrid, x: usize, y: usize) {
+    compute_shadow_with_random(map, x, y, |_| 0);
+}
+
+pub fn compute_shadow_with_random(
+    map: &mut MapGrid,
+    x: usize,
+    y: usize,
+    mut random_below: impl FnMut(i32) -> i32,
+) {
+    if map.tile(x, y).is_none() {
+        return;
+    }
+
+    let xs = x.saturating_sub(3);
+    let ys = y.saturating_sub(3);
+    let xe = (x + 4).min(map.width().saturating_sub(1));
+    let ye = (y + 4).min(map.height().saturating_sub(1));
+    let mut shadow = 0_i32;
+    let mut randomize = false;
+
+    for ty in ys..ye {
+        for tx in xs..xe {
+            let Some(tile) = map.tile(tx, ty) else {
+                continue;
+            };
+            let foreground = tile.foreground_sprite;
+            let distance = x.abs_diff(tx) as i32 + y.abs_diff(ty) as i32;
+            if (20276..=20282).contains(&foreground) {
+                shadow += 7 - distance;
+                randomize = true;
+            }
+            if (21410..=21427).contains(&foreground) {
+                shadow += 31 - distance * 5;
+                randomize = true;
+            }
+            if (16000..=16007).contains(&foreground) {
+                shadow += 31 - distance * 5;
+                randomize = true;
+            }
+        }
+    }
+
+    for tx in (xs..x).rev() {
+        if map.tile(tx, y).is_some_and(|tile| {
+            tile.flags
+                .intersects(MapFlags::SIGHTBLOCK | MapFlags::TSIGHTBLOCK)
+        }) {
+            shadow += 47 - x.abs_diff(tx) as i32 * 10;
+            break;
+        }
+    }
+
+    let divisor = if randomize {
+        let half = shadow / 2;
+        half + random_below(half + 1).clamp(0, half) + 1
+    } else {
+        shadow + 1
+    };
+    let daylight = if divisor <= 0 {
+        63
+    } else {
+        (512 / divisor).min(63)
+    };
+    if let Some(tile) = map.tile_mut(x, y) {
+        tile.daylight = daylight as u16;
+    }
+}
+
 pub fn compute_dlight(map: &mut MapGrid, x: usize, y: usize) -> bool {
     let Some(tile) = map.tile(x, y) else {
         return false;
@@ -324,6 +393,51 @@ mod tests {
         compute_groundlight(&mut map, 10, 10);
 
         assert_eq!(map.tile(10, 10).unwrap().light, 64);
+    }
+
+    #[test]
+    fn compute_shadow_defaults_to_full_daylight_without_shadow_sources() {
+        let mut map = MapGrid::new(20, 20);
+
+        compute_shadow(&mut map, 10, 10);
+
+        assert_eq!(map.tile(10, 10).unwrap().daylight, 63);
+    }
+
+    #[test]
+    fn compute_shadow_uses_left_sightblocker_distance() {
+        let mut map = MapGrid::new(20, 20);
+        map.set_flags(8, 10, MapFlags::SIGHTBLOCK);
+
+        compute_shadow(&mut map, 10, 10);
+
+        assert_eq!(map.tile(10, 10).unwrap().daylight, 18);
+    }
+
+    #[test]
+    fn compute_shadow_uses_legacy_foreground_tables_and_randomizer() {
+        let mut map = MapGrid::new(20, 20);
+        map.tile_mut(10, 10).unwrap().foreground_sprite = 21410;
+        map.tile_mut(11, 10).unwrap().foreground_sprite = 20276;
+        map.tile_mut(10, 11).unwrap().foreground_sprite = 16000;
+
+        compute_shadow_with_random(&mut map, 10, 10, |upper| {
+            assert_eq!(upper, 32);
+            31
+        });
+
+        assert_eq!(map.tile(10, 10).unwrap().daylight, 8);
+    }
+
+    #[test]
+    fn compute_shadow_handles_map_edges_like_legacy_bounds() {
+        let mut map = MapGrid::new(5, 5);
+        map.tile_mut(0, 0).unwrap().foreground_sprite = 21410;
+        map.set_flags(0, 1, MapFlags::SIGHTBLOCK);
+
+        compute_shadow(&mut map, 1, 1);
+
+        assert_eq!(map.tile(1, 1).unwrap().daylight, 17);
     }
 
     #[test]
