@@ -1240,9 +1240,37 @@
         "test result: ok. 60 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
         "+        return Err(DoError::Dead);"
       ]
+    },
+    {
+      "iteration": 47,
+      "startedAt": "2026-06-26T19:57:39.415Z",
+      "endedAt": "2026-06-26T20:07:42.004Z",
+      "durationMs": 602413,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/do_action.rs",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/do_action.rs:",
+        "error: unexpected argument 'targeted_fireball' found",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 219 filtered out; finished in 0.00s",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test result: ok. 223 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "+        return Err(DoError::Dead);",
+        "+        return Err(DoError::Unconscious);",
+        "+        return Err(DoError::UnknownSpell);",
+        "+        return Err(DoError::IllegalCoords);"
+      ]
     }
   ],
-  "totalDurationMs": 24243845,
+  "totalDurationMs": 24846258,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -1250,9 +1278,9 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 37,
       "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 26,
       "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 35,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 36,
       "test result: ok. 132 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 32,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 33,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error; 1 warning emitted": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error; 1 warning emitted": 2,
       "test result: ok. 133 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -1306,7 +1334,7 @@
       "\u001b[91m\u001b[1mError: \u001b[0mTool execution aborted": 1,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error": 3,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 4,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 27,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 28,
       "test result: ok. 151 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 153 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 4,
@@ -1387,8 +1415,8 @@
       "test result: ok. 60 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 7,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 193 filtered out; finished in 0.00s": 1,
       "test result: ok. 201 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "+        return Err(DoError::Dead);": 2,
-      "+        return Err(DoError::Unconscious);": 1,
+      "+        return Err(DoError::Dead);": 3,
+      "+        return Err(DoError::Unconscious);": 2,
       "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 196 filtered out; finished in 0.00s": 1,
       "test result: ok. 206 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out; finished in 0.00s": 1,
@@ -1412,7 +1440,12 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 213 filtered out; finished in 0.01s": 1,
       "test result: ok. 219 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 219 filtered out; finished in 0.00s": 1,
-      "test result: ok. 220 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
+      "test result: ok. 220 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "error: unexpected argument 'targeted_fireball' found": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 219 filtered out; finished in 0.00s": 1,
+      "test result: ok. 223 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "+        return Err(DoError::UnknownSpell);": 1,
+      "+        return Err(DoError::IllegalCoords);": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

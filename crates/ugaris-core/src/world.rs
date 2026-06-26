@@ -4,7 +4,7 @@ use crate::{
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
-        advance_action_step, can_attack, do_attack, do_bless, do_drop, do_firering, do_flash,
+        advance_action_step, can_attack, do_attack, do_bless, do_drop, do_fireball, do_flash,
         do_freeze, do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk, do_warcry,
         endurance_cost, reset_action_after_act, speed_ticks, ItemUseRequest, DUR_MISC_ACTION,
     },
@@ -1475,11 +1475,9 @@ impl World {
                 let current_tick = self.tick.0 as u32;
                 self.characters
                     .get_mut(&character_id)
-                    .filter(|character| {
-                        usize::from(character.x) == target_x && usize::from(character.y) == target_y
-                    })
                     .is_some_and(|character| {
-                        do_firering(character, &self.items, current_tick).is_ok()
+                        do_fireball(character, &self.items, target_x, target_y, current_tick)
+                            .is_ok()
                     })
                     || self.set_player_idle(player, character_id)
             }
@@ -1873,6 +1871,8 @@ impl World {
                     .get_mut(&character_id)
                     .is_some_and(act_magicshield),
                 action::PULSE => true,
+                action::FIREBALL1 => self.complete_fireball(character_id),
+                action::FIREBALL2 => true,
                 action::FIRERING => self.complete_firering(character_id),
                 action::FREEZE => self.complete_freeze(character_id),
                 action::FLASH => self.complete_flash(character_id),
@@ -1894,7 +1894,13 @@ impl World {
                 _ => false,
             };
 
-            self.reset_character_action(character_id);
+            if self
+                .characters
+                .get(&character_id)
+                .is_some_and(|character| character.action == action_id)
+            {
+                self.reset_character_action(character_id);
+            }
             let (new_x, new_y) = self
                 .characters
                 .get(&character_id)
@@ -1949,6 +1955,23 @@ impl World {
         }
         let duration = spell_duration_ticks(&caster, FLASH_DURATION);
         self.install_speed_spell(caster_id, IDR_FLASH, "Flash", 100, duration)
+    }
+
+    fn complete_fireball(&mut self, caster_id: CharacterId) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        if caster.flags.contains(CharacterFlags::NOMAGIC)
+            && !caster.flags.contains(CharacterFlags::NONOMAGIC)
+        {
+            return false;
+        }
+
+        if let Some(caster) = self.characters.get_mut(&caster_id) {
+            caster.action = action::FIREBALL2;
+            caster.step = 0;
+        }
+        true
     }
 
     fn complete_firering(&mut self, caster_id: CharacterId) -> bool {
@@ -4778,6 +4801,38 @@ mod tests {
             200
         );
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn targeted_fireball_sets_up_projectile_action() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        world.spawn_character(caster, 10, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Fireball,
+            arg1: 15,
+            arg2: 10,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::FIREBALL1);
+        assert_eq!(caster.act1, 15);
+        assert_eq!(caster.act2, 10);
+        assert_eq!(caster.dir, Direction::Right as u8);
+        assert_eq!(caster.mana, 7 * POWERSCALE);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(world.tick_basic_actions()[0].ok);
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::FIREBALL2);
+        assert_eq!(caster.step, 0);
     }
 
     #[test]

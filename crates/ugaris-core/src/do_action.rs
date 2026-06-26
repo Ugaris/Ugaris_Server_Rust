@@ -11,7 +11,7 @@ use crate::{
     direction::Direction,
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
     ids::{CharacterId, ItemId},
-    legacy::{action, profession},
+    legacy::{action, profession, MAX_MAP},
     map::{MapFlags, MapGrid},
     spell::{
         heal_spend, magicshield_spend, may_add_spell, pulse_spend, spell_power, BLESS_COST,
@@ -583,6 +583,70 @@ pub fn do_firering(
     Ok(())
 }
 
+pub fn do_fireball(
+    character: &mut Character,
+    items: &HashMap<ItemId, Item>,
+    target_x: usize,
+    target_y: usize,
+    current_tick: u32,
+) -> Result<(), DoError> {
+    if character.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if character.flags.contains(CharacterFlags::NOMAGIC)
+        && !character.flags.contains(CharacterFlags::NONOMAGIC)
+    {
+        return Err(DoError::Unconscious);
+    }
+    if warcried(character, items) {
+        return Err(DoError::Unconscious);
+    }
+    if character_value(character, CharacterValue::Fireball) == 0 {
+        return Err(DoError::UnknownSpell);
+    }
+    if target_x < 1 || target_x >= MAX_MAP - 1 || target_y < 1 || target_y >= MAX_MAP - 1 {
+        return Err(DoError::IllegalCoords);
+    }
+    if character.mana < FIREBALL_COST {
+        return Err(DoError::ManaLow);
+    }
+
+    let direction = offset_to_direction(
+        usize::from(character.x),
+        usize::from(character.y),
+        target_x,
+        target_y,
+    );
+    if let Some(direction) = direction {
+        character.action = action::FIREBALL1;
+        character.act1 = target_x as i32;
+        character.act2 = target_y as i32;
+        character.duration = speed_ticks(
+            character_value(character, CharacterValue::Speed),
+            character.speed_mode,
+            DUR_MAGIC_ACTION / 2,
+        );
+        character.dir = direction as u8;
+    } else {
+        if may_add_spell(character, items, IDR_FIRERING, current_tick).is_none() {
+            return Err(DoError::AlreadyWorking);
+        }
+        character.action = action::FIRERING;
+        character.duration = speed_ticks(
+            character_value(character, CharacterValue::Speed),
+            character.speed_mode,
+            DUR_MAGIC_ACTION,
+        );
+        character.dir = bigdir(character.dir);
+    }
+
+    character.mana -= FIREBALL_COST;
+    if character.speed_mode == SpeedMode::Fast {
+        character.endurance -= endurance_cost(character);
+    }
+    Ok(())
+}
+
 pub fn do_heal(
     caster: &mut Character,
     target: &Character,
@@ -1102,6 +1166,35 @@ fn bigdir(direction: u8) -> u8 {
     }
 }
 
+fn offset_to_direction(
+    from_x: usize,
+    from_y: usize,
+    to_x: usize,
+    to_y: usize,
+) -> Option<Direction> {
+    let mut dx = to_x as i32 - from_x as i32;
+    let mut dy = to_y as i32 - from_y as i32;
+
+    if dx.abs() / 2 > dy.abs() {
+        dy = 0;
+    }
+    if dy.abs() / 2 > dx.abs() {
+        dx = 0;
+    }
+
+    match (dx.signum(), dy.signum()) {
+        (1, 1) => Some(Direction::RightDown),
+        (1, -1) => Some(Direction::RightUp),
+        (1, 0) => Some(Direction::Right),
+        (-1, 1) => Some(Direction::LeftDown),
+        (-1, -1) => Some(Direction::LeftUp),
+        (-1, 0) => Some(Direction::Left),
+        (0, 1) => Some(Direction::Down),
+        (0, -1) => Some(Direction::Up),
+        _ => None,
+    }
+}
+
 fn offset(value: usize, delta: i16) -> Option<usize> {
     if delta.is_negative() {
         value.checked_sub(delta.unsigned_abs() as usize)
@@ -1518,6 +1611,45 @@ mod tests {
         assert!(result.hit);
         assert_eq!(result.hp_damage, 3200);
         assert_eq!(defender.hp, 6800);
+    }
+
+    #[test]
+    fn do_fireball_sets_targeted_legacy_action() {
+        let items = HashMap::new();
+        let mut character = character();
+        character.values[0][CharacterValue::Fireball as usize] = 50;
+        character.mana = FIREBALL_COST;
+
+        do_fireball(&mut character, &items, 15, 10, 0).unwrap();
+
+        assert_eq!(character.action, action::FIREBALL1);
+        assert_eq!(character.act1, 15);
+        assert_eq!(character.act2, 10);
+        assert_eq!(character.dir, Direction::Right as u8);
+        assert_eq!(
+            character.duration,
+            speed_ticks(0, SpeedMode::Normal, DUR_MAGIC_ACTION / 2)
+        );
+        assert_eq!(character.mana, 0);
+    }
+
+    #[test]
+    fn do_fireball_same_tile_sets_firering_action() {
+        let items = HashMap::new();
+        let mut character = character();
+        character.values[0][CharacterValue::Fireball as usize] = 50;
+        character.mana = FIREBALL_COST;
+        character.dir = Direction::RightUp as u8;
+
+        do_fireball(&mut character, &items, 10, 10, 0).unwrap();
+
+        assert_eq!(character.action, action::FIRERING);
+        assert_eq!(character.dir, Direction::Right as u8);
+        assert_eq!(
+            character.duration,
+            speed_ticks(0, SpeedMode::Normal, DUR_MAGIC_ACTION)
+        );
+        assert_eq!(character.mana, 0);
     }
 
     #[test]
