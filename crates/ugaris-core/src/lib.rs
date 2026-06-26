@@ -15,6 +15,7 @@ pub mod item_driver;
 pub mod item_ops;
 pub mod key_registry;
 pub mod legacy;
+pub mod light;
 pub mod log_text;
 pub mod map;
 pub mod path;

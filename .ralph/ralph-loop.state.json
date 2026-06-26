@@ -1,13 +1,13 @@
 {
   "active": true,
-  "iteration": 50,
+  "iteration": 1,
   "minIterations": 1,
   "maxIterations": 50,
   "completionPromise": "COMPLETE",
   "tasksMode": false,
   "taskPromise": "READY_FOR_NEXT_TASK",
-  "prompt": "complete the full port from C to Rust as indicated in @PORTING_LEDGER.md using /home/eddow/Development/UgarisProjects/Ugaris_Server/ as C source. Implement best practices and a logical easily extendable rust version",
-  "startedAt": "2026-06-26T13:11:19.320Z",
+  "prompt": "complete the full port from C to Rust as indicated in @PORTING_LEDGER.md using /home/eddow/Development/UgarisProjects/Ugaris_Server/ as C source. Implement best practices and a logical easily extendable rust version, design the new rust server in a modern way, even if that means re-organizing things.",
+  "startedAt": "2026-06-26T21:57:24.016Z",
   "model": "",
   "agent": "opencode"
 }
