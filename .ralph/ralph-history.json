@@ -247,19 +247,46 @@
         "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 10,
+      "startedAt": "2026-06-26T23:14:32.689Z",
+      "endedAt": "2026-06-26T23:23:11.562Z",
+      "durationMs": 518720,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'world_reschedules_light_timer_after_lighting_torch' found",
+        "test world::tests::world_updates_map_light_when_timer_driven_map_item_changes ... FAILED",
+        "assertion failed: matches!(outcome, ItemDriverOutcome::LightChanged { .. })",
+        "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.00s",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test result: ok. 251 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 4601647,
+  "totalDurationMs": 5120367,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 217 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 9,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 10,
       "test result: ok. 235 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
       "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 5,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 7,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 235 filtered out; finished in 0.00s": 1,
       "test result: ok. 237 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
@@ -279,7 +306,7 @@
       "test light::tests::compute_shadow_handles_map_edges_like_legacy_bounds ... FAILED": 1,
       "test light::tests::compute_shadow_uses_legacy_foreground_tables_and_randomizer ... FAILED": 1,
       "test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 1,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.00s": 1,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 234 filtered out; finished in 0.00s": 1,
       "test result: ok. 245 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 2,
@@ -293,7 +320,14 @@
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.00s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s": 1,
-      "test result: ok. 248 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
+      "test result: ok. 248 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "error: unexpected argument 'world_reschedules_light_timer_after_lighting_torch' found": 1,
+      "test world::tests::world_updates_map_light_when_timer_driven_map_item_changes ... FAILED": 1,
+      "assertion failed: matches!(outcome, ItemDriverOutcome::LightChanged { .. })": 1,
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.00s": 1,
+      "test result: ok. 251 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

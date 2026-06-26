@@ -22,6 +22,7 @@ use crate::{
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD},
+    light::{add_effect_light, add_item_light, remove_effect_light, remove_item_light},
     log_text::LOG_TALK,
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},
@@ -70,6 +71,15 @@ pub struct WorldSoundSpecial {
 const ITEM_DRIVER_TIMER: &str = "item_driver";
 const REMOVE_SPELL_TIMER: &str = "remove_spell";
 const POISON_CALLBACK_TIMER: &str = "poison_callback";
+
+fn item_light_may_have_changed(outcome: &ItemDriverOutcome) -> bool {
+    matches!(
+        outcome,
+        ItemDriverOutcome::LightChanged { .. }
+            | ItemDriverOutcome::FlameThrowerPulse { .. }
+            | ItemDriverOutcome::FlameThrowerExtinguished { .. }
+    )
+}
 
 #[derive(Debug, Default)]
 pub struct World {
@@ -163,6 +173,10 @@ impl World {
     }
 
     pub fn add_item(&mut self, item: Item) {
+        if let Some(old) = self.items.remove(&item.id) {
+            remove_item_light(&mut self.map, &old);
+        }
+        add_item_light(&mut self.map, &item);
         self.items.insert(item.id, item);
     }
 
@@ -548,6 +562,7 @@ impl World {
         let Some(effect) = self.effects.get_mut(&effect_id) else {
             return false;
         };
+        let light = effect.light;
         if effect.fields.len() >= MAX_FIELD {
             return false;
         }
@@ -561,6 +576,7 @@ impl World {
         if let Some(index) = self.map.legacy_index(x, y) {
             effect.fields.push(index as i32);
         }
+        add_effect_light(&mut self.map, x, y, light as i16);
         true
     }
 
@@ -568,6 +584,7 @@ impl World {
         let Some(effect) = self.effects.get_mut(&effect_id) else {
             return;
         };
+        let light = effect.light;
         let fields = std::mem::take(&mut effect.fields);
         for index in fields {
             if index < 0 {
@@ -584,6 +601,7 @@ impl World {
                     }
                 }
             }
+            remove_effect_light(&mut self.map, x, y, light as i16);
         }
     }
 
@@ -782,7 +800,12 @@ impl World {
         let Some(item) = self.items.get_mut(&item_id) else {
             return false;
         };
-        act_take(character, &mut self.map, item, can_carry)
+        let before = item.clone();
+        if !act_take(character, &mut self.map, item, can_carry) {
+            return false;
+        }
+        remove_item_light(&mut self.map, &before);
+        true
     }
 
     pub fn complete_drop(&mut self, character_id: CharacterId, item_id: ItemId) -> bool {
@@ -792,7 +815,11 @@ impl World {
         let Some(item) = self.items.get_mut(&item_id) else {
             return false;
         };
-        act_drop(character, &mut self.map, item)
+        if !act_drop(character, &mut self.map, item) {
+            return false;
+        }
+        add_item_light(&mut self.map, item);
+        true
     }
 
     pub fn complete_give(&mut self, giver_id: CharacterId, receiver_id: CharacterId) -> bool {
@@ -915,6 +942,7 @@ impl World {
         effective_context.daylight = effective_context
             .daylight
             .max(self.date.daylight.clamp(0, 255) as u8);
+        let before = item.clone();
         let outcome = execute_item_driver_with_context(
             character,
             item,
@@ -923,6 +951,9 @@ impl World {
             in_arena,
             &effective_context,
         );
+        if item_light_may_have_changed(&outcome) {
+            self.refresh_item_light_after_mutation(&before, item_id);
+        }
         self.apply_item_driver_outcome(outcome, area_id)
     }
 
@@ -950,6 +981,7 @@ impl World {
             return ItemDriverOutcome::Noop;
         };
         let mut timer_character = timer_callback_character();
+        let before = item.clone();
         let outcome = execute_item_driver_with_context(
             &mut timer_character,
             item,
@@ -963,7 +995,17 @@ impl World {
             false,
             context,
         );
+        if item_light_may_have_changed(&outcome) {
+            self.refresh_item_light_after_mutation(&before, item_id);
+        }
         self.apply_item_driver_outcome(outcome, area_id)
+    }
+
+    fn refresh_item_light_after_mutation(&mut self, before: &Item, item_id: ItemId) {
+        remove_item_light(&mut self.map, before);
+        if let Some(after) = self.items.get(&item_id) {
+            add_item_light(&mut self.map, after);
+        }
     }
 
     fn apply_item_driver_outcome(
@@ -3934,6 +3976,69 @@ mod tests {
 
         assert!(matches!(outcome, ItemDriverOutcome::LightChanged { .. }));
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_updates_map_light_when_timer_driven_map_item_changes() {
+        let mut world = World::default();
+        world.date.daylight = 40;
+        let mut nightlight = item(7, ItemFlags::USED);
+        nightlight.driver = IDR_NIGHTLIGHT;
+        nightlight.driver_data = vec![0, 12];
+        nightlight.x = 10;
+        nightlight.y = 10;
+        world.map.tile_mut(10, 10).unwrap().item = 7;
+        world.add_item(nightlight);
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 0);
+
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+        world.advance();
+        let outcomes = world.process_due_timers(1);
+
+        assert!(matches!(
+            outcomes[0],
+            ItemDriverOutcome::LightChanged { .. }
+        ));
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 12);
+    }
+
+    #[test]
+    fn world_updates_map_light_when_lit_item_is_taken_and_dropped() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.x = 10;
+        character.y = 10;
+        character.dir = Direction::Right as u8;
+        character.act1 = 7;
+        let mut light_item = item(7, ItemFlags::USED | ItemFlags::TAKE);
+        light_item.x = 11;
+        light_item.y = 10;
+        light_item.modifier_index[0] = CharacterValue::Light as i16;
+        light_item.modifier_value[0] = 16;
+        world.map.tile_mut(11, 10).unwrap().item = 7;
+        world.add_character(character);
+        world.add_item(light_item);
+        assert_eq!(world.map.tile(11, 10).unwrap().light, 16);
+
+        assert!(world.complete_take(CharacterId(1), ItemId(7), true));
+        assert_eq!(world.map.tile(11, 10).unwrap().light, 0);
+
+        assert!(world.complete_drop(CharacterId(1), ItemId(7)));
+        assert_eq!(world.map.tile(11, 10).unwrap().light, 16);
+    }
+
+    #[test]
+    fn world_updates_map_light_when_effect_enters_and_leaves_tile() {
+        let mut world = World::default();
+        let mut effect = Effect::new(EF_BALL, 42, 0, 10);
+        effect.light = 30;
+        world.effects.insert(42, effect);
+
+        assert!(world.set_effect_on_map(42, 10, 10));
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 30);
+
+        world.remove_effect_from_map(42);
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 0);
     }
 
     #[test]
