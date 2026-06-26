@@ -204,7 +204,9 @@ impl ServerRuntime {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VisibleMapCell {
     tile_packet: Vec<u8>,
+    character_id: Option<u16>,
     character_packet: Option<Vec<u8>>,
+    character_name_packet: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,6 +215,7 @@ struct VisibleMapCache {
     center_y: u16,
     view_distance: usize,
     cells: HashMap<u16, VisibleMapCell>,
+    known_character_names: HashMap<u16, Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1865,16 +1868,26 @@ fn visible_map_cache(
     character: &Character,
     view_distance: usize,
 ) -> VisibleMapCache {
+    let mut known_character_names = HashMap::new();
     let cells = legacy_diamond_positions(character, view_distance)
         .filter_map(|(client_pos, map_x, map_y)| {
             let tile = world.map.tile(map_x, map_y)?;
-            let character_packet = tile_character(world, tile)
+            let visible_character = tile_character(world, tile);
+            let character_id = visible_character.map(client_character_id);
+            let character_packet = visible_character
                 .map(|character| map_character_packet(character, client_pos).to_vec());
+            let character_name_packet = visible_character.map(|character| {
+                let packet = character_name_packet(character).to_vec();
+                known_character_names.insert(client_character_id(character), packet.clone());
+                packet
+            });
             Some((
                 client_pos,
                 VisibleMapCell {
                     tile_packet: map_tile_packet(world, tile, client_pos).to_vec(),
+                    character_id,
                     character_packet,
+                    character_name_packet,
                 },
             ))
         })
@@ -1885,6 +1898,7 @@ fn visible_map_cache(
         center_y: character.y,
         view_distance,
         cells,
+        known_character_names,
     }
 }
 
@@ -1920,13 +1934,27 @@ fn map_diff_payloads(
             .cells
             .get(client_pos)
             .and_then(|cell| cell.character_packet.as_ref());
+        if let (Some(character_id), Some(name_packet)) = (
+            next_cell.character_id,
+            next_cell.character_name_packet.as_ref(),
+        ) {
+            if cache.known_character_names.get(&character_id) != Some(name_packet) {
+                append_map_packet(
+                    &mut payloads,
+                    &mut current,
+                    bytes::BytesMut::from(&name_packet[..]),
+                );
+            }
+        }
         match (previous_character, next_cell.character_packet.as_ref()) {
             (Some(previous), Some(next)) if previous == next => {}
-            (_, Some(next)) => append_map_packet(
-                &mut payloads,
-                &mut current,
-                bytes::BytesMut::from(&next[..]),
-            ),
+            (_, Some(next)) => {
+                append_map_packet(
+                    &mut payloads,
+                    &mut current,
+                    bytes::BytesMut::from(&next[..]),
+                );
+            }
             (Some(_), None) => append_map_packet(
                 &mut payloads,
                 &mut current,
@@ -2266,6 +2294,7 @@ fn movement_scroll_payload(
         };
         payload.extend_from_slice(&map_tile_packet(world, tile, client_pos));
         if let Some(character) = tile_character(world, tile) {
+            payload.extend_from_slice(&character_name_packet(character));
             payload.extend_from_slice(&map_character_packet(character, client_pos));
         }
     }
@@ -2361,6 +2390,11 @@ fn initial_map_payloads(
         );
 
         if let Some(character) = tile_character(world, tile) {
+            append_map_packet(
+                &mut payloads,
+                &mut current,
+                character_name_packet(character),
+            );
             append_map_packet(
                 &mut payloads,
                 &mut current,
@@ -2469,6 +2503,31 @@ fn map_character_packet(character: &Character, client_pos: u16) -> bytes::BytesM
         },
     )
     .expect("fixed character map field mask is valid")
+}
+
+fn client_character_id(character: &Character) -> u16 {
+    character.id.0 as u16
+}
+
+fn character_name_packet(character: &Character) -> bytes::BytesMut {
+    let name = if character.flags.contains(CharacterFlags::WON) {
+        if character.flags.contains(CharacterFlags::FEMALE) {
+            format!("Lady {}", character.name)
+        } else {
+            format!("Sir {}", character.name)
+        }
+    } else {
+        character.name.clone()
+    };
+
+    ugaris_protocol::packet::character_name(
+        client_character_id(character),
+        character.level.min(u32::from(u8::MAX)) as u8,
+        [0, 0, 0],
+        0,
+        0,
+        &name,
+    )
 }
 
 fn legacy_diamond_positions(
@@ -3264,6 +3323,7 @@ mod tests {
                     0,
                 ]
         }));
+        assert!(payload_contains_character_name(payload, 7, "Tester"));
     }
 
     #[test]
@@ -3375,6 +3435,37 @@ mod tests {
         assert!(payloads[0]
             .windows(3)
             .any(|window| { window == [SV_MAP10 | SV_MAPPOS | MAP_CHARACTER_CLEAR, 5, 0] }));
+    }
+
+    #[test]
+    fn map_diff_payloads_send_name_for_new_visible_character() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut other = login_character(CharacterId(8), &login_block("Guard"), 1, 11, 10);
+        other.x = 11;
+        other.y = 10;
+        let mut world = World::default();
+        assert!(world.spawn_character(character.clone(), 10, 10));
+        let mut cache = visible_map_cache(&world, &character, 1);
+
+        assert!(world.spawn_character(other, 11, 10));
+        let payloads = map_diff_payloads(&world, &character, 1, &mut cache);
+
+        assert_eq!(payloads.len(), 1);
+        assert!(payload_contains_character_name(&payloads[0], 8, "Guard"));
+        assert!(payloads[0].windows(16).any(|window| {
+            window[0]
+                == SV_MAP10
+                    | SV_MAPPOS
+                    | MAP_CHARACTER_SPRITE
+                    | MAP_CHARACTER_ACTION
+                    | MAP_CHARACTER_STATUS
+                && window[7] == 8
+                && window[8] == 0
+        }));
+        assert!(map_diff_payloads(&world, &character, 1, &mut cache).is_empty());
     }
 
     #[test]
@@ -3598,6 +3689,17 @@ mod tests {
         payload[3..3 + len].to_vec()
     }
 
+    fn payload_contains_character_name(payload: &[u8], character_id: u16, name: &str) -> bool {
+        let bytes = name.as_bytes();
+        let packet_len = 13 + bytes.len();
+        payload.windows(packet_len).any(|window| {
+            window[0] == ugaris_protocol::packet::SV_NAME
+                && u16::from_le_bytes([window[1], window[2]]) == character_id
+                && window[12] as usize == bytes.len()
+                && &window[13..] == bytes
+        })
+    }
+
     fn special_payload(payload: &[u8]) -> Option<(u32, u32, u32)> {
         let text_len = u16::from_le_bytes([payload[1], payload[2]]) as usize;
         let start = 3 + text_len;
@@ -3682,6 +3784,24 @@ mod tests {
                     0,
                 ]
         }));
+    }
+
+    #[test]
+    fn movement_scroll_payload_sends_name_for_new_fringe_character() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 11, 10);
+        character.x = 11;
+        character.y = 10;
+        let mut other = login_character(CharacterId(8), &login_block("Guard"), 1, 12, 10);
+        other.x = 12;
+        other.y = 10;
+        let mut world = World::default();
+        assert!(world.spawn_character(character.clone(), 11, 10));
+        assert!(world.spawn_character(other, 12, 10));
+
+        let payload = movement_scroll_payload(&world, &character, 10, 10, 1).unwrap();
+
+        assert!(payload_contains_character_name(&payload, 8, "Guard"));
     }
 
     #[test]
