@@ -158,19 +158,48 @@
         "test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 7,
+      "startedAt": "2026-06-26T14:01:54.385Z",
+      "endedAt": "2026-06-26T14:13:25.300Z",
+      "durationMs": 690736,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/lib.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-core/src/key_registry.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test key_registry::tests::registered_key_list_matches_legacy_count_and_known_ids ... FAILED",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 137 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 137 filtered out; finished in 0.00s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 0.00s",
+        "test result: ok. 138 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 3017434,
+  "totalDurationMs": 3708170,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
-      "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
       "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
       "test result: ok. 132 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 5,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 6,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error; 1 warning emitted": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error; 1 warning emitted": 1,
       "test result: ok. 133 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -180,7 +209,7 @@
       "test area_section::tests::area1_section_lookup_uses_legacy_order ... FAILED": 1,
       "test world::tests::world_applies_player_look_map_as_immediate_request ... FAILED": 1,
       "test result: FAILED. 134 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 1,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
       "test result: ok. 136 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 132 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s": 1,
@@ -190,7 +219,12 @@
       "test result: ok. 137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
       "Keyring command tests are in place. I’m running formatting and focused server tests now, then I’ll e": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 39 filtered out; finished in 0.00s": 1,
-      "test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
+      "test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "test key_registry::tests::registered_key_list_matches_legacy_count_and_known_ids ... FAILED": 1,
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 137 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 137 filtered out; finished in 0.00s": 1,
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 0.00s": 1,
+      "test result: ok. 138 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

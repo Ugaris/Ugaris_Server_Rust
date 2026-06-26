@@ -12,6 +12,7 @@ pub mod game_time;
 pub mod ids;
 pub mod item_driver;
 pub mod item_ops;
+pub mod key_registry;
 pub mod legacy;
 pub mod log_text;
 pub mod map;

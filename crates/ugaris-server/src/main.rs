@@ -14,6 +14,7 @@ use ugaris_core::{
     ids::{CharacterId, ItemId},
     item_driver::IDR_KEY_RING,
     item_ops::consume_item,
+    key_registry::is_registered_key,
     map::{MapFlags, MapTile},
     player::{
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
@@ -200,6 +201,8 @@ const MAP_BOOTSTRAP_CHUNK_TARGET: usize = MAX_LEGACY_TICK_PAYLOAD - 512;
 const DEFAULT_PLAYER_TEMPLATE: &str = "new_warrior_m";
 const IID_KEY_RING: u32 = (59 << 24) | 0x000002;
 const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
+#[cfg(test)]
+const IID_AREA1_SKELKEY1: u32 = (1 << 24) | 0x000002;
 const INVENTORY_KEY_START_SLOT: usize = 30;
 const RANDCHEST_COOLDOWN_SECONDS: u64 = 60 * 60 * 24;
 
@@ -229,6 +232,7 @@ enum KeyringAddApplyResult {
     Added { key_name: String },
     Duplicate,
     Full,
+    NotAKey,
     MissingPlayer,
     MissingCursorItem,
 }
@@ -371,10 +375,7 @@ fn cursor_holds_keyring(world: &World, character: &Character) -> bool {
 }
 
 fn is_runtime_keyring_candidate(item: &Item) -> bool {
-    item.template_id != 0
-        && item.template_id != IID_KEY_RING
-        && item.driver != IDR_KEY_RING
-        && item.name.to_ascii_lowercase().contains("key")
+    is_registered_key(item.template_id)
 }
 
 fn normalize_text_command(bytes: &[u8]) -> Option<String> {
@@ -509,6 +510,9 @@ fn apply_keyring_add_cursor_item(
     let Some(key_item) = world.items.get(&key_item_id) else {
         return KeyringAddApplyResult::MissingCursorItem;
     };
+    if !is_runtime_keyring_candidate(key_item) {
+        return KeyringAddApplyResult::NotAKey;
+    }
     let key_snapshot: Item = key_item.clone();
 
     match player.add_keyring_item(&key_snapshot) {
@@ -1887,7 +1891,7 @@ mod tests {
         keyring.template_id = IID_KEY_RING;
         keyring.driver = IDR_KEY_RING;
         let mut key = test_item(key_id, 501, ItemFlags::TAKE);
-        key.template_id = 0x1122_3344;
+        key.template_id = IID_AREA1_SKELKEY1;
         key.name = "Copper Key".to_string();
         let mut potion = test_item(potion_id, 502, ItemFlags::TAKE);
         potion.template_id = 0x5566_7788;
@@ -1904,7 +1908,10 @@ mod tests {
 
         assert_eq!(result.messages, vec!["Added 1 keys to your keyring."]);
         assert!(result.inventory_changed);
-        assert_eq!(player.keyring_key_name(0x1122_3344), Some("Copper Key"));
+        assert_eq!(
+            player.keyring_key_name(IID_AREA1_SKELKEY1),
+            Some("Copper Key")
+        );
         assert_eq!(
             world.characters.get(&character_id).unwrap().inventory[30],
             None
@@ -2408,7 +2415,7 @@ mod tests {
         world.add_character(character);
         let mut key = test_item(key_item_id, 1200, ItemFlags::USED | ItemFlags::TAKE);
         key.name = "Copper Key".to_string();
-        key.template_id = 0x1122_3344;
+        key.template_id = IID_AREA1_SKELKEY1;
         key.carried_by = Some(character_id);
         world.add_item(key);
         let mut player = PlayerRuntime::connected(1, 0);
@@ -2421,13 +2428,49 @@ mod tests {
             }
         );
 
-        assert_eq!(player.keyring_key_name(0x1122_3344), Some("Copper Key"));
+        assert_eq!(
+            player.keyring_key_name(IID_AREA1_SKELKEY1),
+            Some("Copper Key")
+        );
         let character = world.characters.get(&character_id).unwrap();
         assert_eq!(character.cursor_item, None);
         assert!(character.flags.contains(CharacterFlags::ITEMS));
         let key = world.items.get(&key_item_id).unwrap();
         assert_eq!(key.carried_by, None);
         assert!(!key.flags.contains(ItemFlags::USED));
+    }
+
+    #[test]
+    fn apply_keyring_add_cursor_item_rejects_unregistered_key_like_item() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let key_item_id = ItemId(44);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(key_item_id);
+        world.add_character(character);
+        let mut key = test_item(key_item_id, 1200, ItemFlags::USED | ItemFlags::TAKE);
+        key.name = "Decorative Key".to_string();
+        key.template_id = 0x1122_3344;
+        key.carried_by = Some(character_id);
+        world.add_item(key);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+
+        assert_eq!(
+            apply_keyring_add_cursor_item(&mut world, Some(&mut player), character_id, key_item_id,),
+            KeyringAddApplyResult::NotAKey
+        );
+        assert!(player.keyring.is_empty());
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().cursor_item,
+            Some(key_item_id)
+        );
+        assert!(world
+            .items
+            .get(&key_item_id)
+            .unwrap()
+            .flags
+            .contains(ItemFlags::USED));
     }
 
     #[test]
@@ -2440,13 +2483,13 @@ mod tests {
         world.add_character(character);
         let mut key = test_item(key_item_id, 1200, ItemFlags::USED | ItemFlags::TAKE);
         key.name = "Copper Key".to_string();
-        key.template_id = 0x1122_3344;
+        key.template_id = IID_AREA1_SKELKEY1;
         key.carried_by = Some(character_id);
         world.add_item(key);
         let mut player = PlayerRuntime::connected(1, 0);
         player.character_id = Some(character_id);
         assert_eq!(
-            player.add_keyring_key(0x1122_3344, "Copper Key"),
+            player.add_keyring_key(IID_AREA1_SKELKEY1, "Copper Key"),
             KeyringAddResult::Added
         );
 
@@ -3479,6 +3522,10 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                                 KeyringAddApplyResult::Full => {
                                                     feedback.push((character_id, "Your keyring is full.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                KeyringAddApplyResult::NotAKey => {
+                                                    feedback.push((character_id, "You can only add keys to the keyring.".to_string()));
                                                     blocked += 1;
                                                 }
                                                 KeyringAddApplyResult::MissingPlayer
