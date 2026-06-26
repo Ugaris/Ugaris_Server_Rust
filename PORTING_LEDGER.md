@@ -149,11 +149,12 @@ Current implemented slices:
 - `IDR_KEY_RING = 200` now dispatches to typed show/add-cursor outcomes.
 - `PlayerRuntime` keyring entries now store legacy key recreation metadata: ID, name, description, sprite, flags, value, driver, first 16 drdata bytes, and expire serial.
 - Runtime keyring add keeps duplicate/full semantics, 100-key cap, and the auto-add setting shape used by legacy `DRD_KEYRING_PPD`.
+- Keyring item use now shows legacy-shaped keyring contents through `SV_TEXT`, adds the cursor key into runtime keyring state, consumes the cursor key item, and reports duplicate/full/add feedback with tests.
 - Keyed doors now use carried exact-key/skeleton-key plus runtime keyring lookup and emit the legacy keyring door feedback text.
 
 Chest gaps still to port:
 
-- Keyring commands, remove/show text integration, registered-key validation, auto-add pickup integration, and persistent `DRD_KEYRING_PPD` load/save.
+- Keyring `#keyring` commands, registered-key validation, auto-add pickup integration, removed-key item recreation, and persistent `DRD_KEYRING_PPD` load/save.
 - Achievement persistence/protocol sending beyond runtime marker updates.
 - Exact persistent PPD storage behavior for chest access across logout/server restart.
 - `IDR_RANDCHEST = 34` persistent `DRD_RANDCHEST_PPD`, exact RNG parity, and full live-data smoke coverage.

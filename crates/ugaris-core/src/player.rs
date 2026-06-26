@@ -243,6 +243,40 @@ impl PlayerRuntime {
             .map(|key| key.name.as_str())
     }
 
+    pub fn remove_keyring_key_at(&mut self, index: usize) -> Option<KeyringEntry> {
+        if index >= self.keyring.len() {
+            return None;
+        }
+        Some(self.keyring.remove(index))
+    }
+
+    pub fn keyring_display_lines(&self) -> Vec<String> {
+        if self.keyring.is_empty() {
+            return vec!["Your keyring is empty.".to_string()];
+        }
+
+        let mut lines = Vec::with_capacity(self.keyring.len() + 3);
+        lines.push(format!(
+            "=== Keyring ({}/{KEYRING_MAX_KEYS} keys) ===",
+            self.keyring.len()
+        ));
+        for (index, key) in self.keyring.iter().enumerate() {
+            if key.name.is_empty() {
+                lines.push(format!(
+                    " {}. Unknown Key (ID: {})",
+                    index + 1,
+                    key.template_id
+                ));
+            } else {
+                lines.push(format!(" {}. {}", index + 1, key.name));
+            }
+        }
+        lines.push("Use a key on the keyring to add it.".to_string());
+        lines.push("Type '#keyring remove <number>' to remove a key.".to_string());
+        lines.push("Type '#keyring addall' to add all keys from inventory.".to_string());
+        lines
+    }
+
     pub fn record_chest_opened(&mut self, treasure_index: u8) {
         self.achievements.chests_opened = self.achievements.chests_opened.saturating_add(1);
         if self.achievements.chests_opened >= 10 {
@@ -538,6 +572,43 @@ mod tests {
         assert!(!player.keyring_auto_add());
         player.set_keyring_auto_add(true);
         assert!(player.keyring_auto_add());
+    }
+
+    #[test]
+    fn keyring_display_lines_match_legacy_shape_and_remove_by_position() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(
+            player.keyring_display_lines(),
+            vec!["Your keyring is empty."]
+        );
+        assert_eq!(
+            player.add_keyring_key(0x1122_3344, "Copper Key"),
+            KeyringAddResult::Added
+        );
+        assert_eq!(
+            player.add_keyring_key(0x5566_7788, "Silver Key"),
+            KeyringAddResult::Added
+        );
+
+        assert_eq!(
+            player.keyring_display_lines(),
+            vec![
+                "=== Keyring (2/100 keys) ===",
+                " 1. Copper Key",
+                " 2. Silver Key",
+                "Use a key on the keyring to add it.",
+                "Type '#keyring remove <number>' to remove a key.",
+                "Type '#keyring addall' to add all keys from inventory.",
+            ]
+        );
+        assert_eq!(
+            player.remove_keyring_key_at(0).map(|key| key.name),
+            Some("Copper Key".to_string())
+        );
+        assert_eq!(player.keyring_key_name(0x1122_3344), None);
+        assert_eq!(player.keyring_key_name(0x5566_7788), Some("Silver Key"));
+        assert_eq!(player.remove_keyring_key_at(99), None);
     }
 
     #[test]

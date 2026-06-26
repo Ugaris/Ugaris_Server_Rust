@@ -10,10 +10,13 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
     area_section::section_look_text,
-    entity::{Character, CharacterFlags, CharacterValue, ItemFlags, SpeedMode, POWERSCALE},
+    entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
     ids::{CharacterId, ItemId},
+    item_ops::consume_item,
     map::{MapFlags, MapTile},
-    player::{PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction},
+    player::{
+        KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
+    },
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
     zone::ZoneLoader,
@@ -218,6 +221,15 @@ enum RandomChestApplyResult {
     MissingPlayer,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum KeyringAddApplyResult {
+    Added { key_name: String },
+    Duplicate,
+    Full,
+    MissingPlayer,
+    MissingCursorItem,
+}
+
 #[derive(Debug, Clone)]
 struct ZoneLoadSummary {
     root: PathBuf,
@@ -334,6 +346,46 @@ fn grant_chest_treasure(
     character.flags.insert(CharacterFlags::ITEMS);
     world.add_item(item);
     Some(item_name)
+}
+
+fn keyring_show_messages(player: Option<&PlayerRuntime>) -> Vec<String> {
+    player
+        .map(PlayerRuntime::keyring_display_lines)
+        .unwrap_or_else(|| vec!["Your keyring is empty.".to_string()])
+}
+
+fn apply_keyring_add_cursor_item(
+    world: &mut World,
+    player: Option<&mut PlayerRuntime>,
+    character_id: CharacterId,
+    key_item_id: ItemId,
+) -> KeyringAddApplyResult {
+    let Some(player) = player else {
+        return KeyringAddApplyResult::MissingPlayer;
+    };
+    let Some(key_item) = world.items.get(&key_item_id) else {
+        return KeyringAddApplyResult::MissingCursorItem;
+    };
+    let key_snapshot: Item = key_item.clone();
+
+    match player.add_keyring_item(&key_snapshot) {
+        KeyringAddResult::Added => {
+            let Some(character) = world.characters.get_mut(&character_id) else {
+                return KeyringAddApplyResult::MissingPlayer;
+            };
+            let Some(key_item) = world.items.get_mut(&key_item_id) else {
+                return KeyringAddApplyResult::MissingCursorItem;
+            };
+            if character.cursor_item != Some(key_item_id) || !consume_item(character, key_item) {
+                return KeyringAddApplyResult::MissingCursorItem;
+            }
+            KeyringAddApplyResult::Added {
+                key_name: key_snapshot.name,
+            }
+        }
+        KeyringAddResult::Duplicate => KeyringAddApplyResult::Duplicate,
+        KeyringAddResult::Full => KeyringAddApplyResult::Full,
+    }
 }
 
 fn apply_chest_treasure(
@@ -2099,6 +2151,74 @@ mod tests {
     }
 
     #[test]
+    fn apply_keyring_add_cursor_item_stores_key_and_consumes_cursor() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let key_item_id = ItemId(44);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(key_item_id);
+        world.add_character(character);
+        let mut key = test_item(key_item_id, 1200, ItemFlags::USED | ItemFlags::TAKE);
+        key.name = "Copper Key".to_string();
+        key.template_id = 0x1122_3344;
+        key.carried_by = Some(character_id);
+        world.add_item(key);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+
+        assert_eq!(
+            apply_keyring_add_cursor_item(&mut world, Some(&mut player), character_id, key_item_id,),
+            KeyringAddApplyResult::Added {
+                key_name: "Copper Key".to_string(),
+            }
+        );
+
+        assert_eq!(player.keyring_key_name(0x1122_3344), Some("Copper Key"));
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        let key = world.items.get(&key_item_id).unwrap();
+        assert_eq!(key.carried_by, None);
+        assert!(!key.flags.contains(ItemFlags::USED));
+    }
+
+    #[test]
+    fn apply_keyring_add_cursor_item_reports_duplicate_without_consuming() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let key_item_id = ItemId(44);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(key_item_id);
+        world.add_character(character);
+        let mut key = test_item(key_item_id, 1200, ItemFlags::USED | ItemFlags::TAKE);
+        key.name = "Copper Key".to_string();
+        key.template_id = 0x1122_3344;
+        key.carried_by = Some(character_id);
+        world.add_item(key);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(character_id);
+        assert_eq!(
+            player.add_keyring_key(0x1122_3344, "Copper Key"),
+            KeyringAddResult::Added
+        );
+
+        assert_eq!(
+            apply_keyring_add_cursor_item(&mut world, Some(&mut player), character_id, key_item_id,),
+            KeyringAddApplyResult::Duplicate
+        );
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().cursor_item,
+            Some(key_item_id)
+        );
+        assert!(world
+            .items
+            .get(&key_item_id)
+            .unwrap()
+            .flags
+            .contains(ItemFlags::USED));
+    }
+
+    #[test]
     fn apply_chest_treasure_tracks_legacy_hour_cooldown() {
         let mut loader = chest_loader();
         let mut world = World::default();
@@ -3012,8 +3132,13 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::Teleport { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { .. } => {
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { character_id, .. } => {
+                                            for message in keyring_show_messages(runtime.player_for_character(character_id)) {
+                                                feedback.push((character_id, message));
+                                            }
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::KeyedDoorToggle {
@@ -3039,8 +3164,30 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::KeyringAddCursorItem { .. } => {
-                                            deferred_templates += 1;
+                                        ugaris_core::item_driver::ItemDriverOutcome::KeyringAddCursorItem { character_id, key_item_id, .. } => {
+                                            match apply_keyring_add_cursor_item(
+                                                &mut world,
+                                                runtime.player_for_character_mut(character_id),
+                                                character_id,
+                                                key_item_id,
+                                            ) {
+                                                KeyringAddApplyResult::Added { key_name } => {
+                                                    feedback.push((character_id, format!("You add {key_name} to your keyring.")));
+                                                    executed += 1;
+                                                }
+                                                KeyringAddApplyResult::Duplicate => {
+                                                    feedback.push((character_id, "This key is already on your keyring.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                KeyringAddApplyResult::Full => {
+                                                    feedback.push((character_id, "Your keyring is full.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                KeyringAddApplyResult::MissingPlayer
+                                                | KeyringAddApplyResult::MissingCursorItem => {
+                                                    failed += 1;
+                                                }
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::EmptyPotionTemplateNeeded { .. } => {
                                             deferred_templates += 1;
