@@ -568,6 +568,23 @@ fn grant_orb_spawn_item(
     Some(item_name)
 }
 
+fn instantiate_orb_with_modifier(
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    modifier: i16,
+) -> Option<Item> {
+    let value = u8::try_from(modifier).ok()?;
+    let value_name = CHARACTER_VALUE_NAMES.get(usize::from(value))?;
+    let Ok(mut item) = loader.instantiate_item_template("empty_orb", Some(character_id)) else {
+        return None;
+    };
+    item.name = format!("Orb of {value_name}");
+    ensure_drdata_len(&mut item, 2);
+    item.driver_data[0] = value;
+    item.driver_data[1] = 1;
+    Some(item)
+}
+
 fn ensure_drdata_len(item: &mut Item, len: usize) {
     if item.driver_data.len() < len {
         item.driver_data.resize(len, 0);
@@ -4570,6 +4587,31 @@ async fn main() -> anyhow::Result<()> {
                                                 OrbSpawnApplyResult::MissingPlayer => {
                                                     failed += 1;
                                                 }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TorchExtractOrb {
+                                            item_id,
+                                            character_id,
+                                            modifier_slot,
+                                            modifier,
+                                        } => {
+                                            let granted = instantiate_orb_with_modifier(
+                                                &mut zone_loader,
+                                                character_id,
+                                                modifier,
+                                            )
+                                            .is_some_and(|orb| {
+                                                world.apply_torch_extract_orb(
+                                                    item_id,
+                                                    character_id,
+                                                    modifier_slot,
+                                                    orb,
+                                                )
+                                            });
+                                            if granted {
+                                                executed += 1;
+                                            } else {
+                                                blocked += 1;
                                             }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }

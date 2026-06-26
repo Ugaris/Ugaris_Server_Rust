@@ -14,7 +14,7 @@ use crate::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_NIGHTLIGHT, IDR_TORCH,
     },
-    item_ops::consume_item,
+    item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY},
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},
@@ -457,6 +457,7 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::TorchExtractOrb { .. } => outcome,
             ItemDriverOutcome::EnchantCursorItem {
                 item_id,
                 character_id,
@@ -597,6 +598,54 @@ impl World {
         if let Some(character) = self.characters.get_mut(&character_id) {
             character.flags.insert(CharacterFlags::ITEMS);
         }
+        true
+    }
+
+    pub fn apply_torch_extract_orb(
+        &mut self,
+        torch_item_id: ItemId,
+        character_id: CharacterId,
+        modifier_slot: usize,
+        mut orb: Item,
+    ) -> bool {
+        let Some(torch) = self.items.get(&torch_item_id) else {
+            return false;
+        };
+        if torch.carried_by != Some(character_id)
+            || modifier_slot >= torch.modifier_value.len()
+            || torch.modifier_value[modifier_slot] <= 0
+        {
+            return false;
+        }
+
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        match give_item_to_character(
+            character,
+            &mut orb,
+            GiveItemFlags::LOG.union(GiveItemFlags::ALLOW_DROP),
+        ) {
+            GiveItemResult::Ok => {}
+            GiveItemResult::Dropped => {
+                if !self.map.drop_item_extended(
+                    &mut orb,
+                    usize::from(character.x),
+                    usize::from(character.y),
+                    1,
+                ) {
+                    return false;
+                }
+            }
+            GiveItemResult::Money => {}
+            GiveItemResult::Full | GiveItemResult::Failed => return false,
+        }
+
+        let Some(torch) = self.items.get_mut(&torch_item_id) else {
+            return false;
+        };
+        torch.modifier_value[modifier_slot] -= 1;
+        self.add_item(orb);
         true
     }
 
@@ -1898,6 +1947,36 @@ mod tests {
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert!(character.flags.contains(CharacterFlags::ITEMS));
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_applies_torch_orb_extraction_to_inventory() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        let mut torch = item(7, ItemFlags::USED | ItemFlags::USE);
+        torch.carried_by = Some(CharacterId(1));
+        torch.driver = IDR_TORCH;
+        torch.modifier_index[1] = CharacterValue::Speed as i16;
+        torch.modifier_value[1] = 2;
+        let mut orb = item(8, ItemFlags::USED | ItemFlags::USE);
+        orb.name = "Orb of Speed".to_string();
+        orb.carried_by = Some(CharacterId(1));
+        orb.driver_data = vec![CharacterValue::Speed as u8, 1];
+        world.add_character(character);
+        world.add_item(torch);
+
+        assert!(world.apply_torch_extract_orb(ItemId(7), CharacterId(1), 1, orb));
+
+        let torch = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(torch.modifier_value[1], 1);
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[31], Some(ItemId(8)));
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        assert_eq!(
+            world.items.get(&ItemId(8)).unwrap().carried_by,
+            Some(CharacterId(1))
+        );
     }
 
     #[test]

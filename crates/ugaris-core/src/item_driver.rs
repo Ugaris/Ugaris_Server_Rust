@@ -229,6 +229,12 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
     },
+    TorchExtractOrb {
+        item_id: ItemId,
+        character_id: CharacterId,
+        modifier_slot: usize,
+        modifier: i16,
+    },
     StatScrollUsed {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1194,6 +1200,15 @@ fn torch_driver(
         return ItemDriverOutcome::Noop;
     }
 
+    if let Some((modifier_slot, modifier)) = torch_extractable_modifier(item) {
+        return ItemDriverOutcome::TorchExtractOrb {
+            item_id: item.id,
+            character_id: character.id,
+            modifier_slot,
+            modifier,
+        };
+    }
+
     if item.driver_data[0] != 0 {
         extinguish_torch(item);
     } else {
@@ -1229,6 +1244,16 @@ fn mark_special_modified_torch(item: &mut Item) {
     {
         item.min_level = 200;
     }
+}
+
+fn torch_extractable_modifier(item: &Item) -> Option<(usize, i16)> {
+    item.modifier_index
+        .iter()
+        .zip(item.modifier_value.iter())
+        .enumerate()
+        .find_map(|(slot, (&index, &value))| {
+            (index != V_LIGHT && index >= 0 && value > 0).then_some((slot, index))
+        })
 }
 
 fn extinguish_torch(item: &mut Item) {
@@ -2217,6 +2242,34 @@ mod tests {
         assert_eq!(torch.modifier_value[0], 0);
         assert_eq!(torch.sprite, 0);
         assert!(!torch.flags.contains(ItemFlags::NODECAY));
+    }
+
+    #[test]
+    fn torch_user_use_extracts_non_light_modifier_before_toggling() {
+        let mut character = character(1);
+        let mut torch = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_TORCH);
+        torch.carried_by = Some(CharacterId(1));
+        torch.driver_data = vec![0, 0, 10, 20];
+        torch.modifier_index[1] = CharacterValue::Speed as i16;
+        torch.modifier_value[1] = 2;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TORCH,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut torch, request, 1, false),
+            ItemDriverOutcome::TorchExtractOrb {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                modifier_slot: 1,
+                modifier: CharacterValue::Speed as i16,
+            }
+        );
+        assert_eq!(torch.driver_data[0], 0);
+        assert_eq!(torch.modifier_value[1], 2);
     }
 
     #[test]
