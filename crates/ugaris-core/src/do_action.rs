@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    attack::{
+        apply_facing_attack_bonus, attack_chance_for_diff, attack_roll_hits,
+        direct_attack_damage_units, direct_attack_shield_percent,
+        reduce_hurt_by_armor_and_lifeshield, scaled_direct_attack_damage, ATTACK_DIV,
+    },
     direction::Direction,
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
     ids::{CharacterId, ItemId},
@@ -63,6 +68,13 @@ pub struct ItemUseRequest {
     pub character_id: CharacterId,
     pub item_id: ItemId,
     pub spec: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttackResolution {
+    pub hit: bool,
+    pub hp_damage: i32,
+    pub shield_absorbed: i32,
 }
 
 pub fn do_idle(character: &mut Character, duration: i32) -> Result<(), DoError> {
@@ -302,6 +314,45 @@ pub fn do_drop(
     Ok(())
 }
 
+pub fn do_attack(
+    attacker: &mut Character,
+    map: &MapGrid,
+    defender: &Character,
+    direction: u8,
+    attack_variant: u16,
+) -> Result<(), DoError> {
+    if attacker.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    let (x, y) = action_target(attacker, direction)?;
+    if !map.legacy_inner_bounds(x, y) {
+        return Err(DoError::IllegalCoords);
+    }
+    if !character_reachable_around_tile(map, x, y, defender.id) {
+        return Err(DoError::NoCharacter);
+    }
+    if defender.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if !can_attack(attacker, defender, map) {
+        return Err(DoError::IllegalAttack);
+    }
+
+    attacker.action = attack_variant.clamp(action::ATTACK1, action::ATTACK3);
+    attacker.act1 = defender.id.0 as i32;
+    attacker.duration = speed_ticks(
+        character_value(attacker, CharacterValue::Speed),
+        attacker.speed_mode,
+        DUR_COMBAT_ACTION,
+    );
+    if attacker.speed_mode == SpeedMode::Fast {
+        attacker.endurance -= endurance_cost(attacker) * 2;
+    }
+    attacker.dir = direction;
+
+    Ok(())
+}
+
 pub fn act_walk(character: &mut Character, map: &mut MapGrid) -> bool {
     let from_x = usize::from(character.x);
     let from_y = usize::from(character.y);
@@ -420,6 +471,129 @@ pub fn act_use(character: &mut Character, map: &MapGrid, item: &Item) -> Option<
     })
 }
 
+pub fn act_attack(
+    attacker: &mut Character,
+    defender: &mut Character,
+    map: &MapGrid,
+    d100_roll: i32,
+    d6_roll: i32,
+) -> Option<AttackResolution> {
+    let Ok((x, y)) = action_target(attacker, attacker.dir) else {
+        return None;
+    };
+    if !map.legacy_inner_bounds(x, y) || attacker.act1 != defender.id.0 as i32 {
+        return None;
+    }
+    if !character_reachable_around_tile(map, x, y, defender.id)
+        || !can_attack(attacker, defender, map)
+    {
+        return None;
+    }
+
+    let attack = character_value(attacker, CharacterValue::Attack);
+    let parry = character_value(defender, CharacterValue::Parry);
+    let (attack, parry) = apply_facing_attack_bonus(
+        attack,
+        parry,
+        is_facing(defender, attacker),
+        is_back(defender, attacker),
+        attacker
+            .professions
+            .get(profession::ASSASSIN)
+            .copied()
+            .unwrap_or_default() as i32,
+        defender.action == action::IDLE,
+    );
+    let chance = attack_chance_for_diff(attack - parry);
+    if !attack_roll_hits(d100_roll, chance.hit_chance) {
+        return Some(AttackResolution {
+            hit: false,
+            hp_damage: 0,
+            shield_absorbed: 0,
+        });
+    }
+
+    let damage_units = direct_attack_damage_units(
+        character_value(attacker, CharacterValue::Weapon),
+        d6_roll,
+        attacker
+            .professions
+            .get(profession::ASSASSIN)
+            .copied()
+            .unwrap_or_default() as i32,
+        is_back(defender, attacker),
+        defender.action == action::IDLE,
+    );
+    let reduced = reduce_hurt_by_armor_and_lifeshield(
+        scaled_direct_attack_damage(damage_units),
+        character_value(defender, CharacterValue::Armor),
+        ATTACK_DIV,
+        chance.armor_percent,
+        defender.lifeshield,
+        direct_attack_shield_percent(chance.armor_percent),
+    );
+    defender.lifeshield = reduced.remaining_lifeshield;
+    defender.hp -= reduced.hp_damage;
+
+    Some(AttackResolution {
+        hit: true,
+        hp_damage: reduced.hp_damage,
+        shield_absorbed: reduced.shield_absorbed,
+    })
+}
+
+pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> bool {
+    if defender.id == attacker.id || defender.flags.is_empty() {
+        return false;
+    }
+    if defender
+        .flags
+        .intersects(CharacterFlags::DEAD | CharacterFlags::NOATTACK)
+    {
+        return false;
+    }
+    if attacker
+        .flags
+        .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
+        && defender.flags.contains(CharacterFlags::NOPLRATT)
+    {
+        return false;
+    }
+    if defender
+        .flags
+        .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
+        && attacker.flags.contains(CharacterFlags::NOPLRATT)
+    {
+        return false;
+    }
+    let attacker_flags = map
+        .tile(usize::from(attacker.x), usize::from(attacker.y))
+        .map(|tile| tile.flags)
+        .unwrap_or_else(MapFlags::empty);
+    let defender_flags = map
+        .tile(usize::from(defender.x), usize::from(defender.y))
+        .map(|tile| tile.flags)
+        .unwrap_or_else(MapFlags::empty);
+    if attacker_flags.contains(MapFlags::PEACE) || defender_flags.contains(MapFlags::PEACE) {
+        return false;
+    }
+    if attacker
+        .flags
+        .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
+        && defender.flags.contains(CharacterFlags::PLAYERLIKE)
+    {
+        return false;
+    }
+    if defender
+        .flags
+        .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
+        && attacker.flags.contains(CharacterFlags::PLAYERLIKE)
+    {
+        return false;
+    }
+    true
+}
+
 pub fn advance_action_step(character: &mut Character) -> bool {
     character.step += 1;
     character.step >= character.duration
@@ -487,6 +661,48 @@ fn action_target(character: &Character, direction: u8) -> Result<(usize, usize),
     let x = offset(usize::from(character.x), dx).ok_or(DoError::IllegalCoords)?;
     let y = offset(usize::from(character.y), dy).ok_or(DoError::IllegalCoords)?;
     Ok((x, y))
+}
+
+fn character_reachable_around_tile(
+    map: &MapGrid,
+    center_x: usize,
+    center_y: usize,
+    character_id: CharacterId,
+) -> bool {
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            let Some(x) = offset(center_x, dx) else {
+                continue;
+            };
+            let Some(y) = offset(center_y, dy) else {
+                continue;
+            };
+            if map.tile(x, y).map(|tile| tile.character) == Some(character_id.0 as u16) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_facing(character: &Character, other: &Character) -> bool {
+    Direction::try_from(character.dir)
+        .map(|direction| {
+            let (dx, dy) = direction.delta();
+            i32::from(character.x) + i32::from(dx) == i32::from(other.x)
+                && i32::from(character.y) + i32::from(dy) == i32::from(other.y)
+        })
+        .unwrap_or(false)
+}
+
+fn is_back(character: &Character, other: &Character) -> bool {
+    Direction::try_from(character.dir)
+        .map(|direction| {
+            let (dx, dy) = direction.delta();
+            i32::from(character.x) - i32::from(dx) == i32::from(other.x)
+                && i32::from(character.y) - i32::from(dy) == i32::from(other.y)
+        })
+        .unwrap_or(false)
 }
 
 fn character_value(character: &Character, value: CharacterValue) -> i32 {
@@ -801,6 +1017,120 @@ mod tests {
 
         map.tile_mut(11, 10).unwrap().item = 0;
         assert_eq!(act_use(&mut character, &map, &item), None);
+    }
+
+    #[test]
+    fn do_attack_sets_legacy_action_fields_and_fast_endurance_cost() {
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        map.tile_mut(11, 10).unwrap().character = defender.id.0 as u16;
+        attacker.speed_mode = SpeedMode::Fast;
+        attacker.endurance = 1000;
+
+        do_attack(
+            &mut attacker,
+            &map,
+            &defender,
+            Direction::Right as u8,
+            action::ATTACK2,
+        )
+        .unwrap();
+
+        assert_eq!(attacker.action, action::ATTACK2);
+        assert_eq!(attacker.act1, defender.id.0 as i32);
+        assert_eq!(attacker.dir, Direction::Right as u8);
+        assert_eq!(
+            attacker.duration,
+            speed_ticks(0, SpeedMode::Fast, DUR_COMBAT_ACTION)
+        );
+        assert_eq!(attacker.endurance, 500);
+    }
+
+    #[test]
+    fn do_attack_rejects_unreachable_dead_and_peace_zone_targets() {
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 15;
+        defender.y = 10;
+        map.tile_mut(15, 10).unwrap().character = defender.id.0 as u16;
+
+        assert_eq!(
+            do_attack(
+                &mut attacker,
+                &map,
+                &defender,
+                Direction::Right as u8,
+                action::ATTACK1,
+            ),
+            Err(DoError::NoCharacter)
+        );
+
+        defender.x = 11;
+        defender.y = 10;
+        map.tile_mut(15, 10).unwrap().character = 0;
+        map.tile_mut(11, 10).unwrap().character = defender.id.0 as u16;
+        defender.flags.insert(CharacterFlags::DEAD);
+        assert_eq!(
+            do_attack(
+                &mut attacker,
+                &map,
+                &defender,
+                Direction::Right as u8,
+                action::ATTACK1,
+            ),
+            Err(DoError::Dead)
+        );
+
+        defender.flags.remove(CharacterFlags::DEAD);
+        map.set_flags(10, 10, MapFlags::PEACE);
+        assert_eq!(
+            do_attack(
+                &mut attacker,
+                &map,
+                &defender,
+                Direction::Right as u8,
+                action::ATTACK1,
+            ),
+            Err(DoError::IllegalAttack)
+        );
+    }
+
+    #[test]
+    fn act_attack_uses_strict_hit_roll_and_applies_damage() {
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        defender.dir = Direction::Left as u8;
+        defender.hp = 10_000;
+        attacker.dir = Direction::Right as u8;
+        attacker.act1 = defender.id.0 as i32;
+        attacker.values[0][CharacterValue::Attack as usize] = 10;
+        attacker.values[0][CharacterValue::Weapon as usize] = 10;
+        defender.values[0][CharacterValue::Parry as usize] = 10;
+        map.tile_mut(11, 10).unwrap().character = defender.id.0 as u16;
+
+        assert_eq!(
+            act_attack(&mut attacker, &mut defender, &map, 50, 6),
+            Some(AttackResolution {
+                hit: false,
+                hp_damage: 0,
+                shield_absorbed: 0,
+            })
+        );
+
+        let result = act_attack(&mut attacker, &mut defender, &map, 49, 6).unwrap();
+        assert!(result.hit);
+        assert_eq!(result.hp_damage, 3200);
+        assert_eq!(defender.hp, 6800);
     }
 
     #[test]

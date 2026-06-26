@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::{
     direction::Direction,
     do_action::{
-        act_drop, act_take, act_use, act_walk, advance_action_step, do_drop, do_idle, do_take,
-        do_use, do_walk, endurance_cost, reset_action_after_act, speed_ticks, ItemUseRequest,
-        DUR_MISC_ACTION,
+        act_attack, act_drop, act_take, act_use, act_walk, advance_action_step, do_attack, do_drop,
+        do_idle, do_take, do_use, do_walk, endurance_cost, reset_action_after_act, speed_ticks,
+        ItemUseRequest, DUR_MISC_ACTION,
     },
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode},
     game_time::GameDate,
@@ -226,6 +226,28 @@ impl World {
         let character = self.characters.get_mut(&character_id)?;
         let item = self.items.get(&item_id)?;
         act_use(character, &self.map, item)
+    }
+
+    pub fn complete_attack_with_rolls(
+        &mut self,
+        attacker_id: CharacterId,
+        defender_id: CharacterId,
+        d100_roll: i32,
+        d6_roll: i32,
+    ) -> bool {
+        if attacker_id == defender_id {
+            return false;
+        }
+        let Some(mut defender) = self.characters.remove(&defender_id) else {
+            return false;
+        };
+        let ok = self
+            .characters
+            .get_mut(&attacker_id)
+            .and_then(|attacker| act_attack(attacker, &mut defender, &self.map, d100_roll, d6_roll))
+            .is_some();
+        self.characters.insert(defender_id, defender);
+        ok
     }
 
     pub fn use_item_request(
@@ -1199,6 +1221,49 @@ impl World {
                     self.set_player_idle(player, character_id)
                 }
             }
+            PlayerActionCode::Kill => {
+                let target_id = CharacterId(player.action.arg1 as u32);
+                let Some(target) = self.characters.get(&target_id) else {
+                    return self.set_player_idle(player, character_id);
+                };
+                let target_x = usize::from(target.x);
+                let target_y = usize::from(target.y);
+                let Some(attacker) = self.characters.get(&character_id) else {
+                    return false;
+                };
+                let direction = adjacent_direction(attacker.x, attacker.y, target_x, target_y);
+
+                if let Some(direction) = direction {
+                    let target = target.clone();
+                    let Some(attacker) = self.characters.get_mut(&character_id) else {
+                        return false;
+                    };
+                    if do_attack(
+                        attacker,
+                        &self.map,
+                        &target,
+                        direction as u8,
+                        action::ATTACK1,
+                    )
+                    .is_ok()
+                    {
+                        true
+                    } else {
+                        self.set_player_idle(player, character_id)
+                    }
+                } else if self.setup_walk_toward(
+                    character_id,
+                    target_x,
+                    target_y,
+                    1,
+                    area_id,
+                    false,
+                ) {
+                    true
+                } else {
+                    self.set_player_idle(player, character_id)
+                }
+            }
             PlayerActionCode::Teleport => {
                 let Some((item_id, direction)) = self
                     .characters
@@ -1577,6 +1642,22 @@ impl World {
                     .is_some_and(|request| {
                         item_use = Some(request);
                         true
+                    }),
+                action::ATTACK1 | action::ATTACK2 | action::ATTACK3 => self
+                    .characters
+                    .get(&character_id)
+                    .and_then(|character| {
+                        (character.act1 > 0).then_some(CharacterId(character.act1 as u32))
+                    })
+                    .is_some_and(|defender_id| {
+                        let d100_roll = ((self.tick.0 + u64::from(character_id.0)) % 100) as i32;
+                        let d6_roll = ((self.tick.0 + u64::from(defender_id.0)) % 6) as i32 + 1;
+                        self.complete_attack_with_rolls(
+                            character_id,
+                            defender_id,
+                            d100_roll,
+                            d6_roll,
+                        )
                     }),
                 action::GIVE => self
                     .characters
@@ -2810,6 +2891,90 @@ mod tests {
         assert!(completed[0].ok);
         assert_eq!(completed[0].item_use.unwrap().item_id, ItemId(7));
         assert_eq!(completed[0].item_use.unwrap().spec, 42);
+    }
+
+    #[test]
+    fn world_applies_player_kill_setup_to_adjacent_character() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker.x = 10;
+        attacker.y = 10;
+        let mut defender = character(2);
+        defender.x = 11;
+        defender.y = 10;
+        world.map.tile_mut(11, 10).unwrap().character = 2;
+        world.add_character(attacker);
+        world.add_character(defender);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Kill,
+            arg1: 2,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let attacker = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(attacker.action, action::ATTACK1);
+        assert_eq!(attacker.act1, 2);
+        assert_eq!(attacker.dir, Direction::Right as u8);
+    }
+
+    #[test]
+    fn world_applies_player_kill_setup_by_walking_toward_target() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker.x = 10;
+        attacker.y = 10;
+        world.map.tile_mut(10, 10).unwrap().character = 1;
+        let mut defender = character(2);
+        defender.x = 13;
+        defender.y = 10;
+        world.map.tile_mut(13, 10).unwrap().character = 2;
+        world.add_character(attacker);
+        world.add_character(defender);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Kill,
+            arg1: 2,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let attacker = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(attacker.action, action::WALK);
+        assert_eq!((attacker.tox, attacker.toy), (11, 10));
+        assert_eq!(player.action.action, PlayerActionCode::Kill);
+    }
+
+    #[test]
+    fn world_completes_attack_action_with_damage() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker.x = 10;
+        attacker.y = 10;
+        attacker.dir = Direction::Right as u8;
+        attacker.action = action::ATTACK1;
+        attacker.duration = 1;
+        attacker.act1 = 2;
+        attacker.values[0][CharacterValue::Attack as usize] = 10;
+        attacker.values[0][CharacterValue::Weapon as usize] = 10;
+        let mut defender = character(2);
+        defender.x = 11;
+        defender.y = 10;
+        defender.dir = Direction::Left as u8;
+        defender.hp = 10_000;
+        defender.values[0][CharacterValue::Parry as usize] = 10;
+        world.map.tile_mut(11, 10).unwrap().character = 2;
+        world.add_character(attacker);
+        world.add_character(defender);
+
+        let completed = world.tick_basic_actions();
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].action_id, action::ATTACK1);
+        assert!(completed[0].ok);
+        assert!(world.characters.get(&CharacterId(2)).unwrap().hp < 10_000);
     }
 
     #[test]
