@@ -17,13 +17,14 @@ use ugaris_core::{
         CHARACTER_VALUE_NAMES, POWERSCALE,
     },
     ids::{CharacterId, ItemId},
-    item_driver::{IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_KEY_RING, IDR_TORCH},
+    item_driver::{IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONSHRINE, IDR_KEY_RING, IDR_TORCH},
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
     legacy::INVENTORY_START_INVENTORY,
     map::{MapFlags, MapTile},
     player::{
-        KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
+        DemonShrineResult, KeyringAddResult, PlayerActionCode, PlayerConnectionState,
+        PlayerRuntime, QueuedAction,
     },
     spell::{
         EF_BALL, EF_BLESS, EF_BURN, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL,
@@ -1242,6 +1243,13 @@ fn is_beyond_potion_item(world: &World, item_id: ItemId) -> bool {
         .items
         .get(&item_id)
         .is_some_and(|item| item.driver == IDR_BEYONDPOTION)
+}
+
+fn is_demonshrine_item(world: &World, item_id: ItemId) -> bool {
+    world
+        .items
+        .get(&item_id)
+        .is_some_and(|item| item.driver == IDR_DEMONSHRINE)
 }
 
 fn character_has_active_beyond_potion(world: &World, character_id: CharacterId) -> bool {
@@ -7300,6 +7308,35 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                             }
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::DemonShrine { character_id, location_id, .. } => {
+                                            let result = match (
+                                                runtime.player_for_character_mut(character_id),
+                                                world.characters.get_mut(&character_id),
+                                            ) {
+                                                (Some(player), Some(character)) => player.touch_demonshrine(
+                                                    character,
+                                                    location_id,
+                                                ),
+                                                _ => {
+                                                    failed += 1;
+                                                    continue;
+                                                }
+                                            };
+                                            match result {
+                                                DemonShrineResult::Learned { .. } => {
+                                                    feedback.push((character_id, "You study the old book and learn something about the ancient tribes. Your Ancient Knowledge went up by one and you gained experience.".to_string()));
+                                                    executed += 1;
+                                                }
+                                                DemonShrineResult::AlreadyKnown => {
+                                                    feedback.push((character_id, "You've been here before. You cannot learn more from this book.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                DemonShrineResult::Full => {
+                                                    feedback.push((character_id, "Bug 771".to_string()));
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
                                             if is_chest_request =>
                                         {
@@ -7565,6 +7602,12 @@ async fn main() -> anyhow::Result<()> {
                                             if is_torch_item(&world, item_id) =>
                                         {
                                             feedback.push((character_id, TORCH_UNDERWATER_MESSAGE.to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
+                                            if is_demonshrine_item(&world, item_id) =>
+                                        {
+                                            feedback.push((character_id, "You're not powerful enough to read this book.".to_string()));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { .. } => {

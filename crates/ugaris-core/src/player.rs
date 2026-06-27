@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    entity::{Character, CharacterFlags, Item},
+    entity::{Character, CharacterFlags, CharacterValue, Item},
     ids::CharacterId,
     legacy::DIST_OLD,
 };
@@ -24,6 +24,8 @@ pub const RANDCHEST_MAX_ENTRIES: usize = 100;
 pub const LEGACY_RANDCHEST_PPD_SIZE: usize = RANDCHEST_MAX_ENTRIES * 4 * 2;
 pub const ORBSPAWN_MAX_ENTRIES: usize = 100;
 pub const LEGACY_ORBSPAWN_PPD_SIZE: usize = ORBSPAWN_MAX_ENTRIES * 4 * 2;
+pub const DEMONSHRINE_MAX_ENTRIES: usize = 100;
+pub const LEGACY_DEMONSHRINE_PPD_SIZE: usize = DEMONSHRINE_MAX_ENTRIES * 4;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
@@ -31,6 +33,7 @@ pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
+pub const DRD_DEMONSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 68 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
@@ -151,6 +154,13 @@ pub enum SpecialShrineResult {
     Unsupported,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DemonShrineResult {
+    Learned { exp_added: u32 },
+    AlreadyKnown,
+    Full,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AchievementState {
     pub chests_opened: u32,
@@ -200,6 +210,8 @@ pub struct PlayerRuntime {
     pub random_chests: Vec<RandomChestAccess>,
     #[serde(default)]
     pub orb_spawns: Vec<OrbSpawnAccess>,
+    #[serde(default)]
+    pub demonshrines: Vec<u32>,
     pub achievements: AchievementState,
     #[serde(default)]
     pub keyring_auto_add: bool,
@@ -236,6 +248,7 @@ impl PlayerRuntime {
             keyring: Vec::new(),
             random_chests: Vec::new(),
             orb_spawns: Vec::new(),
+            demonshrines: Vec::new(),
             achievements: AchievementState::default(),
             keyring_auto_add: false,
             current_section_id: 0,
@@ -484,6 +497,39 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_demonshrine_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_DEMONSHRINE_PPD_SIZE];
+        for (index, location_id) in self
+            .demonshrines
+            .iter()
+            .copied()
+            .take(DEMONSHRINE_MAX_ENTRIES)
+            .enumerate()
+        {
+            write_i32(
+                &mut bytes,
+                index * 4,
+                location_id.min(i32::MAX as u32) as i32,
+            );
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_demonshrine_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_DEMONSHRINE_PPD_SIZE {
+            return false;
+        }
+
+        self.demonshrines.clear();
+        for index in 0..DEMONSHRINE_MAX_ENTRIES {
+            let location_id = read_i32(bytes, index * 4);
+            if location_id > 0 {
+                self.demonshrines.push(location_id as u32);
+            }
+        }
+        true
+    }
+
     pub fn decode_legacy_ppd_blob(&mut self, bytes: &[u8]) -> bool {
         for block in LegacyPpdBlocks::parse(bytes) {
             let Some(block) = block else {
@@ -505,6 +551,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_DEMONSHRINE_PPD => {
+                    if !self.decode_legacy_demonshrine_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_ORBSPAWN_PPD => {
                     if !self.decode_legacy_orbspawn_ppd(block.data) {
                         return false;
@@ -521,6 +572,7 @@ impl PlayerRuntime {
         let mut had_keyring = false;
         let mut had_treasure_chest = false;
         let mut had_randchest = false;
+        let mut had_demonshrine = false;
         let mut had_orbspawn = false;
         let mut existing_was_valid = true;
 
@@ -552,6 +604,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_RANDCHEST_PPD,
                     &self.encode_legacy_randchest_ppd(),
+                );
+            } else if block.id == DRD_DEMONSHRINE_PPD {
+                had_demonshrine = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_DEMONSHRINE_PPD,
+                    &self.encode_legacy_demonshrine_ppd(),
                 );
             } else if block.id == DRD_ORBSPAWN_PPD {
                 had_orbspawn = true;
@@ -592,6 +651,15 @@ impl PlayerRuntime {
                 );
             }
         }
+        if !had_demonshrine && (existing_was_valid || existing.is_empty()) {
+            if !self.demonshrines.is_empty() {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_DEMONSHRINE_PPD,
+                    &self.encode_legacy_demonshrine_ppd(),
+                );
+            }
+        }
         if !had_orbspawn && (existing_was_valid || existing.is_empty()) {
             if !self.orb_spawns.is_empty() {
                 write_ppd_block(
@@ -621,6 +689,39 @@ impl PlayerRuntime {
             driver_data: Vec::new(),
             expire_serial: 0,
         })
+    }
+
+    pub fn touch_demonshrine(
+        &mut self,
+        character: &mut Character,
+        location_id: u32,
+    ) -> DemonShrineResult {
+        if self.demonshrines.iter().any(|&id| id == location_id) {
+            return DemonShrineResult::AlreadyKnown;
+        }
+        if self.demonshrines.len() >= DEMONSHRINE_MAX_ENTRIES {
+            return DemonShrineResult::Full;
+        }
+
+        self.demonshrines.push(location_id);
+        let demon_index = CharacterValue::Demon as usize;
+        let demon_value = character
+            .values
+            .get_mut(1)
+            .and_then(|values| values.get_mut(demon_index));
+        let new_demon = if let Some(value) = demon_value {
+            *value = value.saturating_add(1);
+            u32::from((*value).max(0) as u16)
+        } else {
+            0
+        };
+        let exp_added =
+            (250_u32.saturating_add(new_demon.saturating_mul(100))).min(character.exp / 25);
+        character.exp = character.exp.saturating_add(exp_added);
+        character
+            .flags
+            .insert(CharacterFlags::UPDATE | CharacterFlags::ITEMS);
+        DemonShrineResult::Learned { exp_added }
     }
 
     pub fn add_keyring_item(&mut self, item: &Item) -> KeyringAddResult {
@@ -1045,9 +1146,11 @@ mod tests {
         assert_eq!(DRD_JUNK_PPD, 0x8100_0072);
         assert_eq!(DRD_TREASURE_CHEST_PPD, 0x8100_0011);
         assert_eq!(DRD_RANDCHEST_PPD, 0x8100_003f);
+        assert_eq!(DRD_DEMONSHRINE_PPD, 0x8100_0044);
         assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
+        assert_eq!(LEGACY_DEMONSHRINE_PPD_SIZE, 400);
     }
 
     #[test]
@@ -1452,6 +1555,50 @@ mod tests {
         assert_eq!(read_u32(&encoded, 4), LEGACY_ORBSPAWN_PPD_SIZE as u32);
         assert_eq!(read_i32(&encoded, 8), 0x0001_0203);
         assert_eq!(read_i32(&encoded, 8 + ORBSPAWN_PPD_LAST_USED_OFFSET), 55);
+    }
+
+    #[test]
+    fn demonshrine_touch_updates_value_exp_and_blocks_repeats() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = character(3);
+        character.exp = 10_000;
+
+        assert_eq!(
+            player.touch_demonshrine(&mut character, 0x0001_0203),
+            DemonShrineResult::Learned { exp_added: 350 }
+        );
+        assert_eq!(character.values[1][CharacterValue::Demon as usize], 1);
+        assert_eq!(character.exp, 10_350);
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        assert_eq!(
+            player.touch_demonshrine(&mut character, 0x0001_0203),
+            DemonShrineResult::AlreadyKnown
+        );
+    }
+
+    #[test]
+    fn demonshrine_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_demonshrine = vec![0; LEGACY_DEMONSHRINE_PPD_SIZE];
+        write_i32(&mut existing_demonshrine, 0, 0x0001_0203);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_DEMONSHRINE_PPD, &existing_demonshrine);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.demonshrines.push(0x0001_0506);
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_DEMONSHRINE_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_DEMONSHRINE_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20), 0x0001_0506);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.demonshrines, vec![0x0001_0506]);
     }
 
     #[test]

@@ -29,6 +29,7 @@ pub const IDR_EXTINGUISH: u16 = 28;
 pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
+pub const IDR_DEMONSHRINE: u16 = 35;
 pub const IDR_SHRIKEAMULET: u16 = 118;
 pub const IDR_MINEGATEWAYKEY: u16 = 126;
 pub const IDR_INFINITE_CHEST: u16 = 93;
@@ -480,6 +481,11 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         kind: u8,
     },
+    DemonShrine {
+        item_id: ItemId,
+        character_id: CharacterId,
+        location_id: u32,
+    },
     EnchantNeedsCursor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -629,6 +635,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EXTINGUISH => extinguish_driver(character, item),
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
+                IDR_DEMONSHRINE => demonshrine_driver(character, item, area_id),
                 IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
@@ -852,6 +859,24 @@ fn special_shrine_driver(character: &Character, item: &Item) -> ItemDriverOutcom
         item_id: item.id,
         character_id: character.id,
         kind: drdata(item, 0),
+    }
+}
+
+fn demonshrine_driver(character: &Character, item: &Item, area_id: u16) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.level < u32::from(item.min_level) {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::DemonShrine {
+        item_id: item.id,
+        character_id: character.id,
+        location_id: u32::from(item.x) + (u32::from(item.y) << 8) + (u32::from(area_id) << 16),
     }
 }
 
@@ -4484,6 +4509,40 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(3),
                 kind: 0x0A,
+            }
+        );
+    }
+
+    #[test]
+    fn demonshrine_dispatches_location_and_level_gate() {
+        let mut character = character(3);
+        character.level = 9;
+        let mut shrine = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DEMONSHRINE);
+        shrine.min_level = 10;
+        shrine.x = 12;
+        shrine.y = 34;
+
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_DEMONSHRINE,
+            item_id: ItemId(7),
+            character_id: CharacterId(3),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver(&mut character, &mut shrine, request, 5, false),
+            ItemDriverOutcome::BlockedByRequirements {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+            }
+        );
+
+        character.level = 10;
+        assert_eq!(
+            execute_item_driver(&mut character, &mut shrine, request, 5, false),
+            ItemDriverOutcome::DemonShrine {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                location_id: 12 + (34 << 8) + (5 << 16),
             }
         );
     }
