@@ -8420,7 +8420,7 @@ async fn main() -> anyhow::Result<()> {
                     info!(simple_baddy_outcomes, tick = world.tick.0, "processed simple-baddy driver messages");
                 }
 
-                let simple_baddy_attacks = world.process_simple_baddy_attack_actions();
+                let simple_baddy_attacks = world.process_simple_baddy_attack_actions(config.area_id);
                 if simple_baddy_attacks != 0 {
                     info!(simple_baddy_attacks, tick = world.tick.0, "queued simple-baddy attack actions");
                 }
