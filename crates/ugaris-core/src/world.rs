@@ -2528,6 +2528,15 @@ impl World {
                     && best_partial.best_distance < current_distance
                 {
                     best_partial.best_direction.unwrap()
+                } else if self.setup_adjacent_use_toward_target(character_id, target_x, target_y) {
+                    if let Some(character) = self.characters.get_mut(&character_id) {
+                        if let Some(CharacterDriverState::SimpleBaddy(data)) =
+                            character.driver_state.as_mut()
+                        {
+                            data.lastfight = self.tick.0 as i32;
+                        }
+                    }
+                    return true;
                 } else {
                     let Some(character) = self.characters.get_mut(&character_id) else {
                         return false;
@@ -2538,7 +2547,17 @@ impl World {
         };
 
         if !self.walk_or_use_driver(character_id, direction, area_id) {
-            return false;
+            if !self.setup_adjacent_use_toward_target(character_id, target_x, target_y) {
+                return false;
+            }
+            if let Some(attacker_mut) = self.characters.get_mut(&character_id) {
+                if let Some(CharacterDriverState::SimpleBaddy(data)) =
+                    attacker_mut.driver_state.as_mut()
+                {
+                    data.lastfight = self.tick.0 as i32;
+                }
+            }
+            return true;
         }
         if let Some(attacker_mut) = self.characters.get_mut(&character_id) {
             if let Some(CharacterDriverState::SimpleBaddy(data)) =
@@ -2548,6 +2567,70 @@ impl World {
             }
         }
         true
+    }
+
+    fn setup_adjacent_use_toward_target(
+        &mut self,
+        character_id: CharacterId,
+        target_x: usize,
+        target_y: usize,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let from_x = usize::from(character.x);
+        let from_y = usize::from(character.y);
+        let current_distance = manhattan_distance(from_x, from_y, target_x, target_y);
+
+        let mut best: Option<(Direction, ItemId, usize)> = None;
+        for direction in [
+            Direction::Right,
+            Direction::Left,
+            Direction::Down,
+            Direction::Up,
+        ] {
+            let (dx, dy) = direction.delta();
+            let Some(x) = offset_coordinate(from_x, dx) else {
+                continue;
+            };
+            let Some(y) = offset_coordinate(from_y, dy) else {
+                continue;
+            };
+            let Some(tile) = self.map.tile(x, y) else {
+                continue;
+            };
+            if !tile
+                .flags
+                .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+            {
+                continue;
+            }
+            let item_id = ItemId(tile.item);
+            let Some(item) = (tile.item != 0).then(|| self.items.get(&item_id)).flatten() else {
+                continue;
+            };
+            if !item.flags.contains(ItemFlags::USE) {
+                continue;
+            }
+            let distance = manhattan_distance(x, y, target_x, target_y);
+            if distance >= current_distance {
+                continue;
+            }
+            if best.is_none_or(|(_, _, best_distance)| distance < best_distance) {
+                best = Some((direction, item_id, distance));
+            }
+        }
+
+        let Some((direction, item_id, _)) = best else {
+            return false;
+        };
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        do_use(character, &self.map, item, direction as u8, 0).is_ok()
     }
 
     fn setup_simple_baddy_attack_driver(
@@ -10159,6 +10242,58 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 460);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails() {
+        let mut world = World::default();
+        world.tick = Tick(461);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Attack as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 13,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        let mut blocker = item(10, ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK);
+        blocker.x = 11;
+        blocker.y = 10;
+
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 13, 10);
+        world.map.tile_mut(13, 10).unwrap().light = 255;
+        world.items.insert(blocker.id, blocker);
+        let tile = world.map.tile_mut(11, 10).unwrap();
+        tile.item = 10;
+        tile.flags.insert(MapFlags::TMOVEBLOCK);
+        for y in 1..MAX_MAP - 1 {
+            world
+                .map
+                .tile_mut(12, y)
+                .unwrap()
+                .flags
+                .insert(MapFlags::MOVEBLOCK);
+        }
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::USE);
+        assert_eq!(npc.dir, Direction::Right as u8);
+        assert_eq!(npc.act1, 10);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 461);
     }
 
     #[test]
