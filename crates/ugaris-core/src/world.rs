@@ -336,6 +336,33 @@ impl World {
         effect_id
     }
 
+    fn create_ball_trap_effect(
+        &mut self,
+        start_x: u16,
+        start_y: u16,
+        target_x: u16,
+        target_y: u16,
+        power: u8,
+    ) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(
+            EF_BALL,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(TICKS_PER_SECOND * 5) as i32,
+        );
+        effect.strength = i32::from(power);
+        effect.light = 80;
+        effect.from_x = i32::from(start_x);
+        effect.from_y = i32::from(start_y);
+        effect.to_x = i32::from(target_x);
+        effect.to_y = i32::from(target_y);
+        effect.x = i32::from(start_x) * 1024 + 512;
+        effect.y = i32::from(start_y) * 1024 + 512;
+        self.effects.insert(effect_id, effect);
+        effect_id
+    }
+
     fn create_or_refresh_strike_effect(
         &mut self,
         target_id: CharacterId,
@@ -1275,6 +1302,17 @@ impl World {
                 } else {
                     ItemDriverOutcome::Noop
                 }
+            }
+            ItemDriverOutcome::BallTrapProjectile {
+                start_x,
+                start_y,
+                target_x,
+                target_y,
+                power,
+                ..
+            } => {
+                self.create_ball_trap_effect(start_x, start_y, target_x, target_y, power);
+                outcome
             }
             ItemDriverOutcome::SpikeTrapTriggered {
                 item_id,
@@ -4185,8 +4223,8 @@ mod tests {
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
-            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_DOOR, IDR_ENCHANTITEM, IDR_FLAMETHROW,
-            IDR_NIGHTLIGHT, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_ENCHANTITEM,
+            IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
@@ -4586,6 +4624,52 @@ mod tests {
         );
         let trap = world.items.get(&ItemId(7)).unwrap();
         assert_eq!(&trap.driver_data[..2], &[11, 10]);
+    }
+
+    #[test]
+    fn world_balltrap_creates_retained_ball_effect() {
+        let mut world = World::default();
+        let mut trigger = character(1);
+        trigger.flags.remove(CharacterFlags::PLAYER);
+        world.add_character(trigger);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE);
+        trap.driver = IDR_BALLTRAP;
+        trap.x = 10;
+        trap.y = 20;
+        trap.driver_data = vec![130, 125, 42];
+        world.add_item(trap);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_BALLTRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::BallTrapProjectile {
+                start_x: 11,
+                start_y: 19,
+                target_x: 12,
+                target_y: 17,
+                power: 42,
+                ..
+            }
+        ));
+        assert_eq!(world.effects.len(), 1);
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_BALL);
+        assert_eq!(effect.strength, 42);
+        assert_eq!(effect.light, 80);
+        assert_eq!((effect.from_x, effect.from_y), (11, 19));
+        assert_eq!((effect.to_x, effect.to_y), (12, 17));
+        assert_eq!((effect.x, effect.y), (11 * 1024 + 512, 19 * 1024 + 512));
+        assert_eq!(effect.caster, None);
+        assert_eq!(effect.stop_tick, (TICKS_PER_SECOND * 5) as i32);
     }
 
     #[test]
