@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::{
     area_sound::AreaSoundSpecial,
     character_driver::{
-        add_simple_baddy_enemy, process_simple_baddy_messages, CharacterDriverState,
-        SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
+        add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
+        CharacterDriverState, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
     },
     direction::Direction,
     do_action::{
@@ -1646,6 +1646,39 @@ impl World {
                     }
                     ItemDriverOutcome::Noop
                 }
+                SimpleBaddyMessageOutcome::StandardAggro {
+                    target_id,
+                    priority,
+                    require_visible,
+                } => {
+                    let tick = self.tick.0 as i32;
+                    if self.simple_baddy_can_add_standard_enemy(
+                        character_id,
+                        target_id,
+                        require_visible,
+                    ) {
+                        if let Some(character) = self.characters.get_mut(&character_id) {
+                            let _ = add_simple_baddy_enemy_unchecked(
+                                character, target_id, priority, tick,
+                            );
+                        }
+                    }
+                    ItemDriverOutcome::Noop
+                }
+                SimpleBaddyMessageOutcome::StandardSeenHit {
+                    attacker_id,
+                    victim_id,
+                } => {
+                    let tick = self.tick.0 as i32;
+                    if let Some(target_id) =
+                        self.simple_baddy_seen_hit_enemy(character_id, attacker_id, victim_id)
+                    {
+                        if let Some(character) = self.characters.get_mut(&character_id) {
+                            let _ = add_simple_baddy_enemy_unchecked(character, target_id, 1, tick);
+                        }
+                    }
+                    ItemDriverOutcome::Noop
+                }
             })
             .collect()
     }
@@ -1799,6 +1832,50 @@ impl World {
             && caster.mana >= BLESS_COST
             && !target.flags.contains(CharacterFlags::DEAD)
             && may_add_spell(target, &self.items, IDR_BLESS, self.tick.0 as u32).is_some()
+    }
+
+    fn simple_baddy_can_add_standard_enemy(
+        &self,
+        character_id: CharacterId,
+        target_id: CharacterId,
+        require_visible: bool,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(target) = self.characters.get(&target_id) else {
+            return false;
+        };
+        character.group != target.group
+            && can_attack(character, target, &self.map)
+            && (!require_visible || char_see_char(character, target, &self.map, self.date.daylight))
+    }
+
+    fn simple_baddy_seen_hit_enemy(
+        &self,
+        character_id: CharacterId,
+        attacker_id: CharacterId,
+        victim_id: CharacterId,
+    ) -> Option<CharacterId> {
+        let character = self.characters.get(&character_id)?;
+        let attacker = self.characters.get(&attacker_id)?;
+        let victim = self.characters.get(&victim_id)?;
+
+        if victim.id != character.id
+            && victim.group == character.group
+            && self.simple_baddy_can_add_standard_enemy(character_id, attacker_id, true)
+        {
+            return Some(attacker_id);
+        }
+
+        if attacker.id != character.id
+            && attacker.group == character.group
+            && self.simple_baddy_can_add_standard_enemy(character_id, victim_id, true)
+        {
+            return Some(victim_id);
+        }
+
+        None
     }
 
     fn execute_item_driver_timer_request(
@@ -5469,7 +5546,7 @@ mod tests {
     use crate::{
         character_driver::{
             CharacterDriverState, SimpleBaddyDriverData, SimpleBaddyEnemy, NTID_GLADIATOR, NT_CHAR,
-            NT_DIDHIT, NT_GOTHIT, NT_NPC,
+            NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
         },
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
@@ -5726,6 +5803,110 @@ mod tests {
                 target_id: CharacterId(99),
                 priority: 1,
                 last_seen_tick: 123,
+            }]
+        );
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_add_aggressive_seen_character_enemy() {
+        let mut world = World::default();
+        world.tick = Tick(321);
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            aggressive: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_CHAR, 2, 0, 0);
+        let mut target = character(2);
+        target.group = 8;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(
+            data.enemies,
+            vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 0,
+                last_seen_tick: 321,
+            }]
+        );
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_add_defensive_gothit_enemy_without_sight() {
+        let mut world = World::default();
+        world.tick = Tick(322);
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        npc.push_driver_message(NT_GOTHIT, 2, 10, 0);
+        let mut attacker = character(2);
+        attacker.group = 8;
+        world.add_character(npc);
+        world.add_character(attacker);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(
+            data.enemies,
+            vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 322,
+            }]
+        );
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_helper_seen_hit_adds_enemy_for_friend() {
+        let mut world = World::default();
+        world.tick = Tick(323);
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helper: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_SEEHIT, 2, 3, 0);
+        let mut attacker = character(2);
+        attacker.group = 8;
+        let mut victim = character(3);
+        victim.group = 7;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(attacker, 11, 10);
+        world.spawn_character(victim, 12, 10);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(
+            data.enemies,
+            vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 323,
             }]
         );
     }

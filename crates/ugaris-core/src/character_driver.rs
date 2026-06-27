@@ -165,6 +165,15 @@ pub enum SimpleBaddyMessageOutcome {
         caller_id: CharacterId,
         target_id: CharacterId,
     },
+    StandardAggro {
+        target_id: CharacterId,
+        priority: i32,
+        require_visible: bool,
+    },
+    StandardSeenHit {
+        attacker_id: CharacterId,
+        victim_id: CharacterId,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -260,6 +269,10 @@ pub fn process_simple_baddy_messages(
         Some(CharacterDriverState::SimpleBaddy(data)) => data.helper,
         _ => 0,
     };
+    let aggressive = match character.driver_state.as_ref() {
+        Some(CharacterDriverState::SimpleBaddy(data)) => data.aggressive,
+        _ => 0,
+    };
     let poison = match character.driver_state.as_ref() {
         Some(CharacterDriverState::SimpleBaddy(data)) if data.poison_power > 0 => Some((
             data.poison_power as u16,
@@ -279,6 +292,22 @@ pub fn process_simple_baddy_messages(
     for message in messages {
         if message.message_type == NT_CHAR && helper != 0 && message.dat1 > 0 {
             bless_friend = Some(crate::ids::CharacterId(message.dat1 as u32));
+        }
+
+        if message.message_type == NT_CHAR && aggressive != 0 && message.dat1 > 0 {
+            outcomes.push(SimpleBaddyMessageOutcome::StandardAggro {
+                target_id: CharacterId(message.dat1 as u32),
+                priority: 0,
+                require_visible: true,
+            });
+        }
+
+        if message.message_type == NT_SEEHIT && helper != 0 && message.dat1 > 0 && message.dat2 > 0
+        {
+            outcomes.push(SimpleBaddyMessageOutcome::StandardSeenHit {
+                attacker_id: CharacterId(message.dat1 as u32),
+                victim_id: CharacterId(message.dat2 as u32),
+            });
         }
 
         if message.message_type == NT_GOTHIT && drink_inventory_potions {
@@ -307,6 +336,14 @@ pub fn process_simple_baddy_messages(
                     reason: PotionUseReason::LowMana,
                 });
             }
+        }
+
+        if message.message_type == NT_GOTHIT && message.dat1 > 0 {
+            outcomes.push(SimpleBaddyMessageOutcome::StandardAggro {
+                target_id: CharacterId(message.dat1 as u32),
+                priority: 1,
+                require_visible: false,
+            });
         }
 
         if message.message_type == NT_DIDHIT && message.dat1 > 0 && message.dat2 > 0 {
@@ -350,6 +387,15 @@ pub fn add_simple_baddy_enemy(
         return false;
     }
 
+    add_simple_baddy_enemy_unchecked(character, target_id, 1, current_tick)
+}
+
+pub fn add_simple_baddy_enemy_unchecked(
+    character: &mut Character,
+    target_id: CharacterId,
+    priority: i32,
+    current_tick: i32,
+) -> bool {
     let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() else {
         return false;
     };
@@ -359,14 +405,14 @@ pub fn add_simple_baddy_enemy(
         .iter_mut()
         .find(|enemy| enemy.target_id == target_id)
     {
-        enemy.priority = enemy.priority.max(1);
+        enemy.priority = enemy.priority.max(priority);
         enemy.last_seen_tick = current_tick;
         return true;
     }
 
     data.enemies.push(SimpleBaddyEnemy {
         target_id,
-        priority: 1,
+        priority,
         last_seen_tick: current_tick,
     });
     true
@@ -850,6 +896,45 @@ mod tests {
         character.push_driver_message(NT_CHAR, 2, 0, 0);
 
         assert!(process_simple_baddy_messages(&mut character, &[]).is_empty());
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_standard_messages_emit_aggro_outcomes() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            aggressive: 1,
+            helper: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        character.push_driver_message(NT_CHAR, 2, 0, 0);
+        character.push_driver_message(NT_SEEHIT, 3, 4, 0);
+        character.push_driver_message(NT_GOTHIT, 5, 10, 0);
+
+        let outcomes = process_simple_baddy_messages(&mut character, &[]);
+
+        assert_eq!(
+            outcomes,
+            vec![
+                SimpleBaddyMessageOutcome::StandardAggro {
+                    target_id: crate::ids::CharacterId(2),
+                    priority: 0,
+                    require_visible: true,
+                },
+                SimpleBaddyMessageOutcome::StandardSeenHit {
+                    attacker_id: crate::ids::CharacterId(3),
+                    victim_id: crate::ids::CharacterId(4),
+                },
+                SimpleBaddyMessageOutcome::StandardAggro {
+                    target_id: crate::ids::CharacterId(5),
+                    priority: 1,
+                    require_visible: false,
+                },
+                SimpleBaddyMessageOutcome::BlessFriend {
+                    target_id: crate::ids::CharacterId(2),
+                },
+            ]
+        );
         assert!(character.driver_messages.is_empty());
     }
 
