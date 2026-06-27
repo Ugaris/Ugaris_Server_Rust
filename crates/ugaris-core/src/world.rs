@@ -1551,10 +1551,7 @@ impl World {
         }
 
         for (target_id, damage) in targets {
-            if let Some(target) = self.characters.get_mut(&target_id) {
-                target.hp = target.hp.saturating_sub(damage);
-                target.flags.insert(CharacterFlags::UPDATE);
-            }
+            self.apply_legacy_hurt(target_id, Some(caster_id), damage, 10, 50, 70);
         }
     }
 
@@ -1598,10 +1595,7 @@ impl World {
                     effect.strength
                 };
                 let damage = strength.saturating_mul(POWERSCALE);
-                if let Some(target) = self.characters.get_mut(&target_id) {
-                    target.hp = target.hp.saturating_sub(damage);
-                    target.flags.insert(CharacterFlags::UPDATE);
-                }
+                self.apply_legacy_hurt(target_id, effect.caster, damage, 6, 75, 50);
             }
         }
 
@@ -8322,6 +8316,28 @@ mod tests {
     }
 
     #[test]
+    fn edemonball_impact_uses_legacy_hurt_reduction() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.hp = 10_000;
+        target.lifeshield = POWERSCALE;
+        target.values[0][CharacterValue::Armor as usize] = 60;
+        assert!(world.spawn_character(target, 10, 12));
+        let _effect_id = world.create_edemonball_effect(10, 10, 10, 20, 3, 1);
+
+        for _ in 0..6 {
+            world.tick_effects();
+        }
+
+        let target = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(target.hp, 8_500);
+        assert_eq!(target.lifeshield, 0);
+        assert_eq!(target.driver_messages[0].message_type, NT_GOTHIT);
+        assert_eq!(target.driver_messages[0].dat1, 0);
+        assert_eq!(target.driver_messages[0].dat2, 1_500);
+    }
+
+    #[test]
     fn edemonball_green_base_is_absorbed_by_green_crystal() {
         let mut world = World::default();
         let mut target = character(1);
@@ -10462,6 +10478,43 @@ mod tests {
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 14_100);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn fireball_impact_uses_legacy_hurt_reduction() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 15;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.hp = 30 * POWERSCALE;
+        target.lifeshield = POWERSCALE;
+        target.values[0][CharacterValue::Armor as usize] = 20;
+        target.values[0][CharacterValue::Immunity as usize] = 20;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        world.create_fireball_effect(&caster);
+
+        world.tick_effects();
+        world.tick_effects();
+
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 15_200);
+        assert_eq!(target.lifeshield, 0);
+        assert_eq!(target.driver_messages[0].message_type, NT_GOTHIT);
+        assert_eq!(target.driver_messages[0].dat1, 1);
+        assert_eq!(target.driver_messages[0].dat2, 14_800);
+        assert_eq!(
+            world.characters[&CharacterId(1)].driver_messages[0].message_type,
+            NT_DIDHIT
+        );
     }
 
     #[test]
