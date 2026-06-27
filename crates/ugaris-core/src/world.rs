@@ -2344,6 +2344,15 @@ impl World {
         character_id: CharacterId,
         area_id: u16,
     ) -> bool {
+        self.process_simple_baddy_noncombat_action_with_random(character_id, area_id, |_| 0)
+    }
+
+    pub fn process_simple_baddy_noncombat_action_with_random(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        mut random_below: impl FnMut(i32) -> i32,
+    ) -> bool {
         let Some(character) = self.characters.get(&character_id).cloned() else {
             return false;
         };
@@ -2402,6 +2411,41 @@ impl World {
                     return true;
                 }
             }
+            if random_below(2) == 0 {
+                return self.idle_simple_baddy(character_id);
+            }
+
+            let direction = if data.dir != 0 {
+                data.dir
+            } else {
+                random_below(8).clamp(0, 7) + 1
+            };
+            let Some(direction) = u8::try_from(direction)
+                .ok()
+                .and_then(|direction| Direction::try_from(direction).ok())
+            else {
+                self.clear_simple_baddy_scavenger_direction(character_id);
+                return self.idle_simple_baddy(character_id);
+            };
+            let (dx, dy) = direction.delta();
+            let next_x = i32::from(character.x) + i32::from(dx);
+            let next_y = i32::from(character.y) + i32::from(dy);
+            if (next_x - i32::from(target_x)).abs() < i32::from(scavenger_distance)
+                && (next_y - i32::from(target_y)).abs() < i32::from(scavenger_distance)
+                && self.setup_walk_direction(character_id, direction, area_id)
+            {
+                let _ = self.set_simple_baddy_home(character_id, character.x, character.y);
+                if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+                    .characters
+                    .get_mut(&character_id)
+                    .and_then(|character| character.driver_state.as_mut())
+                {
+                    data.dir = direction as i32;
+                }
+                return true;
+            }
+
+            self.clear_simple_baddy_scavenger_direction(character_id);
             return self.idle_simple_baddy(character_id);
         }
 
@@ -2492,6 +2536,16 @@ impl World {
         self.characters
             .get_mut(&character_id)
             .is_some_and(|character| do_idle(character, TICKS_PER_SECOND as i32).is_ok())
+    }
+
+    fn clear_simple_baddy_scavenger_direction(&mut self, character_id: CharacterId) {
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+            .characters
+            .get_mut(&character_id)
+            .and_then(|character| character.driver_state.as_mut())
+        {
+            data.dir = 0;
+        }
     }
 
     pub fn apply_simple_baddy_death_driver(
@@ -4587,6 +4641,19 @@ impl World {
             return false;
         };
         do_walk(character, &mut self.map, direction as u8, area_id).is_ok()
+    }
+
+    fn setup_walk_direction(
+        &mut self,
+        character_id: CharacterId,
+        direction: Direction,
+        area_id: u16,
+    ) -> bool {
+        self.characters
+            .get_mut(&character_id)
+            .is_some_and(|character| {
+                do_walk(character, &mut self.map, direction as u8, area_id).is_ok()
+            })
     }
 
     fn setup_walk_toward_use_item(
@@ -7166,6 +7233,93 @@ mod tests {
         assert_eq!(npc.action, action::WALK);
         assert_eq!((npc.tox, npc.toy), (11, 10));
         assert_eq!(npc.dir, Direction::Right as u8);
+    }
+
+    #[test]
+    fn simple_baddy_scavenger_idles_on_legacy_random_gate() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            scavenger: 4,
+            dir: 0,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action_with_random(CharacterId(1), 1, |_| 0));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::IDLE);
+        assert_eq!(npc.duration, TICKS_PER_SECOND as i32);
+    }
+
+    #[test]
+    fn simple_baddy_scavenger_randomly_walks_inside_home_bounds() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            scavenger: 4,
+            dir: 0,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+        let mut rolls = [1, 0].into_iter();
+
+        assert!(
+            world.process_simple_baddy_noncombat_action_with_random(CharacterId(1), 1, |_| {
+                rolls.next().unwrap_or(0)
+            })
+        );
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!((npc.tox, npc.toy), (11, 10));
+        assert_eq!(npc.dir, Direction::Right as u8);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.dir, Direction::Right as i32);
+        assert_eq!((data.home_x, data.home_y), (10, 10));
+    }
+
+    #[test]
+    fn simple_baddy_scavenger_clears_direction_when_walk_fails() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            scavenger: 4,
+            dir: Direction::Right as i32,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+
+        assert!(world.process_simple_baddy_noncombat_action_with_random(CharacterId(1), 1, |_| 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::IDLE);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.dir, 0);
     }
 
     #[test]
