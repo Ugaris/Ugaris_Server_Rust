@@ -2293,9 +2293,28 @@
         "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 113 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
       ]
+    },
+    {
+      "iteration": 83,
+      "startedAt": "2026-06-27T20:25:00.912Z",
+      "endedAt": "2026-06-27T20:28:14.551Z",
+      "durationMs": 193410,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The first test command used two Cargo test filters, which Cargo rejects. Formatting completed before that failure, so I’m rerunning the focused tests with valid single-filter invocations.",
+        "error: unexpected argument 'onofflight' found",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 447 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 37343110,
+  "totalDurationMs": 37536520,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -2579,7 +2598,10 @@
       "test result: ok. 448 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 113 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 448 filtered out; finished in 0.00s": 1,
-      "test result: ok. 450 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 450 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "The first test command used two Cargo test filters, which Cargo rejects. Formatting completed before": 1,
+      "error: unexpected argument 'onofflight' found": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 447 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
