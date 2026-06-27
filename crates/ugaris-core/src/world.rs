@@ -2339,6 +2339,161 @@ impl World {
             .count()
     }
 
+    pub fn process_simple_baddy_noncombat_action(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_ref() else {
+            return false;
+        };
+        if character.driver != CDR_SIMPLEBADDY
+            || character.action != 0
+            || character.flags.contains(CharacterFlags::DEAD)
+        {
+            return false;
+        }
+
+        let current_tick = self.tick.0 as i32;
+        if current_tick - data.creation_time < TICKS_PER_SECOND as i32 {
+            return self
+                .characters
+                .get_mut(&character_id)
+                .is_some_and(|character| {
+                    do_idle(character, (TICKS_PER_SECOND / 4) as i32).is_ok()
+                });
+        }
+
+        if data.scavenger != 0 {
+            let Some((target_x, target_y)) = character
+                .rest_x
+                .ne(&0)
+                .then_some((character.rest_x, character.rest_y))
+            else {
+                return self.idle_simple_baddy(character_id);
+            };
+            let scavenger_distance = data.scavenger.max(0) as u16;
+            if character.x.abs_diff(target_x) >= scavenger_distance
+                || character.y.abs_diff(target_y) >= scavenger_distance
+            {
+                let min_dist = if data.notsecure != 0 {
+                    data.mindist.max(0) as usize
+                } else {
+                    0
+                };
+                if self.setup_walk_toward(
+                    character_id,
+                    usize::from(target_x),
+                    usize::from(target_y),
+                    min_dist,
+                    area_id,
+                    false,
+                ) || self.setup_walk_toward(
+                    character_id,
+                    usize::from(target_x),
+                    usize::from(target_y),
+                    min_dist,
+                    area_id,
+                    true,
+                ) {
+                    return true;
+                }
+            }
+            return self.idle_simple_baddy(character_id);
+        }
+
+        let target = if data.dayx != 0 {
+            if self.date.hour > 19 || self.date.hour < 6 {
+                Some((data.nightx, data.nighty))
+            } else {
+                Some((data.dayx, data.dayy))
+            }
+        } else if character.rest_x != 0 {
+            Some((i32::from(character.rest_x), i32::from(character.rest_y)))
+        } else {
+            None
+        };
+
+        let Some((target_x, target_y)) = target.filter(|(x, y)| *x > 0 && *y > 0) else {
+            return self.idle_simple_baddy(character_id);
+        };
+        let target_x = target_x as u16;
+        let target_y = target_y as u16;
+        if character.x == target_x && character.y == target_y {
+            if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+                .characters
+                .get_mut(&character_id)
+                .and_then(|character| character.driver_state.as_mut())
+            {
+                data.home_x = target_x;
+                data.home_y = target_y;
+            }
+            return self.idle_simple_baddy(character_id);
+        }
+
+        if data.teleport != 0 && self.teleport_character(character_id, target_x, target_y, false) {
+            let _ = self.set_simple_baddy_home(character_id, target_x, target_y);
+            return true;
+        }
+
+        let min_dist = if data.notsecure != 0 {
+            data.mindist.max(0) as usize
+        } else {
+            0
+        };
+        if self.setup_walk_toward(
+            character_id,
+            usize::from(target_x),
+            usize::from(target_y),
+            min_dist,
+            area_id,
+            false,
+        ) || self.setup_walk_toward(
+            character_id,
+            usize::from(target_x),
+            usize::from(target_y),
+            min_dist,
+            area_id,
+            true,
+        ) {
+            return true;
+        }
+
+        let _ = self.set_simple_baddy_home(character_id, character.x, character.y);
+        self.idle_simple_baddy(character_id)
+    }
+
+    pub fn process_simple_baddy_noncombat_actions(&mut self, area_id: u16) -> usize {
+        let character_ids: Vec<_> = self
+            .characters
+            .iter()
+            .filter_map(|(&character_id, character)| {
+                (character.driver == CDR_SIMPLEBADDY
+                    && matches!(
+                        character.driver_state,
+                        Some(CharacterDriverState::SimpleBaddy(_))
+                    ))
+                .then_some(character_id)
+            })
+            .collect();
+
+        character_ids
+            .into_iter()
+            .filter(|&character_id| {
+                self.process_simple_baddy_noncombat_action(character_id, area_id)
+            })
+            .count()
+    }
+
+    fn idle_simple_baddy(&mut self, character_id: CharacterId) -> bool {
+        self.characters
+            .get_mut(&character_id)
+            .is_some_and(|character| do_idle(character, TICKS_PER_SECOND as i32).is_ok())
+    }
+
     pub fn apply_simple_baddy_death_driver(
         &mut self,
         dead_id: CharacterId,
@@ -6943,6 +7098,74 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert!(data.enemies.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_noncombat_action_idles_shortly_after_creation() {
+        let mut world = World::default();
+        world.tick = Tick(3);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            creation_time: 0,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::IDLE);
+        assert_eq!(npc.duration, (TICKS_PER_SECOND / 4) as i32);
+    }
+
+    #[test]
+    fn simple_baddy_noncombat_action_teleports_to_night_post_and_sets_home() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        world.date.hour = 21;
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            dayx: 20,
+            dayy: 10,
+            nightx: 15,
+            nighty: 10,
+            teleport: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((npc.x, npc.y), (15, 10));
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!((data.home_x, data.home_y), (15, 10));
+    }
+
+    #[test]
+    fn simple_baddy_noncombat_action_walks_back_to_rest_home() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 15;
+        npc.rest_y = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!((npc.tox, npc.toy), (11, 10));
+        assert_eq!(npc.dir, Direction::Right as u8);
     }
 
     #[test]
