@@ -39,11 +39,11 @@ use crate::{
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell, pulse_damage,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
-        BLESS_DURATION, EF_BALL, EF_BLESS, EF_BURN, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,
-        EF_HEAL, EF_MAGICSHIELD, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
-        FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE,
-        IDR_INFRARED, IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, POISON_DURATION,
-        WARCRY_DURATION,
+        BLESS_DURATION, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_EARTHMUD, EF_EARTHRAIN,
+        EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_MAGICSHIELD,
+        EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY, FLASH_DURATION,
+        FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0,
+        IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -518,6 +518,148 @@ impl World {
         effect_id
     }
 
+    pub fn create_explosion_effect(
+        &mut self,
+        x: i32,
+        y: i32,
+        max_age: u32,
+        base_sprite: i32,
+    ) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(
+            EF_EXPLODE,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(u64::from(max_age)) as i32,
+        );
+        effect.strength = max_age as i32;
+        effect.light = 200;
+        effect.base_sprite = base_sprite;
+        self.effects.insert(effect_id, effect);
+        self.set_effect_on_map(effect_id, x, y);
+        effect_id
+    }
+
+    pub fn create_mist_effect(&mut self, x: i32, y: i32) -> u32 {
+        self.create_map_effect(
+            EF_MIST,
+            x,
+            y,
+            self.tick.0 as i32,
+            self.tick.0 as i32 + 24,
+            0,
+            0,
+        )
+    }
+
+    pub fn create_map_effect(
+        &mut self,
+        effect_type: i32,
+        x: i32,
+        y: i32,
+        start_tick: i32,
+        stop_tick: i32,
+        light: i32,
+        strength: i32,
+    ) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(effect_type, effect_id as i32, start_tick, stop_tick);
+        effect.light = light;
+        effect.strength = strength;
+        self.effects.insert(effect_id, effect);
+        self.set_effect_on_map(effect_id, x, y);
+        effect_id
+    }
+
+    pub fn create_bubble_effect(&mut self, x: i32, y: i32, y_offset: i32, duration: u32) -> u32 {
+        self.create_map_effect(
+            EF_BUBBLE,
+            x,
+            y,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(u64::from(duration)) as i32,
+            0,
+            y_offset,
+        )
+    }
+
+    pub fn create_earthrain_effect(&mut self, x: i32, y: i32, strength: i32) -> u32 {
+        self.create_area_map_effect(EF_EARTHRAIN, x, y, 10, strength)
+    }
+
+    pub fn create_earthmud_effect(&mut self, x: i32, y: i32, strength: i32) -> u32 {
+        self.create_area_map_effect(EF_EARTHMUD, x, y, 0, strength)
+    }
+
+    fn create_area_map_effect(
+        &mut self,
+        effect_type: i32,
+        x: i32,
+        y: i32,
+        light: i32,
+        strength: i32,
+    ) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(
+            effect_type,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(TICKS_PER_SECOND * 60) as i32,
+        );
+        effect.light = light;
+        effect.strength = strength;
+        self.effects.insert(effect_id, effect);
+
+        self.add_area_effect_map_tile(effect_id, x, y, effect_type);
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let tx = x + dx;
+                let ty = y + dy;
+                if !self.map_tile_blocks_sight(tx, ty) {
+                    self.add_area_effect_map_tile(effect_id, tx, ty, effect_type);
+                }
+            }
+        }
+        effect_id
+    }
+
+    fn add_area_effect_map_tile(
+        &mut self,
+        effect_id: u32,
+        x: i32,
+        y: i32,
+        effect_type: i32,
+    ) -> bool {
+        let (Ok(x_usize), Ok(y_usize)) = (usize::try_from(x), usize::try_from(y)) else {
+            return false;
+        };
+        if self.map.tile(x_usize, y_usize).is_some_and(|tile| {
+            tile.effects.iter().any(|&slot| {
+                slot != 0
+                    && self
+                        .effects
+                        .get(&u32::from(slot))
+                        .is_some_and(|effect| effect.effect_type == effect_type)
+            })
+        }) {
+            return false;
+        }
+        self.set_effect_on_map(effect_id, x, y)
+    }
+
+    fn map_tile_blocks_sight(&self, x: i32, y: i32) -> bool {
+        let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
+            return true;
+        };
+        self.map.tile(x, y).is_none_or(|tile| {
+            tile.flags
+                .intersects(MapFlags::SIGHTBLOCK | MapFlags::TSIGHTBLOCK)
+        })
+    }
+
     fn create_show_effect(
         &mut self,
         effect_type: i32,
@@ -575,6 +717,7 @@ impl World {
             .get(&effect_id)
             .is_some_and(|effect| self.tick.0 >= effect.stop_tick as u64)
         {
+            self.remove_effect_from_map(effect_id);
             self.effects.remove(&effect_id);
         }
     }
@@ -5278,6 +5421,97 @@ mod tests {
 
         world.remove_effect_from_map(42);
         assert_eq!(world.skip_x_sector(10, 10, 1), 0);
+    }
+
+    #[test]
+    fn world_create_explosion_effect_matches_legacy_shape_and_expires() {
+        let mut world = World::default();
+
+        let effect_id = world.create_explosion_effect(10, 10, 8, 50450);
+
+        let effect = world.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.effect_type, EF_EXPLODE);
+        assert_eq!(effect.strength, 8);
+        assert_eq!(effect.light, 200);
+        assert_eq!(effect.base_sprite, 50450);
+        assert_eq!(effect.stop_tick, 8);
+        assert_eq!(world.map.tile(10, 10).unwrap().effects[0], effect_id as u16);
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 200);
+
+        for _ in 0..8 {
+            world.advance();
+        }
+        world.tick_effects();
+
+        assert!(!world.effects.contains_key(&effect_id));
+        assert_eq!(world.map.tile(10, 10).unwrap().effects[0], 0);
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 0);
+    }
+
+    #[test]
+    fn world_create_mist_effect_uses_legacy_duration_without_light() {
+        let mut world = World::default();
+        world.tick.0 = 5;
+
+        let effect_id = world.create_mist_effect(10, 10);
+
+        let effect = world.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.effect_type, EF_MIST);
+        assert_eq!(effect.start_tick, 5);
+        assert_eq!(effect.stop_tick, 29);
+        assert_eq!(effect.light, 0);
+        assert_eq!(world.map.tile(10, 10).unwrap().effects[0], effect_id as u16);
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 0);
+    }
+
+    #[test]
+    fn world_create_earthrain_places_3x3_except_sight_blocked_tiles() {
+        let mut world = World::default();
+        world.map.set_flags(11, 10, MapFlags::SIGHTBLOCK);
+        world.map.set_flags(9, 9, MapFlags::TSIGHTBLOCK);
+
+        let effect_id = world.create_earthrain_effect(10, 10, 7);
+
+        let effect = world.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.effect_type, EF_EARTHRAIN);
+        assert_eq!(effect.light, 10);
+        assert_eq!(effect.strength, 7);
+        assert_eq!(effect.stop_tick, TICKS_PER_SECOND as i32 * 60);
+        assert_eq!(effect.fields.len(), 7);
+        assert_eq!(world.map.tile(10, 10).unwrap().effects[0], effect_id as u16);
+        assert_eq!(world.map.tile(11, 10).unwrap().effects[0], 0);
+        assert_eq!(world.map.tile(9, 9).unwrap().effects[0], 0);
+        assert!(world.map.tile(10, 10).unwrap().light >= 10);
+    }
+
+    #[test]
+    fn world_create_earthmud_avoids_duplicate_effect_type_on_tile() {
+        let mut world = World::default();
+
+        let first_id = world.create_earthmud_effect(10, 10, 4);
+        let second_id = world.create_earthmud_effect(11, 10, 9);
+
+        assert_eq!(world.map.tile(10, 10).unwrap().effects[0], first_id as u16);
+        assert!(world.map.tile(10, 10).unwrap().effects[1..]
+            .iter()
+            .all(|&slot| slot != second_id as u16));
+        assert_eq!(world.effects[&first_id].fields.len(), 9);
+        assert!(world.effects[&second_id].fields.len() < 9);
+    }
+
+    #[test]
+    fn world_create_bubble_effect_stores_legacy_y_offset_as_strength() {
+        let mut world = World::default();
+        world.tick.0 = 100;
+
+        let effect_id = world.create_bubble_effect(10, 10, -14, 12);
+
+        let effect = world.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.effect_type, EF_BUBBLE);
+        assert_eq!(effect.strength, -14);
+        assert_eq!(effect.start_tick, 100);
+        assert_eq!(effect.stop_tick, 112);
+        assert_eq!(world.map.tile(10, 10).unwrap().effects[0], effect_id as u16);
     }
 
     #[test]
