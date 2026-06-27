@@ -19,7 +19,8 @@ use ugaris_core::{
     },
     ids::{CharacterId, ItemId},
     item_driver::{
-        IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_TORCH,
+        IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING,
+        IDR_SPECIAL_POTION, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
@@ -1275,6 +1276,13 @@ fn is_beyond_potion_item(world: &World, item_id: ItemId) -> bool {
         .items
         .get(&item_id)
         .is_some_and(|item| item.driver == IDR_BEYONDPOTION)
+}
+
+fn is_no_potion_area_blocked_item(world: &World, item_id: ItemId) -> bool {
+    world
+        .items
+        .get(&item_id)
+        .is_some_and(|item| matches!(item.driver, IDR_BEYONDPOTION | IDR_SPECIAL_POTION))
 }
 
 fn is_demonshrine_item(world: &World, item_id: ItemId) -> bool {
@@ -4017,6 +4025,19 @@ mod tests {
     }
 
     #[test]
+    fn no_potion_area_feedback_applies_to_special_and_beyond_potions() {
+        let mut world = World::default();
+        world.add_item(test_item_with_driver(ItemId(1), IDR_SPECIAL_POTION));
+        world.add_item(test_item_with_driver(ItemId(2), IDR_BEYONDPOTION));
+        world.add_item(test_item_with_driver(ItemId(3), IDR_TORCH));
+
+        assert!(is_no_potion_area_blocked_item(&world, ItemId(1)));
+        assert!(is_no_potion_area_blocked_item(&world, ItemId(2)));
+        assert!(!is_no_potion_area_blocked_item(&world, ItemId(3)));
+        assert!(!is_no_potion_area_blocked_item(&world, ItemId(99)));
+    }
+
+    #[test]
     fn area_message_sessions_match_legacy_square_distance() {
         let mut world = World::default();
         let mut origin = login_character(CharacterId(1), &login_block("Ralph"), 1, 10, 10);
@@ -4271,6 +4292,15 @@ mod tests {
             driver_data: Vec::new(),
             serial: 1,
         }
+    }
+
+    fn test_item_with_driver(
+        id: ugaris_core::ids::ItemId,
+        driver: u16,
+    ) -> ugaris_core::entity::Item {
+        let mut item = test_item(id, 0, ItemFlags::USED | ItemFlags::USE);
+        item.driver = driver;
+        item
     }
 
     #[test]
@@ -8130,7 +8160,7 @@ async fn main() -> anyhow::Result<()> {
                                             deferred_templates += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByArea { item_id, character_id }
-                                            if is_beyond_potion_item(&world, item_id) =>
+                                            if is_no_potion_area_blocked_item(&world, item_id) =>
                                         {
                                             feedback.push((character_id, "You sense that the potion would not work.".to_string()));
                                             blocked += 1;
