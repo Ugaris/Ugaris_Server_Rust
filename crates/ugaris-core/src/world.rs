@@ -5172,7 +5172,11 @@ impl World {
             return false;
         }
         let duration = spell_duration_ticks(&caster, BLESS_DURATION);
-        self.install_bless_spell(target_id, strength, duration)
+        let installed = self.install_bless_spell(target_id, strength, duration);
+        if installed {
+            self.queue_sound_area(usize::from(caster.x), usize::from(caster.y), 29);
+        }
+        installed
     }
 
     fn complete_flash(&mut self, caster_id: CharacterId) -> bool {
@@ -5579,12 +5583,10 @@ impl World {
             }
         }
 
-        let mut affected = false;
         for (target_id, modifier, damage) in targets {
             if !self.install_speed_spell(target_id, IDR_WARCRY, "Warcry", modifier, duration) {
                 continue;
             }
-            affected = true;
             if damage > 0 {
                 self.apply_legacy_hurt(target_id, Some(caster_id), damage, 1, 0, 0);
             }
@@ -5604,7 +5606,8 @@ impl World {
             }
         }
 
-        affected
+        self.queue_sound_area(caster_x, caster_y, 29);
+        true
     }
 
     fn install_bless_spell(
@@ -11143,6 +11146,10 @@ mod tests {
         assert_eq!(effect.stop_tick, 2_980);
         assert_eq!(effect.strength, 10);
         assert_eq!(world.timers.used_timers(), 1);
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            29
+        );
     }
 
     #[test]
@@ -11845,6 +11852,10 @@ mod tests {
         assert_eq!(effect.start_tick, 400);
         assert_eq!(effect.stop_tick, 496);
         assert_eq!(world.timers.used_timers(), 1);
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            29
+        );
     }
 
     #[test]
@@ -11872,10 +11883,14 @@ mod tests {
 
         assert!(world.apply_player_action_setup(&mut player, 1));
         world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
-        assert!(!world.tick_basic_actions()[0].ok);
+        assert!(world.tick_basic_actions()[0].ok);
 
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert!(target.inventory[12..30].iter().all(Option::is_none));
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            29
+        );
     }
 
     #[test]
