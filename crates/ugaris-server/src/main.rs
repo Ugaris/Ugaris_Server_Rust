@@ -20,6 +20,7 @@ use ugaris_core::{
     item_driver::{IDR_ACCOUNT_DEPOT, IDR_KEY_RING, IDR_TORCH},
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
+    legacy::INVENTORY_START_INVENTORY,
     map::{MapFlags, MapTile},
     player::{
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
@@ -231,6 +232,8 @@ enum AccountDepotCommandResult {
     Look(String),
     Blocked(String),
 }
+
+const LEGACY_CONTAINER_SIZE: usize = ugaris_core::entity::INVENTORY_SIZE - 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VisibleMapCell {
@@ -1886,6 +1889,66 @@ fn account_depot_payload(depot: &AccountDepotState) -> bytes::BytesMut {
     builder.into_payload()
 }
 
+fn generic_container_item_ids(world: &World, container_id: ItemId) -> Vec<ItemId> {
+    let mut items = world
+        .items
+        .values()
+        .filter(|item| {
+            item.contained_in == Some(container_id) && item.flags.contains(ItemFlags::USED)
+        })
+        .map(|item| item.id)
+        .collect::<Vec<_>>();
+    items.sort_unstable_by_key(|id| id.0);
+    items.truncate(LEGACY_CONTAINER_SIZE);
+    items
+}
+
+fn generic_container_payload(world: &World, container_id: ItemId) -> bytes::BytesMut {
+    let mut builder = PacketBuilder::new();
+    let name = world
+        .items
+        .get(&container_id)
+        .map(|item| {
+            if item.description.is_empty() {
+                item.name.as_str()
+            } else {
+                item.description.as_str()
+            }
+        })
+        .unwrap_or("Container");
+    builder
+        .container_type(1)
+        .container_name(name)
+        .container_count(LEGACY_CONTAINER_SIZE as u8);
+
+    let item_ids = generic_container_item_ids(world, container_id);
+    for slot in 0..LEGACY_CONTAINER_SIZE {
+        let sprite = item_ids
+            .get(slot)
+            .and_then(|item_id| world.items.get(item_id))
+            .map(|item| item.sprite.max(0) as u32)
+            .unwrap_or(0);
+        builder.container_item(slot as u8, sprite);
+    }
+    builder.into_payload()
+}
+
+fn current_container_payload(
+    world: &World,
+    depot: Option<&AccountDepotState>,
+    character_id: CharacterId,
+) -> Option<bytes::BytesMut> {
+    let container_id = world.characters.get(&character_id)?.current_container?;
+    let container = world.items.get(&container_id)?;
+    if container.driver == IDR_ACCOUNT_DEPOT {
+        depot.map(account_depot_payload)
+    } else if container.content_id != 0 {
+        Some(generic_container_payload(world, container_id))
+    } else {
+        None
+    }
+}
+
 fn apply_account_depot_command(
     world: &mut World,
     depot: &mut AccountDepotState,
@@ -1926,6 +1989,111 @@ fn apply_account_depot_command(
             .unwrap_or(AccountDepotCommandResult::Ignored),
         _ => AccountDepotCommandResult::Ignored,
     }
+}
+
+fn apply_item_container_command(
+    world: &mut World,
+    character_id: CharacterId,
+    action: &ClientAction,
+) -> AccountDepotCommandResult {
+    let Some(container_id) = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.current_container)
+    else {
+        return AccountDepotCommandResult::Ignored;
+    };
+    if world
+        .items
+        .get(&container_id)
+        .is_none_or(|item| item.content_id == 0 || item.driver == IDR_ACCOUNT_DEPOT)
+    {
+        return AccountDepotCommandResult::Ignored;
+    }
+
+    match *action {
+        ClientAction::Container { slot, fast } => {
+            apply_item_container_swap(world, character_id, container_id, usize::from(slot), fast)
+        }
+        ClientAction::LookContainer { slot } => generic_container_item_ids(world, container_id)
+            .get(usize::from(slot))
+            .and_then(|item_id| world.items.get(item_id))
+            .map(account_depot_look_text)
+            .map(AccountDepotCommandResult::Look)
+            .unwrap_or(AccountDepotCommandResult::Ignored),
+        _ => AccountDepotCommandResult::Ignored,
+    }
+}
+
+fn apply_item_container_swap(
+    world: &mut World,
+    character_id: CharacterId,
+    container_id: ItemId,
+    slot: usize,
+    fast: bool,
+) -> AccountDepotCommandResult {
+    if slot >= LEGACY_CONTAINER_SIZE {
+        return AccountDepotCommandResult::Ignored;
+    }
+
+    let cursor_id = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.cursor_item);
+    if cursor_id.is_some_and(|item_id| {
+        world
+            .items
+            .get(&item_id)
+            .is_some_and(|item| item.flags.contains(ItemFlags::QUEST))
+    }) {
+        return AccountDepotCommandResult::Blocked(
+            "You cannot store quest items in a container.".to_string(),
+        );
+    }
+
+    let withdrawn_id = generic_container_item_ids(world, container_id)
+        .get(slot)
+        .copied();
+    if cursor_id.is_none() && withdrawn_id.is_none() {
+        return AccountDepotCommandResult::Ignored;
+    }
+
+    if let Some(item_id) = cursor_id {
+        if let Some(item) = world.items.get_mut(&item_id) {
+            item.carried_by = None;
+            item.contained_in = Some(container_id);
+            item.x = 0;
+            item.y = 0;
+        }
+    }
+    if let Some(item_id) = withdrawn_id {
+        if let Some(item) = world.items.get_mut(&item_id) {
+            item.carried_by = Some(character_id);
+            item.contained_in = None;
+            item.x = 0;
+            item.y = 0;
+        }
+    }
+
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.cursor_item = withdrawn_id;
+        if fast {
+            if let Some(item_id) = withdrawn_id {
+                if let Some(slot) = character
+                    .inventory
+                    .iter_mut()
+                    .skip(INVENTORY_START_INVENTORY)
+                    .find(|slot| slot.is_none())
+                {
+                    *slot = Some(item_id);
+                    character.cursor_item = None;
+                }
+            }
+        }
+        character.flags.insert(CharacterFlags::ITEMS);
+    }
+
+    AccountDepotCommandResult::Changed
 }
 
 fn account_depot_swap_slot(
@@ -3221,6 +3389,154 @@ mod tests {
         assert!(payload
             .windows(6)
             .any(|window| { window == [SV_CONTAINER, 2, 0x44, 0x33, 0x22, 0x11] }));
+    }
+
+    #[test]
+    fn generic_container_payload_uses_open_item_description_and_clears_empty_slots() {
+        let mut world = World::default();
+        let mut container = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        container.description = "Opened Chest".to_string();
+        container.content_id = 22;
+        world.add_item(container);
+        let mut stored = test_item(ItemId(20), 0x11223344, ItemFlags::USED | ItemFlags::TAKE);
+        stored.contained_in = Some(ItemId(10));
+        world.add_item(stored);
+
+        let payload = generic_container_payload(&world, ItemId(10));
+
+        assert_eq!(&payload[..2], &[SV_CONTYPE, 1]);
+        assert!(payload.windows(14).any(|window| {
+            window
+                == [
+                    SV_CONNAME, 12, b'O', b'p', b'e', b'n', b'e', b'd', b' ', b'C', b'h', b'e',
+                    b's', b't',
+                ]
+        }));
+        assert!(payload.windows(2).any(|window| window == [SV_CONCNT, 108]));
+        assert!(payload
+            .windows(6)
+            .any(|window| window == [SV_CONTAINER, 0, 0x44, 0x33, 0x22, 0x11]));
+        assert!(payload
+            .windows(6)
+            .any(|window| window == [SV_CONTAINER, 1, 0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn generic_container_swap_exchanges_cursor_and_container_item() {
+        let character_id = CharacterId(7);
+        let cursor_id = ItemId(30);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.current_container = Some(ItemId(10));
+        character.cursor_item = Some(cursor_id);
+
+        let mut world = World::default();
+        world.add_character(character);
+        let mut container = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        container.content_id = 22;
+        world.add_item(container);
+        let mut stored = test_item(ItemId(20), 2222, ItemFlags::USED | ItemFlags::TAKE);
+        stored.contained_in = Some(ItemId(10));
+        world.add_item(stored);
+        let mut cursor = test_item(cursor_id, 3333, ItemFlags::USED | ItemFlags::TAKE);
+        cursor.carried_by = Some(character_id);
+        world.add_item(cursor);
+
+        assert_eq!(
+            apply_item_container_command(
+                &mut world,
+                character_id,
+                &ClientAction::Container {
+                    slot: 0,
+                    fast: false,
+                },
+            ),
+            AccountDepotCommandResult::Changed
+        );
+
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, Some(ItemId(20)));
+        assert_eq!(
+            world.items.get(&ItemId(20)).unwrap().carried_by,
+            Some(character_id)
+        );
+        assert_eq!(
+            world.items.get(&cursor_id).unwrap().contained_in,
+            Some(ItemId(10))
+        );
+    }
+
+    #[test]
+    fn generic_container_fast_swap_stores_withdrawn_item_in_inventory() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.current_container = Some(ItemId(10));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut container = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        container.content_id = 22;
+        world.add_item(container);
+        let mut stored = test_item(ItemId(20), 2222, ItemFlags::USED | ItemFlags::TAKE);
+        stored.contained_in = Some(ItemId(10));
+        world.add_item(stored);
+
+        assert_eq!(
+            apply_item_container_command(
+                &mut world,
+                character_id,
+                &ClientAction::Container {
+                    slot: 0,
+                    fast: true,
+                },
+            ),
+            AccountDepotCommandResult::Changed
+        );
+
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert_eq!(
+            character.inventory[INVENTORY_START_INVENTORY],
+            Some(ItemId(20))
+        );
+        assert_eq!(
+            world.items.get(&ItemId(20)).unwrap().carried_by,
+            Some(character_id)
+        );
+    }
+
+    #[test]
+    fn generic_container_blocks_quest_cursor_storage() {
+        let character_id = CharacterId(7);
+        let cursor_id = ItemId(30);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.current_container = Some(ItemId(10));
+        character.cursor_item = Some(cursor_id);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut container = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        container.content_id = 22;
+        world.add_item(container);
+        let mut cursor = test_item(cursor_id, 3333, ItemFlags::USED | ItemFlags::QUEST);
+        cursor.carried_by = Some(character_id);
+        world.add_item(cursor);
+
+        assert_eq!(
+            apply_item_container_command(
+                &mut world,
+                character_id,
+                &ClientAction::Container {
+                    slot: 0,
+                    fast: false,
+                },
+            ),
+            AccountDepotCommandResult::Blocked(
+                "You cannot store quest items in a container.".to_string()
+            )
+        );
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().cursor_item,
+            Some(cursor_id)
+        );
+        assert_eq!(world.items.get(&cursor_id).unwrap().contained_in, None);
     }
 
     #[test]
@@ -5441,9 +5757,20 @@ async fn main() -> anyhow::Result<()> {
                             }
                         }
                         ClientAction::Container { .. } | ClientAction::LookContainer { .. } => {
-                            let result = {
+                            let current_container = world
+                                .characters
+                                .get(&character_id)
+                                .and_then(|character| character.current_container);
+                            let result = if current_container.is_some_and(|container_id| {
+                                world
+                                    .items
+                                    .get(&container_id)
+                                    .is_some_and(|item| item.driver == IDR_ACCOUNT_DEPOT)
+                            }) {
                                 let depot = runtime.ensure_account_depot(character_id);
                                 apply_account_depot_command(&mut world, depot, character_id, &action)
+                            } else {
+                                apply_item_container_command(&mut world, character_id, &action)
                             };
                             match result {
                                 AccountDepotCommandResult::Changed => {
@@ -5488,10 +5815,12 @@ async fn main() -> anyhow::Result<()> {
                     command_container_refresh.sort_unstable_by_key(|id| id.0);
                     command_container_refresh.dedup();
                     for character_id in command_container_refresh {
-                        let Some(depot) = runtime.account_depots.get(&character_id) else {
-                            continue;
-                        };
-                        let payload = account_depot_payload(depot);
+                        let payload = current_container_payload(
+                            &world,
+                            runtime.account_depots.get(&character_id),
+                            character_id,
+                        );
+                        let Some(payload) = payload else { continue };
                         for (session_id, _) in runtime.sessions_for_character(character_id) {
                             if runtime.send_to_session(session_id, payload.clone()) {
                                 container_sessions += 1;
