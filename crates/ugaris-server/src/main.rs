@@ -1699,6 +1699,10 @@ fn grant_template_item_smart(
     Some(item_name)
 }
 
+fn apply_xmasmaker(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) -> bool {
+    grant_template_item_smart(world, loader, character_id, "xmaspop").is_some()
+}
+
 fn apply_assemble_item(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -4211,6 +4215,27 @@ mod tests {
             world.items.get(&item_id).unwrap().carried_by,
             Some(character_id)
         );
+    }
+
+    #[test]
+    fn apply_xmasmaker_silently_grants_xmaspop_like_c() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::STAFF);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"xmaspop: name="Christmas Pop" flag=IF_TAKE driver=64 ;"#)
+            .unwrap();
+
+        assert!(apply_xmasmaker(&mut world, &mut loader, character_id));
+
+        let character = world.characters.get(&character_id).unwrap();
+        let item_id = character.inventory[INVENTORY_START_INVENTORY].unwrap();
+        let item = world.items.get(&item_id).unwrap();
+        assert_eq!(item.name, "Christmas Pop");
+        assert_eq!(item.carried_by, Some(character_id));
     }
 
     #[test]
@@ -7577,13 +7602,7 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::XmasMaker { character_id, .. } => {
-                                            if let Some(item_name) = grant_template_item_smart(
-                                                &mut world,
-                                                &mut zone_loader,
-                                                character_id,
-                                                "xmaspop",
-                                            ) {
-                                                feedback.push((character_id, format!("You received {item_name}.")));
+                                            if apply_xmasmaker(&mut world, &mut zone_loader, character_id) {
                                                 executed += 1;
                                             } else {
                                                 failed += 1;
