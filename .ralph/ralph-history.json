@@ -220,17 +220,45 @@
         "test result: ok. 97 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 8,
+      "startedAt": "2026-06-27T10:51:50.516Z",
+      "endedAt": "2026-06-27T11:00:17.666Z",
+      "durationMs": 507006,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test world::tests::simple_baddy_message_actions_use_inventory_hp_potion ... FAILED",
+        "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 329 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 329 filtered out; finished in 0.00s",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test result: ok. 331 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 3170508,
+  "totalDurationMs": 3677514,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 7,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 6,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 6,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 8,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 7,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 7,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
       "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
       "test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
@@ -239,11 +267,11 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
       "test result: ok. 323 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 13 previous errors": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 3,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 4,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 1,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -258,7 +286,11 @@
       "error: unexpected argument 'character_driver::tests::simple_baddy_create_initializes_state_and_item_": 1,
       "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test result: ok. 329 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 97 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
+      "test result: ok. 97 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "test world::tests::simple_baddy_message_actions_use_inventory_hp_potion ... FAILED": 1,
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 329 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 329 filtered out; finished in 0.00s": 1,
+      "test result: ok. 331 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

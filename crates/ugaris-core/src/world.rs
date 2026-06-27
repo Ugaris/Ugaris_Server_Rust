@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     area_sound::AreaSoundSpecial,
+    character_driver::{process_simple_baddy_messages, SimpleBaddyMessageOutcome},
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
@@ -21,7 +22,7 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_FLAMETHROW, IDR_NIGHTLIGHT,
-        IDR_STEPTRAP, IDR_TORCH,
+        IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -1498,6 +1499,34 @@ impl World {
             self.refresh_item_light_after_mutation(&before, item_id);
         }
         self.apply_item_driver_outcome(outcome, area_id)
+    }
+
+    pub fn process_simple_baddy_message_actions(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+    ) -> Vec<ItemDriverOutcome> {
+        let carried_items: Vec<Item> = self.items.values().cloned().collect();
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return Vec::new();
+        };
+        let message_outcomes = process_simple_baddy_messages(character, &carried_items);
+
+        message_outcomes
+            .into_iter()
+            .map(|outcome| match outcome {
+                SimpleBaddyMessageOutcome::UseInventoryPotion { item_id, .. } => self
+                    .execute_item_driver_request(
+                        ItemDriverRequest::Driver {
+                            driver: IDR_POTION,
+                            item_id,
+                            character_id,
+                            spec: 0,
+                        },
+                        area_id,
+                    ),
+            })
+            .collect()
     }
 
     fn execute_item_driver_timer_request(
@@ -5164,12 +5193,13 @@ impl Default for Tick {
 #[cfg(test)]
 mod tests {
     use crate::{
+        character_driver::{CharacterDriverState, SimpleBaddyDriverData, NT_GOTHIT},
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_ENCHANTITEM,
-            IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_PALACEKEY, IDR_SPECIAL_POTION, IDR_SPIKETRAP,
-            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION,
+            IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
@@ -5195,6 +5225,72 @@ mod tests {
         assert_eq!(character.action, 0);
         assert_eq!(character.duration, 0);
         assert_eq!(character.step, 0);
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_use_inventory_hp_potion() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.hp = 40 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 100;
+        npc.values[1][CharacterValue::Hp as usize] = 100;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            drink_inventory_potions: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_GOTHIT, 0, 0, 0);
+        npc.inventory[30] = Some(ItemId(7));
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE);
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver = IDR_POTION;
+        potion.driver_data = vec![0, 20, 0, 0];
+        world.add_character(npc);
+        world.items.insert(ItemId(7), potion);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::PotionDrunk {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                hp_added: 20 * POWERSCALE,
+                mana_added: 0,
+                endurance_added: 0,
+            }]
+        );
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.hp, 60 * POWERSCALE);
+        assert_eq!(npc.inventory[30], None);
+        assert!(npc.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_skip_when_drink_inventory_potions_disabled() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.hp = 40 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 100;
+        npc.values[1][CharacterValue::Hp as usize] = 100;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        npc.push_driver_message(NT_GOTHIT, 0, 0, 0);
+        npc.inventory[30] = Some(ItemId(7));
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE);
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver = IDR_POTION;
+        potion.driver_data = vec![0, 20, 0, 0];
+        world.add_character(npc);
+        world.items.insert(ItemId(7), potion);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert!(outcomes.is_empty());
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.hp, 40 * POWERSCALE);
+        assert_eq!(npc.inventory[30], Some(ItemId(7)));
+        assert!(npc.driver_messages.is_empty());
     }
 
     #[test]

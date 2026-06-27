@@ -12,6 +12,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
+    character_driver::{CharacterDriverState, CDR_SIMPLEBADDY},
     effect::Effect,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
@@ -8393,6 +8394,29 @@ async fn main() -> anyhow::Result<()> {
                     if refreshed_sessions != 0 {
                         info!(refreshed_sessions, tick = world.tick.0, "queued map refreshes for completed actions");
                     }
+                }
+
+                let simple_baddy_message_characters: Vec<_> = world
+                    .characters
+                    .iter()
+                    .filter_map(|(&character_id, character)| {
+                        (!character.driver_messages.is_empty()
+                            && (character.driver == CDR_SIMPLEBADDY
+                                || matches!(
+                                    character.driver_state.as_ref(),
+                                    Some(CharacterDriverState::SimpleBaddy(_))
+                                )))
+                        .then_some(character_id)
+                    })
+                    .collect();
+                if !simple_baddy_message_characters.is_empty() {
+                    let mut simple_baddy_outcomes = 0;
+                    for character_id in simple_baddy_message_characters {
+                        simple_baddy_outcomes += world
+                            .process_simple_baddy_message_actions(character_id, config.area_id)
+                            .len();
+                    }
+                    info!(simple_baddy_outcomes, tick = world.tick.0, "processed simple-baddy driver messages");
                 }
 
                 let (periodic_diff_sessions, periodic_empty_frames) =
