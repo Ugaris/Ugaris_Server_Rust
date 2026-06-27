@@ -142,6 +142,9 @@ pub enum SimpleBaddyMessageOutcome {
         item_id: ItemId,
         reason: PotionUseReason,
     },
+    BlessFriend {
+        target_id: crate::ids::CharacterId,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,10 +236,19 @@ pub fn process_simple_baddy_messages(
         character.driver_state.as_ref(),
         Some(CharacterDriverState::SimpleBaddy(data)) if data.drink_inventory_potions != 0
     );
+    let helper = match character.driver_state.as_ref() {
+        Some(CharacterDriverState::SimpleBaddy(data)) => data.helper,
+        _ => 0,
+    };
     let mut outcomes = Vec::new();
+    let mut bless_friend = None;
 
     let messages = std::mem::take(&mut character.driver_messages);
     for message in messages {
+        if message.message_type == NT_CHAR && helper != 0 && message.dat1 > 0 {
+            bless_friend = Some(crate::ids::CharacterId(message.dat1 as u32));
+        }
+
         if message.message_type == NT_GOTHIT && drink_inventory_potions {
             if let Some(item_id) = find_simple_baddy_inventory_potion(
                 character,
@@ -264,6 +276,10 @@ pub fn process_simple_baddy_messages(
                 });
             }
         }
+    }
+
+    if let Some(target_id) = bless_friend {
+        outcomes.push(SimpleBaddyMessageOutcome::BlessFriend { target_id });
     }
 
     outcomes
@@ -717,6 +733,39 @@ mod tests {
         assert!(character.driver_messages.is_empty());
     }
 
+    #[test]
+    fn simple_baddy_char_message_selects_last_helper_bless_target() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helper: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        character.push_driver_message(NT_CHAR, 2, 0, 0);
+        character.push_driver_message(NT_CHAR, 3, 0, 0);
+
+        let outcomes = process_simple_baddy_messages(&mut character, &[]);
+
+        assert_eq!(
+            outcomes,
+            vec![SimpleBaddyMessageOutcome::BlessFriend {
+                target_id: crate::ids::CharacterId(3),
+            }]
+        );
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_char_message_ignores_bless_when_helper_disabled() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        character.push_driver_message(NT_CHAR, 2, 0, 0);
+
+        assert!(process_simple_baddy_messages(&mut character, &[]).is_empty());
+        assert!(character.driver_messages.is_empty());
+    }
+
     fn test_character() -> Character {
         Character {
             id: crate::ids::CharacterId(1),
@@ -725,6 +774,7 @@ mod tests {
             flags: CharacterFlags::USED,
             sprite: 0,
             driver: 0,
+            group: 0,
             speed_mode: SpeedMode::Normal,
             x: 0,
             y: 0,

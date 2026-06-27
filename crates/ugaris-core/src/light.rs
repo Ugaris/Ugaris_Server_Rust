@@ -480,6 +480,7 @@ mod tests {
             flags: CharacterFlags::USED,
             sprite: 0,
             driver: 0,
+            group: 0,
             speed_mode: Default::default(),
             x: 0,
             y: 0,

@@ -536,6 +536,7 @@ fn login_character(
         flags: CharacterFlags::USED | CharacterFlags::PLAYER | CharacterFlags::ALIVE,
         sprite: 1,
         driver: 0,
+        group: 0,
         speed_mode: SpeedMode::Normal,
         x: 0,
         y: 0,

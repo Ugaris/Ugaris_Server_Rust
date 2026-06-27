@@ -379,6 +379,7 @@ impl ZoneLoader {
             flags: template.flags | CharacterFlags::USED,
             sprite: template.sprite,
             driver: template.driver,
+            group: template.group as u16,
             speed_mode: Default::default(),
             x: 0,
             y: 0,

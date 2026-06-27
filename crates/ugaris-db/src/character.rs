@@ -648,6 +648,7 @@ mod tests {
             flags: CharacterFlags::PLAYER,
             sprite: 0,
             driver: 0,
+            group: 0,
             speed_mode: SpeedMode::Normal,
             x: 0,
             y: 0,

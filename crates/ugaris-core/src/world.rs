@@ -40,11 +40,12 @@ use crate::{
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell, pulse_damage,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
-        BLESS_DURATION, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_EARTHMUD, EF_EARTHRAIN,
-        EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_MAGICSHIELD,
-        EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY, FLASH_DURATION,
-        FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0,
-        IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
+        BLESS_COST, BLESS_DURATION, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_EARTHMUD,
+        EF_EARTHRAIN, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL,
+        EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
+        FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE,
+        IDR_INFRARED, IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, POISON_DURATION,
+        WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -1525,8 +1526,33 @@ impl World {
                         },
                         area_id,
                     ),
+                SimpleBaddyMessageOutcome::BlessFriend { target_id } => {
+                    if self.simple_baddy_can_bless_friend(character_id, target_id) {
+                        let _ = self.setup_bless_spell(character_id, target_id);
+                    }
+                    ItemDriverOutcome::Noop
+                }
             })
             .collect()
+    }
+
+    fn simple_baddy_can_bless_friend(
+        &self,
+        caster_id: CharacterId,
+        target_id: CharacterId,
+    ) -> bool {
+        let Some(caster) = self.characters.get(&caster_id) else {
+            return false;
+        };
+        let Some(target) = self.characters.get(&target_id) else {
+            return false;
+        };
+        caster_id != target_id
+            && caster.group == target.group
+            && character_value(caster, CharacterValue::Bless) > 0
+            && caster.mana >= BLESS_COST
+            && !target.flags.contains(CharacterFlags::DEAD)
+            && may_add_spell(target, &self.items, IDR_BLESS, self.tick.0 as u32).is_some()
     }
 
     fn execute_item_driver_timer_request(
@@ -5149,6 +5175,7 @@ fn timer_callback_character() -> Character {
         flags: CharacterFlags::empty(),
         sprite: 0,
         driver: 0,
+        group: 0,
         speed_mode: SpeedMode::Normal,
         x: 0,
         y: 0,
@@ -5193,7 +5220,7 @@ impl Default for Tick {
 #[cfg(test)]
 mod tests {
     use crate::{
-        character_driver::{CharacterDriverState, SimpleBaddyDriverData, NT_GOTHIT},
+        character_driver::{CharacterDriverState, SimpleBaddyDriverData, NT_CHAR, NT_GOTHIT},
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
@@ -5290,6 +5317,61 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.hp, 40 * POWERSCALE);
         assert_eq!(npc.inventory[30], Some(ItemId(7)));
+        assert!(npc.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_set_up_helper_bless() {
+        let mut world = World::default();
+        world.tick = Tick(1_000);
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Bless as usize] = 40;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helper: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_CHAR, 2, 0, 0);
+        let mut friend = character(2);
+        friend.group = 7;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(friend, 12, 10);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::BLESS1);
+        assert_eq!(npc.act1, 2);
+        assert_eq!(npc.mana, 8 * POWERSCALE);
+        assert!(npc.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_reject_helper_bless_for_other_group() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Bless as usize] = 40;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helper: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_CHAR, 2, 0, 0);
+        let mut other = character(2);
+        other.group = 8;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(other, 12, 10);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, 0);
+        assert_eq!(npc.mana, 10 * POWERSCALE);
         assert!(npc.driver_messages.is_empty());
     }
 
@@ -8790,6 +8872,7 @@ mod tests {
             flags: CharacterFlags::USED,
             sprite: 0,
             driver: 0,
+            group: 0,
             speed_mode: SpeedMode::Normal,
             x: 0,
             y: 0,

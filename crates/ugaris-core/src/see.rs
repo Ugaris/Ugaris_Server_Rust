@@ -202,6 +202,7 @@ mod tests {
             flags,
             sprite: 0,
             driver: 0,
+            group: 0,
             speed_mode: SpeedMode::Normal,
             x,
             y,

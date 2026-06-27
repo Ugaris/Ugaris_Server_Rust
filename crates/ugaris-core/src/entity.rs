@@ -295,6 +295,8 @@ pub struct Character {
     pub sprite: i32,
     #[serde(default)]
     pub driver: u16,
+    #[serde(default)]
+    pub group: u16,
     pub speed_mode: SpeedMode,
     pub x: u16,
     pub y: u16,
@@ -467,6 +469,7 @@ mod tests {
             flags: CharacterFlags::USED,
             sprite: 0,
             driver: 0,
+            group: 0,
             speed_mode: SpeedMode::Normal,
             x: 0,
             y: 0,
