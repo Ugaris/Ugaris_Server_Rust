@@ -6055,13 +6055,13 @@ impl World {
         character_serial: u32,
         item_serial: u32,
     ) -> bool {
-        let Some(character) = self.characters.get_mut(&character_id) else {
+        let Some(character) = self.characters.get(&character_id) else {
             return false;
         };
         if !character.flags.contains(CharacterFlags::USED) || character.id.0 != character_serial {
             return false;
         }
-        let Some(item) = self.items.get_mut(&item_id) else {
+        let Some(item) = self.items.get(&item_id) else {
             return false;
         };
         if item.serial != item_serial || !matches!(item.driver, IDR_POISON0..=IDR_POISON3) {
@@ -6079,13 +6079,20 @@ impl World {
         power = power.clamp(1, 20);
 
         if tick == 0 {
-            item.modifier_value[0] = item.modifier_value[0].saturating_sub(1).max(-1000);
-            character.flags.insert(CharacterFlags::UPDATE);
+            if let Some(item) = self.items.get_mut(&item_id) {
+                item.modifier_value[0] = item.modifier_value[0].saturating_sub(1).max(-1000);
+            }
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                character.flags.insert(CharacterFlags::UPDATE);
+            }
         }
-        character.hp = character.hp.saturating_sub(crate::entity::POWERSCALE / 3);
-        character.flags.insert(CharacterFlags::UPDATE);
+
+        self.apply_legacy_hurt(character_id, None, crate::entity::POWERSCALE / 3, 1, 0, 50);
 
         tick = if tick == 0 { 9 } else { tick - 1 };
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
         write_poison_tick(&mut item.driver_data, tick);
         let due = self.tick.0 + (crate::tick::TICKS_PER_SECOND * 2 / u64::from(power));
         self.schedule_poison_callback_timer(
@@ -11276,6 +11283,27 @@ mod tests {
         assert_eq!(read_poison_tick(&spell.driver_data), Some(8));
         assert_eq!(spell.modifier_value[0], -1);
         assert_eq!(world.timers.used_timers(), 2);
+    }
+
+    #[test]
+    fn poison_callback_uses_legacy_hurt_shield_reduction() {
+        let mut world = World::default();
+        world.tick = Tick(1_000);
+        let mut character = character(1);
+        character.hp = 10 * POWERSCALE;
+        character.lifeshield = POWERSCALE;
+        world.add_character(character);
+        assert!(world.poison_character(CharacterId(1), 4, 0));
+
+        world.tick = Tick(1_000 + TICKS_PER_SECOND);
+        world.process_due_timers(1);
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.hp, 10 * POWERSCALE - 167);
+        assert_eq!(character.lifeshield, POWERSCALE - 166);
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
+        assert_eq!(character.driver_messages.len(), 1);
+        assert_eq!(character.driver_messages[0].dat2, 167);
     }
 
     #[test]
