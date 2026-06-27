@@ -4364,6 +4364,16 @@ impl World {
         true
     }
 
+    pub fn teleport_character_same_area(
+        &mut self,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+        extended: bool,
+    ) -> bool {
+        self.teleport_character(character_id, x, y, extended)
+    }
+
     pub fn apply_player_action_setup(&mut self, player: &mut PlayerRuntime, area_id: u16) -> bool {
         let Some(character_id) = player.character_id else {
             return false;
