@@ -20,8 +20,8 @@ use ugaris_core::{
     },
     ids::{CharacterId, ItemId},
     item_driver::{
-        ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING,
-        IDR_SPECIAL_POTION, IDR_TORCH,
+        ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE,
+        IDR_FOOD, IDR_KEY_RING, IDR_SPECIAL_POTION, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
@@ -1985,7 +1985,17 @@ fn apply_nomad_stack(
     let Some((kind, unit, template)) = world.items.get(&item_id).and_then(|item| {
         stack_kind(item.template_id).map(|kind| (kind, stack_unit(kind), stack_template(kind)))
     }) else {
-        return NomadStackApplyResult::Bug("Bug #1442y");
+        return NomadStackApplyResult::Bug(
+            if world
+                .items
+                .get(&item_id)
+                .is_some_and(|item| item.driver == IDR_DEMONCHIP)
+            {
+                "Bug #1445y"
+            } else {
+                "Bug #1442y"
+            },
+        );
     };
     let Some(character) = world.characters.get(&character_id) else {
         return NomadStackApplyResult::MissingPlayer;
@@ -5361,6 +5371,26 @@ mod tests {
         assert_eq!(stack_count(cursor), 50);
         assert_eq!(carried.sprite, 53024);
         assert_eq!(cursor.description, "50 Silver Chips.");
+    }
+
+    #[test]
+    fn demon_chip_stack_invalid_template_reports_legacy_chip_bug() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(20));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut stack = test_item(ItemId(20), 53007, ItemFlags::USED | ItemFlags::USE);
+        stack.template_id = 0xDEAD_BEEF;
+        stack.driver = IDR_DEMONCHIP;
+        stack.carried_by = Some(character_id);
+        world.add_item(stack);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
+            NomadStackApplyResult::Bug("Bug #1445y")
+        );
     }
 
     #[test]
