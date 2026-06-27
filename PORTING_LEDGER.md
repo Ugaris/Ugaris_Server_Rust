@@ -118,7 +118,7 @@ cargo test --workspace
 cargo build -p ugaris-server
 ```
 
-Last verified after the `IDR_FORESTSPADE` slice:
+Last verified after the simple-baddy earth-demon earthmud combat slice:
 
 - `cargo test --workspace`: passed.
 - `cargo build -p ugaris-server`: passed.
@@ -254,6 +254,7 @@ Current implemented slices:
 - `src/system/drvlib.c` `distance_driver` distance-7 fireball-spacing now has a Rust simple-baddy attack slice for the C active Fireball spacing path: after offensive spell/pulse and distance-3 attempts, simple baddies with active Fireball, enough mana, useful fireball damage, an available Flash spell slot, and effective Fireball above effective Flash try to path to seven steps from the target without the distance-3 idle fallback. Focused core tests cover successful distance-seven movement and the Fireball-vs-Flash gate. Remaining fight-driver gaps include full randomized task scorer/priority ordering, fireball line-of-hit repositioning, flee/secure movement details, exact global RNG parity, and exact NPC scheduling.
 - `src/system/drvlib.c` in-combat `fight_driver_attack_enemy` self-preservation tasks now have a Rust simple-baddy attack slice: visible-enemy processing tries C-style low-HP self-heal, low-lifeshield magic shield, unblessed self-bless, and half-second regeneration idle before offensive/movement fallback, using the existing timed action bridges and stamping `lastfight`. Focused core tests cover heal priority over fireball, magic shield before melee, self-bless admission, and regeneration idle. Remaining fight-driver gaps include exact randomized task scorer/priority ordering, fireball line-of-hit repositioning, flee/secure movement details, exact global RNG parity, and exact NPC scheduling.
 - `src/system/drvlib.c` fireball line-of-hit repositioning inside `fight_driver_attack_enemy` now has a Rust simple-baddy slice: non-adjacent Fireball setup first runs a C-shaped `ishit_fireball`-style half-tile line scan, refuses blocked lines that do not hit the recorded target in the 3x3 blast neighborhood, and tries the legacy right/left/down/up lane search up to four tiles with dead-direction suppression before falling back to other attack tasks. Focused core tests cover successful lane repositioning and blocked-line no-cast behavior. Remaining fight-driver gaps include full randomized task scorer/priority ordering, exact enemy-list blast admission beyond the selected target, flee/secure movement details, exact global RNG parity, and exact NPC scheduling.
+- `src/system/drvlib.c` earth-demon `fight_driver_attack_enemy` earthmud task now has a Rust simple-baddy attack slice: `CF_EDEMON` simple baddies with effective demon value `30`, at least half HP, and useful non-sightblocked/non-duplicate target tiles set up the existing timed `AC_EARTHMUD` action against the C-shaped target tile, including walking-target prediction via `tox/toy + tox/toy - x/y`, HP cost, strength storage, direction, and `lastfight` stamping. Focused core tests cover useful earthmud setup and blocked/no-useful-tile fallback. Remaining fight-driver gaps include the full randomized task scorer/priority ordering, exact earth task value weighting relative to other tasks, flee/secure movement details, exact global RNG parity, and exact NPC scheduling.
 
 Chest gaps still to port:
 

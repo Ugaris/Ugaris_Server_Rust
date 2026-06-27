@@ -11,10 +11,10 @@ use crate::{
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
-        advance_action_step, can_attack, do_attack, do_ball, do_bless, do_drop, do_fireball,
-        do_flash, do_freeze, do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk,
-        do_warcry, endurance_cost, reset_action_after_act, speed_ticks, speed_ticks_inverse,
-        ItemUseRequest, DUR_MISC_ACTION,
+        advance_action_step, can_attack, do_attack, do_ball, do_bless, do_drop, do_earthmud,
+        do_fireball, do_flash, do_freeze, do_heal, do_idle, do_magicshield, do_pulse, do_take,
+        do_use, do_walk, do_warcry, endurance_cost, reset_action_after_act, speed_ticks,
+        speed_ticks_inverse, ItemUseRequest, DUR_MISC_ACTION,
     },
     drvlib::{char_dist, map_dist, step_char_dist, tile_char_dist},
     effect::Effect,
@@ -2359,6 +2359,9 @@ impl World {
             if self.setup_simple_baddy_self_preservation(character_id) {
                 return true;
             }
+            if self.setup_simple_baddy_earthmud_attack(character_id, &target) {
+                return true;
+            }
             if self.setup_simple_baddy_fireball_attack(character_id, &target, area_id) {
                 return true;
             }
@@ -2454,6 +2457,74 @@ impl World {
         }
 
         false
+    }
+
+    fn setup_simple_baddy_earthmud_attack(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let max_hp = character_value(&attacker, CharacterValue::Hp) * POWERSCALE;
+        let strength = character_value_present(&attacker, CharacterValue::Demon);
+        if !attacker.flags.contains(CharacterFlags::EDEMON)
+            || strength != 30
+            || attacker.hp < max_hp / 2
+            || self.simple_baddy_earthmud_value(target) == 0
+        {
+            return false;
+        }
+
+        let (target_x, target_y) = simple_baddy_earth_spell_target(target);
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        if do_earthmud(character, target_x, target_y, strength).is_err() {
+            return false;
+        }
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
+            data.lastfight = self.tick.0 as i32;
+        }
+        true
+    }
+
+    fn simple_baddy_earthmud_value(&self, target: &Character) -> i32 {
+        let (target_x, target_y) = simple_baddy_earth_spell_target(target);
+        let mut good = 0;
+        for (x, y) in [
+            (target_x, target_y),
+            (target_x.saturating_add(1), target_y),
+            (target_x.saturating_sub(1), target_y),
+            (target_x, target_y.saturating_add(1)),
+            (target_x, target_y.saturating_sub(1)),
+        ] {
+            if self.simple_baddy_can_place_earthmud(x, y) {
+                good += 1;
+            }
+        }
+
+        if good > 0 {
+            good
+        } else {
+            0
+        }
+    }
+
+    fn simple_baddy_can_place_earthmud(&self, x: usize, y: usize) -> bool {
+        self.map.tile(x, y).is_some_and(|tile| {
+            !tile
+                .flags
+                .intersects(MapFlags::SIGHTBLOCK | MapFlags::TSIGHTBLOCK)
+                && tile.effects.iter().all(|&effect_id| {
+                    effect_id == 0
+                        || self
+                            .effects
+                            .get(&u32::from(effect_id))
+                            .is_none_or(|effect| effect.effect_type != EF_EARTHMUD)
+                })
+        })
     }
 
     fn setup_simple_baddy_self_preservation(&mut self, character_id: CharacterId) -> bool {
@@ -7275,6 +7346,19 @@ fn predicted_fireball_target(caster: &Character, target: &Character) -> (usize, 
     (usize::from(target.x), usize::from(target.y))
 }
 
+fn simple_baddy_earth_spell_target(target: &Character) -> (usize, usize) {
+    if target.action != action::WALK {
+        return (usize::from(target.x), usize::from(target.y));
+    }
+
+    let x = i32::from(target.tox) + i32::from(target.tox) - i32::from(target.x);
+    let y = i32::from(target.toy) + i32::from(target.toy) - i32::from(target.y);
+    (
+        usize::try_from(x).unwrap_or(0),
+        usize::try_from(y).unwrap_or(0),
+    )
+}
+
 fn ball_target_damage_multiplier(enemy_count: i32) -> i32 {
     match enemy_count.clamp(1, 10) {
         1 => 100,
@@ -8423,9 +8507,86 @@ mod tests {
     }
 
     #[test]
-    fn simple_baddy_attack_action_uses_firering_against_adjacent_recorded_enemy() {
+    fn simple_baddy_attack_action_earth_demon_casts_useful_earthmud() {
         let mut world = World::default();
         world.tick = Tick(454);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.flags.insert(CharacterFlags::EDEMON);
+        npc.hp = 100 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 100;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.values[1][CharacterValue::Demon as usize] = 30;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 15,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut target = character(2);
+        target.action = action::WALK;
+        target.tox = 16;
+        target.toy = 10;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 15, 10);
+        world.map.tile_mut(15, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::EARTHMUD);
+        assert_eq!(npc.act1, 17 + 10 * MAX_MAP as i32);
+        assert_eq!(npc.act2, 30);
+        assert_eq!(npc.hp, 100 * POWERSCALE - 3000);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 454);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_skips_earthmud_without_useful_tiles() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.flags.insert(CharacterFlags::EDEMON);
+        npc.hp = 100 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 100;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.values[1][CharacterValue::Demon as usize] = 30;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 15,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 15, 10);
+        for (x, y) in [(15, 10), (16, 10), (14, 10), (15, 11), (15, 9)] {
+            world.map.set_flags(x, y, MapFlags::SIGHTBLOCK);
+        }
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_ne!(npc.action, action::EARTHMUD);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_uses_firering_against_adjacent_recorded_enemy() {
+        let mut world = World::default();
+        world.tick = Tick(455);
         let mut npc = character(1);
         npc.driver = CDR_SIMPLEBADDY;
         npc.mana = FIREBALL_COST;
@@ -8454,7 +8615,7 @@ mod tests {
         let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
             panic!("simple baddy state missing");
         };
-        assert_eq!(data.lastfight, 454);
+        assert_eq!(data.lastfight, 455);
     }
 
     #[test]

@@ -1938,14 +1938,41 @@
         "test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 365 filtered out; finished in 0.01s",
         "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok"
       ]
+    },
+    {
+      "iteration": 70,
+      "startedAt": "2026-06-27T18:30:35.493Z",
+      "endedAt": "2026-06-27T18:41:09.789Z",
+      "durationMs": 634107,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The first test exposed a visibility setup issue rather than an implementation error: the distant moving target was not visible in the test world, so the NPC fell back to pathing. I’m adjusting the tes",
+        "error: unexpected argument 'simple_baddy_attack_action_skips_earthmud_without_useful_tiles' found",
+        "test world::tests::simple_baddy_attack_action_uses_firering_against_adjacent_recorded_enemy ... FAILED",
+        "test world::tests::simple_baddy_attack_action_earth_demon_casts_useful_earthmud ... FAILED",
+        "test result: FAILED. 22 passed; 2 failed; 0 ignored; 0 measured; 409 filtered out; finished in 0.01s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: FAILED. 23 passed; 1 failed; 0 ignored; 0 measured; 409 filtered out; finished in 0.01s",
+        "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 409 filtered out; finished in 0.01s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 30513788,
+  "totalDurationMs": 31147895,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 66,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 64,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 67,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 65,
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 60,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 45,
@@ -1961,7 +1988,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 18,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 19,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 4,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -2179,7 +2206,14 @@
       "test world::tests::simple_baddy_fireball_repositions_for_blocked_line_of_fire ... FAILED": 1,
       "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.00s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.00s": 1,
-      "test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 365 filtered out; finished in 0.01s": 1
+      "test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 365 filtered out; finished in 0.01s": 1,
+      "The first test exposed a visibility setup issue rather than an implementation error: the distant mov": 1,
+      "error: unexpected argument 'simple_baddy_attack_action_skips_earthmud_without_useful_tiles' found": 1,
+      "test world::tests::simple_baddy_attack_action_uses_firering_against_adjacent_recorded_enemy ... FAIL": 1,
+      "test world::tests::simple_baddy_attack_action_earth_demon_casts_useful_earthmud ... FAILED": 1,
+      "test result: FAILED. 22 passed; 2 failed; 0 ignored; 0 measured; 409 filtered out; finished in 0.01s": 1,
+      "test result: FAILED. 23 passed; 1 failed; 0 ignored; 0 measured; 409 filtered out; finished in 0.01s": 1,
+      "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 409 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
