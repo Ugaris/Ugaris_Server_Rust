@@ -2840,10 +2840,21 @@ fn resolve_transport_travel(
     current_area: u16,
     spec: i32,
 ) -> TransportTravelResult {
+    resolve_transport_travel_with_random(world, player, character_id, current_area, spec, |_| 0)
+}
+
+fn resolve_transport_travel_with_random(
+    world: &World,
+    player: &PlayerRuntime,
+    character_id: CharacterId,
+    current_area: u16,
+    spec: i32,
+    mut random_below: impl FnMut(i32) -> i32,
+) -> TransportTravelResult {
     let nr = (spec & 255) - 1;
     let mirror = match spec / 256 {
         1..=26 => (spec / 256) as u32,
-        _ => 1,
+        _ => (random_below(26).clamp(0, 25) + 1) as u32,
     };
 
     if (64..96).contains(&nr) {
@@ -4615,6 +4626,63 @@ mod tests {
                 x: 129,
                 y: 201,
                 mirror: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn transport_travel_randomizes_invalid_mirror_like_c() {
+        let world = World::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.touch_transport(2);
+
+        let low =
+            resolve_transport_travel_with_random(&world, &player, CharacterId(1), 1, 3, |_| 7);
+        let high = resolve_transport_travel_with_random(
+            &world,
+            &player,
+            CharacterId(1),
+            1,
+            3 + 27 * 256,
+            |_| 25,
+        );
+
+        assert_eq!(
+            low,
+            TransportTravelResult::CrossArea {
+                area: 3,
+                x: 129,
+                y: 201,
+                mirror: 8,
+            }
+        );
+        assert_eq!(
+            high,
+            TransportTravelResult::CrossArea {
+                area: 3,
+                x: 129,
+                y: 201,
+                mirror: 26,
+            }
+        );
+    }
+
+    #[test]
+    fn transport_travel_clamps_injected_random_mirror_roll() {
+        let world = World::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.touch_transport(2);
+
+        let result =
+            resolve_transport_travel_with_random(&world, &player, CharacterId(1), 1, 3, |_| 99);
+
+        assert_eq!(
+            result,
+            TransportTravelResult::CrossArea {
+                area: 3,
+                x: 129,
+                y: 201,
+                mirror: 26,
             }
         );
     }
