@@ -694,6 +694,17 @@ impl World {
     }
 
     pub fn tick_effects(&mut self) {
+        let mut state = self.tick.0.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        self.tick_effects_with_random(|limit| {
+            if limit <= 0 {
+                return 0;
+            }
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (state % limit as u64) as i32
+        });
+    }
+
+    pub fn tick_effects_with_random(&mut self, mut random_below: impl FnMut(i32) -> i32) {
         let effect_ids: Vec<u32> = self.effects.keys().copied().collect();
         for effect_id in effect_ids {
             match self
@@ -705,10 +716,54 @@ impl World {
                 Some(EF_BALL) => self.tick_ball_effect(effect_id),
                 Some(EF_STRIKE | EF_PULSE) => self.tick_strike_effect(effect_id),
                 Some(EF_BURN) => self.tick_burn_effect(effect_id),
+                Some(EF_EARTHRAIN) => self.tick_earthrain_effect(effect_id, &mut random_below),
                 Some(_) => self.tick_expiring_effect(effect_id),
                 _ => {}
             }
         }
+    }
+
+    fn tick_earthrain_effect(&mut self, effect_id: u32, random_below: &mut impl FnMut(i32) -> i32) {
+        let Some(effect) = self.effects.get(&effect_id).cloned() else {
+            return;
+        };
+
+        let mut targets = Vec::new();
+        for index in &effect.fields {
+            if *index < 0 {
+                continue;
+            }
+            let index = *index as usize;
+            let x = index % self.map.width();
+            let y = index / self.map.width();
+            let Some(target_id) = self.map.tile(x, y).and_then(|tile| {
+                (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+            }) else {
+                continue;
+            };
+            let Some(target) = self.characters.get(&target_id) else {
+                continue;
+            };
+            if !target.flags.contains(CharacterFlags::PLAYER) {
+                continue;
+            }
+            let reduction =
+                (effect.strength - character_value(target, CharacterValue::Demon)).max(0);
+            let damage = reduction * 150;
+            if damage == 0 || random_below(10) != 0 {
+                continue;
+            }
+            targets.push((target_id, damage));
+        }
+
+        for (target_id, damage) in targets {
+            if let Some(target) = self.characters.get_mut(&target_id) {
+                target.hp = target.hp.saturating_sub(damage);
+                target.flags.insert(CharacterFlags::UPDATE);
+            }
+        }
+
+        self.tick_expiring_effect(effect_id);
     }
 
     fn tick_expiring_effect(&mut self, effect_id: u32) {
@@ -5512,6 +5567,48 @@ mod tests {
         assert_eq!(world.map.tile(11, 10).unwrap().effects[0], 0);
         assert_eq!(world.map.tile(9, 9).unwrap().effects[0], 0);
         assert!(world.map.tile(10, 10).unwrap().light >= 10);
+    }
+
+    #[test]
+    fn earthrain_tick_damages_players_using_legacy_demon_reduction() {
+        let mut world = World::default();
+        let effect_id = world.create_earthrain_effect(10, 10, 7);
+        let mut target = character(1);
+        target.flags |= CharacterFlags::PLAYER;
+        target.hp = 10_000;
+        target.values[0][CharacterValue::Demon as usize] = 2;
+        assert!(world.spawn_character(target, 10, 10));
+
+        world.tick_effects_with_random(|_| 0);
+
+        let target = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(target.hp, 10_000 - (7 - 2) * 150);
+        assert!(target.flags.contains(CharacterFlags::UPDATE));
+        assert!(world.effects.contains_key(&effect_id));
+    }
+
+    #[test]
+    fn earthrain_tick_skips_non_players_roll_misses_and_full_demon_reduction() {
+        let mut world = World::default();
+        world.create_earthrain_effect(10, 10, 4);
+        let mut non_player = character(1);
+        non_player.hp = 10_000;
+        assert!(world.spawn_character(non_player, 10, 10));
+        let mut demon_player = character(2);
+        demon_player.flags |= CharacterFlags::PLAYER;
+        demon_player.hp = 10_000;
+        demon_player.values[0][CharacterValue::Demon as usize] = 4;
+        assert!(world.spawn_character(demon_player, 11, 10));
+        let mut missed_player = character(3);
+        missed_player.flags |= CharacterFlags::PLAYER;
+        missed_player.hp = 10_000;
+        assert!(world.spawn_character(missed_player, 10, 11));
+
+        world.tick_effects_with_random(|_| 1);
+
+        assert_eq!(world.characters.get(&CharacterId(1)).unwrap().hp, 10_000);
+        assert_eq!(world.characters.get(&CharacterId(2)).unwrap().hp, 10_000);
+        assert_eq!(world.characters.get(&CharacterId(3)).unwrap().hp, 10_000);
     }
 
     #[test]
