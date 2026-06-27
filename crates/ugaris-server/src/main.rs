@@ -31,9 +31,9 @@ use ugaris_core::{
         PlayerRuntime, QueuedAction, XmasTreeResult,
     },
     spell::{
-        EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_EARTHMUD, EF_EARTHRAIN, EF_EXPLODE, EF_FIREBALL,
-        EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE,
-        EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
+        EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN,
+        EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_LAG, EF_MAGICSHIELD,
+        EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
     },
     text::COL_DARK_GRAY,
     tick::TICKS_PER_SECOND,
@@ -3312,6 +3312,21 @@ fn visible_client_effect_body(
             effect.strength,
         )),
         EF_EARTHMUD => Some(ugaris_protocol::packet::ceffect_earthmud(effect_id as i32)),
+        EF_CURSE => Some(ugaris_protocol::packet::ceffect_curse(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+            effect.start_tick,
+            effect.stop_tick,
+            effect.strength,
+        )),
+        EF_CAP => Some(ugaris_protocol::packet::ceffect_cap(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+        )),
+        EF_LAG => Some(ugaris_protocol::packet::ceffect_lag(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+        )),
         EF_BUBBLE => Some(ugaris_protocol::packet::ceffect_bubble(
             effect_id as i32,
             effect.strength,
@@ -3336,7 +3351,7 @@ fn effect_visible_to_viewer(
             (effect.x, effect.y)
         }
         EF_MAGICSHIELD | EF_FLASH | EF_WARCRY | EF_BLESS | EF_HEAL | EF_FREEZE | EF_BURN
-        | EF_POTION | EF_PULSEBACK | EF_FIRERING => {
+        | EF_POTION | EF_CURSE | EF_CAP | EF_LAG | EF_PULSEBACK | EF_FIRERING => {
             let Some(character_id) = effect_character_id(effect) else {
                 return false;
             };
@@ -5677,6 +5692,51 @@ mod tests {
         assert_eq!(
             &payloads[1][..],
             &ugaris_protocol::packet::used_effects(1)[..]
+        );
+    }
+
+    #[test]
+    fn client_effect_payloads_send_legacy_curse_cap_and_lag_effects() {
+        let login = login_block("Tester");
+        let mut viewer = login_character(CharacterId(7), &login, 1, 10, 10);
+        viewer.x = 10;
+        viewer.y = 10;
+        let mut target = login_character(CharacterId(8), &login, 1, 11, 10);
+        target.x = 11;
+        target.y = 10;
+        let mut world = World::default();
+        world.characters.insert(target.id, target.clone());
+
+        let mut curse = Effect::new(EF_CURSE, 77, 100, 200);
+        curse.target_character = Some(target.id);
+        curse.strength = 33;
+        world.effects.insert(77, curse);
+        let mut cap = Effect::new(EF_CAP, 78, 101, 201);
+        cap.target_character = Some(target.id);
+        world.effects.insert(78, cap);
+        let mut lag = Effect::new(EF_LAG, 79, 102, 202);
+        lag.target_character = Some(target.id);
+        world.effects.insert(79, lag);
+
+        let payloads =
+            client_effect_payloads(&world, &viewer, 2, &mut ClientEffectCache::default());
+
+        assert_eq!(payloads.len(), 4);
+        assert_eq!(
+            &payloads[0][2..],
+            &ugaris_protocol::packet::ceffect_curse(77, 8, 100, 200, 33)[..]
+        );
+        assert_eq!(
+            &payloads[1][2..],
+            &ugaris_protocol::packet::ceffect_cap(78, 8)[..]
+        );
+        assert_eq!(
+            &payloads[2][2..],
+            &ugaris_protocol::packet::ceffect_lag(79, 8)[..]
+        );
+        assert_eq!(
+            &payloads[3][..],
+            &ugaris_protocol::packet::used_effects(7)[..]
         );
     }
 

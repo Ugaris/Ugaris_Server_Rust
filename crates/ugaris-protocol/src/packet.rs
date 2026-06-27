@@ -760,6 +760,39 @@ pub fn ceffect_earthmud(effect_id: i32) -> BytesMut {
     out
 }
 
+pub fn ceffect_curse(
+    effect_id: i32,
+    character: i32,
+    start: i32,
+    stop: i32,
+    strength: i32,
+) -> BytesMut {
+    let mut out = BytesMut::with_capacity(24);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(18);
+    out.put_i32_le(character);
+    out.put_i32_le(start);
+    out.put_i32_le(stop);
+    out.put_i32_le(strength);
+    out
+}
+
+pub fn ceffect_cap(effect_id: i32, character: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(12);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(19);
+    out.put_i32_le(character);
+    out
+}
+
+pub fn ceffect_lag(effect_id: i32, character: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(12);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(20);
+    out.put_i32_le(character);
+    out
+}
+
 pub fn ceffect_bubble(effect_id: i32, y_offset: i32) -> BytesMut {
     let mut out = BytesMut::with_capacity(12);
     out.put_i32_le(effect_id);
@@ -936,8 +969,20 @@ mod tests {
         );
         assert_eq!(&ceffect_earthmud(7)[..], &[7, 0, 0, 0, 16, 0, 0, 0]);
         assert_eq!(
-            &ceffect_bubble(8, 45)[..],
-            &[8, 0, 0, 0, 24, 0, 0, 0, 45, 0, 0, 0]
+            &ceffect_curse(8, 9, 10, 11, 12)[..],
+            &[8, 0, 0, 0, 18, 0, 0, 0, 9, 0, 0, 0, 10, 0, 0, 0, 11, 0, 0, 0, 12, 0, 0, 0]
+        );
+        assert_eq!(
+            &ceffect_cap(9, 10)[..],
+            &[9, 0, 0, 0, 19, 0, 0, 0, 10, 0, 0, 0]
+        );
+        assert_eq!(
+            &ceffect_lag(11, 12)[..],
+            &[11, 0, 0, 0, 20, 0, 0, 0, 12, 0, 0, 0]
+        );
+        assert_eq!(
+            &ceffect_bubble(13, 45)[..],
+            &[13, 0, 0, 0, 24, 0, 0, 0, 45, 0, 0, 0]
         );
     }
 

@@ -60,6 +60,10 @@ pub const EF_MIST: i32 = 13;
 pub const EF_POTION: i32 = 14;
 pub const EF_EARTHRAIN: i32 = 15;
 pub const EF_EARTHMUD: i32 = 16;
+pub const EF_EDEMONBALL: i32 = 17;
+pub const EF_CURSE: i32 = 18;
+pub const EF_CAP: i32 = 19;
+pub const EF_LAG: i32 = 20;
 pub const EF_PULSE: i32 = 21;
 pub const EF_PULSEBACK: i32 = 22;
 pub const EF_FIRERING: i32 = 23;
@@ -371,6 +375,9 @@ mod tests {
         assert_eq!(IDR_NONOMAGIC, 1017);
         assert_eq!(IDR_OXYGEN, 1018);
         assert_eq!(IDR_UWTALK, 1019);
+        assert_eq!(EF_CURSE, 18);
+        assert_eq!(EF_CAP, 19);
+        assert_eq!(EF_LAG, 20);
         assert_eq!(EF_PULSEBACK, 22);
     }
 
