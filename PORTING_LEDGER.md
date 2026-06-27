@@ -233,6 +233,7 @@ Current implemented slices:
 - C `hurt` `CF_FDEMON` back-attack gating is now represented in `World::apply_legacy_hurt`: damage is reduced by armor first, fire demons take only one percent of post-armor damage unless the causing character stands on the exact legacy back tile for the target's cardinal facing, and magic-shield absorption then applies to the reduced value like C. Focused core tests cover blocked front damage and full back damage.
 - C `hurt` `CF_HARDKILL` special-weapon gating is now represented in `World::apply_legacy_hurt`: hard-to-kill targets take zero post-armor damage unless the causing character has legacy `IID_HARDKILL` equipped in `WN_RHAND` and unsigned `drdata[37]` is at least the target level. Focused core tests cover no weapon, under-leveled weapon, and qualifying weapon damage.
 - C `hurt` magic-shield hit visuals are now represented in `World::apply_legacy_hurt`: when lifeshield absorbs damage, the target has an effective `V_MAGICSHIELD`, and no `EF_MAGICSHIELD` visual is already attached, Rust creates the legacy three-tick character-attached shield effect with light `16` and strength `0`. Focused core tests cover creation and duplicate suppression.
+- C `hurt` post-damage regeneration delay is now represented in `World::apply_legacy_hurt`: successful hurt calls stamp the target `regen_ticker` from the world tick alongside hit notifications, matching the legacy `ch[cn].regen_ticker = ticker` side effect. Focused core tests cover the tick stamp through the armor/lifeshield damage path.
 
 Chest gaps still to port:
 

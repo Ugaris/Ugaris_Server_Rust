@@ -258,6 +258,8 @@ impl World {
                 }
             }
 
+            target.regen_ticker = self.tick.0.min(u64::from(u32::MAX)) as u32;
+
             target.push_driver_message(
                 NT_GOTHIT,
                 cause_id.map(|id| id.0 as i32).unwrap_or_default(),
@@ -6657,6 +6659,7 @@ mod tests {
     #[test]
     fn legacy_hurt_applies_armor_lifeshield_and_hit_notifications() {
         let mut world = World::default();
+        world.tick = Tick(1234);
         let mut target = character(1);
         target.hp = 5 * POWERSCALE;
         target.lifeshield = POWERSCALE;
@@ -6682,6 +6685,7 @@ mod tests {
         let target = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(target.hp, 1_200);
         assert_eq!(target.lifeshield, 0);
+        assert_eq!(target.regen_ticker, 1234);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
         assert_eq!(target.driver_messages[0].message_type, NT_GOTHIT);
         assert_eq!(target.driver_messages[0].dat1, 2);
