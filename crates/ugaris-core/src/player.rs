@@ -37,6 +37,9 @@ pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TRANSPORT_PPD: u32 = make_drd(DEV_ID_DB, 44 | PERSISTENT_PLAYER_DATA);
+pub const TRANSPORT_MAJOR_CITIES_MASK: u64 = 0x03E0_0205;
+pub const TRANSPORT_ALL_TELEPORTS_MASK: u64 = 0x03F3_F7FF;
+pub const TRANSPORT_EARTH_UNDERGROUND_MASK: u64 = 0x01F8;
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEMONSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 68 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
@@ -186,6 +189,12 @@ pub struct AchievementState {
     pub treasure_master: bool,
     pub legendary_looter: bool,
     pub gold_looter: bool,
+    #[serde(default)]
+    pub traveller_of_astonia: bool,
+    #[serde(default)]
+    pub explorer_of_astonia: bool,
+    #[serde(default)]
+    pub underground_explorer: bool,
 }
 
 impl Default for QueuedAction {
@@ -289,7 +298,24 @@ impl PlayerRuntime {
         let bit = 1_u64 << point;
         let newly_seen = self.transport_seen & bit == 0;
         self.transport_seen |= bit;
+        if newly_seen {
+            self.update_transport_achievement_markers();
+        }
         newly_seen
+    }
+
+    fn update_transport_achievement_markers(&mut self) {
+        if (self.transport_seen & TRANSPORT_MAJOR_CITIES_MASK) == TRANSPORT_MAJOR_CITIES_MASK {
+            self.achievements.traveller_of_astonia = true;
+        }
+        if (self.transport_seen & TRANSPORT_ALL_TELEPORTS_MASK) == TRANSPORT_ALL_TELEPORTS_MASK {
+            self.achievements.explorer_of_astonia = true;
+        }
+        if (self.transport_seen & TRANSPORT_EARTH_UNDERGROUND_MASK)
+            == TRANSPORT_EARTH_UNDERGROUND_MASK
+        {
+            self.achievements.underground_explorer = true;
+        }
     }
 
     pub fn encode_legacy_transport_ppd(&self) -> Vec<u8> {
@@ -1793,6 +1819,35 @@ mod tests {
         assert_eq!(read_u32(&encoded, 0), DRD_TRANSPORT_PPD);
         assert_eq!(read_u32(&encoded, 4), LEGACY_TRANSPORT_PPD_SIZE as u32);
         assert_eq!(read_u64(&encoded, 8), 1_u64 << 5);
+    }
+
+    #[test]
+    fn transport_discovery_marks_legacy_exploration_achievement_thresholds() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        for point in [0, 2, 9, 21, 22, 23, 24] {
+            assert!(player.touch_transport(point));
+        }
+        assert!(!player.achievements.traveller_of_astonia);
+
+        assert!(player.touch_transport(25));
+        assert!(player.achievements.traveller_of_astonia);
+
+        let mut underground = PlayerRuntime::connected(2, 0);
+        for point in 3..=7 {
+            assert!(underground.touch_transport(point));
+        }
+        assert!(!underground.achievements.underground_explorer);
+        assert!(underground.touch_transport(8));
+        assert!(underground.achievements.underground_explorer);
+
+        let mut explorer = PlayerRuntime::connected(3, 0);
+        for point in 0..=25 {
+            if ![11, 18, 19].contains(&point) {
+                assert!(explorer.touch_transport(point));
+            }
+        }
+        assert!(explorer.achievements.explorer_of_astonia);
+        assert_eq!(explorer.transport_seen & !TRANSPORT_ALL_TELEPORTS_MASK, 0);
     }
 
     #[test]
