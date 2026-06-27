@@ -1551,15 +1551,42 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 56,
+      "startedAt": "2026-06-27T16:45:20.629Z",
+      "endedAt": "2026-06-27T16:53:28.755Z",
+      "durationMs": 487981,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The failure was due to the tests’ visibility setup, not the runtime helper. I set the target tiles lit for those close-range spell tests and will rerun the focused suite.",
+        "test world::tests::simple_baddy_attack_action_uses_freeze_against_close_recorded_enemy ... FAILED",
+        "test world::tests::simple_baddy_attack_action_uses_warcry_when_close_and_unshielded ... FAILED",
+        "test world::tests::simple_baddy_attack_action_uses_flash_against_close_recorded_enemy ... FAILED",
+        "test result: FAILED. 9 passed; 3 failed; 0 ignored; 0 measured; 400 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 400 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 24239922,
+  "totalDurationMs": 24727903,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 53,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 52,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 48,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 54,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 53,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 49,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 37,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 32,
@@ -1574,7 +1601,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 14,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 15,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 3,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -1748,7 +1775,13 @@
       "test result: ok. 408 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
       "test result: ok. 100 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "error: unexpected argument 'world_auto_closes_opened_door_from_timer' found": 1,
-      "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 392 filtered out; finished in 0.01s": 1
+      "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 392 filtered out; finished in 0.01s": 1,
+      "The failure was due to the tests’ visibility setup, not the runtime helper. I set the target tiles l": 1,
+      "test world::tests::simple_baddy_attack_action_uses_freeze_against_close_recorded_enemy ... FAILED": 1,
+      "test world::tests::simple_baddy_attack_action_uses_warcry_when_close_and_unshielded ... FAILED": 1,
+      "test world::tests::simple_baddy_attack_action_uses_flash_against_close_recorded_enemy ... FAILED": 1,
+      "test result: FAILED. 9 passed; 3 failed; 0 ignored; 0 measured; 400 filtered out; finished in 0.00s": 1,
+      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 400 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
