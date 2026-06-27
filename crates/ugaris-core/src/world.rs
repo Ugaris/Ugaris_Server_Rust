@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::{
     area_sound::AreaSoundSpecial,
     character_driver::{
-        add_simple_baddy_enemy, process_simple_baddy_messages, SimpleBaddyMessageOutcome,
-        CDR_SIMPLEBADDY,
+        add_simple_baddy_enemy, process_simple_baddy_messages, CharacterDriverState,
+        SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
     },
     direction::Direction,
     do_action::{
@@ -1648,6 +1648,89 @@ impl World {
                 }
             })
             .collect()
+    }
+
+    pub fn process_simple_baddy_attack_action(&mut self, character_id: CharacterId) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if attacker.driver != CDR_SIMPLEBADDY
+            || attacker.action != 0
+            || attacker.flags.contains(CharacterFlags::DEAD)
+        {
+            return false;
+        }
+
+        let mut enemies = match attacker.driver_state.as_ref() {
+            Some(CharacterDriverState::SimpleBaddy(data)) => data.enemies.clone(),
+            _ => return false,
+        };
+        enemies.sort_by(|a, b| {
+            b.priority
+                .cmp(&a.priority)
+                .then_with(|| b.last_seen_tick.cmp(&a.last_seen_tick))
+        });
+
+        for enemy in enemies {
+            let Some(target) = self.characters.get(&enemy.target_id).cloned() else {
+                continue;
+            };
+            if target.flags.contains(CharacterFlags::DEAD)
+                || !char_see_char(&attacker, &target, &self.map, self.date.daylight)
+                || !can_attack(&attacker, &target, &self.map)
+            {
+                continue;
+            }
+            let Some(direction) = adjacent_direction(
+                attacker.x,
+                attacker.y,
+                usize::from(target.x),
+                usize::from(target.y),
+            ) else {
+                continue;
+            };
+            let Some(attacker_mut) = self.characters.get_mut(&character_id) else {
+                return false;
+            };
+            if do_attack(
+                attacker_mut,
+                &self.map,
+                &target,
+                direction as u8,
+                action::ATTACK1,
+            )
+            .is_ok()
+            {
+                if let Some(CharacterDriverState::SimpleBaddy(data)) =
+                    attacker_mut.driver_state.as_mut()
+                {
+                    data.lastfight = self.tick.0 as i32;
+                }
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn process_simple_baddy_attack_actions(&mut self) -> usize {
+        let character_ids: Vec<_> = self
+            .characters
+            .iter()
+            .filter_map(|(&character_id, character)| {
+                (character.driver == CDR_SIMPLEBADDY
+                    && matches!(
+                        character.driver_state,
+                        Some(CharacterDriverState::SimpleBaddy(_))
+                    ))
+                .then_some(character_id)
+            })
+            .collect();
+
+        character_ids
+            .into_iter()
+            .filter(|&character_id| self.process_simple_baddy_attack_action(character_id))
+            .count()
     }
 
     pub fn apply_simple_baddy_death_driver(
@@ -5645,6 +5728,63 @@ mod tests {
                 last_seen_tick: 123,
             }]
         );
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_attacks_visible_adjacent_recorded_enemy() {
+        let mut world = World::default();
+        world.tick = Tick(456);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Attack as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut target = character(2);
+        target.values[0][CharacterValue::Attack as usize] = 1;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1)));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::ATTACK1);
+        assert_eq!(npc.act1, 2);
+        assert_eq!(npc.dir, Direction::Right as u8);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 456);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_ignores_non_adjacent_enemies() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Attack as usize] = 20;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 15, 10);
+
+        assert!(!world.process_simple_baddy_attack_action(CharacterId(1)));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, 0);
     }
 
     #[test]
