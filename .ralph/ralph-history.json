@@ -932,20 +932,47 @@
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 34,
+      "startedAt": "2026-06-27T02:29:35.583Z",
+      "endedAt": "2026-06-27T02:35:57.406Z",
+      "durationMs": 381675,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 86 filtered out; finished in 0.00s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 282 filtered out; finished in 0.00s",
+        "test result: ok. 87 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test result: ok. 290 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 16232996,
+  "totalDurationMs": 16614671,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 217 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 33,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 34,
       "test result: ok. 235 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
-      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 30,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 28,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 31,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 29,
       "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 5,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 18,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 19,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 235 filtered out; finished in 0.00s": 1,
       "test result: ok. 237 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 226 filtered out; finished in 0.00s": 1,
@@ -1015,7 +1042,7 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s": 1,
       "test result: ok. 261 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 3,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 15,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 16,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 261 filtered out; finished in 0.00s": 1,
       "test result: ok. 265 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 265 filtered out; finished in 0.00s": 1,
@@ -1037,7 +1064,7 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 83 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 270 filtered out; finished in 0.00s": 1,
       "test result: ok. 271 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 3,
       "error: unexpected argument 'item_driver::tests::execute_mine_gateway_key_driver_combines_key_bits' f": 1,
       "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 230 filtered out; finished in 0.00s": 1,
@@ -1067,7 +1094,10 @@
       "test item_driver::tests::special_potion_type_7_resets_professions_and_lowers_profession_points ... F": 1,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.00s": 1,
-      "test result: ok. 290 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 290 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 86 filtered out; finished in 0.00s": 1,
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 282 filtered out; finished in 0.00s": 1,
+      "test result: ok. 87 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -1200,6 +1200,36 @@ fn chest_blocked_message(
     CHEST_EMPTY_MESSAGE
 }
 
+fn special_potion_fun_message(
+    world: &World,
+    character_id: CharacterId,
+    kind: u8,
+) -> Option<String> {
+    let name = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.as_str())
+        .unwrap_or("Someone");
+
+    match kind {
+        8 => Some(format!(
+            "You see {name} hit himself on the head with a mug."
+        )),
+        9 => Some(format!(
+            "{name} suddenly starts singing in a slurred tongue... Dogs start howling..."
+        )),
+        10 => Some(format!(
+            "{name}'s hair suddenly shoots up as if hit by electricity."
+        )),
+        11 => Some(format!("{name} seems to be enjoying a fine ale.")),
+        12 => Some(format!("{name} drinks a delicious apple juice.")),
+        13 => Some(format!("{name} feels refreshed.")),
+        14 => Some(format!("{name} cracks his strong knuckles.")),
+        15 => Some(format!("{name} starts frothing at the mouth.")),
+        _ => None,
+    }
+}
+
 fn is_torch_item(world: &World, item_id: ItemId) -> bool {
     world
         .items
@@ -3689,6 +3719,47 @@ mod tests {
                 (CharacterId(2), "Your torch expired.".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn special_potion_fun_message_matches_legacy_text() {
+        let mut world = World::default();
+        let login = login_block("Ralph");
+        world.add_character(login_character(CharacterId(1), &login, 1, 10, 10));
+
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 8).as_deref(),
+            Some("You see Ralph hit himself on the head with a mug.")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 9).as_deref(),
+            Some("Ralph suddenly starts singing in a slurred tongue... Dogs start howling...")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 10).as_deref(),
+            Some("Ralph's hair suddenly shoots up as if hit by electricity.")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 11).as_deref(),
+            Some("Ralph seems to be enjoying a fine ale.")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 12).as_deref(),
+            Some("Ralph drinks a delicious apple juice.")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 13).as_deref(),
+            Some("Ralph feels refreshed.")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 14).as_deref(),
+            Some("Ralph cracks his strong knuckles.")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 15).as_deref(),
+            Some("Ralph starts frothing at the mouth.")
+        );
+        assert_eq!(special_potion_fun_message(&world, CharacterId(1), 7), None);
     }
 
     #[test]
@@ -7248,13 +7319,22 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DecayItemToggled { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BeyondPotion { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionDrunk { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionDrunk {
+                                            character_id,
+                                            kind,
+                                            ..
+                                        } => {
+                                            if let Some(message) = special_potion_fun_message(&world, character_id, kind) {
+                                                feedback.push((character_id, message));
+                                            }
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionAntidote {
