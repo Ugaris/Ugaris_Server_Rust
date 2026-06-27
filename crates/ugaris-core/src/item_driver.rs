@@ -17,6 +17,7 @@ pub const IDR_DOOR: u16 = 2;
 pub const IDR_BALLTRAP: u16 = 3;
 pub const IDR_CHEST: u16 = 5;
 pub const IDR_USETRAP: u16 = 6;
+pub const IDR_PALACEGATE: u16 = 9;
 pub const IDR_TELEPORT: u16 = 10;
 pub const IDR_NIGHTLIGHT: u16 = 11;
 pub const IDR_TORCH: u16 = 12;
@@ -416,6 +417,12 @@ pub enum ItemDriverOutcome {
         remaining_off: Option<i32>,
         gates_opened: bool,
     },
+    PalaceGateTick {
+        item_id: ItemId,
+        opened: bool,
+        closed: bool,
+        blocked: bool,
+    },
     TorchExtinguishedUnderwater {
         item_id: ItemId,
         character_id: CharacterId,
@@ -759,6 +766,7 @@ pub fn execute_item_driver_with_context(
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
+                IDR_PALACEGATE => palace_gate_driver(character, item, context),
                 IDR_SPIKETRAP => spiketrap_driver(character, item, context),
                 IDR_EXTINGUISH => extinguish_driver(character, item),
                 IDR_CHEST => chest_driver(character, item),
@@ -2376,6 +2384,23 @@ pub fn outcome_item_name(name: &str) -> [u8; OUTCOME_ITEM_NAME_BYTES] {
     let len = source.len().min(OUTCOME_ITEM_NAME_BYTES);
     bytes[..len].copy_from_slice(&source[..len]);
     bytes
+}
+
+fn palace_gate_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if !context.timer_call || character.id.0 != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::PalaceGateTick {
+        item_id: item.id,
+        opened: false,
+        closed: false,
+        blocked: false,
+    }
 }
 
 fn food_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
@@ -4550,6 +4575,43 @@ mod tests {
         assert_eq!(light.modifier_index[0], V_LIGHT);
         assert_eq!(light.modifier_value[0], 15);
         assert_eq!(light.sprite, 101);
+    }
+
+    #[test]
+    fn palace_gate_only_dispatches_for_zero_character_timer_calls() {
+        let mut timer_character = character(0);
+        let mut gate = item(7, ItemFlags::USED, 0, IDR_PALACEGATE);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PALACEGATE,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut gate,
+                request,
+                3,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::PalaceGateTick {
+                item_id: ItemId(7),
+                opened: false,
+                closed: false,
+                blocked: false,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver(&mut character(1), &mut gate, request, 3, false),
+            ItemDriverOutcome::Noop
+        );
     }
 
     #[test]

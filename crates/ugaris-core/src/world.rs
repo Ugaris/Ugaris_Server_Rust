@@ -4310,6 +4310,18 @@ impl World {
                     gates_opened,
                 }
             }
+            ItemDriverOutcome::PalaceGateTick { item_id, .. } => {
+                self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
+                let Some((opened, closed, blocked)) = self.tick_area3_palace_gate(item_id) else {
+                    return ItemDriverOutcome::Noop;
+                };
+                ItemDriverOutcome::PalaceGateTick {
+                    item_id,
+                    opened,
+                    closed,
+                    blocked,
+                }
+            }
             ItemDriverOutcome::TorchExtinguishedUnderwater {
                 item_id,
                 character_id,
@@ -5110,6 +5122,70 @@ impl World {
         self.queue_sound_area(x, y, if character_id.0 == 0 { 2 } else { 3 });
 
         DoorToggleResult::Toggled
+    }
+
+    fn tick_area3_palace_gate(&mut self, item_id: ItemId) -> Option<(bool, bool, bool)> {
+        let item = self.items.get(&item_id)?;
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        let is_open = item.driver_data.first().copied().unwrap_or_default() != 0;
+        let keep_open = self.area3_palace_lamps.keep_open_until_tick > self.tick.0;
+        let tile = self.map.tile(x, y)?;
+        if tile.item != item_id.0 {
+            return None;
+        }
+
+        if keep_open {
+            if is_open {
+                return Some((false, false, false));
+            }
+            let item = self.items.get_mut(&item_id)?;
+            item.driver_data.resize(40, 0);
+            let tile = self.map.tile_mut(x, y)?;
+            let stored = item.flags
+                & (ItemFlags::MOVEBLOCK
+                    | ItemFlags::SIGHTBLOCK
+                    | ItemFlags::DOOR
+                    | ItemFlags::SOUNDBLOCK);
+            store_door_flags(item, stored);
+            item.flags.remove(
+                ItemFlags::MOVEBLOCK
+                    | ItemFlags::SIGHTBLOCK
+                    | ItemFlags::DOOR
+                    | ItemFlags::SOUNDBLOCK,
+            );
+            tile.flags.remove(
+                MapFlags::TMOVEBLOCK
+                    | MapFlags::TSIGHTBLOCK
+                    | MapFlags::DOOR
+                    | MapFlags::TSOUNDBLOCK,
+            );
+            item.driver_data[0] = 1;
+            item.sprite += 1;
+            self.mark_dirty_sector(x, y);
+            return Some((true, false, false));
+        }
+
+        if !is_open {
+            return Some((false, false, false));
+        }
+        if tile
+            .flags
+            .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+        {
+            return Some((false, false, true));
+        }
+
+        let item = self.items.get_mut(&item_id)?;
+        item.driver_data.resize(40, 0);
+        let tile = self.map.tile_mut(x, y)?;
+        let restored = door_stored_flags(item);
+        item.flags.insert(restored);
+        apply_door_tile_flags(tile, item.flags);
+        item.driver_data[0] = 0;
+        item.sprite -= 1;
+        self.mark_dirty_sector(x, y);
+        Some((false, true, false))
     }
 
     fn shift_extended_door_foregrounds(&mut self, x: usize, y: usize, delta: i32) {
@@ -7900,8 +7976,9 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_EDEMONBALL,
-            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEKEY,
-            IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEGATE,
+            IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH,
+            IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
@@ -10541,6 +10618,112 @@ mod tests {
             }
         ));
         assert_eq!(world.timers.used_timers(), 2);
+    }
+
+    #[test]
+    fn world_area3_palace_gate_opens_and_closes_from_keepopen_window() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        world.area3_palace_lamps.keep_open_until_tick = 200;
+        let mut gate = item(
+            7,
+            ItemFlags::USED | ItemFlags::MOVEBLOCK | ItemFlags::SIGHTBLOCK | ItemFlags::DOOR,
+        );
+        gate.driver = IDR_PALACEGATE;
+        gate.driver_data = vec![0];
+        gate.sprite = 500;
+        gate.x = 10;
+        gate.y = 10;
+        world.map.tile_mut(10, 10).unwrap().item = 7;
+        world.map.tile_mut(10, 10).unwrap().flags =
+            MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK | MapFlags::DOOR;
+        world.add_item(gate);
+
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+        world.advance();
+        let open_outcome = world.process_due_timers(3).remove(0);
+
+        assert_eq!(
+            open_outcome,
+            ItemDriverOutcome::PalaceGateTick {
+                item_id: ItemId(7),
+                opened: true,
+                closed: false,
+                blocked: false,
+            }
+        );
+        let gate = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(gate.driver_data[0], 1);
+        assert_eq!(gate.sprite, 501);
+        assert!(!gate
+            .flags
+            .intersects(ItemFlags::MOVEBLOCK | ItemFlags::SIGHTBLOCK | ItemFlags::DOOR));
+        assert!(!world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .intersects(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK | MapFlags::DOOR));
+
+        world.tick = Tick(250);
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+        world.advance();
+        let close_outcome = world.process_due_timers(3).remove(0);
+
+        assert_eq!(
+            close_outcome,
+            ItemDriverOutcome::PalaceGateTick {
+                item_id: ItemId(7),
+                opened: false,
+                closed: true,
+                blocked: false,
+            }
+        );
+        let gate = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(gate.driver_data[0], 0);
+        assert_eq!(gate.sprite, 500);
+        assert!(gate.flags.contains(ItemFlags::MOVEBLOCK));
+        assert!(world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK));
+    }
+
+    #[test]
+    fn world_area3_palace_gate_refuses_to_close_when_blocked() {
+        let mut world = World::default();
+        world.tick = Tick(250);
+        let mut gate = item(7, ItemFlags::USED);
+        gate.driver = IDR_PALACEGATE;
+        gate.driver_data = vec![1];
+        gate.driver_data.resize(40, 0);
+        gate.driver_data[30..38].copy_from_slice(&ItemFlags::MOVEBLOCK.bits().to_le_bytes());
+        gate.sprite = 501;
+        gate.x = 10;
+        gate.y = 10;
+        world.map.tile_mut(10, 10).unwrap().item = 7;
+        world.map.tile_mut(10, 10).unwrap().flags = MapFlags::MOVEBLOCK;
+        world.add_item(gate);
+
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+        world.advance();
+        let outcome = world.process_due_timers(3).remove(0);
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::PalaceGateTick {
+                item_id: ItemId(7),
+                opened: false,
+                closed: false,
+                blocked: true,
+            }
+        );
+        let gate = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(gate.driver_data[0], 1);
+        assert_eq!(gate.sprite, 501);
+        assert_eq!(world.timers.used_timers(), 1);
     }
 
     #[test]
