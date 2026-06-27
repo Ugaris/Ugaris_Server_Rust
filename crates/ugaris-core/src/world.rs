@@ -45,13 +45,13 @@ use crate::{
     see::char_see_char,
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell, pulse_damage,
-        read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
-        BLESS_COST, BLESS_DURATION, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_EARTHMUD,
-        EF_EARTHRAIN, EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,
-        EF_HEAL, EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
-        FIREBALL_COST, FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION, IDR_BLESS,
-        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3, IDR_POTION_SP,
-        IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
+        pulse_spend, read_spell_expire_tick, spell_power, strike_damage, warcry_damage,
+        warcry_speed_modifier, BLESS_COST, BLESS_DURATION, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN,
+        EF_EARTHMUD, EF_EARTHRAIN, EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH,
+        EF_FREEZE, EF_HEAL, EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE,
+        EF_WARCRY, FIREBALL_COST, FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION,
+        IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3,
+        IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -2362,6 +2362,9 @@ impl World {
             if self.setup_simple_baddy_spell_attack(character_id, &target) {
                 return true;
             }
+            if self.setup_simple_baddy_pulse_attack(character_id) {
+                return true;
+            }
             if let Some(direction) = adjacent_direction(
                 attacker.x,
                 attacker.y,
@@ -2439,6 +2442,120 @@ impl World {
         }
 
         false
+    }
+
+    fn setup_simple_baddy_pulse_attack(&mut self, character_id: CharacterId) -> bool {
+        if self.simple_baddy_pulse_value(character_id) == 0 {
+            return false;
+        }
+
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        if do_pulse(character).is_err() {
+            return false;
+        }
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
+            data.lastfight = self.tick.0 as i32;
+        }
+        true
+    }
+
+    fn simple_baddy_pulse_value(&self, character_id: CharacterId) -> i32 {
+        let Some(caster) = self.characters.get(&character_id) else {
+            return 0;
+        };
+        let pulse_value = character_value(caster, CharacterValue::Pulse);
+        if pulse_value == 0 || caster.mana <= POWERSCALE {
+            return 0;
+        }
+
+        let pulse_power = spell_power(
+            pulse_value,
+            character_value(caster, CharacterValue::Tactics),
+        );
+        let Some(spend) = pulse_spend(pulse_power, caster.mana) else {
+            return 0;
+        };
+
+        let mut damageable_total = 0;
+        for dx in -2..=2 {
+            for dy in -2..=2 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                damageable_total +=
+                    self.simple_baddy_pulse_field_value(caster, dx, dy, spend.amount);
+            }
+        }
+
+        if damageable_total * 95 > spend.mana_cost * 100 {
+            pulse_value
+        } else {
+            0
+        }
+    }
+
+    fn simple_baddy_pulse_field_value(
+        &self,
+        caster: &Character,
+        dx: i32,
+        dy: i32,
+        pulse_amount: i32,
+    ) -> i32 {
+        let x = i32::from(caster.x) + dx;
+        let y = i32::from(caster.y) + dy;
+        if x < 0 || y < 0 {
+            return 0;
+        }
+        let Some(tile) = self.map.tile(x as usize, y as usize) else {
+            return 0;
+        };
+        let target_id = CharacterId(u32::from(tile.character));
+        let Some(target) = self.characters.get(&target_id) else {
+            return 0;
+        };
+        if !can_attack(caster, target, &self.map)
+            || !self.map.can_see(
+                usize::from(caster.x),
+                usize::from(caster.y),
+                x as usize,
+                y as usize,
+                DIST_MAX,
+            )
+        {
+            return 0;
+        }
+        if target.mana > POWERSCALE * 4
+            && (character_value(target, CharacterValue::MagicShield) != 0
+                || character_value(target, CharacterValue::Heal) != 0)
+        {
+            return 0;
+        }
+        if target.action == action::HEAL_SELF || target.action == action::MAGICSHIELD {
+            return 0;
+        }
+
+        let has = target.hp + target.lifeshield;
+        let total = character_value(target, CharacterValue::Hp) * POWERSCALE
+            + character_value(target, CharacterValue::MagicShield) * POWERSCALE
+            + 1;
+        if total <= 0 || has * 100 / total > 72 {
+            return 0;
+        }
+
+        let target_has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+        let damage = pulse_damage(
+            character_value(caster, CharacterValue::Pulse),
+            pulse_amount,
+            character_value(target, CharacterValue::Immunity),
+            character_value(target, CharacterValue::Tactics),
+            target_has_tactics,
+        );
+        if damage * 95 < has * 100 {
+            return 0;
+        }
+        has
     }
 
     fn setup_simple_baddy_fireball_attack(
@@ -7957,6 +8074,83 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 461);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_uses_pulse_when_nearby_enemy_is_finishable() {
+        let mut world = World::default();
+        world.tick = Tick(462);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = POWERSCALE + 1;
+        npc.values[0][CharacterValue::Mana as usize] = 1;
+        npc.values[0][CharacterValue::Pulse as usize] = 2_000;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 12,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.hp = POWERSCALE + 100;
+        target.lifeshield = 0;
+        target.values[0][CharacterValue::Hp as usize] = 100;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 12, 10);
+        world.map.tile_mut(12, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::PULSE);
+        assert_eq!(npc.mana, 1);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 462);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_does_not_pulse_healthy_targets() {
+        let mut world = World::default();
+        world.tick = Tick(463);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = 100 * POWERSCALE;
+        npc.values[0][CharacterValue::Mana as usize] = 100;
+        npc.values[0][CharacterValue::Pulse as usize] = 200;
+        npc.values[0][CharacterValue::Attack as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut target = character(2);
+        target.hp = 100 * POWERSCALE;
+        target.values[0][CharacterValue::Hp as usize] = 100;
+        target.values[0][CharacterValue::Attack as usize] = 1;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::ATTACK1);
+        assert_eq!(npc.mana, 100 * POWERSCALE);
     }
 
     #[test]
