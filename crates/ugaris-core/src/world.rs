@@ -24,7 +24,7 @@ use crate::{
         IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
-    legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD},
+    legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
     light::{
         add_character_light, add_effect_light, add_item_light, compute_dlight, compute_groundlight,
         compute_shadow_with_random, remove_character_light, remove_effect_light, remove_item_light,
@@ -3445,6 +3445,8 @@ impl World {
                 action::FIREBALL2 => true,
                 action::BALL1 => self.complete_ball(character_id),
                 action::BALL2 => true,
+                action::EARTHRAIN => self.complete_earthrain(character_id),
+                action::EARTHMUD => self.complete_earthmud(character_id),
                 action::FIRERING => self.complete_firering(character_id),
                 action::FREEZE => self.complete_freeze(character_id),
                 action::FLASH => self.complete_flash(character_id),
@@ -3577,6 +3579,34 @@ impl World {
             caster.step = 0;
         }
         true
+    }
+
+    fn complete_earthrain(&mut self, caster_id: CharacterId) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        if caster.act1 <= 0 {
+            return false;
+        }
+        self.create_earthrain_effect(
+            caster.act1 % MAX_MAP as i32,
+            caster.act1 / MAX_MAP as i32,
+            caster.act2,
+        ) != 0
+    }
+
+    fn complete_earthmud(&mut self, caster_id: CharacterId) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        if caster.act1 <= 0 {
+            return false;
+        }
+        self.create_earthmud_effect(
+            caster.act1 % MAX_MAP as i32,
+            caster.act1 / MAX_MAP as i32,
+            caster.act2,
+        ) != 0
     }
 
     fn complete_firering(&mut self, caster_id: CharacterId) -> bool {
@@ -7752,6 +7782,57 @@ mod tests {
         assert_eq!(effect.light, 80);
         assert_eq!((effect.from_x, effect.from_y), (10, 10));
         assert_eq!((effect.to_x, effect.to_y), (15, 10));
+    }
+
+    #[test]
+    fn earthrain_action_completion_creates_legacy_area_effect() {
+        let mut world = World::default();
+        world.tick = Tick(400);
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.hp = 10 * POWERSCALE;
+
+        crate::do_action::do_earthrain(&mut caster, 12, 10, 7).unwrap();
+        caster.duration = 1;
+        world.spawn_character(caster, 10, 10);
+
+        let completion = world.tick_basic_actions().pop().unwrap();
+        assert!(completion.ok);
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::IDLE);
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_EARTHRAIN);
+        assert_eq!(effect.strength, 7);
+        assert_eq!(effect.light, 10);
+        assert_eq!(effect.stop_tick, 400 + TICKS_PER_SECOND as i32 * 60);
+        assert_eq!(
+            world.map.tile(12, 10).unwrap().effects[0],
+            effect.serial as u16
+        );
+    }
+
+    #[test]
+    fn earthmud_action_completion_creates_legacy_area_effect() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.hp = 10 * POWERSCALE;
+
+        crate::do_action::do_earthmud(&mut caster, 12, 10, 4).unwrap();
+        caster.duration = 1;
+        world.spawn_character(caster, 10, 10);
+
+        let completion = world.tick_basic_actions().pop().unwrap();
+        assert!(completion.ok);
+
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_EARTHMUD);
+        assert_eq!(effect.strength, 4);
+        assert_eq!(effect.light, 0);
+        assert_eq!(
+            world.map.tile(12, 10).unwrap().effects[0],
+            effect.serial as u16
+        );
     }
 
     #[test]

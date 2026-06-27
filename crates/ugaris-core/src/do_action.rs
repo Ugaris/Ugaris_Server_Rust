@@ -711,6 +711,65 @@ pub fn do_ball(
     Ok(())
 }
 
+pub fn do_earthrain(
+    character: &mut Character,
+    target_x: usize,
+    target_y: usize,
+    strength: i32,
+) -> Result<(), DoError> {
+    do_earth_spell(character, target_x, target_y, strength, action::EARTHRAIN)
+}
+
+pub fn do_earthmud(
+    character: &mut Character,
+    target_x: usize,
+    target_y: usize,
+    strength: i32,
+) -> Result<(), DoError> {
+    do_earth_spell(character, target_x, target_y, strength, action::EARTHMUD)
+}
+
+fn do_earth_spell(
+    character: &mut Character,
+    target_x: usize,
+    target_y: usize,
+    strength: i32,
+    action_id: u16,
+) -> Result<(), DoError> {
+    if character.flags.contains(CharacterFlags::DEAD) {
+        return Err(DoError::Dead);
+    }
+    if target_x < 1 || target_x >= MAX_MAP - 1 || target_y < 1 || target_y >= MAX_MAP - 1 {
+        return Err(DoError::IllegalCoords);
+    }
+    let Some(direction) = offset_to_direction(
+        usize::from(character.x),
+        usize::from(character.y),
+        target_x,
+        target_y,
+    ) else {
+        return Err(DoError::SelfTarget);
+    };
+    if character.hp - POWERSCALE < strength * 100 {
+        return Err(DoError::ManaLow);
+    }
+
+    character.hp -= strength * 100;
+    character.action = action_id;
+    character.act1 = (target_x + target_y * MAX_MAP) as i32;
+    character.act2 = strength;
+    character.duration = speed_ticks(
+        character_value(character, CharacterValue::Speed),
+        character.speed_mode,
+        DUR_MAGIC_ACTION,
+    );
+    if character.speed_mode == SpeedMode::Fast {
+        character.endurance -= endurance_cost(character);
+    }
+    character.dir = direction as u8;
+    Ok(())
+}
+
 pub fn do_heal(
     caster: &mut Character,
     target: &Character,
@@ -1715,6 +1774,41 @@ mod tests {
             speed_ticks(0, SpeedMode::Normal, DUR_MAGIC_ACTION)
         );
         assert_eq!(character.mana, 0);
+    }
+
+    #[test]
+    fn do_earthrain_sets_legacy_action_and_hp_cost() {
+        let mut character = character();
+        character.hp = 10 * POWERSCALE;
+        character.speed_mode = SpeedMode::Fast;
+
+        do_earthrain(&mut character, 12, 10, 15).unwrap();
+
+        assert_eq!(character.action, action::EARTHRAIN);
+        assert_eq!(character.act1, (12 + 10 * MAX_MAP) as i32);
+        assert_eq!(character.act2, 15);
+        assert_eq!(character.dir, Direction::Right as u8);
+        assert_eq!(character.hp, 10 * POWERSCALE - 1500);
+        assert_eq!(
+            character.duration,
+            speed_ticks(0, SpeedMode::Fast, DUR_MAGIC_ACTION)
+        );
+        assert_eq!(character.endurance, -endurance_cost(&character));
+    }
+
+    #[test]
+    fn do_earthmud_rejects_self_and_low_hp_like_c() {
+        let mut character = character();
+        character.hp = 2 * POWERSCALE;
+
+        assert_eq!(
+            do_earthmud(&mut character, 10, 10, 1),
+            Err(DoError::SelfTarget)
+        );
+        assert_eq!(
+            do_earthmud(&mut character, 11, 10, 11),
+            Err(DoError::ManaLow)
+        );
     }
 
     #[test]
