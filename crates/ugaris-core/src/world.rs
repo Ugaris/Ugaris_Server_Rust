@@ -785,6 +785,7 @@ impl World {
             {
                 Some(EF_FIREBALL) => self.tick_fireball_effect(effect_id),
                 Some(EF_BALL) => self.tick_ball_effect(effect_id),
+                Some(EF_EDEMONBALL) => self.tick_edemonball_effect(effect_id),
                 Some(EF_STRIKE | EF_PULSE) => self.tick_strike_effect(effect_id),
                 Some(EF_BURN) => self.tick_burn_effect(effect_id),
                 Some(EF_EARTHRAIN) => self.tick_earthrain_effect(effect_id, &mut random_below),
@@ -1080,6 +1081,79 @@ impl World {
         self.set_effect_on_map(effect_id, x / 1024, y / 1024);
     }
 
+    fn tick_edemonball_effect(&mut self, effect_id: u32) {
+        let Some(effect) = self.effects.get(&effect_id).cloned() else {
+            return;
+        };
+
+        if effect.caster.is_some_and(|caster_id| {
+            !self
+                .characters
+                .get(&caster_id)
+                .is_some_and(|caster| caster.flags.contains(CharacterFlags::USED))
+        }) || self.tick.0 >= effect.stop_tick as u64
+        {
+            self.remove_effect_from_map(effect_id);
+            self.effects.remove(&effect_id);
+            return;
+        }
+
+        self.remove_effect_from_map(effect_id);
+
+        let raw_dx = effect.to_x - effect.from_x;
+        let raw_dy = effect.to_y - effect.from_y;
+        if raw_dx == 0 && raw_dy == 0 {
+            self.explode_edemonball_effect(effect_id, effect.x / 1024, effect.y / 1024);
+            return;
+        }
+
+        let (step_x, step_y) = if raw_dx.abs() > raw_dy.abs() {
+            (raw_dx * 256 / raw_dx.abs(), raw_dy * 256 / raw_dx.abs())
+        } else {
+            (raw_dx * 256 / raw_dy.abs(), raw_dy * 256 / raw_dy.abs())
+        };
+
+        let last_x = effect.x / 1024;
+        let last_y = effect.y / 1024;
+        let x = effect.x + step_x;
+        let y = effect.y + step_y;
+        let tile_x = x / 1024;
+        let tile_y = y / 1024;
+
+        if self.edemonball_map_blocked(tile_x, tile_y)
+            && !self.fire_tile_contains_caster(effect.caster, tile_x, tile_y)
+        {
+            if let Some(effect) = self.effects.get_mut(&effect_id) {
+                effect.x = x;
+                effect.y = y;
+                effect.last_x = last_x;
+                effect.last_y = last_y;
+            }
+            let has_character = self
+                .map
+                .tile(
+                    usize::try_from(tile_x).unwrap_or_default(),
+                    usize::try_from(tile_y).unwrap_or_default(),
+                )
+                .is_some_and(|tile| tile.character != 0);
+            let (explode_x, explode_y) = if has_character {
+                (tile_x, tile_y)
+            } else {
+                (last_x, last_y)
+            };
+            self.explode_edemonball_effect(effect_id, explode_x, explode_y);
+            return;
+        }
+
+        if let Some(effect) = self.effects.get_mut(&effect_id) {
+            effect.x = x;
+            effect.y = y;
+            effect.last_x = last_x;
+            effect.last_y = last_y;
+        }
+        self.set_effect_on_map(effect_id, tile_x, tile_y);
+    }
+
     fn fire_map_blocked(&self, x: i32, y: i32) -> bool {
         let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
             return true;
@@ -1088,6 +1162,19 @@ impl World {
             return true;
         };
         tile.flags.contains(MapFlags::TMOVEBLOCK)
+            || (!tile.flags.contains(MapFlags::FIRETHRU)
+                && tile.flags.contains(MapFlags::MOVEBLOCK))
+    }
+
+    fn edemonball_map_blocked(&self, x: i32, y: i32) -> bool {
+        let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
+            return true;
+        };
+        let Some(tile) = self.map.tile(x, y) else {
+            return true;
+        };
+        tile.character != 0
+            || (tile.item != 0 && tile.flags.contains(MapFlags::TMOVEBLOCK))
             || (!tile.flags.contains(MapFlags::FIRETHRU)
                 && tile.flags.contains(MapFlags::MOVEBLOCK))
     }
@@ -1238,6 +1325,51 @@ impl World {
                 target.flags.insert(CharacterFlags::UPDATE);
             }
         }
+    }
+
+    fn explode_edemonball_effect(&mut self, effect_id: u32, x: i32, y: i32) {
+        let Some(effect) = self.effects.get(&effect_id).cloned() else {
+            return;
+        };
+        self.remove_effect_from_map(effect_id);
+        self.effects.remove(&effect_id);
+
+        if x < 1 || x >= self.map.width().saturating_sub(1) as i32 {
+            return;
+        }
+        if y < 1 || y >= self.map.height().saturating_sub(1) as i32 {
+            return;
+        }
+
+        if let Some(target_id) = self.map.tile(x as usize, y as usize).and_then(|tile| {
+            (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+        }) {
+            let may_damage = self.characters.get(&target_id).is_some_and(|target| {
+                if effect.base_sprite == 2
+                    && target
+                        .flags
+                        .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
+                {
+                    return false;
+                }
+                match effect.caster {
+                    Some(caster_id) => self
+                        .characters
+                        .get(&caster_id)
+                        .is_some_and(|caster| can_attack(caster, target, &self.map)),
+                    None => true,
+                }
+            });
+            if may_damage {
+                let damage = effect.strength.saturating_mul(POWERSCALE);
+                if let Some(target) = self.characters.get_mut(&target_id) {
+                    target.hp = target.hp.saturating_sub(damage);
+                    target.flags.insert(CharacterFlags::UPDATE);
+                }
+            }
+        }
+
+        self.create_explosion_effect(x, y, 8, 50450 + effect.base_sprite);
     }
 
     fn reflect_fireball_from_target(
@@ -7222,6 +7354,82 @@ mod tests {
         assert_eq!((effect.to_x, effect.to_y), (10, 30));
         assert_eq!((effect.x, effect.y), (10 * 1024 + 512, 21 * 1024 + 512));
         assert_eq!(effect.stop_tick, 1 + (TICKS_PER_SECOND * 4) as i32);
+    }
+
+    #[test]
+    fn edemonball_effect_moves_by_legacy_quarter_tile_steps() {
+        let mut world = World::default();
+        let effect_id = world.create_edemonball_effect(10, 10, 10, 20, 7, 1);
+
+        world.tick_effects();
+
+        let effect = world.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.effect_type, EF_EDEMONBALL);
+        assert_eq!((effect.x, effect.y), (10 * 1024 + 512, 10 * 1024 + 768));
+        assert_eq!((effect.last_x, effect.last_y), (10, 10));
+        assert!(world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .effects
+            .contains(&(effect_id as u16)));
+    }
+
+    #[test]
+    fn edemonball_effect_explodes_on_character_and_applies_direct_damage() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.hp = 10_000;
+        assert!(world.spawn_character(target, 10, 12));
+        let _effect_id = world.create_edemonball_effect(10, 10, 10, 20, 3, 0);
+
+        for _ in 0..6 {
+            world.tick_effects();
+        }
+
+        assert!(!world
+            .effects
+            .values()
+            .any(|effect| effect.effect_type == EF_EDEMONBALL));
+        let target = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(target.hp, 7_000);
+        assert!(target.flags.contains(CharacterFlags::UPDATE));
+        assert!(world.effects.values().any(|effect| {
+            effect.effect_type == EF_EXPLODE
+                && effect.base_sprite == 50450
+                && effect
+                    .fields
+                    .iter()
+                    .any(|&field| field == world.map.legacy_index(10, 12).unwrap() as i32)
+        }));
+    }
+
+    #[test]
+    fn edemonball_effect_explodes_on_wall_at_previous_tile() {
+        let mut world = World::default();
+        world
+            .map
+            .tile_mut(10, 11)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+        let _effect_id = world.create_edemonball_effect(10, 10, 10, 20, 3, 2);
+
+        world.tick_effects();
+        world.tick_effects();
+
+        assert!(!world
+            .effects
+            .values()
+            .any(|effect| effect.effect_type == EF_EDEMONBALL));
+        assert!(world.effects.values().any(|effect| {
+            effect.effect_type == EF_EXPLODE
+                && effect.base_sprite == 50452
+                && effect
+                    .fields
+                    .iter()
+                    .any(|&field| field == world.map.legacy_index(10, 10).unwrap() as i32)
+        }));
     }
 
     #[test]
