@@ -2954,6 +2954,15 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::ForestSpadeCollapse {
+                character_id, x, y, ..
+            } => {
+                if self.teleport_character(character_id, x, y, false) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::Recall {
                 item_id,
                 character_id,

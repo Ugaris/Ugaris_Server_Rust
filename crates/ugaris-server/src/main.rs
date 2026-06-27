@@ -20,7 +20,7 @@ use ugaris_core::{
     },
     ids::{CharacterId, ItemId},
     item_driver::{
-        IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING,
+        ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING,
         IDR_SPECIAL_POTION, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
@@ -464,6 +464,16 @@ enum RandomChestApplyResult {
     Money { amount: u32 },
     Item { item_name: String },
     Empty,
+    CursorOccupied,
+    MissingPlayer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ForestSpadeApplyResult {
+    Found { item_name: String },
+    FoundMoney { amount: u32 },
+    AlreadyDug,
+    Nothing,
     CursorOccupied,
     MissingPlayer,
 }
@@ -1554,6 +1564,53 @@ fn apply_random_chest(
     }
     player.record_chest_opened(0);
     RandomChestApplyResult::Money { amount }
+}
+
+const FOREST_SPADE_DIG_COOLDOWN_SECONDS: u64 = 365 * 24 * 60 * 60;
+
+fn apply_forest_spade_find(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    player: Option<&mut PlayerRuntime>,
+    character_id: CharacterId,
+    find: ForestSpadeFind,
+    realtime_seconds: u64,
+    random_seed: u64,
+) -> ForestSpadeApplyResult {
+    if world
+        .characters
+        .get(&character_id)
+        .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return ForestSpadeApplyResult::CursorOccupied;
+    }
+
+    match find {
+        ForestSpadeFind::ForestNote1 => {
+            grant_template_item_to_cursor(world, loader, character_id, "forest_note1")
+                .map(|item_name| ForestSpadeApplyResult::Found { item_name })
+                .unwrap_or(ForestSpadeApplyResult::Nothing)
+        }
+        ForestSpadeFind::BranningtonTreasure { dig_index } => {
+            let Some(player) = player else {
+                return ForestSpadeApplyResult::MissingPlayer;
+            };
+            let last_dig = player.treasure_dig_last_seconds(dig_index);
+            if last_dig != 0
+                && realtime_seconds.saturating_sub(last_dig) < FOREST_SPADE_DIG_COOLDOWN_SECONDS
+            {
+                return ForestSpadeApplyResult::AlreadyDug;
+            }
+            let amount = 100_000 + legacy_random(random_seed, 100_000);
+            if !grant_money_to_cursor(world, loader, character_id, amount) {
+                return ForestSpadeApplyResult::Nothing;
+            }
+            if !player.mark_treasure_dig(dig_index, realtime_seconds) {
+                return ForestSpadeApplyResult::MissingPlayer;
+            }
+            ForestSpadeApplyResult::FoundMoney { amount }
+        }
+    }
 }
 
 fn random_chest_location_id(x: u16, y: u16, area_id: u16) -> u32 {
@@ -7819,6 +7876,56 @@ async fn main() -> anyhow::Result<()> {
                                                 "Congratulations, you have just discovered bug #4744B, please report it to the authorities!".to_string(),
                                             ));
                                             failed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeFind { item_id, character_id, find } => {
+                                            let random_seed = world.tick.0
+                                                ^ (u64::from(item_id.0) << 16)
+                                                ^ u64::from(character_id.0);
+                                            match apply_forest_spade_find(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                runtime.player_for_character_mut(character_id),
+                                                character_id,
+                                                find,
+                                                realtime_seconds,
+                                                random_seed,
+                                            ) {
+                                                ForestSpadeApplyResult::Found { item_name } => {
+                                                    feedback.push((character_id, format!("You found a {item_name}.")));
+                                                    executed += 1;
+                                                }
+                                                ForestSpadeApplyResult::FoundMoney { amount } => {
+                                                    feedback.push((character_id, format!("You found a Money ({:.2}G).", f64::from(amount) / 100.0)));
+                                                    executed += 1;
+                                                }
+                                                ForestSpadeApplyResult::AlreadyDug => {
+                                                    feedback.push((character_id, "You've already dug here. The treasure hasn't regrown yet.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                ForestSpadeApplyResult::Nothing => {
+                                                    feedback.push((character_id, "You dug a nice deep hole but you didn't find anything. Embarrassed you stop digging and fill the hole again.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                ForestSpadeApplyResult::CursorOccupied => {
+                                                    feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                ForestSpadeApplyResult::MissingPlayer => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeCollapse { character_id, .. } => {
+                                            feedback.push((character_id, "The floor collapses below your feet and you fall...".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeNothing { character_id, .. } => {
+                                            feedback.push((character_id, "You dug a nice deep hole but you didn't find anything. Embarrassed you stop digging and fill the hole again.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeCursorOccupied { character_id, .. } => {
+                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::OrbSpawn { item_id, character_id, anti, special } => {
                                             let random_seed = world.tick.0

@@ -26,6 +26,8 @@ pub const ORBSPAWN_MAX_ENTRIES: usize = 100;
 pub const LEGACY_ORBSPAWN_PPD_SIZE: usize = ORBSPAWN_MAX_ENTRIES * 4 * 2;
 pub const DEMONSHRINE_MAX_ENTRIES: usize = 100;
 pub const LEGACY_DEMONSHRINE_PPD_SIZE: usize = DEMONSHRINE_MAX_ENTRIES * 4;
+pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
+pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
@@ -37,6 +39,7 @@ pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DA
 pub const DRD_DEMONSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 68 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
 pub const DRD_MISC_PPD: u32 = make_drd(DEV_ID_DB, 113 | PERSISTENT_PLAYER_DATA);
+pub const DRD_TREASURE_DIG_PPD: u32 = make_drd(DEV_ID_ED, 5 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
@@ -225,6 +228,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub demonshrines: Vec<u32>,
     #[serde(default)]
+    pub treasure_dig_last_seconds: [u64; TREASURE_DIG_PPD_ENTRIES],
+    #[serde(default)]
     pub misc_ppd: Vec<u8>,
     pub achievements: AchievementState,
     #[serde(default)]
@@ -263,6 +268,7 @@ impl PlayerRuntime {
             random_chests: Vec::new(),
             orb_spawns: Vec::new(),
             demonshrines: Vec::new(),
+            treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
             achievements: AchievementState::default(),
             keyring_auto_add: false,
@@ -561,6 +567,47 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn treasure_dig_last_seconds(&self, dig_index: u8) -> u64 {
+        self.treasure_dig_last_seconds
+            .get(usize::from(dig_index))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn mark_treasure_dig(&mut self, dig_index: u8, realtime_seconds: u64) -> bool {
+        let Some(last_dig) = self
+            .treasure_dig_last_seconds
+            .get_mut(usize::from(dig_index))
+        else {
+            return false;
+        };
+        *last_dig = realtime_seconds;
+        true
+    }
+
+    pub fn encode_legacy_treasure_dig_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_TREASURE_DIG_PPD_SIZE];
+        for (index, last_dig_seconds) in self.treasure_dig_last_seconds.iter().copied().enumerate()
+        {
+            write_i32(
+                &mut bytes,
+                index * 4,
+                last_dig_seconds.min(i32::MAX as u64) as i32,
+            );
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_treasure_dig_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_TREASURE_DIG_PPD_SIZE {
+            return false;
+        }
+        for index in 0..TREASURE_DIG_PPD_ENTRIES {
+            self.treasure_dig_last_seconds[index] = read_i32(bytes, index * 4).max(0) as u64;
+        }
+        true
+    }
+
     pub fn decode_legacy_ppd_blob(&mut self, bytes: &[u8]) -> bool {
         for block in LegacyPpdBlocks::parse(bytes) {
             let Some(block) = block else {
@@ -592,6 +639,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_TREASURE_DIG_PPD => {
+                    if !self.decode_legacy_treasure_dig_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_MISC_PPD => {
                     if !self.decode_legacy_misc_ppd(block.data) {
                         return false;
@@ -610,6 +662,7 @@ impl PlayerRuntime {
         let mut had_randchest = false;
         let mut had_demonshrine = false;
         let mut had_orbspawn = false;
+        let mut had_treasure_dig = false;
         let mut had_misc = false;
         let mut existing_was_valid = true;
 
@@ -655,6 +708,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_ORBSPAWN_PPD,
                     &self.encode_legacy_orbspawn_ppd(),
+                );
+            } else if block.id == DRD_TREASURE_DIG_PPD {
+                had_treasure_dig = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TREASURE_DIG_PPD,
+                    &self.encode_legacy_treasure_dig_ppd(),
                 );
             } else if block.id == DRD_MISC_PPD {
                 had_misc = true;
@@ -706,6 +766,19 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_ORBSPAWN_PPD,
                     &self.encode_legacy_orbspawn_ppd(),
+                );
+            }
+        }
+        if !had_treasure_dig && (existing_was_valid || existing.is_empty()) {
+            if self
+                .treasure_dig_last_seconds
+                .iter()
+                .any(|seconds| *seconds != 0)
+            {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TREASURE_DIG_PPD,
+                    &self.encode_legacy_treasure_dig_ppd(),
                 );
             }
         }
@@ -1434,6 +1507,25 @@ mod tests {
         assert_eq!(decoded.chest_last_access_seconds(63), 86_400);
         assert_eq!(decoded.chest_last_access_seconds(199), i32::MAX as u64);
         assert_eq!(decoded.chest_last_access_seconds(1), 0);
+    }
+
+    #[test]
+    fn treasure_dig_ppd_codec_matches_legacy_c_layout() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.mark_treasure_dig(0, 1234));
+        assert!(player.mark_treasure_dig(4, i32::MAX as u64 + 99));
+
+        let bytes = player.encode_legacy_treasure_dig_ppd();
+        assert_eq!(bytes.len(), LEGACY_TREASURE_DIG_PPD_SIZE);
+        assert_eq!(read_i32(&bytes, 0), 1234);
+        assert_eq!(read_i32(&bytes, 4), 0);
+        assert_eq!(read_i32(&bytes, 4 * 4), i32::MAX);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_treasure_dig_ppd(&bytes));
+        assert_eq!(decoded.treasure_dig_last_seconds(0), 1234);
+        assert_eq!(decoded.treasure_dig_last_seconds(1), 0);
+        assert_eq!(decoded.treasure_dig_last_seconds(4), i32::MAX as u64);
     }
 
     #[test]

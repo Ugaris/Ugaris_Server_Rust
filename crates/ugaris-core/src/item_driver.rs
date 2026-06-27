@@ -32,6 +32,7 @@ pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_DEMONSHRINE: u16 = 35;
 pub const IDR_EDEMONBALL: u16 = 36;
 pub const IDR_PALACEKEY: u16 = 59;
+pub const IDR_FORESTSPADE: u16 = 77;
 pub const IDR_SHRIKEAMULET: u16 = 118;
 pub const IDR_MINEGATEWAYKEY: u16 = 126;
 pub const IDR_INFINITE_CHEST: u16 = 93;
@@ -129,6 +130,12 @@ pub enum InfiniteChestTemplate {
     Rune7,
     Rune8,
     Rune9,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ForestSpadeFind {
+    ForestNote1,
+    BranningtonTreasure { dig_index: u8 },
 }
 
 impl InfiniteChestTemplate {
@@ -362,6 +369,25 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
     },
     InfiniteChestUnknown {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ForestSpadeFind {
+        item_id: ItemId,
+        character_id: CharacterId,
+        find: ForestSpadeFind,
+    },
+    ForestSpadeCollapse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+    },
+    ForestSpadeNothing {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ForestSpadeCursorOccupied {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -707,6 +733,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EXTINGUISH => extinguish_driver(character, item),
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
+                IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_DEMONSHRINE => demonshrine_driver(character, item, area_id),
                 IDR_PALACEKEY => palace_key_driver(character, item, context),
                 IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
@@ -1188,6 +1215,59 @@ fn randchest_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     ItemDriverOutcome::RandomChest {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn forest_spade_driver(character: &Character, item: &Item, area_id: u16) -> ItemDriverOutcome {
+    if item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::ForestSpadeCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    match (area_id, character.x, character.y) {
+        (16, 205, 234) => ItemDriverOutcome::ForestSpadeFind {
+            item_id: item.id,
+            character_id: character.id,
+            find: ForestSpadeFind::ForestNote1,
+        },
+        (16, 130, 219) => ItemDriverOutcome::ForestSpadeCollapse {
+            item_id: item.id,
+            character_id: character.id,
+            x: 44,
+            y: 231,
+        },
+        (1, 93, 36) => ItemDriverOutcome::ForestSpadeCollapse {
+            item_id: item.id,
+            character_id: character.id,
+            x: 106,
+            y: 211,
+        },
+        (29, 83, 127) => forest_spade_treasure(item.id, character.id, 0),
+        (29, 94, 222) => forest_spade_treasure(item.id, character.id, 1),
+        (29, 214, 136) => forest_spade_treasure(item.id, character.id, 2),
+        (29, 185, 22) => forest_spade_treasure(item.id, character.id, 3),
+        (29, 165, 79) => forest_spade_treasure(item.id, character.id, 4),
+        _ => ItemDriverOutcome::ForestSpadeNothing {
+            item_id: item.id,
+            character_id: character.id,
+        },
+    }
+}
+
+fn forest_spade_treasure(
+    item_id: ItemId,
+    character_id: CharacterId,
+    dig_index: u8,
+) -> ItemDriverOutcome {
+    ItemDriverOutcome::ForestSpadeFind {
+        item_id,
+        character_id,
+        find: ForestSpadeFind::BranningtonTreasure { dig_index },
     }
 }
 
@@ -5114,6 +5194,84 @@ mod tests {
             }
         );
         assert_eq!(drdata_u32(&gate, 8), 227);
+    }
+
+    #[test]
+    fn forest_spade_classifies_note_collapse_and_treasure_locations() {
+        let mut character = character(42);
+        let mut spade = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FORESTSPADE);
+        spade.carried_by = Some(CharacterId(42));
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FORESTSPADE,
+            item_id: ItemId(7),
+            character_id: CharacterId(42),
+            spec: 0,
+        };
+
+        character.x = 205;
+        character.y = 234;
+        assert_eq!(
+            execute_item_driver(&mut character, &mut spade, request, 16, false),
+            ItemDriverOutcome::ForestSpadeFind {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                find: ForestSpadeFind::ForestNote1,
+            }
+        );
+
+        character.x = 93;
+        character.y = 36;
+        assert_eq!(
+            execute_item_driver(&mut character, &mut spade, request, 1, false),
+            ItemDriverOutcome::ForestSpadeCollapse {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                x: 106,
+                y: 211,
+            }
+        );
+
+        character.x = 214;
+        character.y = 136;
+        assert_eq!(
+            execute_item_driver(&mut character, &mut spade, request, 29, false),
+            ItemDriverOutcome::ForestSpadeFind {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                find: ForestSpadeFind::BranningtonTreasure { dig_index: 2 },
+            }
+        );
+    }
+
+    #[test]
+    fn forest_spade_blocks_cursor_and_reports_empty_ground() {
+        let mut character = character(42);
+        character.cursor_item = Some(ItemId(9));
+        let mut spade = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FORESTSPADE);
+        spade.carried_by = Some(CharacterId(42));
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FORESTSPADE,
+            item_id: ItemId(7),
+            character_id: CharacterId(42),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut spade, request, 16, false),
+            ItemDriverOutcome::ForestSpadeCursorOccupied {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+            }
+        );
+
+        character.cursor_item = None;
+        assert_eq!(
+            execute_item_driver(&mut character, &mut spade, request, 16, false),
+            ItemDriverOutcome::ForestSpadeNothing {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+            }
+        );
     }
 
     fn request(character_id: u32, item_id: u32, spec: i32) -> ItemUseRequest {
