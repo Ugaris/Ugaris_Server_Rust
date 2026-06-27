@@ -7296,6 +7296,19 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionProfessionReset {
+                                            character_id,
+                                            used,
+                                            ..
+                                        } => {
+                                            if !used {
+                                                feedback.push((
+                                                    character_id,
+                                                    "You don't feel like drinking this potion now.".to_string(),
+                                                ));
+                                            }
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { character_id, .. } => {
                                             for message in keyring_show_messages(runtime.player_for_character(character_id)) {
                                                 feedback.push((character_id, message));

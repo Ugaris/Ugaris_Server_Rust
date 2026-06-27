@@ -453,6 +453,14 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         used: bool,
     },
+    SpecialPotionProfessionReset {
+        item_id: ItemId,
+        character_id: CharacterId,
+        used: bool,
+        professions_reset: u16,
+        profession_points_lowered: u16,
+        exp_refunded: u32,
+    },
     SpecialShrine {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1318,6 +1326,28 @@ fn raise_value_exp(character: &mut Character, value: usize) -> Option<u32> {
     Some(cost)
 }
 
+fn lower_value(character: &mut Character, value: usize) -> Option<u32> {
+    if character.flags.contains(CharacterFlags::NOEXP)
+        || value >= CHARACTER_VALUE_COUNT
+        || skill_raise_cost_factor(value) == 0
+    {
+        return None;
+    }
+    let current = bare_value(character, value);
+    if i32::from(current) <= skill_start(value) {
+        return None;
+    }
+
+    let seyan = character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE);
+    let lowered = current.saturating_sub(1);
+    character.values[1][value] = lowered;
+    let cost = raise_cost(value, lowered, seyan);
+    character.exp_used = character.exp_used.saturating_sub(cost);
+    character.flags.insert(CharacterFlags::UPDATE);
+    Some(cost)
+}
+
 fn bare_value(character: &Character, value: usize) -> i16 {
     character
         .values
@@ -1350,7 +1380,8 @@ fn raise_cost(value: usize, current: i16, seyan: bool) -> u32 {
 fn skill_start(value: usize) -> i32 {
     match value {
         0..=6 => 10,
-        11..=42 => 1,
+        42 => -1,
+        11..=41 => 1,
         _ => -1,
     }
 }
@@ -1890,6 +1921,58 @@ fn special_potion_driver(
                 installed: false,
             };
         }
+        7 => {
+            if character.exp < character.exp_used {
+                return ItemDriverOutcome::SpecialPotionProfessionReset {
+                    item_id: item.id,
+                    character_id: character.id,
+                    used: false,
+                    professions_reset: 0,
+                    profession_points_lowered: 0,
+                    exp_refunded: 0,
+                };
+            }
+
+            let professions_reset = character
+                .professions
+                .iter()
+                .fold(0_u16, |sum, &value| sum.saturating_add(value.max(0) as u16));
+            if professions_reset == 0 {
+                return ItemDriverOutcome::SpecialPotionProfessionReset {
+                    item_id: item.id,
+                    character_id: character.id,
+                    used: false,
+                    professions_reset: 0,
+                    profession_points_lowered: 0,
+                    exp_refunded: 0,
+                };
+            }
+
+            for profession in &mut character.professions {
+                *profession = 0;
+            }
+            let old_exp_used = character.exp_used;
+            let mut profession_points_lowered = 0_u16;
+            for _ in 0..(professions_reset / 3) {
+                if lower_value(character, CharacterValue::Profession as usize).is_some() {
+                    profession_points_lowered = profession_points_lowered.saturating_add(1);
+                }
+            }
+            let exp_refunded = old_exp_used.saturating_sub(character.exp_used);
+            character.exp = character.exp.saturating_sub(exp_refunded);
+            character
+                .flags
+                .insert(CharacterFlags::PROF | CharacterFlags::UPDATE);
+            consume_item(character, item);
+            return ItemDriverOutcome::SpecialPotionProfessionReset {
+                item_id: item.id,
+                character_id: character.id,
+                used: true,
+                professions_reset,
+                profession_points_lowered,
+                exp_refunded,
+            };
+        }
         8 => {
             character.hp = (character.hp - 10 * POWERSCALE).max(1);
             character.endurance = (character.endurance - 10 * POWERSCALE).max(0);
@@ -2374,6 +2457,87 @@ mod tests {
         );
         assert!(item.flags.contains(ItemFlags::USED));
         assert_eq!(character.hp, 0);
+    }
+
+    #[test]
+    fn special_potion_type_7_resets_professions_and_lowers_profession_points() {
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        character.professions[0] = 2;
+        character.professions[3] = 4;
+        character.values[1][CharacterValue::Profession as usize] = 10;
+        character.exp = 10_000;
+        character.exp_used = 5_000;
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_POTION);
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver_data = vec![7];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut potion,
+            ItemDriverRequest::Driver {
+                driver: IDR_SPECIAL_POTION,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SpecialPotionProfessionReset {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                used: true,
+                professions_reset: 6,
+                profession_points_lowered: 2,
+                exp_refunded: 2_240,
+            }
+        );
+        assert!(character.professions.iter().all(|&value| value == 0));
+        assert_eq!(character.values[1][CharacterValue::Profession as usize], 8);
+        assert_eq!((character.exp, character.exp_used), (7_760, 2_760));
+        assert_eq!(character.inventory[30], None);
+        assert!(!potion.flags.contains(ItemFlags::USED));
+        assert!(character
+            .flags
+            .contains(CharacterFlags::PROF | CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn special_potion_type_7_blocks_without_professions() {
+        let mut character = character(1);
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_POTION);
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver_data = vec![7];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut potion,
+            ItemDriverRequest::Driver {
+                driver: IDR_SPECIAL_POTION,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SpecialPotionProfessionReset {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                used: false,
+                professions_reset: 0,
+                profession_points_lowered: 0,
+                exp_refunded: 0,
+            }
+        );
+        assert!(potion.flags.contains(ItemFlags::USED));
     }
 
     #[test]

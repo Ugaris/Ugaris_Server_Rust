@@ -1546,7 +1546,8 @@ impl World {
                     installed,
                 }
             }
-            ItemDriverOutcome::SpecialPotionSecurity { .. } => outcome,
+            ItemDriverOutcome::SpecialPotionSecurity { .. }
+            | ItemDriverOutcome::SpecialPotionProfessionReset { .. } => outcome,
             ItemDriverOutcome::SpecialShrine { .. } => outcome,
             ItemDriverOutcome::TorchExtractOrb { .. } => outcome,
             ItemDriverOutcome::NomadStack { .. } => outcome,
