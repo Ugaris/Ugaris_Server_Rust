@@ -2557,6 +2557,9 @@ impl World {
                     return true;
                 }
             }
+            if self.regenerate_simple_baddy(character_id) {
+                return true;
+            }
             if random_below(2) == 0 {
                 return self.idle_simple_baddy(character_id);
             }
@@ -2608,7 +2611,8 @@ impl World {
         };
 
         let Some((target_x, target_y)) = target.filter(|(x, y)| *x > 0 && *y > 0) else {
-            return self.idle_simple_baddy(character_id);
+            return self.regenerate_simple_baddy(character_id)
+                || self.idle_simple_baddy(character_id);
         };
         let target_x = target_x as u16;
         let target_y = target_y as u16;
@@ -2621,7 +2625,8 @@ impl World {
                 data.home_x = target_x;
                 data.home_y = target_y;
             }
-            return self.idle_simple_baddy(character_id);
+            return self.regenerate_simple_baddy(character_id)
+                || self.idle_simple_baddy(character_id);
         }
 
         if data.teleport != 0 && self.teleport_character(character_id, target_x, target_y, false) {
@@ -2653,7 +2658,7 @@ impl World {
         }
 
         let _ = self.set_simple_baddy_home(character_id, character.x, character.y);
-        self.idle_simple_baddy(character_id)
+        self.regenerate_simple_baddy(character_id) || self.idle_simple_baddy(character_id)
     }
 
     pub fn process_simple_baddy_noncombat_actions(&mut self, area_id: u16) -> usize {
@@ -2682,6 +2687,20 @@ impl World {
         self.characters
             .get_mut(&character_id)
             .is_some_and(|character| do_idle(character, TICKS_PER_SECOND as i32).is_ok())
+    }
+
+    fn regenerate_simple_baddy(&mut self, character_id: CharacterId) -> bool {
+        self.characters
+            .get_mut(&character_id)
+            .is_some_and(|character| {
+                let max_mana = character_value(character, CharacterValue::Mana) * POWERSCALE;
+                let max_hp = character_value(character, CharacterValue::Hp) * POWERSCALE;
+                if character.mana < max_mana || character.hp < max_hp {
+                    do_idle(character, TICKS_PER_SECOND as i32).is_ok()
+                } else {
+                    false
+                }
+            })
     }
 
     fn clear_simple_baddy_scavenger_direction(&mut self, character_id: CharacterId) {
@@ -7676,6 +7695,36 @@ mod tests {
         };
         assert_eq!(data.dir, Direction::Right as i32);
         assert_eq!((data.home_x, data.home_y), (10, 10));
+    }
+
+    #[test]
+    fn simple_baddy_scavenger_regenerates_before_random_wander() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.hp = 9 * POWERSCALE;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 10;
+        npc.values[0][CharacterValue::Mana as usize] = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            scavenger: 4,
+            dir: 0,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(
+            world.process_simple_baddy_noncombat_action_with_random(CharacterId(1), 1, |_| {
+                panic!("regenerate_driver should run before RANDOM wander gates")
+            })
+        );
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::IDLE);
+        assert_eq!(npc.duration, TICKS_PER_SECOND as i32);
     }
 
     #[test]
