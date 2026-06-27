@@ -2362,6 +2362,15 @@ impl World {
         character_id: CharacterId,
         area_id: u16,
     ) -> bool {
+        self.process_simple_baddy_attack_action_with_random(character_id, area_id, |_| 1)
+    }
+
+    pub fn process_simple_baddy_attack_action_with_random(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        mut random: impl FnMut(u32) -> u32,
+    ) -> bool {
         let Some(attacker) = self.characters.get(&character_id).cloned() else {
             return false;
         };
@@ -2398,7 +2407,7 @@ impl World {
             if self.setup_simple_baddy_fireball_attack(character_id, &target, area_id) {
                 return true;
             }
-            if self.setup_simple_baddy_spell_attack(character_id, &target) {
+            if self.setup_simple_baddy_spell_attack(character_id, &target, &mut random) {
                 return true;
             }
             if self.setup_simple_baddy_pulse_attack(character_id) {
@@ -3287,6 +3296,7 @@ impl World {
         &mut self,
         character_id: CharacterId,
         target: &Character,
+        random: &mut impl FnMut(u32) -> u32,
     ) -> bool {
         let Some(attacker) = self.characters.get(&character_id).cloned() else {
             return false;
@@ -3334,8 +3344,10 @@ impl World {
             ) > POWERSCALE
         {
             if character_distance > 10 && character_distance < 30 {
-                let target_x = usize::from(target.x);
-                let target_y = usize::from(target.y);
+                let target_x = usize::from(target.x).saturating_sub(1)
+                    + usize::try_from(random(3).min(2)).unwrap_or(0);
+                let target_y = usize::from(target.y).saturating_sub(1)
+                    + usize::try_from(random(3).min(2)).unwrap_or(0);
                 return self
                     .setup_simple_baddy_spell_action(character_id, |character, items, tick| {
                         do_ball(character, items, target_x, target_y, tick)
@@ -9157,6 +9169,44 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 461);
+    }
+
+    #[test]
+    fn simple_baddy_ball_attack_uses_legacy_random_target_offset() {
+        let mut world = World::default();
+        world.tick = Tick(461);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FLASH_COST;
+        npc.values[0][CharacterValue::Flash as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 16,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 16, 10);
+        world.map.tile_mut(16, 10).unwrap().light = 255;
+        let mut rolls = [0, 2].into_iter();
+
+        assert!(
+            world.process_simple_baddy_attack_action_with_random(CharacterId(1), 1, |_| {
+                rolls.next().unwrap()
+            })
+        );
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::BALL1);
+        assert_eq!(npc.act1, 15);
+        assert_eq!(npc.act2, 11);
     }
 
     #[test]
