@@ -7368,6 +7368,9 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DecayItemToggled { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LabExitAnimating { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LabExitExpired { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LabExitUse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BeyondPotion { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
@@ -7570,6 +7573,10 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyDoesNotFit { character_id, .. } => {
                                             feedback.push((character_id, "Interesting idea. Really. Doesn't work, though.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LabExitWrongOwner { character_id, .. } => {
+                                            feedback.push((character_id, "This gate has not been created for you. You cannot use it.".to_string()));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::EmptyPotionTemplateNeeded { .. } => {

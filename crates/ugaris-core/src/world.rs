@@ -1573,6 +1573,24 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::LabExitAnimating {
+                item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::LabExitExpired { item_id } => {
+                if self.destroy_item(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::LabExitUse { .. } | ItemDriverOutcome::LabExitWrongOwner { .. } => {
+                outcome
+            }
             ItemDriverOutcome::BeyondPotion {
                 item_id,
                 character_id,

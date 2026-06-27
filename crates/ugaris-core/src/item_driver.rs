@@ -38,6 +38,7 @@ pub const IDR_ENCHANTITEM: u16 = 83;
 pub const IDR_ORBSPAWN: u16 = 84;
 pub const IDR_SPECIAL_POTION: u16 = 88;
 pub const IDR_NOMADSTACK: u16 = 96;
+pub const IDR_LABEXIT: u16 = 102;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
 pub const IDR_BEYONDPOTION: u16 = 133;
@@ -380,6 +381,28 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
     },
+    LabExitAnimating {
+        item_id: ItemId,
+        sprite: i32,
+        frame: u32,
+        schedule_after_ticks: u64,
+    },
+    LabExitExpired {
+        item_id: ItemId,
+    },
+    LabExitUse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        lab_nr: u8,
+        frame: u32,
+        target_area: u16,
+        target_x: u16,
+        target_y: u16,
+    },
+    LabExitWrongOwner {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BeyondPotion {
         item_id: ItemId,
         character_id: CharacterId,
@@ -660,6 +683,7 @@ pub fn execute_item_driver_with_context(
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
+                IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
@@ -1675,6 +1699,66 @@ fn drdata_u32(item: &Item, idx: usize) -> u32 {
 fn set_drdata_u16(item: &mut Item, idx: usize, value: u16) {
     set_drdata(item, idx, value as u8);
     set_drdata(item, idx + 1, (value >> 8) as u8);
+}
+
+fn set_drdata_u32(item: &mut Item, idx: usize, value: u32) {
+    for (offset, byte) in value.to_le_bytes().into_iter().enumerate() {
+        set_drdata(item, idx + offset, byte);
+    }
+}
+
+fn labexit_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if context.timer_call && character.id.0 == 0 {
+        let frame = drdata_u32(item, 8);
+        if frame < 24 {
+            item.sprite = 1060 + (frame % 24) as i32;
+        } else if frame < 240 {
+            item.sprite = 1060 + (frame % 24) as i32 + 24;
+        } else if frame < 240 + 24 {
+            item.sprite = 1060 + (frame % 24) as i32 + 48;
+        } else {
+            return ItemDriverOutcome::LabExitExpired { item_id: item.id };
+        }
+
+        let next_frame = frame.saturating_add(1);
+        set_drdata_u32(item, 8, next_frame);
+        return ItemDriverOutcome::LabExitAnimating {
+            item_id: item.id,
+            sprite: item.sprite,
+            frame: next_frame,
+            schedule_after_ticks: 2,
+        };
+    }
+
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let owner_id = drdata_u32(item, 0);
+    if character.id.0 != owner_id {
+        return ItemDriverOutcome::LabExitWrongOwner {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let frame = drdata_u32(item, 8);
+    let close_frame = 240 - 24 + (frame % 24);
+    set_drdata_u32(item, 8, close_frame);
+
+    ItemDriverOutcome::LabExitUse {
+        item_id: item.id,
+        character_id: character.id,
+        lab_nr: drdata(item, 4),
+        frame: close_frame,
+        target_area: 3,
+        target_x: 183,
+        target_y: 199,
+    }
 }
 
 fn toylight_driver(
@@ -4545,6 +4629,92 @@ mod tests {
                 location_id: 12 + (34 << 8) + (5 << 16),
             }
         );
+    }
+
+    #[test]
+    fn labexit_timer_animates_reschedules_and_expires() {
+        let mut timer_character = character(0);
+        let mut gate = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LABEXIT);
+        set_drdata_u32(&mut gate, 8, 23);
+        let timer_context = ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        };
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LABEXIT,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut gate,
+                request,
+                2,
+                false,
+                &timer_context,
+            ),
+            ItemDriverOutcome::LabExitAnimating {
+                item_id: ItemId(7),
+                sprite: 1083,
+                frame: 24,
+                schedule_after_ticks: 2,
+            }
+        );
+        assert_eq!(drdata_u32(&gate, 8), 24);
+
+        set_drdata_u32(&mut gate, 8, 264);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut gate,
+                request,
+                2,
+                false,
+                &timer_context,
+            ),
+            ItemDriverOutcome::LabExitExpired { item_id: ItemId(7) }
+        );
+    }
+
+    #[test]
+    fn labexit_use_requires_owner_and_returns_area_exit() {
+        let mut character = character(42);
+        let mut gate = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LABEXIT);
+        set_drdata_u32(&mut gate, 0, 41);
+        set_drdata(&mut gate, 4, 9);
+        set_drdata_u32(&mut gate, 8, 35);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LABEXIT,
+            item_id: ItemId(7),
+            character_id: CharacterId(42),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut gate, request, 2, false),
+            ItemDriverOutcome::LabExitWrongOwner {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+            }
+        );
+
+        set_drdata_u32(&mut gate, 0, 42);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut gate, request, 2, false),
+            ItemDriverOutcome::LabExitUse {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                lab_nr: 9,
+                frame: 227,
+                target_area: 3,
+                target_x: 183,
+                target_y: 199,
+            }
+        );
+        assert_eq!(drdata_u32(&gate, 8), 227);
     }
 
     fn request(character_id: u32, item_id: u32, spec: i32) -> ItemUseRequest {
