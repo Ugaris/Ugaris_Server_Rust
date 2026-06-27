@@ -287,6 +287,12 @@ impl World {
             }
         }
 
+        if outcome.killed {
+            if let Some(cause_id) = cause_id {
+                self.apply_simple_baddy_death_driver(target_id, cause_id);
+            }
+        }
+
         for (id, character) in self.characters.iter_mut() {
             if *id == target_id || Some(*id) == cause_id {
                 continue;
@@ -8184,6 +8190,37 @@ mod tests {
         let effect_ids = world.apply_simple_baddy_death_driver(CharacterId(1), CharacterId(2));
 
         assert!(effect_ids.is_empty());
+    }
+
+    #[test]
+    fn legacy_hurt_invokes_simple_baddy_death_driver_for_earth_demons() {
+        let mut world = World::default();
+        let mut dead = character(1);
+        dead.driver = CDR_SIMPLEBADDY;
+        dead.flags.insert(CharacterFlags::EDEMON);
+        dead.flags.insert(CharacterFlags::GOD);
+        dead.values[1][CharacterValue::Demon as usize] = 6;
+        dead.hp = POWERSCALE;
+        let killer = character(2);
+        assert!(world.spawn_character(dead, 10, 10));
+        assert!(world.spawn_character(killer, 12, 10));
+        world.map.tile_mut(12, 10).unwrap().light = 255;
+
+        let outcome = world
+            .apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), POWERSCALE, 1, 0, 0)
+            .unwrap();
+
+        assert!(outcome.killed);
+        let dead = world.characters.get(&CharacterId(1)).unwrap();
+        assert!(dead.flags.contains(CharacterFlags::DEAD));
+        assert!(world
+            .effects
+            .values()
+            .any(|effect| effect.effect_type == EF_EARTHRAIN && effect.strength == 6));
+        assert!(world
+            .effects
+            .values()
+            .any(|effect| effect.effect_type == EF_EARTHMUD && effect.strength == 6));
     }
 
     #[test]
