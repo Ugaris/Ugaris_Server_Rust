@@ -3003,6 +3003,39 @@ impl World {
             .map
             .tile(front_x, front_y)
             .is_some_and(|tile| tile.character != 0);
+        if self.characters.get(&character_id).is_some_and(|attacker| {
+            usize::from(attacker.x) == front_x && usize::from(attacker.y) == front_y
+        }) {
+            return false;
+        }
+
+        let Some(side_x) = offset_coordinate(usize::from(target.x), dy) else {
+            return false;
+        };
+        let Some(side_y) = offset_coordinate(usize::from(target.y), dx) else {
+            return false;
+        };
+        if side_x < 1 || side_y < 1 || side_x >= MAX_MAP || side_y >= MAX_MAP {
+            return false;
+        }
+        let same_group_side_occupied = self
+            .map
+            .tile(side_x, side_y)
+            .and_then(|tile| {
+                (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+            })
+            .and_then(|side_id| self.characters.get(&side_id))
+            .is_some_and(|side_character| {
+                side_character.id != character_id
+                    && self
+                        .characters
+                        .get(&character_id)
+                        .is_some_and(|attacker| side_character.group == attacker.group)
+            });
+        if same_group_side_occupied {
+            return false;
+        }
+
         let idle_target = target.action == action::IDLE
             && self.tick.0.saturating_sub(u64::from(target.regen_ticker)) > TICKS_PER_SECOND / 2;
         if !idle_target && !front_occupied {
@@ -10063,6 +10096,49 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::WALK);
         assert_ne!((npc.tox, npc.toy), (9, 10));
+    }
+
+    #[test]
+    fn simple_baddy_attack_back_move_rejects_front_position_like_c() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let mut target = character(2);
+        target.dir = Direction::Right as u8;
+        world.spawn_character(npc, 11, 10);
+        world.spawn_character(target.clone(), 10, 10);
+        target.x = 10;
+        target.y = 10;
+
+        assert!(!world.setup_simple_baddy_attack_back_move(CharacterId(1), &target, 1));
+    }
+
+    #[test]
+    fn simple_baddy_attack_back_move_rejects_same_group_side_occupant_like_c() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let mut target = character(2);
+        target.dir = Direction::Right as u8;
+        let front_blocker = character(3);
+        let mut side_ally = character(4);
+        side_ally.group = 7;
+        world.spawn_character(npc, 9, 9);
+        world.spawn_character(target.clone(), 10, 10);
+        world.spawn_character(front_blocker, 11, 10);
+        world.spawn_character(side_ally, 10, 11);
+        target.x = 10;
+        target.y = 10;
+
+        assert!(!world.setup_simple_baddy_attack_back_move(CharacterId(1), &target, 1));
     }
 
     #[test]
