@@ -20,6 +20,7 @@ pub const KEYRING_KEY_DRDATA_LEN: usize = 16;
 pub const LEGACY_KEYRING_PPD_SIZE: usize = 15_912;
 pub const TREASURE_CHEST_PPD_ENTRIES: usize = 200;
 pub const LEGACY_TREASURE_CHEST_PPD_SIZE: usize = TREASURE_CHEST_PPD_ENTRIES * 4;
+pub const LEGACY_TRANSPORT_PPD_SIZE: usize = 8;
 pub const RANDCHEST_MAX_ENTRIES: usize = 100;
 pub const LEGACY_RANDCHEST_PPD_SIZE: usize = RANDCHEST_MAX_ENTRIES * 4 * 2;
 pub const ORBSPAWN_MAX_ENTRIES: usize = 100;
@@ -35,6 +36,7 @@ pub const DEV_ID_DB: u32 = 1;
 pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAYER_DATA);
+pub const DRD_TRANSPORT_PPD: u32 = make_drd(DEV_ID_DB, 44 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEMONSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 68 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
@@ -288,6 +290,18 @@ impl PlayerRuntime {
         let newly_seen = self.transport_seen & bit == 0;
         self.transport_seen |= bit;
         newly_seen
+    }
+
+    pub fn encode_legacy_transport_ppd(&self) -> Vec<u8> {
+        self.transport_seen.to_le_bytes().to_vec()
+    }
+
+    pub fn decode_legacy_transport_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_TRANSPORT_PPD_SIZE {
+            return false;
+        }
+        self.transport_seen = read_u64(bytes, 0);
+        true
     }
 
     pub fn touch_special_shrine(
@@ -637,6 +651,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_TRANSPORT_PPD => {
+                    if !self.decode_legacy_transport_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_RANDCHEST_PPD => {
                     if !self.decode_legacy_randchest_ppd(block.data) {
                         return false;
@@ -672,6 +691,7 @@ impl PlayerRuntime {
         let mut encoded = Vec::with_capacity(existing.len().max(LEGACY_KEYRING_PPD_SIZE + 8));
         let mut had_keyring = false;
         let mut had_treasure_chest = false;
+        let mut had_transport = false;
         let mut had_randchest = false;
         let mut had_demonshrine = false;
         let mut had_orbspawn = false;
@@ -700,6 +720,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_TREASURE_CHEST_PPD,
                     &self.encode_legacy_treasure_chest_ppd(),
+                );
+            } else if block.id == DRD_TRANSPORT_PPD {
+                had_transport = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TRANSPORT_PPD,
+                    &self.encode_legacy_transport_ppd(),
                 );
             } else if block.id == DRD_RANDCHEST_PPD {
                 had_randchest = true;
@@ -754,6 +781,14 @@ impl PlayerRuntime {
                     &self.encode_legacy_treasure_chest_ppd(),
                 );
             }
+        }
+        if !had_transport && (existing_was_valid || existing.is_empty()) && self.transport_seen != 0
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_TRANSPORT_PPD,
+                &self.encode_legacy_transport_ppd(),
+            );
         }
         if !had_randchest && (existing_was_valid || existing.is_empty()) {
             if !self.random_chests.is_empty() {
@@ -1709,6 +1744,55 @@ mod tests {
         assert_eq!(read_u32(&encoded, 4), LEGACY_RANDCHEST_PPD_SIZE as u32);
         assert_eq!(read_i32(&encoded, 8), 0x0001_0203);
         assert_eq!(read_i32(&encoded, 8 + RANDCHEST_PPD_LAST_USED_OFFSET), 55);
+    }
+
+    #[test]
+    fn transport_ppd_codec_matches_legacy_seen_mask_layout() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.transport_seen = 0x0102_0304_0506_0708;
+
+        let encoded = player.encode_legacy_transport_ppd();
+        assert_eq!(encoded, 0x0102_0304_0506_0708_u64.to_le_bytes());
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_transport_ppd(&encoded));
+        assert_eq!(decoded.transport_seen, 0x0102_0304_0506_0708);
+        assert!(!decoded.decode_legacy_transport_ppd(&encoded[..7]));
+    }
+
+    #[test]
+    fn transport_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_transport = vec![0; LEGACY_TRANSPORT_PPD_SIZE];
+        write_u64(&mut existing_transport, 0, 0x0000_0000_0000_0004);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_TRANSPORT_PPD, &existing_transport);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.transport_seen = 0x0000_0000_0000_0021;
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_TRANSPORT_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_TRANSPORT_PPD_SIZE as u32);
+        assert_eq!(read_u64(&encoded, 20), 0x0000_0000_0000_0021);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.transport_seen, 0x0000_0000_0000_0021);
+    }
+
+    #[test]
+    fn ppd_blob_appends_transport_without_existing_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.touch_transport(5);
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_TRANSPORT_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_TRANSPORT_PPD_SIZE as u32);
+        assert_eq!(read_u64(&encoded, 8), 1_u64 << 5);
     }
 
     #[test]

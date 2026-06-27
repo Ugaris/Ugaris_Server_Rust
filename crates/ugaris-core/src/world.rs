@@ -3576,6 +3576,7 @@ impl World {
             ItemDriverOutcome::TorchExtractOrb { .. } => outcome,
             ItemDriverOutcome::NomadStack { .. }
             | ItemDriverOutcome::TransportOpen { .. }
+            | ItemDriverOutcome::TransportTravel { .. }
             | ItemDriverOutcome::TransportInvalid { .. } => outcome,
             ItemDriverOutcome::EnchantCursorItem {
                 item_id,

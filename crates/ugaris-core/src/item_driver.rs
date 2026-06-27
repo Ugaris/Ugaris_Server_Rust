@@ -520,6 +520,11 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         point: u8,
     },
+    TransportTravel {
+        item_id: ItemId,
+        character_id: CharacterId,
+        spec: i32,
+    },
     TransportInvalid {
         item_id: ItemId,
         character_id: CharacterId,
@@ -725,7 +730,7 @@ pub fn execute_item_driver_with_context(
             driver,
             item_id,
             character_id,
-            ..
+            spec,
         } => {
             if character.id != character_id || item.id != item_id {
                 return ItemDriverOutcome::Noop;
@@ -751,7 +756,7 @@ pub fn execute_item_driver_with_context(
                 IDR_PALACEKEY => palace_key_driver(character, item, context),
                 IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
-                IDR_TRANSPORT => transport_driver(character, item),
+                IDR_TRANSPORT => transport_driver(character, item, spec),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
@@ -1017,9 +1022,17 @@ fn nomad_stack_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     }
 }
 
-fn transport_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+fn transport_driver(character: &Character, item: &Item, spec: i32) -> ItemDriverOutcome {
     if character.id.0 == 0 {
         return ItemDriverOutcome::Noop;
+    }
+
+    if spec != 0 {
+        return ItemDriverOutcome::TransportTravel {
+            item_id: item.id,
+            character_id: character.id,
+            spec,
+        };
     }
 
     let point = drdata(item, 0);
@@ -2930,6 +2943,21 @@ mod tests {
                 ..
             }
         ));
+
+        let travel_request = ItemDriverRequest::Driver {
+            driver: IDR_TRANSPORT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 22 + 5 * 256,
+        };
+        assert_eq!(
+            execute_item_driver(&mut character, &mut transport, travel_request, 1, false),
+            ItemDriverOutcome::TransportTravel {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 22 + 5 * 256,
+            }
+        );
     }
 
     #[test]

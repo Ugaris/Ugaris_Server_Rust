@@ -8097,6 +8097,10 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, format!("Nothing happens - BUG ({point},#1).")));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TransportTravel { character_id, .. } => {
+                                            feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::SpecialShrine { character_id, kind, .. } => {
                                             let result = match (
                                                 runtime.player_for_character_mut(character_id),
