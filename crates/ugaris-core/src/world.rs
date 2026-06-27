@@ -198,6 +198,10 @@ impl World {
                 )
             })
         });
+        let has_magicshield_effect = self.effects.values().any(|effect| {
+            effect.effect_type == EF_MAGICSHIELD && effect.target_character == Some(target_id)
+        });
+        let mut create_magicshield_effect = false;
 
         let (target_x, target_y) = {
             let target = self.characters.get_mut(&target_id)?;
@@ -232,6 +236,9 @@ impl World {
                     target.lifeshield -= shield_absorbed;
                     hp_damage -= shield_absorbed;
                     outcome.shield_absorbed = shield_absorbed;
+                    create_magicshield_effect = shield_absorbed > 0
+                        && character_value_present(target, CharacterValue::MagicShield) != 0
+                        && !has_magicshield_effect;
                 }
 
                 target.hp -= hp_damage;
@@ -259,6 +266,17 @@ impl World {
             );
             (target.x, target.y)
         };
+
+        if create_magicshield_effect {
+            self.create_show_effect(
+                EF_MAGICSHIELD,
+                target_id,
+                self.tick.0 as u32,
+                self.tick.0 as u32 + 3,
+                16,
+                0,
+            );
+        }
 
         if let Some(cause_id) = cause_id {
             if let Some(cause) = self.characters.get_mut(&cause_id) {
@@ -6653,6 +6671,55 @@ mod tests {
         assert_eq!(
             world.characters[&CharacterId(3)].driver_messages[0].message_type,
             NT_SEEHIT
+        );
+    }
+
+    #[test]
+    fn legacy_hurt_creates_magicshield_visual_on_shield_absorption() {
+        let mut world = World::default();
+        world.tick = Tick(77);
+        let mut target = character(1);
+        target.hp = 5 * POWERSCALE;
+        target.lifeshield = POWERSCALE;
+        target.values[1][CharacterValue::MagicShield as usize] = 10;
+        assert!(world.spawn_character(target, 10, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 100)
+            .unwrap();
+
+        assert_eq!(outcome.shield_absorbed, POWERSCALE);
+        let effect = world
+            .effects
+            .values()
+            .find(|effect| effect.effect_type == EF_MAGICSHIELD)
+            .unwrap();
+        assert_eq!(effect.target_character, Some(CharacterId(1)));
+        assert_eq!(effect.start_tick, 77);
+        assert_eq!(effect.stop_tick, 80);
+        assert_eq!(effect.light, 16);
+        assert_eq!(effect.strength, 0);
+    }
+
+    #[test]
+    fn legacy_hurt_does_not_duplicate_active_magicshield_visual() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.hp = 5 * POWERSCALE;
+        target.lifeshield = 2 * POWERSCALE;
+        target.values[1][CharacterValue::MagicShield as usize] = 10;
+        assert!(world.spawn_character(target, 10, 10));
+        world.create_show_effect(EF_MAGICSHIELD, CharacterId(1), 1, 4, 16, 0);
+
+        world.apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 100);
+
+        assert_eq!(
+            world
+                .effects
+                .values()
+                .filter(|effect| effect.effect_type == EF_MAGICSHIELD)
+                .count(),
+            1
         );
     }
 
