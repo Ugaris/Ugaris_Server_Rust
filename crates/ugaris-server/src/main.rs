@@ -1315,7 +1315,9 @@ fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
-    if *driver != ugaris_core::item_driver::IDR_DOOR {
+    if *driver != ugaris_core::item_driver::IDR_DOOR
+        && *driver != ugaris_core::item_driver::IDR_INFINITE_CHEST
+    {
         return ugaris_core::item_driver::ItemDriverContext::default();
     }
     let required_key_id = world
@@ -1327,11 +1329,37 @@ fn item_driver_context_for_request(
         return ugaris_core::item_driver::ItemDriverContext::default();
     }
 
+    let door_key = if *driver == ugaris_core::item_driver::IDR_INFINITE_CHEST {
+        infinite_chest_key_access(world, *character_id, required_key_id)
+    } else {
+        door_key_access(world, player, *character_id, required_key_id)
+    };
+
     ugaris_core::item_driver::ItemDriverContext {
-        door_key: door_key_access(world, player, *character_id, required_key_id),
+        door_key,
         cursor_template_id: None,
         ..ugaris_core::item_driver::ItemDriverContext::default()
     }
+}
+
+fn infinite_chest_key_access(
+    world: &World,
+    character_id: CharacterId,
+    required_key_id: u32,
+) -> Option<ugaris_core::item_driver::DoorKeyAccess> {
+    let character = world.characters.get(&character_id)?;
+    let inventory_items = character.inventory.iter().skip(30).flatten().copied();
+    for item_id in inventory_items.clone() {
+        if let Some(access) = carried_door_key_access(world, item_id, IID_SKELETON_KEY) {
+            return Some(access);
+        }
+    }
+    for item_id in inventory_items {
+        if let Some(access) = carried_door_key_access(world, item_id, required_key_id) {
+            return Some(access);
+        }
+    }
+    None
 }
 
 fn door_key_access(
@@ -5495,6 +5523,73 @@ mod tests {
     }
 
     #[test]
+    fn grant_template_item_to_cursor_supports_infinite_chest_runes() {
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"
+                rune4:
+                    name="Rune IV"
+                    sprite=444
+                    flag=IF_TAKE
+                ;
+                "#,
+            )
+            .unwrap();
+        let mut world = World::default();
+        world.add_character(login_character(
+            CharacterId(7),
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+
+        assert_eq!(
+            grant_template_item_to_cursor(&mut world, &mut loader, CharacterId(7), "rune4"),
+            Some("Rune IV".to_string())
+        );
+
+        let character = world.characters.get(&CharacterId(7)).unwrap();
+        let item = world.items.get(&character.cursor_item.unwrap()).unwrap();
+        assert_eq!(item.name, "Rune IV");
+        assert_eq!(item.sprite, 444);
+        assert_eq!(item.carried_by, Some(CharacterId(7)));
+    }
+
+    #[test]
+    fn infinite_chest_context_uses_inventory_key_not_keyring() {
+        let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(30));
+        let mut key = test_item(ItemId(30), 1, ItemFlags::TAKE);
+        key.template_id = 0x1122_3344;
+        key.name = "Palace Key".to_string();
+        let mut chest = test_item(ItemId(70), 1, ItemFlags::USE);
+        chest.driver = ugaris_core::item_driver::IDR_INFINITE_CHEST;
+        chest.driver_data = vec![1, 0x44, 0x33, 0x22, 0x11];
+
+        let mut world = World::default();
+        world.add_character(character);
+        world.add_item(key);
+        world.add_item(chest);
+        let mut player = PlayerRuntime::connected(5, 0);
+        player.add_keyring_key(0x5566_7788, "Wrong Keyring Key");
+
+        let context = item_driver_context_for_request(
+            &world,
+            Some(&player),
+            &ugaris_core::item_driver::ItemDriverRequest::Driver {
+                driver: ugaris_core::item_driver::IDR_INFINITE_CHEST,
+                item_id: ItemId(70),
+                character_id: CharacterId(7),
+                spec: 0,
+            },
+        );
+
+        assert_eq!(context.door_key.unwrap().name, "Palace Key");
+    }
+
+    #[test]
     fn apply_assemble_item_replaces_used_item_and_consumes_cursor() {
         let character_id = CharacterId(7);
         let used_id = ItemId(70);
@@ -6813,6 +6908,45 @@ async fn main() -> anyhow::Result<()> {
                                                     failed += 1;
                                                 }
                                             }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::InfiniteChest { character_id, template, key_name, .. } => {
+                                            match grant_template_item_to_cursor(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                template.as_str(),
+                                            ) {
+                                                Some(item_name) => {
+                                                    if let Some(key_name) = key_name {
+                                                        let key_name = outcome_item_name_text(&key_name);
+                                                        feedback.push((character_id, format!("You use {key_name} to open the chest.")));
+                                                    }
+                                                    feedback.push((character_id, format!("You got a {item_name}.")));
+                                                    executed += 1;
+                                                }
+                                                None => {
+                                                    feedback.push((
+                                                        character_id,
+                                                        "Congratulations, you have just discovered bug #4744C, please report it to the authorities!".to_string(),
+                                                    ));
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::InfiniteChestCursorOccupied { character_id, .. } => {
+                                            feedback.push((character_id, CHEST_CURSOR_OCCUPIED_MESSAGE.to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::InfiniteChestKeyRequired { character_id, .. } => {
+                                            feedback.push((character_id, CHEST_KEY_REQUIRED_MESSAGE.to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::InfiniteChestUnknown { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Congratulations, you have just discovered bug #4744B, please report it to the authorities!".to_string(),
+                                            ));
+                                            failed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::OrbSpawn { item_id, character_id, anti, special } => {
                                             let random_seed = world.tick.0

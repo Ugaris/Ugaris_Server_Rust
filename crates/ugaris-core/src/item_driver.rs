@@ -29,6 +29,7 @@ pub const IDR_EXTINGUISH: u16 = 28;
 pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
+pub const IDR_INFINITE_CHEST: u16 = 93;
 pub const IDR_FOOD: u16 = 64;
 pub const IDR_ENCHANTITEM: u16 = 83;
 pub const IDR_ORBSPAWN: u16 = 84;
@@ -101,6 +102,50 @@ impl AssembleTemplate {
             Self::WarrRedkey13 => "warr_redkey13",
             Self::WarrRedkey23 => "warr_redkey23",
             Self::WarrRedkey123 => "warr_redkey123",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InfiniteChestTemplate {
+    Rune1,
+    Rune2,
+    Rune3,
+    Rune4,
+    Rune5,
+    Rune6,
+    Rune7,
+    Rune8,
+    Rune9,
+}
+
+impl InfiniteChestTemplate {
+    pub fn from_kind(kind: u8) -> Option<Self> {
+        match kind {
+            1 => Some(Self::Rune1),
+            2 => Some(Self::Rune2),
+            3 => Some(Self::Rune3),
+            4 => Some(Self::Rune4),
+            5 => Some(Self::Rune5),
+            6 => Some(Self::Rune6),
+            7 => Some(Self::Rune7),
+            8 => Some(Self::Rune8),
+            9 => Some(Self::Rune9),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Rune1 => "rune1",
+            Self::Rune2 => "rune2",
+            Self::Rune3 => "rune3",
+            Self::Rune4 => "rune4",
+            Self::Rune5 => "rune5",
+            Self::Rune6 => "rune6",
+            Self::Rune7 => "rune7",
+            Self::Rune8 => "rune8",
+            Self::Rune9 => "rune9",
         }
     }
 }
@@ -258,6 +303,24 @@ pub enum ItemDriverOutcome {
         treasure_index: u8,
     },
     RandomChest {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    InfiniteChest {
+        item_id: ItemId,
+        character_id: CharacterId,
+        template: InfiniteChestTemplate,
+        key_name: Option<[u8; OUTCOME_ITEM_NAME_BYTES]>,
+    },
+    InfiniteChestCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    InfiniteChestKeyRequired {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    InfiniteChestUnknown {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -486,6 +549,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EXTINGUISH => extinguish_driver(character, item),
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
+                IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
@@ -725,6 +789,55 @@ fn randchest_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     ItemDriverOutcome::RandomChest {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn infinite_chest_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::InfiniteChestCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let required_key_id = drdata_u32(item, 1);
+    let key_name = if required_key_id == 0 {
+        None
+    } else {
+        match context
+            .door_key
+            .as_ref()
+            .filter(|key| key.key_id == required_key_id || key.key_id == IID_SKELETON_KEY)
+        {
+            Some(key) => Some(outcome_item_name(&key.name)),
+            None => {
+                return ItemDriverOutcome::InfiniteChestKeyRequired {
+                    item_id: item.id,
+                    character_id: character.id,
+                };
+            }
+        }
+    };
+
+    let Some(template) = InfiniteChestTemplate::from_kind(drdata(item, 0)) else {
+        return ItemDriverOutcome::InfiniteChestUnknown {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::InfiniteChest {
+        item_id: item.id,
+        character_id: character.id,
+        template,
+        key_name,
     }
 }
 
@@ -1347,6 +1460,15 @@ fn drdata_u16(item: &Item, idx: usize) -> u16 {
     let lo = u16::from(drdata(item, idx));
     let hi = u16::from(drdata(item, idx + 1));
     lo | (hi << 8)
+}
+
+fn drdata_u32(item: &Item, idx: usize) -> u32 {
+    u32::from_le_bytes([
+        drdata(item, idx),
+        drdata(item, idx + 1),
+        drdata(item, idx + 2),
+        drdata(item, idx + 3),
+    ])
 }
 
 fn set_drdata_u16(item: &mut Item, idx: usize, value: u16) {
@@ -2515,6 +2637,122 @@ mod tests {
             ItemDriverOutcome::RandomChest {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_infinite_chest_maps_rune_kind_to_template() {
+        let mut character = character(1);
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_INFINITE_CHEST);
+        chest.driver_data = vec![4];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut chest,
+            ItemDriverRequest::Driver {
+                driver: IDR_INFINITE_CHEST,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::InfiniteChest {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                template: InfiniteChestTemplate::Rune4,
+                key_name: None,
+            }
+        );
+    }
+
+    #[test]
+    fn execute_infinite_chest_requires_empty_cursor_before_key_checks() {
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(9));
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_INFINITE_CHEST);
+        chest.driver_data = vec![1, 0x44, 0x33, 0x22, 0x11];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut chest,
+            ItemDriverRequest::Driver {
+                driver: IDR_INFINITE_CHEST,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::InfiniteChestCursorOccupied {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_infinite_chest_requires_matching_key_when_configured() {
+        let mut character = character(1);
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_INFINITE_CHEST);
+        chest.driver_data = vec![1, 0x44, 0x33, 0x22, 0x11];
+
+        let missing = execute_item_driver(
+            &mut character,
+            &mut chest.clone(),
+            ItemDriverRequest::Driver {
+                driver: IDR_INFINITE_CHEST,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+        assert_eq!(
+            missing,
+            ItemDriverOutcome::InfiniteChestKeyRequired {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let outcome = execute_item_driver_with_context(
+            &mut character,
+            &mut chest,
+            ItemDriverRequest::Driver {
+                driver: IDR_INFINITE_CHEST,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+            &ItemDriverContext {
+                door_key: Some(DoorKeyAccess {
+                    key_id: 0x1122_3344,
+                    name: "Palace Key".to_string(),
+                    source: DoorKeySource::Carried,
+                }),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::InfiniteChest {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                template: InfiniteChestTemplate::Rune1,
+                key_name: Some(outcome_item_name("Palace Key")),
             }
         );
     }
