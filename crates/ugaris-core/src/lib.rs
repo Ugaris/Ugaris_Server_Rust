@@ -1,6 +1,7 @@
 pub mod area_section;
 pub mod area_sound;
 pub mod attack;
+pub mod character_driver;
 pub mod combat;
 pub mod config;
 pub mod direction;

@@ -19,7 +19,8 @@ This note maps the legacy driver registry/module dispatch to a Rust architecture
 - `crates/ugaris-core/src/world.rs` applies same-area teleport/recall effects after `ItemDriverOutcome`, which is the right boundary for map mutation.
 - `crates/ugaris-core/src/player.rs` already ports the player-driver action setter surface, queue behavior, and driver stop/halt primitives.
 - `crates/ugaris-core/src/drvlib.rs` currently only contains distance helpers from `src/system/drvlib.c`.
-- There is no Rust character-driver registry yet, and `Character` does not currently carry a message queue or typed per-driver state equivalent to legacy `set_data`/`DRD_*`.
+- `crates/ugaris-core/src/character_driver.rs` now provides the first Rust character-driver registry edge for the base module's `CDR_MACRO`, `CDR_TRADER`, and `CDR_JANITOR` tick/death/respawn dispatch, preserving C-compatible handled/unsupported return codes.
+- `Character` does not currently carry a message queue or typed per-driver state equivalent to legacy `set_data`/`DRD_*`, so actual macro/trader/janitor behavior remains deferred behind typed stub outcomes.
 
 ## Recommended Rust Architecture
 
