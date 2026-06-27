@@ -12,7 +12,10 @@ use crate::{
     },
     drvlib::char_dist,
     effect::Effect,
-    entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
+    entity::{
+        Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, MAX_MODIFIERS,
+        POWERSCALE,
+    },
     game_time::GameDate,
     ids::{CharacterId, ItemId},
     item_driver::{
@@ -36,8 +39,8 @@ use crate::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
         BLESS_DURATION, EF_BALL, EF_BURN, EF_FIREBALL, EF_STRIKE, FLASH_DURATION, FREEZE_DURATION,
-        IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_WARCRY,
-        POISON_DURATION, WARCRY_DURATION,
+        IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_POTION_SP,
+        IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -1332,6 +1335,30 @@ impl World {
                     outcome
                 } else {
                     ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::BeyondPotion {
+                item_id,
+                character_id,
+                duration_minutes,
+                modifier_index,
+                modifier_value,
+                beyond_max_mod,
+            } => {
+                if self.install_beyond_potion_spell(
+                    character_id,
+                    item_id,
+                    duration_minutes,
+                    modifier_index,
+                    modifier_value,
+                    beyond_max_mod,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::BlockedByRequirements {
+                        item_id,
+                        character_id,
+                    }
                 }
             }
             ItemDriverOutcome::TorchExtractOrb { .. } => outcome,
@@ -3219,6 +3246,94 @@ impl World {
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             true
         } else {
+            false
+        }
+    }
+
+    fn install_beyond_potion_spell(
+        &mut self,
+        character_id: CharacterId,
+        potion_item_id: ItemId,
+        duration_minutes: u8,
+        modifier_index: [i16; MAX_MODIFIERS],
+        modifier_value: [i16; MAX_MODIFIERS],
+        beyond_max_mod: bool,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let Some(slot) = may_add_spell(&character, &self.items, IDR_POTION_SP, self.tick.0 as u32)
+        else {
+            return false;
+        };
+        if !self
+            .items
+            .get(&potion_item_id)
+            .is_some_and(|item| item.carried_by == Some(character_id))
+        {
+            return false;
+        }
+
+        let item_id = self.next_runtime_item_id();
+        let start_tick = self.tick.0 as u32;
+        let duration_ticks = u32::from(duration_minutes) * 60 * TICKS_PER_SECOND as u32;
+        let expire_tick = start_tick.wrapping_add(duration_ticks);
+        let mut driver_data = Vec::with_capacity(8);
+        driver_data.extend_from_slice(&expire_tick.to_le_bytes());
+        driver_data.extend_from_slice(&start_tick.to_le_bytes());
+
+        let mut flags = ItemFlags::USED;
+        if beyond_max_mod {
+            flags.insert(ItemFlags::BEYONDMAXMOD);
+        }
+        let item = Item {
+            id: item_id,
+            name: "Potion Spell".to_string(),
+            description: "A potion spell.".to_string(),
+            flags,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index,
+            modifier_value,
+            x: 0,
+            y: 0,
+            carried_by: Some(character_id),
+            contained_in: None,
+            content_id: 0,
+            driver: IDR_POTION_SP,
+            driver_data,
+            serial: item_id.0,
+        };
+
+        if !self.destroy_item(potion_item_id) {
+            return false;
+        }
+        self.items.insert(item_id, item);
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            if character.inventory.len() <= slot {
+                self.items.remove(&item_id);
+                return false;
+            }
+            character.inventory[slot] = Some(item_id);
+            let character_serial = character.id.0;
+            character
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            self.schedule_spell_remove_timer(
+                character_id,
+                item_id,
+                slot,
+                character_serial,
+                item_id.0,
+            );
+            true
+        } else {
+            self.items.remove(&item_id);
             false
         }
     }
@@ -6643,6 +6758,102 @@ mod tests {
 
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert!(target.inventory[12..30].iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn beyond_potion_installs_timed_potion_spell_and_consumes_potion() {
+        let mut world = World::default();
+        world.tick = Tick(1_200);
+        let mut character = character(1);
+        character
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::WARRIOR);
+        character.level = 20;
+        character.inventory[30] = Some(ItemId(7));
+        world.add_character(character);
+
+        let mut potion = item(
+            7,
+            ItemFlags::USED | ItemFlags::USE | ItemFlags::BEYONDMAXMOD,
+        );
+        potion.driver = crate::item_driver::IDR_BEYONDPOTION;
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver_data = vec![3];
+        potion.modifier_index = [
+            CharacterValue::Strength as i16,
+            CharacterValue::Agility as i16,
+            0,
+            0,
+            0,
+        ];
+        potion.modifier_value = [5, 6, 0, 0, 0];
+        world.add_item(potion);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_BEYONDPOTION,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::BeyondPotion { .. }));
+        assert!(!world.items.contains_key(&ItemId(7)));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[30], None);
+        let spell_id = character.inventory[29].unwrap();
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_POTION_SP);
+        assert_eq!(spell.carried_by, Some(CharacterId(1)));
+        assert_eq!(spell.modifier_index[0], CharacterValue::Strength as i16);
+        assert_eq!(spell.modifier_value[0], 5);
+        assert!(spell.flags.contains(ItemFlags::BEYONDMAXMOD));
+        assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(5_520));
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn beyond_potion_blocks_while_another_potion_spell_is_active() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.inventory[12] = Some(ItemId(8));
+        character.inventory[30] = Some(ItemId(7));
+        world.add_character(character);
+
+        let mut active = item(8, ItemFlags::USED);
+        active.driver = IDR_POTION_SP;
+        active.carried_by = Some(CharacterId(1));
+        active.driver_data = 10_000_u32.to_le_bytes().to_vec();
+        world.add_item(active);
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE);
+        potion.driver = crate::item_driver::IDR_BEYONDPOTION;
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver_data = vec![3];
+        world.add_item(potion);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_BEYONDPOTION,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::BlockedByRequirements { .. }
+        ));
+        assert!(world.items.contains_key(&ItemId(7)));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[12], Some(ItemId(8)));
+        assert_eq!(character.inventory[30], Some(ItemId(7)));
     }
 
     #[test]

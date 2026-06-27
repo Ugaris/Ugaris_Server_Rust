@@ -1198,6 +1198,26 @@ fn is_torch_item(world: &World, item_id: ItemId) -> bool {
         .is_some_and(|item| item.driver == IDR_TORCH)
 }
 
+fn is_beyond_potion_item(world: &World, item_id: ItemId) -> bool {
+    world
+        .items
+        .get(&item_id)
+        .is_some_and(|item| item.driver == IDR_BEYONDPOTION)
+}
+
+fn character_has_active_beyond_potion(world: &World, character_id: CharacterId) -> bool {
+    world
+        .characters
+        .get(&character_id)
+        .is_some_and(|character| {
+            character.inventory[12..30].iter().any(|item_id| {
+                item_id
+                    .and_then(|item_id| world.items.get(&item_id))
+                    .is_some_and(|item| item.driver == ugaris_core::spell::IDR_POTION_SP)
+            })
+        })
+}
+
 fn timer_outcome_feedback(
     outcomes: &[ugaris_core::item_driver::ItemDriverOutcome],
 ) -> Vec<(CharacterId, String)> {
@@ -6732,6 +6752,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DecayItemToggled { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BeyondPotion { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
@@ -6858,7 +6879,27 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::EmptyPotionTemplateNeeded { .. } => {
                                             deferred_templates += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BlockedByArea { item_id, character_id }
+                                            if is_beyond_potion_item(&world, item_id) =>
+                                        {
+                                            feedback.push((character_id, "You sense that the potion would not work.".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByArea { .. } => {
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
+                                            if is_beyond_potion_item(&world, item_id) =>
+                                        {
+                                            let message = if character_has_active_beyond_potion(&world, character_id) {
+                                                "Another potion is still active."
+                                            } else {
+                                                "You do not meet the requirements needed to use this potion."
+                                            };
+                                            feedback.push((
+                                                character_id,
+                                                message.to_string(),
+                                            ));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }

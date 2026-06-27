@@ -4,7 +4,7 @@ use crate::{
     do_action::ItemUseRequest,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, CHARACTER_VALUE_COUNT,
-        POWERSCALE,
+        MAX_MODIFIERS, POWERSCALE,
     },
     ids::{CharacterId, ItemId},
     item_ops::consume_item,
@@ -35,6 +35,7 @@ pub const IDR_ORBSPAWN: u16 = 84;
 pub const IDR_NOMADSTACK: u16 = 96;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
+pub const IDR_BEYONDPOTION: u16 = 133;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_ANTIENCHANTITEM: u16 = 160;
 pub const IDR_SPECIALANTIENCHANTITEM: u16 = 161;
@@ -294,6 +295,14 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
     },
+    BeyondPotion {
+        item_id: ItemId,
+        character_id: CharacterId,
+        duration_minutes: u8,
+        modifier_index: [i16; MAX_MODIFIERS],
+        modifier_value: [i16; MAX_MODIFIERS],
+        beyond_max_mod: bool,
+    },
     TorchExtractOrb {
         item_id: ItemId,
         character_id: CharacterId,
@@ -494,6 +503,7 @@ pub fn execute_item_driver_with_context(
                 IDR_NOMADSTACK => nomad_stack_driver(character, item),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
+                IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
                     driver,
@@ -1659,6 +1669,79 @@ fn potion_driver(
         mana_added: character.mana - old_mana,
         endurance_added: character.endurance - old_endurance,
     }
+}
+
+fn beyond_potion_driver(
+    character: &Character,
+    item: &Item,
+    area_id: u16,
+    in_arena: bool,
+) -> ItemDriverOutcome {
+    if item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+    if !check_item_requirements(character, item) {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if area_id == 34 && in_arena {
+        return ItemDriverOutcome::BlockedByArea {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::BeyondPotion {
+        item_id: item.id,
+        character_id: character.id,
+        duration_minutes: drdata(item, 0),
+        modifier_index: item.modifier_index,
+        modifier_value: item.modifier_value,
+        beyond_max_mod: item.flags.contains(ItemFlags::BEYONDMAXMOD),
+    }
+}
+
+fn check_item_requirements(character: &Character, item: &Item) -> bool {
+    if character.level < u32::from(item.min_level) {
+        return false;
+    }
+    if item.max_level != 0 && character.level > u32::from(item.max_level) {
+        return false;
+    }
+    if item.needs_class & 1 != 0 && !character.flags.contains(CharacterFlags::WARRIOR) {
+        return false;
+    }
+    if item.needs_class & 2 != 0 && !character.flags.contains(CharacterFlags::MAGE) {
+        return false;
+    }
+    if item.needs_class & 4 != 0
+        && !(character.flags.contains(CharacterFlags::WARRIOR)
+            && character.flags.contains(CharacterFlags::MAGE))
+    {
+        return false;
+    }
+    if item.needs_class & 8 != 0 && !character.flags.contains(CharacterFlags::ARCH) {
+        return false;
+    }
+
+    item.modifier_index
+        .iter()
+        .zip(item.modifier_value.iter())
+        .all(|(&index, &required)| {
+            if index >= 0 || required <= 0 {
+                return true;
+            }
+            let value = (-index) as usize;
+            character
+                .values
+                .get(1)
+                .and_then(|values| values.get(value))
+                .copied()
+                .unwrap_or_default()
+                >= required
+        })
 }
 
 fn capped_resource(current: i32, added_units: u8, max_units: i32) -> i32 {
@@ -3140,6 +3223,85 @@ mod tests {
                 delay_ticks: 1,
             }
         );
+    }
+
+    #[test]
+    fn beyond_potion_dispatch_copies_modifiers_and_duration() {
+        let mut character = character(3);
+        character.level = 12;
+        character.flags.insert(CharacterFlags::WARRIOR);
+        let mut potion = item(
+            7,
+            ItemFlags::USED | ItemFlags::USE | ItemFlags::BEYONDMAXMOD,
+            0,
+            IDR_BEYONDPOTION,
+        );
+        potion.carried_by = Some(character.id);
+        potion.min_level = 10;
+        potion.driver_data = vec![15];
+        potion.modifier_index = [
+            CharacterValue::Strength as i16,
+            CharacterValue::Agility as i16,
+            0,
+            0,
+            0,
+        ];
+        potion.modifier_value = [3, 4, 0, 0, 0];
+
+        assert_eq!(
+            execute_item_driver(
+                &mut character,
+                &mut potion,
+                ItemDriverRequest::Driver {
+                    driver: IDR_BEYONDPOTION,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(3),
+                    spec: 0,
+                },
+                1,
+                false,
+            ),
+            ItemDriverOutcome::BeyondPotion {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                duration_minutes: 15,
+                modifier_index: [
+                    CharacterValue::Strength as i16,
+                    CharacterValue::Agility as i16,
+                    0,
+                    0,
+                    0,
+                ],
+                modifier_value: [3, 4, 0, 0, 0],
+                beyond_max_mod: true,
+            }
+        );
+    }
+
+    #[test]
+    fn beyond_potion_blocks_failed_requirements_and_teufelheim_arena() {
+        let mut character = character(3);
+        character.level = 9;
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_BEYONDPOTION);
+        potion.carried_by = Some(character.id);
+        potion.min_level = 10;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BEYONDPOTION,
+            item_id: ItemId(7),
+            character_id: CharacterId(3),
+            spec: 0,
+        };
+
+        assert!(matches!(
+            execute_item_driver(&mut character, &mut potion, request, 1, false),
+            ItemDriverOutcome::BlockedByRequirements { .. }
+        ));
+
+        character.level = 10;
+        assert!(matches!(
+            execute_item_driver(&mut character, &mut potion, request, 34, true),
+            ItemDriverOutcome::BlockedByArea { .. }
+        ));
     }
 
     fn request(character_id: u32, item_id: u32, spec: i32) -> ItemUseRequest {
