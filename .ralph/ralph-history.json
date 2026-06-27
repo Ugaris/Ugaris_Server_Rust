@@ -1262,21 +1262,45 @@
         "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
         "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok"
       ]
+    },
+    {
+      "iteration": 45,
+      "startedAt": "2026-06-27T15:39:47.418Z",
+      "endedAt": "2026-06-27T15:45:59.644Z",
+      "durationMs": 372052,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 392 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test result: ok. 400 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 20338688,
+  "totalDurationMs": 20710740,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 43,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 42,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 38,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 44,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 43,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 39,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 32,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 28,
       "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 21,
       "test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 10,
       "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/common/": 2,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
       "test result: ok. 323 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
@@ -1381,7 +1405,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 15,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 16,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -1426,7 +1450,9 @@
       "error: unexpected argument 'fireball_effect_explodes_on_character_block_and_applies_area_damage' fou": 1,
       "test world::tests::fireball_effect_explodes_on_character_block_and_applies_area_damage ... FAILED": 1,
       "test result: FAILED. 167 passed; 1 failed; 0 ignored; 0 measured; 230 filtered out; finished in 0.03": 1,
-      "test result: ok. 168 passed; 0 failed; 0 ignored; 0 measured; 230 filtered out; finished in 0.03s": 1
+      "test result: ok. 168 passed; 0 failed; 0 ignored; 0 measured; 230 filtered out; finished in 0.03s": 1,
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 392 filtered out; finished in 0.00s": 1,
+      "test result: ok. 400 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

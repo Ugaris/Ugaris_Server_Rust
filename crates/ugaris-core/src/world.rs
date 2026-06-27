@@ -49,9 +49,9 @@ use crate::{
         BLESS_COST, BLESS_DURATION, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_EARTHMUD,
         EF_EARTHRAIN, EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,
         EF_HEAL, EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
-        FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE,
-        IDR_INFRARED, IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, POISON_DURATION,
-        WARCRY_DURATION,
+        FIREBALL_COST, FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH,
+        IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY,
+        POISON_DURATION, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -2311,6 +2311,9 @@ impl World {
             if !can_attack(&attacker, &target, &self.map) {
                 continue;
             }
+            if self.setup_simple_baddy_fireball_attack(character_id, &target) {
+                return true;
+            }
             if let Some(direction) = adjacent_direction(
                 attacker.x,
                 attacker.y,
@@ -2388,6 +2391,62 @@ impl World {
         }
 
         false
+    }
+
+    fn setup_simple_baddy_fireball_attack(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if character_value(&attacker, CharacterValue::Fireball) <= 1
+            || attacker.mana < FIREBALL_COST
+        {
+            return false;
+        }
+
+        let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+        let damage = fireball_damage(
+            character_value(&attacker, CharacterValue::Fireball),
+            character_value(target, CharacterValue::Immunity),
+            character_value(target, CharacterValue::Tactics),
+            has_tactics,
+        );
+        if damage < POWERSCALE {
+            return false;
+        }
+
+        let target_dx = attacker.x.abs_diff(target.x);
+        let target_dy = attacker.y.abs_diff(target.y);
+        let (target_x, target_y) = if target_dx <= 1 && target_dy <= 1 {
+            if may_add_spell(&attacker, &self.items, IDR_FIRERING, self.tick.0 as u32).is_none() {
+                return false;
+            }
+            (usize::from(attacker.x), usize::from(attacker.y))
+        } else {
+            predicted_fireball_target(&attacker, target)
+        };
+
+        let Some(attacker_mut) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        if do_fireball(
+            attacker_mut,
+            &self.items,
+            target_x,
+            target_y,
+            self.tick.0 as u32,
+        )
+        .is_err()
+        {
+            return false;
+        }
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = attacker_mut.driver_state.as_mut() {
+            data.lastfight = self.tick.0 as i32;
+        }
+        true
     }
 
     fn simple_baddy_enemy_tracking(
@@ -7445,6 +7504,80 @@ mod tests {
                 last_y: 10,
             }]
         );
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_uses_firering_against_adjacent_recorded_enemy() {
+        let mut world = World::default();
+        world.tick = Tick(454);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FIREBALL_COST;
+        npc.values[0][CharacterValue::Fireball as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::FIRERING);
+        assert_eq!(npc.mana, 0);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 454);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_uses_fireball_against_visible_recorded_enemy() {
+        let mut world = World::default();
+        world.tick = Tick(455);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FIREBALL_COST;
+        npc.values[0][CharacterValue::Fireball as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 15,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 15, 10);
+        world.map.tile_mut(15, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::FIREBALL1);
+        assert_eq!(npc.act1, 15);
+        assert_eq!(npc.act2, 10);
+        assert_eq!(npc.dir, Direction::Right as u8);
+        assert_eq!(npc.mana, 0);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 455);
     }
 
     #[test]
