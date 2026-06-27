@@ -3233,6 +3233,12 @@ fn client_effect_payloads(
         }
     }
 
+    for (slot_index, slot) in cache.slots.iter_mut().enumerate() {
+        if !used[slot_index] {
+            *slot = None;
+        }
+    }
+
     for (effect_id, serial, body) in pending {
         let Some(slot_index) = used.iter().position(|used| !*used) else {
             break;
@@ -5723,6 +5729,53 @@ mod tests {
         assert_eq!(
             &payloads[0][..],
             &ugaris_protocol::packet::used_effects(0)[..]
+        );
+        assert!(cache.slots.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn client_effect_payloads_reuse_slot_after_effect_disappears() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut world = World::default();
+        let mut first = Effect::new(EF_FIREBALL, 123, 55, 65);
+        first.from_x = 10;
+        first.from_y = 10;
+        first.to_x = 12;
+        first.to_y = 10;
+        first.x = 11 * 1024 + 512;
+        first.y = 10 * 1024 + 512;
+        world.effects.insert(123, first);
+        let mut cache = ClientEffectCache::default();
+
+        let payloads = client_effect_payloads(&world, &character, 2, &mut cache);
+        assert_eq!(payloads[0][1], 0);
+
+        world.effects.clear();
+        assert_eq!(
+            &client_effect_payloads(&world, &character, 2, &mut cache)[0][..],
+            &ugaris_protocol::packet::used_effects(0)[..]
+        );
+
+        let mut second = Effect::new(EF_BALL, 124, 56, 66);
+        second.from_x = 10;
+        second.from_y = 10;
+        second.to_x = 12;
+        second.to_y = 10;
+        second.x = 11 * 1024 + 512;
+        second.y = 10 * 1024 + 512;
+        world.effects.insert(124, second);
+
+        let payloads = client_effect_payloads(&world, &character, 2, &mut cache);
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[0][0], ugaris_protocol::packet::SV_CEFFECT);
+        assert_eq!(payloads[0][1], 0);
+        assert_eq!(&payloads[0][2..10], &[124, 0, 0, 0, 2, 0, 0, 0]);
+        assert_eq!(
+            &payloads[1][..],
+            &ugaris_protocol::packet::used_effects(1)[..]
         );
     }
 
