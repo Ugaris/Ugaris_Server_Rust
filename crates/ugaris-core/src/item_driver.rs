@@ -30,6 +30,7 @@ pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_DEMONSHRINE: u16 = 35;
+pub const IDR_PALACEKEY: u16 = 59;
 pub const IDR_SHRIKEAMULET: u16 = 118;
 pub const IDR_MINEGATEWAYKEY: u16 = 126;
 pub const IDR_INFINITE_CHEST: u16 = 93;
@@ -52,6 +53,8 @@ pub const IDR_ANTIORBSPAWN: u16 = 162;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_KEY_RING: u16 = 200;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
+pub const IID_AREA11_PALACEKEY: u32 = (0x01 << 24) | 0x000050;
+pub const IID_AREA11_PALACEKEYPART: u32 = (0x01 << 24) | 0x000051;
 const V_LIGHT: i16 = 9;
 const LIGHT_TIMER_TICKS: u64 = TICKS_PER_SECOND * 30;
 pub const OUTCOME_ITEM_NAME_BYTES: usize = 32;
@@ -161,6 +164,7 @@ pub struct ItemDriverContext {
     pub door_key: Option<DoorKeyAccess>,
     pub cursor_template_id: Option<u32>,
     pub cursor_driver: Option<u16>,
+    pub cursor_sprite: Option<i32>,
     pub cursor_drdata0: Option<u8>,
     pub timer_call: bool,
     pub daylight: u8,
@@ -509,6 +513,27 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         location_id: u32,
     },
+    PalaceKeySplit {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_part_sprite: i32,
+        carried_part_sprite: i32,
+    },
+    PalaceKeyCombine {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        result_sprite: i32,
+        final_key: bool,
+    },
+    PalaceKeyNeedsCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    PalaceKeyDoesNotFit {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     EnchantNeedsCursor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -659,6 +684,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_DEMONSHRINE => demonshrine_driver(character, item, area_id),
+                IDR_PALACEKEY => palace_key_driver(character, item, context),
                 IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
@@ -901,6 +927,132 @@ fn demonshrine_driver(character: &Character, item: &Item, area_id: u16) -> ItemD
         item_id: item.id,
         character_id: character.id,
         location_id: u32::from(item.x) + (u32::from(item.y) << 8) + (u32::from(area_id) << 16),
+    }
+}
+
+const PALACE_KEY_COMBINATIONS: &[(i32, i32, i32)] = &[
+    (51015, 51016, 51021),
+    (51015, 51017, 51027),
+    (51015, 51022, 51023),
+    (51015, 51024, 51026),
+    (51015, 51025, 51027),
+    (51015, 51029, 51032),
+    (51015, 51030, 51033),
+    (51015, 51034, 51031),
+    (51015, 51036, 51038),
+    (51015, 51039, 51014),
+    (51015, 51040, 51037),
+    (51016, 51018, 51022),
+    (51016, 51025, 51024),
+    (51016, 51027, 51041),
+    (51016, 51028, 51026),
+    (51016, 51030, 51034),
+    (51016, 51032, 51042),
+    (51016, 51033, 51031),
+    (51016, 51037, 51014),
+    (51016, 51038, 51043),
+    (51016, 51040, 51039),
+    (51017, 51018, 51025),
+    (51017, 51019, 51029),
+    (51017, 51021, 51041),
+    (51017, 51022, 51024),
+    (51017, 51023, 51026),
+    (51017, 51035, 51036),
+    (51017, 51022, 51024),
+    (51018, 51021, 51023),
+    (51018, 51027, 51028),
+    (51018, 51029, 51030),
+    (51018, 51032, 51033),
+    (51018, 51036, 51040),
+    (51018, 51038, 51037),
+    (51018, 51041, 51026),
+    (51018, 51042, 51031),
+    (51018, 51043, 51014),
+    (51019, 51020, 51035),
+    (51019, 51024, 51034),
+    (51019, 51025, 51030),
+    (51019, 51026, 51031),
+    (51019, 51027, 51032),
+    (51019, 51028, 51033),
+    (51019, 51041, 51042),
+    (51020, 51029, 51036),
+    (51020, 51030, 51040),
+    (51020, 51031, 51014),
+    (51020, 51032, 51038),
+    (51020, 51033, 51037),
+    (51020, 51034, 51039),
+    (51021, 51025, 51026),
+    (51021, 51030, 51031),
+    (51021, 51036, 51043),
+    (51021, 51040, 51014),
+    (51022, 51027, 51026),
+    (51022, 51029, 51034),
+    (51022, 51032, 51031),
+    (51022, 51036, 51039),
+    (51022, 51038, 51014),
+    (51023, 51029, 51031),
+    (51023, 51036, 51014),
+    (51024, 51035, 51039),
+    (51025, 51035, 51040),
+    (51026, 51035, 51014),
+    (51027, 51035, 51038),
+    (51028, 51035, 51037),
+    (51035, 51041, 51037),
+];
+
+fn palace_key_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        if let Some(&(part1, part2, _)) = PALACE_KEY_COMBINATIONS
+            .iter()
+            .find(|(_, _, result)| *result == item.sprite)
+        {
+            return ItemDriverOutcome::PalaceKeySplit {
+                item_id: item.id,
+                character_id: character.id,
+                cursor_part_sprite: part1,
+                carried_part_sprite: part2,
+            };
+        }
+        return ItemDriverOutcome::PalaceKeyNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    if context.cursor_template_id != Some(IID_AREA11_PALACEKEYPART) {
+        return ItemDriverOutcome::PalaceKeyDoesNotFit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let cursor_sprite = context.cursor_sprite.unwrap_or_default();
+    let Some(&(_, _, result_sprite)) =
+        PALACE_KEY_COMBINATIONS.iter().find(|&&(part1, part2, _)| {
+            (item.sprite == part1 && cursor_sprite == part2)
+                || (cursor_sprite == part1 && item.sprite == part2)
+        })
+    else {
+        return ItemDriverOutcome::PalaceKeyDoesNotFit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::PalaceKeyCombine {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        result_sprite,
+        final_key: result_sprite == 51014,
     }
 }
 
@@ -3240,6 +3392,89 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut character, &mut item, request, 1, false),
             ItemDriverOutcome::AssembleUnknownItem {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_palace_key_driver_splits_and_combines_legacy_sprites() {
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        let mut key_part = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PALACEKEY);
+        key_part.carried_by = Some(CharacterId(1));
+        key_part.template_id = IID_AREA11_PALACEKEYPART;
+        key_part.sprite = 51021;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PALACEKEY,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut key_part, request, 11, false),
+            ItemDriverOutcome::PalaceKeySplit {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_part_sprite: 51015,
+                carried_part_sprite: 51016,
+            }
+        );
+
+        character.cursor_item = Some(ItemId(8));
+        key_part.sprite = 51015;
+        let context = ItemDriverContext {
+            cursor_template_id: Some(IID_AREA11_PALACEKEYPART),
+            cursor_sprite: Some(51039),
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut key_part,
+                request,
+                11,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::PalaceKeyCombine {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(8),
+                result_sprite: 51014,
+                final_key: true,
+            }
+        );
+    }
+
+    #[test]
+    fn execute_palace_key_driver_reports_legacy_failures() {
+        let mut character = character(1);
+        let mut key_part = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PALACEKEY);
+        key_part.carried_by = Some(CharacterId(1));
+        key_part.template_id = IID_AREA11_PALACEKEYPART;
+        key_part.sprite = 51015;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PALACEKEY,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut key_part, request, 11, false),
+            ItemDriverOutcome::PalaceKeyNeedsCursor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.cursor_item = Some(ItemId(8));
+        assert_eq!(
+            execute_item_driver(&mut character, &mut key_part, request, 11, false),
+            ItemDriverOutcome::PalaceKeyDoesNotFit {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }

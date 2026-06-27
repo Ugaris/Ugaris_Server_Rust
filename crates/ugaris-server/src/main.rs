@@ -1343,16 +1343,18 @@ fn item_driver_context_for_request(
     else {
         return ugaris_core::item_driver::ItemDriverContext::default();
     };
-    if *driver == ugaris_core::item_driver::IDR_ASSEMBLE {
-        let cursor_template_id = world
+    if *driver == ugaris_core::item_driver::IDR_ASSEMBLE
+        || *driver == ugaris_core::item_driver::IDR_PALACEKEY
+    {
+        let cursor_item = world
             .characters
             .get(character_id)
             .and_then(|character| character.cursor_item)
-            .and_then(|cursor_item_id| world.items.get(&cursor_item_id))
-            .map(|item| item.template_id);
+            .and_then(|cursor_item_id| world.items.get(&cursor_item_id));
         return ugaris_core::item_driver::ItemDriverContext {
             door_key: None,
-            cursor_template_id,
+            cursor_template_id: cursor_item.map(|item| item.template_id),
+            cursor_sprite: cursor_item.map(|item| item.sprite),
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
@@ -1683,6 +1685,49 @@ fn apply_assemble_item(
     character.inventory[slot] = Some(new_item_id);
     character.flags.insert(CharacterFlags::ITEMS);
     world.add_item(new_item);
+    AssembleApplyResult::Assembled
+}
+
+fn apply_palace_key_split(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    item_id: ItemId,
+    character_id: CharacterId,
+    cursor_part_sprite: i32,
+    carried_part_sprite: i32,
+) -> AssembleApplyResult {
+    let Some(character) = world.characters.get(&character_id) else {
+        return AssembleApplyResult::MissingPlayer;
+    };
+    if character.cursor_item.is_some() {
+        return AssembleApplyResult::MissingItem;
+    }
+    if world
+        .items
+        .get(&item_id)
+        .is_none_or(|item| item.carried_by != Some(character_id))
+    {
+        return AssembleApplyResult::MissingItem;
+    }
+
+    let Ok(mut cursor_item) =
+        loader.instantiate_item_template("palace_key_part1", Some(character_id))
+    else {
+        return AssembleApplyResult::TemplateUnavailable;
+    };
+    cursor_item.sprite = cursor_part_sprite;
+    let cursor_item_id = cursor_item.id;
+
+    let Some(item) = world.items.get_mut(&item_id) else {
+        return AssembleApplyResult::MissingItem;
+    };
+    item.sprite = carried_part_sprite;
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return AssembleApplyResult::MissingPlayer;
+    };
+    character.cursor_item = Some(cursor_item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(cursor_item);
     AssembleApplyResult::Assembled
 }
 
@@ -7376,6 +7421,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
                                             executed += 1;
@@ -7554,6 +7600,45 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::AssembleUnknownItem { character_id, .. } => {
                                             feedback.push((character_id, "Bug # 42556".to_string()));
                                             failed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PalaceKeySplit {
+                                            item_id,
+                                            character_id,
+                                            cursor_part_sprite,
+                                            carried_part_sprite,
+                                        } => {
+                                            match apply_palace_key_split(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                item_id,
+                                                character_id,
+                                                cursor_part_sprite,
+                                                carried_part_sprite,
+                                            ) {
+                                                AssembleApplyResult::Assembled => {
+                                                    executed += 1;
+                                                }
+                                                AssembleApplyResult::TemplateUnavailable => {
+                                                    feedback.push((character_id, "That doesn't fit.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                AssembleApplyResult::MissingPlayer
+                                                | AssembleApplyResult::MissingItem => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyNeedsCursor { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "The only thing you can think of to do with this key part is to add another key part to it."
+                                                    .to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyDoesNotFit { character_id, .. } => {
+                                            feedback.push((character_id, "That doesn't fit.".to_string()));
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::EnchantNeedsCursor { character_id, .. } => {
                                             feedback.push((character_id, "You have to use another item on this one.".to_string()));

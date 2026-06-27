@@ -1260,7 +1260,13 @@ impl World {
             .get(&character_id)
             .and_then(|character| character.cursor_item)
             .and_then(|cursor_item_id| self.items.get(&cursor_item_id))
-            .map(|item| (item.driver, item.driver_data.first().copied().unwrap_or(0)));
+            .map(|item| {
+                (
+                    item.driver,
+                    item.sprite,
+                    item.driver_data.first().copied().unwrap_or(0),
+                )
+            });
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -1268,9 +1274,11 @@ impl World {
             return ItemDriverOutcome::Noop;
         };
         let mut effective_context = context.clone();
-        if let Some((cursor_driver, cursor_drdata0)) = cursor_context {
+        if let Some((cursor_driver, cursor_sprite, cursor_drdata0)) = cursor_context {
             effective_context.cursor_driver =
                 effective_context.cursor_driver.or(Some(cursor_driver));
+            effective_context.cursor_sprite =
+                effective_context.cursor_sprite.or(Some(cursor_sprite));
             effective_context.cursor_drdata0 =
                 effective_context.cursor_drdata0.or(Some(cursor_drdata0));
         }
@@ -1739,6 +1747,28 @@ impl World {
                     }
                 }
             }
+            ItemDriverOutcome::PalaceKeyCombine {
+                item_id,
+                character_id,
+                cursor_item_id,
+                result_sprite,
+                final_key,
+            } => {
+                if self.apply_palace_key_combine(
+                    item_id,
+                    character_id,
+                    cursor_item_id,
+                    result_sprite,
+                    final_key,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::PalaceKeyDoesNotFit {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             _ => outcome,
         }
     }
@@ -1926,6 +1956,38 @@ impl World {
             }
             _ => item.sprite,
         };
+        self.destroy_item(cursor_item_id)
+    }
+
+    fn apply_palace_key_combine(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        result_sprite: i32,
+        final_key: bool,
+    ) -> bool {
+        if !self.character_holds_cursor_item(character_id, cursor_item_id) {
+            return false;
+        }
+        if !self.items.contains_key(&cursor_item_id) {
+            return false;
+        }
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.carried_by != Some(character_id) {
+            return false;
+        }
+
+        item.sprite = result_sprite;
+        if final_key {
+            item.template_id = crate::item_driver::IID_AREA11_PALACEKEY;
+            item.driver = 0;
+            item.flags.remove(ItemFlags::USE);
+            item.name = "Palace Key".to_string();
+            item.description = "The key to the ice palace.".to_string();
+        }
         self.destroy_item(cursor_item_id)
     }
 
@@ -4875,8 +4937,8 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_ENCHANTITEM,
-            IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP,
-            IDR_TORCH, IDR_USETRAP,
+            IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_PALACEKEY, IDR_SPECIAL_POTION, IDR_SPIKETRAP,
+            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
@@ -5586,6 +5648,66 @@ mod tests {
         assert!(!world.items.contains_key(&ItemId(7)));
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(character.inventory[30], None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
+    fn world_palace_key_final_combine_consumes_cursor_and_creates_final_key() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        character.cursor_item = Some(ItemId(8));
+        let mut carried = item(7, ItemFlags::USED | ItemFlags::USE);
+        carried.carried_by = Some(CharacterId(1));
+        carried.driver = IDR_PALACEKEY;
+        carried.template_id = crate::item_driver::IID_AREA11_PALACEKEYPART;
+        carried.sprite = 51015;
+        let mut cursor = item(8, ItemFlags::USED | ItemFlags::USE);
+        cursor.carried_by = Some(CharacterId(1));
+        cursor.driver = IDR_PALACEKEY;
+        cursor.template_id = crate::item_driver::IID_AREA11_PALACEKEYPART;
+        cursor.sprite = 51039;
+        world.add_character(character);
+        world.add_item(carried);
+        world.add_item(cursor);
+
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: IDR_PALACEKEY,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            11,
+            &ItemDriverContext {
+                cursor_template_id: Some(crate::item_driver::IID_AREA11_PALACEKEYPART),
+                cursor_sprite: Some(51039),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::PalaceKeyCombine {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(8),
+                result_sprite: 51014,
+                final_key: true,
+            }
+        );
+        assert!(!world.items.contains_key(&ItemId(8)));
+        let carried = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(carried.sprite, 51014);
+        assert_eq!(
+            carried.template_id,
+            crate::item_driver::IID_AREA11_PALACEKEY
+        );
+        assert_eq!(carried.driver, 0);
+        assert!(!carried.flags.contains(ItemFlags::USE));
+        assert_eq!(carried.name, "Palace Key");
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.cursor_item, None);
         assert!(character.flags.contains(CharacterFlags::ITEMS));
     }
 
