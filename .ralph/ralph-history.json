@@ -1153,19 +1153,46 @@
         "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
       ]
+    },
+    {
+      "iteration": 41,
+      "startedAt": "2026-06-27T15:08:18.483Z",
+      "endedAt": "2026-06-27T15:13:14.324Z",
+      "durationMs": 295673,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test result: ok. 391 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 18461549,
+  "totalDurationMs": 18757222,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 39,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 38,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 34,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 40,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 39,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 35,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 30,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 26,
-      "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 31,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 27,
+      "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 20,
       "test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
       "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/common/": 2,
@@ -1272,7 +1299,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 11,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 12,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -1306,9 +1333,11 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 390 filtered out; finished in 0.00s": 2,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 388 filtered out; finished in 0.00s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 387 filtered out; finished in 0.00s": 1,
-      "test result: ok. 391 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 3,
+      "test result: ok. 391 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 383 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1
+      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1,
+      "test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

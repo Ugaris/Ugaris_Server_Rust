@@ -2974,9 +2974,16 @@ fn login_bootstrap_payloads(
     mirror_id: u16,
     tick: u64,
     view_distance: usize,
+    effect_cache: &mut ClientEffectCache,
 ) -> Vec<bytes::BytesMut> {
     let mut payloads = vec![login_payload(world, character, mirror_id, tick)];
     payloads.extend(initial_map_payloads(world, character, view_distance));
+    payloads.extend(client_effect_payloads(
+        world,
+        character,
+        view_distance,
+        effect_cache,
+    ));
     payloads
 }
 
@@ -5489,6 +5496,39 @@ mod tests {
                 | MAP_TILE_ISPRITE
                 | MAP_TILE_FLAGS
         );
+    }
+
+    #[test]
+    fn login_bootstrap_payloads_include_visible_client_effect_slots() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut world = World::default();
+        assert!(world.spawn_character(character.clone(), 10, 10));
+        let mut effect = Effect::new(EF_FIREBALL, 123, 55, 65);
+        effect.from_x = 10;
+        effect.from_y = 10;
+        effect.to_x = 12;
+        effect.to_y = 10;
+        effect.x = 11 * 1024 + 512;
+        effect.y = 10 * 1024 + 512;
+        world.effects.insert(123, effect);
+        let mut effect_cache = ClientEffectCache::default();
+
+        let payloads = login_bootstrap_payloads(&world, &character, 1, 10, 2, &mut effect_cache);
+
+        assert!(payloads.iter().any(|payload| {
+            payload.first().copied() == Some(ugaris_protocol::packet::SV_CEFFECT)
+                && payload.get(1).copied() == Some(0)
+                && payload[2..].starts_with(&ugaris_protocol::packet::ceffect_fireball(
+                    123, 55, 10, 10, 12, 10,
+                ))
+        }));
+        assert!(payloads
+            .iter()
+            .any(|payload| &payload[..] == &ugaris_protocol::packet::used_effects(1)[..]));
+        assert!(client_effect_payloads(&world, &character, 2, &mut effect_cache).is_empty());
     }
 
     #[test]
@@ -8431,6 +8471,12 @@ async fn main() -> anyhow::Result<()> {
                                     payloads.push(bytes::BytesMut::from(&payload[..]));
                                 }
                             }
+                            payloads.extend(client_effect_payloads(
+                                &world,
+                                character,
+                                view_distance,
+                                runtime.effect_caches.entry(session_id).or_default(),
+                            ));
                             if runtime.send_many_to_session(session_id, payloads) {
                                 refreshed_sessions += 1;
                             }
@@ -8590,6 +8636,7 @@ async fn main() -> anyhow::Result<()> {
                                     config.mirror_id,
                                     world.tick.0,
                                     view_distance,
+                                    runtime.effect_caches.entry(id.0).or_default(),
                                 )
                             })
                             .unwrap_or_else(|| {
@@ -8610,6 +8657,7 @@ async fn main() -> anyhow::Result<()> {
                                     config.mirror_id,
                                     world.tick.0,
                                     view_distance,
+                                    runtime.effect_caches.entry(id.0).or_default(),
                                 )
                             });
                         let payload_count = payloads.len();
