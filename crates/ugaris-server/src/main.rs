@@ -27,8 +27,9 @@ use ugaris_core::{
         PlayerRuntime, QueuedAction,
     },
     spell::{
-        EF_BALL, EF_BLESS, EF_BURN, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL,
-        EF_MAGICSHIELD, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
+        EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_EARTHMUD, EF_EARTHRAIN, EF_EXPLODE, EF_FIREBALL,
+        EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE,
+        EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
     },
     text::COL_DARK_GRAY,
     tick::TICKS_PER_SECOND,
@@ -3174,6 +3175,24 @@ fn visible_client_effect_body(
             effect_character_id(effect)?.0 as i32,
             effect.start_tick,
         )),
+        EF_EXPLODE => Some(ugaris_protocol::packet::ceffect_explode(
+            effect_id as i32,
+            effect.start_tick,
+            effect.base_sprite,
+        )),
+        EF_MIST => Some(ugaris_protocol::packet::ceffect_mist(
+            effect_id as i32,
+            effect.start_tick,
+        )),
+        EF_EARTHRAIN => Some(ugaris_protocol::packet::ceffect_earthrain(
+            effect_id as i32,
+            effect.strength,
+        )),
+        EF_EARTHMUD => Some(ugaris_protocol::packet::ceffect_earthmud(effect_id as i32)),
+        EF_BUBBLE => Some(ugaris_protocol::packet::ceffect_bubble(
+            effect_id as i32,
+            effect.strength,
+        )),
         _ => None,
     }
 }
@@ -3190,7 +3209,9 @@ fn effect_visible_to_viewer(
 ) -> bool {
     let (x, y) = match effect.effect_type {
         EF_BALL | EF_FIREBALL => (effect.x / 1024, effect.y / 1024),
-        EF_STRIKE | EF_PULSE => (effect.x, effect.y),
+        EF_STRIKE | EF_PULSE | EF_EXPLODE | EF_MIST | EF_EARTHRAIN | EF_EARTHMUD | EF_BUBBLE => {
+            (effect.x, effect.y)
+        }
         EF_MAGICSHIELD | EF_FLASH | EF_WARCRY | EF_BLESS | EF_HEAL | EF_FREEZE | EF_BURN
         | EF_POTION | EF_PULSEBACK | EF_FIRERING => {
             let Some(character_id) = effect_character_id(effect) else {
@@ -5326,6 +5347,35 @@ mod tests {
         assert_eq!(
             &payloads[0][..],
             &ugaris_protocol::packet::used_effects(0)[..]
+        );
+    }
+
+    #[test]
+    fn client_effect_payloads_send_visible_map_anchored_effect_records() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut world = World::default();
+        let mut effect = Effect::new(EF_EXPLODE, 90, 55, 63);
+        effect.x = 11;
+        effect.y = 10;
+        effect.base_sprite = 50050;
+        world.effects.insert(90, effect);
+
+        let payloads =
+            client_effect_payloads(&world, &character, 2, &mut ClientEffectCache::default());
+
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[0][0], ugaris_protocol::packet::SV_CEFFECT);
+        assert_eq!(payloads[0][1], 0);
+        assert_eq!(
+            &payloads[0][2..],
+            &ugaris_protocol::packet::ceffect_explode(90, 55, 50050)[..]
+        );
+        assert_eq!(
+            &payloads[1][..],
+            &ugaris_protocol::packet::used_effects(1)[..]
         );
     }
 

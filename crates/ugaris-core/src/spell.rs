@@ -50,15 +50,20 @@ pub const EF_MAGICSHIELD: i32 = 2;
 pub const EF_BALL: i32 = 3;
 pub const EF_STRIKE: i32 = 4;
 pub const EF_FLASH: i32 = 5;
+pub const EF_EXPLODE: i32 = 7;
 pub const EF_WARCRY: i32 = 8;
 pub const EF_BLESS: i32 = 9;
 pub const EF_FREEZE: i32 = 10;
 pub const EF_HEAL: i32 = 11;
 pub const EF_BURN: i32 = 12;
+pub const EF_MIST: i32 = 13;
 pub const EF_POTION: i32 = 14;
+pub const EF_EARTHRAIN: i32 = 15;
+pub const EF_EARTHMUD: i32 = 16;
 pub const EF_PULSE: i32 = 21;
 pub const EF_PULSEBACK: i32 = 22;
 pub const EF_FIRERING: i32 = 23;
+pub const EF_BUBBLE: i32 = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpellSpend {

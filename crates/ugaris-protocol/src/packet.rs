@@ -728,6 +728,46 @@ pub fn ceffect_fireball(
     out
 }
 
+pub fn ceffect_explode(effect_id: i32, start: i32, base_sprite: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(16);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(7);
+    out.put_i32_le(start);
+    out.put_i32_le(base_sprite);
+    out
+}
+
+pub fn ceffect_mist(effect_id: i32, start: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(12);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(13);
+    out.put_i32_le(start);
+    out
+}
+
+pub fn ceffect_earthrain(effect_id: i32, strength: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(12);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(15);
+    out.put_i32_le(strength);
+    out
+}
+
+pub fn ceffect_earthmud(effect_id: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(8);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(16);
+    out
+}
+
+pub fn ceffect_bubble(effect_id: i32, y_offset: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(12);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(24);
+    out.put_i32_le(y_offset);
+    out
+}
+
 pub fn action(action: u16, x: u16, y: u16) -> [u8; 7] {
     let mut out = [0; 7];
     out[0] = SV_ACT;
@@ -877,6 +917,27 @@ mod tests {
         assert_eq!(
             special(0x11223344, 0xffff_ffff, 0x55667788),
             [SV_SPECIAL, 0x44, 0x33, 0x22, 0x11, 0xff, 0xff, 0xff, 0xff, 0x88, 0x77, 0x66, 0x55,]
+        );
+    }
+
+    #[test]
+    fn map_anchored_effect_packets_match_legacy_layouts() {
+        assert_eq!(
+            &ceffect_explode(1, 2, 50050)[..],
+            &[1, 0, 0, 0, 7, 0, 0, 0, 2, 0, 0, 0, 0x82, 0xc3, 0, 0]
+        );
+        assert_eq!(
+            &ceffect_mist(3, 4)[..],
+            &[3, 0, 0, 0, 13, 0, 0, 0, 4, 0, 0, 0]
+        );
+        assert_eq!(
+            &ceffect_earthrain(5, 6)[..],
+            &[5, 0, 0, 0, 15, 0, 0, 0, 6, 0, 0, 0]
+        );
+        assert_eq!(&ceffect_earthmud(7)[..], &[7, 0, 0, 0, 16, 0, 0, 0]);
+        assert_eq!(
+            &ceffect_bubble(8, 45)[..],
+            &[8, 0, 0, 0, 24, 0, 0, 0, 45, 0, 0, 0]
         );
     }
 
