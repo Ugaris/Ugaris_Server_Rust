@@ -6,7 +6,7 @@
 
 use crate::{
     entity::{Character, CharacterFlags, CharacterValue, Item, INVENTORY_SIZE, POWERSCALE},
-    ids::ItemId,
+    ids::{CharacterId, ItemId},
     item_driver::IDR_POTION,
 };
 
@@ -91,6 +91,15 @@ pub struct SimpleBaddyDriverData {
     pub poison_type: i32,
     pub drinkspecial: i32,
     pub drink_inventory_potions: i32,
+    #[serde(default)]
+    pub enemies: Vec<SimpleBaddyEnemy>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SimpleBaddyEnemy {
+    pub target_id: CharacterId,
+    pub priority: i32,
+    pub last_seen_tick: i32,
 }
 
 impl Default for SimpleBaddyDriverData {
@@ -120,6 +129,7 @@ impl Default for SimpleBaddyDriverData {
             poison_type: 0,
             drinkspecial: 0,
             drink_inventory_potions: 0,
+            enemies: Vec::new(),
         }
     }
 }
@@ -146,10 +156,14 @@ pub enum SimpleBaddyMessageOutcome {
         target_id: crate::ids::CharacterId,
     },
     PoisonHit {
-        target_id: crate::ids::CharacterId,
+        target_id: CharacterId,
         power: u16,
         poison_type: u16,
         chance: i32,
+    },
+    AddEnemy {
+        caller_id: CharacterId,
+        target_id: CharacterId,
     },
 }
 
@@ -254,6 +268,10 @@ pub fn process_simple_baddy_messages(
         )),
         _ => None,
     };
+    let helpid = match character.driver_state.as_ref() {
+        Some(CharacterDriverState::SimpleBaddy(data)) => data.helpid,
+        _ => 0,
+    };
     let mut outcomes = Vec::new();
     let mut bless_friend = None;
 
@@ -294,12 +312,24 @@ pub fn process_simple_baddy_messages(
         if message.message_type == NT_DIDHIT && message.dat1 > 0 && message.dat2 > 0 {
             if let Some((power, poison_type, chance)) = poison {
                 outcomes.push(SimpleBaddyMessageOutcome::PoisonHit {
-                    target_id: crate::ids::CharacterId(message.dat1 as u32),
+                    target_id: CharacterId(message.dat1 as u32),
                     power,
                     poison_type,
                     chance,
                 });
             }
+        }
+
+        if message.message_type == NT_NPC
+            && helpid != 0
+            && message.dat1 == helpid
+            && message.dat2 > 0
+            && message.dat3 > 0
+        {
+            outcomes.push(SimpleBaddyMessageOutcome::AddEnemy {
+                caller_id: CharacterId(message.dat2 as u32),
+                target_id: CharacterId(message.dat3 as u32),
+            });
         }
     }
 
@@ -308,6 +338,38 @@ pub fn process_simple_baddy_messages(
     }
 
     outcomes
+}
+
+pub fn add_simple_baddy_enemy(
+    character: &mut Character,
+    caller: &Character,
+    target_id: CharacterId,
+    current_tick: i32,
+) -> bool {
+    if caller.id == character.id || caller.group != character.group {
+        return false;
+    }
+
+    let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() else {
+        return false;
+    };
+
+    if let Some(enemy) = data
+        .enemies
+        .iter_mut()
+        .find(|enemy| enemy.target_id == target_id)
+    {
+        enemy.priority = enemy.priority.max(1);
+        enemy.last_seen_tick = current_tick;
+        return true;
+    }
+
+    data.enemies.push(SimpleBaddyEnemy {
+        target_id,
+        priority: 1,
+        last_seen_tick: current_tick,
+    });
+    true
 }
 
 fn find_simple_baddy_inventory_potion(
@@ -830,6 +892,73 @@ mod tests {
 
         assert!(process_simple_baddy_messages(&mut character, &[]).is_empty());
         assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_npc_message_emits_helpid_enemy_outcome() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helpid: NTID_GLADIATOR,
+            ..SimpleBaddyDriverData::default()
+        }));
+        character.push_driver_message(NT_NPC, NTID_MERCHANT, 2, 99);
+        character.push_driver_message(NT_NPC, NTID_GLADIATOR, 2, 99);
+
+        let outcomes = process_simple_baddy_messages(&mut character, &[]);
+
+        assert_eq!(
+            outcomes,
+            vec![SimpleBaddyMessageOutcome::AddEnemy {
+                caller_id: crate::ids::CharacterId(2),
+                target_id: crate::ids::CharacterId(99),
+            }]
+        );
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn add_simple_baddy_enemy_requires_same_group_caller_and_updates_existing() {
+        let mut character = test_character();
+        character.group = 7;
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let mut caller = test_character();
+        caller.id = crate::ids::CharacterId(2);
+        caller.group = 8;
+
+        assert!(!add_simple_baddy_enemy(
+            &mut character,
+            &caller,
+            crate::ids::CharacterId(99),
+            10,
+        ));
+
+        caller.group = 7;
+        assert!(add_simple_baddy_enemy(
+            &mut character,
+            &caller,
+            crate::ids::CharacterId(99),
+            10,
+        ));
+        assert!(add_simple_baddy_enemy(
+            &mut character,
+            &caller,
+            crate::ids::CharacterId(99),
+            12,
+        ));
+
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(
+            data.enemies,
+            vec![SimpleBaddyEnemy {
+                target_id: crate::ids::CharacterId(99),
+                priority: 1,
+                last_seen_tick: 12,
+            }]
+        );
     }
 
     fn test_character() -> Character {

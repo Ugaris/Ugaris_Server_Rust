@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use crate::{
     area_sound::AreaSoundSpecial,
-    character_driver::{process_simple_baddy_messages, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY},
+    character_driver::{
+        add_simple_baddy_enemy, process_simple_baddy_messages, SimpleBaddyMessageOutcome,
+        CDR_SIMPLEBADDY,
+    },
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
@@ -1628,6 +1631,18 @@ impl World {
                         && random_below(100) < chance
                     {
                         let _ = self.poison_character(target_id, power, poison_type);
+                    }
+                    ItemDriverOutcome::Noop
+                }
+                SimpleBaddyMessageOutcome::AddEnemy {
+                    caller_id,
+                    target_id,
+                } => {
+                    let tick = self.tick.0 as i32;
+                    if let Some(caller) = self.characters.get(&caller_id).cloned() {
+                        if let Some(character) = self.characters.get_mut(&character_id) {
+                            let _ = add_simple_baddy_enemy(character, &caller, target_id, tick);
+                        }
                     }
                     ItemDriverOutcome::Noop
                 }
@@ -5370,7 +5385,8 @@ impl Default for Tick {
 mod tests {
     use crate::{
         character_driver::{
-            CharacterDriverState, SimpleBaddyDriverData, NT_CHAR, NT_DIDHIT, NT_GOTHIT,
+            CharacterDriverState, SimpleBaddyDriverData, SimpleBaddyEnemy, NTID_GLADIATOR, NT_CHAR,
+            NT_DIDHIT, NT_GOTHIT, NT_NPC,
         },
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
@@ -5595,6 +5611,40 @@ mod tests {
 
         assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
         assert!(world.characters[&CharacterId(2)].inventory[29].is_none());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_add_npc_alert_enemy_for_same_group_caller() {
+        let mut world = World::default();
+        world.tick = Tick(123);
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helpid: NTID_GLADIATOR,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_NPC, NTID_GLADIATOR, 2, 99);
+        let mut caller = character(2);
+        caller.group = 7;
+        world.add_character(npc);
+        world.add_character(caller);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(
+            data.enemies,
+            vec![SimpleBaddyEnemy {
+                target_id: CharacterId(99),
+                priority: 1,
+                last_seen_tick: 123,
+            }]
+        );
     }
 
     #[test]
