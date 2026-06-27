@@ -55,6 +55,7 @@ pub const EF_BLESS: i32 = 9;
 pub const EF_FREEZE: i32 = 10;
 pub const EF_HEAL: i32 = 11;
 pub const EF_BURN: i32 = 12;
+pub const EF_POTION: i32 = 14;
 pub const EF_PULSE: i32 = 21;
 pub const EF_PULSEBACK: i32 = 22;
 pub const EF_FIRERING: i32 = 23;

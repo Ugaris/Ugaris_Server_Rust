@@ -25,7 +25,10 @@ use ugaris_core::{
     player::{
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
     },
-    spell::{EF_BALL, EF_BURN, EF_FIREBALL, EF_STRIKE},
+    spell::{
+        EF_BALL, EF_BLESS, EF_BURN, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL,
+        EF_MAGICSHIELD, EF_POTION, EF_STRIKE, EF_WARCRY,
+    },
     text::COL_DARK_GRAY,
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
@@ -2797,13 +2800,15 @@ fn client_effect_payloads(
         .effects
         .iter()
         .filter_map(|(&effect_id, effect)| {
-            visible_client_effect_body(effect_id, effect, viewer, view_distance).map(|body| {
-                (
-                    effect_id,
-                    effect.serial,
-                    body.into_iter().collect::<Vec<u8>>(),
-                )
-            })
+            visible_client_effect_body(effect_id, effect, world, viewer, view_distance).map(
+                |body| {
+                    (
+                        effect_id,
+                        effect.serial,
+                        body.into_iter().collect::<Vec<u8>>(),
+                    )
+                },
+            )
         })
         .collect();
     visible_effects.sort_by_key(|(effect_id, _, _)| *effect_id);
@@ -2873,14 +2878,20 @@ fn client_effect_payloads(
 fn visible_client_effect_body(
     effect_id: u32,
     effect: &Effect,
+    world: &World,
     viewer: &Character,
     view_distance: usize,
 ) -> Option<bytes::BytesMut> {
-    if !effect_visible_to_viewer(effect, viewer, view_distance) {
+    if !effect_visible_to_viewer(effect, world, viewer, view_distance) {
         return None;
     }
 
     match effect.effect_type {
+        EF_MAGICSHIELD => Some(ugaris_protocol::packet::ceffect_shield(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+            effect.start_tick,
+        )),
         EF_BALL => Some(ugaris_protocol::packet::ceffect_ball(
             effect_id as i32,
             effect.start_tick,
@@ -2897,6 +2908,33 @@ fn visible_client_effect_body(
             effect.to_x,
             effect.to_y,
         )),
+        EF_FLASH => Some(ugaris_protocol::packet::ceffect_flash(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+        )),
+        EF_WARCRY => Some(ugaris_protocol::packet::ceffect_warcry(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+            effect.stop_tick,
+        )),
+        EF_BLESS => Some(ugaris_protocol::packet::ceffect_bless(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+            effect.start_tick,
+            effect.stop_tick,
+            effect.strength,
+        )),
+        EF_HEAL => Some(ugaris_protocol::packet::ceffect_heal(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+            effect.start_tick,
+        )),
+        EF_FREEZE => Some(ugaris_protocol::packet::ceffect_freeze(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+            effect.start_tick,
+            effect.stop_tick,
+        )),
         EF_STRIKE => Some(ugaris_protocol::packet::ceffect_strike(
             effect_id as i32,
             effect
@@ -2908,28 +2946,47 @@ fn visible_client_effect_body(
         )),
         EF_BURN => Some(ugaris_protocol::packet::ceffect_burn(
             effect_id as i32,
-            effect
-                .target_character
-                .map(|character_id| character_id.0 as i32)
-                .unwrap_or_default(),
+            effect_character_id(effect)?.0 as i32,
             effect.stop_tick,
+        )),
+        EF_POTION => Some(ugaris_protocol::packet::ceffect_potion(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+            effect.start_tick,
+            effect.stop_tick,
+            effect.strength,
+        )),
+        EF_FIRERING => Some(ugaris_protocol::packet::ceffect_firering(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+            effect.start_tick,
         )),
         _ => None,
     }
 }
 
-fn effect_visible_to_viewer(effect: &Effect, viewer: &Character, view_distance: usize) -> bool {
+fn effect_character_id(effect: &Effect) -> Option<CharacterId> {
+    effect.target_character.or(effect.caster)
+}
+
+fn effect_visible_to_viewer(
+    effect: &Effect,
+    world: &World,
+    viewer: &Character,
+    view_distance: usize,
+) -> bool {
     let (x, y) = match effect.effect_type {
         EF_BALL | EF_FIREBALL => (effect.x / 1024, effect.y / 1024),
         EF_STRIKE => (effect.x, effect.y),
-        EF_BURN => {
-            let Some(character_id) = effect.target_character else {
+        EF_MAGICSHIELD | EF_FLASH | EF_WARCRY | EF_BLESS | EF_HEAL | EF_FREEZE | EF_BURN
+        | EF_POTION | EF_FIRERING => {
+            let Some(character_id) = effect_character_id(effect) else {
                 return false;
             };
-            if character_id.0 > u32::from(u16::MAX) {
+            let Some(character) = world.characters.get(&character_id) else {
                 return false;
-            }
-            (effect.x, effect.y)
+            };
+            (i32::from(character.x), i32::from(character.y))
         }
         _ => return false,
     };
@@ -4793,6 +4850,59 @@ mod tests {
 
         assert!(
             client_effect_payloads(&world, &character, 2, &mut ClientEffectCache::default())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn client_effect_payloads_send_visible_character_spell_effects() {
+        let login = login_block("Tester");
+        let mut viewer = login_character(CharacterId(7), &login, 1, 10, 10);
+        viewer.x = 10;
+        viewer.y = 10;
+        let mut target = login_character(CharacterId(8), &login, 1, 11, 10);
+        target.x = 11;
+        target.y = 10;
+        let mut world = World::default();
+        world.characters.insert(target.id, target.clone());
+        let mut effect = Effect::new(EF_BLESS, 77, 100, 200);
+        effect.target_character = Some(target.id);
+        effect.strength = 33;
+        world.effects.insert(77, effect);
+
+        let payloads =
+            client_effect_payloads(&world, &viewer, 2, &mut ClientEffectCache::default());
+
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[0][0], ugaris_protocol::packet::SV_CEFFECT);
+        assert_eq!(payloads[0][1], 0);
+        assert_eq!(
+            &payloads[0][2..],
+            &ugaris_protocol::packet::ceffect_bless(77, 8, 100, 200, 33)[..]
+        );
+        assert_eq!(
+            &payloads[1][..],
+            &ugaris_protocol::packet::used_effects(1)[..]
+        );
+    }
+
+    #[test]
+    fn client_effect_payloads_hide_character_spell_effects_with_hidden_target() {
+        let login = login_block("Tester");
+        let mut viewer = login_character(CharacterId(7), &login, 1, 10, 10);
+        viewer.x = 10;
+        viewer.y = 10;
+        let mut target = login_character(CharacterId(8), &login, 1, 20, 20);
+        target.x = 20;
+        target.y = 20;
+        let mut world = World::default();
+        world.characters.insert(target.id, target.clone());
+        let mut effect = Effect::new(EF_HEAL, 77, 100, 200);
+        effect.target_character = Some(target.id);
+        world.effects.insert(77, effect);
+
+        assert!(
+            client_effect_payloads(&world, &viewer, 2, &mut ClientEffectCache::default())
                 .is_empty()
         );
     }

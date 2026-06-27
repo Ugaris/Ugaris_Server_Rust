@@ -587,6 +587,94 @@ pub fn ceffect_burn(effect_id: i32, character: i32, stop: i32) -> BytesMut {
     out
 }
 
+pub fn ceffect_shield(effect_id: i32, character: i32, start: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(16);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(1);
+    out.put_i32_le(character);
+    out.put_i32_le(start);
+    out
+}
+
+pub fn ceffect_flash(effect_id: i32, character: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(12);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(5);
+    out.put_i32_le(character);
+    out
+}
+
+pub fn ceffect_warcry(effect_id: i32, character: i32, stop: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(16);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(8);
+    out.put_i32_le(character);
+    out.put_i32_le(stop);
+    out
+}
+
+pub fn ceffect_bless(
+    effect_id: i32,
+    character: i32,
+    start: i32,
+    stop: i32,
+    strength: i32,
+) -> BytesMut {
+    let mut out = BytesMut::with_capacity(24);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(9);
+    out.put_i32_le(character);
+    out.put_i32_le(start);
+    out.put_i32_le(stop);
+    out.put_i32_le(strength);
+    out
+}
+
+pub fn ceffect_heal(effect_id: i32, character: i32, start: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(16);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(10);
+    out.put_i32_le(character);
+    out.put_i32_le(start);
+    out
+}
+
+pub fn ceffect_freeze(effect_id: i32, character: i32, start: i32, stop: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(20);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(11);
+    out.put_i32_le(character);
+    out.put_i32_le(start);
+    out.put_i32_le(stop);
+    out
+}
+
+pub fn ceffect_potion(
+    effect_id: i32,
+    character: i32,
+    start: i32,
+    stop: i32,
+    strength: i32,
+) -> BytesMut {
+    let mut out = BytesMut::with_capacity(24);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(14);
+    out.put_i32_le(character);
+    out.put_i32_le(start);
+    out.put_i32_le(stop);
+    out.put_i32_le(strength);
+    out
+}
+
+pub fn ceffect_firering(effect_id: i32, character: i32, start: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(16);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(23);
+    out.put_i32_le(character);
+    out.put_i32_le(start);
+    out
+}
+
 pub fn ceffect_fireball(
     effect_id: i32,
     start: i32,
@@ -805,6 +893,25 @@ mod tests {
             &ceffect_burn(0x11, 0x22, 0x33)[..],
             &[0x11, 0, 0, 0, 12, 0, 0, 0, 0x22, 0, 0, 0, 0x33, 0, 0, 0]
         );
+        assert_eq!(
+            &ceffect_shield(0x11, 0x22, 0x33)[..],
+            &[0x11, 0, 0, 0, 1, 0, 0, 0, 0x22, 0, 0, 0, 0x33, 0, 0, 0]
+        );
+        assert_eq!(
+            &ceffect_flash(0x11, 0x22)[..],
+            &[0x11, 0, 0, 0, 5, 0, 0, 0, 0x22, 0, 0, 0]
+        );
+        assert_eq!(
+            &ceffect_bless(0x11, 0x22, 0x33, 0x44, 0x55)[..],
+            &[
+                0x11, 0, 0, 0, 9, 0, 0, 0, 0x22, 0, 0, 0, 0x33, 0, 0, 0, 0x44, 0, 0, 0, 0x55, 0, 0,
+                0,
+            ]
+        );
+        assert_eq!(&ceffect_heal(1, 2, 3)[4..8], &[10, 0, 0, 0]);
+        assert_eq!(&ceffect_freeze(1, 2, 3, 4)[4..8], &[11, 0, 0, 0]);
+        assert_eq!(&ceffect_potion(1, 2, 3, 4, 5)[4..8], &[14, 0, 0, 0]);
+        assert_eq!(&ceffect_firering(1, 2, 3)[4..8], &[23, 0, 0, 0]);
         assert_eq!(&ceffect_fireball(1, 2, 3, 4, 5, 6)[4..8], &[4, 0, 0, 0]);
     }
 
