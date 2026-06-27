@@ -416,8 +416,101 @@ mod legacy_account_depot_codec {
     }
 }
 
+use legacy_account_depot_codec::{
+    decode_legacy_account_depot_blob, encode_legacy_account_depot_blob,
+};
 #[cfg(test)]
-use legacy_account_depot_codec::*;
+use legacy_account_depot_codec::{
+    encode_legacy_account_depot_item, LEGACY_ACCOUNT_DEPOT_DRDATA_OFFSET,
+    LEGACY_ACCOUNT_DEPOT_DRIVER_OFFSET, LEGACY_ACCOUNT_DEPOT_ITEM_PERSISTED_PREFIX,
+    LEGACY_ACCOUNT_DEPOT_ITEM_SIZE, LEGACY_ACCOUNT_DEPOT_MIN_LEVEL_OFFSET,
+    LEGACY_ACCOUNT_DEPOT_MOD_INDEX_OFFSET, LEGACY_ACCOUNT_DEPOT_NAME_OFFSET,
+    LEGACY_ACCOUNT_DEPOT_SPRITE_OFFSET, LEGACY_ACCOUNT_DEPOT_TEMPLATE_ID_OFFSET,
+    LEGACY_ACCOUNT_DEPOT_VALUE_OFFSET,
+};
+
+const DRD_ACCOUNT_WIDE_DEPOT: u32 =
+    (ugaris_core::player::DEV_ID_ED << 24) | (6 | ugaris_core::player::PERSISTENT_SUBSCRIBER_DATA);
+
+#[derive(Debug, Clone, Copy)]
+struct LegacySubscriberBlock<'a> {
+    id: u32,
+    data: &'a [u8],
+}
+
+fn parse_legacy_subscriber_blocks(bytes: &[u8]) -> Option<Vec<LegacySubscriberBlock<'_>>> {
+    let mut blocks = Vec::new();
+    let mut offset = 0usize;
+    while offset < bytes.len() {
+        if bytes.len().saturating_sub(offset) < 8 {
+            return None;
+        }
+        let id = u32::from_le_bytes(bytes[offset..offset + 4].try_into().ok()?);
+        let size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().ok()?) as usize;
+        offset += 8;
+        if bytes.len().saturating_sub(offset) < size {
+            return None;
+        }
+        blocks.push(LegacySubscriberBlock {
+            id,
+            data: &bytes[offset..offset + size],
+        });
+        offset += size;
+    }
+    Some(blocks)
+}
+
+fn write_legacy_subscriber_block(bytes: &mut Vec<u8>, id: u32, data: &[u8]) {
+    bytes.extend_from_slice(&id.to_le_bytes());
+    bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(data);
+}
+
+fn account_depot_has_items(depot: &AccountDepotState) -> bool {
+    depot.slots.iter().any(Option::is_some)
+}
+
+fn decode_legacy_account_depot_subscriber_blob(bytes: &[u8]) -> Option<AccountDepotState> {
+    parse_legacy_subscriber_blocks(bytes)?
+        .into_iter()
+        .find(|block| block.id == DRD_ACCOUNT_WIDE_DEPOT)
+        .map(|block| decode_legacy_account_depot_blob(block.data))
+}
+
+fn encode_legacy_account_depot_subscriber_blob(
+    existing: &[u8],
+    depot: Option<&AccountDepotState>,
+) -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(existing.len());
+    let Some(blocks) = parse_legacy_subscriber_blocks(existing) else {
+        return existing.to_vec();
+    };
+    let mut had_account_depot = false;
+    for block in blocks {
+        if block.id == DRD_ACCOUNT_WIDE_DEPOT {
+            had_account_depot = true;
+            if let Some(depot) = depot.filter(|depot| account_depot_has_items(depot)) {
+                write_legacy_subscriber_block(
+                    &mut encoded,
+                    DRD_ACCOUNT_WIDE_DEPOT,
+                    &encode_legacy_account_depot_blob(depot),
+                );
+            }
+        } else {
+            write_legacy_subscriber_block(&mut encoded, block.id, block.data);
+        }
+    }
+    if !had_account_depot {
+        if let Some(depot) = depot.filter(|depot| account_depot_has_items(depot)) {
+            write_legacy_subscriber_block(
+                &mut encoded,
+                DRD_ACCOUNT_WIDE_DEPOT,
+                &encode_legacy_account_depot_blob(depot),
+            );
+        }
+    }
+    encoded
+}
 
 impl Default for AccountDepotState {
     fn default() -> Self {
@@ -545,13 +638,19 @@ enum AssembleApplyResult {
     TemplateUnavailable,
 }
 
+#[derive(Debug, Clone)]
+struct CharacterSnapshotApplyResult {
+    loaded: bool,
+    account_depot: Option<AccountDepotState>,
+}
+
 fn apply_character_snapshot(
     world: &mut World,
     player: &mut PlayerRuntime,
     snapshot: CharacterSnapshot,
     fallback_x: usize,
     fallback_y: usize,
-) -> bool {
+) -> CharacterSnapshotApplyResult {
     let CharacterSnapshot {
         mut character,
         items,
@@ -562,6 +661,7 @@ fn apply_character_snapshot(
 
     player.ppd_blob = ppd_blob;
     player.subscriber_blob = subscriber_blob;
+    let account_depot = decode_legacy_account_depot_subscriber_blob(&player.subscriber_blob);
     let ppd_blob = player.ppd_blob.clone();
     if !ppd_blob.is_empty() && !player.decode_legacy_ppd_blob(&ppd_blob) {
         warn!(
@@ -576,14 +676,20 @@ fn apply_character_snapshot(
         character.x = 0;
         character.y = 0;
         if !world.spawn_character(character, fallback_x, fallback_y) {
-            return false;
+            return CharacterSnapshotApplyResult {
+                loaded: false,
+                account_depot: None,
+            };
         }
     }
 
     for item in items {
         world.add_item(item);
     }
-    true
+    CharacterSnapshotApplyResult {
+        loaded: true,
+        account_depot,
+    }
 }
 
 fn character_snapshot_items(world: &World, character: &Character) -> Vec<Item> {
@@ -606,6 +712,7 @@ fn character_save_request(
     world: &World,
     player: &PlayerRuntime,
     character: &Character,
+    account_depot: Option<&AccountDepotState>,
     area_id: u16,
     mirror_id: u16,
 ) -> CharacterSaveRequest {
@@ -613,7 +720,10 @@ fn character_save_request(
         character: character.clone(),
         items: character_snapshot_items(world, character),
         ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
-        subscriber_blob: player.subscriber_blob.clone(),
+        subscriber_blob: encode_legacy_account_depot_subscriber_blob(
+            &player.subscriber_blob,
+            account_depot,
+        ),
         mode: CharacterSaveMode::Logout {
             expected_current_area: i32::from(area_id),
             expected_current_mirror: i32::from(mirror_id),
@@ -5820,6 +5930,43 @@ mod tests {
     }
 
     #[test]
+    fn account_depot_subscriber_blob_replaces_block_and_preserves_unknown() {
+        let unknown_id = (77 << 24) | 9;
+        let mut existing = Vec::new();
+        write_legacy_subscriber_block(&mut existing, unknown_id, &[1, 2, 3]);
+        write_legacy_subscriber_block(&mut existing, DRD_ACCOUNT_WIDE_DEPOT, &[9, 9, 9]);
+
+        let mut depot = AccountDepotState::default();
+        let mut item = test_item(ItemId(99), 1234, ItemFlags::USED | ItemFlags::TAKE);
+        item.name = "Stored Gem".to_string();
+        depot.slots[2] = Some(item);
+
+        let encoded = encode_legacy_account_depot_subscriber_blob(&existing, Some(&depot));
+        let blocks = parse_legacy_subscriber_blocks(&encoded).unwrap();
+
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].id, unknown_id);
+        assert_eq!(blocks[0].data, &[1, 2, 3]);
+        assert_eq!(blocks[1].id, DRD_ACCOUNT_WIDE_DEPOT);
+        let decoded = decode_legacy_account_depot_subscriber_blob(&encoded).unwrap();
+        assert_eq!(decoded.slots[0].as_ref().unwrap().name, "Stored Gem");
+    }
+
+    #[test]
+    fn account_depot_subscriber_blob_omits_empty_depot_like_c_del_data() {
+        let mut existing = Vec::new();
+        write_legacy_subscriber_block(&mut existing, DRD_ACCOUNT_WIDE_DEPOT, &[9, 9, 9]);
+
+        let encoded = encode_legacy_account_depot_subscriber_blob(
+            &existing,
+            Some(&AccountDepotState::default()),
+        );
+
+        assert!(parse_legacy_subscriber_blocks(&encoded).unwrap().is_empty());
+        assert!(decode_legacy_account_depot_subscriber_blob(&encoded).is_none());
+    }
+
+    #[test]
     fn generic_container_payload_uses_open_item_description_and_clears_empty_slots() {
         let mut world = World::default();
         let mut container = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
@@ -7282,8 +7429,12 @@ mod tests {
         let mut player = PlayerRuntime::connected(5, 0);
         player.add_keyring_key(0x3b000001, "Copper Key");
         player.mark_chest_access(9, 1234);
+        let mut depot = AccountDepotState::default();
+        let mut stored = test_item(ItemId(201), 4321, ItemFlags::USED | ItemFlags::TAKE);
+        stored.name = "Depot Relic".to_string();
+        depot.slots[4] = Some(stored);
 
-        let request = character_save_request(&world, &player, &character, 1, 2);
+        let request = character_save_request(&world, &player, &character, Some(&depot), 1, 2);
 
         assert_eq!(request.items.len(), 2);
         assert!(request.items.iter().any(|item| item.id == ItemId(101)));
@@ -7292,6 +7443,9 @@ mod tests {
         assert!(decoded.decode_legacy_ppd_blob(&request.ppd_blob));
         assert_eq!(decoded.keyring.len(), 1);
         assert_eq!(decoded.chest_last_access_seconds(9), 1234);
+        let decoded_depot = decode_legacy_account_depot_subscriber_blob(&request.subscriber_blob)
+            .expect("account depot subscriber block");
+        assert_eq!(decoded_depot.slots[0].as_ref().unwrap().name, "Depot Relic");
     }
 
     #[test]
@@ -9799,13 +9953,17 @@ async fn main() -> anyhow::Result<()> {
                                     match repository.load_character_snapshot(db_character_id).await {
                                         Ok(Some(snapshot)) => {
                                             if let Some(player) = runtime.players.get_mut(&id.0) {
-                                                loaded_from_database = apply_character_snapshot(
+                                                let snapshot_result = apply_character_snapshot(
                                                     &mut world,
                                                     player,
                                                     snapshot,
                                                     spawn_tile.0,
                                                     spawn_tile.1,
                                                 );
+                                                loaded_from_database = snapshot_result.loaded;
+                                                if let Some(account_depot) = snapshot_result.account_depot {
+                                                    runtime.account_depots.insert(db_character_id, account_depot);
+                                                }
                                             }
                                             if loaded_from_database {
                                                 info!(%id, character_id = db_character_id.0, mirror, "loaded DB-backed character snapshot");
@@ -9911,6 +10069,11 @@ async fn main() -> anyhow::Result<()> {
                         info!(%id, command = command_kind, "action queued for gameplay port");
                     }
                     SessionEvent::Disconnected { id } => {
+                        let account_depot = runtime
+                            .players
+                            .get(&id.0)
+                            .and_then(|player| player.character_id)
+                            .and_then(|character_id| runtime.account_depots.get(&character_id).cloned());
                         if let Some(player) = runtime.disconnect(id.0) {
                             if let Some(character_id) = player.character_id {
                                 if let Some(repository) = &character_repository {
@@ -9919,6 +10082,7 @@ async fn main() -> anyhow::Result<()> {
                                             &world,
                                             &player,
                                             character,
+                                            account_depot.as_ref(),
                                             config.area_id,
                                             config.mirror_id,
                                         );
