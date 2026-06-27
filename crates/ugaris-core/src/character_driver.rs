@@ -90,6 +90,8 @@ pub struct SimpleBaddyDriverData {
     pub notsecure: i32,
     pub mindist: i32,
     pub lastfight: i32,
+    #[serde(default)]
+    pub last_hit: i32,
     pub poison_power: i32,
     pub poison_chance: i32,
     pub poison_type: i32,
@@ -136,6 +138,7 @@ impl Default for SimpleBaddyDriverData {
             notsecure: 0,
             mindist: 0,
             lastfight: 0,
+            last_hit: 0,
             poison_power: 0,
             poison_chance: 0,
             poison_type: 0,
@@ -187,6 +190,7 @@ pub enum SimpleBaddyMessageOutcome {
         attacker_id: CharacterId,
         victim_id: CharacterId,
     },
+    NoteHit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -350,6 +354,10 @@ pub fn process_simple_baddy_messages(
                     reason: PotionUseReason::LowMana,
                 });
             }
+        }
+
+        if message.message_type == NT_GOTHIT {
+            outcomes.push(SimpleBaddyMessageOutcome::NoteHit);
         }
 
         if message.message_type == NT_GOTHIT && message.dat1 > 0 {
@@ -751,6 +759,7 @@ mod tests {
         assert_eq!(data.stopdist, 40);
         assert_eq!(data.scavenger, 0);
         assert_eq!(data.dir, 3);
+        assert_eq!(data.last_hit, 0);
         assert_eq!(data.drink_inventory_potions, 0);
     }
 
@@ -852,6 +861,7 @@ mod tests {
                     item_id: ItemId(31),
                     reason: PotionUseReason::LowMana,
                 },
+                SimpleBaddyMessageOutcome::NoteHit,
             ]
         );
         assert!(character.driver_messages.is_empty());
@@ -880,7 +890,7 @@ mod tests {
             ],
         );
 
-        assert!(outcomes.is_empty());
+        assert_eq!(outcomes, vec![SimpleBaddyMessageOutcome::NoteHit]);
         assert!(character.driver_messages.is_empty());
     }
 
@@ -944,6 +954,7 @@ mod tests {
                     attacker_id: crate::ids::CharacterId(3),
                     victim_id: crate::ids::CharacterId(4),
                 },
+                SimpleBaddyMessageOutcome::NoteHit,
                 SimpleBaddyMessageOutcome::StandardAggro {
                     target_id: crate::ids::CharacterId(5),
                     priority: 1,

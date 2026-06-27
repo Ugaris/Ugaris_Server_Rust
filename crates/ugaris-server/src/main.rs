@@ -9443,6 +9443,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::StepTrapDiscoverTarget { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::OnOffLightChanged { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PalaceGateTick { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DecayItemToggled { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LabExitAnimating { .. }

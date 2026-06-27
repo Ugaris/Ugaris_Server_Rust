@@ -2265,11 +2265,11 @@ impl World {
         };
         let message_outcomes = process_simple_baddy_messages(character, &carried_items);
 
-        message_outcomes
-            .into_iter()
-            .map(|outcome| match outcome {
-                SimpleBaddyMessageOutcome::UseInventoryPotion { item_id, .. } => self
-                    .execute_item_driver_request(
+        let mut applied = Vec::new();
+        for outcome in message_outcomes {
+            match outcome {
+                SimpleBaddyMessageOutcome::UseInventoryPotion { item_id, .. } => {
+                    let outcome = self.execute_item_driver_request(
                         ItemDriverRequest::Driver {
                             driver: IDR_POTION,
                             item_id,
@@ -2277,12 +2277,14 @@ impl World {
                             spec: 0,
                         },
                         area_id,
-                    ),
+                    );
+                    applied.push(outcome);
+                }
                 SimpleBaddyMessageOutcome::BlessFriend { target_id } => {
                     if self.simple_baddy_can_bless_friend(character_id, target_id) {
                         let _ = self.setup_bless_spell(character_id, target_id);
                     }
-                    ItemDriverOutcome::Noop
+                    applied.push(ItemDriverOutcome::Noop);
                 }
                 SimpleBaddyMessageOutcome::PoisonHit {
                     target_id,
@@ -2295,7 +2297,7 @@ impl World {
                     {
                         let _ = self.poison_character(target_id, power, poison_type);
                     }
-                    ItemDriverOutcome::Noop
+                    applied.push(ItemDriverOutcome::Noop);
                 }
                 SimpleBaddyMessageOutcome::AddEnemy {
                     caller_id,
@@ -2309,7 +2311,7 @@ impl World {
                             Self::apply_simple_baddy_enemy_tracking(character, target_id, tracking);
                         }
                     }
-                    ItemDriverOutcome::Noop
+                    applied.push(ItemDriverOutcome::Noop);
                 }
                 SimpleBaddyMessageOutcome::StandardAggro {
                     target_id,
@@ -2332,7 +2334,7 @@ impl World {
                             Self::apply_simple_baddy_enemy_tracking(character, target_id, tracking);
                         }
                     }
-                    ItemDriverOutcome::Noop
+                    applied.push(ItemDriverOutcome::Noop);
                 }
                 SimpleBaddyMessageOutcome::StandardSeenHit {
                     attacker_id,
@@ -2351,10 +2353,20 @@ impl World {
                             Self::apply_simple_baddy_enemy_tracking(character, target_id, tracking);
                         }
                     }
-                    ItemDriverOutcome::Noop
+                    applied.push(ItemDriverOutcome::Noop);
                 }
-            })
-            .collect()
+                SimpleBaddyMessageOutcome::NoteHit => {
+                    if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+                        .characters
+                        .get_mut(&character_id)
+                        .and_then(|character| character.driver_state.as_mut())
+                    {
+                        data.last_hit = self.tick.0 as i32;
+                    }
+                }
+            }
+        }
+        applied
     }
 
     pub fn process_simple_baddy_attack_action(
@@ -8275,6 +8287,10 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.hp, 60 * POWERSCALE);
         assert_eq!(npc.inventory[30], None);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.last_hit, world.tick.0 as i32);
         assert!(npc.driver_messages.is_empty());
     }
 
@@ -8667,6 +8683,7 @@ mod tests {
         else {
             panic!("simple baddy state missing");
         };
+        assert_eq!(data.last_hit, 322);
         assert_eq!(
             data.enemies,
             vec![SimpleBaddyEnemy {

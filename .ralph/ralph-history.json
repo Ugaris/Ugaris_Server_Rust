@@ -2210,15 +2210,44 @@
         "test result: ok. 448 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 80,
+      "startedAt": "2026-06-27T20:02:31.199Z",
+      "endedAt": "2026-06-27T20:13:26.356Z",
+      "durationMs": 654989,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_message_actions_add_npc_alert_enemy_for_same_group_caller ... FAILED",
+        "test result: FAILED. 72 passed; 1 failed; 0 ignored; 0 measured; 375 filtered out; finished in 0.01s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test world::tests::simple_baddy_message_actions_add_aggressive_seen_character_enemy ... FAILED",
+        "test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 375 filtered out; finished in 0.01s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 36001933,
+  "totalDurationMs": 36656922,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 76,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 74,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 68,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 77,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 75,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 69,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 50,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 43,
@@ -2233,9 +2262,9 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 22,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 23,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 4,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 5,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.00s": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 325 filtered out; finished in 0.00s": 1,
@@ -2278,7 +2307,7 @@
       "test result: ok. 348 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 348 filtered out; finished in 0.00s": 1,
       "test result: ok. 350 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_message_actions_add_aggressive_seen_character_enemy ... FAILED": 1,
+      "test world::tests::simple_baddy_message_actions_add_aggressive_seen_character_enemy ... FAILED": 2,
       "test result: FAILED. 26 passed; 1 failed; 0 ignored; 0 measured; 327 filtered out; finished in 0.00s": 1,
       "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 327 filtered out; finished in 0.00s": 1,
       "test result: ok. 354 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
@@ -2329,7 +2358,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 43,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 44,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -2488,7 +2517,10 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 444 filtered out; finished in 0.00s": 1,
       "test result: ok. 445 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 445 filtered out; finished in 0.00s": 1,
-      "test result: ok. 448 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
+      "test result: ok. 448 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
+      "test world::tests::simple_baddy_message_actions_add_npc_alert_enemy_for_same_group_caller ... FAILED": 1,
+      "test result: FAILED. 72 passed; 1 failed; 0 ignored; 0 measured; 375 filtered out; finished in 0.01s": 1,
+      "test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 375 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
