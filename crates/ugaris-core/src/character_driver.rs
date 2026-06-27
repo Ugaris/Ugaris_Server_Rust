@@ -100,6 +100,12 @@ pub struct SimpleBaddyEnemy {
     pub target_id: CharacterId,
     pub priority: i32,
     pub last_seen_tick: i32,
+    #[serde(default)]
+    pub visible: bool,
+    #[serde(default)]
+    pub last_x: u16,
+    #[serde(default)]
+    pub last_y: u16,
 }
 
 impl Default for SimpleBaddyDriverData {
@@ -414,6 +420,9 @@ pub fn add_simple_baddy_enemy_unchecked(
         target_id,
         priority,
         last_seen_tick: current_tick,
+        visible: false,
+        last_x: 0,
+        last_y: 0,
     });
     true
 }
@@ -1042,6 +1051,9 @@ mod tests {
                 target_id: crate::ids::CharacterId(99),
                 priority: 1,
                 last_seen_tick: 12,
+                visible: false,
+                last_x: 0,
+                last_y: 0,
             }]
         );
     }
