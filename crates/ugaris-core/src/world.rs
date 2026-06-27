@@ -26,8 +26,9 @@ use crate::{
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD},
     light::{
-        add_character_light, add_effect_light, add_item_light, remove_character_light,
-        remove_effect_light, remove_item_light, LIGHT_DISTANCE,
+        add_character_light, add_effect_light, add_item_light, compute_dlight, compute_groundlight,
+        compute_shadow_with_random, remove_character_light, remove_effect_light, remove_item_light,
+        reset_dlight, LIGHT_DISTANCE,
     },
     log_text::LOG_TALK,
     map::{manhattan_distance, MapFlags, MapGrid},
@@ -278,6 +279,78 @@ impl World {
             usize::from(item.y),
             item_light_value(item),
         );
+    }
+
+    pub fn compute_groundlight_at(&mut self, x: usize, y: usize) -> bool {
+        let old_light = self.map.tile(x, y).map(|tile| tile.light);
+        compute_groundlight(&mut self.map, x, y);
+        let changed = self.map.tile(x, y).map(|tile| tile.light) != old_light;
+        if changed {
+            self.mark_dirty_sector(x, y);
+        }
+        changed
+    }
+
+    pub fn compute_shadow_at(&mut self, x: usize, y: usize) -> bool {
+        self.compute_shadow_at_with_random(x, y, |_| 0)
+    }
+
+    pub fn compute_shadow_at_with_random(
+        &mut self,
+        x: usize,
+        y: usize,
+        random_below: impl FnMut(i32) -> i32,
+    ) -> bool {
+        let old_daylight = self.map.tile(x, y).map(|tile| tile.daylight);
+        compute_shadow_with_random(&mut self.map, x, y, random_below);
+        let changed = self.map.tile(x, y).map(|tile| tile.daylight) != old_daylight;
+        if changed {
+            self.mark_dirty_sector(x, y);
+        }
+        changed
+    }
+
+    pub fn compute_dlight_at(&mut self, x: usize, y: usize) -> bool {
+        let changed = compute_dlight(&mut self.map, x, y);
+        if changed {
+            self.mark_dirty_sector(x, y);
+        }
+        changed
+    }
+
+    pub fn reset_dlight_around(&mut self, x: usize, y: usize) -> bool {
+        if self.map.tile(x, y).is_none() {
+            return false;
+        }
+
+        let xs = x.saturating_sub(LIGHT_DISTANCE);
+        let ys = y.saturating_sub(LIGHT_DISTANCE);
+        let xe = (x + 1 + LIGHT_DISTANCE).min(self.map.width().saturating_sub(1));
+        let ye = (y + 1 + LIGHT_DISTANCE).min(self.map.height().saturating_sub(1));
+
+        let mut before = HashMap::new();
+        for ty in ys..ye {
+            for tx in xs..xe {
+                if let Some(tile) = self.map.tile(tx, ty) {
+                    before.insert((tx, ty), tile.daylight);
+                }
+            }
+        }
+
+        if !reset_dlight(&mut self.map, x, y) {
+            return false;
+        }
+
+        for ((tx, ty), old_daylight) in before {
+            if self
+                .map
+                .tile(tx, ty)
+                .is_some_and(|tile| tile.daylight != old_daylight)
+            {
+                self.mark_dirty_sector(tx, ty);
+            }
+        }
+        true
     }
 
     fn next_effect_id(&self) -> u32 {
@@ -4446,6 +4519,64 @@ mod tests {
             .sound_area_specials(4, 4, u32::from(LOG_TALK))
             .is_empty());
         assert_eq!(world.sound_area_specials(4, 4, 7).len(), 1);
+    }
+
+    #[test]
+    fn world_groundlight_marks_dirty_sector_when_light_changes() {
+        let mut world = World {
+            tick: Tick(17),
+            map: MapGrid::new(24, 24),
+            ..World::default()
+        };
+        world.map.tile_mut(10, 10).unwrap().ground_sprite = 14361;
+
+        assert!(world.compute_groundlight_at(10, 10));
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 64);
+        assert_eq!(world.skip_x_sector(10, 10, 17), 0);
+        assert!(!world.compute_groundlight_at(40, 40));
+    }
+
+    #[test]
+    fn world_shadow_marks_dirty_sector_only_on_daylight_change() {
+        let mut world = World {
+            tick: Tick(23),
+            map: MapGrid::new(24, 24),
+            ..World::default()
+        };
+
+        assert!(world.compute_shadow_at(10, 10));
+        assert_eq!(world.map.tile(10, 10).unwrap().daylight, 63);
+        assert_eq!(world.skip_x_sector(10, 10, 23), 0);
+        assert!(!world.compute_shadow_at(10, 10));
+    }
+
+    #[test]
+    fn world_dlight_wrappers_mark_changed_indoor_tiles_dirty() {
+        let mut world = World {
+            tick: Tick(31),
+            map: MapGrid::new(32, 32),
+            ..World::default()
+        };
+        world.map.set_flags(10, 10, MapFlags::INDOORS);
+
+        assert!(world.compute_dlight_at(10, 10));
+        assert_eq!(world.map.tile(10, 10).unwrap().daylight, 63);
+        assert_eq!(world.skip_x_sector(10, 10, 31), 0);
+
+        let mut world = World {
+            tick: Tick(37),
+            map: MapGrid::new(32, 32),
+            ..World::default()
+        };
+        for y in 8..=10 {
+            for x in 8..=10 {
+                world.map.set_flags(x, y, MapFlags::INDOORS);
+            }
+        }
+
+        assert!(world.reset_dlight_around(10, 10));
+        assert!(world.map.tile(10, 10).unwrap().daylight > 0);
+        assert_eq!(world.skip_x_sector(10, 10, 37), 0);
     }
 
     #[test]
