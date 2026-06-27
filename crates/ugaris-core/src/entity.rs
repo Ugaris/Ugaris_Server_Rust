@@ -325,6 +325,8 @@ pub struct Character {
     pub saves: u8,
     #[serde(default)]
     pub deaths: u32,
+    #[serde(default)]
+    pub regen_ticker: u32,
     pub cursor_item: Option<ItemId>,
     pub current_container: Option<ItemId>,
     pub values: Vec<Vec<i16>>,
@@ -495,6 +497,7 @@ mod tests {
             creation_time: 0,
             saves: 0,
             deaths: 0,
+            regen_ticker: 0,
             cursor_item: None,
             current_container: None,
             values: Character::empty_values(),

@@ -172,6 +172,7 @@ pub struct ItemDriverContext {
     pub timer_call: bool,
     pub daylight: u8,
     pub character_underwater: bool,
+    pub current_tick: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -724,7 +725,9 @@ pub fn execute_item_driver_with_context(
                 IDR_SPECIALANTIENCHANTITEM => anti_enchant_driver(character, item, true),
                 IDR_ORBSPAWN => orbspawn_driver(character, item, false),
                 IDR_ANTIORBSPAWN => orbspawn_driver(character, item, true),
-                IDR_SPECIAL_POTION => special_potion_driver(character, item, area_id, in_arena),
+                IDR_SPECIAL_POTION => {
+                    special_potion_driver(character, item, area_id, in_arena, context.current_tick)
+                }
                 IDR_SPECIAL_SHRINE => special_shrine_driver(character, item),
                 IDR_NOMADSTACK => nomad_stack_driver(character, item),
                 IDR_DEMONCHIP => nomad_stack_driver(character, item),
@@ -2265,6 +2268,7 @@ fn special_potion_driver(
     item: &mut Item,
     area_id: u16,
     in_arena: bool,
+    current_tick: u32,
 ) -> ItemDriverOutcome {
     if character.id.0 == 0 || item.carried_by != Some(character.id) {
         return ItemDriverOutcome::Noop;
@@ -2390,17 +2394,21 @@ fn special_potion_driver(
             character.hp = (character.hp - 10 * POWERSCALE).max(1);
             character.endurance = (character.endurance - 10 * POWERSCALE).max(0);
             character.mana = (character.mana - 10 * POWERSCALE).max(0);
+            character.regen_ticker = current_tick;
         }
         9 => {
             character.hp = (character.hp - 10 * POWERSCALE).max(1);
+            character.regen_ticker = current_tick;
         }
         10 => {
             character.mana = (character.mana - 10 * POWERSCALE).max(0);
+            character.regen_ticker = current_tick;
         }
         11 => {
             character.hp = (character.hp - 10 * POWERSCALE).max(1);
             character.endurance = (character.endurance - 10 * POWERSCALE).max(0);
             character.mana = (character.mana - 10 * POWERSCALE).max(0);
+            character.regen_ticker = current_tick;
         }
         12 => {
             if area_id != 33 {
@@ -2419,6 +2427,7 @@ fn special_potion_driver(
         }
         15 => {
             character.endurance = (character.endurance - 10 * POWERSCALE).max(0);
+            character.regen_ticker = current_tick;
         }
         _ => {
             return ItemDriverOutcome::Unsupported {
@@ -4707,7 +4716,7 @@ mod tests {
         potion.carried_by = Some(character.id);
         potion.driver_data = vec![8];
 
-        let outcome = execute_item_driver(
+        let outcome = execute_item_driver_with_context(
             &mut character,
             &mut potion,
             ItemDriverRequest::Driver {
@@ -4718,11 +4727,16 @@ mod tests {
             },
             1,
             false,
+            &ItemDriverContext {
+                current_tick: 12_345,
+                ..ItemDriverContext::default()
+            },
         );
 
         assert_eq!(character.hp, 5 * POWERSCALE);
         assert_eq!(character.mana, 2 * POWERSCALE);
         assert_eq!(character.endurance, POWERSCALE);
+        assert_eq!(character.regen_ticker, 12_345);
         assert_eq!(character.inventory[30], None);
         assert!(!potion.flags.contains(ItemFlags::USED));
         assert_eq!(
@@ -5144,6 +5158,7 @@ mod tests {
             creation_time: 0,
             saves: 0,
             deaths: 0,
+            regen_ticker: 0,
             cursor_item: None,
             current_container: None,
             values: Character::empty_values(),

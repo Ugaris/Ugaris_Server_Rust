@@ -2112,6 +2112,7 @@ impl World {
             return ItemDriverOutcome::Noop;
         };
         let mut effective_context = context.clone();
+        effective_context.current_tick = self.tick.0 as u32;
         if let Some((cursor_driver, cursor_sprite, cursor_drdata0)) = cursor_context {
             effective_context.cursor_driver =
                 effective_context.cursor_driver.or(Some(cursor_driver));
@@ -6596,6 +6597,7 @@ fn timer_callback_character() -> Character {
         creation_time: 0,
         saves: 0,
         deaths: 0,
+        regen_ticker: 0,
         cursor_item: None,
         current_container: None,
         values: Character::empty_values(),
@@ -11950,6 +11952,7 @@ mod tests {
             creation_time: 0,
             saves: 0,
             deaths: 0,
+            regen_ticker: 0,
             cursor_item: None,
             current_container: None,
             values: Character::empty_values(),

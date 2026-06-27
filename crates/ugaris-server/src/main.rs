@@ -562,6 +562,7 @@ fn login_character(
         creation_time: 0,
         saves: 0,
         deaths: 0,
+        regen_ticker: 0,
         cursor_item: None,
         current_container: None,
         values,
