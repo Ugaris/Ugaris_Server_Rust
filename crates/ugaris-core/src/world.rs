@@ -17,8 +17,8 @@ use crate::{
     drvlib::{char_dist, map_dist},
     effect::Effect,
     entity::{
-        Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, MAX_MODIFIERS,
-        POWERSCALE,
+        Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, INVENTORY_SIZE,
+        MAX_MODIFIERS, POWERSCALE,
     },
     game_time::GameDate,
     ids::{CharacterId, ItemId},
@@ -56,6 +56,7 @@ use crate::{
 };
 
 const IID_REFLECT_FIREBALL: u32 = (0x01 << 24) | 0x00004E;
+const IID_AREA6_GREENCRYSTAL: u32 = (0x01 << 24) | 0x000048;
 const LEGACY_EQUIPMENT_SLOTS: std::ops::Range<usize> = 0..12;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1497,7 +1498,12 @@ impl World {
                 }
             });
             if may_damage {
-                let damage = effect.strength.saturating_mul(POWERSCALE);
+                let strength = if effect.base_sprite == 0 {
+                    self.absorb_edemonball_with_green_crystal(target_id, effect.strength)
+                } else {
+                    effect.strength
+                };
+                let damage = strength.saturating_mul(POWERSCALE);
                 if let Some(target) = self.characters.get_mut(&target_id) {
                     target.hp = target.hp.saturating_sub(damage);
                     target.flags.insert(CharacterFlags::UPDATE);
@@ -1506,6 +1512,55 @@ impl World {
         }
 
         self.create_explosion_effect(x, y, 8, 50450 + effect.base_sprite);
+    }
+
+    fn absorb_edemonball_with_green_crystal(
+        &mut self,
+        target_id: CharacterId,
+        mut strength: i32,
+    ) -> i32 {
+        let Some(target) = self.characters.get(&target_id) else {
+            return strength;
+        };
+        let mut candidates = Vec::with_capacity(INVENTORY_SIZE - 29);
+        if let Some(item_id) = target.cursor_item {
+            candidates.push(item_id);
+        }
+        candidates.extend(target.inventory[30..].iter().filter_map(|&item_id| item_id));
+
+        for item_id in candidates {
+            let Some(item) = self.items.get(&item_id) else {
+                continue;
+            };
+            if item.template_id != IID_AREA6_GREENCRYSTAL {
+                continue;
+            }
+            let crystal_power = item.driver_data.first().copied().unwrap_or_default() as i32;
+            if strength > crystal_power {
+                strength -= crystal_power;
+                self.destroy_item(item_id);
+                continue;
+            }
+
+            let mut sprite_changed = false;
+            if let Some(item) = self.items.get_mut(&item_id) {
+                item.driver_data.resize(1, 0);
+                item.driver_data[0] = (crystal_power - strength).clamp(0, u8::MAX as i32) as u8;
+                let sprite = 50318 + 5 - (i32::from(item.driver_data[0]) / 42);
+                if item.sprite != sprite {
+                    item.sprite = sprite;
+                    sprite_changed = true;
+                }
+            }
+            if sprite_changed {
+                if let Some(target) = self.characters.get_mut(&target_id) {
+                    target.flags.insert(CharacterFlags::ITEMS);
+                }
+            }
+            return 0;
+        }
+
+        strength
     }
 
     fn reflect_fireball_from_target(
@@ -7637,6 +7692,85 @@ mod tests {
                     .iter()
                     .any(|&field| field == world.map.legacy_index(10, 12).unwrap() as i32)
         }));
+    }
+
+    #[test]
+    fn edemonball_green_base_is_absorbed_by_green_crystal() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.hp = 10_000;
+        target.inventory[30] = Some(ItemId(77));
+        assert!(world.spawn_character(target, 10, 12));
+        let mut crystal = item(77, ItemFlags::USED);
+        crystal.carried_by = Some(CharacterId(1));
+        crystal.template_id = IID_AREA6_GREENCRYSTAL;
+        crystal.driver_data = vec![100];
+        crystal.sprite = 50318;
+        world.items.insert(ItemId(77), crystal);
+        let _effect_id = world.create_edemonball_effect(10, 10, 10, 20, 30, 0);
+
+        for _ in 0..6 {
+            world.tick_effects();
+        }
+
+        let target = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(target.hp, 10_000);
+        assert!(target.flags.contains(CharacterFlags::ITEMS));
+        let crystal = world.items.get(&ItemId(77)).unwrap();
+        assert_eq!(crystal.driver_data[0], 70);
+        assert_eq!(crystal.sprite, 50322);
+    }
+
+    #[test]
+    fn edemonball_green_crystals_are_destroyed_until_damage_remaining() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.hp = 10_000;
+        target.cursor_item = Some(ItemId(77));
+        target.inventory[30] = Some(ItemId(78));
+        assert!(world.spawn_character(target, 10, 12));
+        for (id, power) in [(77, 20), (78, 40)] {
+            let mut crystal = item(id, ItemFlags::USED);
+            crystal.carried_by = Some(CharacterId(1));
+            crystal.template_id = IID_AREA6_GREENCRYSTAL;
+            crystal.driver_data = vec![power];
+            world.items.insert(ItemId(id), crystal);
+        }
+        let _effect_id = world.create_edemonball_effect(10, 10, 10, 20, 70, 0);
+
+        for _ in 0..6 {
+            world.tick_effects();
+        }
+
+        let target = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(target.hp, 0);
+        assert_eq!(target.cursor_item, None);
+        assert_eq!(target.inventory[30], None);
+        assert!(!world.items.contains_key(&ItemId(77)));
+        assert!(!world.items.contains_key(&ItemId(78)));
+    }
+
+    #[test]
+    fn edemonball_non_green_base_ignores_green_crystal() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.hp = 10_000;
+        target.inventory[30] = Some(ItemId(77));
+        assert!(world.spawn_character(target, 10, 12));
+        let mut crystal = item(77, ItemFlags::USED);
+        crystal.carried_by = Some(CharacterId(1));
+        crystal.template_id = IID_AREA6_GREENCRYSTAL;
+        crystal.driver_data = vec![100];
+        world.items.insert(ItemId(77), crystal);
+        let _effect_id = world.create_edemonball_effect(10, 10, 10, 20, 3, 1);
+
+        for _ in 0..6 {
+            world.tick_effects();
+        }
+
+        let target = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(target.hp, 7_000);
+        assert_eq!(world.items.get(&ItemId(77)).unwrap().driver_data[0], 100);
     }
 
     #[test]

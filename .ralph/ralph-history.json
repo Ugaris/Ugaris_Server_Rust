@@ -704,14 +704,41 @@
         "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
       ]
+    },
+    {
+      "iteration": 25,
+      "startedAt": "2026-06-27T13:13:25.082Z",
+      "endedAt": "2026-06-27T13:20:45.176Z",
+      "durationMs": 439929,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Two focused tests exposed incorrect expectations in the new tests, not implementation failures: C damage is `strength * POWERSCALE`, so 10 remaining strength removes 10,000 HP and strength 30 removes ",
+        "error: let chains are only allowed in Rust 2024 or later",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test world::tests::edemonball_green_crystals_are_destroyed_until_damage_remaining ... FAILED",
+        "test world::tests::edemonball_non_green_base_ignores_green_crystal ... FAILED",
+        "test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 11614510,
+  "totalDurationMs": 12054439,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 23,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 22,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 24,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 23,
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 21,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
@@ -727,7 +754,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 8,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 9,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 2,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -780,7 +807,7 @@
       "assertion failed: world.process_simple_baddy_attack_action(CharacterId(1), 1)": 1,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 3,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 4,
       "test world::tests::simple_baddy_message_actions_add_defensive_gothit_enemy_without_sight ... FAILED": 1,
       "test world::tests::simple_baddy_message_actions_helper_seen_hit_adds_enemy_for_friend ... FAILED": 1,
       "test result: FAILED. 25 passed; 2 failed; 0 ignored; 0 measured; 327 filtered out; finished in 0.01s": 1,
@@ -809,7 +836,13 @@
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors; 5 warnings emitted": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
-      "test result: ok. 368 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 368 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "Two focused tests exposed incorrect expectations in the new tests, not implementation failures: C da": 1,
+      "error: let chains are only allowed in Rust 2024 or later": 1,
+      "test world::tests::edemonball_green_crystals_are_destroyed_until_damage_remaining ... FAILED": 1,
+      "test world::tests::edemonball_non_green_base_ignores_green_crystal ... FAILED": 1,
+      "test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
