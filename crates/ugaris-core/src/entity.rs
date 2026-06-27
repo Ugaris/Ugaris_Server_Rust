@@ -297,6 +297,12 @@ pub struct Character {
     pub driver: u16,
     #[serde(default)]
     pub group: u16,
+    #[serde(default)]
+    pub clan: u16,
+    #[serde(default)]
+    pub clan_rank: u8,
+    #[serde(default)]
+    pub clan_serial: u32,
     pub speed_mode: SpeedMode,
     pub x: u16,
     pub y: u16,
@@ -472,6 +478,9 @@ mod tests {
             sprite: 0,
             driver: 0,
             group: 0,
+            clan: 0,
+            clan_rank: 0,
+            clan_serial: 0,
             speed_mode: SpeedMode::Normal,
             x: 0,
             y: 0,

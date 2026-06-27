@@ -547,6 +547,9 @@ fn login_character(
         sprite: 1,
         driver: 0,
         group: 0,
+        clan: 0,
+        clan_rank: 0,
+        clan_serial: 0,
         speed_mode: SpeedMode::Normal,
         x: 0,
         y: 0,
@@ -2599,6 +2602,219 @@ const LEGACY_TRANSPORT_DESTINATIONS: [TransportDestination; 26] = [
     },
 ];
 
+const LEGACY_TRANSPORT_CLAN_DESTINATIONS: [TransportDestination; 32] = [
+    TransportDestination {
+        name: "Clan1",
+        x: 28,
+        y: 18,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan2",
+        x: 59,
+        y: 18,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan3",
+        x: 90,
+        y: 18,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan4",
+        x: 121,
+        y: 18,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan5",
+        x: 152,
+        y: 18,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan6",
+        x: 183,
+        y: 18,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan7",
+        x: 214,
+        y: 18,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan8",
+        x: 245,
+        y: 18,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan9",
+        x: 28,
+        y: 38,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan10",
+        x: 59,
+        y: 38,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan11",
+        x: 90,
+        y: 38,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan12",
+        x: 121,
+        y: 38,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan13",
+        x: 152,
+        y: 38,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan14",
+        x: 183,
+        y: 38,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan15",
+        x: 214,
+        y: 38,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan16",
+        x: 245,
+        y: 38,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan17",
+        x: 28,
+        y: 58,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan18",
+        x: 59,
+        y: 58,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan19",
+        x: 90,
+        y: 58,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan20",
+        x: 121,
+        y: 58,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan21",
+        x: 152,
+        y: 58,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan22",
+        x: 183,
+        y: 58,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan23",
+        x: 28,
+        y: 78,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan24",
+        x: 59,
+        y: 78,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan25",
+        x: 90,
+        y: 78,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan26",
+        x: 121,
+        y: 78,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan27",
+        x: 152,
+        y: 78,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan28",
+        x: 183,
+        y: 78,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan29",
+        x: 28,
+        y: 251,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan30",
+        x: 59,
+        y: 251,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan31",
+        x: 90,
+        y: 251,
+        area: 3,
+    },
+    TransportDestination {
+        name: "Clan32",
+        x: 28,
+        y: 231,
+        area: 3,
+    },
+];
+
+fn may_enter_clan(character: &Character, clan: u16) -> bool {
+    (1..=32).contains(&clan) && character.clan == clan
+}
+
+fn transport_clan_access(world: &World, character_id: CharacterId) -> [u8; 4] {
+    let Some(character) = world.characters.get(&character_id) else {
+        return [0; 4];
+    };
+    let mut access = [0_u8; 4];
+    for clan in 1..=32_u16 {
+        if may_enter_clan(character, clan) {
+            let index = (clan - 1) as usize;
+            access[index / 8] |= 1_u8 << (index % 8);
+        }
+    }
+    access
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TransportTravelResult {
     SameArea {
@@ -2631,7 +2847,28 @@ fn resolve_transport_travel(
     };
 
     if (64..96).contains(&nr) {
-        return TransportTravelResult::Blocked(format!("You may not enter ({}).", nr - 63));
+        let clan = (nr - 63) as u16;
+        if !world
+            .characters
+            .get(&character_id)
+            .is_some_and(|character| may_enter_clan(character, clan))
+        {
+            return TransportTravelResult::Blocked(format!("You may not enter ({}).", clan));
+        }
+        let destination = LEGACY_TRANSPORT_CLAN_DESTINATIONS[(clan - 1) as usize];
+        if destination.area != current_area {
+            return TransportTravelResult::CrossArea {
+                area: destination.area,
+                x: destination.x,
+                y: destination.y,
+                mirror,
+            };
+        }
+        return TransportTravelResult::SameArea {
+            x: destination.x,
+            y: destination.y,
+            mirror,
+        };
     }
 
     if !(0..64).contains(&nr) {
@@ -4379,6 +4616,52 @@ mod tests {
                 y: 201,
                 mirror: 4,
             }
+        );
+    }
+
+    #[test]
+    fn transport_clan_access_marks_direct_member_byte() {
+        let mut world = World::default();
+        let mut character = login_character(CharacterId(1), &login_block("Ralph"), 3, 10, 10);
+        character.clan = 17;
+        world.add_character(character);
+
+        assert_eq!(transport_clan_access(&world, CharacterId(1)), [0, 0, 1, 0]);
+    }
+
+    #[test]
+    fn transport_clan_travel_uses_legacy_hall_coordinates() {
+        let mut world = World::default();
+        world.map = ugaris_core::map::MapGrid::new(300, 300);
+        let mut character = login_character(CharacterId(1), &login_block("Ralph"), 3, 10, 10);
+        character.clan = 17;
+        assert!(world.spawn_character(character, 10, 10));
+        let player = PlayerRuntime::connected(1, 0);
+
+        let result = apply_transport_travel(&mut world, &player, CharacterId(1), 3, 81 + 2 * 256);
+
+        assert_eq!(
+            result,
+            TransportTravelResult::SameArea {
+                x: 28,
+                y: 58,
+                mirror: 2,
+            }
+        );
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((character.x, character.y), (28, 58));
+    }
+
+    #[test]
+    fn transport_clan_travel_rejects_non_member_with_legacy_text() {
+        let world = World::default();
+        let player = PlayerRuntime::connected(1, 0);
+
+        let result = resolve_transport_travel(&world, &player, CharacterId(1), 3, 65);
+
+        assert_eq!(
+            result,
+            TransportTravelResult::Blocked("You may not enter (1).".to_string())
         );
     }
 
@@ -8408,8 +8691,9 @@ async fn main() -> anyhow::Result<()> {
                                             if newly_seen {
                                                 feedback.push((character_id, "You have reached a new transportation point.".to_string()));
                                             }
+                                            let clan_access = transport_clan_access(&world, character_id);
                                             let payload = bytes::BytesMut::from(
-                                                &ugaris_protocol::packet::transport(seen, [0; 4])[..],
+                                                &ugaris_protocol::packet::transport(seen, clan_access)[..],
                                             );
                                             for (session_id, _) in runtime.sessions_for_character(character_id) {
                                                 runtime.send_to_session(session_id, payload.clone());
