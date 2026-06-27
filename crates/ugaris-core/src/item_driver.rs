@@ -35,6 +35,7 @@ pub const IDR_INFINITE_CHEST: u16 = 93;
 pub const IDR_FOOD: u16 = 64;
 pub const IDR_ENCHANTITEM: u16 = 83;
 pub const IDR_ORBSPAWN: u16 = 84;
+pub const IDR_SPECIAL_POTION: u16 = 88;
 pub const IDR_NOMADSTACK: u16 = 96;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
@@ -427,6 +428,14 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    SpecialPotionDrunk {
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+        hp_delta: i32,
+        mana_delta: i32,
+        endurance_delta: i32,
+    },
     EnchantNeedsCursor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -597,6 +606,7 @@ pub fn execute_item_driver_with_context(
                 IDR_SPECIALANTIENCHANTITEM => anti_enchant_driver(character, item, true),
                 IDR_ORBSPAWN => orbspawn_driver(character, item, false),
                 IDR_ANTIORBSPAWN => orbspawn_driver(character, item, true),
+                IDR_SPECIAL_POTION => special_potion_driver(character, item, area_id, in_arena),
                 IDR_NOMADSTACK => nomad_stack_driver(character, item),
                 IDR_DEMONCHIP => nomad_stack_driver(character, item),
                 IDR_SHRIKEAMULET => shrike_amulet_driver(character, item, context),
@@ -1768,6 +1778,103 @@ fn food_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome 
         item_id: item.id,
         character_id: character.id,
         kind,
+    }
+}
+
+fn special_potion_driver(
+    character: &mut Character,
+    item: &mut Item,
+    area_id: u16,
+    in_arena: bool,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+    if item.min_level != 0 && character.level < u32::from(item.min_level) {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if item.max_level != 0 && character.level > u32::from(item.max_level) {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if area_id == 33 || (area_id == 34 && in_arena) {
+        return ItemDriverOutcome::BlockedByArea {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let kind = drdata(item, 0);
+    let max_hp = character
+        .values
+        .first()
+        .and_then(|values| values.get(CharacterValue::Hp as usize))
+        .copied()
+        .unwrap_or(0)
+        .max(0) as i32
+        * POWERSCALE;
+    let old_hp = character.hp;
+    let old_mana = character.mana;
+    let old_endurance = character.endurance;
+
+    match kind {
+        8 => {
+            character.hp = (character.hp - 10 * POWERSCALE).max(1);
+            character.endurance = (character.endurance - 10 * POWERSCALE).max(0);
+            character.mana = (character.mana - 10 * POWERSCALE).max(0);
+        }
+        9 => {
+            character.hp = (character.hp - 10 * POWERSCALE).max(1);
+        }
+        10 => {
+            character.mana = (character.mana - 10 * POWERSCALE).max(0);
+        }
+        11 => {
+            character.hp = (character.hp - 10 * POWERSCALE).max(1);
+            character.endurance = (character.endurance - 10 * POWERSCALE).max(0);
+            character.mana = (character.mana - 10 * POWERSCALE).max(0);
+        }
+        12 => {
+            if area_id != 33 {
+                character.hp = (character.hp + 3 * POWERSCALE).min(max_hp);
+            }
+        }
+        13 => {
+            if area_id != 33 {
+                character.hp = (character.hp + 4 * POWERSCALE).min(max_hp);
+            }
+        }
+        14 => {
+            if area_id != 33 {
+                character.hp = (character.hp + 5 * POWERSCALE).min(max_hp);
+            }
+        }
+        15 => {
+            character.endurance = (character.endurance - 10 * POWERSCALE).max(0);
+        }
+        _ => {
+            return ItemDriverOutcome::Unsupported {
+                driver: IDR_SPECIAL_POTION,
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+    }
+
+    consume_item(character, item);
+    character.flags.insert(CharacterFlags::UPDATE);
+    ItemDriverOutcome::SpecialPotionDrunk {
+        item_id: item.id,
+        character_id: character.id,
+        kind,
+        hp_delta: character.hp - old_hp,
+        mana_delta: character.mana - old_mana,
+        endurance_delta: character.endurance - old_endurance,
     }
 }
 
@@ -3694,6 +3801,100 @@ mod tests {
                 delay_ticks: 1,
             }
         );
+    }
+
+    #[test]
+    fn special_potion_fun_drinks_mutate_resources_and_consume_item() {
+        let mut character = character(3);
+        character.level = 10;
+        character.hp = 15 * POWERSCALE;
+        character.mana = 12 * POWERSCALE;
+        character.endurance = 11 * POWERSCALE;
+        character.values[0][CharacterValue::Hp as usize] = 20;
+        character.inventory[30] = Some(ItemId(7));
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_POTION);
+        potion.carried_by = Some(character.id);
+        potion.driver_data = vec![8];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut potion,
+            ItemDriverRequest::Driver {
+                driver: IDR_SPECIAL_POTION,
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(character.hp, 5 * POWERSCALE);
+        assert_eq!(character.mana, 2 * POWERSCALE);
+        assert_eq!(character.endurance, POWERSCALE);
+        assert_eq!(character.inventory[30], None);
+        assert!(!potion.flags.contains(ItemFlags::USED));
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SpecialPotionDrunk {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                kind: 8,
+                hp_delta: -10 * POWERSCALE,
+                mana_delta: -10 * POWERSCALE,
+                endurance_delta: -10 * POWERSCALE,
+            }
+        );
+    }
+
+    #[test]
+    fn special_potion_healing_caps_at_max_hp_and_area_blocks() {
+        let mut character = character(3);
+        character.level = 10;
+        character.hp = 18 * POWERSCALE;
+        character.values[0][CharacterValue::Hp as usize] = 20;
+        character.inventory[30] = Some(ItemId(7));
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_POTION);
+        potion.carried_by = Some(character.id);
+        potion.driver_data = vec![14];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SPECIAL_POTION,
+            item_id: ItemId(7),
+            character_id: CharacterId(3),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut potion, request, 1, false),
+            ItemDriverOutcome::SpecialPotionDrunk {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                kind: 14,
+                hp_delta: 2 * POWERSCALE,
+                mana_delta: 0,
+                endurance_delta: 0,
+            }
+        );
+        assert_eq!(character.hp, 20 * POWERSCALE);
+
+        let mut blocked = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_POTION);
+        blocked.carried_by = Some(character.id);
+        blocked.driver_data = vec![14];
+        assert!(matches!(
+            execute_item_driver(
+                &mut character,
+                &mut blocked,
+                ItemDriverRequest::Driver {
+                    driver: IDR_SPECIAL_POTION,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(3),
+                    spec: 0,
+                },
+                34,
+                true,
+            ),
+            ItemDriverOutcome::BlockedByArea { .. }
+        ));
     }
 
     #[test]

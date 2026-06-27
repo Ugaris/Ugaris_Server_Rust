@@ -7188,6 +7188,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DecayItemToggled { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BeyondPotion { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionDrunk { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
