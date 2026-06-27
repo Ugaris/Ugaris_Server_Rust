@@ -760,6 +760,27 @@ pub fn ceffect_earthmud(effect_id: i32) -> BytesMut {
     out
 }
 
+pub fn ceffect_edemonball(
+    effect_id: i32,
+    start: i32,
+    base_sprite: i32,
+    from_x: i32,
+    from_y: i32,
+    to_x: i32,
+    to_y: i32,
+) -> BytesMut {
+    let mut out = BytesMut::with_capacity(32);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(17);
+    out.put_i32_le(start);
+    out.put_i32_le(base_sprite);
+    out.put_i32_le(from_x);
+    out.put_i32_le(from_y);
+    out.put_i32_le(to_x);
+    out.put_i32_le(to_y);
+    out
+}
+
 pub fn ceffect_curse(
     effect_id: i32,
     character: i32,
@@ -981,8 +1002,15 @@ mod tests {
             &[11, 0, 0, 0, 20, 0, 0, 0, 12, 0, 0, 0]
         );
         assert_eq!(
-            &ceffect_bubble(13, 45)[..],
-            &[13, 0, 0, 0, 24, 0, 0, 0, 45, 0, 0, 0]
+            &ceffect_edemonball(13, 14, 50050, 15, 16, 17, 18)[..],
+            &[
+                13, 0, 0, 0, 17, 0, 0, 0, 14, 0, 0, 0, 0x82, 0xc3, 0, 0, 15, 0, 0, 0, 16, 0, 0, 0,
+                17, 0, 0, 0, 18, 0, 0, 0,
+            ]
+        );
+        assert_eq!(
+            &ceffect_bubble(19, 45)[..],
+            &[19, 0, 0, 0, 24, 0, 0, 0, 45, 0, 0, 0]
         );
     }
 

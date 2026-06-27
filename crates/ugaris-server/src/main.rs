@@ -33,8 +33,8 @@ use ugaris_core::{
     },
     spell::{
         EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN,
-        EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_LAG, EF_MAGICSHIELD,
-        EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
+        EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_LAG,
+        EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
     },
     text::COL_DARK_GRAY,
     tick::TICKS_PER_SECOND,
@@ -3315,6 +3315,15 @@ fn visible_client_effect_body(
             effect.strength,
         )),
         EF_EARTHMUD => Some(ugaris_protocol::packet::ceffect_earthmud(effect_id as i32)),
+        EF_EDEMONBALL => Some(ugaris_protocol::packet::ceffect_edemonball(
+            effect_id as i32,
+            effect.start_tick,
+            effect.base_sprite,
+            effect.from_x,
+            effect.from_y,
+            effect.to_x,
+            effect.to_y,
+        )),
         EF_CURSE => Some(ugaris_protocol::packet::ceffect_curse(
             effect_id as i32,
             effect_character_id(effect)?.0 as i32,
@@ -3349,7 +3358,7 @@ fn effect_visible_to_viewer(
     view_distance: usize,
 ) -> bool {
     let (x, y) = match effect.effect_type {
-        EF_BALL | EF_FIREBALL => (effect.x / 1024, effect.y / 1024),
+        EF_BALL | EF_FIREBALL | EF_EDEMONBALL => (effect.x / 1024, effect.y / 1024),
         EF_STRIKE | EF_PULSE | EF_EXPLODE | EF_MIST | EF_EARTHRAIN | EF_EARTHMUD | EF_BUBBLE => {
             (effect.x, effect.y)
         }
@@ -5616,6 +5625,39 @@ mod tests {
         assert_eq!(
             &payloads[0][..],
             &ugaris_protocol::packet::used_effects(0)[..]
+        );
+    }
+
+    #[test]
+    fn client_effect_payloads_send_visible_edemonball_records() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut world = World::default();
+        let mut effect = Effect::new(EF_EDEMONBALL, 125, 55, 65);
+        effect.base_sprite = 50050;
+        effect.from_x = 10;
+        effect.from_y = 10;
+        effect.to_x = 12;
+        effect.to_y = 10;
+        effect.x = 11 * 1024 + 512;
+        effect.y = 10 * 1024 + 512;
+        world.effects.insert(125, effect);
+
+        let payloads =
+            client_effect_payloads(&world, &character, 2, &mut ClientEffectCache::default());
+
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[0][0], ugaris_protocol::packet::SV_CEFFECT);
+        assert_eq!(payloads[0][1], 0);
+        assert_eq!(
+            &payloads[0][2..],
+            &ugaris_protocol::packet::ceffect_edemonball(125, 55, 50050, 10, 10, 12, 10)[..]
+        );
+        assert_eq!(
+            &payloads[1][..],
+            &ugaris_protocol::packet::used_effects(1)[..]
         );
     }
 
