@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use crate::{
     area_sound::AreaSoundSpecial,
+    attack::reduce_hurt_by_armor_and_lifeshield,
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
+        NT_DIDHIT, NT_GOTHIT, NT_SEEHIT,
     },
     direction::Direction,
     do_action::{
@@ -151,9 +153,99 @@ pub struct TileSpecialOutcome {
     pub sound_type: Option<u32>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct LegacyHurtOutcome {
+    pub damage_after_armor: i32,
+    pub shield_absorbed: i32,
+    pub hp_damage: i32,
+    pub killed: bool,
+    pub nodeath_saved: bool,
+}
+
 impl World {
     pub fn advance(&mut self) {
         self.tick.0 += 1;
+    }
+
+    pub fn apply_legacy_hurt(
+        &mut self,
+        target_id: CharacterId,
+        cause_id: Option<CharacterId>,
+        damage: i32,
+        armor_divisor: i32,
+        armor_percent: i32,
+        shield_percent: i32,
+    ) -> Option<LegacyHurtOutcome> {
+        let cause_id = cause_id.filter(|id| id.0 != 0 && self.characters.contains_key(id));
+        let mut outcome = LegacyHurtOutcome::default();
+        let (target_x, target_y) = {
+            let target = self.characters.get_mut(&target_id)?;
+            if target.flags.contains(CharacterFlags::DEAD) {
+                return None;
+            }
+
+            let damage = damage.max(0);
+            let armor_value = character_value(target, CharacterValue::Armor);
+            let reduced = reduce_hurt_by_armor_and_lifeshield(
+                damage,
+                armor_value,
+                armor_divisor,
+                armor_percent,
+                target.lifeshield,
+                shield_percent,
+            );
+            outcome.damage_after_armor = reduced.damage_after_armor;
+
+            if !target.flags.contains(CharacterFlags::IMMORTAL) {
+                target.lifeshield = reduced.remaining_lifeshield;
+                target.hp -= reduced.hp_damage;
+                target.flags.insert(CharacterFlags::UPDATE);
+                outcome.shield_absorbed = reduced.shield_absorbed;
+                outcome.hp_damage = reduced.hp_damage;
+
+                if target.hp < POWERSCALE / 2 {
+                    if target.flags.contains(CharacterFlags::NODEATH) {
+                        target.hp = 1;
+                        outcome.nodeath_saved = true;
+                    } else {
+                        target.flags.insert(CharacterFlags::DEAD);
+                        target.flags.remove(CharacterFlags::ALIVE);
+                        target.deaths = target.deaths.saturating_add(1);
+                        outcome.killed = true;
+                    }
+                }
+            }
+
+            target.push_driver_message(
+                NT_GOTHIT,
+                cause_id.map(|id| id.0 as i32).unwrap_or_default(),
+                outcome.hp_damage,
+                0,
+            );
+            (target.x, target.y)
+        };
+
+        if let Some(cause_id) = cause_id {
+            if let Some(cause) = self.characters.get_mut(&cause_id) {
+                cause.push_driver_message(NT_DIDHIT, target_id.0 as i32, outcome.hp_damage, 0);
+            }
+        }
+
+        for (id, character) in self.characters.iter_mut() {
+            if *id == target_id || Some(*id) == cause_id {
+                continue;
+            }
+            if map_dist(character.x, character.y, target_x, target_y) <= 16 {
+                character.push_driver_message(
+                    NT_SEEHIT,
+                    cause_id.map(|id| id.0 as i32).unwrap_or_default(),
+                    target_id.0 as i32,
+                    0,
+                );
+            }
+        }
+
+        Some(outcome)
     }
 
     pub fn add_character(&mut self, character: Character) {
@@ -962,14 +1054,19 @@ impl World {
             if damage == 0 || random_below(10) != 0 {
                 continue;
             }
-            targets.push((target_id, damage));
+            let armor_percent = 50 - reduction.min(50);
+            targets.push((target_id, damage, armor_percent));
         }
 
-        for (target_id, damage) in targets {
-            if let Some(target) = self.characters.get_mut(&target_id) {
-                target.hp = target.hp.saturating_sub(damage);
-                target.flags.insert(CharacterFlags::UPDATE);
-            }
+        for (target_id, damage, armor_percent) in targets {
+            self.apply_legacy_hurt(
+                target_id,
+                None,
+                damage,
+                8,
+                armor_percent,
+                armor_percent + 25,
+            );
         }
 
         self.tick_expiring_effect(effect_id);
@@ -1144,10 +1241,7 @@ impl World {
             if damage == 0 {
                 continue;
             }
-            if let Some(target) = self.characters.get_mut(&target_id) {
-                target.hp = target.hp.saturating_sub(damage);
-                target.flags.insert(CharacterFlags::UPDATE);
-            }
+            self.apply_legacy_hurt(target_id, Some(caster_id), damage, 100, 30, 85);
         }
     }
 
@@ -6476,6 +6570,80 @@ mod tests {
         assert_eq!(character.action, 0);
         assert_eq!(character.duration, 0);
         assert_eq!(character.step, 0);
+    }
+
+    #[test]
+    fn legacy_hurt_applies_armor_lifeshield_and_hit_notifications() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.hp = 5 * POWERSCALE;
+        target.lifeshield = POWERSCALE;
+        target.values[0][CharacterValue::Armor as usize] = 20;
+        assert!(world.spawn_character(target, 10, 10));
+        assert!(world.spawn_character(character(2), 11, 10));
+        assert!(world.spawn_character(character(3), 12, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(
+                CharacterId(1),
+                Some(CharacterId(2)),
+                5 * POWERSCALE,
+                5,
+                90,
+                75,
+            )
+            .unwrap();
+
+        assert_eq!(outcome.damage_after_armor, 4_800);
+        assert_eq!(outcome.shield_absorbed, POWERSCALE);
+        assert_eq!(outcome.hp_damage, 3_800);
+        let target = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(target.hp, 1_200);
+        assert_eq!(target.lifeshield, 0);
+        assert!(target.flags.contains(CharacterFlags::UPDATE));
+        assert_eq!(target.driver_messages[0].message_type, NT_GOTHIT);
+        assert_eq!(target.driver_messages[0].dat1, 2);
+        assert_eq!(
+            world.characters[&CharacterId(2)].driver_messages[0].message_type,
+            NT_DIDHIT
+        );
+        assert_eq!(
+            world.characters[&CharacterId(3)].driver_messages[0].message_type,
+            NT_SEEHIT
+        );
+    }
+
+    #[test]
+    fn legacy_hurt_ports_immortal_and_nodeath_guards() {
+        let mut world = World::default();
+        let mut immortal = character(1);
+        immortal.flags |= CharacterFlags::IMMORTAL;
+        immortal.hp = POWERSCALE;
+        immortal.lifeshield = POWERSCALE;
+        assert!(world.spawn_character(immortal, 10, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(CharacterId(1), None, 5 * POWERSCALE, 1, 0, 100)
+            .unwrap();
+
+        let immortal = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(outcome.hp_damage, 0);
+        assert_eq!(immortal.hp, POWERSCALE);
+        assert_eq!(immortal.lifeshield, POWERSCALE);
+
+        let mut nodeath = character(2);
+        nodeath.flags |= CharacterFlags::NODEATH;
+        nodeath.hp = 700;
+        assert!(world.spawn_character(nodeath, 11, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(CharacterId(2), None, POWERSCALE, 1, 0, 0)
+            .unwrap();
+
+        let nodeath = world.characters.get(&CharacterId(2)).unwrap();
+        assert!(outcome.nodeath_saved);
+        assert_eq!(nodeath.hp, 1);
+        assert!(!nodeath.flags.contains(CharacterFlags::DEAD));
     }
 
     #[test]
