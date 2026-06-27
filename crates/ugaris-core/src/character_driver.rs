@@ -15,6 +15,144 @@ pub const CDR_MACRO: u16 = 37;
 pub const CDR_TRADER: u16 = 72;
 pub const CDR_JANITOR: u16 = 85;
 
+pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimpleBaddyDriverData {
+    pub startdist: i32,
+    pub chardist: i32,
+    pub stopdist: i32,
+    pub aggressive: i32,
+    pub helper: i32,
+    pub scavenger: i32,
+    pub dir: i32,
+    pub dayx: i32,
+    pub dayy: i32,
+    pub daydir: i32,
+    pub nightx: i32,
+    pub nighty: i32,
+    pub nightdir: i32,
+    pub teleport: i32,
+    pub helpid: i32,
+    pub creation_time: i32,
+    pub notsecure: i32,
+    pub mindist: i32,
+    pub lastfight: i32,
+    pub poison_power: i32,
+    pub poison_chance: i32,
+    pub poison_type: i32,
+    pub drinkspecial: i32,
+    pub drink_inventory_potions: i32,
+}
+
+impl Default for SimpleBaddyDriverData {
+    fn default() -> Self {
+        Self {
+            startdist: 20,
+            chardist: 0,
+            stopdist: 40,
+            aggressive: 0,
+            helper: 0,
+            scavenger: 0,
+            dir: 3,
+            dayx: 0,
+            dayy: 0,
+            daydir: 0,
+            nightx: 0,
+            nighty: 0,
+            nightdir: 0,
+            teleport: 0,
+            helpid: 0,
+            creation_time: 0,
+            notsecure: 0,
+            mindist: 0,
+            lastfight: 0,
+            poison_power: 0,
+            poison_chance: 0,
+            poison_type: 0,
+            drinkspecial: 0,
+            drink_inventory_potions: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownSimpleBaddyArgument {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimpleBaddyParseResult {
+    pub data: SimpleBaddyDriverData,
+    pub unknown: Vec<UnknownSimpleBaddyArgument>,
+}
+
+pub fn parse_simple_baddy_driver_args(args: &str) -> SimpleBaddyParseResult {
+    let mut data = SimpleBaddyDriverData::default();
+    let mut unknown = Vec::new();
+    let mut rest = args;
+
+    while let Some((name, value, next)) = next_legacy_name_value(rest) {
+        let parsed = value.parse::<i32>().unwrap_or(0);
+        match name {
+            "aggressive" => data.aggressive = parsed,
+            "scavenger" => data.scavenger = parsed,
+            "helper" => data.helper = parsed,
+            "startdist" => data.startdist = parsed,
+            "chardist" => data.chardist = parsed,
+            "stopdist" => data.stopdist = parsed,
+            "dir" => data.dir = parsed,
+            "dayx" => data.dayx = parsed,
+            "dayy" => data.dayy = parsed,
+            "daydir" => data.daydir = parsed,
+            "nightx" => data.nightx = parsed,
+            "nighty" => data.nighty = parsed,
+            "nightdir" => data.nightdir = parsed,
+            "teleport" => data.teleport = parsed,
+            "helpid" => data.helpid = parsed,
+            "notsecure" => data.notsecure = parsed,
+            "mindist" => data.mindist = parsed,
+            "poisonpower" => data.poison_power = parsed,
+            "poisontype" => data.poison_type = parsed,
+            "poisonchance" => data.poison_chance = parsed,
+            "drinkspecial" => data.drinkspecial = parsed,
+            "drinkinvpots" => data.drink_inventory_potions = parsed,
+            _ => unknown.push(UnknownSimpleBaddyArgument {
+                name: name.to_string(),
+                value: value.to_string(),
+            }),
+        }
+        rest = next;
+    }
+
+    SimpleBaddyParseResult { data, unknown }
+}
+
+fn next_legacy_name_value(input: &str) -> Option<(&str, &str, &str)> {
+    let input = input.trim_start_matches(char::is_whitespace);
+    let name_len = input
+        .bytes()
+        .take(60)
+        .take_while(|byte| byte.is_ascii_alphabetic())
+        .count();
+    if name_len == 0 {
+        return None;
+    }
+    let name = &input[..name_len];
+    let input = input[name_len..].trim_start_matches(char::is_whitespace);
+    let input = input.strip_prefix('=')?;
+    let input = input.trim_start_matches(char::is_whitespace);
+    let value_len = input
+        .bytes()
+        .take(60)
+        .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+        .count();
+    let value = &input[..value_len];
+    let input = input[value_len..].strip_prefix(';')?;
+    Some((name, value, input.trim_start_matches(char::is_whitespace)))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CharacterDriverKind {
     SimpleBaddy,
@@ -123,6 +261,7 @@ mod tests {
         assert_eq!(CDR_MACRO, 37);
         assert_eq!(CDR_TRADER, 72);
         assert_eq!(CDR_JANITOR, 85);
+        assert_eq!(DRD_SIMPLEBADDYDRIVER, 0x0100_0013);
         assert_eq!(
             CharacterDriverKind::SimpleBaddy.legacy_id(),
             CDR_SIMPLEBADDY
@@ -216,5 +355,49 @@ mod tests {
             }
         );
         assert_eq!(outcome.legacy_return_code(), 0);
+    }
+
+    #[test]
+    fn simple_baddy_defaults_match_create_message_initialization() {
+        let data = SimpleBaddyDriverData::default();
+        assert_eq!(data.aggressive, 0);
+        assert_eq!(data.helper, 0);
+        assert_eq!(data.startdist, 20);
+        assert_eq!(data.chardist, 0);
+        assert_eq!(data.stopdist, 40);
+        assert_eq!(data.scavenger, 0);
+        assert_eq!(data.dir, 3);
+        assert_eq!(data.drink_inventory_potions, 0);
+    }
+
+    #[test]
+    fn parses_simple_baddy_legacy_arg_string() {
+        let parsed = parse_simple_baddy_driver_args(
+            " aggressive = 1; helper=2; startdist=12; poisonpower=-4; poisontype=3; poisonchance=25; drinkinvpots=1; unknown=99;",
+        );
+
+        assert_eq!(parsed.data.aggressive, 1);
+        assert_eq!(parsed.data.helper, 2);
+        assert_eq!(parsed.data.startdist, 12);
+        assert_eq!(parsed.data.poison_power, -4);
+        assert_eq!(parsed.data.poison_type, 3);
+        assert_eq!(parsed.data.poison_chance, 25);
+        assert_eq!(parsed.data.drink_inventory_potions, 1);
+        assert_eq!(
+            parsed.unknown,
+            vec![UnknownSimpleBaddyArgument {
+                name: "unknown".to_string(),
+                value: "99".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn simple_baddy_arg_parser_stops_like_c_nextnv_on_malformed_pair() {
+        let parsed = parse_simple_baddy_driver_args("aggressive=1; broken 7; helper=1;");
+
+        assert_eq!(parsed.data.aggressive, 1);
+        assert_eq!(parsed.data.helper, 0);
+        assert!(parsed.unknown.is_empty());
     }
 }
