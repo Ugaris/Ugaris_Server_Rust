@@ -408,6 +408,8 @@ impl ZoneLoader {
                 values,
                 professions: template.professions,
                 inventory,
+                driver_state: None,
+                driver_messages: Vec::new(),
             },
             inventory_items,
         ))

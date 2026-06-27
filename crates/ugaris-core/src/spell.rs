@@ -555,6 +555,8 @@ mod tests {
             values,
             professions: Character::empty_professions(),
             inventory: vec![None; INVENTORY_SIZE],
+            driver_state: None,
+            driver_messages: Vec::new(),
         }
     }
 

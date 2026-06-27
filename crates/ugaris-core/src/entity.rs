@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
+use crate::character_driver::{CharacterDriverMessage, CharacterDriverState};
 use crate::ids::{CharacterId, ItemId};
 
 pub const CHARACTER_NAME_SIZE: usize = 40;
@@ -325,6 +326,10 @@ pub struct Character {
     pub values: Vec<Vec<i16>>,
     pub professions: Vec<i16>,
     pub inventory: Vec<Option<ItemId>>,
+    #[serde(default)]
+    pub driver_state: Option<CharacterDriverState>,
+    #[serde(default)]
+    pub driver_messages: Vec<CharacterDriverMessage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -365,6 +370,19 @@ impl Character {
     pub fn empty_professions() -> Vec<i16> {
         vec![0; PROFESSION_COUNT]
     }
+
+    pub fn push_driver_message(&mut self, message_type: i32, dat1: i32, dat2: i32, dat3: i32) {
+        self.driver_messages.push(CharacterDriverMessage {
+            message_type,
+            dat1,
+            dat2,
+            dat3,
+        });
+    }
+
+    pub fn purge_driver_messages(&mut self) {
+        self.driver_messages.clear();
+    }
 }
 
 #[cfg(test)]
@@ -392,5 +410,99 @@ mod tests {
         assert_eq!(CHARACTER_VALUE_NAMES[42], "Profession");
         assert_eq!(PROFESSION_NAMES[0], "Athlete");
         assert_eq!(PROFESSION_NAMES[11], "Demon");
+    }
+
+    #[test]
+    fn legacy_character_snapshots_default_driver_runtime_fields() {
+        let json = r#"{
+            "id": 1,
+            "name": "Rat",
+            "description": "",
+            "flags": "USED",
+            "sprite": 1,
+            "speed_mode": "Normal",
+            "x": 10,
+            "y": 11,
+            "rest_area": 1,
+            "rest_x": 10,
+            "rest_y": 11,
+            "tox": 0,
+            "toy": 0,
+            "dir": 0,
+            "action": 0,
+            "duration": 0,
+            "step": 0,
+            "act1": 0,
+            "act2": 0,
+            "hp": 1000,
+            "mana": 0,
+            "endurance": 0,
+            "lifeshield": 0,
+            "level": 1,
+            "exp": 0,
+            "exp_used": 0,
+            "gold": 0,
+            "cursor_item": null,
+            "current_container": null,
+            "values": [],
+            "professions": [],
+            "inventory": []
+        }"#;
+
+        let character: Character = serde_json::from_str(json).unwrap();
+
+        assert!(character.driver_state.is_none());
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn driver_message_queue_preserves_legacy_payload_order() {
+        let mut character = Character {
+            id: CharacterId(1),
+            name: String::new(),
+            description: String::new(),
+            flags: CharacterFlags::USED,
+            sprite: 0,
+            speed_mode: SpeedMode::Normal,
+            x: 0,
+            y: 0,
+            rest_area: 0,
+            rest_x: 0,
+            rest_y: 0,
+            tox: 0,
+            toy: 0,
+            dir: 0,
+            action: 0,
+            duration: 0,
+            step: 0,
+            act1: 0,
+            act2: 0,
+            hp: 0,
+            mana: 0,
+            endurance: 0,
+            lifeshield: 0,
+            level: 0,
+            exp: 0,
+            exp_used: 0,
+            gold: 0,
+            creation_time: 0,
+            saves: 0,
+            deaths: 0,
+            cursor_item: None,
+            current_container: None,
+            values: Character::empty_values(),
+            professions: Character::empty_professions(),
+            inventory: Character::empty_inventory(),
+            driver_state: None,
+            driver_messages: Vec::new(),
+        };
+
+        character.push_driver_message(crate::character_driver::NT_CREATE, 1, 2, 3);
+        character.push_driver_message(crate::character_driver::NT_GOTHIT, 4, 5, 6);
+
+        assert_eq!(character.driver_messages[0].message_type, 9);
+        assert_eq!(character.driver_messages[1].dat1, 4);
+        character.purge_driver_messages();
+        assert!(character.driver_messages.is_empty());
     }
 }

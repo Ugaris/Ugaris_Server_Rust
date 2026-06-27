@@ -17,7 +17,49 @@ pub const CDR_JANITOR: u16 = 85;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub const NT_CHAR: i32 = 1;
+pub const NT_ITEM: i32 = 2;
+pub const NT_GOTHIT: i32 = 3;
+pub const NT_DIDHIT: i32 = 4;
+pub const NT_SEEHIT: i32 = 5;
+pub const NT_DEAD: i32 = 6;
+pub const NT_SPELL: i32 = 7;
+pub const NT_GIVE: i32 = 8;
+pub const NT_CREATE: i32 = 9;
+pub const NT_TEXT: i32 = 200;
+pub const NT_NPC: i32 = 300;
+
+pub const NTID_MERCHANT: i32 = 1;
+pub const NTID_TERION: i32 = 2;
+pub const NTID_ASTURIN: i32 = 3;
+pub const NTID_GATEKEEPER: i32 = 4;
+pub const NTID_DIDSAY: i32 = 5;
+pub const NTID_TUTORIAL: i32 = 6;
+pub const NTID_PALACE_ALERT: i32 = 7;
+pub const NTID_ARENA: i32 = 8;
+pub const NTID_DUNGEON: i32 = 9;
+pub const NTID_TWOCITY: i32 = 10;
+pub const NTID_TWOCITY_PICK: i32 = 11;
+pub const NTID_DICE: i32 = 12;
+pub const NTID_LABGNOMETORCH: i32 = 13;
+pub const NTID_LAB2_DEAMONCHECK: i32 = 14;
+pub const NTID_SALTMINE_USEITEM: i32 = 15;
+pub const NTID_GLADIATOR: i32 = 16;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CharacterDriverMessage {
+    pub message_type: i32,
+    pub dat1: i32,
+    pub dat2: i32,
+    pub dat3: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CharacterDriverState {
+    SimpleBaddy(SimpleBaddyDriverData),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SimpleBaddyDriverData {
     pub startdist: i32,
     pub chardist: i32,
@@ -253,6 +295,23 @@ mod tests {
         assert_eq!(CDT_DEAD, 2);
         assert_eq!(CDT_RESPAWN, 3);
         assert_eq!(CDT_SPECIAL, 4);
+    }
+
+    #[test]
+    fn notify_constants_match_c_notify_header() {
+        assert_eq!(NT_CHAR, 1);
+        assert_eq!(NT_ITEM, 2);
+        assert_eq!(NT_GOTHIT, 3);
+        assert_eq!(NT_DIDHIT, 4);
+        assert_eq!(NT_SEEHIT, 5);
+        assert_eq!(NT_DEAD, 6);
+        assert_eq!(NT_SPELL, 7);
+        assert_eq!(NT_GIVE, 8);
+        assert_eq!(NT_CREATE, 9);
+        assert_eq!(NT_TEXT, 200);
+        assert_eq!(NT_NPC, 300);
+        assert_eq!(NTID_MERCHANT, 1);
+        assert_eq!(NTID_GLADIATOR, 16);
     }
 
     #[test]

@@ -96,6 +96,8 @@ mod tests {
             values: Character::empty_values(),
             professions: Character::empty_professions(),
             inventory: Character::empty_inventory(),
+            driver_state: None,
+            driver_messages: Vec::new(),
         }
     }
 }
