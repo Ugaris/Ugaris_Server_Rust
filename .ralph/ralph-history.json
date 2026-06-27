@@ -1004,14 +1004,41 @@
         "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 36,
+      "startedAt": "2026-06-27T14:32:18.716Z",
+      "endedAt": "2026-06-27T14:41:26.990Z",
+      "durationMs": 548054,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The test failure shows the weak weapon was still accepted because the target level changed unexpectedly or the assertion location needs checking. I’ll inspect the formatted test lines and correct the ",
+        "The failure is on the no-weapon case, which means the cause had an existing right-hand item from `spawn_character` or `add_character` setup isn’t preserving the fixture as expected. I’ll inspect `spaw",
+        "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/common/global.h",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test world::tests::legacy_hurt_ports_hardkill_weapon_gate ... FAILED",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 387 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 387 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 16316818,
+  "totalDurationMs": 16864872,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 34,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 33,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 35,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 34,
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 30,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 26,
@@ -1019,7 +1046,7 @@
       "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 17,
       "test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
-      "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/common/": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/common/": 2,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
       "test result: ok. 323 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 13 previous errors": 1,
@@ -1027,7 +1054,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 11,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 12,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 2,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -1080,7 +1107,7 @@
       "assertion failed: world.process_simple_baddy_attack_action(CharacterId(1), 1)": 1,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 6,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 7,
       "test world::tests::simple_baddy_message_actions_add_defensive_gothit_enemy_without_sight ... FAILED": 1,
       "test world::tests::simple_baddy_message_actions_helper_seen_hit_adds_enemy_for_friend ... FAILED": 1,
       "test result: FAILED. 25 passed; 2 failed; 0 ignored; 0 measured; 327 filtered out; finished in 0.01s": 1,
@@ -1146,7 +1173,12 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.02s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 386 filtered out; finished in 0.00s": 1,
-      "test result: ok. 387 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 387 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "The test failure shows the weak weapon was still accepted because the target level changed unexpecte": 1,
+      "The failure is on the no-weapon case, which means the cause had an existing right-hand item from `sp": 1,
+      "test world::tests::legacy_hurt_ports_hardkill_weapon_gate ... FAILED": 1,
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 387 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 387 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

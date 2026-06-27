@@ -30,7 +30,7 @@ use crate::{
         IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
-    legacy::{action, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
+    legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
     light::{
         add_character_light, add_effect_light, add_item_light, compute_dlight, compute_groundlight,
         compute_shadow_with_random, remove_character_light, remove_effect_light, remove_item_light,
@@ -60,6 +60,7 @@ use crate::{
 const IID_REFLECT_FIREBALL: u32 = (0x01 << 24) | 0x00004E;
 const IID_AREA6_GREENCRYSTAL: u32 = (0x01 << 24) | 0x000048;
 const LEGACY_EQUIPMENT_SLOTS: std::ops::Range<usize> = 0..12;
+const IID_HARDKILL: u32 = (0x01 << 24) | 0x00005D;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorldActionCompletion {
@@ -183,6 +184,20 @@ impl World {
                 .get(&id)
                 .map(|character| (character.x, character.y))
         });
+        let cause_hardkill_weapon = cause_id.and_then(|id| {
+            let item_id = self
+                .characters
+                .get(&id)?
+                .inventory
+                .get(worn_slot::RIGHT_HAND)?
+                .as_ref()?;
+            self.items.get(item_id).map(|item| {
+                (
+                    item.template_id,
+                    item.driver_data.get(37).copied().unwrap_or_default(),
+                )
+            })
+        });
 
         let (target_x, target_y) = {
             let target = self.characters.get_mut(&target_id)?;
@@ -200,6 +215,14 @@ impl World {
                 && !cause_position.is_some_and(|(x, y)| is_back_attack_against_target(target, x, y))
             {
                 damage_after_armor /= 100;
+            }
+
+            if target.flags.contains(CharacterFlags::HARDKILL)
+                && !cause_hardkill_weapon.is_some_and(|(template_id, level)| {
+                    template_id == IID_HARDKILL && u32::from(level) >= target.level
+                })
+            {
+                damage_after_armor = 0;
             }
 
             if !target.flags.contains(CharacterFlags::IMMORTAL) {
@@ -6708,6 +6731,71 @@ mod tests {
         assert_eq!(outcome.damage_after_armor, 10 * POWERSCALE);
         assert_eq!(outcome.hp_damage, 10 * POWERSCALE);
         assert_eq!(world.characters[&CharacterId(1)].hp, 9_900);
+    }
+
+    #[test]
+    fn legacy_hurt_ports_hardkill_weapon_gate() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.flags |= CharacterFlags::HARDKILL;
+        target.hp = 10 * POWERSCALE;
+        target.level = 8;
+        assert!(world.spawn_character(target, 10, 10));
+        assert!(world.spawn_character(character(2), 11, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(
+                CharacterId(1),
+                Some(CharacterId(2)),
+                5 * POWERSCALE,
+                1,
+                0,
+                0,
+            )
+            .unwrap();
+
+        assert_eq!(outcome.damage_after_armor, 5 * POWERSCALE);
+        assert_eq!(outcome.hp_damage, 0);
+        assert_eq!(world.characters[&CharacterId(1)].hp, 10 * POWERSCALE);
+
+        let mut weak_weapon = item(7, ItemFlags::USED | ItemFlags::SWORD);
+        weak_weapon.template_id = IID_HARDKILL;
+        weak_weapon.driver_data.resize(38, 0);
+        weak_weapon.driver_data[37] = 7;
+        world.items.insert(ItemId(7), weak_weapon);
+        world.characters.get_mut(&CharacterId(2)).unwrap().inventory[worn_slot::RIGHT_HAND] =
+            Some(ItemId(7));
+
+        let outcome = world
+            .apply_legacy_hurt(
+                CharacterId(1),
+                Some(CharacterId(2)),
+                5 * POWERSCALE,
+                1,
+                0,
+                0,
+            )
+            .unwrap();
+
+        assert_eq!(outcome.hp_damage, 0);
+        assert_eq!(world.characters[&CharacterId(1)].hp, 10 * POWERSCALE);
+
+        world.items.get_mut(&ItemId(7)).unwrap().driver_data[37] = 8;
+
+        let outcome = world
+            .apply_legacy_hurt(
+                CharacterId(1),
+                Some(CharacterId(2)),
+                5 * POWERSCALE,
+                1,
+                0,
+                0,
+            )
+            .unwrap();
+
+        assert_eq!(outcome.damage_after_armor, 5 * POWERSCALE);
+        assert_eq!(outcome.hp_damage, 5 * POWERSCALE);
+        assert_eq!(world.characters[&CharacterId(1)].hp, 5 * POWERSCALE);
     }
 
     #[test]
