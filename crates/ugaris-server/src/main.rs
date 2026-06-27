@@ -1350,11 +1350,6 @@ fn infinite_chest_key_access(
 ) -> Option<ugaris_core::item_driver::DoorKeyAccess> {
     let character = world.characters.get(&character_id)?;
     let inventory_items = character.inventory.iter().skip(30).flatten().copied();
-    for item_id in inventory_items.clone() {
-        if let Some(access) = carried_door_key_access(world, item_id, IID_SKELETON_KEY) {
-            return Some(access);
-        }
-    }
     for item_id in inventory_items {
         if let Some(access) = carried_door_key_access(world, item_id, required_key_id) {
             return Some(access);
@@ -5707,6 +5702,36 @@ mod tests {
         );
 
         assert_eq!(context.door_key.unwrap().name, "Palace Key");
+    }
+
+    #[test]
+    fn infinite_chest_context_rejects_skeleton_key() {
+        let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(30));
+        let mut key = test_item(ItemId(30), 1, ItemFlags::TAKE);
+        key.template_id = IID_SKELETON_KEY;
+        key.name = "Skeleton Key".to_string();
+        let mut chest = test_item(ItemId(70), 1, ItemFlags::USE);
+        chest.driver = ugaris_core::item_driver::IDR_INFINITE_CHEST;
+        chest.driver_data = vec![1, 0x44, 0x33, 0x22, 0x11];
+
+        let mut world = World::default();
+        world.add_character(character);
+        world.add_item(key);
+        world.add_item(chest);
+
+        let context = item_driver_context_for_request(
+            &world,
+            None,
+            &ugaris_core::item_driver::ItemDriverRequest::Driver {
+                driver: ugaris_core::item_driver::IDR_INFINITE_CHEST,
+                item_id: ItemId(70),
+                character_id: CharacterId(7),
+                spec: 0,
+            },
+        );
+
+        assert_eq!(context.door_key, None);
     }
 
     #[test]

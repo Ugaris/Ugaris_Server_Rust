@@ -869,7 +869,7 @@ fn infinite_chest_driver(
         match context
             .door_key
             .as_ref()
-            .filter(|key| key.key_id == required_key_id || key.key_id == IID_SKELETON_KEY)
+            .filter(|key| key.key_id == required_key_id)
         {
             Some(key) => Some(outcome_item_name(&key.name)),
             None => {
@@ -3091,6 +3091,42 @@ mod tests {
                 character_id: CharacterId(1),
                 template: InfiniteChestTemplate::Rune1,
                 key_name: Some(outcome_item_name("Palace Key")),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_infinite_chest_rejects_skeleton_key() {
+        let mut character = character(1);
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_INFINITE_CHEST);
+        chest.driver_data = vec![1, 0x44, 0x33, 0x22, 0x11];
+
+        let outcome = execute_item_driver_with_context(
+            &mut character,
+            &mut chest,
+            ItemDriverRequest::Driver {
+                driver: IDR_INFINITE_CHEST,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+            &ItemDriverContext {
+                door_key: Some(DoorKeyAccess {
+                    key_id: IID_SKELETON_KEY,
+                    name: "Skeleton Key".to_string(),
+                    source: DoorKeySource::Carried,
+                }),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::InfiniteChestKeyRequired {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
             }
         );
     }
