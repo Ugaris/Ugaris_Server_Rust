@@ -136,6 +136,13 @@ pub struct World {
     pending_look_maps: Vec<LookMapRequest>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct TileSpecialOutcome {
+    pub damage: i32,
+    pub bubble_effect_id: Option<u32>,
+    pub sound_type: Option<u32>,
+}
+
 impl World {
     pub fn advance(&mut self) {
         self.tick.0 += 1;
@@ -1258,6 +1265,68 @@ impl World {
         self.characters
             .get_mut(&character_id)
             .map(advance_action_step)
+    }
+
+    pub fn tile_special_check(&mut self, character_id: CharacterId) -> TileSpecialOutcome {
+        let Some(character) = self.characters.get(&character_id) else {
+            return TileSpecialOutcome::default();
+        };
+        if !character.flags.contains(CharacterFlags::PLAYER) {
+            return TileSpecialOutcome::default();
+        }
+
+        let x = usize::from(character.x);
+        let y = usize::from(character.y);
+        let Some(tile) = self.map.tile(x, y).copied() else {
+            return TileSpecialOutcome::default();
+        };
+        if !tile.flags.contains(MapFlags::SLOWDEATH) {
+            return TileSpecialOutcome::default();
+        }
+
+        if tile.flags.contains(MapFlags::UNDERWATER) {
+            if !character.flags.contains(CharacterFlags::OXYGEN) {
+                if let Some(character) = self.characters.get_mut(&character_id) {
+                    character.hp -= 50;
+                    character.flags.insert(CharacterFlags::UPDATE);
+                }
+                return TileSpecialOutcome {
+                    damage: 50,
+                    bubble_effect_id: None,
+                    sound_type: None,
+                };
+            }
+
+            let cadence = self
+                .tick
+                .0
+                .wrapping_add(u64::from(character_id.0).wrapping_mul(32));
+            if cadence % 6 == 0 && (cadence / TICKS_PER_SECOND) % 3 == 0 {
+                let bubble_effect_id = self.create_bubble_effect(x as i32, y as i32, 45, 1);
+                return TileSpecialOutcome {
+                    damage: 0,
+                    bubble_effect_id: Some(bubble_effect_id),
+                    sound_type: (cadence % 12 == 0).then_some(44),
+                };
+            }
+            return TileSpecialOutcome::default();
+        }
+
+        let sprite = tile.ground_sprite & 0xffff;
+        let damage = if (59706..=59709).contains(&sprite) {
+            250
+        } else {
+            100
+        };
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.hp -= damage;
+            character.flags.insert(CharacterFlags::UPDATE);
+        }
+        TileSpecialOutcome {
+            damage,
+            bubble_effect_id: None,
+            sound_type: Some(66),
+        }
     }
 
     pub fn reset_character_action(&mut self, character_id: CharacterId) -> bool {
@@ -3530,6 +3599,7 @@ impl World {
         let mut completed = Vec::new();
 
         for character_id in character_ids {
+            self.tile_special_check(character_id);
             if self
                 .characters
                 .get(&character_id)
@@ -8978,6 +9048,107 @@ mod tests {
                 && effect.x == 10
                 && effect.y == 10
         }));
+    }
+
+    #[test]
+    fn tile_special_check_drowns_player_without_oxygen_on_underwater_slowdeath() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.hp = 1_000;
+        assert!(world.spawn_character(player, 10, 10));
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::SLOWDEATH | MapFlags::UNDERWATER);
+
+        let outcome = world.tile_special_check(CharacterId(1));
+
+        assert_eq!(outcome.damage, 50);
+        assert_eq!(outcome.bubble_effect_id, None);
+        assert_eq!(outcome.sound_type, None);
+        let player = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(player.hp, 950);
+        assert!(player.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn tile_special_check_creates_legacy_bubble_cadence_for_oxygen_player() {
+        let mut world = World::default();
+        world.tick.0 = 40;
+        let mut player = character(1);
+        player
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::OXYGEN);
+        player.hp = 1_000;
+        assert!(world.spawn_character(player, 10, 10));
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::SLOWDEATH | MapFlags::UNDERWATER);
+
+        let outcome = world.tile_special_check(CharacterId(1));
+
+        let effect_id = outcome.bubble_effect_id.unwrap();
+        assert_eq!(outcome.damage, 0);
+        assert_eq!(outcome.sound_type, Some(44));
+        let player = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(player.hp, 1_000);
+        let effect = world.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.effect_type, EF_BUBBLE);
+        assert_eq!(effect.strength, 45);
+        assert_eq!(effect.stop_tick - effect.start_tick, 1);
+        assert!(world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .effects
+            .contains(&(effect_id as u16)));
+    }
+
+    #[test]
+    fn tile_special_check_applies_non_underwater_slowdeath_damage() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.hp = 1_000;
+        assert!(world.spawn_character(player, 10, 10));
+        let tile = world.map.tile_mut(10, 10).unwrap();
+        tile.flags.insert(MapFlags::SLOWDEATH);
+        tile.ground_sprite = 59706;
+
+        let outcome = world.tile_special_check(CharacterId(1));
+
+        assert_eq!(outcome.damage, 250);
+        assert_eq!(outcome.bubble_effect_id, None);
+        assert_eq!(outcome.sound_type, Some(66));
+        let player = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(player.hp, 750);
+        assert!(player.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn tick_basic_actions_runs_tile_specials_before_skipping_idle_players() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.hp = 1_000;
+        assert!(world.spawn_character(player, 10, 10));
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::SLOWDEATH | MapFlags::UNDERWATER);
+
+        assert!(world.tick_basic_actions().is_empty());
+
+        let player = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(player.hp, 950);
     }
 
     fn character(id: u32) -> Character {
