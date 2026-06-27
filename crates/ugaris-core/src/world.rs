@@ -2407,6 +2407,9 @@ impl World {
         });
 
         for enemy in enemies.iter().filter(|enemy| enemy.visible) {
+            let previous_lastfight = self
+                .simple_baddy_lastfight(character_id)
+                .unwrap_or_default();
             let Some(target) = self.characters.get(&enemy.target_id).cloned() else {
                 continue;
             };
@@ -2414,27 +2417,35 @@ impl World {
                 continue;
             }
             if self.setup_simple_baddy_self_preservation(character_id) {
+                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
             if self.setup_simple_baddy_earthmud_attack(character_id, &target) {
+                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
             if self.setup_simple_baddy_fireball_attack(character_id, &target, area_id) {
+                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
             if self.setup_simple_baddy_spell_attack(character_id, &target, &mut random) {
+                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
             if self.setup_simple_baddy_pulse_attack(character_id) {
+                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
             if self.setup_simple_baddy_distance_attack(character_id, &target, area_id) {
+                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
             if self.setup_simple_baddy_fireball_distance_attack(character_id, &target, area_id) {
+                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
             if self.setup_simple_baddy_attack_back_move(character_id, &target, area_id) {
+                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
             if let Some(direction) = adjacent_direction(
@@ -2460,6 +2471,7 @@ impl World {
                     {
                         data.lastfight = self.tick.0 as i32;
                     }
+                    self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                     return true;
                 }
             } else if self.setup_walk_toward(
@@ -2484,6 +2496,7 @@ impl World {
                         data.lastfight = self.tick.0 as i32;
                     }
                 }
+                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
         }
@@ -2514,6 +2527,27 @@ impl World {
         }
 
         false
+    }
+
+    fn simple_baddy_lastfight(&self, character_id: CharacterId) -> Option<i32> {
+        let character = self.characters.get(&character_id)?;
+        let CharacterDriverState::SimpleBaddy(data) = character.driver_state.as_ref()?;
+        Some(data.lastfight)
+    }
+
+    fn queue_simple_baddy_attack_sound(
+        &mut self,
+        character_id: CharacterId,
+        previous_lastfight: i32,
+    ) {
+        let current_tick = self.tick.0 as i32;
+        if current_tick - previous_lastfight <= (TICKS_PER_SECOND * 10) as i32 {
+            return;
+        }
+        let Some(character) = self.characters.get(&character_id) else {
+            return;
+        };
+        self.queue_sound_area(usize::from(character.x), usize::from(character.y), 1);
     }
 
     fn setup_simple_baddy_earthmud_attack(
@@ -8873,6 +8907,64 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 450);
+    }
+
+    #[test]
+    fn simple_baddy_visible_attack_queues_legacy_start_combat_sound_after_delay() {
+        let mut world = World::default();
+        world.tick = Tick(TICKS_PER_SECOND * 11);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            lastfight: 0,
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::PLAYER);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].character_id, CharacterId(2));
+        assert_eq!(sounds[0].special.special_type, 1);
+
+        let mut world = World::default();
+        world.tick = Tick(TICKS_PER_SECOND * 11);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            lastfight: (TICKS_PER_SECOND * 11 - 1) as i32,
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::PLAYER);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        assert!(world.drain_pending_sound_specials().is_empty());
     }
 
     #[test]

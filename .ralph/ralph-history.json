@@ -2367,21 +2367,48 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 86,
+      "startedAt": "2026-06-27T20:43:03.010Z",
+      "endedAt": "2026-06-27T20:49:26.550Z",
+      "durationMs": 383342,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/crates/none",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 450 filtered out; finished in 0.02s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test result: ok. 451 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 38417373,
+  "totalDurationMs": 38800715,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 81,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 79,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 72,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 82,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 80,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 73,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 52,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 46,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 47,
       "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 22,
       "test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 17,
       "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/common/": 2,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
       "test result: ok. 323 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
@@ -2486,7 +2513,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 48,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 49,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -2664,8 +2691,11 @@
       "assertion failed: world.process_simple_baddy_noncombat_action(CharacterId(1), 1)": 1,
       "test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 375 filtered out; finished in 0.01s": 1,
       "After comparing the selector, a safe bounded improvement is the C `fight_driver_attack_enemy` emerge": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
-      "test result: ok. 450 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "test result: ok. 450 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/crates/none": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 450 filtered out; finished in 0.02s": 1,
+      "test result: ok. 451 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
