@@ -79,6 +79,10 @@ pub struct ItemUseRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttackResolution {
     pub hit: bool,
+    pub raw_damage: i32,
+    pub armor_divisor: i32,
+    pub armor_percent: i32,
+    pub shield_percent: i32,
     pub hp_damage: i32,
     pub shield_absorbed: i32,
 }
@@ -1048,6 +1052,10 @@ pub fn act_attack(
     if !attack_roll_hits(d100_roll, chance.hit_chance) {
         return Some(AttackResolution {
             hit: false,
+            raw_damage: 0,
+            armor_divisor: ATTACK_DIV,
+            armor_percent: chance.armor_percent,
+            shield_percent: direct_attack_shield_percent(chance.armor_percent),
             hp_damage: 0,
             shield_absorbed: 0,
         });
@@ -1064,19 +1072,23 @@ pub fn act_attack(
         is_back(defender, attacker),
         defender.action == action::IDLE,
     );
+    let raw_damage = scaled_direct_attack_damage(damage_units);
+    let shield_percent = direct_attack_shield_percent(chance.armor_percent);
     let reduced = reduce_hurt_by_armor_and_lifeshield(
-        scaled_direct_attack_damage(damage_units),
+        raw_damage,
         character_value(defender, CharacterValue::Armor),
         ATTACK_DIV,
         chance.armor_percent,
         defender.lifeshield,
-        direct_attack_shield_percent(chance.armor_percent),
+        shield_percent,
     );
-    defender.lifeshield = reduced.remaining_lifeshield;
-    defender.hp -= reduced.hp_damage;
 
     Some(AttackResolution {
         hit: true,
+        raw_damage,
+        armor_divisor: ATTACK_DIV,
+        armor_percent: chance.armor_percent,
+        shield_percent,
         hp_damage: reduced.hp_damage,
         shield_absorbed: reduced.shield_absorbed,
     })
@@ -1726,6 +1738,10 @@ mod tests {
             act_attack(&mut attacker, &mut defender, &map, 50, 6),
             Some(AttackResolution {
                 hit: false,
+                raw_damage: 0,
+                armor_divisor: ATTACK_DIV,
+                armor_percent: 90,
+                shield_percent: 97,
                 hp_damage: 0,
                 shield_absorbed: 0,
             })
@@ -1733,8 +1749,9 @@ mod tests {
 
         let result = act_attack(&mut attacker, &mut defender, &map, 49, 6).unwrap();
         assert!(result.hit);
+        assert_eq!(result.raw_damage, 3200);
         assert_eq!(result.hp_damage, 3200);
-        assert_eq!(defender.hp, 6800);
+        assert_eq!(defender.hp, 10_000);
     }
 
     #[test]

@@ -1967,13 +1967,24 @@ impl World {
         let Some(mut defender) = self.characters.remove(&defender_id) else {
             return false;
         };
-        let ok = self
-            .characters
-            .get_mut(&attacker_id)
-            .and_then(|attacker| act_attack(attacker, &mut defender, &self.map, d100_roll, d6_roll))
-            .is_some();
+        let resolution = self.characters.get_mut(&attacker_id).and_then(|attacker| {
+            act_attack(attacker, &mut defender, &self.map, d100_roll, d6_roll)
+        });
         self.characters.insert(defender_id, defender);
-        ok
+        let Some(resolution) = resolution else {
+            return false;
+        };
+        if resolution.hit {
+            self.apply_legacy_hurt(
+                defender_id,
+                Some(attacker_id),
+                resolution.raw_damage,
+                resolution.armor_divisor,
+                resolution.armor_percent,
+                resolution.shield_percent,
+            );
+        }
+        true
     }
 
     pub fn use_item_request(
@@ -9498,7 +9509,14 @@ mod tests {
         assert_eq!(completed.len(), 1);
         assert_eq!(completed[0].action_id, action::ATTACK1);
         assert!(completed[0].ok);
-        assert!(world.characters.get(&CharacterId(2)).unwrap().hp < 10_000);
+        let defender = world.characters.get(&CharacterId(2)).unwrap();
+        assert!(defender.hp < 10_000);
+        assert_eq!(defender.driver_messages[0].message_type, NT_GOTHIT);
+        assert_eq!(defender.driver_messages[0].dat1, 1);
+        assert_eq!(
+            world.characters[&CharacterId(1)].driver_messages[0].message_type,
+            NT_DIDHIT
+        );
     }
 
     #[test]
