@@ -894,19 +894,46 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 32,
+      "startedAt": "2026-06-27T14:04:34.070Z",
+      "endedAt": "2026-06-27T14:11:06.710Z",
+      "durationMs": 392460,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'burn_character_damage_uses_legacy_hurt_reduction' found",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test result: ok. 159 passed; 0 failed; 0 ignored; 0 measured; 227 filtered out; finished in 0.03s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test result: ok. 386 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 14663872,
+  "totalDurationMs": 15056332,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 30,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 29,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 27,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 31,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 30,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 28,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
-      "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 15,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 20,
+      "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
       "test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/common/": 1,
@@ -1013,7 +1040,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 4,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 5,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -1024,7 +1051,10 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 381 filtered out; finished in 0.00s": 1,
       "test result: ok. 383 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 381 filtered out; finished in 0.00s": 1,
-      "test result: ok. 384 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 384 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "error: unexpected argument 'burn_character_damage_uses_legacy_hurt_reduction' found": 1,
+      "test result: ok. 159 passed; 0 failed; 0 ignored; 0 measured; 227 filtered out; finished in 0.03s": 1,
+      "test result: ok. 386 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

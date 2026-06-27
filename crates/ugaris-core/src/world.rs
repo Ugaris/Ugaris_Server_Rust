@@ -1797,10 +1797,7 @@ impl World {
 
         if tile.flags.contains(MapFlags::UNDERWATER) {
             if !character.flags.contains(CharacterFlags::OXYGEN) {
-                if let Some(character) = self.characters.get_mut(&character_id) {
-                    character.hp -= 50;
-                    character.flags.insert(CharacterFlags::UPDATE);
-                }
+                self.apply_legacy_hurt(character_id, None, 50, 1, 0, 0);
                 return TileSpecialOutcome {
                     damage: 50,
                     bubble_effect_id: None,
@@ -1829,10 +1826,7 @@ impl World {
         } else {
             100
         };
-        if let Some(character) = self.characters.get_mut(&character_id) {
-            character.hp -= damage;
-            character.flags.insert(CharacterFlags::UPDATE);
-        }
+        self.apply_legacy_hurt(character_id, None, damage, 1, 25, 66);
         TileSpecialOutcome {
             damage,
             bubble_effect_id: None,
@@ -3032,10 +3026,7 @@ impl World {
                 damage,
                 reset_after_ticks,
             } => {
-                if let Some(character) = self.characters.get_mut(&character_id) {
-                    character.hp = character.hp.saturating_sub(damage);
-                    character.flags.insert(CharacterFlags::UPDATE);
-                }
+                self.apply_legacy_hurt(character_id, None, damage, 1, 75, 75);
                 self.schedule_item_driver_timer(item_id, CharacterId(0), reset_after_ticks);
                 outcome
             }
@@ -3725,9 +3716,8 @@ impl World {
         effect.target_character = Some(character_id);
         effect.x = i32::from(character.x);
         effect.y = i32::from(character.y);
-        character.hp = character.hp.saturating_sub(20 * POWERSCALE);
-        character.flags.insert(CharacterFlags::UPDATE);
         self.effects.insert(effect_id, effect);
+        self.apply_legacy_hurt(character_id, None, 20 * POWERSCALE, 1, 50, 75);
         true
     }
 
@@ -8490,6 +8480,40 @@ mod tests {
     }
 
     #[test]
+    fn world_spiketrap_damage_uses_legacy_hurt_reduction() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.hp = 10_000;
+        character.lifeshield = 1_000;
+        character.values[0][CharacterValue::Armor as usize] = 20;
+        world.add_character(character);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE);
+        trap.driver = IDR_SPIKETRAP;
+        trap.driver_data = vec![0, 4];
+        world.add_item(trap);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_SPIKETRAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::SpikeTrapTriggered { .. }
+        ));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.hp, 8_000);
+        assert_eq!(character.lifeshield, 0);
+        assert_eq!(character.driver_messages[0].message_type, NT_GOTHIT);
+        assert_eq!(character.driver_messages[0].dat2, 2_000);
+    }
+
+    #[test]
     fn world_flamethrower_timer_burns_forward_characters_and_reschedules() {
         let mut world = World::default();
         let mut trap = item(7, ItemFlags::USED | ItemFlags::USE);
@@ -8561,6 +8585,24 @@ mod tests {
         world.tick_effects();
 
         assert!(world.effects.is_empty());
+    }
+
+    #[test]
+    fn burn_character_damage_uses_legacy_hurt_reduction() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.hp = 50 * POWERSCALE;
+        character.lifeshield = 5 * POWERSCALE;
+        character.values[0][CharacterValue::Armor as usize] = 100;
+        world.add_character(character);
+
+        assert!(world.burn_character(CharacterId(1)));
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.hp, 40 * POWERSCALE);
+        assert_eq!(character.lifeshield, 0);
+        assert_eq!(character.driver_messages[0].message_type, NT_GOTHIT);
+        assert_eq!(character.driver_messages[0].dat2, 10 * POWERSCALE);
     }
 
     #[test]
