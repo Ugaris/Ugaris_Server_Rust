@@ -409,6 +409,13 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         schedule_after_ticks: Option<u64>,
     },
+    OnOffLightChanged {
+        item_id: ItemId,
+        character_id: CharacterId,
+        now_on: bool,
+        remaining_off: Option<i32>,
+        gates_opened: bool,
+    },
     TorchExtinguishedUnderwater {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2225,22 +2232,26 @@ fn onofflight_driver(
         }
     }
 
-    if item.driver_data[0] != 0 {
+    let now_on = if item.driver_data[0] != 0 {
         item.driver_data[0] = 0;
         item.modifier_value[0] = 0;
         item.sprite -= 1;
+        false
     } else {
         let light = i16::from(item.driver_data[1]);
         item.driver_data[0] = 1;
         item.modifier_index[0] = V_LIGHT;
         item.modifier_value[0] = light;
         item.sprite += 1;
-    }
+        true
+    };
 
-    ItemDriverOutcome::LightChanged {
+    ItemDriverOutcome::OnOffLightChanged {
         item_id: item.id,
         character_id: character.id,
-        schedule_after_ticks: None,
+        now_on,
+        remaining_off: None,
+        gates_opened: false,
     }
 }
 
@@ -4522,10 +4533,12 @@ mod tests {
         };
         assert_eq!(
             execute_item_driver(&mut character, &mut light, request, 3, false),
-            ItemDriverOutcome::LightChanged {
+            ItemDriverOutcome::OnOffLightChanged {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
-                schedule_after_ticks: None,
+                now_on: false,
+                remaining_off: None,
+                gates_opened: false,
             }
         );
         assert_eq!(light.driver_data[0], 0);

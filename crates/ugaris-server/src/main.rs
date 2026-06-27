@@ -9395,6 +9395,32 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::OnOffLightChanged {
+                                            character_id,
+                                            now_on: true,
+                                            remaining_off: Some(0),
+                                            gates_opened: true,
+                                            ..
+                                        } => {
+                                            if character_id.0 != 0 {
+                                                feedback.push((
+                                                    character_id,
+                                                    "The light has returned to the palace and the gates open.".to_string(),
+                                                ));
+                                            }
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::OnOffLightChanged {
+                                            character_id,
+                                            now_on: true,
+                                            remaining_off: Some(remaining),
+                                            ..
+                                        } => {
+                                            if character_id.0 != 0 {
+                                                feedback.push((character_id, format!("{} remaining", remaining)));
+                                            }
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LollipopLicked { .. }
@@ -9416,6 +9442,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::TriggerMapItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StepTrapDiscoverTarget { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::OnOffLightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TorchExtinguishedUnderwater { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DecayItemToggled { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LabExitAnimating { .. }

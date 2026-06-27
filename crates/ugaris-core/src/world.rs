@@ -105,10 +105,18 @@ fn item_light_may_have_changed(outcome: &ItemDriverOutcome) -> bool {
     matches!(
         outcome,
         ItemDriverOutcome::LightChanged { .. }
+            | ItemDriverOutcome::OnOffLightChanged { .. }
             | ItemDriverOutcome::FlameThrowerPulse { .. }
             | ItemDriverOutcome::FlameThrowerExtinguished { .. }
             | ItemDriverOutcome::DecayItemToggled { .. }
     )
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Area3PalaceLampState {
+    pub switched_on_count: i32,
+    pub switched_off_count: i32,
+    pub keep_open_until_tick: u64,
 }
 
 fn item_light_value(item: &Item) -> i16 {
@@ -144,6 +152,7 @@ pub struct World {
     pub characters: HashMap<CharacterId, Character>,
     pub items: HashMap<ItemId, Item>,
     pub effects: HashMap<u32, Effect>,
+    pub area3_palace_lamps: Area3PalaceLampState,
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,
 }
@@ -1845,6 +1854,27 @@ impl World {
                     .and_then(|item| item.carried_by)
                     .unwrap_or(CharacterId(0));
                 self.schedule_item_driver_timer(item_id, character_id, 1)
+            })
+            .count()
+    }
+
+    fn schedule_registered_area3_lamp_extinguish(&mut self) -> usize {
+        let mut item_ids: Vec<ItemId> = self
+            .items
+            .iter()
+            .filter_map(|(&item_id, item)| {
+                (item.driver == IDR_ONOFFLIGHT
+                    && item.driver_data.get(6).copied().unwrap_or_default() != 0)
+                    .then_some(item_id)
+            })
+            .collect();
+        item_ids.sort_by_key(|item_id| item_id.0);
+
+        item_ids
+            .into_iter()
+            .enumerate()
+            .filter(|(index, item_id)| {
+                self.schedule_item_driver_timer(*item_id, CharacterId(0), (*index as u64) + 1)
             })
             .count()
     }
@@ -4237,6 +4267,36 @@ impl World {
                     self.schedule_item_driver_timer(item_id, character_id, after_ticks);
                 }
                 outcome
+            }
+            ItemDriverOutcome::OnOffLightChanged {
+                item_id,
+                character_id,
+                now_on,
+                ..
+            } => {
+                let mut remaining_off = None;
+                let mut gates_opened = false;
+                if now_on {
+                    self.area3_palace_lamps.switched_on_count += 1;
+                    let remaining = self.area3_palace_lamps.switched_off_count
+                        - self.area3_palace_lamps.switched_on_count;
+                    remaining_off = Some(remaining);
+                    if remaining == 0 {
+                        gates_opened = true;
+                        self.area3_palace_lamps.keep_open_until_tick =
+                            self.tick.0 + (TICKS_PER_SECOND as u64 * 60 * 3);
+                        self.schedule_registered_area3_lamp_extinguish();
+                    }
+                } else {
+                    self.area3_palace_lamps.switched_off_count += 1;
+                }
+                ItemDriverOutcome::OnOffLightChanged {
+                    item_id,
+                    character_id,
+                    now_on,
+                    remaining_off,
+                    gates_opened,
+                }
             }
             ItemDriverOutcome::TorchExtinguishedUnderwater {
                 item_id,
@@ -10333,6 +10393,104 @@ mod tests {
         assert_eq!(light.modifier_value[0], 14);
         assert_eq!(light.sprite, 101);
         assert_eq!(world.map.tile(10, 10).unwrap().light, 14);
+    }
+
+    #[test]
+    fn world_tracks_area3_onofflight_counts_and_gate_window() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        let mut character = character(1);
+        character.x = 10;
+        character.y = 10;
+        let mut light = item(7, ItemFlags::USED | ItemFlags::USE);
+        light.driver = IDR_ONOFFLIGHT;
+        light.driver_data = vec![1, 14, 0, 0, 0, 0, 1];
+        light.modifier_index[0] = CharacterValue::Light as i16;
+        light.modifier_value[0] = 14;
+        light.sprite = 101;
+        light.x = 10;
+        light.y = 10;
+        world.map.tile_mut(10, 10).unwrap().item = 7;
+        world.add_character(character);
+        world.add_item(light);
+
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ONOFFLIGHT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let off = world.execute_item_driver_request(request, 3);
+        assert_eq!(
+            off,
+            ItemDriverOutcome::OnOffLightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                now_on: false,
+                remaining_off: None,
+                gates_opened: false,
+            }
+        );
+        assert_eq!(world.area3_palace_lamps.switched_off_count, 1);
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 0);
+
+        let on = world.execute_item_driver_request(request, 3);
+        assert_eq!(
+            on,
+            ItemDriverOutcome::OnOffLightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                now_on: true,
+                remaining_off: Some(0),
+                gates_opened: true,
+            }
+        );
+        assert_eq!(world.area3_palace_lamps.switched_on_count, 1);
+        assert_eq!(
+            world.area3_palace_lamps.keep_open_until_tick,
+            100 + TICKS_PER_SECOND as u64 * 60 * 3
+        );
+        assert_eq!(world.timers.used_timers(), 1);
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 14);
+    }
+
+    #[test]
+    fn world_schedules_registered_area3_lamps_for_extinguish_when_gates_open() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.x = 10;
+        character.y = 10;
+        world.add_character(character);
+
+        for id in [7, 9] {
+            let mut light = item(id, ItemFlags::USED | ItemFlags::USE);
+            light.driver = IDR_ONOFFLIGHT;
+            light.driver_data = vec![0, 10, 0, 0, 0, 0, 1];
+            light.x = 10 + id as u16;
+            light.y = 10;
+            world.add_item(light);
+        }
+        world.area3_palace_lamps.switched_off_count = 1;
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_ONOFFLIGHT,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            3,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::OnOffLightChanged {
+                now_on: true,
+                gates_opened: true,
+                ..
+            }
+        ));
+        assert_eq!(world.timers.used_timers(), 2);
     }
 
     #[test]
