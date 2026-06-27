@@ -180,6 +180,10 @@ impl PacketBuilder {
         self.raw(&special(special_type, opt1, opt2))
     }
 
+    pub fn transport(&mut self, seen: u64, clan_access: [u8; 4]) -> &mut Self {
+        self.raw(&transport(seen, clan_access))
+    }
+
     pub fn exit(&mut self, reason: &str) -> &mut Self {
         let bytes = reason.as_bytes();
         let len = bytes.len().min(200);
@@ -937,6 +941,14 @@ pub fn special(special_type: u32, opt1: u32, opt2: u32) -> [u8; 13] {
     out
 }
 
+pub fn transport(seen: u64, clan_access: [u8; 4]) -> [u8; 13] {
+    let mut out = [0; 13];
+    out[0] = SV_TELEPORT;
+    out[1..9].copy_from_slice(&seen.to_le_bytes());
+    out[9..13].copy_from_slice(&clan_access);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -971,6 +983,28 @@ mod tests {
         assert_eq!(
             special(0x11223344, 0xffff_ffff, 0x55667788),
             [SV_SPECIAL, 0x44, 0x33, 0x22, 0x11, 0xff, 0xff, 0xff, 0xff, 0x88, 0x77, 0x66, 0x55,]
+        );
+    }
+
+    #[test]
+    fn transport_packet_matches_legacy_seen_and_clan_layout() {
+        assert_eq!(
+            transport(0x0102_0304_0506_0708, [0xaa, 0xbb, 0xcc, 0xdd]),
+            [
+                SV_TELEPORT,
+                0x08,
+                0x07,
+                0x06,
+                0x05,
+                0x04,
+                0x03,
+                0x02,
+                0x01,
+                0xaa,
+                0xbb,
+                0xcc,
+                0xdd,
+            ]
         );
     }
 

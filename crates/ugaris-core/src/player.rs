@@ -238,6 +238,8 @@ pub struct PlayerRuntime {
     pub current_section_id: u16,
     #[serde(default)]
     pub special_shrine_hcsc_last_touch_seconds: u64,
+    #[serde(default)]
+    pub transport_seen: u64,
 }
 
 impl PlayerRuntime {
@@ -274,7 +276,18 @@ impl PlayerRuntime {
             keyring_auto_add: false,
             current_section_id: 0,
             special_shrine_hcsc_last_touch_seconds: 0,
+            transport_seen: 0,
         }
+    }
+
+    pub fn touch_transport(&mut self, point: u8) -> bool {
+        if point >= 64 {
+            return false;
+        }
+        let bit = 1_u64 << point;
+        let newly_seen = self.transport_seen & bit == 0;
+        self.transport_seen |= bit;
+        newly_seen
     }
 
     pub fn touch_special_shrine(

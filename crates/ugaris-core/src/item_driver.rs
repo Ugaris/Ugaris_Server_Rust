@@ -21,6 +21,7 @@ pub const IDR_TELEPORT: u16 = 10;
 pub const IDR_NIGHTLIGHT: u16 = 11;
 pub const IDR_TORCH: u16 = 12;
 pub const IDR_RECALL: u16 = 13;
+pub const IDR_TRANSPORT: u16 = 18;
 pub const IDR_STATSCROLL: u16 = 19;
 pub const IDR_FLAMETHROW: u16 = 24;
 pub const IDR_STEPTRAP: u16 = 25;
@@ -62,6 +63,8 @@ pub const IID_AREA11_PALACEKEYPART: u32 = (0x01 << 24) | 0x000051;
 const V_LIGHT: i16 = 9;
 const LIGHT_TIMER_TICKS: u64 = TICKS_PER_SECOND * 30;
 pub const OUTCOME_ITEM_NAME_BYTES: usize = 32;
+pub const LEGACY_TRANSPORT_POINT_COUNT: u8 = 26;
+pub const LEGACY_TRANSPORT_CLAN_EXIT: u8 = 255;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DoorKeyAccess {
@@ -512,6 +515,16 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    TransportOpen {
+        item_id: ItemId,
+        character_id: CharacterId,
+        point: u8,
+    },
+    TransportInvalid {
+        item_id: ItemId,
+        character_id: CharacterId,
+        point: u8,
+    },
     SpecialPotionDrunk {
         item_id: ItemId,
         character_id: CharacterId,
@@ -738,6 +751,7 @@ pub fn execute_item_driver_with_context(
                 IDR_PALACEKEY => palace_key_driver(character, item, context),
                 IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
+                IDR_TRANSPORT => transport_driver(character, item),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
@@ -1000,6 +1014,27 @@ fn nomad_stack_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     ItemDriverOutcome::NomadStack {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn transport_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let point = drdata(item, 0);
+    if point != LEGACY_TRANSPORT_CLAN_EXIT && point >= LEGACY_TRANSPORT_POINT_COUNT {
+        return ItemDriverOutcome::TransportInvalid {
+            item_id: item.id,
+            character_id: character.id,
+            point,
+        };
+    }
+
+    ItemDriverOutcome::TransportOpen {
+        item_id: item.id,
+        character_id: character.id,
+        point,
     }
 }
 
@@ -2854,6 +2889,47 @@ mod tests {
                 character_id: CharacterId(1),
             }
         );
+    }
+
+    #[test]
+    fn transport_driver_opens_valid_points_and_rejects_invalid_points() {
+        let mut character = character(1);
+        let mut transport = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_TRANSPORT);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TRANSPORT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        transport.driver_data = vec![25];
+        assert_eq!(
+            execute_item_driver(&mut character, &mut transport, request, 1, false),
+            ItemDriverOutcome::TransportOpen {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                point: 25,
+            }
+        );
+
+        transport.driver_data = vec![26];
+        assert_eq!(
+            execute_item_driver(&mut character, &mut transport, request, 1, false),
+            ItemDriverOutcome::TransportInvalid {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                point: 26,
+            }
+        );
+
+        transport.driver_data = vec![LEGACY_TRANSPORT_CLAN_EXIT];
+        assert!(matches!(
+            execute_item_driver(&mut character, &mut transport, request, 1, false),
+            ItemDriverOutcome::TransportOpen {
+                point: LEGACY_TRANSPORT_CLAN_EXIT,
+                ..
+            }
+        ));
     }
 
     #[test]

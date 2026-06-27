@@ -3444,7 +3444,9 @@ impl World {
             | ItemDriverOutcome::SpecialPotionProfessionReset { .. } => outcome,
             ItemDriverOutcome::SpecialShrine { .. } => outcome,
             ItemDriverOutcome::TorchExtractOrb { .. } => outcome,
-            ItemDriverOutcome::NomadStack { .. } => outcome,
+            ItemDriverOutcome::NomadStack { .. }
+            | ItemDriverOutcome::TransportOpen { .. }
+            | ItemDriverOutcome::TransportInvalid { .. } => outcome,
             ItemDriverOutcome::EnchantCursorItem {
                 item_id,
                 character_id,

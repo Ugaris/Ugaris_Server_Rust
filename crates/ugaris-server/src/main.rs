@@ -8018,6 +8018,32 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                             }
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TransportOpen { character_id, point, .. } => {
+                                            let Some(player) = runtime.player_for_character_mut(character_id) else {
+                                                failed += 1;
+                                                continue;
+                                            };
+                                            let newly_seen = if point == ugaris_core::item_driver::LEGACY_TRANSPORT_CLAN_EXIT {
+                                                false
+                                            } else {
+                                                player.touch_transport(point)
+                                            };
+                                            let seen = player.transport_seen;
+                                            if newly_seen {
+                                                feedback.push((character_id, "You have reached a new transportation point.".to_string()));
+                                            }
+                                            let payload = bytes::BytesMut::from(
+                                                &ugaris_protocol::packet::transport(seen, [0; 4])[..],
+                                            );
+                                            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                                                runtime.send_to_session(session_id, payload.clone());
+                                            }
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TransportInvalid { character_id, point, .. } => {
+                                            feedback.push((character_id, format!("Nothing happens - BUG ({point},#1).")));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::SpecialShrine { character_id, kind, .. } => {
                                             let result = match (
                                                 runtime.player_for_character_mut(character_id),
