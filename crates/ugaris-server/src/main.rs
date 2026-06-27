@@ -8592,6 +8592,26 @@ async fn main() -> anyhow::Result<()> {
                     if refreshed_sessions != 0 {
                         info!(refreshed_sessions, tick = world.tick.0, "queued map refreshes for completed actions");
                     }
+
+                    let mut sound_sessions = 0;
+                    for sound in world.drain_pending_sound_specials() {
+                        let payload = ugaris_protocol::packet::special(
+                            sound.special.special_type,
+                            sound.special.opt1 as u32,
+                            sound.special.opt2 as u32,
+                        );
+                        for (session_id, _) in runtime.sessions_for_character(sound.character_id) {
+                            if runtime.send_to_session(
+                                session_id,
+                                bytes::BytesMut::from(&payload[..]),
+                            ) {
+                                sound_sessions += 1;
+                            }
+                        }
+                    }
+                    if sound_sessions != 0 {
+                        info!(sound_sessions, tick = world.tick.0, "queued legacy sound-area specials");
+                    }
                 }
 
                 let simple_baddy_message_characters: Vec<_> = world

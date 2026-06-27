@@ -1234,15 +1234,43 @@
         "test result: ok. 397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 44,
+      "startedAt": "2026-06-27T15:30:53.171Z",
+      "endedAt": "2026-06-27T15:39:44.867Z",
+      "durationMs": 531526,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'fireball_effect_explodes_on_character_block_and_applies_area_damage' found",
+        "test world::tests::fireball_effect_explodes_on_character_block_and_applies_area_damage ... FAILED",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "assertion failed: !world.effects.contains_key(&effect_id)",
+        "test result: FAILED. 167 passed; 1 failed; 0 ignored; 0 measured; 230 filtered out; finished in 0.03s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 168 passed; 0 failed; 0 ignored; 0 measured; 230 filtered out; finished in 0.03s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 19807162,
+  "totalDurationMs": 20338688,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 42,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 41,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 37,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 43,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 42,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 38,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 32,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 28,
@@ -1257,7 +1285,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 12,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 13,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 3,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -1333,7 +1361,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
       "test world::tests::edemonball_effect_explodes_on_wall_at_previous_tile ... FAILED": 1,
       "test world::tests::edemonball_effect_explodes_on_character_and_applies_direct_damage ... FAILED": 1,
-      "assertion failed: !world.effects.contains_key(&effect_id)": 1,
+      "assertion failed: !world.effects.contains_key(&effect_id)": 2,
       "test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
       "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
@@ -1353,7 +1381,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 14,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 15,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -1394,7 +1422,11 @@
       "test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 394 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 391 filtered out; finished in 0.00s": 1,
-      "test result: ok. 397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "error: unexpected argument 'fireball_effect_explodes_on_character_block_and_applies_area_damage' fou": 1,
+      "test world::tests::fireball_effect_explodes_on_character_block_and_applies_area_damage ... FAILED": 1,
+      "test result: FAILED. 167 passed; 1 failed; 0 ignored; 0 measured; 230 filtered out; finished in 0.03": 1,
+      "test result: ok. 168 passed; 0 failed; 0 ignored; 0 measured; 230 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

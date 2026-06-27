@@ -145,6 +145,7 @@ pub struct World {
     pub items: HashMap<ItemId, Item>,
     pub effects: HashMap<u32, Effect>,
     pending_look_maps: Vec<LookMapRequest>,
+    pending_sound_specials: Vec<WorldSoundSpecial>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -387,6 +388,15 @@ impl World {
             });
         }
         specials
+    }
+
+    pub fn queue_sound_area(&mut self, x: usize, y: usize, sound_type: u32) {
+        let specials = self.sound_area_specials(x, y, sound_type);
+        self.pending_sound_specials.extend(specials);
+    }
+
+    pub fn drain_pending_sound_specials(&mut self) -> Vec<WorldSoundSpecial> {
+        self.pending_sound_specials.drain(..).collect()
     }
 
     pub fn add_item(&mut self, item: Item) {
@@ -1608,6 +1618,9 @@ impl World {
         for (target_id, damage) in targets {
             self.apply_legacy_hurt(target_id, Some(caster_id), damage, 10, 50, 70);
         }
+
+        self.create_explosion_effect(x, y, 8, 50050);
+        self.queue_sound_area(x as usize, y as usize, 6);
     }
 
     fn explode_edemonball_effect(&mut self, effect_id: u32, x: i32, y: i32) {
@@ -1866,6 +1879,9 @@ impl World {
                 .wrapping_add(u64::from(character_id.0).wrapping_mul(32));
             if cadence % 6 == 0 && (cadence / TICKS_PER_SECOND) % 3 == 0 {
                 let bubble_effect_id = self.create_bubble_effect(x as i32, y as i32, 45, 1);
+                if cadence % 12 == 0 {
+                    self.queue_sound_area(x, y, 44);
+                }
                 return TileSpecialOutcome {
                     damage: 0,
                     bubble_effect_id: Some(bubble_effect_id),
@@ -1882,6 +1898,7 @@ impl World {
             100
         };
         self.apply_legacy_hurt(character_id, None, damage, 1, 25, 66);
+        self.queue_sound_area(x, y, 66);
         TileSpecialOutcome {
             damage,
             bubble_effect_id: None,
@@ -5094,6 +5111,7 @@ impl World {
         }
 
         self.create_fireball_effect(&caster);
+        self.queue_sound_area(usize::from(caster.x), usize::from(caster.y), 5);
         if let Some(caster) = self.characters.get_mut(&caster_id) {
             caster.action = action::FIREBALL2;
             caster.step = 0;
@@ -5215,6 +5233,8 @@ impl World {
         for (target_id, damage) in targets {
             self.apply_legacy_hurt(target_id, Some(caster_id), damage, 10, 30, 85);
         }
+
+        self.queue_sound_area(caster_x, caster_y, 5);
 
         true
     }
@@ -7996,6 +8016,29 @@ mod tests {
     }
 
     #[test]
+    fn queued_sound_area_drains_legacy_player_special_targets() {
+        let mut world = World {
+            map: MapGrid::new(24, 24),
+            ..World::default()
+        };
+        let mut listener = character(1);
+        listener.flags.insert(CharacterFlags::PLAYER);
+        listener.x = 12;
+        listener.y = 10;
+        world.add_character(listener);
+
+        world.queue_sound_area(10, 10, 5);
+
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].character_id, CharacterId(1));
+        assert_eq!(sounds[0].special.special_type, 5);
+        assert_eq!(sounds[0].special.opt1, -40);
+        assert_eq!(sounds[0].special.opt2, 200);
+        assert!(world.drain_pending_sound_specials().is_empty());
+    }
+
+    #[test]
     fn world_groundlight_marks_dirty_sector_when_light_changes() {
         let mut world = World {
             tick: Tick(17),
@@ -8277,7 +8320,13 @@ mod tests {
         }
         world.tick_effects();
 
-        assert!(!world.effects.contains_key(&effect_id));
+        assert_ne!(
+            world
+                .effects
+                .get(&effect_id)
+                .map(|effect| effect.effect_type),
+            Some(EF_FIREBALL)
+        );
         assert_eq!(world.map.tile(10, 10).unwrap().effects[0], 0);
         assert_eq!(world.map.tile(10, 10).unwrap().light, 0);
     }
@@ -10935,8 +10984,24 @@ mod tests {
         world.tick_effects();
         world.tick_effects();
 
-        assert!(!world.effects.contains_key(&effect_id));
+        assert_ne!(
+            world
+                .effects
+                .get(&effect_id)
+                .map(|effect| effect.effect_type),
+            Some(EF_FIREBALL)
+        );
         assert_eq!(world.map.tile(11, 10).unwrap().effects, [0; 4]);
+        assert!(world
+            .effects
+            .values()
+            .any(|effect| effect.effect_type == EF_EXPLODE
+                && effect.base_sprite == 50050
+                && effect.strength == 8));
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            6
+        );
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 14_100);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
