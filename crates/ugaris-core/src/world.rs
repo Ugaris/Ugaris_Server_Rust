@@ -883,6 +883,34 @@ impl World {
         true
     }
 
+    pub fn refresh_character_light_after_value_change(
+        &mut self,
+        character_id: CharacterId,
+        old_light: i16,
+    ) -> bool {
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        let new_light = character_light_value(character);
+        if old_light == new_light {
+            return false;
+        }
+
+        let mut before = character.clone();
+        if let Some(values) = before.values.get_mut(0) {
+            if let Some(light) = values.get_mut(CharacterValue::Light as usize) {
+                *light = old_light;
+            }
+        }
+        remove_character_light(&mut self.map, &before);
+        add_character_light(&mut self.map, character);
+        character.flags.insert(CharacterFlags::UPDATE);
+        let after = character.clone();
+        self.mark_character_light_area(&before);
+        self.mark_character_light_area(&after);
+        true
+    }
+
     pub fn complete_walk(&mut self, character_id: CharacterId) -> bool {
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
@@ -4368,6 +4396,31 @@ mod tests {
 
         assert!(world.remove_character(CharacterId(1)).is_some());
         assert_eq!(world.map.tile(12, 10).unwrap().light, 0);
+    }
+
+    #[test]
+    fn world_refreshes_character_light_after_value_change_without_stale_light() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.values[0][CharacterValue::Light as usize] = 16;
+        assert!(world.spawn_character(character, 10, 10));
+
+        let old_light = world.characters[&CharacterId(1)].values[0][CharacterValue::Light as usize];
+        world.characters.get_mut(&CharacterId(1)).unwrap().values[0]
+            [CharacterValue::Light as usize] = 25;
+
+        assert!(world.refresh_character_light_after_value_change(CharacterId(1), old_light));
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 25);
+        assert!(world.characters[&CharacterId(1)]
+            .flags
+            .contains(CharacterFlags::UPDATE));
+
+        let old_light = world.characters[&CharacterId(1)].values[0][CharacterValue::Light as usize];
+        world.characters.get_mut(&CharacterId(1)).unwrap().values[0]
+            [CharacterValue::Light as usize] = 0;
+
+        assert!(world.refresh_character_light_after_value_change(CharacterId(1), old_light));
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 0);
     }
 
     #[test]
