@@ -2368,6 +2368,9 @@ impl World {
             if self.setup_simple_baddy_distance_attack(character_id, &target, area_id) {
                 return true;
             }
+            if self.setup_simple_baddy_fireball_distance_attack(character_id, &target, area_id) {
+                return true;
+            }
             if self.setup_simple_baddy_attack_back_move(character_id, &target, area_id) {
                 return true;
             }
@@ -2488,6 +2491,38 @@ impl World {
         }
 
         self.setup_simple_baddy_distance_driver(character_id, target, 3, area_id, true)
+    }
+
+    fn setup_simple_baddy_fireball_distance_attack(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+        area_id: u16,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if attacker.mana <= FIREBALL_COST
+            || character_value_present(&attacker, CharacterValue::Fireball) == 0
+            || character_value_present(&attacker, CharacterValue::Fireball)
+                <= character_value_present(&attacker, CharacterValue::Flash)
+            || may_add_spell(&attacker, &self.items, IDR_FLASH, self.tick.0 as u32).is_none()
+        {
+            return false;
+        }
+
+        let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+        let damage = fireball_damage(
+            character_value(&attacker, CharacterValue::Fireball),
+            character_value(target, CharacterValue::Immunity),
+            character_value(target, CharacterValue::Tactics),
+            has_tactics,
+        );
+        if damage < POWERSCALE {
+            return false;
+        }
+
+        self.setup_simple_baddy_distance_driver(character_id, target, 7, area_id, false)
     }
 
     fn setup_simple_baddy_distance_driver(
@@ -8392,6 +8427,55 @@ mod tests {
         assert_eq!(npc.action, action::WALK);
         assert_eq!(npc.tox, 11);
         assert_eq!(npc.toy, 10);
+    }
+
+    #[test]
+    fn simple_baddy_fireball_spacing_moves_toward_distance_seven() {
+        let mut world = World::default();
+        world.tick = Tick(466);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FIREBALL_COST + 1;
+        npc.values[0][CharacterValue::Fireball as usize] = 1;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.values[1][CharacterValue::Fireball as usize] = 20;
+        npc.values[1][CharacterValue::Flash as usize] = 5;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 20, 10);
+
+        let target = world.characters.get(&CharacterId(2)).cloned().unwrap();
+        assert!(world.setup_simple_baddy_fireball_distance_attack(CharacterId(1), &target, 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!(npc.tox, 11);
+        assert_eq!(npc.toy, 10);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 466);
+    }
+
+    #[test]
+    fn simple_baddy_fireball_spacing_requires_fireball_above_flash() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FIREBALL_COST + 1;
+        npc.values[0][CharacterValue::Fireball as usize] = 1;
+        npc.values[1][CharacterValue::Fireball as usize] = 5;
+        npc.values[1][CharacterValue::Flash as usize] = 5;
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 20, 10);
+
+        let target = world.characters.get(&CharacterId(2)).cloned().unwrap();
+        assert!(!world.setup_simple_baddy_fireball_distance_attack(CharacterId(1), &target, 1));
+        assert_eq!(world.characters[&CharacterId(1)].action, 0);
     }
 
     #[test]
