@@ -37,12 +37,13 @@ use crate::{
     scheduler::{TaskScheduler, TimerPayload, TimerQueue},
     sector::{DirtySectors, SoundSectors},
     spell::{
-        fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell,
+        fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell, pulse_damage,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
         BLESS_DURATION, EF_BALL, EF_BLESS, EF_BURN, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,
-        EF_HEAL, EF_MAGICSHIELD, EF_POTION, EF_STRIKE, EF_WARCRY, FLASH_DURATION, FREEZE_DURATION,
-        IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3,
-        IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
+        EF_HEAL, EF_MAGICSHIELD, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
+        FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE,
+        IDR_INFRARED, IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, POISON_DURATION,
+        WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -478,6 +479,45 @@ impl World {
         effect_id
     }
 
+    fn create_pulse_effect(&mut self, x: u16, y: u16, strength: i32) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(
+            EF_PULSE,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(6) as i32,
+        );
+        effect.strength = strength;
+        effect.x = i32::from(x);
+        effect.y = i32::from(y);
+        self.effects.insert(effect_id, effect);
+        self.set_effect_on_map(effect_id, i32::from(x), i32::from(y));
+        effect_id
+    }
+
+    fn create_pulseback_effect(
+        &mut self,
+        target_id: CharacterId,
+        caster_x: u16,
+        caster_y: u16,
+        strength: i32,
+    ) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(
+            EF_PULSEBACK,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(7) as i32,
+        );
+        effect.target_character = Some(target_id);
+        effect.x = i32::from(caster_x);
+        effect.y = i32::from(caster_y);
+        effect.light = 20;
+        effect.strength = strength;
+        self.effects.insert(effect_id, effect);
+        effect_id
+    }
+
     fn create_show_effect(
         &mut self,
         effect_type: i32,
@@ -521,7 +561,7 @@ impl World {
             {
                 Some(EF_FIREBALL) => self.tick_fireball_effect(effect_id),
                 Some(EF_BALL) => self.tick_ball_effect(effect_id),
-                Some(EF_STRIKE) => self.tick_strike_effect(effect_id),
+                Some(EF_STRIKE | EF_PULSE) => self.tick_strike_effect(effect_id),
                 Some(EF_BURN) => self.tick_burn_effect(effect_id),
                 Some(_) => self.tick_expiring_effect(effect_id),
                 _ => {}
@@ -3177,7 +3217,7 @@ impl World {
                     })
                     .is_some_and(|receiver_id| self.complete_give(character_id, receiver_id)),
                 action::MAGICSHIELD => self.complete_magicshield(character_id),
-                action::PULSE => true,
+                action::PULSE => self.complete_pulse(character_id),
                 action::FIREBALL1 => self.complete_fireball(character_id),
                 action::FIREBALL2 => true,
                 action::BALL1 => self.complete_ball(character_id),
@@ -3406,6 +3446,86 @@ impl World {
             self.tick.0.saturating_add(3) as u32,
             25,
             0,
+        );
+        true
+    }
+
+    fn complete_pulse(&mut self, caster_id: CharacterId) -> bool {
+        let Some(caster) = self.characters.get(&caster_id).cloned() else {
+            return false;
+        };
+        if caster.flags.contains(CharacterFlags::NOMAGIC)
+            && !caster.flags.contains(CharacterFlags::NONOMAGIC)
+        {
+            return false;
+        }
+
+        let caster_x = usize::from(caster.x);
+        let caster_y = usize::from(caster.y);
+        let min_x = caster_x.saturating_sub(2).max(1);
+        let max_x = caster_x
+            .saturating_add(2)
+            .min(self.map.width().saturating_sub(2));
+        let min_y = caster_y.saturating_sub(2).max(1);
+        let max_y = caster_y
+            .saturating_add(2)
+            .min(self.map.height().saturating_sub(2));
+        let mut targets = Vec::new();
+
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let Some(target_id) = self.map.tile(x, y).and_then(|tile| {
+                    (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+                }) else {
+                    continue;
+                };
+                if target_id == caster_id {
+                    continue;
+                }
+                let Some(target) = self.characters.get(&target_id) else {
+                    continue;
+                };
+                if !can_attack(&caster, target, &self.map) {
+                    continue;
+                }
+                if !self.map.can_see(caster_x, caster_y, x, y, DIST_MAX) {
+                    continue;
+                }
+                let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+                let damage = pulse_damage(
+                    character_value(&caster, CharacterValue::Pulse),
+                    caster.act1,
+                    character_value(target, CharacterValue::Immunity),
+                    character_value(target, CharacterValue::Tactics),
+                    has_tactics,
+                );
+                let had = target.hp.saturating_add(target.lifeshield);
+                let total = character_value(target, CharacterValue::Hp) * POWERSCALE
+                    + character_value(target, CharacterValue::MagicShield) * POWERSCALE
+                    + 1;
+                if had.saturating_mul(100) / total <= 75 && damage >= had {
+                    targets.push((target_id, damage, had));
+                }
+            }
+        }
+
+        for (target_id, damage, had) in targets {
+            self.create_pulseback_effect(target_id, caster.x, caster.y, caster.act1);
+            if let Some(caster) = self.characters.get_mut(&caster_id) {
+                let max_mana = character_value(caster, CharacterValue::Mana) * POWERSCALE;
+                caster.mana = max_mana.min(caster.mana.saturating_add(damage.min(had)));
+                caster.flags.insert(CharacterFlags::UPDATE);
+            }
+            if let Some(target) = self.characters.get_mut(&target_id) {
+                target.hp = target.hp.saturating_sub(damage);
+                target.flags.insert(CharacterFlags::UPDATE);
+            }
+        }
+
+        self.create_pulse_effect(
+            caster.x,
+            caster.y,
+            character_value(&caster, CharacterValue::Pulse),
         );
         true
     }
@@ -7962,6 +8082,53 @@ mod tests {
         assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(14_442));
         assert_eq!(character.inventory[30], None);
         assert!(!world.items.contains_key(&ItemId(10)));
+    }
+
+    #[test]
+    fn player_pulse_damages_low_health_target_and_creates_visible_effects() {
+        let mut world = World::default();
+        world.tick = Tick(500);
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.mana = 100 * POWERSCALE;
+        caster.values[0][CharacterValue::Mana as usize] = 100;
+        caster.values[0][CharacterValue::Pulse as usize] = 200;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.hp = 10 * POWERSCALE;
+        target.values[0][CharacterValue::Hp as usize] = 100;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Pulse,
+            arg1: 0,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let mana_after_setup = world.characters.get(&CharacterId(1)).unwrap().mana;
+        assert!(mana_after_setup < 100 * POWERSCALE);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(world.tick_basic_actions()[0].ok);
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert!(caster.mana > mana_after_setup);
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert!(target.hp <= 0);
+        assert!(target.flags.contains(CharacterFlags::UPDATE));
+        assert!(world
+            .effects
+            .values()
+            .any(|effect| effect.effect_type == EF_PULSE && effect.x == 10 && effect.y == 10));
+        assert!(world.effects.values().any(|effect| {
+            effect.effect_type == EF_PULSEBACK
+                && effect.target_character == Some(CharacterId(2))
+                && effect.x == 10
+                && effect.y == 10
+        }));
     }
 
     fn character(id: u32) -> Character {

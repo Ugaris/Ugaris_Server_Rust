@@ -27,7 +27,7 @@ use ugaris_core::{
     },
     spell::{
         EF_BALL, EF_BLESS, EF_BURN, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL,
-        EF_MAGICSHIELD, EF_POTION, EF_STRIKE, EF_WARCRY,
+        EF_MAGICSHIELD, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
     },
     text::COL_DARK_GRAY,
     tick::TICKS_PER_SECOND,
@@ -3049,6 +3049,16 @@ fn visible_client_effect_body(
             effect.stop_tick,
             effect.strength,
         )),
+        EF_PULSE => Some(ugaris_protocol::packet::ceffect_pulse(
+            effect_id as i32,
+            effect.start_tick,
+        )),
+        EF_PULSEBACK => Some(ugaris_protocol::packet::ceffect_pulseback(
+            effect_id as i32,
+            effect_character_id(effect)?.0 as i32,
+            effect.x,
+            effect.y,
+        )),
         EF_FIRERING => Some(ugaris_protocol::packet::ceffect_firering(
             effect_id as i32,
             effect_character_id(effect)?.0 as i32,
@@ -3070,9 +3080,9 @@ fn effect_visible_to_viewer(
 ) -> bool {
     let (x, y) = match effect.effect_type {
         EF_BALL | EF_FIREBALL => (effect.x / 1024, effect.y / 1024),
-        EF_STRIKE => (effect.x, effect.y),
+        EF_STRIKE | EF_PULSE => (effect.x, effect.y),
         EF_MAGICSHIELD | EF_FLASH | EF_WARCRY | EF_BLESS | EF_HEAL | EF_FREEZE | EF_BURN
-        | EF_POTION | EF_FIRERING => {
+        | EF_POTION | EF_PULSEBACK | EF_FIRERING => {
             let Some(character_id) = effect_character_id(effect) else {
                 return false;
             };

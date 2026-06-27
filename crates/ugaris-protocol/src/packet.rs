@@ -682,6 +682,24 @@ pub fn ceffect_potion(
     out
 }
 
+pub fn ceffect_pulse(effect_id: i32, start: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(12);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(21);
+    out.put_i32_le(start);
+    out
+}
+
+pub fn ceffect_pulseback(effect_id: i32, character: i32, x: i32, y: i32) -> BytesMut {
+    let mut out = BytesMut::with_capacity(20);
+    out.put_i32_le(effect_id);
+    out.put_i32_le(22);
+    out.put_i32_le(character);
+    out.put_i32_le(x);
+    out.put_i32_le(y);
+    out
+}
+
 pub fn ceffect_firering(effect_id: i32, character: i32, start: i32) -> BytesMut {
     let mut out = BytesMut::with_capacity(16);
     out.put_i32_le(effect_id);
@@ -927,6 +945,14 @@ mod tests {
         assert_eq!(&ceffect_heal(1, 2, 3)[4..8], &[10, 0, 0, 0]);
         assert_eq!(&ceffect_freeze(1, 2, 3, 4)[4..8], &[11, 0, 0, 0]);
         assert_eq!(&ceffect_potion(1, 2, 3, 4, 5)[4..8], &[14, 0, 0, 0]);
+        assert_eq!(
+            &ceffect_pulse(1, 2)[..],
+            &[1, 0, 0, 0, 21, 0, 0, 0, 2, 0, 0, 0]
+        );
+        assert_eq!(
+            &ceffect_pulseback(1, 2, 3, 4)[..],
+            &[1, 0, 0, 0, 22, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0]
+        );
         assert_eq!(&ceffect_firering(1, 2, 3)[4..8], &[23, 0, 0, 0]);
         assert_eq!(&ceffect_fireball(1, 2, 3, 4, 5, 6)[4..8], &[4, 0, 0, 0]);
     }
