@@ -949,14 +949,41 @@
         "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
       ]
+    },
+    {
+      "iteration": 34,
+      "startedAt": "2026-06-27T14:16:30.588Z",
+      "endedAt": "2026-06-27T14:23:48.531Z",
+      "durationMs": 437788,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "`cargo test` only accepts one test-name filter, so the first verification command failed before running tests. I’ll rerun the targeted cases with a shared filter.",
+        "error: unexpected argument 'player_warcry_sets_up_and_debuffs_sound_reachable_targets' found",
+        "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 359 filtered out; finished in 0.00s",
+        "test world::tests::self_targeted_fireball_sets_up_firering_and_damages_adjacent_targets ... FAILED",
+        "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.02s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 15374141,
+  "totalDurationMs": 15811929,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 32,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 31,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 33,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 32,
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 29,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 25,
@@ -972,7 +999,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 10,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 11,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 2,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -1082,7 +1109,14 @@
       "test result: ok. 384 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "error: unexpected argument 'burn_character_damage_uses_legacy_hurt_reduction' found": 1,
       "test result: ok. 159 passed; 0 failed; 0 ignored; 0 measured; 227 filtered out; finished in 0.03s": 1,
-      "test result: ok. 386 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2
+      "test result: ok. 386 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
+      "`cargo test` only accepts one test-name filter, so the first verification command failed before runn": 1,
+      "error: unexpected argument 'player_warcry_sets_up_and_debuffs_sound_reachable_targets' found": 1,
+      "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 359 filtered out; finished in 0.00s": 1,
+      "test world::tests::self_targeted_fireball_sets_up_firering_and_damages_adjacent_targets ... FAILED": 1,
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.02s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

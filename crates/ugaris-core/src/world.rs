@@ -5081,10 +5081,7 @@ impl World {
         }
 
         for (target_id, damage) in targets {
-            if let Some(target) = self.characters.get_mut(&target_id) {
-                target.hp = target.hp.saturating_sub(damage);
-                target.flags.insert(CharacterFlags::UPDATE);
-            }
+            self.apply_legacy_hurt(target_id, Some(caster_id), damage, 10, 30, 85);
         }
 
         true
@@ -5175,10 +5172,7 @@ impl World {
                 caster.mana = max_mana.min(caster.mana.saturating_add(damage.min(had)));
                 caster.flags.insert(CharacterFlags::UPDATE);
             }
-            if let Some(target) = self.characters.get_mut(&target_id) {
-                target.hp = target.hp.saturating_sub(damage);
-                target.flags.insert(CharacterFlags::UPDATE);
-            }
+            self.apply_legacy_hurt(target_id, Some(caster_id), damage, 1, 0, 100);
         }
 
         self.create_pulse_effect(
@@ -5330,10 +5324,7 @@ impl World {
             }
             affected = true;
             if damage > 0 {
-                if let Some(target) = self.characters.get_mut(&target_id) {
-                    target.hp = target.hp.saturating_sub(damage);
-                    target.flags.insert(CharacterFlags::UPDATE);
-                }
+                self.apply_legacy_hurt(target_id, Some(caster_id), damage, 1, 0, 0);
             }
         }
 
@@ -10912,6 +10903,8 @@ mod tests {
         let mut target = character(2);
         target.flags.insert(CharacterFlags::ALIVE);
         target.hp = 30 * POWERSCALE;
+        target.lifeshield = POWERSCALE;
+        target.values[0][CharacterValue::Armor as usize] = 20;
         target.values[0][CharacterValue::Immunity as usize] = 20;
         world.spawn_character(caster, 10, 10);
         world.spawn_character(target, 11, 10);
@@ -10946,8 +10939,16 @@ mod tests {
             250
         );
         let target = world.characters.get(&CharacterId(2)).unwrap();
-        assert_eq!(target.hp, 14_100);
+        assert_eq!(target.hp, 15_200);
+        assert_eq!(target.lifeshield, 0);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
+        assert_eq!(target.driver_messages[0].message_type, NT_GOTHIT);
+        assert_eq!(target.driver_messages[0].dat1, 1);
+        assert_eq!(target.driver_messages[0].dat2, 14_800);
+        assert_eq!(
+            world.characters[&CharacterId(1)].driver_messages[0].message_type,
+            NT_DIDHIT
+        );
         let effect = world.effects.values().next().unwrap();
         assert_eq!(effect.effect_type, EF_FIRERING);
         assert_eq!(effect.target_character, Some(CharacterId(1)));
@@ -11016,6 +11017,7 @@ mod tests {
         let mut target = character(2);
         target.flags.insert(CharacterFlags::ALIVE);
         target.hp = 20 * POWERSCALE;
+        target.lifeshield = POWERSCALE;
         target.values[0][CharacterValue::Immunity as usize] = 20;
         world.spawn_character(caster, 10, 10);
         world.spawn_character(target, 13, 10);
@@ -11039,6 +11041,10 @@ mod tests {
         assert_eq!(caster.lifeshield, 30 * POWERSCALE);
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 16_400);
+        assert_eq!(target.lifeshield, POWERSCALE);
+        assert_eq!(target.driver_messages[0].message_type, NT_GOTHIT);
+        assert_eq!(target.driver_messages[0].dat1, 1);
+        assert_eq!(target.driver_messages[0].dat2, 3_600);
         let spell_id = target.inventory[29].unwrap();
         let spell = world.items.get(&spell_id).unwrap();
         assert_eq!(spell.driver, IDR_WARCRY);
@@ -11492,6 +11498,7 @@ mod tests {
         let mut target = character(2);
         target.flags.insert(CharacterFlags::ALIVE);
         target.hp = 10 * POWERSCALE;
+        target.lifeshield = POWERSCALE;
         target.values[0][CharacterValue::Hp as usize] = 100;
         world.spawn_character(caster, 10, 10);
         world.spawn_character(target, 12, 10);
@@ -11513,8 +11520,14 @@ mod tests {
         let caster = world.characters.get(&CharacterId(1)).unwrap();
         assert!(caster.mana > mana_after_setup);
         let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.lifeshield, 0);
         assert!(target.hp <= 0);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
+        assert_eq!(target.driver_messages[0].message_type, NT_GOTHIT);
+        assert_eq!(
+            world.characters[&CharacterId(1)].driver_messages[0].message_type,
+            NT_DIDHIT
+        );
         assert!(world
             .effects
             .values()
