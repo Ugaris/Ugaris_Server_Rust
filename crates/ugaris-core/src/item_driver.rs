@@ -29,6 +29,8 @@ pub const IDR_EXTINGUISH: u16 = 28;
 pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
+pub const IDR_SHRIKEAMULET: u16 = 118;
+pub const IDR_MINEGATEWAYKEY: u16 = 126;
 pub const IDR_INFINITE_CHEST: u16 = 93;
 pub const IDR_FOOD: u16 = 64;
 pub const IDR_ENCHANTITEM: u16 = 83;
@@ -154,6 +156,8 @@ impl InfiniteChestTemplate {
 pub struct ItemDriverContext {
     pub door_key: Option<DoorKeyAccess>,
     pub cursor_template_id: Option<u32>,
+    pub cursor_driver: Option<u16>,
+    pub cursor_drdata0: Option<u8>,
     pub timer_call: bool,
     pub daylight: u8,
     pub character_underwater: bool,
@@ -427,6 +431,34 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    ShrikeAmuletAssemble {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        combined_bits: u8,
+    },
+    ShrikeAmuletNeedsCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ShrikeAmuletDoesNotFit {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    MineGatewayKeyAssemble {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        combined_bits: u8,
+    },
+    MineGatewayKeyNeedsCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    MineGatewayKeyDoesNotFit {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BlockedByRequirements {
         item_id: ItemId,
         character_id: CharacterId,
@@ -567,6 +599,8 @@ pub fn execute_item_driver_with_context(
                 IDR_ANTIORBSPAWN => orbspawn_driver(character, item, true),
                 IDR_NOMADSTACK => nomad_stack_driver(character, item),
                 IDR_DEMONCHIP => nomad_stack_driver(character, item),
+                IDR_SHRIKEAMULET => shrike_amulet_driver(character, item, context),
+                IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
@@ -895,6 +929,63 @@ fn anti_enchant_driver(character: &Character, item: &Item, extract_orb: bool) ->
         modifier: i16::from(drdata(item, 0)),
         amount: i16::from(drdata(item, 1)),
         extract_orb,
+    }
+}
+
+fn shrike_amulet_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::ShrikeAmuletNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    let own_bits = drdata(item, 0);
+    let cursor_bits = context.cursor_drdata0.unwrap_or(0);
+    if context.cursor_driver != Some(IDR_SHRIKEAMULET) || (own_bits & cursor_bits) != 0 {
+        return ItemDriverOutcome::ShrikeAmuletDoesNotFit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::ShrikeAmuletAssemble {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        combined_bits: own_bits | cursor_bits,
+    }
+}
+
+fn mine_gateway_key_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::MineGatewayKeyNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    if context.cursor_driver != Some(IDR_MINEGATEWAYKEY) {
+        return ItemDriverOutcome::MineGatewayKeyDoesNotFit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    let combined_bits = drdata(item, 0) | context.cursor_drdata0.unwrap_or(0);
+    ItemDriverOutcome::MineGatewayKeyAssemble {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        combined_bits,
     }
 }
 
@@ -2572,6 +2663,119 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut character, &mut item, request, 1, false),
             ItemDriverOutcome::AssembleUnknownItem {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_shrike_amulet_driver_combines_non_overlapping_parts() {
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        character.cursor_item = Some(ItemId(8));
+        let mut amulet = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SHRIKEAMULET);
+        amulet.carried_by = Some(CharacterId(1));
+        amulet.driver_data = vec![1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SHRIKEAMULET,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut character,
+            &mut amulet,
+            request,
+            1,
+            false,
+            &ItemDriverContext {
+                cursor_driver: Some(IDR_SHRIKEAMULET),
+                cursor_drdata0: Some(2),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::ShrikeAmuletAssemble {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(8),
+                combined_bits: 3,
+            }
+        );
+
+        let outcome = execute_item_driver_with_context(
+            &mut character,
+            &mut amulet,
+            request,
+            1,
+            false,
+            &ItemDriverContext {
+                cursor_driver: Some(IDR_SHRIKEAMULET),
+                cursor_drdata0: Some(1),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::ShrikeAmuletDoesNotFit {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_mine_gateway_key_driver_combines_key_bits() {
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(8));
+        let mut key = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_MINEGATEWAYKEY);
+        key.driver_data = vec![1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_MINEGATEWAYKEY,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut key,
+                request,
+                1,
+                false,
+                &ItemDriverContext {
+                    cursor_driver: Some(IDR_MINEGATEWAYKEY),
+                    cursor_drdata0: Some(14),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::MineGatewayKeyAssemble {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(8),
+                combined_bits: 15,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut key,
+                request,
+                1,
+                false,
+                &ItemDriverContext {
+                    cursor_driver: Some(IDR_SHRIKEAMULET),
+                    cursor_drdata0: Some(2),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::MineGatewayKeyDoesNotFit {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }

@@ -1097,6 +1097,12 @@ impl World {
             .map(|tile| tile.flags)
             .unwrap_or_else(MapFlags::empty);
         let in_arena = character_tile_flags.contains(MapFlags::ARENA);
+        let cursor_context = self
+            .characters
+            .get(&character_id)
+            .and_then(|character| character.cursor_item)
+            .and_then(|cursor_item_id| self.items.get(&cursor_item_id))
+            .map(|item| (item.driver, item.driver_data.first().copied().unwrap_or(0)));
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -1104,6 +1110,12 @@ impl World {
             return ItemDriverOutcome::Noop;
         };
         let mut effective_context = context.clone();
+        if let Some((cursor_driver, cursor_drdata0)) = cursor_context {
+            effective_context.cursor_driver =
+                effective_context.cursor_driver.or(Some(cursor_driver));
+            effective_context.cursor_drdata0 =
+                effective_context.cursor_drdata0.or(Some(cursor_drdata0));
+        }
         effective_context.character_underwater |=
             character_tile_flags.contains(MapFlags::UNDERWATER);
         effective_context.daylight = effective_context
@@ -1474,6 +1486,46 @@ impl World {
                     }
                 }
             }
+            ItemDriverOutcome::ShrikeAmuletAssemble {
+                item_id,
+                character_id,
+                cursor_item_id,
+                combined_bits,
+            } => {
+                if self.apply_shrike_amulet_assemble(
+                    item_id,
+                    character_id,
+                    cursor_item_id,
+                    combined_bits,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::ShrikeAmuletDoesNotFit {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
+            ItemDriverOutcome::MineGatewayKeyAssemble {
+                item_id,
+                character_id,
+                cursor_item_id,
+                combined_bits,
+            } => {
+                if self.apply_mine_gateway_key_assemble(
+                    item_id,
+                    character_id,
+                    cursor_item_id,
+                    combined_bits,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::MineGatewayKeyDoesNotFit {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             _ => outcome,
         }
     }
@@ -1570,6 +1622,98 @@ impl World {
             character.flags.insert(CharacterFlags::ITEMS);
         }
         true
+    }
+
+    fn apply_shrike_amulet_assemble(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        combined_bits: u8,
+    ) -> bool {
+        if !self.character_holds_cursor_item(character_id, cursor_item_id) {
+            return false;
+        }
+        if !self.items.contains_key(&cursor_item_id) {
+            return false;
+        }
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.carried_by != Some(character_id) {
+            return false;
+        }
+        item.driver_data.resize(1, 0);
+        item.driver_data[0] = combined_bits;
+        item.sprite = 51617 + i32::from(combined_bits);
+        match combined_bits {
+            3 => {
+                item.name = "Crystal on Chain".to_string();
+                item.description = "A light blue crystal on a silver chain.".to_string();
+            }
+            5 => {
+                item.name = "Crystal on Charm".to_string();
+                item.description = "A light blue crystal on a silver crescent charm.".to_string();
+            }
+            6 => {
+                item.name = "Charm on Chain".to_string();
+                item.description = "A silver crescent charm on a silver chain.".to_string();
+            }
+            7 => {
+                item.name = "Talisman".to_string();
+                item.description = "A silver talisman.".to_string();
+            }
+            _ => {}
+        }
+        self.destroy_item(cursor_item_id)
+    }
+
+    fn apply_mine_gateway_key_assemble(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        combined_bits: u8,
+    ) -> bool {
+        const IID_MINEGATEWAY: u32 = (0x01 << 24) | 0x000098;
+
+        if !self.character_holds_cursor_item(character_id, cursor_item_id) {
+            return false;
+        }
+        if !self.items.contains_key(&cursor_item_id) {
+            return false;
+        }
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        item.driver_data.resize(1, 0);
+        item.driver_data[0] = combined_bits;
+        item.description = "A partially assembled key.".to_string();
+        item.sprite = match combined_bits {
+            1 => 52201,
+            2 => 52202,
+            3 => 52205,
+            4 => 52203,
+            5 => 52206,
+            6 => 52209,
+            7 => 52213,
+            8 => 52204,
+            9 => 52210,
+            10 => 52207,
+            11 => 52212,
+            12 => 52208,
+            13 => 52214,
+            14 => 52211,
+            15 => {
+                item.flags.remove(ItemFlags::USE);
+                item.template_id = IID_MINEGATEWAY;
+                item.name = "Mine gateway key".to_string();
+                item.description = "A fully assembled key.".to_string();
+                52200
+            }
+            _ => item.sprite,
+        };
+        self.destroy_item(cursor_item_id)
     }
 
     pub fn apply_torch_extract_orb(
@@ -6177,6 +6321,92 @@ mod tests {
             .unwrap()
             .flags
             .contains(MapFlags::TMOVEBLOCK));
+    }
+
+    #[test]
+    fn world_applies_shrike_amulet_assembly() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        character.cursor_item = Some(ItemId(8));
+        world.add_character(character);
+
+        let mut base = item(7, ItemFlags::USED | ItemFlags::USE);
+        base.driver = crate::item_driver::IDR_SHRIKEAMULET;
+        base.carried_by = Some(CharacterId(1));
+        base.driver_data = vec![1];
+        world.add_item(base);
+        let mut cursor = item(8, ItemFlags::USED | ItemFlags::USE);
+        cursor.driver = crate::item_driver::IDR_SHRIKEAMULET;
+        cursor.carried_by = Some(CharacterId(1));
+        cursor.driver_data = vec![2];
+        world.add_item(cursor);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_SHRIKEAMULET,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::ShrikeAmuletAssemble { .. }
+        ));
+        let base = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(base.driver_data[0], 3);
+        assert_eq!(base.sprite, 51620);
+        assert_eq!(base.name, "Crystal on Chain");
+        assert_eq!(base.description, "A light blue crystal on a silver chain.");
+        assert!(!world.items.contains_key(&ItemId(8)));
+        assert_eq!(world.characters[&CharacterId(1)].cursor_item, None);
+    }
+
+    #[test]
+    fn world_applies_mine_gateway_key_final_assembly() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        character.cursor_item = Some(ItemId(8));
+        world.add_character(character);
+
+        let mut base = item(7, ItemFlags::USED | ItemFlags::USE);
+        base.driver = crate::item_driver::IDR_MINEGATEWAYKEY;
+        base.carried_by = Some(CharacterId(1));
+        base.driver_data = vec![7];
+        world.add_item(base);
+        let mut cursor = item(8, ItemFlags::USED | ItemFlags::USE);
+        cursor.driver = crate::item_driver::IDR_MINEGATEWAYKEY;
+        cursor.carried_by = Some(CharacterId(1));
+        cursor.driver_data = vec![8];
+        world.add_item(cursor);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_MINEGATEWAYKEY,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::MineGatewayKeyAssemble { .. }
+        ));
+        let base = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(base.driver_data[0], 15);
+        assert_eq!(base.sprite, 52200);
+        assert_eq!(base.template_id, 0x01000098);
+        assert_eq!(base.name, "Mine gateway key");
+        assert_eq!(base.description, "A fully assembled key.");
+        assert!(!base.flags.contains(ItemFlags::USE));
+        assert!(!world.items.contains_key(&ItemId(8)));
+        assert_eq!(world.characters[&CharacterId(1)].cursor_item, None);
     }
 
     #[test]
