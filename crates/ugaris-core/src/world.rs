@@ -1335,6 +1335,7 @@ impl World {
                 }
             }
             ItemDriverOutcome::TorchExtractOrb { .. } => outcome,
+            ItemDriverOutcome::NomadStack { .. } => outcome,
             ItemDriverOutcome::EnchantCursorItem {
                 item_id,
                 character_id,

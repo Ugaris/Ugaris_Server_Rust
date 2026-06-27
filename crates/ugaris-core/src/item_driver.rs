@@ -32,6 +32,7 @@ pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_FOOD: u16 = 64;
 pub const IDR_ENCHANTITEM: u16 = 83;
 pub const IDR_ORBSPAWN: u16 = 84;
+pub const IDR_NOMADSTACK: u16 = 96;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
@@ -345,6 +346,10 @@ pub enum ItemDriverOutcome {
         anti: bool,
         special: bool,
     },
+    NomadStack {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     EnchantNeedsCursor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -486,6 +491,7 @@ pub fn execute_item_driver_with_context(
                 IDR_SPECIALANTIENCHANTITEM => anti_enchant_driver(character, item, true),
                 IDR_ORBSPAWN => orbspawn_driver(character, item, false),
                 IDR_ANTIORBSPAWN => orbspawn_driver(character, item, true),
+                IDR_NOMADSTACK => nomad_stack_driver(character, item),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_KEY_RING => keyring_driver(character, item),
@@ -663,6 +669,17 @@ fn orbspawn_driver(character: &Character, item: &Item, anti: bool) -> ItemDriver
         character_id: character.id,
         anti,
         special: anti && drdata(item, 0) == 1,
+    }
+}
+
+fn nomad_stack_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::NomadStack {
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -1750,6 +1767,33 @@ mod tests {
             ),
             ItemDriverOutcome::AccountDepotOpened {
                 item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn nomad_stack_driver_dispatches_for_carried_items() {
+        let mut character = character(1);
+        let mut stack = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_NOMADSTACK);
+        stack.carried_by = Some(character.id);
+        character.inventory[30] = Some(stack.id);
+
+        assert_eq!(
+            execute_item_driver(
+                &mut character,
+                &mut stack,
+                ItemDriverRequest::Driver {
+                    driver: IDR_NOMADSTACK,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                1,
+                false,
+            ),
+            ItemDriverOutcome::NomadStack {
+                item_id: ItemId(7),
                 character_id: CharacterId(1),
             }
         );

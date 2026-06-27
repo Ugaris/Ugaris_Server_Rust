@@ -234,6 +234,29 @@ enum AccountDepotCommandResult {
 }
 
 const LEGACY_CONTAINER_SIZE: usize = ugaris_core::entity::INVENTORY_SIZE - 2;
+const IID_AREA19_WOLFSSKIN: u32 = 0x0100008A;
+const IID_AREA19_SALT: u32 = 0x0100008B;
+const IID_AREA19_WOLFSSKIN2: u32 = 0x0100008C;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NomadStackApplyResult {
+    Split {
+        left: u32,
+        right: u32,
+        unit: &'static str,
+    },
+    Merged {
+        count: u32,
+        unit: &'static str,
+    },
+    CannotSplitOne {
+        unit: &'static str,
+    },
+    CannotMix,
+    Bug(&'static str),
+    MissingPlayer,
+    MissingItem,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VisibleMapCell {
@@ -1571,6 +1594,219 @@ fn apply_assemble_item(
     character.flags.insert(CharacterFlags::ITEMS);
     world.add_item(new_item);
     AssembleApplyResult::Assembled
+}
+
+fn apply_nomad_stack(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    item_id: ItemId,
+    character_id: CharacterId,
+) -> NomadStackApplyResult {
+    let Some((stack_kind, unit, template)) = world.items.get(&item_id).and_then(|item| {
+        nomad_stack_kind(item.template_id)
+            .map(|kind| (kind, nomad_stack_unit(kind), nomad_stack_template(kind)))
+    }) else {
+        return NomadStackApplyResult::Bug("Bug #1442y");
+    };
+    let Some(character) = world.characters.get(&character_id) else {
+        return NomadStackApplyResult::MissingPlayer;
+    };
+    if world
+        .items
+        .get(&item_id)
+        .is_none_or(|item| item.carried_by != Some(character_id))
+    {
+        return NomadStackApplyResult::MissingItem;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item else {
+        return split_nomad_stack(
+            world,
+            loader,
+            item_id,
+            character_id,
+            stack_kind,
+            unit,
+            template,
+        );
+    };
+    if cursor_item_id == item_id {
+        return NomadStackApplyResult::MissingItem;
+    }
+    let Some(cursor_kind) = world
+        .items
+        .get(&cursor_item_id)
+        .and_then(|item| nomad_stack_kind(item.template_id))
+    else {
+        return NomadStackApplyResult::CannotMix;
+    };
+    if cursor_kind != stack_kind {
+        return NomadStackApplyResult::CannotMix;
+    }
+
+    let cursor_value = world
+        .items
+        .get(&cursor_item_id)
+        .map(|item| item.value)
+        .unwrap_or_default();
+    let cursor_count = world
+        .items
+        .get(&cursor_item_id)
+        .map(nomad_stack_count)
+        .unwrap_or_default();
+    let Some(item) = world.items.get_mut(&item_id) else {
+        return NomadStackApplyResult::MissingItem;
+    };
+    item.value = item.value.saturating_add(cursor_value);
+    let count = nomad_stack_count(item).saturating_add(cursor_count);
+    set_nomad_stack_count(item, count, stack_kind);
+    world.items.remove(&cursor_item_id);
+
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return NomadStackApplyResult::MissingPlayer;
+    };
+    character.cursor_item = None;
+    character.flags.insert(CharacterFlags::ITEMS);
+    NomadStackApplyResult::Merged { count, unit }
+}
+
+fn split_nomad_stack(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    item_id: ItemId,
+    character_id: CharacterId,
+    stack_kind: NomadStackKind,
+    unit: &'static str,
+    template: &'static str,
+) -> NomadStackApplyResult {
+    let Some(item) = world.items.get(&item_id) else {
+        return NomadStackApplyResult::MissingItem;
+    };
+    let old_count = nomad_stack_count(item);
+    if old_count < 2 {
+        return NomadStackApplyResult::CannotSplitOne { unit };
+    }
+    let right = nomad_split_amount(old_count / 2);
+    let left = old_count - right;
+    let old_value = item.value;
+
+    let Ok(mut split_item) = loader.instantiate_item_template(template, Some(character_id)) else {
+        return NomadStackApplyResult::Bug("Bug #3199i");
+    };
+    split_item.value = old_value.saturating_mul(right) / old_count;
+    set_nomad_stack_count(&mut split_item, right, stack_kind);
+    let split_item_id = split_item.id;
+
+    let Some(item) = world.items.get_mut(&item_id) else {
+        return NomadStackApplyResult::MissingItem;
+    };
+    item.value = old_value.saturating_mul(left) / old_count;
+    set_nomad_stack_count(item, left, stack_kind);
+
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return NomadStackApplyResult::MissingPlayer;
+    };
+    if character.cursor_item.is_some() {
+        return NomadStackApplyResult::MissingItem;
+    }
+    character.cursor_item = Some(split_item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(split_item);
+    NomadStackApplyResult::Split { left, right, unit }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NomadStackKind {
+    Salt,
+    Skin1,
+    Skin2,
+}
+
+fn nomad_stack_kind(template_id: u32) -> Option<NomadStackKind> {
+    match template_id {
+        IID_AREA19_SALT => Some(NomadStackKind::Salt),
+        IID_AREA19_WOLFSSKIN => Some(NomadStackKind::Skin1),
+        IID_AREA19_WOLFSSKIN2 => Some(NomadStackKind::Skin2),
+        _ => None,
+    }
+}
+
+fn nomad_stack_template(kind: NomadStackKind) -> &'static str {
+    match kind {
+        NomadStackKind::Salt => "salt",
+        NomadStackKind::Skin1 => "skin1",
+        NomadStackKind::Skin2 => "skin2",
+    }
+}
+
+fn nomad_stack_unit(kind: NomadStackKind) -> &'static str {
+    match kind {
+        NomadStackKind::Salt => "ounce",
+        NomadStackKind::Skin1 | NomadStackKind::Skin2 => "skin",
+    }
+}
+
+fn nomad_split_amount(mut amount: u32) -> u32 {
+    for step in [10000, 5000, 2500, 1000, 500, 250, 100, 50, 25, 10] {
+        if amount >= step {
+            amount = step;
+            break;
+        }
+    }
+    amount
+}
+
+fn nomad_stack_count(item: &Item) -> u32 {
+    let mut bytes = [0_u8; 4];
+    for (idx, byte) in item.driver_data.iter().take(4).enumerate() {
+        bytes[idx] = *byte;
+    }
+    u32::from_le_bytes(bytes)
+}
+
+fn set_nomad_stack_count(item: &mut Item, count: u32, kind: NomadStackKind) {
+    if item.driver_data.len() < 4 {
+        item.driver_data.resize(4, 0);
+    }
+    item.driver_data[..4].copy_from_slice(&count.to_le_bytes());
+    match kind {
+        NomadStackKind::Salt => {
+            item.sprite = if count >= 10000 {
+                13212
+            } else if count >= 1000 {
+                13211
+            } else if count >= 100 {
+                13210
+            } else if count >= 10 {
+                13209
+            } else {
+                13208
+            };
+            item.description = format!("{count} ounces of {}.", item.name);
+        }
+        NomadStackKind::Skin1 => {
+            item.sprite = skin_stack_sprite(count, 59655);
+            item.description = format!("{count} {}s.", item.name);
+        }
+        NomadStackKind::Skin2 => {
+            item.sprite = skin_stack_sprite(count, 59660);
+            item.description = format!("{count} {}s.", item.name);
+        }
+    }
+}
+
+fn skin_stack_sprite(count: u32, base: i32) -> i32 {
+    if count >= 5 {
+        base + 4
+    } else if count >= 4 {
+        base + 3
+    } else if count >= 3 {
+        base + 2
+    } else if count >= 2 {
+        base + 1
+    } else {
+        base
+    }
 }
 
 fn grant_money_to_cursor(
@@ -3523,6 +3759,89 @@ mod tests {
             driver_data: Vec::new(),
             serial: 1,
         }
+    }
+
+    #[test]
+    fn nomad_stack_split_creates_cursor_stack_with_legacy_counts() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(20));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut stack = test_item(ItemId(20), 13208, ItemFlags::USED | ItemFlags::USE);
+        stack.name = "salt".to_string();
+        stack.template_id = IID_AREA19_SALT;
+        stack.driver = ugaris_core::item_driver::IDR_NOMADSTACK;
+        stack.value = 1_000;
+        stack.carried_by = Some(character_id);
+        set_nomad_stack_count(&mut stack, 123, NomadStackKind::Salt);
+        world.add_item(stack);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"salt: name="salt" ID=0100008B flag=IF_TAKE driver=96 ;"#)
+            .unwrap();
+
+        assert_eq!(
+            apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
+            NomadStackApplyResult::Split {
+                left: 73,
+                right: 50,
+                unit: "ounce",
+            }
+        );
+        let character = world.characters.get(&character_id).unwrap();
+        let cursor_id = character
+            .cursor_item
+            .expect("split stack should be on cursor");
+        let carried = world.items.get(&ItemId(20)).unwrap();
+        let cursor = world.items.get(&cursor_id).unwrap();
+        assert_eq!(nomad_stack_count(carried), 73);
+        assert_eq!(nomad_stack_count(cursor), 50);
+        assert_eq!(carried.sprite, 13209);
+        assert_eq!(cursor.description, "50 ounces of salt.");
+    }
+
+    #[test]
+    fn nomad_stack_merge_consumes_matching_cursor_stack() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(20));
+        character.cursor_item = Some(ItemId(21));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut carried = test_item(ItemId(20), 59655, ItemFlags::USED | ItemFlags::USE);
+        carried.name = "skin".to_string();
+        carried.template_id = IID_AREA19_WOLFSSKIN;
+        carried.driver = ugaris_core::item_driver::IDR_NOMADSTACK;
+        carried.value = 30;
+        carried.carried_by = Some(character_id);
+        set_nomad_stack_count(&mut carried, 3, NomadStackKind::Skin1);
+        world.add_item(carried);
+        let mut cursor = test_item(ItemId(21), 59655, ItemFlags::USED | ItemFlags::USE);
+        cursor.name = "skin".to_string();
+        cursor.template_id = IID_AREA19_WOLFSSKIN;
+        cursor.value = 20;
+        cursor.carried_by = Some(character_id);
+        set_nomad_stack_count(&mut cursor, 2, NomadStackKind::Skin1);
+        world.add_item(cursor);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
+            NomadStackApplyResult::Merged {
+                count: 5,
+                unit: "skin",
+            }
+        );
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().cursor_item,
+            None
+        );
+        assert!(!world.items.contains_key(&ItemId(21)));
+        let stack = world.items.get(&ItemId(20)).unwrap();
+        assert_eq!(nomad_stack_count(stack), 5);
+        assert_eq!(stack.value, 50);
+        assert_eq!(stack.sprite, 59659);
     }
 
     #[test]
@@ -6355,6 +6674,34 @@ async fn main() -> anyhow::Result<()> {
                                                 executed += 1;
                                             } else {
                                                 blocked += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::NomadStack { item_id, character_id } => {
+                                            match apply_nomad_stack(&mut world, &mut zone_loader, item_id, character_id) {
+                                                NomadStackApplyResult::Split { left, right, unit } => {
+                                                    feedback.push((character_id, format!("Split into {left} {unit}s and {right} {unit}s.")));
+                                                    executed += 1;
+                                                }
+                                                NomadStackApplyResult::Merged { count, unit } => {
+                                                    feedback.push((character_id, format!("{count} {unit}s.")));
+                                                    executed += 1;
+                                                }
+                                                NomadStackApplyResult::CannotSplitOne { unit } => {
+                                                    feedback.push((character_id, format!("You cannot split 1 {unit}.")));
+                                                    blocked += 1;
+                                                }
+                                                NomadStackApplyResult::CannotMix => {
+                                                    feedback.push((character_id, "You cannot mix those.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                NomadStackApplyResult::Bug(message) => {
+                                                    feedback.push((character_id, message.to_string()));
+                                                    failed += 1;
+                                                }
+                                                NomadStackApplyResult::MissingPlayer
+                                                | NomadStackApplyResult::MissingItem => {
+                                                    failed += 1;
+                                                }
                                             }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
