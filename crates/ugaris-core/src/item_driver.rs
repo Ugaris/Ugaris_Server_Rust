@@ -30,6 +30,7 @@ pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
 pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_DEMONSHRINE: u16 = 35;
+pub const IDR_EDEMONBALL: u16 = 36;
 pub const IDR_PALACEKEY: u16 = 59;
 pub const IDR_SHRIKEAMULET: u16 = 118;
 pub const IDR_MINEGATEWAYKEY: u16 = 126;
@@ -288,6 +289,17 @@ pub enum ItemDriverOutcome {
         target_x: u16,
         target_y: u16,
         power: u8,
+    },
+    EdemonBallProjectile {
+        item_id: ItemId,
+        character_id: CharacterId,
+        start_x: u16,
+        start_y: u16,
+        target_x: u16,
+        target_y: u16,
+        strength: i32,
+        base_sprite: i32,
+        schedule_after_ticks: u64,
     },
     FlameThrowerPulse {
         item_id: ItemId,
@@ -686,6 +698,7 @@ pub fn execute_item_driver_with_context(
                 IDR_POTION => potion_driver(character, item, area_id, in_arena),
                 IDR_DOOR => door_driver(character, item, context),
                 IDR_BALLTRAP => balltrap_driver(character, item),
+                IDR_EDEMONBALL => edemonball_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -761,6 +774,54 @@ fn balltrap_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         target_x: clamp_legacy_coordinate(item_x + i32::from(dx)),
         target_y: clamp_legacy_coordinate(item_y + i32::from(dy)),
         power: drdata(item, 2),
+    }
+}
+
+fn edemonball_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if !context.timer_call || character.id.0 != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let item_x = i32::from(item.x);
+    let item_y = i32::from(item.y);
+    let strength = i32::from(drdata(item, 2));
+    let base_sprite = i32::from(drdata(item, 1));
+    let shot = match drdata(item, 3) {
+        0 => Some((item_x, item_y + 1, item_x, item_y + 10)),
+        1 => Some((item_x, item_y + 1, item_x + 1, item_y + 10)),
+        2 => Some((item_x, item_y + 1, item_x - 1, item_y + 10)),
+        3 => Some((item_x, item_y - 1, item_x, item_y - 10)),
+        4 => Some((item_x, item_y - 1, item_x + 1, item_y - 10)),
+        5 => Some((item_x, item_y - 1, item_x - 1, item_y - 10)),
+        6 => Some((item_x + 1, item_y, item_x + 10, item_y)),
+        7 => Some((item_x + 1, item_y, item_x + 10, item_y + 1)),
+        8 => Some((item_x + 1, item_y, item_x + 10, item_y - 1)),
+        9 => Some((item_x - 1, item_y, item_x - 10, item_y)),
+        10 => Some((item_x - 1, item_y, item_x - 10, item_y + 1)),
+        11 => Some((item_x - 1, item_y, item_x - 10, item_y - 1)),
+        _ => None,
+    };
+
+    let Some((start_x, start_y, target_x, target_y)) = shot else {
+        set_drdata(item, 3, 0);
+        return ItemDriverOutcome::Noop;
+    };
+    set_drdata(item, 3, drdata(item, 3).saturating_add(1));
+
+    ItemDriverOutcome::EdemonBallProjectile {
+        item_id: item.id,
+        character_id: character.id,
+        start_x: clamp_legacy_coordinate(start_x),
+        start_y: clamp_legacy_coordinate(start_y),
+        target_x: clamp_legacy_coordinate(target_x),
+        target_y: clamp_legacy_coordinate(target_y),
+        strength,
+        base_sprite,
+        schedule_after_ticks: TICKS_PER_SECOND * 16,
     }
 }
 

@@ -45,8 +45,8 @@ use crate::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell, pulse_damage,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
         BLESS_COST, BLESS_DURATION, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_EARTHMUD,
-        EF_EARTHRAIN, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL,
-        EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
+        EF_EARTHRAIN, EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,
+        EF_HEAL, EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
         FLASH_DURATION, FREEZE_DURATION, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE,
         IDR_INFRARED, IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, POISON_DURATION,
         WARCRY_DURATION,
@@ -477,6 +477,34 @@ impl World {
         effect.to_y = i32::from(target_y);
         effect.x = i32::from(start_x) * 1024 + 512;
         effect.y = i32::from(start_y) * 1024 + 512;
+        self.effects.insert(effect_id, effect);
+        effect_id
+    }
+
+    fn create_edemonball_effect(
+        &mut self,
+        start_x: u16,
+        start_y: u16,
+        target_x: u16,
+        target_y: u16,
+        strength: i32,
+        base_sprite: i32,
+    ) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(
+            EF_EDEMONBALL,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(TICKS_PER_SECOND * 4) as i32,
+        );
+        effect.strength = strength;
+        effect.from_x = i32::from(start_x);
+        effect.from_y = i32::from(start_y);
+        effect.to_x = i32::from(target_x);
+        effect.to_y = i32::from(target_y);
+        effect.x = i32::from(start_x) * 1024 + 512;
+        effect.y = i32::from(start_y) * 1024 + 512;
+        effect.base_sprite = base_sprite;
         self.effects.insert(effect_id, effect);
         effect_id
     }
@@ -2320,6 +2348,28 @@ impl World {
                 ..
             } => {
                 self.create_ball_trap_effect(start_x, start_y, target_x, target_y, power);
+                outcome
+            }
+            ItemDriverOutcome::EdemonBallProjectile {
+                item_id,
+                start_x,
+                start_y,
+                target_x,
+                target_y,
+                strength,
+                base_sprite,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.create_edemonball_effect(
+                    start_x,
+                    start_y,
+                    target_x,
+                    target_y,
+                    strength,
+                    base_sprite,
+                );
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                 outcome
             }
             ItemDriverOutcome::SpikeTrapTriggered {
@@ -5819,9 +5869,9 @@ mod tests {
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
-            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_ENCHANTITEM,
-            IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION,
-            IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_EDEMONBALL,
+            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_PALACEKEY, IDR_POTION,
+            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
@@ -7130,6 +7180,48 @@ mod tests {
         assert_eq!((effect.x, effect.y), (11 * 1024 + 512, 19 * 1024 + 512));
         assert_eq!(effect.caster, None);
         assert_eq!(effect.stop_tick, (TICKS_PER_SECOND * 5) as i32);
+    }
+
+    #[test]
+    fn world_edemonball_timer_creates_retained_projectile_effect() {
+        let mut world = World::default();
+        let mut cannon = item(7, ItemFlags::USED | ItemFlags::USE);
+        cannon.driver = IDR_EDEMONBALL;
+        cannon.x = 10;
+        cannon.y = 20;
+        cannon.driver_data = vec![1, 2, 42, 0];
+        world.add_item(cannon);
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+
+        world.advance();
+        let outcomes = world.process_due_timers(6);
+
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(
+            &outcomes[0],
+            &ItemDriverOutcome::EdemonBallProjectile {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                start_x: 10,
+                start_y: 21,
+                target_x: 10,
+                target_y: 30,
+                strength: 42,
+                base_sprite: 2,
+                schedule_after_ticks: TICKS_PER_SECOND * 16,
+            }
+        );
+        let cannon = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(cannon.driver_data[3], 1);
+        assert_eq!(world.effects.len(), 1);
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_EDEMONBALL);
+        assert_eq!(effect.strength, 42);
+        assert_eq!(effect.base_sprite, 2);
+        assert_eq!((effect.from_x, effect.from_y), (10, 21));
+        assert_eq!((effect.to_x, effect.to_y), (10, 30));
+        assert_eq!((effect.x, effect.y), (10 * 1024 + 512, 21 * 1024 + 512));
+        assert_eq!(effect.stop_tick, 1 + (TICKS_PER_SECOND * 4) as i32);
     }
 
     #[test]
