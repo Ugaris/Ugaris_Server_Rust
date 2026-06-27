@@ -5510,12 +5510,11 @@ impl World {
         }
 
         let duration = spell_duration_ticks(&caster, FREEZE_DURATION);
-        let mut installed = false;
         for (target_id, modifier) in targets {
-            installed |=
-                self.install_speed_spell(target_id, IDR_FREEZE, "Freeze", modifier, duration);
+            self.install_speed_spell(target_id, IDR_FREEZE, "Freeze", modifier, duration);
         }
-        installed
+        self.queue_sound_area(caster_x, caster_y, 31);
+        true
     }
 
     fn complete_warcry(&mut self, caster_id: CharacterId) -> bool {
@@ -11833,6 +11832,28 @@ mod tests {
         assert_eq!(effect.start_tick, 300);
         assert_eq!(effect.stop_tick, 396);
         assert_eq!(world.timers.used_timers(), 1);
+        let sounds = world.drain_pending_sound_specials();
+        assert!(sounds.iter().any(|sound| sound.special.special_type == 31));
+    }
+
+    #[test]
+    fn freeze_completion_succeeds_and_sounds_without_targets() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.action = action::FREEZE;
+        caster.duration = 1;
+        caster.values[0][CharacterValue::Freeze as usize] = 50;
+        world.spawn_character(caster, 10, 10);
+
+        let completed = world.tick_basic_actions();
+
+        assert_eq!(completed.len(), 1);
+        assert!(completed[0].ok);
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].character_id, CharacterId(1));
+        assert_eq!(sounds[0].special.special_type, 31);
     }
 
     #[test]
