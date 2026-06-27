@@ -266,6 +266,7 @@ enum NomadStackApplyResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VisibleMapCell {
+    effect_packet: Vec<u8>,
     tile_packet: Vec<u8>,
     character_id: Option<u16>,
     character_packet: Option<Vec<u8>>,
@@ -2748,6 +2749,7 @@ fn visible_map_cache(
             Some((
                 client_pos,
                 VisibleMapCell {
+                    effect_packet: map_effect_packet(tile, client_pos).to_vec(),
                     tile_packet: map_tile_packet(world, tile, client_pos).to_vec(),
                     character_id,
                     character_packet,
@@ -2785,6 +2787,15 @@ fn map_diff_payloads(
     let mut current = bytes::BytesMut::new();
 
     for (client_pos, next_cell) in &next_cache.cells {
+        match cache.cells.get(client_pos) {
+            Some(previous) if previous.effect_packet == next_cell.effect_packet => {}
+            _ => append_map_packet(
+                &mut payloads,
+                &mut current,
+                bytes::BytesMut::from(&next_cell.effect_packet[..]),
+            ),
+        }
+
         match cache.cells.get(client_pos) {
             Some(previous) if previous.tile_packet == next_cell.tile_packet => {}
             _ => append_map_packet(
@@ -3318,6 +3329,14 @@ fn initial_map_payloads(
             continue;
         };
 
+        if tile.effects.iter().any(|effect| *effect != 0) {
+            append_map_packet(
+                &mut payloads,
+                &mut current,
+                map_effect_packet(tile, client_pos),
+            );
+        }
+
         append_map_packet(
             &mut payloads,
             &mut current,
@@ -3353,6 +3372,11 @@ fn append_map_packet(
         payloads.push(std::mem::take(current));
     }
     current.extend_from_slice(&packet);
+}
+
+fn map_effect_packet(tile: &MapTile, client_pos: u16) -> bytes::BytesMut {
+    ugaris_protocol::packet::map_effects_basic(MapPosition::Absolute(client_pos), tile.effects)
+        .expect("fixed effect map field mask is valid")
 }
 
 fn map_tile_packet(world: &World, tile: &MapTile, client_pos: u16) -> bytes::BytesMut {
@@ -3625,9 +3649,10 @@ fn queued0(action: PlayerActionCode) -> QueuedAction {
 #[cfg(test)]
 mod tests {
     use ugaris_protocol::packet::{
-        MAP_CHARACTER_ACTION, MAP_CHARACTER_SPRITE, MAP_CHARACTER_STATUS, MAP_TILE_FLAGS,
-        MAP_TILE_FSPRITE, MAP_TILE_GSPRITE, MAP_TILE_ISPRITE, SV_CONCNT, SV_CONNAME, SV_CONTAINER,
-        SV_CONTYPE, SV_LOGINDONE, SV_MAP10, SV_MAP11, SV_MAPPOS, SV_MIRROR, SV_ORIGIN, SV_PROTOCOL,
+        MAP_CHARACTER_ACTION, MAP_CHARACTER_SPRITE, MAP_CHARACTER_STATUS, MAP_EFFECT_0,
+        MAP_EFFECT_1, MAP_EFFECT_2, MAP_EFFECT_3, MAP_TILE_FLAGS, MAP_TILE_FSPRITE,
+        MAP_TILE_GSPRITE, MAP_TILE_ISPRITE, SV_CONCNT, SV_CONNAME, SV_CONTAINER, SV_CONTYPE,
+        SV_LOGINDONE, SV_MAP01, SV_MAP10, SV_MAP11, SV_MAPPOS, SV_MIRROR, SV_ORIGIN, SV_PROTOCOL,
         SV_SETCITEM, SV_SETHP, SV_SETITEM, SV_SETVAL0, SV_SETVAL1, SV_SPECIAL, SV_TEXT, SV_TICKER,
     };
 
@@ -4753,6 +4778,101 @@ mod tests {
                 ]
         }));
         assert!(payload_contains_character_name(payload, 7, "Tester"));
+    }
+
+    #[test]
+    fn initial_map_payloads_send_visible_map_effect_slots() {
+        let login = login_block("Tester");
+        let mut character =
+            login_character(CharacterId(7), &login, 1, LOGIN_SPAWN_X, LOGIN_SPAWN_Y);
+        character.x = LOGIN_SPAWN_X as u16;
+        character.y = LOGIN_SPAWN_Y as u16;
+        let mut world = World::default();
+        world
+            .map
+            .tile_mut(LOGIN_SPAWN_X, LOGIN_SPAWN_Y)
+            .unwrap()
+            .effects = [42, 0, 77, 0];
+        assert!(world.spawn_character(character.clone(), LOGIN_SPAWN_X, LOGIN_SPAWN_Y));
+
+        let payloads = initial_map_payloads(&world, &character, 1);
+        let payload = &payloads[0];
+
+        assert!(payload.windows(19).any(|window| {
+            window
+                == [
+                    SV_MAP01
+                        | SV_MAPPOS
+                        | MAP_EFFECT_0
+                        | MAP_EFFECT_1
+                        | MAP_EFFECT_2
+                        | MAP_EFFECT_3,
+                    4,
+                    0,
+                    42,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    77,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ]
+        }));
+    }
+
+    #[test]
+    fn map_diff_payloads_clear_removed_map_effect_slots() {
+        let login = login_block("Tester");
+        let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        let mut world = World::default();
+        world.map.tile_mut(10, 10).unwrap().effects = [42, 0, 77, 0];
+        assert!(world.spawn_character(character.clone(), 10, 10));
+        let mut cache = visible_map_cache(&world, &character, 1);
+        world.map.tile_mut(10, 10).unwrap().effects = [0; 4];
+
+        let payloads = map_diff_payloads(&world, &character, 1, &mut cache);
+        let payload = payloads.concat();
+
+        assert!(payload.windows(19).any(|window| {
+            window
+                == [
+                    SV_MAP01
+                        | SV_MAPPOS
+                        | MAP_EFFECT_0
+                        | MAP_EFFECT_1
+                        | MAP_EFFECT_2
+                        | MAP_EFFECT_3,
+                    4,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ]
+        }));
     }
 
     #[test]

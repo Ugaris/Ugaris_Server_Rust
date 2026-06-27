@@ -470,6 +470,22 @@ pub fn map_tile_basic(
     )
 }
 
+pub fn map_effects_basic(
+    position: MapPosition,
+    effects: [u16; 4],
+) -> Result<BytesMut, PacketBuildError> {
+    let mut body = BytesMut::with_capacity(16);
+    for effect in effects {
+        body.put_u32_le(u32::from(effect));
+    }
+    map_delta(
+        MapLayer::Effects,
+        position,
+        MAP_EFFECT_0 | MAP_EFFECT_1 | MAP_EFFECT_2 | MAP_EFFECT_3,
+        &body,
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CharacterMapAction {
     pub action: u8,
@@ -1001,6 +1017,36 @@ mod tests {
                 0,
                 0,
                 17,
+                0,
+            ]
+        );
+    }
+
+    #[test]
+    fn map_effects_basic_matches_legacy_effect_layer_body() {
+        let packet = map_effects_basic(MapPosition::Absolute(0x1234), [1, 2, 0x1234, 0]).unwrap();
+
+        assert_eq!(
+            &packet[..],
+            &[
+                SV_MAP01 | SV_MAPPOS | MAP_EFFECT_0 | MAP_EFFECT_1 | MAP_EFFECT_2 | MAP_EFFECT_3,
+                0x34,
+                0x12,
+                1,
+                0,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+                0x34,
+                0x12,
+                0,
+                0,
+                0,
+                0,
+                0,
                 0,
             ]
         );
