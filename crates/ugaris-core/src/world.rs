@@ -14,7 +14,7 @@ use crate::{
         do_warcry, endurance_cost, reset_action_after_act, speed_ticks, ItemUseRequest,
         DUR_MISC_ACTION,
     },
-    drvlib::char_dist,
+    drvlib::{char_dist, map_dist},
     effect::Effect,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, MAX_MODIFIERS,
@@ -1848,6 +1848,7 @@ impl World {
             };
             if target.flags.contains(CharacterFlags::DEAD)
                 || !can_attack(&attacker, &target, &self.map)
+                || self.simple_baddy_enemy_past_stop_dist(&attacker, &target)
             {
                 continue;
             }
@@ -1865,6 +1866,13 @@ impl World {
             }
         }
         updated
+    }
+
+    fn simple_baddy_enemy_past_stop_dist(&self, character: &Character, target: &Character) -> bool {
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_ref() else {
+            return false;
+        };
+        data.stopdist != 0 && self.simple_baddy_target_home_dist(character, target) > data.stopdist
     }
 
     fn remove_simple_baddy_enemy(&mut self, character_id: CharacterId, target_id: CharacterId) {
@@ -1978,6 +1986,40 @@ impl World {
         character.group != target.group
             && can_attack(character, target, &self.map)
             && (!require_visible || char_see_char(character, target, &self.map, self.date.daylight))
+            && self.simple_baddy_enemy_within_start_limits(character, target)
+    }
+
+    fn simple_baddy_enemy_within_start_limits(
+        &self,
+        character: &Character,
+        target: &Character,
+    ) -> bool {
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_ref() else {
+            return false;
+        };
+        if data.startdist != 0
+            && self.simple_baddy_target_home_dist(character, target) > data.startdist
+        {
+            return false;
+        }
+        if data.chardist != 0 && char_dist(character, target) > data.chardist {
+            return false;
+        }
+        true
+    }
+
+    fn simple_baddy_target_home_dist(&self, character: &Character, target: &Character) -> i32 {
+        let home_x = if character.rest_x != 0 {
+            character.rest_x
+        } else {
+            character.x
+        };
+        let home_y = if character.rest_y != 0 {
+            character.rest_y
+        } else {
+            character.y
+        };
+        map_dist(home_x, home_y, target.x, target.y)
     }
 
     fn simple_baddy_seen_hit_enemy(
@@ -5977,6 +6019,36 @@ mod tests {
     }
 
     #[test]
+    fn simple_baddy_message_actions_rejects_enemy_outside_start_or_char_distance() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            aggressive: 1,
+            startdist: 6,
+            chardist: 4,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_CHAR, 2, 0, 0);
+        let mut target = character(2);
+        target.group = 8;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 14, 10);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert!(data.enemies.is_empty());
+    }
+
+    #[test]
     fn simple_baddy_message_actions_add_defensive_gothit_enemy_without_sight() {
         let mut world = World::default();
         world.tick = Tick(322);
@@ -6123,6 +6195,40 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 457);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_removes_visible_enemy_past_stop_distance() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            stopdist: 6,
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 14,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 14, 10);
+        world.map.tile_mut(14, 10).unwrap().light = 255;
+
+        assert!(!world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert!(data.enemies.is_empty());
     }
 
     #[test]
