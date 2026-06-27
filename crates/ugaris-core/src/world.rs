@@ -14,7 +14,7 @@ use crate::{
         advance_action_step, can_attack, do_attack, do_ball, do_bless, do_drop, do_earthmud,
         do_fireball, do_flash, do_freeze, do_heal, do_idle, do_magicshield, do_pulse, do_take,
         do_use, do_walk, do_warcry, endurance_cost, reset_action_after_act, speed_ticks,
-        speed_ticks_inverse, ItemUseRequest, DUR_MISC_ACTION,
+        speed_ticks_inverse, turn, ItemUseRequest, DUR_MISC_ACTION,
     },
     drvlib::{char_dist, map_dist, step_char_dist, tile_char_dist},
     effect::Effect,
@@ -3604,17 +3604,18 @@ impl World {
 
         let target = if data.dayx != 0 {
             if self.date.hour > 19 || self.date.hour < 6 {
-                Some((data.nightx, data.nighty))
+                Some((data.nightx, data.nighty, data.nightdir))
             } else {
-                Some((data.dayx, data.dayy))
+                Some((data.dayx, data.dayy, data.daydir))
             }
         } else if character.rest_x != 0 {
-            Some((i32::from(character.rest_x), i32::from(character.rest_y)))
+            Some((i32::from(character.rest_x), i32::from(character.rest_y), 0))
         } else {
             None
         };
 
-        let Some((target_x, target_y)) = target.filter(|(x, y)| *x > 0 && *y > 0) else {
+        let Some((target_x, target_y, target_dir)) = target.filter(|(x, y, _)| *x > 0 && *y > 0)
+        else {
             return self.regenerate_simple_baddy(character_id)
                 || self.spell_self_simple_baddy(character_id)
                 || self.idle_simple_baddy(character_id);
@@ -3629,6 +3630,11 @@ impl World {
             {
                 data.home_x = target_x;
                 data.home_y = target_y;
+            }
+            if target_dir != 0 {
+                if let Some(character) = self.characters.get_mut(&character_id) {
+                    let _ = turn(character, target_dir as u8);
+                }
             }
             return self.regenerate_simple_baddy(character_id)
                 || self.spell_self_simple_baddy(character_id)
@@ -9669,6 +9675,36 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!((data.home_x, data.home_y), (15, 10));
+    }
+
+    #[test]
+    fn simple_baddy_noncombat_action_turns_to_day_post_direction() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        world.date.hour = 12;
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.dir = Direction::Left as u8;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            dayx: 10,
+            dayy: 10,
+            daydir: Direction::Down as i32,
+            nightx: 15,
+            nighty: 10,
+            nightdir: Direction::Up as i32,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.dir, Direction::Down as u8);
+        assert_eq!(npc.action, action::IDLE);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!((data.home_x, data.home_y), (10, 10));
     }
 
     #[test]
