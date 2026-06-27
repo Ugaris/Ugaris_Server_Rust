@@ -55,6 +55,9 @@ use crate::{
     Tick,
 };
 
+const IID_REFLECT_FIREBALL: u32 = (0x01 << 24) | 0x00004E;
+const LEGACY_EQUIPMENT_SLOTS: std::ops::Range<usize> = 0..12;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorldActionCompletion {
     pub character_id: CharacterId,
@@ -394,6 +397,33 @@ impl World {
         effect.caster_serial = caster.id.0 as i32;
         effect.x = i32::from(caster.x) * 1024 + 512;
         effect.y = i32::from(caster.y) * 1024 + 512;
+        self.effects.insert(effect_id, effect);
+        effect_id
+    }
+
+    fn create_reflected_fireball_effect(
+        &mut self,
+        reflector: &Character,
+        caster: &Character,
+        strength: i32,
+    ) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(
+            EF_FIREBALL,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(TICKS_PER_SECOND) as i32,
+        );
+        effect.strength = strength;
+        effect.light = 200;
+        effect.from_x = i32::from(reflector.x);
+        effect.from_y = i32::from(reflector.y);
+        effect.to_x = i32::from(caster.x);
+        effect.to_y = i32::from(caster.y);
+        effect.caster = Some(reflector.id);
+        effect.caster_serial = reflector.id.0 as i32;
+        effect.x = i32::from(reflector.x) * 1024 + 512;
+        effect.y = i32::from(reflector.y) * 1024 + 512;
         self.effects.insert(effect_id, effect);
         effect_id
     }
@@ -1159,11 +1189,15 @@ impl World {
                 if !can_attack(&caster, target, &self.map) {
                     return;
                 }
-                let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+                let target = target.clone();
+                if self.reflect_fireball_from_target(&target, &caster, effect.strength) {
+                    return;
+                }
+                let has_tactics = character_value_present(&target, CharacterValue::Tactics) != 0;
                 let damage = fireball_damage(
                     effect.strength,
-                    character_value(target, CharacterValue::Immunity),
-                    character_value(target, CharacterValue::Tactics),
+                    character_value(&target, CharacterValue::Immunity),
+                    character_value(&target, CharacterValue::Tactics),
                     has_tactics,
                 );
                 targets.push((target_id, damage));
@@ -1176,6 +1210,40 @@ impl World {
                 target.flags.insert(CharacterFlags::UPDATE);
             }
         }
+    }
+
+    fn reflect_fireball_from_target(
+        &mut self,
+        target: &Character,
+        caster: &Character,
+        strength: i32,
+    ) -> bool {
+        let Some((slot, item_id, charges)) = LEGACY_EQUIPMENT_SLOTS.clone().find_map(|slot| {
+            let item_id = *target.inventory.get(slot)?.as_ref()?;
+            let item = self.items.get(&item_id)?;
+            (item.template_id == IID_REFLECT_FIREBALL)
+                .then(|| (slot, item_id, read_u32_le_prefix(&item.driver_data)))
+        }) else {
+            return false;
+        };
+
+        let used_charges = strength.max(0) as u32;
+        if charges <= used_charges {
+            if let Some(target) = self.characters.get_mut(&target.id) {
+                if target.inventory.get(slot) == Some(&Some(item_id)) {
+                    target.inventory[slot] = None;
+                }
+            }
+            self.items.remove(&item_id);
+        } else if let Some(item) = self.items.get_mut(&item_id) {
+            let remaining = charges - used_charges;
+            write_u32_le_prefix(&mut item.driver_data, remaining);
+            item.description = format!("{remaining} units left.");
+            item.flags.insert(ItemFlags::FORCEUPDATE);
+        }
+
+        self.create_reflected_fireball_effect(target, caster, strength - 1);
+        true
     }
 
     pub fn drain_look_map_requests(&mut self) -> Vec<LookMapRequest> {
@@ -5662,6 +5730,20 @@ fn apply_door_tile_flags(tile: &mut crate::map::MapTile, item_flags: ItemFlags) 
     }
 }
 
+fn read_u32_le_prefix(bytes: &[u8]) -> u32 {
+    let mut raw = [0; 4];
+    let len = bytes.len().min(raw.len());
+    raw[..len].copy_from_slice(&bytes[..len]);
+    u32::from_le_bytes(raw)
+}
+
+fn write_u32_le_prefix(bytes: &mut Vec<u8>, value: u32) {
+    if bytes.len() < 4 {
+        bytes.resize(4, 0);
+    }
+    bytes[..4].copy_from_slice(&value.to_le_bytes());
+}
+
 fn timer_callback_character() -> Character {
     Character {
         id: CharacterId(0),
@@ -8995,6 +9077,86 @@ mod tests {
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 14_100);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn fireball_reflect_item_reduces_charges_and_shoots_back() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 15;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.hp = 30 * POWERSCALE;
+        target.inventory[0] = Some(ItemId(70));
+        let mut reflector = item(70, ItemFlags::USED);
+        reflector.template_id = IID_REFLECT_FIREBALL;
+        reflector.carried_by = Some(CharacterId(2));
+        reflector.driver_data = 100_u32.to_le_bytes().to_vec();
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        world.items.insert(ItemId(70), reflector);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        world.create_fireball_effect(&caster);
+
+        world.tick_effects();
+        world.tick_effects();
+
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 30 * POWERSCALE);
+        assert_eq!(target.inventory[0], Some(ItemId(70)));
+        let reflector = world.items.get(&ItemId(70)).unwrap();
+        assert_eq!(read_u32_le_prefix(&reflector.driver_data), 47);
+        assert_eq!(reflector.description, "47 units left.");
+        let reflected = world.effects.values().next().unwrap();
+        assert_eq!(reflected.effect_type, EF_FIREBALL);
+        assert_eq!(reflected.strength, 52);
+        assert_eq!(reflected.caster, Some(CharacterId(2)));
+        assert_eq!((reflected.from_x, reflected.from_y), (12, 10));
+        assert_eq!((reflected.to_x, reflected.to_y), (10, 10));
+    }
+
+    #[test]
+    fn fireball_reflect_item_is_destroyed_when_charges_are_used_up() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 15;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.hp = 30 * POWERSCALE;
+        target.inventory[0] = Some(ItemId(71));
+        let mut reflector = item(71, ItemFlags::USED);
+        reflector.template_id = IID_REFLECT_FIREBALL;
+        reflector.carried_by = Some(CharacterId(2));
+        reflector.driver_data = 10_u32.to_le_bytes().to_vec();
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        world.items.insert(ItemId(71), reflector);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        world.create_fireball_effect(&caster);
+
+        world.tick_effects();
+        world.tick_effects();
+
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 30 * POWERSCALE);
+        assert_eq!(target.inventory[0], None);
+        assert!(!world.items.contains_key(&ItemId(71)));
+        let reflected = world.effects.values().next().unwrap();
+        assert_eq!(reflected.effect_type, EF_FIREBALL);
+        assert_eq!(reflected.strength, 52);
+        assert_eq!(reflected.caster, Some(CharacterId(2)));
     }
 
     #[test]
