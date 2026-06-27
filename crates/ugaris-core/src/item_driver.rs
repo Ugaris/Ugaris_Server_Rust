@@ -36,6 +36,7 @@ pub const IDR_NOMADSTACK: u16 = 96;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
 pub const IDR_BEYONDPOTION: u16 = 133;
+pub const IDR_DEMONCHIP: u16 = 136;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_ANTIENCHANTITEM: u16 = 160;
 pub const IDR_SPECIALANTIENCHANTITEM: u16 = 161;
@@ -501,6 +502,7 @@ pub fn execute_item_driver_with_context(
                 IDR_ORBSPAWN => orbspawn_driver(character, item, false),
                 IDR_ANTIORBSPAWN => orbspawn_driver(character, item, true),
                 IDR_NOMADSTACK => nomad_stack_driver(character, item),
+                IDR_DEMONCHIP => nomad_stack_driver(character, item),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
@@ -1868,6 +1870,33 @@ mod tests {
                 &mut stack,
                 ItemDriverRequest::Driver {
                     driver: IDR_NOMADSTACK,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                1,
+                false,
+            ),
+            ItemDriverOutcome::NomadStack {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn demon_chip_driver_dispatches_to_stack_outcome() {
+        let mut character = character(1);
+        let mut stack = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DEMONCHIP);
+        stack.carried_by = Some(character.id);
+        character.inventory[30] = Some(stack.id);
+
+        assert_eq!(
+            execute_item_driver(
+                &mut character,
+                &mut stack,
+                ItemDriverRequest::Driver {
+                    driver: IDR_DEMONCHIP,
                     item_id: ItemId(7),
                     character_id: CharacterId(1),
                     spec: 0,

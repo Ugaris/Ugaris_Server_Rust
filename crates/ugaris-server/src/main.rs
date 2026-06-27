@@ -240,6 +240,9 @@ const LEGACY_CONTAINER_SIZE: usize = ugaris_core::entity::INVENTORY_SIZE - 2;
 const IID_AREA19_WOLFSSKIN: u32 = 0x0100008A;
 const IID_AREA19_SALT: u32 = 0x0100008B;
 const IID_AREA19_WOLFSSKIN2: u32 = 0x0100008C;
+const IID_BRONZECHIP: u32 = 0x010000AC;
+const IID_SILVERCHIP: u32 = 0x010000AD;
+const IID_GOLDCHIP: u32 = 0x010000AE;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum NomadStackApplyResult {
@@ -1625,9 +1628,8 @@ fn apply_nomad_stack(
     item_id: ItemId,
     character_id: CharacterId,
 ) -> NomadStackApplyResult {
-    let Some((stack_kind, unit, template)) = world.items.get(&item_id).and_then(|item| {
-        nomad_stack_kind(item.template_id)
-            .map(|kind| (kind, nomad_stack_unit(kind), nomad_stack_template(kind)))
+    let Some((kind, unit, template)) = world.items.get(&item_id).and_then(|item| {
+        stack_kind(item.template_id).map(|kind| (kind, stack_unit(kind), stack_template(kind)))
     }) else {
         return NomadStackApplyResult::Bug("Bug #1442y");
     };
@@ -1643,15 +1645,7 @@ fn apply_nomad_stack(
     }
 
     let Some(cursor_item_id) = character.cursor_item else {
-        return split_nomad_stack(
-            world,
-            loader,
-            item_id,
-            character_id,
-            stack_kind,
-            unit,
-            template,
-        );
+        return split_nomad_stack(world, loader, item_id, character_id, kind, unit, template);
     };
     if cursor_item_id == item_id {
         return NomadStackApplyResult::MissingItem;
@@ -1659,14 +1653,13 @@ fn apply_nomad_stack(
     let Some(cursor_kind) = world
         .items
         .get(&cursor_item_id)
-        .and_then(|item| nomad_stack_kind(item.template_id))
+        .and_then(|item| stack_kind(item.template_id))
     else {
         return NomadStackApplyResult::CannotMix;
     };
-    if cursor_kind != stack_kind {
+    if cursor_kind != kind {
         return NomadStackApplyResult::CannotMix;
     }
-
     let cursor_value = world
         .items
         .get(&cursor_item_id)
@@ -1675,14 +1668,14 @@ fn apply_nomad_stack(
     let cursor_count = world
         .items
         .get(&cursor_item_id)
-        .map(nomad_stack_count)
+        .map(stack_count)
         .unwrap_or_default();
     let Some(item) = world.items.get_mut(&item_id) else {
         return NomadStackApplyResult::MissingItem;
     };
     item.value = item.value.saturating_add(cursor_value);
-    let count = nomad_stack_count(item).saturating_add(cursor_count);
-    set_nomad_stack_count(item, count, stack_kind);
+    let count = stack_count(item).saturating_add(cursor_count);
+    set_stack_count(item, count, kind);
     world.items.remove(&cursor_item_id);
 
     let Some(character) = world.characters.get_mut(&character_id) else {
@@ -1698,18 +1691,18 @@ fn split_nomad_stack(
     loader: &mut ZoneLoader,
     item_id: ItemId,
     character_id: CharacterId,
-    stack_kind: NomadStackKind,
+    stack_kind: StackKind,
     unit: &'static str,
     template: &'static str,
 ) -> NomadStackApplyResult {
     let Some(item) = world.items.get(&item_id) else {
         return NomadStackApplyResult::MissingItem;
     };
-    let old_count = nomad_stack_count(item);
+    let old_count = stack_count(item);
     if old_count < 2 {
         return NomadStackApplyResult::CannotSplitOne { unit };
     }
-    let right = nomad_split_amount(old_count / 2);
+    let right = stack_split_amount(old_count / 2);
     let left = old_count - right;
     let old_value = item.value;
 
@@ -1717,14 +1710,14 @@ fn split_nomad_stack(
         return NomadStackApplyResult::Bug("Bug #3199i");
     };
     split_item.value = old_value.saturating_mul(right) / old_count;
-    set_nomad_stack_count(&mut split_item, right, stack_kind);
+    set_stack_count(&mut split_item, right, stack_kind);
     let split_item_id = split_item.id;
 
     let Some(item) = world.items.get_mut(&item_id) else {
         return NomadStackApplyResult::MissingItem;
     };
     item.value = old_value.saturating_mul(left) / old_count;
-    set_nomad_stack_count(item, left, stack_kind);
+    set_stack_count(item, left, stack_kind);
 
     let Some(character) = world.characters.get_mut(&character_id) else {
         return NomadStackApplyResult::MissingPlayer;
@@ -1739,37 +1732,47 @@ fn split_nomad_stack(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NomadStackKind {
+enum StackKind {
     Salt,
     Skin1,
     Skin2,
+    BronzeChip,
+    SilverChip,
+    GoldChip,
 }
 
-fn nomad_stack_kind(template_id: u32) -> Option<NomadStackKind> {
+fn stack_kind(template_id: u32) -> Option<StackKind> {
     match template_id {
-        IID_AREA19_SALT => Some(NomadStackKind::Salt),
-        IID_AREA19_WOLFSSKIN => Some(NomadStackKind::Skin1),
-        IID_AREA19_WOLFSSKIN2 => Some(NomadStackKind::Skin2),
+        IID_AREA19_SALT => Some(StackKind::Salt),
+        IID_AREA19_WOLFSSKIN => Some(StackKind::Skin1),
+        IID_AREA19_WOLFSSKIN2 => Some(StackKind::Skin2),
+        IID_BRONZECHIP => Some(StackKind::BronzeChip),
+        IID_SILVERCHIP => Some(StackKind::SilverChip),
+        IID_GOLDCHIP => Some(StackKind::GoldChip),
         _ => None,
     }
 }
 
-fn nomad_stack_template(kind: NomadStackKind) -> &'static str {
+fn stack_template(kind: StackKind) -> &'static str {
     match kind {
-        NomadStackKind::Salt => "salt",
-        NomadStackKind::Skin1 => "skin1",
-        NomadStackKind::Skin2 => "skin2",
+        StackKind::Salt => "salt",
+        StackKind::Skin1 => "skin1",
+        StackKind::Skin2 => "skin2",
+        StackKind::BronzeChip => "bronzechip",
+        StackKind::SilverChip => "silverchip",
+        StackKind::GoldChip => "goldchip",
     }
 }
 
-fn nomad_stack_unit(kind: NomadStackKind) -> &'static str {
+fn stack_unit(kind: StackKind) -> &'static str {
     match kind {
-        NomadStackKind::Salt => "ounce",
-        NomadStackKind::Skin1 | NomadStackKind::Skin2 => "skin",
+        StackKind::Salt => "ounce",
+        StackKind::Skin1 | StackKind::Skin2 => "skin",
+        StackKind::BronzeChip | StackKind::SilverChip | StackKind::GoldChip => "chip",
     }
 }
 
-fn nomad_split_amount(mut amount: u32) -> u32 {
+fn stack_split_amount(mut amount: u32) -> u32 {
     for step in [10000, 5000, 2500, 1000, 500, 250, 100, 50, 25, 10] {
         if amount >= step {
             amount = step;
@@ -1779,7 +1782,7 @@ fn nomad_split_amount(mut amount: u32) -> u32 {
     amount
 }
 
-fn nomad_stack_count(item: &Item) -> u32 {
+fn stack_count(item: &Item) -> u32 {
     let mut bytes = [0_u8; 4];
     for (idx, byte) in item.driver_data.iter().take(4).enumerate() {
         bytes[idx] = *byte;
@@ -1787,13 +1790,13 @@ fn nomad_stack_count(item: &Item) -> u32 {
     u32::from_le_bytes(bytes)
 }
 
-fn set_nomad_stack_count(item: &mut Item, count: u32, kind: NomadStackKind) {
+fn set_stack_count(item: &mut Item, count: u32, kind: StackKind) {
     if item.driver_data.len() < 4 {
         item.driver_data.resize(4, 0);
     }
     item.driver_data[..4].copy_from_slice(&count.to_le_bytes());
     match kind {
-        NomadStackKind::Salt => {
+        StackKind::Salt => {
             item.sprite = if count >= 10000 {
                 13212
             } else if count >= 1000 {
@@ -1807,15 +1810,39 @@ fn set_nomad_stack_count(item: &mut Item, count: u32, kind: NomadStackKind) {
             };
             item.description = format!("{count} ounces of {}.", item.name);
         }
-        NomadStackKind::Skin1 => {
+        StackKind::Skin1 => {
             item.sprite = skin_stack_sprite(count, 59655);
             item.description = format!("{count} {}s.", item.name);
         }
-        NomadStackKind::Skin2 => {
+        StackKind::Skin2 => {
             item.sprite = skin_stack_sprite(count, 59660);
             item.description = format!("{count} {}s.", item.name);
         }
+        StackKind::BronzeChip => set_chip_stack_data(item, count, 0),
+        StackKind::SilverChip => set_chip_stack_data(item, count, 12),
+        StackKind::GoldChip => set_chip_stack_data(item, count, 6),
     }
+}
+
+fn set_chip_stack_data(item: &mut Item, count: u32, sprite_offset: i32) {
+    item.sprite = if count > 5 {
+        53012 + sprite_offset
+    } else if count == 5 {
+        53011 + sprite_offset
+    } else if count == 4 {
+        53010 + sprite_offset
+    } else if count == 3 {
+        53009 + sprite_offset
+    } else if count == 2 {
+        53008 + sprite_offset
+    } else {
+        53007 + sprite_offset
+    };
+    item.description = if count > 1 {
+        format!("{count} {}s.", item.name)
+    } else {
+        format!("{count} {}.", item.name)
+    };
 }
 
 fn skin_stack_sprite(count: u32, base: i32) -> i32 {
@@ -3851,7 +3878,7 @@ mod tests {
         stack.driver = ugaris_core::item_driver::IDR_NOMADSTACK;
         stack.value = 1_000;
         stack.carried_by = Some(character_id);
-        set_nomad_stack_count(&mut stack, 123, NomadStackKind::Salt);
+        set_stack_count(&mut stack, 123, StackKind::Salt);
         world.add_item(stack);
         let mut loader = ZoneLoader::new();
         loader
@@ -3872,8 +3899,8 @@ mod tests {
             .expect("split stack should be on cursor");
         let carried = world.items.get(&ItemId(20)).unwrap();
         let cursor = world.items.get(&cursor_id).unwrap();
-        assert_eq!(nomad_stack_count(carried), 73);
-        assert_eq!(nomad_stack_count(cursor), 50);
+        assert_eq!(stack_count(carried), 73);
+        assert_eq!(stack_count(cursor), 50);
         assert_eq!(carried.sprite, 13209);
         assert_eq!(cursor.description, "50 ounces of salt.");
     }
@@ -3892,14 +3919,14 @@ mod tests {
         carried.driver = ugaris_core::item_driver::IDR_NOMADSTACK;
         carried.value = 30;
         carried.carried_by = Some(character_id);
-        set_nomad_stack_count(&mut carried, 3, NomadStackKind::Skin1);
+        set_stack_count(&mut carried, 3, StackKind::Skin1);
         world.add_item(carried);
         let mut cursor = test_item(ItemId(21), 59655, ItemFlags::USED | ItemFlags::USE);
         cursor.name = "skin".to_string();
         cursor.template_id = IID_AREA19_WOLFSSKIN;
         cursor.value = 20;
         cursor.carried_by = Some(character_id);
-        set_nomad_stack_count(&mut cursor, 2, NomadStackKind::Skin1);
+        set_stack_count(&mut cursor, 2, StackKind::Skin1);
         world.add_item(cursor);
         let mut loader = ZoneLoader::new();
 
@@ -3916,9 +3943,53 @@ mod tests {
         );
         assert!(!world.items.contains_key(&ItemId(21)));
         let stack = world.items.get(&ItemId(20)).unwrap();
-        assert_eq!(nomad_stack_count(stack), 5);
+        assert_eq!(stack_count(stack), 5);
         assert_eq!(stack.value, 50);
         assert_eq!(stack.sprite, 59659);
+    }
+
+    #[test]
+    fn demon_chip_stack_split_uses_legacy_sprite_offsets() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(20));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut stack = test_item(ItemId(20), 53019, ItemFlags::USED | ItemFlags::USE);
+        stack.name = "Silver Chip".to_string();
+        stack.template_id = IID_SILVERCHIP;
+        stack.driver = ugaris_core::item_driver::IDR_DEMONCHIP;
+        stack.value = 123_000;
+        stack.carried_by = Some(character_id);
+        set_stack_count(&mut stack, 123, StackKind::SilverChip);
+        world.add_item(stack);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"silverchip: name="Silver Chip" ID=010000AD flag=IF_TAKE driver=136 ;"#,
+            )
+            .unwrap();
+
+        assert_eq!(
+            apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
+            NomadStackApplyResult::Split {
+                left: 73,
+                right: 50,
+                unit: "chip",
+            }
+        );
+        let cursor_id = world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .cursor_item
+            .unwrap();
+        let carried = world.items.get(&ItemId(20)).unwrap();
+        let cursor = world.items.get(&cursor_id).unwrap();
+        assert_eq!(stack_count(carried), 73);
+        assert_eq!(stack_count(cursor), 50);
+        assert_eq!(carried.sprite, 53024);
+        assert_eq!(cursor.description, "50 Silver Chips.");
     }
 
     #[test]

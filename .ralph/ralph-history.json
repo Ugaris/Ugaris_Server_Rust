@@ -574,16 +574,44 @@
         "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 22,
+      "startedAt": "2026-06-27T00:52:39.326Z",
+      "endedAt": "2026-06-27T00:59:39.807Z",
+      "durationMs": 420309,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 266 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test result: ok. 267 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+      ]
     }
   ],
-  "totalDurationMs": 10452047,
+  "totalDurationMs": 10872356,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 217 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 21,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 22,
       "test result: ok. 235 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
-      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
       "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 5,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 14,
@@ -631,13 +659,13 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 251 filtered out; finished in 0.00s": 2,
       "test result: ok. 252 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 252 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
-      "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
+      "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 10,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 3 previous errors": 1,
       "test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 3,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 252 filtered out; finished in 0.00s": 1,
       "test result: ok. 255 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 255 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 3,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 4,
       "test result: ok. 257 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 257 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -657,13 +685,17 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s": 1,
       "test result: ok. 261 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 3,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 3,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 4,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 261 filtered out; finished in 0.00s": 1,
       "test result: ok. 265 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 265 filtered out; finished in 0.00s": 1,
       "test result: ok. 266 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "error: expected `;`, found `(`": 1,
-      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s": 1
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 266 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.00s": 1,
+      "test result: ok. 267 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
