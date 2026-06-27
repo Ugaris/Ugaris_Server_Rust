@@ -344,9 +344,36 @@
         "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 12,
+      "startedAt": "2026-06-27T11:26:30.097Z",
+      "endedAt": "2026-06-27T11:38:17.571Z",
+      "durationMs": 707301,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The first targeted run exposed that the test setup was failing visibility due to normal light/perception rules, not the death-driver logic. I adjusted the fixture to make the dying NPC a god-mode view",
+        "The targeted tests still fail because the new method is taking the early-return path. I’m narrowing that down inside the fixture before changing the implementation logic.",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/world.rs:",
+        "test world::tests::simple_baddy_death_driver_respects_earth_demon_gates ... FAILED",
+        "test world::tests::simple_baddy_death_driver_creates_earth_demon_effects_at_killer ... FAILED",
+        "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 343 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "assertion failed: char_see_char(&world.characters[&CharacterId(1)],",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 344 filtered out; finished in 0.00s",
+        "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 343 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 5237270,
+  "totalDurationMs": 5944571,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -363,11 +390,11 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
       "test result: ok. 323 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 13 previous errors": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 6,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 7,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 3,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -397,7 +424,15 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 339 filtered out; finished in 0.00s": 1,
       "error: unexpected argument 'tick_basic_actions_runs_tile_specials' found": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 339 filtered out; finished in 0.00s": 1,
-      "test result: ok. 343 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 343 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "The first targeted run exposed that the test setup was failing visibility due to normal light/percep": 1,
+      "The targeted tests still fail because the new method is taking the early-return path. I’m narrowing ": 1,
+      "test world::tests::simple_baddy_death_driver_respects_earth_demon_gates ... FAILED": 1,
+      "test world::tests::simple_baddy_death_driver_creates_earth_demon_effects_at_killer ... FAILED": 1,
+      "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 343 filtered out; finished in 0.00s": 1,
+      "assertion failed: char_see_char(&world.characters[&CharacterId(1)],": 1,
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 344 filtered out; finished in 0.00s": 1,
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 343 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

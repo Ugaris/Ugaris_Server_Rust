@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     area_sound::AreaSoundSpecial,
-    character_driver::{process_simple_baddy_messages, SimpleBaddyMessageOutcome},
+    character_driver::{process_simple_baddy_messages, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY},
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
@@ -37,6 +37,7 @@ use crate::{
     player::{PlayerActionCode, PlayerRuntime},
     scheduler::{TaskScheduler, TimerPayload, TimerQueue},
     sector::{DirtySectors, SoundSectors},
+    see::char_see_char,
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell, pulse_damage,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
@@ -1632,6 +1633,41 @@ impl World {
                 }
             })
             .collect()
+    }
+
+    pub fn apply_simple_baddy_death_driver(
+        &mut self,
+        dead_id: CharacterId,
+        killer_id: CharacterId,
+    ) -> Vec<u32> {
+        let Some(dead) = self.characters.get(&dead_id).cloned() else {
+            return Vec::new();
+        };
+        let Some(killer) = self.characters.get(&killer_id).cloned() else {
+            return Vec::new();
+        };
+        if dead.driver != CDR_SIMPLEBADDY
+            || !dead.flags.contains(CharacterFlags::EDEMON)
+            || !char_see_char(&dead, &killer, &self.map, self.date.daylight)
+        {
+            return Vec::new();
+        }
+
+        let strength = character_value_present(&dead, CharacterValue::Demon);
+        let mut effects = Vec::new();
+        if strength > 5 {
+            effects.push(self.create_earthmud_effect(
+                i32::from(killer.x),
+                i32::from(killer.y),
+                strength,
+            ));
+        }
+        effects.push(self.create_earthrain_effect(
+            i32::from(killer.x),
+            i32::from(killer.y),
+            strength,
+        ));
+        effects
     }
 
     fn simple_baddy_can_poison_hit(
@@ -5559,6 +5595,62 @@ mod tests {
 
         assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
         assert!(world.characters[&CharacterId(2)].inventory[29].is_none());
+    }
+
+    #[test]
+    fn simple_baddy_death_driver_creates_earth_demon_effects_at_killer() {
+        let mut world = World::default();
+        let mut dead = character(1);
+        dead.driver = CDR_SIMPLEBADDY;
+        dead.flags.insert(CharacterFlags::EDEMON);
+        dead.flags.insert(CharacterFlags::GOD);
+        dead.values[1][CharacterValue::Demon as usize] = 6;
+        let killer = character(2);
+        assert!(world.spawn_character(dead, 10, 10));
+        assert!(world.spawn_character(killer, 12, 10));
+        world.map.tile_mut(12, 10).unwrap().light = 255;
+
+        let effect_ids = world.apply_simple_baddy_death_driver(CharacterId(1), CharacterId(2));
+
+        assert_eq!(effect_ids.len(), 2);
+        let mud = world.effects.get(&effect_ids[0]).unwrap();
+        assert_eq!(mud.effect_type, EF_EARTHMUD);
+        assert_eq!(mud.strength, 6);
+        let rain = world.effects.get(&effect_ids[1]).unwrap();
+        assert_eq!(rain.effect_type, EF_EARTHRAIN);
+        assert_eq!(rain.strength, 6);
+        let killer_tile = world.map.tile(12, 10).unwrap();
+        assert!(killer_tile.effects.contains(&(effect_ids[0] as u16)));
+        assert!(killer_tile.effects.contains(&(effect_ids[1] as u16)));
+    }
+
+    #[test]
+    fn simple_baddy_death_driver_respects_earth_demon_gates() {
+        let mut world = World::default();
+        let mut dead = character(1);
+        dead.driver = CDR_SIMPLEBADDY;
+        dead.flags.insert(CharacterFlags::EDEMON);
+        dead.flags.insert(CharacterFlags::GOD);
+        dead.values[1][CharacterValue::Demon as usize] = 5;
+        let killer = character(2);
+        assert!(world.spawn_character(dead, 10, 10));
+        assert!(world.spawn_character(killer, 12, 10));
+        world.map.tile_mut(12, 10).unwrap().light = 255;
+
+        let effect_ids = world.apply_simple_baddy_death_driver(CharacterId(1), CharacterId(2));
+
+        assert_eq!(effect_ids.len(), 1);
+        assert_eq!(world.effects[&effect_ids[0]].effect_type, EF_EARTHRAIN);
+
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::SIGHTBLOCK);
+        let effect_ids = world.apply_simple_baddy_death_driver(CharacterId(1), CharacterId(2));
+
+        assert!(effect_ids.is_empty());
     }
 
     #[test]
