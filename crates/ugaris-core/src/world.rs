@@ -51,7 +51,8 @@ use crate::{
         EF_FREEZE, EF_HEAL, EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE,
         EF_WARCRY, FIREBALL_COST, FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION,
         IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3,
-        IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
+        IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, SPELL_SLOT_END, SPELL_SLOT_START,
+        WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -3615,6 +3616,7 @@ impl World {
                     return true;
                 }
             }
+            self.drink_special_poison_simple_baddy(character_id);
             if self.regenerate_simple_baddy(character_id) {
                 return true;
             }
@@ -3673,6 +3675,7 @@ impl World {
 
         let Some((target_x, target_y, target_dir)) = target.filter(|(x, y, _)| *x > 0 && *y > 0)
         else {
+            self.drink_special_poison_simple_baddy(character_id);
             return self.regenerate_simple_baddy(character_id)
                 || self.spell_self_simple_baddy(character_id)
                 || self.idle_simple_baddy(character_id);
@@ -3742,6 +3745,7 @@ impl World {
         }
 
         let _ = self.set_simple_baddy_home(character_id, character.x, character.y);
+        self.drink_special_poison_simple_baddy(character_id);
         self.regenerate_simple_baddy(character_id)
             || self.spell_self_simple_baddy(character_id)
             || self.idle_simple_baddy(character_id)
@@ -3828,6 +3832,29 @@ impl World {
         }
 
         false
+    }
+
+    fn drink_special_poison_simple_baddy(&mut self, character_id: CharacterId) {
+        let Some(character) = self.characters.get(&character_id) else {
+            return;
+        };
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_ref() else {
+            return;
+        };
+        if data.drinkspecial == 0 {
+            return;
+        }
+        let has_poison0 = character.inventory[SPELL_SLOT_START..SPELL_SLOT_END]
+            .iter()
+            .flatten()
+            .any(|item_id| {
+                self.items
+                    .get(item_id)
+                    .is_some_and(|item| item.driver == IDR_POISON0)
+            });
+        if has_poison0 {
+            self.remove_all_poison(character_id);
+        }
     }
 
     fn clear_simple_baddy_scavenger_direction(&mut self, character_id: CharacterId) {
@@ -7995,7 +8022,7 @@ mod tests {
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
-        spell::{IDR_INFRARED, IDR_POISON2},
+        spell::{IDR_INFRARED, IDR_POISON0, IDR_POISON1, IDR_POISON2},
         tick::TICKS_PER_SECOND,
     };
 
@@ -10195,6 +10222,66 @@ mod tests {
         assert_eq!(npc.action, action::IDLE);
         assert_eq!(npc.duration, TICKS_PER_SECOND as i32);
         assert_eq!(npc.mana, 10 * POWERSCALE);
+    }
+
+    #[test]
+    fn simple_baddy_drinkspecial_removes_poison_when_poison0_is_active() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.hp = 10 * POWERSCALE;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 10;
+        npc.values[0][CharacterValue::Mana as usize] = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            drinkspecial: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut poison0 = item(10, ItemFlags::empty());
+        poison0.driver = IDR_POISON0;
+        let mut poison1 = item(11, ItemFlags::empty());
+        poison1.driver = IDR_POISON1;
+        npc.inventory[SPELL_SLOT_START] = Some(poison0.id);
+        npc.inventory[SPELL_SLOT_START + 1] = Some(poison1.id);
+        world.items.insert(poison0.id, poison0);
+        world.items.insert(poison1.id, poison1);
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert!(npc.inventory[SPELL_SLOT_START].is_none());
+        assert!(npc.inventory[SPELL_SLOT_START + 1].is_none());
+        assert!(!world.items.contains_key(&ItemId(10)));
+        assert!(!world.items.contains_key(&ItemId(11)));
+        assert!(npc
+            .flags
+            .contains(CharacterFlags::ITEMS | CharacterFlags::UPDATE));
+        assert_eq!(npc.action, action::IDLE);
+    }
+
+    #[test]
+    fn simple_baddy_drinkspecial_requires_poison0_trigger() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            drinkspecial: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut poison1 = item(11, ItemFlags::empty());
+        poison1.driver = IDR_POISON1;
+        npc.inventory[SPELL_SLOT_START] = Some(poison1.id);
+        world.items.insert(poison1.id, poison1);
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.inventory[SPELL_SLOT_START], Some(ItemId(11)));
+        assert!(world.items.contains_key(&ItemId(11)));
     }
 
     #[test]
