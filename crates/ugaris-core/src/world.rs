@@ -5246,8 +5246,8 @@ impl World {
             caster_id,
             self.tick.0 as u32,
             self.tick.0.saturating_add(7) as u32,
-            50,
             20,
+            50,
         );
 
         let caster_x = usize::from(caster.x);
@@ -5290,6 +5290,14 @@ impl World {
         }
 
         for (target_id, damage) in targets {
+            self.create_show_effect(
+                EF_BURN,
+                target_id,
+                self.tick.0 as u32,
+                self.tick.0.saturating_add(8) as u32,
+                20,
+                0,
+            );
             self.apply_legacy_hurt(target_id, Some(caster_id), damage, 10, 30, 85);
         }
 
@@ -11551,12 +11559,24 @@ mod tests {
             world.characters[&CharacterId(1)].driver_messages[0].message_type,
             NT_DIDHIT
         );
-        let effect = world.effects.values().next().unwrap();
-        assert_eq!(effect.effect_type, EF_FIRERING);
-        assert_eq!(effect.target_character, Some(CharacterId(1)));
-        assert_eq!(effect.stop_tick, 257);
-        assert_eq!(effect.light, 50);
-        assert_eq!(effect.strength, 20);
+        let firering_effect = world
+            .effects
+            .values()
+            .find(|effect| effect.effect_type == EF_FIRERING)
+            .unwrap();
+        assert_eq!(firering_effect.target_character, Some(CharacterId(1)));
+        assert_eq!(firering_effect.stop_tick, 257);
+        assert_eq!(firering_effect.light, 20);
+        assert_eq!(firering_effect.strength, 50);
+        let burn_effect = world
+            .effects
+            .values()
+            .find(|effect| effect.effect_type == EF_BURN)
+            .unwrap();
+        assert_eq!(burn_effect.target_character, Some(CharacterId(2)));
+        assert_eq!(burn_effect.stop_tick, 258);
+        assert_eq!(burn_effect.light, 20);
+        assert_eq!(burn_effect.strength, 0);
         assert_eq!(world.timers.used_timers(), 1);
     }
 
