@@ -2356,6 +2356,9 @@ impl World {
             if !can_attack(&attacker, &target, &self.map) {
                 continue;
             }
+            if self.setup_simple_baddy_self_preservation(character_id) {
+                return true;
+            }
             if self.setup_simple_baddy_fireball_attack(character_id, &target) {
                 return true;
             }
@@ -2448,6 +2451,65 @@ impl World {
                 return true;
             }
             self.remove_simple_baddy_enemy(character_id, enemy.target_id);
+        }
+
+        false
+    }
+
+    fn setup_simple_baddy_self_preservation(&mut self, character_id: CharacterId) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let max_hp = character_value(&character, CharacterValue::Hp) * POWERSCALE;
+        let max_mana = character_value(&character, CharacterValue::Mana) * POWERSCALE;
+
+        if character_value(&character, CharacterValue::Heal) > 1
+            && character.mana >= POWERSCALE * 2
+            && character.hp < max_hp / 2
+        {
+            let target = character.clone();
+            if self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
+                do_heal(character, &target, None)
+            }) {
+                return true;
+            }
+        }
+
+        if character_value(&character, CharacterValue::MagicShield) > 1
+            && character.mana >= POWERSCALE * 2
+            && character.lifeshield
+                < character_value(&character, CharacterValue::MagicShield) * POWERSCALE / 2
+        {
+            if self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
+                do_magicshield(character)
+            }) {
+                return true;
+            }
+        }
+
+        if character_value(&character, CharacterValue::Bless) > 1
+            && character.mana >= BLESS_COST
+            && may_add_spell(&character, &self.items, IDR_BLESS, self.tick.0 as u32).is_some()
+        {
+            let target = character.clone();
+            if self.setup_simple_baddy_spell_action(character_id, |character, items, tick| {
+                do_bless(character, &target, items, tick, None)
+            }) {
+                return true;
+            }
+        }
+
+        if character.mana < max_mana || character.hp < max_hp {
+            let Some(character) = self.characters.get_mut(&character_id) else {
+                return false;
+            };
+            if do_idle(character, (TICKS_PER_SECOND / 2) as i32).is_err() {
+                return false;
+            }
+            if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
+                data.lastfight = self.tick.0 as i32;
+            }
+            return true;
         }
 
         false
@@ -8058,6 +8120,153 @@ mod tests {
                 last_y: 10,
             }]
         );
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_self_heals_before_offense_when_badly_hurt() {
+        let mut world = World::default();
+        world.tick = Tick(450);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.hp = 40 * POWERSCALE;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 100;
+        npc.values[0][CharacterValue::Mana as usize] = 10;
+        npc.values[0][CharacterValue::Heal as usize] = 20;
+        npc.values[0][CharacterValue::Fireball as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 15,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 15, 10);
+        world.map.tile_mut(15, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::HEAL_SELF);
+        assert!(npc.mana < 10 * POWERSCALE);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 450);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_restores_magicshield_before_melee() {
+        let mut world = World::default();
+        world.tick = Tick(451);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = 10 * POWERSCALE;
+        npc.lifeshield = 0;
+        npc.values[0][CharacterValue::MagicShield as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::MAGICSHIELD);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 451);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_self_blesses_when_unblessed() {
+        let mut world = World::default();
+        world.tick = Tick(452);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = BLESS_COST;
+        npc.values[0][CharacterValue::Bless as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::BLESS_SELF);
+        assert_eq!(npc.mana, 0);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 452);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_idles_to_regenerate_during_fight() {
+        let mut world = World::default();
+        world.tick = Tick(453);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.hp = 90 * POWERSCALE;
+        npc.mana = 100 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 100;
+        npc.values[0][CharacterValue::Mana as usize] = 100;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::IDLE);
+        assert_eq!(npc.duration, (TICKS_PER_SECOND / 2) as i32);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 453);
     }
 
     #[test]
