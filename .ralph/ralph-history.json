@@ -1340,9 +1340,28 @@
         "error: test failed, to rerun pass `-p ugaris-core --lib`",
         "test result: ok. 402 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
       ]
+    },
+    {
+      "iteration": 48,
+      "startedAt": "2026-06-27T15:57:25.651Z",
+      "endedAt": "2026-06-27T16:00:59.617Z",
+      "durationMs": 213767,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 402 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 401 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 21388264,
+  "totalDurationMs": 21602031,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -1513,7 +1532,9 @@
       "test world::tests::completed_attack_queues_legacy_unarmed_miss_sound ... FAILED": 1,
       "test world::tests::world_completes_attack_action_with_damage ... FAILED": 1,
       "test result: FAILED. 399 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 402 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 402 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 402 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 401 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

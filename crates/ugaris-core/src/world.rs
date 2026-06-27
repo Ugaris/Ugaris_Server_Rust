@@ -2033,6 +2033,23 @@ impl World {
         d100_roll: i32,
         d6_roll: i32,
     ) -> bool {
+        self.complete_attack_with_rolls_and_clash_roll(
+            attacker_id,
+            defender_id,
+            d100_roll,
+            d6_roll,
+            d100_roll.rem_euclid(2),
+        )
+    }
+
+    pub fn complete_attack_with_rolls_and_clash_roll(
+        &mut self,
+        attacker_id: CharacterId,
+        defender_id: CharacterId,
+        d100_roll: i32,
+        d6_roll: i32,
+        clash_roll: i32,
+    ) -> bool {
         if attacker_id == defender_id {
             return false;
         }
@@ -2062,7 +2079,7 @@ impl World {
             7
         } else if !attacker_rhand || !defender_rhand {
             8
-        } else if d100_roll.rem_euclid(2) == 0 {
+        } else if clash_roll.rem_euclid(2) == 0 {
             34
         } else {
             35
@@ -5061,11 +5078,15 @@ impl World {
                     .is_some_and(|defender_id| {
                         let d100_roll = ((self.tick.0 + u64::from(character_id.0)) % 100) as i32;
                         let d6_roll = ((self.tick.0 + u64::from(defender_id.0)) % 6) as i32 + 1;
-                        self.complete_attack_with_rolls(
+                        let clash_roll =
+                            ((self.tick.0 + u64::from(character_id.0) + u64::from(defender_id.0))
+                                % 2) as i32;
+                        self.complete_attack_with_rolls_and_clash_roll(
                             character_id,
                             defender_id,
                             d100_roll,
                             d6_roll,
+                            clash_roll,
                         )
                     }),
                 action::GIVE => self
@@ -10193,6 +10214,55 @@ mod tests {
         assert_eq!(
             world.drain_pending_sound_specials()[0].special.special_type,
             35
+        );
+    }
+
+    #[test]
+    fn completed_attack_weapon_clash_sound_uses_independent_legacy_roll() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker.flags.insert(CharacterFlags::PLAYER);
+        attacker.x = 10;
+        attacker.y = 10;
+        attacker.dir = Direction::Right as u8;
+        attacker.act1 = 2;
+        attacker.values[0][CharacterValue::Attack as usize] = 10;
+        let mut defender = character(2);
+        defender.x = 11;
+        defender.y = 10;
+        defender.values[0][CharacterValue::Parry as usize] = 10;
+        let mut attacker_weapon = item(10, ItemFlags::USED | ItemFlags::WNRHAND);
+        attacker_weapon.carried_by = Some(CharacterId(1));
+        let mut defender_weapon = item(11, ItemFlags::USED | ItemFlags::WNRHAND);
+        defender_weapon.carried_by = Some(CharacterId(2));
+        attacker.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(10));
+        defender.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(11));
+        world.spawn_character(attacker, 10, 10);
+        world.spawn_character(defender, 11, 10);
+        world.add_item(attacker_weapon);
+        world.add_item(defender_weapon);
+
+        assert!(world.complete_attack_with_rolls_and_clash_roll(
+            CharacterId(1),
+            CharacterId(2),
+            100,
+            1,
+            1,
+        ));
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            35
+        );
+        assert!(world.complete_attack_with_rolls_and_clash_roll(
+            CharacterId(1),
+            CharacterId(2),
+            99,
+            1,
+            0,
+        ));
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            34
         );
     }
 
