@@ -145,6 +145,12 @@ pub enum SimpleBaddyMessageOutcome {
     BlessFriend {
         target_id: crate::ids::CharacterId,
     },
+    PoisonHit {
+        target_id: crate::ids::CharacterId,
+        power: u16,
+        poison_type: u16,
+        chance: i32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -240,6 +246,14 @@ pub fn process_simple_baddy_messages(
         Some(CharacterDriverState::SimpleBaddy(data)) => data.helper,
         _ => 0,
     };
+    let poison = match character.driver_state.as_ref() {
+        Some(CharacterDriverState::SimpleBaddy(data)) if data.poison_power > 0 => Some((
+            data.poison_power as u16,
+            data.poison_type.max(0) as u16,
+            data.poison_chance,
+        )),
+        _ => None,
+    };
     let mut outcomes = Vec::new();
     let mut bless_friend = None;
 
@@ -273,6 +287,17 @@ pub fn process_simple_baddy_messages(
                 outcomes.push(SimpleBaddyMessageOutcome::UseInventoryPotion {
                     item_id,
                     reason: PotionUseReason::LowMana,
+                });
+            }
+        }
+
+        if message.message_type == NT_DIDHIT && message.dat1 > 0 && message.dat2 > 0 {
+            if let Some((power, poison_type, chance)) = poison {
+                outcomes.push(SimpleBaddyMessageOutcome::PoisonHit {
+                    target_id: crate::ids::CharacterId(message.dat1 as u32),
+                    power,
+                    poison_type,
+                    chance,
                 });
             }
         }
@@ -761,6 +786,47 @@ mod tests {
             SimpleBaddyDriverData::default(),
         ));
         character.push_driver_message(NT_CHAR, 2, 0, 0);
+
+        assert!(process_simple_baddy_messages(&mut character, &[]).is_empty());
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_didhit_emits_poison_hit_outcome() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            poison_power: 7,
+            poison_type: 2,
+            poison_chance: 35,
+            ..SimpleBaddyDriverData::default()
+        }));
+        character.push_driver_message(NT_DIDHIT, 42, 3, 0);
+
+        let outcomes = process_simple_baddy_messages(&mut character, &[]);
+
+        assert_eq!(
+            outcomes,
+            vec![SimpleBaddyMessageOutcome::PoisonHit {
+                target_id: crate::ids::CharacterId(42),
+                power: 7,
+                poison_type: 2,
+                chance: 35,
+            }]
+        );
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_didhit_requires_power_target_and_damage() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            poison_power: 7,
+            poison_type: 2,
+            poison_chance: 100,
+            ..SimpleBaddyDriverData::default()
+        }));
+        character.push_driver_message(NT_DIDHIT, 0, 3, 0);
+        character.push_driver_message(NT_DIDHIT, 42, 0, 0);
 
         assert!(process_simple_baddy_messages(&mut character, &[]).is_empty());
         assert!(character.driver_messages.is_empty());

@@ -1507,6 +1507,22 @@ impl World {
         character_id: CharacterId,
         area_id: u16,
     ) -> Vec<ItemDriverOutcome> {
+        let tick = self.tick.0;
+        self.process_simple_baddy_message_actions_with_random(character_id, area_id, |limit| {
+            if limit <= 0 {
+                0
+            } else {
+                ((tick + u64::from(character_id.0)) % limit as u64) as i32
+            }
+        })
+    }
+
+    pub fn process_simple_baddy_message_actions_with_random(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        mut random_below: impl FnMut(i32) -> i32,
+    ) -> Vec<ItemDriverOutcome> {
         let carried_items: Vec<Item> = self.items.values().cloned().collect();
         let Some(character) = self.characters.get_mut(&character_id) else {
             return Vec::new();
@@ -1532,8 +1548,35 @@ impl World {
                     }
                     ItemDriverOutcome::Noop
                 }
+                SimpleBaddyMessageOutcome::PoisonHit {
+                    target_id,
+                    power,
+                    poison_type,
+                    chance,
+                } => {
+                    if self.simple_baddy_can_poison_hit(character_id, target_id)
+                        && random_below(100) < chance
+                    {
+                        let _ = self.poison_character(target_id, power, poison_type);
+                    }
+                    ItemDriverOutcome::Noop
+                }
             })
             .collect()
+    }
+
+    fn simple_baddy_can_poison_hit(
+        &self,
+        attacker_id: CharacterId,
+        target_id: CharacterId,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&attacker_id) else {
+            return false;
+        };
+        let Some(target) = self.characters.get(&target_id) else {
+            return false;
+        };
+        can_attack(attacker, target, &self.map)
     }
 
     fn simple_baddy_can_bless_friend(
@@ -5220,7 +5263,9 @@ impl Default for Tick {
 #[cfg(test)]
 mod tests {
     use crate::{
-        character_driver::{CharacterDriverState, SimpleBaddyDriverData, NT_CHAR, NT_GOTHIT},
+        character_driver::{
+            CharacterDriverState, SimpleBaddyDriverData, NT_CHAR, NT_DIDHIT, NT_GOTHIT,
+        },
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
@@ -5373,6 +5418,77 @@ mod tests {
         assert_eq!(npc.action, 0);
         assert_eq!(npc.mana, 10 * POWERSCALE);
         assert!(npc.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_poison_successful_hit() {
+        let mut world = World::default();
+        world.tick = Tick(1_000);
+        let mut npc = character(1);
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            poison_power: 6,
+            poison_type: 2,
+            poison_chance: 50,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_DIDHIT, 2, 10, 0);
+        let mut target = character(2);
+        target.values[1][CharacterValue::Hp as usize] = 100;
+        target.hp = 100 * POWERSCALE;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        let outcomes =
+            world.process_simple_baddy_message_actions_with_random(CharacterId(1), 1, |_| 49);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        let poison_id = target.inventory[29].expect("poison spell item");
+        let poison = world.items.get(&poison_id).unwrap();
+        assert_eq!(poison.driver, IDR_POISON0 + 2);
+        assert!(target.flags.contains(CharacterFlags::UPDATE));
+        assert!(world.characters[&CharacterId(1)].driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_poison_respects_chance_and_attack_policy() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            poison_power: 6,
+            poison_type: 2,
+            poison_chance: 50,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_DIDHIT, 2, 10, 0);
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::NOATTACK);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        let outcomes =
+            world.process_simple_baddy_message_actions_with_random(CharacterId(1), 1, |_| 0);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        assert!(world.characters[&CharacterId(2)].inventory[29].is_none());
+
+        world
+            .characters
+            .get_mut(&CharacterId(2))
+            .unwrap()
+            .flags
+            .remove(CharacterFlags::NOATTACK);
+        world
+            .characters
+            .get_mut(&CharacterId(1))
+            .unwrap()
+            .push_driver_message(NT_DIDHIT, 2, 10, 0);
+
+        let outcomes =
+            world.process_simple_baddy_message_actions_with_random(CharacterId(1), 1, |_| 50);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        assert!(world.characters[&CharacterId(2)].inventory[29].is_none());
     }
 
     #[test]
