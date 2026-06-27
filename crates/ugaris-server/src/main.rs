@@ -196,6 +196,34 @@ impl ServerRuntime {
             .collect()
     }
 
+    fn sessions_for_area_message(
+        &self,
+        world: &World,
+        origin_character_id: CharacterId,
+        maxdist: u16,
+    ) -> Vec<(u64, CharacterId)> {
+        let Some(origin) = world.characters.get(&origin_character_id) else {
+            return Vec::new();
+        };
+        let min_x = origin.x.saturating_sub(maxdist);
+        let max_x = origin.x.saturating_add(maxdist);
+        let min_y = origin.y.saturating_sub(maxdist);
+        let max_y = origin.y.saturating_add(maxdist);
+
+        self.players
+            .iter()
+            .filter_map(|(session_id, player)| {
+                let character_id = player.character_id?;
+                let character = world.characters.get(&character_id)?;
+                (character.x >= min_x
+                    && character.x <= max_x
+                    && character.y >= min_y
+                    && character.y <= max_y)
+                    .then_some((*session_id, character_id))
+            })
+            .collect()
+    }
+
     fn player_for_character_mut(
         &mut self,
         character_id: CharacterId,
@@ -3855,6 +3883,39 @@ mod tests {
     }
 
     #[test]
+    fn area_message_sessions_match_legacy_square_distance() {
+        let mut world = World::default();
+        let mut origin = login_character(CharacterId(1), &login_block("Ralph"), 1, 10, 10);
+        origin.x = 10;
+        origin.y = 10;
+        let mut edge = login_character(CharacterId(2), &login_block("Lisa"), 1, 26, 26);
+        edge.x = 26;
+        edge.y = 26;
+        let mut outside = login_character(CharacterId(3), &login_block("Milhouse"), 1, 27, 10);
+        outside.x = 27;
+        outside.y = 10;
+        world.add_character(origin);
+        world.add_character(edge);
+        world.add_character(outside);
+
+        let mut runtime = ServerRuntime::default();
+        let mut origin_player = PlayerRuntime::connected(10, 0);
+        origin_player.character_id = Some(CharacterId(1));
+        let mut edge_player = PlayerRuntime::connected(20, 0);
+        edge_player.character_id = Some(CharacterId(2));
+        let mut outside_player = PlayerRuntime::connected(30, 0);
+        outside_player.character_id = Some(CharacterId(3));
+        runtime.players.insert(10, origin_player);
+        runtime.players.insert(20, edge_player);
+        runtime.players.insert(30, outside_player);
+
+        let mut sessions = runtime.sessions_for_area_message(&world, CharacterId(1), 16);
+        sessions.sort_unstable_by_key(|(session_id, _)| *session_id);
+
+        assert_eq!(sessions, vec![(10, CharacterId(1)), (20, CharacterId(2))]);
+    }
+
+    #[test]
     fn login_payload_sends_legacy_session_start_packets() {
         let login = login_block("Tester");
         let mut character =
@@ -7172,6 +7233,7 @@ async fn main() -> anyhow::Result<()> {
                         let mut failed = 0;
                         let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
                         let mut feedback = Vec::new();
+                        let mut area_feedback = Vec::new();
                         let mut container_refresh = Vec::new();
                         for request in item_use_requests {
                             let use_character_id = request.character_id;
@@ -7527,7 +7589,7 @@ async fn main() -> anyhow::Result<()> {
                                             ..
                                         } => {
                                             if let Some(message) = special_potion_fun_message(&world, character_id, kind) {
-                                                feedback.push((character_id, message));
+                                                area_feedback.push((character_id, message, 16));
                                             }
                                             executed += 1;
                                         }
@@ -7827,6 +7889,14 @@ async fn main() -> anyhow::Result<()> {
                         for (character_id, message) in feedback {
                             let payload = ugaris_protocol::packet::system_text(&message);
                             for (session_id, _) in runtime.sessions_for_character(character_id) {
+                                if runtime.send_to_session(session_id, payload.clone()) {
+                                    feedback_sessions += 1;
+                                }
+                            }
+                        }
+                        for (character_id, message, maxdist) in area_feedback {
+                            let payload = ugaris_protocol::packet::system_text(&message);
+                            for (session_id, _) in runtime.sessions_for_area_message(&world, character_id, maxdist) {
                                 if runtime.send_to_session(session_id, payload.clone()) {
                                     feedback_sessions += 1;
                                 }
