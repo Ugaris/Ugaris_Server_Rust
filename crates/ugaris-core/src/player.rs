@@ -251,6 +251,8 @@ pub struct PlayerRuntime {
     pub special_shrine_hcsc_last_touch_seconds: u64,
     #[serde(default)]
     pub transport_seen: u64,
+    #[serde(default)]
+    pub current_mirror_id: u16,
 }
 
 impl PlayerRuntime {
@@ -288,7 +290,12 @@ impl PlayerRuntime {
             current_section_id: 0,
             special_shrine_hcsc_last_touch_seconds: 0,
             transport_seen: 0,
+            current_mirror_id: 0,
         }
+    }
+
+    pub fn set_current_mirror(&mut self, mirror_id: u32) {
+        self.current_mirror_id = mirror_id.min(u32::from(u16::MAX)) as u16;
     }
 
     pub fn touch_transport(&mut self, point: u8) -> bool {

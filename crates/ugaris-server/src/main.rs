@@ -716,6 +716,11 @@ fn character_save_request(
     area_id: u16,
     mirror_id: u16,
 ) -> CharacterSaveRequest {
+    let save_mirror_id = if player.current_mirror_id == 0 {
+        mirror_id
+    } else {
+        player.current_mirror_id
+    };
     CharacterSaveRequest {
         character: character.clone(),
         items: character_snapshot_items(world, character),
@@ -728,7 +733,7 @@ fn character_save_request(
             expected_current_area: i32::from(area_id),
             expected_current_mirror: i32::from(mirror_id),
             allowed_area: i32::from(area_id),
-            mirror: i32::from(mirror_id),
+            mirror: i32::from(save_mirror_id),
         },
     }
 }
@@ -7458,6 +7463,10 @@ mod tests {
         assert_eq!(request.items.len(), 2);
         assert!(request.items.iter().any(|item| item.id == ItemId(101)));
         assert!(request.items.iter().any(|item| item.id == ItemId(102)));
+        assert!(matches!(
+            request.mode,
+            ugaris_db::character::CharacterSaveMode::Logout { mirror: 2, .. }
+        ));
         let mut decoded = PlayerRuntime::connected(6, 0);
         assert!(decoded.decode_legacy_ppd_blob(&request.ppd_blob));
         assert_eq!(decoded.keyring.len(), 1);
@@ -7465,6 +7474,23 @@ mod tests {
         let decoded_depot = decode_legacy_account_depot_subscriber_blob(&request.subscriber_blob)
             .expect("account depot subscriber block");
         assert_eq!(decoded_depot.slots[0].as_ref().unwrap().name, "Depot Relic");
+    }
+
+    #[test]
+    fn character_save_request_persists_runtime_transport_mirror() {
+        let login = login_block("Tester");
+        let character = login_character(CharacterId(7), &login, 1, 10, 10);
+        let mut world = World::default();
+        world.add_character(character.clone());
+        let mut player = PlayerRuntime::connected(5, 0);
+        player.set_current_mirror(9);
+
+        let request = character_save_request(&world, &player, &character, None, 1, 2);
+
+        assert!(matches!(
+            request.mode,
+            ugaris_db::character::CharacterSaveMode::Logout { mirror: 9, .. }
+        ));
     }
 
     #[test]
@@ -9271,6 +9297,9 @@ async fn main() -> anyhow::Result<()> {
                                             };
                                             match apply_transport_travel(&mut world, player, character_id, config.area_id, spec) {
                                                 TransportTravelResult::SameArea { mirror, .. } => {
+                                                    if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                        player.set_current_mirror(mirror);
+                                                    }
                                                     let mut builder = PacketBuilder::new();
                                                     builder.mirror(mirror);
                                                     let payload = builder.into_payload();
@@ -9978,6 +10007,9 @@ async fn main() -> anyhow::Result<()> {
                     }
                     SessionEvent::Login { id, login } => {
                         let mut character_id = runtime.login(id.0, &login, world.tick.0);
+                        if let Some(player) = runtime.players.get_mut(&id.0) {
+                            player.set_current_mirror(u32::from(config.mirror_id));
+                        }
                         let mut loaded_from_database = false;
                         if let Some(repository) = &character_repository {
                             let request = LoginRequest {
@@ -9996,6 +10028,7 @@ async fn main() -> anyhow::Result<()> {
                                     if let Some(player) = runtime.players.get_mut(&id.0) {
                                         player.character_id = Some(db_character_id);
                                         player.character_number = if character_number == 0 { db_character_id.0 } else { character_number };
+                                        player.set_current_mirror(mirror.max(0) as u32);
                                     }
                                     match repository.load_character_snapshot(db_character_id).await {
                                         Ok(Some(snapshot)) => {
