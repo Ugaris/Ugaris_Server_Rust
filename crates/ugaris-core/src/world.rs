@@ -2777,6 +2777,156 @@ impl World {
         true
     }
 
+    pub fn setup_simple_baddy_flee_action(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let enemies = self.refresh_simple_baddy_enemy_tracking(&attacker);
+        let mut direction_scores = [0i32; 9];
+        let mut min_distance = 99;
+
+        for enemy in enemies.into_iter().filter(|enemy| enemy.visible) {
+            let Some(target) = self.characters.get(&enemy.target_id) else {
+                continue;
+            };
+            let distance = char_dist(&attacker, target);
+            if distance > 30 {
+                continue;
+            }
+            min_distance = min_distance.min(distance);
+            let score = 5000 - distance * 50;
+            let dx = i32::from(target.x) - i32::from(attacker.x);
+            let dy = i32::from(target.y) - i32::from(attacker.y);
+            let total_delta = dx.abs() + dy.abs();
+            if total_delta == 0 {
+                continue;
+            }
+
+            if dx > 0 {
+                direction_scores[Direction::Right as usize] -= score * dx.abs() / total_delta;
+                direction_scores[Direction::RightUp as usize] -= score * dx.abs() / total_delta / 2;
+                direction_scores[Direction::RightDown as usize] -=
+                    score * dx.abs() / total_delta / 2;
+                direction_scores[Direction::Left as usize] += score * dx.abs() / total_delta / 4;
+                direction_scores[Direction::LeftUp as usize] += score * dx.abs() / total_delta / 8;
+                direction_scores[Direction::LeftDown as usize] +=
+                    score * dx.abs() / total_delta / 8;
+            }
+            if dx < 0 {
+                direction_scores[Direction::Left as usize] -= score * dx.abs() / total_delta;
+                direction_scores[Direction::LeftUp as usize] -= score * dx.abs() / total_delta / 2;
+                direction_scores[Direction::LeftDown as usize] -=
+                    score * dx.abs() / total_delta / 2;
+                direction_scores[Direction::Right as usize] -= score * dx.abs() / total_delta / 4;
+                direction_scores[Direction::RightUp as usize] -= score * dx.abs() / total_delta / 8;
+                direction_scores[Direction::RightDown as usize] -=
+                    score * dx.abs() / total_delta / 8;
+            }
+            if dy > 0 {
+                direction_scores[Direction::Down as usize] -= score * dy.abs() / total_delta;
+                direction_scores[Direction::LeftDown as usize] -=
+                    score * dy.abs() / total_delta / 2;
+                direction_scores[Direction::RightDown as usize] -=
+                    score * dy.abs() / total_delta / 2;
+                direction_scores[Direction::Up as usize] -= score * dy.abs() / total_delta / 4;
+                direction_scores[Direction::LeftUp as usize] -= score * dy.abs() / total_delta / 8;
+                direction_scores[Direction::RightUp as usize] -= score * dy.abs() / total_delta / 8;
+            }
+            if dy < 0 {
+                direction_scores[Direction::Up as usize] -= score * dy.abs() / total_delta;
+                direction_scores[Direction::LeftUp as usize] -= score * dy.abs() / total_delta / 2;
+                direction_scores[Direction::RightUp as usize] -= score * dy.abs() / total_delta / 2;
+                direction_scores[Direction::Down as usize] -= score * dy.abs() / total_delta / 4;
+                direction_scores[Direction::LeftDown as usize] -=
+                    score * dy.abs() / total_delta / 8;
+                direction_scores[Direction::RightDown as usize] -=
+                    score * dy.abs() / total_delta / 8;
+            }
+        }
+        if min_distance > 30 {
+            return false;
+        }
+
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            if min_distance < 10
+                && (character.endurance > 4 * POWERSCALE || character.speed_mode == SpeedMode::Fast)
+            {
+                character.speed_mode = SpeedMode::Fast;
+            } else if min_distance < 10 {
+                character.speed_mode = SpeedMode::Normal;
+            } else {
+                character.speed_mode = SpeedMode::Stealth;
+            }
+        }
+
+        let mut best_direction = None;
+        let mut best_score = i32::MIN;
+        for direction_id in 1..=8 {
+            let direction =
+                Direction::try_from(direction_id as u8).expect("valid legacy direction");
+            let score = direction_scores[direction_id]
+                + self.simple_baddy_flee_eval_path(
+                    usize::from(attacker.x),
+                    usize::from(attacker.y),
+                    direction,
+                );
+            if score > best_score {
+                best_direction = Some(direction);
+                best_score = score;
+            }
+        }
+        let Some(direction) = best_direction else {
+            return false;
+        };
+        if !self.setup_walk_direction(character_id, direction, area_id) {
+            return false;
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
+                data.lastfight = self.tick.0 as i32;
+            }
+        }
+        true
+    }
+
+    fn simple_baddy_flee_eval_path(&self, x: usize, y: usize, direction: Direction) -> i32 {
+        let (dx, dy) = direction.delta();
+        let mut x = x;
+        let mut y = y;
+        let mut score = 0;
+
+        for _ in 0..10 {
+            let Some(next_x) = offset_coordinate(x, dx) else {
+                return score;
+            };
+            let Some(next_y) = offset_coordinate(y, dy) else {
+                return score;
+            };
+            x = next_x;
+            y = next_y;
+            if x < 1 || x >= MAX_MAP - 1 || y < 1 || y >= MAX_MAP - 1 {
+                return score;
+            }
+            let Some(tile) = self.map.tile(x, y) else {
+                return score;
+            };
+            if tile
+                .flags
+                .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+            {
+                return score;
+            }
+            let daylight = (i32::from(tile.daylight) * self.date.daylight) / 256;
+            score += 300 - i32::from(tile.light).max(daylight);
+        }
+
+        score
+    }
+
     fn setup_simple_baddy_pulse_attack(&mut self, character_id: CharacterId) -> bool {
         if self.simple_baddy_pulse_value(character_id) == 0 {
             return false;
@@ -9235,6 +9385,108 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::WALK);
         assert_ne!((npc.tox, npc.toy), (9, 10));
+    }
+
+    #[test]
+    fn simple_baddy_flee_action_moves_away_from_visible_enemy() {
+        let mut world = World::default();
+        world.tick = Tick(459);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.endurance = 5 * POWERSCALE;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 13,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 13, 10);
+        world.map.tile_mut(13, 10).unwrap().light = 255;
+
+        assert!(world.setup_simple_baddy_flee_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert!(npc.tox < 10);
+        assert_eq!(npc.dir, Direction::Left as u8);
+        assert_eq!(npc.speed_mode, SpeedMode::Fast);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 459);
+    }
+
+    #[test]
+    fn simple_baddy_flee_action_uses_stealth_when_enemy_is_distant() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 20,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 20, 10);
+        world.map.tile_mut(20, 10).unwrap().light = 255;
+
+        assert!(world.setup_simple_baddy_flee_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.speed_mode, SpeedMode::Stealth);
+        assert!(npc.tox < 10);
+    }
+
+    #[test]
+    fn simple_baddy_flee_action_scores_blocked_escape_path() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.endurance = 5 * POWERSCALE;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 13,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 13, 10);
+        world.map.tile_mut(13, 10).unwrap().light = 255;
+        world
+            .map
+            .tile_mut(8, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+
+        assert!(world.setup_simple_baddy_flee_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert!(npc.tox < 10);
     }
 
     #[test]
