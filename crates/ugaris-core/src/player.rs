@@ -26,6 +26,7 @@ pub const ORBSPAWN_MAX_ENTRIES: usize = 100;
 pub const LEGACY_ORBSPAWN_PPD_SIZE: usize = ORBSPAWN_MAX_ENTRIES * 4 * 2;
 pub const DEMONSHRINE_MAX_ENTRIES: usize = 100;
 pub const LEGACY_DEMONSHRINE_PPD_SIZE: usize = DEMONSHRINE_MAX_ENTRIES * 4;
+pub const LEGACY_MISC_PPD_SIZE: usize = 36;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
@@ -35,6 +36,7 @@ pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAY
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEMONSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 68 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
+pub const DRD_MISC_PPD: u32 = make_drd(DEV_ID_DB, 113 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
@@ -61,6 +63,8 @@ const RANDCHEST_PPD_IDS_OFFSET: usize = 0;
 const RANDCHEST_PPD_LAST_USED_OFFSET: usize = RANDCHEST_PPD_IDS_OFFSET + RANDCHEST_MAX_ENTRIES * 4;
 const ORBSPAWN_PPD_IDS_OFFSET: usize = 0;
 const ORBSPAWN_PPD_LAST_USED_OFFSET: usize = ORBSPAWN_PPD_IDS_OFFSET + ORBSPAWN_MAX_ENTRIES * 4;
+const MISC_PPD_TREEDONE_OFFSET: usize = 24;
+const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 
 pub const DEFERRED_ACHIEVEMENTS: u32 = 1 << 0;
 pub const DEFERRED_MOTD: u32 = 1 << 1;
@@ -161,6 +165,14 @@ pub enum DemonShrineResult {
     Full,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum XmasTreeResult {
+    Dormant,
+    AlreadyGranted,
+    NeedsHolidayTreat,
+    GiftGranted,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AchievementState {
     pub chests_opened: u32,
@@ -212,6 +224,8 @@ pub struct PlayerRuntime {
     pub orb_spawns: Vec<OrbSpawnAccess>,
     #[serde(default)]
     pub demonshrines: Vec<u32>,
+    #[serde(default)]
+    pub misc_ppd: Vec<u8>,
     pub achievements: AchievementState,
     #[serde(default)]
     pub keyring_auto_add: bool,
@@ -249,6 +263,7 @@ impl PlayerRuntime {
             random_chests: Vec::new(),
             orb_spawns: Vec::new(),
             demonshrines: Vec::new(),
+            misc_ppd: Vec::new(),
             achievements: AchievementState::default(),
             keyring_auto_add: false,
             current_section_id: 0,
@@ -515,6 +530,22 @@ impl PlayerRuntime {
         bytes
     }
 
+    pub fn encode_legacy_misc_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_MISC_PPD_SIZE];
+        let copy_len = self.misc_ppd.len().min(LEGACY_MISC_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.misc_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_misc_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_MISC_PPD_SIZE {
+            return false;
+        }
+
+        self.misc_ppd = bytes[..LEGACY_MISC_PPD_SIZE].to_vec();
+        true
+    }
+
     pub fn decode_legacy_demonshrine_ppd(&mut self, bytes: &[u8]) -> bool {
         if bytes.len() < LEGACY_DEMONSHRINE_PPD_SIZE {
             return false;
@@ -561,6 +592,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_MISC_PPD => {
+                    if !self.decode_legacy_misc_ppd(block.data) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -574,6 +610,7 @@ impl PlayerRuntime {
         let mut had_randchest = false;
         let mut had_demonshrine = false;
         let mut had_orbspawn = false;
+        let mut had_misc = false;
         let mut existing_was_valid = true;
 
         for block in LegacyPpdBlocks::parse(existing) {
@@ -619,6 +656,9 @@ impl PlayerRuntime {
                     DRD_ORBSPAWN_PPD,
                     &self.encode_legacy_orbspawn_ppd(),
                 );
+            } else if block.id == DRD_MISC_PPD {
+                had_misc = true;
+                write_ppd_block(&mut encoded, DRD_MISC_PPD, &self.encode_legacy_misc_ppd());
             } else {
                 write_ppd_block(&mut encoded, block.id, block.data);
             }
@@ -669,8 +709,54 @@ impl PlayerRuntime {
                 );
             }
         }
+        if !had_misc && (existing_was_valid || existing.is_empty()) && !self.misc_ppd.is_empty() {
+            write_ppd_block(&mut encoded, DRD_MISC_PPD, &self.encode_legacy_misc_ppd());
+        }
 
         encoded
+    }
+
+    pub fn touch_xmas_tree(
+        &mut self,
+        area_id: u16,
+        event_year: i32,
+        is_xmas: bool,
+        has_holiday_treat: bool,
+    ) -> XmasTreeResult {
+        if !is_xmas {
+            return XmasTreeResult::Dormant;
+        }
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            self.misc_ppd.resize(LEGACY_MISC_PPD_SIZE, 0);
+        }
+        if read_i32(&self.misc_ppd, MISC_PPD_GIFT_YEAR_OFFSET) != event_year {
+            for byte in &mut self.misc_ppd[MISC_PPD_TREEDONE_OFFSET..MISC_PPD_TREEDONE_OFFSET + 8] {
+                *byte = 0;
+            }
+            write_i32(&mut self.misc_ppd, MISC_PPD_GIFT_YEAR_OFFSET, event_year);
+        }
+
+        let idx = usize::from(area_id / 8);
+        let bit = 1u8 << (area_id % 8);
+        if idx >= 8 || self.misc_ppd[MISC_PPD_TREEDONE_OFFSET + idx] & bit != 0 {
+            return XmasTreeResult::AlreadyGranted;
+        }
+        if !has_holiday_treat {
+            return XmasTreeResult::NeedsHolidayTreat;
+        }
+
+        self.misc_ppd[MISC_PPD_TREEDONE_OFFSET + idx] |= bit;
+        XmasTreeResult::GiftGranted
+    }
+
+    pub fn unmark_xmas_tree(&mut self, area_id: u16) {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            return;
+        }
+        let idx = usize::from(area_id / 8);
+        if idx < 8 {
+            self.misc_ppd[MISC_PPD_TREEDONE_OFFSET + idx] &= !(1u8 << (area_id % 8));
+        }
     }
 
     pub fn add_keyring_key(
@@ -1147,10 +1233,12 @@ mod tests {
         assert_eq!(DRD_TREASURE_CHEST_PPD, 0x8100_0011);
         assert_eq!(DRD_RANDCHEST_PPD, 0x8100_003f);
         assert_eq!(DRD_DEMONSHRINE_PPD, 0x8100_0044);
+        assert_eq!(DRD_MISC_PPD, 0x8100_0071);
         assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_DEMONSHRINE_PPD_SIZE, 400);
+        assert_eq!(LEGACY_MISC_PPD_SIZE, 36);
     }
 
     #[test]
@@ -1599,6 +1687,60 @@ mod tests {
         let mut decoded = PlayerRuntime::connected(2, 0);
         assert!(decoded.decode_legacy_ppd_blob(&encoded));
         assert_eq!(decoded.demonshrines, vec![0x0001_0506]);
+    }
+
+    #[test]
+    fn xmas_tree_touch_resets_by_event_year_and_blocks_repeats() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(
+            player.touch_xmas_tree(1, 2025, false, true),
+            XmasTreeResult::Dormant
+        );
+        assert_eq!(
+            player.touch_xmas_tree(1, 2025, true, false),
+            XmasTreeResult::NeedsHolidayTreat
+        );
+        assert_eq!(
+            player.touch_xmas_tree(1, 2025, true, true),
+            XmasTreeResult::GiftGranted
+        );
+        assert_eq!(
+            player.touch_xmas_tree(1, 2025, true, true),
+            XmasTreeResult::AlreadyGranted
+        );
+        assert_eq!(
+            player.touch_xmas_tree(1, 2026, true, true),
+            XmasTreeResult::GiftGranted
+        );
+        assert_eq!(read_i32(&player.misc_ppd, MISC_PPD_GIFT_YEAR_OFFSET), 2026);
+        assert_eq!(player.misc_ppd[MISC_PPD_TREEDONE_OFFSET], 0b0000_0010);
+    }
+
+    #[test]
+    fn misc_ppd_blob_preserves_non_tree_legacy_fields() {
+        let mut existing_misc = vec![0; LEGACY_MISC_PPD_SIZE];
+        write_i32(&mut existing_misc, 0, 123);
+        write_i32(&mut existing_misc, 20, 456);
+        write_i32(&mut existing_misc, MISC_PPD_GIFT_YEAR_OFFSET, 2024);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, DRD_MISC_PPD, &existing_misc);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.decode_legacy_ppd_blob(&existing));
+        assert_eq!(
+            player.touch_xmas_tree(2, 2025, true, true),
+            XmasTreeResult::GiftGranted
+        );
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), DRD_MISC_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_MISC_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 8), 123);
+        assert_eq!(read_i32(&encoded, 28), 456);
+        assert_eq!(encoded[8 + MISC_PPD_TREEDONE_OFFSET], 0b0000_0100);
+        assert_eq!(read_i32(&encoded, 8 + MISC_PPD_GIFT_YEAR_OFFSET), 2025);
     }
 
     #[test]
