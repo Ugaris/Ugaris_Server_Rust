@@ -39,7 +39,8 @@ use crate::{
     spell::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
-        BLESS_DURATION, EF_BALL, EF_BURN, EF_FIREBALL, EF_STRIKE, FLASH_DURATION, FREEZE_DURATION,
+        BLESS_DURATION, EF_BALL, EF_BLESS, EF_BURN, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,
+        EF_HEAL, EF_MAGICSHIELD, EF_POTION, EF_STRIKE, EF_WARCRY, FLASH_DURATION, FREEZE_DURATION,
         IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3,
         IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
     },
@@ -477,6 +478,39 @@ impl World {
         effect_id
     }
 
+    fn create_show_effect(
+        &mut self,
+        effect_type: i32,
+        target_id: CharacterId,
+        start_tick: u32,
+        stop_tick: u32,
+        light: i32,
+        strength: i32,
+    ) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(
+            effect_type,
+            effect_id as i32,
+            start_tick as i32,
+            stop_tick as i32,
+        );
+        effect.target_character = Some(target_id);
+        effect.strength = strength;
+        effect.light = light;
+        if let Some(target) = self.characters.get(&target_id) {
+            effect.x = i32::from(target.x);
+            effect.y = i32::from(target.y);
+        }
+        self.effects.insert(effect_id, effect);
+        effect_id
+    }
+
+    fn remove_show_effect_type(&mut self, target_id: CharacterId, effect_type: i32) {
+        self.effects.retain(|_, effect| {
+            !(effect.effect_type == effect_type && effect.target_character == Some(target_id))
+        });
+    }
+
     pub fn tick_effects(&mut self) {
         let effect_ids: Vec<u32> = self.effects.keys().copied().collect();
         for effect_id in effect_ids {
@@ -489,8 +523,19 @@ impl World {
                 Some(EF_BALL) => self.tick_ball_effect(effect_id),
                 Some(EF_STRIKE) => self.tick_strike_effect(effect_id),
                 Some(EF_BURN) => self.tick_burn_effect(effect_id),
+                Some(_) => self.tick_expiring_effect(effect_id),
                 _ => {}
             }
+        }
+    }
+
+    fn tick_expiring_effect(&mut self, effect_id: u32) {
+        if self
+            .effects
+            .get(&effect_id)
+            .is_some_and(|effect| self.tick.0 >= effect.stop_tick as u64)
+        {
+            self.effects.remove(&effect_id);
         }
     }
 
@@ -3131,10 +3176,7 @@ impl World {
                         (character.act1 > 0).then_some(CharacterId(character.act1 as u32))
                     })
                     .is_some_and(|receiver_id| self.complete_give(character_id, receiver_id)),
-                action::MAGICSHIELD => self
-                    .characters
-                    .get_mut(&character_id)
-                    .is_some_and(act_magicshield),
+                action::MAGICSHIELD => self.complete_magicshield(character_id),
                 action::PULSE => true,
                 action::FIREBALL1 => self.complete_fireball(character_id),
                 action::FIREBALL2 => true,
@@ -3221,7 +3263,21 @@ impl World {
             return false;
         }
         let duration = spell_duration_ticks(&caster, FLASH_DURATION);
-        self.install_speed_spell(caster_id, IDR_FLASH, "Flash", 100, duration)
+        if !self.install_speed_spell(caster_id, IDR_FLASH, "Flash", 100, duration) {
+            return false;
+        }
+        self.create_show_effect(
+            EF_FLASH,
+            caster_id,
+            self.tick.0 as u32,
+            self.tick.0.saturating_add(duration.max(0) as u64) as u32,
+            50,
+            spell_power(
+                character_value(&caster, CharacterValue::Flash),
+                character_value(&caster, CharacterValue::Tactics),
+            ),
+        );
+        true
     }
 
     fn complete_fireball(&mut self, caster_id: CharacterId) -> bool {
@@ -3277,6 +3333,14 @@ impl World {
         if !self.install_firering_spell(caster_id) {
             return false;
         }
+        self.create_show_effect(
+            EF_FIRERING,
+            caster_id,
+            self.tick.0 as u32,
+            self.tick.0.saturating_add(7) as u32,
+            50,
+            20,
+        );
 
         let caster_x = usize::from(caster.x);
         let caster_y = usize::from(caster.y);
@@ -3324,6 +3388,25 @@ impl World {
             }
         }
 
+        true
+    }
+
+    fn complete_magicshield(&mut self, character_id: CharacterId) -> bool {
+        if !self
+            .characters
+            .get_mut(&character_id)
+            .is_some_and(act_magicshield)
+        {
+            return false;
+        }
+        self.create_show_effect(
+            EF_MAGICSHIELD,
+            character_id,
+            self.tick.0 as u32,
+            self.tick.0.saturating_add(3) as u32,
+            25,
+            0,
+        );
         true
     }
 
@@ -3507,6 +3590,7 @@ impl World {
         let old_item_id = target.inventory.get(slot).copied().flatten();
         if let Some(item_id) = old_item_id {
             self.items.remove(&item_id);
+            self.remove_show_effect_type(target_id, EF_BLESS);
         }
 
         let item_id = self.next_runtime_item_id();
@@ -3564,6 +3648,14 @@ impl World {
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+            self.create_show_effect(
+                EF_BLESS,
+                target_id,
+                start_tick,
+                expire_tick,
+                0,
+                strength / 4,
+            );
             true
         } else {
             false
@@ -3651,6 +3743,14 @@ impl World {
                 character_serial,
                 item_id.0,
             );
+            self.create_show_effect(
+                EF_POTION,
+                character_id,
+                start_tick,
+                expire_tick,
+                0,
+                i32::from(modifier_value[0]),
+            );
             true
         } else {
             self.items.remove(&item_id);
@@ -3716,6 +3816,15 @@ impl World {
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+            match driver {
+                IDR_FREEZE => {
+                    self.create_show_effect(EF_FREEZE, target_id, start_tick, expire_tick, 0, 0);
+                }
+                IDR_WARCRY => {
+                    self.create_show_effect(EF_WARCRY, target_id, start_tick, expire_tick, 0, 0);
+                }
+                _ => {}
+            }
             true
         } else {
             self.items.remove(&item_id);
@@ -3998,6 +4107,11 @@ impl World {
                     character.id.0,
                     item.serial,
                     due as u64,
+                    item.driver,
+                    item.driver_data
+                        .get(4..8)
+                        .and_then(|bytes| Some(u32::from_le_bytes(bytes.try_into().ok()?))),
+                    item.modifier_value[0],
                 ));
             }
         }
@@ -4005,15 +4119,74 @@ impl World {
         spells
             .into_iter()
             .filter(
-                |&(character_id, item_id, slot, character_serial, item_serial, due)| {
-                    self.set_spell_remove_timer(
+                |&(
+                    character_id,
+                    item_id,
+                    slot,
+                    character_serial,
+                    item_serial,
+                    due,
+                    driver,
+                    start_tick,
+                    modifier_value,
+                )| {
+                    let scheduled = self.set_spell_remove_timer(
                         due,
                         character_id,
                         item_id,
                         slot,
                         character_serial,
                         item_serial,
-                    )
+                    );
+                    if scheduled {
+                        if let Some(start_tick) = start_tick {
+                            let stop_tick = due as u32;
+                            match driver {
+                                IDR_BLESS => {
+                                    self.create_show_effect(
+                                        EF_BLESS,
+                                        character_id,
+                                        start_tick,
+                                        stop_tick,
+                                        0,
+                                        i32::from(modifier_value),
+                                    );
+                                }
+                                IDR_FREEZE => {
+                                    self.create_show_effect(
+                                        EF_FREEZE,
+                                        character_id,
+                                        start_tick,
+                                        stop_tick,
+                                        0,
+                                        0,
+                                    );
+                                }
+                                IDR_WARCRY => {
+                                    self.create_show_effect(
+                                        EF_WARCRY,
+                                        character_id,
+                                        start_tick,
+                                        stop_tick,
+                                        0,
+                                        0,
+                                    );
+                                }
+                                IDR_POTION_SP => {
+                                    self.create_show_effect(
+                                        EF_POTION,
+                                        character_id,
+                                        start_tick,
+                                        stop_tick,
+                                        0,
+                                        i32::from(modifier_value),
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    scheduled
                 },
             )
             .count()
@@ -4197,18 +4370,43 @@ impl World {
             let Some(caster) = self.characters.get(&caster_id).cloned() else {
                 return false;
             };
-            return self
+            if !self
                 .characters
                 .get_mut(&target_id)
-                .is_some_and(|target| act_heal(&caster, target));
+                .is_some_and(|target| act_heal(&caster, target))
+            {
+                return false;
+            }
+            self.create_show_effect(
+                EF_HEAL,
+                target_id,
+                self.tick.0 as u32,
+                self.tick.0.saturating_add(8) as u32,
+                0,
+                0,
+            );
+            return true;
         }
 
         let Some(caster) = self.characters.get(&caster_id).cloned() else {
             return false;
         };
-        self.characters
+        if !self
+            .characters
             .get_mut(&target_id)
             .is_some_and(|target| act_heal(&caster, target))
+        {
+            return false;
+        }
+        self.create_show_effect(
+            EF_HEAL,
+            target_id,
+            self.tick.0 as u32,
+            self.tick.0.saturating_add(8) as u32,
+            0,
+            0,
+        );
+        true
     }
 }
 
@@ -6765,6 +6963,11 @@ mod tests {
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(character.lifeshield, 8 * POWERSCALE);
         assert_eq!(character.action, 0);
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_MAGICSHIELD);
+        assert_eq!(effect.target_character, Some(CharacterId(1)));
+        assert_eq!(effect.stop_tick, 3);
+        assert_eq!(effect.light, 25);
     }
 
     #[test]
@@ -6805,6 +7008,10 @@ mod tests {
         assert!(completed[0].ok);
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 10 * POWERSCALE);
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_HEAL);
+        assert_eq!(effect.target_character, Some(CharacterId(2)));
+        assert_eq!(effect.stop_tick, 8);
     }
 
     #[test]
@@ -6855,6 +7062,12 @@ mod tests {
             i32::from_le_bytes(spell.driver_data[8..12].try_into().unwrap()),
             40
         );
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_BLESS);
+        assert_eq!(effect.target_character, Some(CharacterId(1)));
+        assert_eq!(effect.start_tick, 100);
+        assert_eq!(effect.stop_tick, 2_980);
+        assert_eq!(effect.strength, 10);
         assert_eq!(world.timers.used_timers(), 1);
     }
 
@@ -6898,6 +7111,13 @@ mod tests {
             u32::from_le_bytes(spell.driver_data[4..8].try_into().unwrap()),
             200
         );
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_FLASH);
+        assert_eq!(effect.target_character, Some(CharacterId(1)));
+        assert_eq!(effect.start_tick, 200);
+        assert_eq!(effect.stop_tick, 248);
+        assert_eq!(effect.light, 50);
+        assert_eq!(effect.strength, 40);
         assert_eq!(world.timers.used_timers(), 1);
     }
 
@@ -7233,6 +7453,12 @@ mod tests {
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 14_100);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_FIRERING);
+        assert_eq!(effect.target_character, Some(CharacterId(1)));
+        assert_eq!(effect.stop_tick, 257);
+        assert_eq!(effect.light, 50);
+        assert_eq!(effect.strength, 20);
         assert_eq!(world.timers.used_timers(), 1);
     }
 
@@ -7276,6 +7502,11 @@ mod tests {
             u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
             396
         );
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_FREEZE);
+        assert_eq!(effect.target_character, Some(CharacterId(2)));
+        assert_eq!(effect.start_tick, 300);
+        assert_eq!(effect.stop_tick, 396);
         assert_eq!(world.timers.used_timers(), 1);
     }
 
@@ -7323,6 +7554,11 @@ mod tests {
             u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
             496
         );
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_WARCRY);
+        assert_eq!(effect.target_character, Some(CharacterId(2)));
+        assert_eq!(effect.start_tick, 400);
+        assert_eq!(effect.stop_tick, 496);
         assert_eq!(world.timers.used_timers(), 1);
     }
 
@@ -7410,6 +7646,12 @@ mod tests {
         assert_eq!(spell.modifier_value[0], 5);
         assert!(spell.flags.contains(ItemFlags::BEYONDMAXMOD));
         assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(5_520));
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_POTION);
+        assert_eq!(effect.target_character, Some(CharacterId(1)));
+        assert_eq!(effect.start_tick, 1_200);
+        assert_eq!(effect.stop_tick, 5_520);
+        assert_eq!(effect.strength, 5);
         assert_eq!(world.timers.used_timers(), 1);
     }
 
@@ -7504,6 +7746,32 @@ mod tests {
             Some(ItemId(7))
         );
         assert!(world.items.contains_key(&ItemId(7)));
+    }
+
+    #[test]
+    fn scheduling_existing_bless_spell_restores_show_effect() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[12] = Some(ItemId(7));
+        world.add_character(character);
+
+        let mut spell = item(7, ItemFlags::USED);
+        spell.driver = IDR_BLESS;
+        spell.carried_by = Some(CharacterId(1));
+        spell.modifier_value[0] = 15;
+        spell.driver_data = Vec::new();
+        spell.driver_data.extend_from_slice(&500_u32.to_le_bytes());
+        spell.driver_data.extend_from_slice(&100_u32.to_le_bytes());
+        world.add_item(spell);
+
+        assert_eq!(world.schedule_existing_spell_timers(), 1);
+
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_BLESS);
+        assert_eq!(effect.target_character, Some(CharacterId(1)));
+        assert_eq!(effect.start_tick, 100);
+        assert_eq!(effect.stop_tick, 500);
+        assert_eq!(effect.strength, 15);
     }
 
     #[test]
