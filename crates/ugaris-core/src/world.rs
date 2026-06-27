@@ -4132,6 +4132,8 @@ impl World {
             self.shift_extended_door_foregrounds(x, y, if is_open { -1 } else { 1 });
         }
 
+        self.queue_sound_area(x, y, if character_id.0 == 0 { 2 } else { 3 });
+
         DoorToggleResult::Toggled
     }
 
@@ -10594,7 +10596,11 @@ mod tests {
     #[test]
     fn world_executes_door_driver_open_and_close() {
         let mut world = World::default();
-        world.add_character(character(1));
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        actor.x = 10;
+        actor.y = 10;
+        world.add_character(actor);
         let mut door = item(
             7,
             ItemFlags::USED
@@ -10634,6 +10640,9 @@ mod tests {
         assert!(!tile.flags.intersects(
             MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK | MapFlags::TSOUNDBLOCK | MapFlags::DOOR
         ));
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].special.special_type, 3);
 
         let outcome = world.execute_item_driver_request(request, 1);
         assert!(matches!(outcome, ItemDriverOutcome::DoorToggle { .. }));
@@ -10649,6 +10658,9 @@ mod tests {
         assert!(tile.flags.contains(MapFlags::TSIGHTBLOCK));
         assert!(tile.flags.contains(MapFlags::TSOUNDBLOCK));
         assert!(tile.flags.contains(MapFlags::DOOR));
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].special.special_type, 3);
     }
 
     #[test]
@@ -10687,7 +10699,11 @@ mod tests {
     #[test]
     fn world_auto_closes_opened_door_from_timer() {
         let mut world = World::default();
-        world.add_character(character(1));
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        actor.x = 10;
+        actor.y = 10;
+        world.add_character(actor);
         let mut door = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::DOOR);
         door.driver = crate::item_driver::IDR_DOOR;
         door.sprite = 100;
@@ -10705,6 +10721,9 @@ mod tests {
         );
 
         assert!(matches!(outcome, ItemDriverOutcome::DoorToggle { .. }));
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].special.special_type, 3);
         assert_eq!(world.items.get(&ItemId(7)).unwrap().driver_data[39], 1);
         assert_eq!(world.timers.used_timers(), 1);
 
@@ -10724,6 +10743,9 @@ mod tests {
         assert_eq!(door.driver_data[0], 0);
         assert_eq!(door.driver_data[39], 0);
         assert_eq!(door.sprite, 100);
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].special.special_type, 2);
     }
 
     #[test]
