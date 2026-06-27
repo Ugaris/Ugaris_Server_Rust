@@ -3124,7 +3124,26 @@ fn resolve_transport_travel(
     current_area: u16,
     spec: i32,
 ) -> TransportTravelResult {
-    resolve_transport_travel_with_random(world, player, character_id, current_area, spec, |_| 0)
+    resolve_transport_travel_with_random(
+        world,
+        player,
+        character_id,
+        current_area,
+        spec,
+        runtime_random_below,
+    )
+}
+
+fn runtime_random_below(max: i32) -> i32 {
+    if max <= 0 {
+        return 0;
+    }
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos() as u64)
+        .unwrap_or_default();
+    legacy_random(nanos, max as u32) as i32
 }
 
 fn resolve_transport_travel_with_random(
