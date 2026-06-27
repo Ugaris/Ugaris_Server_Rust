@@ -731,17 +731,45 @@
         "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
         "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok"
       ]
+    },
+    {
+      "iteration": 26,
+      "startedAt": "2026-06-27T13:20:47.692Z",
+      "endedAt": "2026-06-27T13:28:22.541Z",
+      "durationMs": 454656,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The new stop-distance test passed, but the start-distance test failed because the target was not visible at that range under current test lighting, so the aggro message was rejected before the home-di",
+        "test world::tests::simple_baddy_message_actions_use_explicit_fight_driver_home_for_start_distance ... FAILED",
+        "test result: FAILED. 34 passed; 1 failed; 0 ignored; 0 measured; 338 filtered out; finished in 0.01s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 338 filtered out; finished in 0.01s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 12054439,
+  "totalDurationMs": 12509095,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 24,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 23,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 21,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 25,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 24,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 22,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 15,
       "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
       "test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
@@ -754,7 +782,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 9,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 10,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 2,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -842,7 +870,12 @@
       "test world::tests::edemonball_green_crystals_are_destroyed_until_damage_remaining ... FAILED": 1,
       "test world::tests::edemonball_non_green_base_ignores_green_crystal ... FAILED": 1,
       "test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
+      "The new stop-distance test passed, but the start-distance test failed because the target was not vis": 1,
+      "test world::tests::simple_baddy_message_actions_use_explicit_fight_driver_home_for_start_distance ..": 1,
+      "test result: FAILED. 34 passed; 1 failed; 0 ignored; 0 measured; 338 filtered out; finished in 0.01s": 1,
+      "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 338 filtered out; finished in 0.01s": 1,
+      "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

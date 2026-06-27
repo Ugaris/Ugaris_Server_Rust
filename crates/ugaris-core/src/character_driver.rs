@@ -70,6 +70,10 @@ pub struct SimpleBaddyDriverData {
     pub startdist: i32,
     pub chardist: i32,
     pub stopdist: i32,
+    #[serde(default)]
+    pub home_x: u16,
+    #[serde(default)]
+    pub home_y: u16,
     pub aggressive: i32,
     pub helper: i32,
     pub scavenger: i32,
@@ -114,6 +118,8 @@ impl Default for SimpleBaddyDriverData {
             startdist: 20,
             chardist: 0,
             stopdist: 40,
+            home_x: 0,
+            home_y: 0,
             aggressive: 0,
             helper: 0,
             scavenger: 0,

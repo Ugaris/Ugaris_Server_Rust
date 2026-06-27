@@ -2299,6 +2299,18 @@ impl World {
         data.stopdist != 0 && self.simple_baddy_target_home_dist(character, target) > data.stopdist
     }
 
+    pub fn set_simple_baddy_home(&mut self, character_id: CharacterId, x: u16, y: u16) -> bool {
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() else {
+            return false;
+        };
+        data.home_x = x;
+        data.home_y = y;
+        true
+    }
+
     fn remove_simple_baddy_enemy(&mut self, character_id: CharacterId, target_id: CharacterId) {
         if let Some(character) = self.characters.get_mut(&character_id) {
             if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
@@ -2443,15 +2455,12 @@ impl World {
     }
 
     fn simple_baddy_target_home_dist(&self, character: &Character, target: &Character) -> i32 {
-        let home_x = if character.rest_x != 0 {
-            character.rest_x
-        } else {
-            character.x
-        };
-        let home_y = if character.rest_y != 0 {
-            character.rest_y
-        } else {
-            character.y
+        let (home_x, home_y) = match character.driver_state.as_ref() {
+            Some(CharacterDriverState::SimpleBaddy(data)) if data.home_x != 0 => {
+                (data.home_x, data.home_y)
+            }
+            _ if character.rest_x != 0 => (character.rest_x, character.rest_y),
+            _ => (character.x, character.y),
         };
         map_dist(home_x, home_y, target.x, target.y)
     }
@@ -6544,6 +6553,40 @@ mod tests {
     }
 
     #[test]
+    fn simple_baddy_message_actions_use_explicit_fight_driver_home_for_start_distance() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            aggressive: 1,
+            startdist: 6,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_CHAR, 2, 0, 0);
+        let mut target = character(2);
+        target.group = 8;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 14, 10);
+        world.map.tile_mut(14, 10).unwrap().light = 255;
+        assert!(world.set_simple_baddy_home(CharacterId(1), 14, 10));
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.home_x, 14);
+        assert_eq!(data.home_y, 10);
+        assert_eq!(data.enemies.len(), 1);
+        assert_eq!(data.enemies[0].target_id, CharacterId(2));
+    }
+
+    #[test]
     fn simple_baddy_message_actions_rejects_non_hurt_enemy_in_neutral_zone() {
         let mut world = World::default();
         let mut npc = character(1);
@@ -6798,6 +6841,45 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert!(data.enemies.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_uses_explicit_fight_driver_home_for_stop_distance() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.values[0][CharacterValue::Attack as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            stopdist: 6,
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 14,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 14, 10);
+        world.map.tile_mut(14, 10).unwrap().light = 255;
+        assert!(world.set_simple_baddy_home(CharacterId(1), 14, 10));
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.home_x, 14);
+        assert_eq!(data.home_y, 10);
+        assert_eq!(data.enemies.len(), 1);
     }
 
     #[test]
