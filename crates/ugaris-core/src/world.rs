@@ -2359,7 +2359,7 @@ impl World {
             if self.setup_simple_baddy_self_preservation(character_id) {
                 return true;
             }
-            if self.setup_simple_baddy_fireball_attack(character_id, &target) {
+            if self.setup_simple_baddy_fireball_attack(character_id, &target, area_id) {
                 return true;
             }
             if self.setup_simple_baddy_spell_attack(character_id, &target) {
@@ -2824,6 +2824,7 @@ impl World {
         &mut self,
         character_id: CharacterId,
         target: &Character,
+        area_id: u16,
     ) -> bool {
         let Some(attacker) = self.characters.get(&character_id).cloned() else {
             return false;
@@ -2853,6 +2854,16 @@ impl World {
             }
             (usize::from(attacker.x), usize::from(attacker.y))
         } else {
+            if !self.fireball_line_hits_target(
+                character_id,
+                target.id,
+                usize::from(attacker.x),
+                usize::from(attacker.y),
+                usize::from(target.x),
+                usize::from(target.y),
+            ) {
+                return self.setup_simple_baddy_fireball_lane_move(character_id, target, area_id);
+            }
             predicted_fireball_target(&attacker, target)
         };
 
@@ -2874,6 +2885,148 @@ impl World {
             data.lastfight = self.tick.0 as i32;
         }
         true
+    }
+
+    fn setup_simple_baddy_fireball_lane_move(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+        area_id: u16,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let directions = [
+            Direction::Right,
+            Direction::Left,
+            Direction::Down,
+            Direction::Up,
+        ];
+        let mut blocked_directions = [false; 4];
+
+        for distance in 1..5 {
+            for (index, direction) in directions.into_iter().enumerate() {
+                if blocked_directions[index] {
+                    continue;
+                }
+                let (dx, dy) = direction.delta();
+                let Some(x) = offset_coordinate(usize::from(attacker.x), dx * distance as i16)
+                else {
+                    blocked_directions[index] = true;
+                    continue;
+                };
+                let Some(y) = offset_coordinate(usize::from(attacker.y), dy * distance as i16)
+                else {
+                    blocked_directions[index] = true;
+                    continue;
+                };
+                if x >= MAX_MAP || y >= MAX_MAP || self.map.blocks_movement(x, y) {
+                    blocked_directions[index] = true;
+                    continue;
+                }
+                if !self.fireball_line_hits_target(
+                    character_id,
+                    target.id,
+                    x,
+                    y,
+                    usize::from(target.x),
+                    usize::from(target.y),
+                ) {
+                    continue;
+                }
+                if self.setup_walk_direction(character_id, direction, area_id) {
+                    if let Some(character) = self.characters.get_mut(&character_id) {
+                        if let Some(CharacterDriverState::SimpleBaddy(data)) =
+                            character.driver_state.as_mut()
+                        {
+                            data.lastfight = self.tick.0 as i32;
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn fireball_line_hits_target(
+        &self,
+        attacker_id: CharacterId,
+        target_id: CharacterId,
+        from_x: usize,
+        from_y: usize,
+        target_x: usize,
+        target_y: usize,
+    ) -> bool {
+        let mut x = from_x as i32 * 1024 + 512;
+        let mut y = from_y as i32 * 1024 + 512;
+        let mut dx = target_x as i32 - from_x as i32;
+        let mut dy = target_y as i32 - from_y as i32;
+
+        if dx.abs() < 2 && dy.abs() < 2 {
+            return false;
+        }
+        if dx.abs() > dy.abs() {
+            dy = dy * 512 / dx.abs();
+            dx = dx * 512 / dx.abs();
+        } else {
+            dx = dx * 512 / dy.abs();
+            dy = dy * 512 / dy.abs();
+        }
+
+        for _ in 0..48 {
+            let cx = x / 1024;
+            let cy = y / 1024;
+            let Ok(cx_usize) = usize::try_from(cx) else {
+                return false;
+            };
+            let Ok(cy_usize) = usize::try_from(cy) else {
+                return false;
+            };
+            let Some(tile) = self.map.tile(cx_usize, cy_usize) else {
+                return false;
+            };
+            let fire_block = tile.flags.contains(MapFlags::TMOVEBLOCK)
+                || (!tile.flags.contains(MapFlags::FIRETHRU)
+                    && tile.flags.contains(MapFlags::MOVEBLOCK));
+            if fire_block && tile.character != attacker_id.0 as u16 {
+                return self.fireball_block_hits_target(target_id, cx_usize, cy_usize);
+            }
+            x += dx;
+            y += dy;
+        }
+
+        false
+    }
+
+    fn fireball_block_hits_target(&self, target_id: CharacterId, x: usize, y: usize) -> bool {
+        for (dx, dy) in [
+            (0, 0),
+            (1, 0),
+            (0, 1),
+            (-1, 0),
+            (0, -1),
+            (1, 1),
+            (-1, 1),
+            (1, -1),
+            (-1, -1),
+        ] {
+            let Some(check_x) = offset_coordinate(x, dx) else {
+                continue;
+            };
+            let Some(check_y) = offset_coordinate(y, dy) else {
+                continue;
+            };
+            if self
+                .map
+                .tile(check_x, check_y)
+                .is_some_and(|tile| tile.character == target_id.0 as u16)
+            {
+                return true;
+            }
+        }
+        false
     }
 
     fn setup_simple_baddy_spell_attack(
@@ -8341,6 +8494,90 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 455);
+    }
+
+    #[test]
+    fn simple_baddy_fireball_repositions_for_blocked_line_of_fire() {
+        let mut world = World::default();
+        world.tick = Tick(467);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FIREBALL_COST;
+        npc.values[0][CharacterValue::Fireball as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 14,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 14, 10);
+        world
+            .map
+            .tile_mut(12, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+        world.map.tile_mut(14, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!(npc.tox, 10);
+        assert_eq!(npc.toy, 11);
+        assert_eq!(npc.mana, FIREBALL_COST);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 467);
+    }
+
+    #[test]
+    fn simple_baddy_fireball_does_not_cast_through_blocked_line_without_lane() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FIREBALL_COST;
+        npc.values[0][CharacterValue::Fireball as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 14,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 14, 10);
+        for (x, y) in [(12, 10), (10, 9), (10, 11), (11, 10), (9, 10)] {
+            world
+                .map
+                .tile_mut(x, y)
+                .unwrap()
+                .flags
+                .insert(MapFlags::MOVEBLOCK);
+        }
+        world.map.tile_mut(14, 10).unwrap().light = 255;
+
+        let target = world.characters[&CharacterId(2)].clone();
+        assert!(!world.setup_simple_baddy_fireball_attack(CharacterId(1), &target, 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, 0);
+        assert_eq!(npc.mana, FIREBALL_COST);
     }
 
     #[test]
