@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     area_sound::AreaSoundSpecial,
-    attack::reduce_hurt_by_armor_and_lifeshield,
+    attack::reduce_hurt_by_armor,
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
@@ -178,6 +178,12 @@ impl World {
     ) -> Option<LegacyHurtOutcome> {
         let cause_id = cause_id.filter(|id| id.0 != 0 && self.characters.contains_key(id));
         let mut outcome = LegacyHurtOutcome::default();
+        let cause_position = cause_id.and_then(|id| {
+            self.characters
+                .get(&id)
+                .map(|character| (character.x, character.y))
+        });
+
         let (target_x, target_y) = {
             let target = self.characters.get_mut(&target_id)?;
             if target.flags.contains(CharacterFlags::DEAD) {
@@ -186,22 +192,28 @@ impl World {
 
             let damage = damage.max(0);
             let armor_value = character_value(target, CharacterValue::Armor);
-            let reduced = reduce_hurt_by_armor_and_lifeshield(
-                damage,
-                armor_value,
-                armor_divisor,
-                armor_percent,
-                target.lifeshield,
-                shield_percent,
-            );
-            outcome.damage_after_armor = reduced.damage_after_armor;
+            let mut damage_after_armor =
+                reduce_hurt_by_armor(damage, armor_value, armor_divisor, armor_percent);
+            outcome.damage_after_armor = damage_after_armor;
+
+            if target.flags.contains(CharacterFlags::FDEMON)
+                && !cause_position.is_some_and(|(x, y)| is_back_attack_against_target(target, x, y))
+            {
+                damage_after_armor /= 100;
+            }
 
             if !target.flags.contains(CharacterFlags::IMMORTAL) {
-                target.lifeshield = reduced.remaining_lifeshield;
-                target.hp -= reduced.hp_damage;
+                let mut hp_damage = damage_after_armor;
+                if hp_damage != 0 && target.lifeshield != 0 && shield_percent > 0 {
+                    let shield_absorbed = (hp_damage * shield_percent / 100).min(target.lifeshield);
+                    target.lifeshield -= shield_absorbed;
+                    hp_damage -= shield_absorbed;
+                    outcome.shield_absorbed = shield_absorbed;
+                }
+
+                target.hp -= hp_damage;
                 target.flags.insert(CharacterFlags::UPDATE);
-                outcome.shield_absorbed = reduced.shield_absorbed;
-                outcome.hp_damage = reduced.hp_damage;
+                outcome.hp_damage = hp_damage;
 
                 if target.hp < POWERSCALE / 2 {
                     if target.flags.contains(CharacterFlags::NODEATH) {
@@ -6248,6 +6260,21 @@ fn spell_duration_ticks(character: &Character, base_duration: i32) -> i32 {
     }
 }
 
+fn is_back_attack_against_target(target: &Character, attacker_x: u16, attacker_y: u16) -> bool {
+    let target_x = i32::from(target.x);
+    let target_y = i32::from(target.y);
+    let attacker_x = i32::from(attacker_x);
+    let attacker_y = i32::from(attacker_y);
+
+    match Direction::try_from(target.dir).ok() {
+        Some(Direction::Left) => target_x + 1 == attacker_x && target_y == attacker_y,
+        Some(Direction::Right) => target_x - 1 == attacker_x && target_y == attacker_y,
+        Some(Direction::Down) => target_x == attacker_x && target_y - 1 == attacker_y,
+        Some(Direction::Up) => target_x == attacker_x && target_y + 1 == attacker_y,
+        _ => false,
+    }
+}
+
 fn predicted_fireball_target(caster: &Character, target: &Character) -> (usize, usize) {
     if target.action != action::WALK {
         return (usize::from(target.x), usize::from(target.y));
@@ -6637,6 +6664,50 @@ mod tests {
         assert!(outcome.nodeath_saved);
         assert_eq!(nodeath.hp, 1);
         assert!(!nodeath.flags.contains(CharacterFlags::DEAD));
+    }
+
+    #[test]
+    fn legacy_hurt_ports_fdemon_back_attack_gate() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.flags |= CharacterFlags::FDEMON;
+        target.dir = Direction::Right as u8;
+        target.hp = 20 * POWERSCALE;
+        assert!(world.spawn_character(target, 10, 10));
+        assert!(world.spawn_character(character(2), 11, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(
+                CharacterId(1),
+                Some(CharacterId(2)),
+                10 * POWERSCALE,
+                1,
+                0,
+                0,
+            )
+            .unwrap();
+
+        assert_eq!(outcome.damage_after_armor, 10 * POWERSCALE);
+        assert_eq!(outcome.hp_damage, 100);
+        assert_eq!(world.characters[&CharacterId(1)].hp, 19_900);
+
+        world.remove_character(CharacterId(2));
+        assert!(world.spawn_character(character(2), 9, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(
+                CharacterId(1),
+                Some(CharacterId(2)),
+                10 * POWERSCALE,
+                1,
+                0,
+                0,
+            )
+            .unwrap();
+
+        assert_eq!(outcome.damage_after_armor, 10 * POWERSCALE);
+        assert_eq!(outcome.hp_damage, 10 * POWERSCALE);
+        assert_eq!(world.characters[&CharacterId(1)].hp, 9_900);
     }
 
     #[test]

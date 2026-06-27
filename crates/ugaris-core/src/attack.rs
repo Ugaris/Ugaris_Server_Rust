@@ -261,13 +261,7 @@ pub fn reduce_hurt_by_armor_and_lifeshield(
     lifeshield: i32,
     shield_percent: i32,
 ) -> HurtReduction {
-    let armor_divisor = armor_divisor.max(1);
-    let mut damage = damage.max(0);
-
-    let percent_damage = damage * armor_percent / 100;
-    let armor_cap = armor_value * POWERSCALE / 20 / armor_divisor;
-    damage -= percent_damage.min(armor_cap);
-    damage = damage.max(0);
+    let mut damage = reduce_hurt_by_armor(damage, armor_value, armor_divisor, armor_percent);
     let damage_after_armor = damage;
 
     let mut remaining_lifeshield = lifeshield.max(0);
@@ -284,6 +278,20 @@ pub fn reduce_hurt_by_armor_and_lifeshield(
         hp_damage: damage,
         remaining_lifeshield,
     }
+}
+
+pub fn reduce_hurt_by_armor(
+    damage: i32,
+    armor_value: i32,
+    armor_divisor: i32,
+    armor_percent: i32,
+) -> i32 {
+    let armor_divisor = armor_divisor.max(1);
+    let mut damage = damage.max(0);
+    let percent_damage = damage * armor_percent / 100;
+    let armor_cap = armor_value * POWERSCALE / 20 / armor_divisor;
+    damage -= percent_damage.min(armor_cap);
+    damage.max(0)
 }
 
 #[cfg(test)]
