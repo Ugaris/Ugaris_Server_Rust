@@ -744,6 +744,7 @@ mod tests {
             description: String::new(),
             flags: CharacterFlags::USED,
             sprite: 0,
+            driver: 0,
             speed_mode: SpeedMode::Normal,
             x: 0,
             y: 0,

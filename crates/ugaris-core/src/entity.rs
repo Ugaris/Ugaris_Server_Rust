@@ -293,6 +293,8 @@ pub struct Character {
     pub description: String,
     pub flags: CharacterFlags,
     pub sprite: i32,
+    #[serde(default)]
+    pub driver: u16,
     pub speed_mode: SpeedMode,
     pub x: u16,
     pub y: u16,
@@ -453,6 +455,7 @@ mod tests {
 
         assert!(character.driver_state.is_none());
         assert!(character.driver_messages.is_empty());
+        assert_eq!(character.driver, 0);
     }
 
     #[test]
@@ -463,6 +466,7 @@ mod tests {
             description: String::new(),
             flags: CharacterFlags::USED,
             sprite: 0,
+            driver: 0,
             speed_mode: SpeedMode::Normal,
             x: 0,
             y: 0,

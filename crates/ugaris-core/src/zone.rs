@@ -378,6 +378,7 @@ impl ZoneLoader {
             description: template.description,
             flags: template.flags | CharacterFlags::USED,
             sprite: template.sprite,
+            driver: template.driver,
             speed_mode: Default::default(),
             x: 0,
             y: 0,
@@ -1366,6 +1367,7 @@ mod tests {
         assert_eq!(character.y, 22);
         assert_eq!(character.values[1][0], 10);
         assert_eq!(character.professions[0], 3);
+        assert_eq!(character.driver, CDR_SIMPLEBADDY);
         assert_eq!(character.inventory[6], Some(ItemId(2)));
         assert_eq!(character.inventory[12], Some(ItemId(3)));
         assert_eq!(character.inventory[30], Some(ItemId(4)));
