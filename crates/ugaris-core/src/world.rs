@@ -1720,12 +1720,14 @@ impl World {
                     target_id,
                     priority,
                     require_visible,
+                    hurtme,
                 } => {
                     let tick = self.tick.0 as i32;
                     if self.simple_baddy_can_add_standard_enemy(
                         character_id,
                         target_id,
                         require_visible,
+                        hurtme,
                     ) {
                         let tracking = self.simple_baddy_enemy_tracking(character_id, target_id);
                         if let Some(character) = self.characters.get_mut(&character_id) {
@@ -1742,12 +1744,15 @@ impl World {
                     victim_id,
                 } => {
                     let tick = self.tick.0 as i32;
-                    if let Some(target_id) =
+                    if let Some((target_id, hurtme)) =
                         self.simple_baddy_seen_hit_enemy(character_id, attacker_id, victim_id)
                     {
                         let tracking = self.simple_baddy_enemy_tracking(character_id, target_id);
                         if let Some(character) = self.characters.get_mut(&character_id) {
-                            let _ = add_simple_baddy_enemy_unchecked(character, target_id, 1, tick);
+                            let priority = if hurtme { 1 } else { 0 };
+                            let _ = add_simple_baddy_enemy_unchecked(
+                                character, target_id, priority, tick,
+                            );
                             Self::apply_simple_baddy_enemy_tracking(character, target_id, tracking);
                         }
                     }
@@ -2044,6 +2049,7 @@ impl World {
         character_id: CharacterId,
         target_id: CharacterId,
         require_visible: bool,
+        hurtme: bool,
     ) -> bool {
         let Some(character) = self.characters.get(&character_id) else {
             return false;
@@ -2051,9 +2057,18 @@ impl World {
         let Some(target) = self.characters.get(&target_id) else {
             return false;
         };
-        character.group != target.group
-            && can_attack(character, target, &self.map)
-            && (!require_visible || char_see_char(character, target, &self.map, self.date.daylight))
+        if character.group == target.group || !can_attack(character, target, &self.map) {
+            return false;
+        }
+        if !hurtme
+            && self
+                .map
+                .tile(usize::from(target.x), usize::from(target.y))
+                .is_some_and(|tile| tile.flags.contains(MapFlags::NEUTRAL))
+        {
+            return false;
+        }
+        (!require_visible || char_see_char(character, target, &self.map, self.date.daylight))
             && self.simple_baddy_enemy_within_start_limits(character, target)
     }
 
@@ -2095,23 +2110,23 @@ impl World {
         character_id: CharacterId,
         attacker_id: CharacterId,
         victim_id: CharacterId,
-    ) -> Option<CharacterId> {
+    ) -> Option<(CharacterId, bool)> {
         let character = self.characters.get(&character_id)?;
         let attacker = self.characters.get(&attacker_id)?;
         let victim = self.characters.get(&victim_id)?;
 
         if victim.id != character.id
             && victim.group == character.group
-            && self.simple_baddy_can_add_standard_enemy(character_id, attacker_id, true)
+            && self.simple_baddy_can_add_standard_enemy(character_id, attacker_id, true, true)
         {
-            return Some(attacker_id);
+            return Some((attacker_id, true));
         }
 
         if attacker.id != character.id
             && attacker.group == character.group
-            && self.simple_baddy_can_add_standard_enemy(character_id, victim_id, true)
+            && self.simple_baddy_can_add_standard_enemy(character_id, victim_id, true, false)
         {
-            return Some(victim_id);
+            return Some((victim_id, false));
         }
 
         None
@@ -6128,6 +6143,80 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert!(data.enemies.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_rejects_non_hurt_enemy_in_neutral_zone() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            aggressive: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_CHAR, 2, 0, 0);
+        let mut target = character(2);
+        target.group = 8;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::NEUTRAL);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert!(data.enemies.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_keeps_hurt_enemy_in_neutral_zone() {
+        let mut world = World::default();
+        world.tick = Tick(324);
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        npc.push_driver_message(NT_GOTHIT, 2, 10, 0);
+        let mut attacker = character(2);
+        attacker.group = 8;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(attacker, 11, 10);
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::NEUTRAL);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(
+            data.enemies,
+            vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 324,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }]
+        );
     }
 
     #[test]

@@ -175,6 +175,7 @@ pub enum SimpleBaddyMessageOutcome {
         target_id: CharacterId,
         priority: i32,
         require_visible: bool,
+        hurtme: bool,
     },
     StandardSeenHit {
         attacker_id: CharacterId,
@@ -305,6 +306,7 @@ pub fn process_simple_baddy_messages(
                 target_id: CharacterId(message.dat1 as u32),
                 priority: 0,
                 require_visible: true,
+                hurtme: false,
             });
         }
 
@@ -349,6 +351,7 @@ pub fn process_simple_baddy_messages(
                 target_id: CharacterId(message.dat1 as u32),
                 priority: 1,
                 require_visible: false,
+                hurtme: true,
             });
         }
 
@@ -929,6 +932,7 @@ mod tests {
                     target_id: crate::ids::CharacterId(2),
                     priority: 0,
                     require_visible: true,
+                    hurtme: false,
                 },
                 SimpleBaddyMessageOutcome::StandardSeenHit {
                     attacker_id: crate::ids::CharacterId(3),
@@ -938,6 +942,7 @@ mod tests {
                     target_id: crate::ids::CharacterId(5),
                     priority: 1,
                     require_visible: false,
+                    hurtme: true,
                 },
                 SimpleBaddyMessageOutcome::BlessFriend {
                     target_id: crate::ids::CharacterId(2),
