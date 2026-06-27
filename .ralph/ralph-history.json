@@ -434,13 +434,41 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 17,
+      "startedAt": "2026-06-27T00:09:18.999Z",
+      "endedAt": "2026-06-27T00:18:46.020Z",
+      "durationMs": 566876,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: could not compile `ugaris-core` (lib test) due to 2 previous errors",
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 245 filtered out; finished in 0.00s",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test world::tests::world_usetrap_schedules_target_item_driver_timer ... FAILED",
+        "assertion failed: matches!(outcomes[0], ItemDriverOutcome::DoorToggle",
+        "test result: FAILED. 259 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test world::tests::world_timer_callback_expires_and_destroys_burned_out_torch ... FAILED",
+        "assertion failed: matches!(outcomes[0], ItemDriverOutcome::TorchExpired { item_name: _, .. })",
+        "test result: ok. 260 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 7866866,
+  "totalDurationMs": 8433742,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 217 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 16,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 17,
       "test result: ok. 235 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 14,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 14,
@@ -466,7 +494,7 @@
       "test light::tests::compute_shadow_handles_map_edges_like_legacy_bounds ... FAILED": 1,
       "test light::tests::compute_shadow_uses_legacy_foreground_tables_and_randomizer ... FAILED": 1,
       "test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 3,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.00s": 1,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 234 filtered out; finished in 0.00s": 1,
       "test result: ok. 245 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 2,
@@ -504,7 +532,15 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 75 filtered out; finished in 0.00s": 1,
       "test result: ok. 76 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "test result: ok. 257 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
+      "test result: ok. 257 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1,
+      "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 245 filtered out; finished in 0.00s": 1,
+      "test world::tests::world_usetrap_schedules_target_item_driver_timer ... FAILED": 1,
+      "assertion failed: matches!(outcomes[0], ItemDriverOutcome::DoorToggle": 1,
+      "test result: FAILED. 259 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test world::tests::world_timer_callback_expires_and_destroys_burned_out_torch ... FAILED": 1,
+      "assertion failed: matches!(outcomes[0], ItemDriverOutcome::TorchExpired { item_name: _, .. })": 1,
+      "test result: ok. 260 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

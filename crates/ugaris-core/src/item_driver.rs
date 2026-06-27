@@ -1133,15 +1133,25 @@ fn teleport_door_driver(character: &Character, item: &Item) -> ItemDriverOutcome
 
 fn door_driver(
     character: &Character,
-    item: &Item,
+    item: &mut Item,
     context: &ItemDriverContext,
 ) -> ItemDriverOutcome {
     if item.x == 0 {
         return ItemDriverOutcome::Noop;
     }
 
+    if context.timer_call {
+        item.driver_data.resize(40, 0);
+        if item.driver_data[39] != 0 {
+            item.driver_data[39] -= 1;
+        }
+        if drdata(item, 0) == 0 || item.driver_data[39] != 0 || drdata(item, 5) != 0 {
+            return ItemDriverOutcome::Noop;
+        }
+    }
+
     let required_key_id = door_required_key_id(item);
-    if required_key_id != 0 {
+    if !context.timer_call && required_key_id != 0 {
         if let Some(key) = context
             .door_key
             .as_ref()

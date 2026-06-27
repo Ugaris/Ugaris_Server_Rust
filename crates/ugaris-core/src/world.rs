@@ -75,6 +75,13 @@ const ITEM_DRIVER_TIMER: &str = "item_driver";
 const REMOVE_SPELL_TIMER: &str = "remove_spell";
 const POISON_CALLBACK_TIMER: &str = "poison_callback";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DoorToggleResult {
+    Toggled,
+    Blocked,
+    Failed,
+}
+
 fn item_light_may_have_changed(outcome: &ItemDriverOutcome) -> bool {
     matches!(
         outcome,
@@ -781,7 +788,7 @@ impl World {
         for event in self.timers.tick(self.tick.0) {
             match event.name.as_str() {
                 ITEM_DRIVER_TIMER => {
-                    let [driver, item_id, character_id, _, _] = event.payload.0;
+                    let [driver, item_id, character_id, timer_call, _] = event.payload.0;
                     if driver <= 0 || item_id <= 0 || character_id < 0 {
                         continue;
                     }
@@ -795,7 +802,7 @@ impl World {
                         request,
                         area_id,
                         &ItemDriverContext {
-                            timer_call: true,
+                            timer_call: timer_call != 0,
                             ..ItemDriverContext::default()
                         },
                     ));
@@ -1182,22 +1189,32 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
-            ItemDriverOutcome::DoorToggle { item_id, .. } => {
-                if self.toggle_door(item_id) {
+            ItemDriverOutcome::DoorToggle {
+                item_id,
+                character_id,
+            } => {
+                if self.toggle_door(item_id, character_id) == DoorToggleResult::Toggled {
                     outcome
                 } else {
                     ItemDriverOutcome::Noop
                 }
             }
-            ItemDriverOutcome::KeyedDoorToggle { item_id, .. } => {
-                if self.toggle_door(item_id) {
+            ItemDriverOutcome::KeyedDoorToggle {
+                item_id,
+                character_id,
+                ..
+            } => {
+                if self.toggle_door(item_id, character_id) == DoorToggleResult::Toggled {
                     outcome
                 } else {
                     ItemDriverOutcome::Noop
                 }
             }
-            ItemDriverOutcome::DoubleDoorToggle { item_id, .. } => {
-                if self.toggle_double_door(item_id) {
+            ItemDriverOutcome::DoubleDoorToggle {
+                item_id,
+                character_id,
+            } => {
+                if self.toggle_double_door(item_id, character_id) {
                     outcome
                 } else {
                     ItemDriverOutcome::Noop
@@ -1521,6 +1538,16 @@ impl World {
         character_id: CharacterId,
         after_ticks: u64,
     ) -> bool {
+        self.schedule_item_driver_timer_with_context(item_id, character_id, after_ticks, true)
+    }
+
+    fn schedule_item_driver_timer_with_context(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        after_ticks: u64,
+        timer_call: bool,
+    ) -> bool {
         let Some(item) = self.items.get(&item_id) else {
             return false;
         };
@@ -1534,7 +1561,7 @@ impl World {
                 i32::from(item.driver),
                 item_id.0 as i32,
                 character_id.0 as i32,
-                0,
+                if timer_call { 1 } else { 0 },
                 0,
             ]),
         )
@@ -1554,7 +1581,12 @@ impl World {
         else {
             return false;
         };
-        self.schedule_item_driver_timer(target_item_id, character_id, after_ticks)
+        self.schedule_item_driver_timer_with_context(
+            target_item_id,
+            character_id,
+            after_ticks,
+            character_id.0 == 0,
+        )
     }
 
     fn discover_steptrap_target(&mut self, item_id: ItemId) -> bool {
@@ -1710,38 +1742,49 @@ impl World {
         }
     }
 
-    fn toggle_door(&mut self, item_id: ItemId) -> bool {
+    fn toggle_door(&mut self, item_id: ItemId, character_id: CharacterId) -> DoorToggleResult {
         let Some(item) = self.items.get(&item_id) else {
-            return false;
+            return DoorToggleResult::Failed;
         };
         let x = usize::from(item.x);
         let y = usize::from(item.y);
         let is_open = item.driver_data.first().copied().unwrap_or_default() != 0;
 
         if x == 0 || y == 0 {
-            return false;
+            return DoorToggleResult::Failed;
         }
         let Some(tile) = self.map.tile(x, y) else {
-            return false;
+            return DoorToggleResult::Failed;
         };
         if tile.item != item_id.0 {
-            return false;
+            return DoorToggleResult::Failed;
         }
         if is_open
             && tile
                 .flags
                 .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
         {
-            return false;
+            if character_id.0 == 0 {
+                let should_retry = self.items.get_mut(&item_id).is_some_and(|item| {
+                    item.driver_data.resize(40, 0);
+                    item.driver_data[39] = item.driver_data[39].saturating_add(1);
+                    item.driver_data[5] == 0
+                });
+                if should_retry {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 5);
+                }
+            }
+            return DoorToggleResult::Blocked;
         }
 
+        let mut schedule_auto_close = false;
         let extended_door = {
             let Some(item) = self.items.get_mut(&item_id) else {
-                return false;
+                return DoorToggleResult::Failed;
             };
             item.driver_data.resize(40, 0);
             let Some(tile) = self.map.tile_mut(x, y) else {
-                return false;
+                return DoorToggleResult::Failed;
             };
 
             if is_open {
@@ -1771,16 +1814,22 @@ impl World {
                 );
                 item.driver_data[0] = 1;
                 item.sprite += 1;
+                item.driver_data[39] = item.driver_data[39].saturating_add(1);
+                schedule_auto_close = item.driver_data[5] == 0;
             }
 
             item.driver_data[7] != 0
         };
 
+        if schedule_auto_close {
+            self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
+        }
+
         if extended_door {
             self.shift_extended_door_foregrounds(x, y, if is_open { -1 } else { 1 });
         }
 
-        true
+        DoorToggleResult::Toggled
     }
 
     fn shift_extended_door_foregrounds(&mut self, x: usize, y: usize, delta: i32) {
@@ -1805,8 +1854,8 @@ impl World {
         }
     }
 
-    fn toggle_double_door(&mut self, item_id: ItemId) -> bool {
-        let mut toggled = self.toggle_door(item_id);
+    fn toggle_double_door(&mut self, item_id: ItemId, character_id: CharacterId) -> bool {
+        let mut toggled = self.toggle_door(item_id, character_id) == DoorToggleResult::Toggled;
         let Some((x, y, open_state)) = self.items.get(&item_id).map(|item| {
             (
                 usize::from(item.x),
@@ -1837,7 +1886,8 @@ impl World {
                 continue;
             };
             if door_open_state(adjacent_item) != open_state {
-                toggled |= self.toggle_door(adjacent_item_id);
+                toggled |=
+                    self.toggle_door(adjacent_item_id, character_id) == DoorToggleResult::Toggled;
             }
         }
 
@@ -5657,6 +5707,123 @@ mod tests {
         let door = world.items.get(&ItemId(7)).unwrap();
         assert_eq!(door.driver_data[0], 1);
         assert_eq!(door.sprite, 101);
+    }
+
+    #[test]
+    fn world_auto_closes_opened_door_from_timer() {
+        let mut world = World::default();
+        world.add_character(character(1));
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::DOOR);
+        door.driver = crate::item_driver::IDR_DOOR;
+        door.sprite = 100;
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_DOOR,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::DoorToggle { .. }));
+        assert_eq!(world.items.get(&ItemId(7)).unwrap().driver_data[39], 1);
+        assert_eq!(world.timers.used_timers(), 1);
+
+        for _ in 0..(TICKS_PER_SECOND * 10) {
+            world.advance();
+        }
+        let outcomes = world.process_due_timers(1);
+
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::DoorToggle {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+            }]
+        );
+        let door = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(door.driver_data[0], 0);
+        assert_eq!(door.driver_data[39], 0);
+        assert_eq!(door.sprite, 100);
+    }
+
+    #[test]
+    fn world_respects_no_auto_close_door_flag() {
+        let mut world = World::default();
+        world.add_character(character(1));
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::DOOR);
+        door.driver = crate::item_driver::IDR_DOOR;
+        door.driver_data.resize(6, 0);
+        door.driver_data[5] = 1;
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_DOOR,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::DoorToggle { .. }));
+        let door = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(door.driver_data[0], 1);
+        assert_eq!(door.driver_data[39], 1);
+        assert_eq!(world.timers.used_timers(), 0);
+    }
+
+    #[test]
+    fn world_retries_blocked_door_timer_close() {
+        let mut world = World::default();
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::DOOR);
+        door.driver = crate::item_driver::IDR_DOOR;
+        door.sprite = 101;
+        door.driver_data.resize(40, 0);
+        door.driver_data[0] = 1;
+        door.driver_data[39] = 1;
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::TMOVEBLOCK);
+        world.add_item(door);
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+
+        world.advance();
+        assert_eq!(world.process_due_timers(1), vec![ItemDriverOutcome::Noop]);
+        let door = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(door.driver_data[0], 1);
+        assert_eq!(door.driver_data[39], 1);
+        assert_eq!(world.timers.used_timers(), 1);
+
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .remove(MapFlags::TMOVEBLOCK);
+        for _ in 0..(TICKS_PER_SECOND * 5) {
+            world.advance();
+        }
+        let outcomes = world.process_due_timers(1);
+
+        assert!(matches!(
+            outcomes.as_slice(),
+            [ItemDriverOutcome::DoorToggle { .. }]
+        ));
+        let door = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(door.driver_data[0], 0);
+        assert_eq!(door.driver_data[39], 0);
+        assert_eq!(door.sprite, 100);
     }
 
     #[test]
