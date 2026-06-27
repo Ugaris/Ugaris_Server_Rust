@@ -2365,6 +2365,9 @@ impl World {
             if self.setup_simple_baddy_pulse_attack(character_id) {
                 return true;
             }
+            if self.setup_simple_baddy_attack_back_move(character_id, &target, area_id) {
+                return true;
+            }
             if let Some(direction) = adjacent_direction(
                 attacker.x,
                 attacker.y,
@@ -2442,6 +2445,64 @@ impl World {
         }
 
         false
+    }
+
+    fn setup_simple_baddy_attack_back_move(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+        area_id: u16,
+    ) -> bool {
+        let Ok(direction) = Direction::try_from(target.dir) else {
+            return false;
+        };
+        let (dx, dy) = direction.delta();
+        if dx != 0 && dy != 0 {
+            return false;
+        }
+
+        let Some(back_x) = offset_coordinate(usize::from(target.x), -dx) else {
+            return false;
+        };
+        let Some(back_y) = offset_coordinate(usize::from(target.y), -dy) else {
+            return false;
+        };
+        if back_x < 1 || back_y < 1 || back_x >= MAX_MAP || back_y >= MAX_MAP {
+            return false;
+        }
+        if self.map.blocks_movement(back_x, back_y) {
+            return false;
+        }
+
+        let Some(front_x) = offset_coordinate(usize::from(target.x), dx) else {
+            return false;
+        };
+        let Some(front_y) = offset_coordinate(usize::from(target.y), dy) else {
+            return false;
+        };
+        if front_x < 1 || front_y < 1 || front_x >= MAX_MAP || front_y >= MAX_MAP {
+            return false;
+        }
+
+        let front_occupied = self
+            .map
+            .tile(front_x, front_y)
+            .is_some_and(|tile| tile.character != 0);
+        let idle_target = target.action == action::IDLE
+            && self.tick.0.saturating_sub(u64::from(target.regen_ticker)) > TICKS_PER_SECOND / 2;
+        if !idle_target && !front_occupied {
+            return false;
+        }
+
+        if !self.setup_walk_toward(character_id, back_x, back_y, 0, area_id, false) {
+            return false;
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
+                data.lastfight = self.tick.0 as i32;
+            }
+        }
+        true
     }
 
     fn setup_simple_baddy_pulse_attack(&mut self, character_id: CharacterId) -> bool {
@@ -8228,6 +8289,85 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 457);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_moves_to_target_back_when_front_is_occupied() {
+        let mut world = World::default();
+        world.tick = Tick(458);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Attack as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 10,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut target = character(2);
+        target.dir = Direction::Right as u8;
+        let front_blocker = character(3);
+        world.spawn_character(npc, 9, 9);
+        world.spawn_character(target, 10, 10);
+        world.spawn_character(front_blocker, 11, 10);
+        world.map.tile_mut(10, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!(npc.tox, 9);
+        assert_eq!(npc.toy, 10);
+        assert_eq!(npc.dir, Direction::Down as u8);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 458);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_skips_back_move_when_back_tile_is_blocked() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Attack as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 10,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut target = character(2);
+        target.dir = Direction::Right as u8;
+        let front_blocker = character(3);
+        world.spawn_character(npc, 9, 9);
+        world.spawn_character(target, 10, 10);
+        world.spawn_character(front_blocker, 11, 10);
+        world
+            .map
+            .tile_mut(9, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+        world.map.tile_mut(10, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_ne!((npc.tox, npc.toy), (9, 10));
     }
 
     #[test]

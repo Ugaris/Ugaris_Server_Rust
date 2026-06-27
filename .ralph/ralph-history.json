@@ -1787,15 +1787,42 @@
         "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 108 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
       ]
+    },
+    {
+      "iteration": 64,
+      "startedAt": "2026-06-27T17:47:56.583Z",
+      "endedAt": "2026-06-27T17:57:05.269Z",
+      "durationMs": 548514,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: could not compile `ugaris-core` (lib test) due to 2 previous errors",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test world::tests::simple_baddy_attack_action_skips_back_move_when_back_tile_is_blocked ... FAILED",
+        "test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 27971577,
+  "totalDurationMs": 28520091,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 61,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 60,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 56,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 62,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 61,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 57,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 43,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 37,
@@ -1810,7 +1837,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 16,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 17,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 4,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -1863,7 +1890,7 @@
       "assertion failed: world.process_simple_baddy_attack_action(CharacterId(1), 1)": 1,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 7,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 8,
       "test world::tests::simple_baddy_message_actions_add_defensive_gothit_enemy_without_sight ... FAILED": 1,
       "test world::tests::simple_baddy_message_actions_helper_seen_hit_adds_enemy_for_friend ... FAILED": 1,
       "test result: FAILED. 25 passed; 2 failed; 0 ignored; 0 measured; 327 filtered out; finished in 0.01s": 1,
@@ -1906,7 +1933,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 31,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 32,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -1942,7 +1969,7 @@
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 387 filtered out; finished in 0.00s": 1,
       "test result: ok. 391 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 383 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 2,
       "test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 3,
       "test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 394 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
@@ -2011,7 +2038,10 @@
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.00s": 1,
       "test result: ok. 108 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 418 filtered out; finished in 0.00s": 1,
-      "test result: ok. 419 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 419 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test world::tests::simple_baddy_attack_action_skips_back_move_when_back_tile_is_blocked ... FAILED": 1,
+      "test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.00s": 1,
+      "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
