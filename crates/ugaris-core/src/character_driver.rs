@@ -4,7 +4,11 @@
 //! same numeric compatibility at the registry edge while routing known drivers
 //! to typed outcomes that can be filled in incrementally.
 
-use crate::entity::{Character, CharacterFlags};
+use crate::{
+    entity::{Character, CharacterFlags, CharacterValue, Item, INVENTORY_SIZE, POWERSCALE},
+    ids::ItemId,
+    item_driver::IDR_POTION,
+};
 
 pub const CDT_DRIVER: u16 = 0;
 pub const CDT_ITEM: u16 = 1;
@@ -132,6 +136,20 @@ pub struct SimpleBaddyParseResult {
     pub unknown: Vec<UnknownSimpleBaddyArgument>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SimpleBaddyMessageOutcome {
+    UseInventoryPotion {
+        item_id: ItemId,
+        reason: PotionUseReason,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PotionUseReason {
+    LowHp,
+    LowMana,
+}
+
 pub fn parse_simple_baddy_driver_args(args: &str) -> SimpleBaddyParseResult {
     let mut data = SimpleBaddyDriverData::default();
     let mut unknown = Vec::new();
@@ -205,6 +223,106 @@ pub fn apply_simple_baddy_create_message(
     }
 
     unknown
+}
+
+pub fn process_simple_baddy_messages(
+    character: &mut Character,
+    carried_items: &[Item],
+) -> Vec<SimpleBaddyMessageOutcome> {
+    let drink_inventory_potions = matches!(
+        character.driver_state.as_ref(),
+        Some(CharacterDriverState::SimpleBaddy(data)) if data.drink_inventory_potions != 0
+    );
+    let mut outcomes = Vec::new();
+
+    let messages = std::mem::take(&mut character.driver_messages);
+    for message in messages {
+        if message.message_type == NT_GOTHIT && drink_inventory_potions {
+            if let Some(item_id) = find_simple_baddy_inventory_potion(
+                character,
+                carried_items,
+                CharacterValue::Hp,
+                2,
+                PotionUseReason::LowHp,
+            ) {
+                outcomes.push(SimpleBaddyMessageOutcome::UseInventoryPotion {
+                    item_id,
+                    reason: PotionUseReason::LowHp,
+                });
+            }
+
+            if let Some(item_id) = find_simple_baddy_inventory_potion(
+                character,
+                carried_items,
+                CharacterValue::Mana,
+                4,
+                PotionUseReason::LowMana,
+            ) {
+                outcomes.push(SimpleBaddyMessageOutcome::UseInventoryPotion {
+                    item_id,
+                    reason: PotionUseReason::LowMana,
+                });
+            }
+        }
+    }
+
+    outcomes
+}
+
+fn find_simple_baddy_inventory_potion(
+    character: &Character,
+    carried_items: &[Item],
+    value: CharacterValue,
+    divisor: i32,
+    reason: PotionUseReason,
+) -> Option<ItemId> {
+    let max_value = character_value(character, value);
+    if max_value == 0 {
+        return None;
+    }
+
+    let current = match value {
+        CharacterValue::Hp => character.hp,
+        CharacterValue::Mana => character.mana,
+        _ => return None,
+    };
+    if current >= max_value * POWERSCALE / divisor {
+        return None;
+    }
+
+    character
+        .inventory
+        .get(30..INVENTORY_SIZE)
+        .unwrap_or_default()
+        .iter()
+        .flatten()
+        .find(|item_id| {
+            carried_items
+                .iter()
+                .find(|item| item.id == **item_id)
+                .is_some_and(|item| {
+                    item.driver == IDR_POTION
+                        && match reason {
+                            PotionUseReason::LowHp => drdata(item, 1) != 0,
+                            PotionUseReason::LowMana => drdata(item, 2) != 0,
+                        }
+                })
+        })
+        .copied()
+}
+
+fn character_value(character: &Character, value: CharacterValue) -> i32 {
+    character
+        .values
+        .get(1)
+        .and_then(|values| values.get(value as usize))
+        .copied()
+        .unwrap_or_default()
+        .into()
+}
+
+fn drdata(item: &Item, index: usize) -> u8 {
+    item.driver_data.get(index).copied().unwrap_or_default()
 }
 
 fn next_legacy_name_value(input: &str) -> Option<(&str, &str, &str)> {
@@ -323,7 +441,10 @@ fn dispatch_known_character_driver(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{entity::SpeedMode, ids::ItemId};
+    use crate::{
+        entity::{ItemFlags, SpeedMode},
+        ids::ItemId,
+    };
 
     #[test]
     fn legacy_dispatch_type_constants_match_c_libload() {
@@ -530,6 +651,72 @@ mod tests {
         assert_eq!(data.creation_time, 1234);
     }
 
+    #[test]
+    fn simple_baddy_gothit_uses_matching_inventory_potions_when_low() {
+        let mut character = test_character();
+        character.values[1][CharacterValue::Hp as usize] = 20;
+        character.values[1][CharacterValue::Mana as usize] = 20;
+        character.hp = 9 * POWERSCALE;
+        character.mana = 4 * POWERSCALE;
+        character.inventory[30] = Some(ItemId(30));
+        character.inventory[31] = Some(ItemId(31));
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            drink_inventory_potions: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        character.push_driver_message(NT_GOTHIT, 0, 0, 0);
+
+        let outcomes = process_simple_baddy_messages(
+            &mut character,
+            &[
+                test_item(ItemId(30), IDR_POTION, &[0, 1, 0]),
+                test_item(ItemId(31), IDR_POTION, &[0, 0, 1]),
+            ],
+        );
+
+        assert_eq!(
+            outcomes,
+            vec![
+                SimpleBaddyMessageOutcome::UseInventoryPotion {
+                    item_id: ItemId(30),
+                    reason: PotionUseReason::LowHp,
+                },
+                SimpleBaddyMessageOutcome::UseInventoryPotion {
+                    item_id: ItemId(31),
+                    reason: PotionUseReason::LowMana,
+                },
+            ]
+        );
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_gothit_ignores_disabled_or_wrong_potions() {
+        let mut character = test_character();
+        character.values[1][CharacterValue::Hp as usize] = 20;
+        character.hp = 9 * POWERSCALE;
+        character.inventory[29] = Some(ItemId(29));
+        character.inventory[30] = Some(ItemId(30));
+        character.inventory[31] = Some(ItemId(31));
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            drink_inventory_potions: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        character.push_driver_message(NT_GOTHIT, 0, 0, 0);
+
+        let outcomes = process_simple_baddy_messages(
+            &mut character,
+            &[
+                test_item(ItemId(29), IDR_POTION, &[0, 1, 0]),
+                test_item(ItemId(30), 999, &[0, 1, 0]),
+                test_item(ItemId(31), IDR_POTION, &[0, 0, 1]),
+            ],
+        );
+
+        assert!(outcomes.is_empty());
+        assert!(character.driver_messages.is_empty());
+    }
+
     fn test_character() -> Character {
         Character {
             id: crate::ids::CharacterId(1),
@@ -570,6 +757,32 @@ mod tests {
             inventory: Character::empty_inventory(),
             driver_state: None,
             driver_messages: Vec::new(),
+        }
+    }
+
+    fn test_item(id: ItemId, driver: u16, driver_data: &[u8]) -> Item {
+        Item {
+            id,
+            name: String::new(),
+            description: String::new(),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [0; crate::entity::MAX_MODIFIERS],
+            modifier_value: [0; crate::entity::MAX_MODIFIERS],
+            x: 0,
+            y: 0,
+            carried_by: None,
+            contained_in: None,
+            content_id: 0,
+            driver,
+            driver_data: driver_data.to_vec(),
+            serial: 0,
         }
     }
 }
