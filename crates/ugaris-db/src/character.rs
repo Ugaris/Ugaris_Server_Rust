@@ -445,12 +445,24 @@ async fn begin_login_tx(
     tx: &mut Transaction<'_, Postgres>,
     request: LoginRequest,
 ) -> anyhow::Result<LoginOutcome> {
-    let row = sqlx::query_as::<_, (i64, i64, String, bool, bool, bool, bool, Option<i32>, i32, i32, i32, i32)>(
-        "select c.id, c.account_id, c.name, c.locked, a.locked, a.ip_locked, a.fixed, \
-         extract(epoch from a.paid_until)::int, c.current_area, c.allowed_area, c.mirror, c.current_mirror \
-         from characters c join accounts a on a.id = c.account_id \
-         where lower(c.name) = lower($1) for update",
-    )
+    let row = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i64,
+            String,
+            String,
+            bool,
+            bool,
+            bool,
+            bool,
+            Option<i32>,
+            i32,
+            i32,
+            i32,
+            i32,
+        ),
+    >(BEGIN_LOGIN_SQL)
     .bind(&request.name)
     .fetch_optional(&mut **tx)
     .await?;
@@ -459,6 +471,7 @@ async fn begin_login_tx(
         id,
         account_id,
         name,
+        password_hash,
         character_locked,
         account_locked,
         ip_locked,
@@ -472,6 +485,10 @@ async fn begin_login_tx(
     else {
         return Ok(LoginOutcome::WrongPassword);
     };
+
+    if !legacy_password_matches(&request.password, &password_hash) {
+        return Ok(LoginOutcome::WrongPassword);
+    }
 
     if character_locked || account_locked {
         return Ok(LoginOutcome::Locked);
@@ -540,6 +557,15 @@ async fn begin_login_tx(
     })
 }
 
+fn legacy_password_matches(password: &str, stored_password: &str) -> bool {
+    password == stored_password
+}
+
+const BEGIN_LOGIN_SQL: &str = "select c.id, c.account_id, c.name, a.password_hash, c.locked, a.locked, a.ip_locked, a.fixed, \
+         extract(epoch from a.paid_until)::int, c.current_area, c.allowed_area, c.mirror, c.current_mirror \
+          from characters c join accounts a on a.id = c.account_id \
+          where lower(c.name) = lower($1) for update";
+
 async fn update_mirror_if_needed(
     tx: &mut Transaction<'_, Postgres>,
     id: i64,
@@ -573,6 +599,19 @@ mod tests {
             LoginOutcome::TooManyBadPasswords.legacy_find_login_code(),
             -9
         );
+    }
+
+    #[test]
+    fn legacy_password_check_matches_c_plaintext_compare() {
+        assert!(legacy_password_matches("test123", "test123"));
+        assert!(!legacy_password_matches("test123", "Test123"));
+        assert!(!legacy_password_matches("test123", ""));
+    }
+
+    #[test]
+    fn login_query_fetches_account_password_before_status_checks() {
+        assert!(BEGIN_LOGIN_SQL.contains("a.password_hash"));
+        assert!(BEGIN_LOGIN_SQL.contains("for update"));
     }
 
     #[test]
