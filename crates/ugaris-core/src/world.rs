@@ -2036,9 +2036,21 @@ impl World {
         if attacker_id == defender_id {
             return false;
         }
+        let Some((attacker_x, attacker_y, attacker_rhand)) =
+            self.characters.get(&attacker_id).map(|attacker| {
+                (
+                    usize::from(attacker.x),
+                    usize::from(attacker.y),
+                    attacker.inventory[worn_slot::RIGHT_HAND].is_some(),
+                )
+            })
+        else {
+            return false;
+        };
         let Some(mut defender) = self.characters.remove(&defender_id) else {
             return false;
         };
+        let defender_rhand = defender.inventory[worn_slot::RIGHT_HAND].is_some();
         let resolution = self.characters.get_mut(&attacker_id).and_then(|attacker| {
             act_attack(attacker, &mut defender, &self.map, d100_roll, d6_roll)
         });
@@ -2046,6 +2058,16 @@ impl World {
         let Some(resolution) = resolution else {
             return false;
         };
+        let sound_type = if resolution.hit {
+            7
+        } else if !attacker_rhand || !defender_rhand {
+            8
+        } else if d100_roll.rem_euclid(2) == 0 {
+            34
+        } else {
+            35
+        };
+        self.queue_sound_area(attacker_x, attacker_y, sound_type);
         if resolution.hit {
             self.apply_legacy_hurt(
                 defender_id,
@@ -10072,6 +10094,7 @@ mod tests {
     fn world_completes_attack_action_with_damage() {
         let mut world = World::default();
         let mut attacker = character(1);
+        attacker.flags.insert(CharacterFlags::PLAYER);
         attacker.x = 10;
         attacker.y = 10;
         attacker.dir = Direction::Right as u8;
@@ -10101,6 +10124,75 @@ mod tests {
         assert_eq!(
             world.characters[&CharacterId(1)].driver_messages[0].message_type,
             NT_DIDHIT
+        );
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            7
+        );
+    }
+
+    #[test]
+    fn completed_attack_queues_legacy_unarmed_miss_sound() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker.flags.insert(CharacterFlags::PLAYER);
+        attacker.x = 10;
+        attacker.y = 10;
+        attacker.dir = Direction::Right as u8;
+        attacker.action = action::ATTACK1;
+        attacker.duration = 1;
+        attacker.act1 = 2;
+        attacker.values[0][CharacterValue::Attack as usize] = 10;
+        let mut defender = character(2);
+        defender.x = 11;
+        defender.y = 10;
+        defender.values[0][CharacterValue::Parry as usize] = 10;
+        world.spawn_character(attacker, 10, 10);
+        world.spawn_character(defender, 11, 10);
+
+        assert!(world.complete_attack_with_rolls(CharacterId(1), CharacterId(2), 100, 1));
+
+        assert_eq!(world.characters[&CharacterId(2)].hp, 0);
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            8
+        );
+    }
+
+    #[test]
+    fn completed_attack_queues_legacy_weapon_clash_miss_sound() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker.flags.insert(CharacterFlags::PLAYER);
+        attacker.x = 10;
+        attacker.y = 10;
+        attacker.dir = Direction::Right as u8;
+        attacker.act1 = 2;
+        attacker.values[0][CharacterValue::Attack as usize] = 10;
+        let mut defender = character(2);
+        defender.x = 11;
+        defender.y = 10;
+        defender.values[0][CharacterValue::Parry as usize] = 10;
+        let mut attacker_weapon = item(10, ItemFlags::USED | ItemFlags::WNRHAND);
+        attacker_weapon.carried_by = Some(CharacterId(1));
+        let mut defender_weapon = item(11, ItemFlags::USED | ItemFlags::WNRHAND);
+        defender_weapon.carried_by = Some(CharacterId(2));
+        attacker.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(10));
+        defender.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(11));
+        world.spawn_character(attacker, 10, 10);
+        world.spawn_character(defender, 11, 10);
+        world.add_item(attacker_weapon);
+        world.add_item(defender_weapon);
+
+        assert!(world.complete_attack_with_rolls(CharacterId(1), CharacterId(2), 100, 1));
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            34
+        );
+        assert!(world.complete_attack_with_rolls(CharacterId(1), CharacterId(2), 99, 1));
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            35
         );
     }
 
