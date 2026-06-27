@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::{
+    character_driver::{apply_simple_baddy_create_message, CDR_SIMPLEBADDY, NT_CREATE},
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
         MAX_MODIFIERS, POWERSCALE, PROFESSION_COUNT,
@@ -371,48 +372,52 @@ impl ZoneLoader {
             inventory_items.push(item);
         }
 
-        Ok((
-            Character {
-                id,
-                name: template.name,
-                description: template.description,
-                flags: template.flags | CharacterFlags::USED,
-                sprite: template.sprite,
-                speed_mode: Default::default(),
-                x: 0,
-                y: 0,
-                rest_area: 0,
-                rest_x: 0,
-                rest_y: 0,
-                tox: 0,
-                toy: 0,
-                dir: LEGACY_DIR_RIGHTDOWN,
-                action: 0,
-                duration: 0,
-                step: 0,
-                act1: 0,
-                act2: 0,
-                hp: i32::from(values[0][0]) * POWERSCALE,
-                mana: i32::from(values[0][2]) * POWERSCALE,
-                endurance: i32::from(values[0][1]) * POWERSCALE,
-                lifeshield: 0,
-                level: template.level_override.unwrap_or(0),
-                exp: 0,
-                exp_used: 0,
-                gold: template.gold,
-                creation_time: 0,
-                saves: 0,
-                deaths: 0,
-                cursor_item: None,
-                current_container: None,
-                values,
-                professions: template.professions,
-                inventory,
-                driver_state: None,
-                driver_messages: Vec::new(),
-            },
-            inventory_items,
-        ))
+        let mut character = Character {
+            id,
+            name: template.name,
+            description: template.description,
+            flags: template.flags | CharacterFlags::USED,
+            sprite: template.sprite,
+            speed_mode: Default::default(),
+            x: 0,
+            y: 0,
+            rest_area: 0,
+            rest_x: 0,
+            rest_y: 0,
+            tox: 0,
+            toy: 0,
+            dir: LEGACY_DIR_RIGHTDOWN,
+            action: 0,
+            duration: 0,
+            step: 0,
+            act1: 0,
+            act2: 0,
+            hp: i32::from(values[0][0]) * POWERSCALE,
+            mana: i32::from(values[0][2]) * POWERSCALE,
+            endurance: i32::from(values[0][1]) * POWERSCALE,
+            lifeshield: 0,
+            level: template.level_override.unwrap_or(0),
+            exp: 0,
+            exp_used: 0,
+            gold: template.gold,
+            creation_time: 0,
+            saves: 0,
+            deaths: 0,
+            cursor_item: None,
+            current_container: None,
+            values,
+            professions: template.professions,
+            inventory,
+            driver_state: None,
+            driver_messages: Vec::new(),
+        };
+
+        if template.driver == CDR_SIMPLEBADDY {
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+
+        Ok((character, inventory_items))
     }
 }
 
@@ -1318,6 +1323,9 @@ mod tests {
             Guard:
               name="Practice Guard"
               flag=CF_RESPAWN
+              flag=CF_NOBODY
+              driver=7
+              arg="aggressive=1; startdist=8; drinkinvpots=1;"
               V_HP=10
               P_ATHLETE=3
               WN_RHAND=Torch
@@ -1361,6 +1369,17 @@ mod tests {
         assert_eq!(character.inventory[6], Some(ItemId(2)));
         assert_eq!(character.inventory[12], Some(ItemId(3)));
         assert_eq!(character.inventory[30], Some(ItemId(4)));
+        assert!(!character.flags.contains(CharacterFlags::NOBODY));
+        assert!(character.flags.contains(CharacterFlags::ITEMDEATH));
+        assert!(character.driver_messages.is_empty());
+        let Some(crate::character_driver::CharacterDriverState::SimpleBaddy(data)) =
+            &character.driver_state
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.aggressive, 1);
+        assert_eq!(data.startdist, 8);
+        assert_eq!(data.drink_inventory_potions, 1);
 
         assert_eq!(world.items.get(&ItemId(1)).unwrap().x, 11);
         assert_eq!(

@@ -4,6 +4,8 @@
 //! same numeric compatibility at the registry edge while routing known drivers
 //! to typed outcomes that can be filled in incrementally.
 
+use crate::entity::{Character, CharacterFlags};
+
 pub const CDT_DRIVER: u16 = 0;
 pub const CDT_ITEM: u16 = 1;
 pub const CDT_DEAD: u16 = 2;
@@ -171,6 +173,40 @@ pub fn parse_simple_baddy_driver_args(args: &str) -> SimpleBaddyParseResult {
     SimpleBaddyParseResult { data, unknown }
 }
 
+pub fn apply_simple_baddy_create_message(
+    character: &mut Character,
+    args: Option<&str>,
+    current_tick: i32,
+) -> Vec<UnknownSimpleBaddyArgument> {
+    let mut data = match character.driver_state.take() {
+        Some(CharacterDriverState::SimpleBaddy(data)) => data,
+        None => SimpleBaddyDriverData::default(),
+    };
+
+    let unknown = if let Some(args) = args.filter(|args| !args.is_empty()) {
+        let parsed = parse_simple_baddy_driver_args(args);
+        data = parsed.data;
+        parsed.unknown
+    } else {
+        Vec::new()
+    };
+
+    data.creation_time = current_tick;
+    character.driver_state = Some(CharacterDriverState::SimpleBaddy(data));
+    character
+        .driver_messages
+        .retain(|message| message.message_type != NT_CREATE);
+
+    if character.inventory.get(30).and_then(|slot| *slot).is_some()
+        && character.flags.contains(CharacterFlags::NOBODY)
+    {
+        character.flags.remove(CharacterFlags::NOBODY);
+        character.flags.insert(CharacterFlags::ITEMDEATH);
+    }
+
+    unknown
+}
+
 fn next_legacy_name_value(input: &str) -> Option<(&str, &str, &str)> {
     let input = input.trim_start_matches(char::is_whitespace);
     let name_len = input
@@ -287,6 +323,7 @@ fn dispatch_known_character_driver(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{entity::SpeedMode, ids::ItemId};
 
     #[test]
     fn legacy_dispatch_type_constants_match_c_libload() {
@@ -458,5 +495,80 @@ mod tests {
         assert_eq!(parsed.data.aggressive, 1);
         assert_eq!(parsed.data.helper, 0);
         assert!(parsed.unknown.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_create_initializes_state_and_item_body_flags() {
+        let mut character = test_character();
+        character.flags.insert(CharacterFlags::NOBODY);
+        character.inventory[30] = Some(ItemId(77));
+        character.push_driver_message(NT_CREATE, 0, 0, 0);
+
+        let unknown = apply_simple_baddy_create_message(
+            &mut character,
+            Some("aggressive=1; startdist=9; drinkinvpots=1; unknown=7;"),
+            1234,
+        );
+
+        assert_eq!(
+            unknown,
+            vec![UnknownSimpleBaddyArgument {
+                name: "unknown".to_string(),
+                value: "7".to_string(),
+            }]
+        );
+        assert!(!character.flags.contains(CharacterFlags::NOBODY));
+        assert!(character.flags.contains(CharacterFlags::ITEMDEATH));
+        assert!(character.driver_messages.is_empty());
+
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.aggressive, 1);
+        assert_eq!(data.startdist, 9);
+        assert_eq!(data.drink_inventory_potions, 1);
+        assert_eq!(data.creation_time, 1234);
+    }
+
+    fn test_character() -> Character {
+        Character {
+            id: crate::ids::CharacterId(1),
+            name: "Rat".to_string(),
+            description: String::new(),
+            flags: CharacterFlags::USED,
+            sprite: 0,
+            speed_mode: SpeedMode::Normal,
+            x: 0,
+            y: 0,
+            rest_area: 0,
+            rest_x: 0,
+            rest_y: 0,
+            tox: 0,
+            toy: 0,
+            dir: 0,
+            action: 0,
+            duration: 0,
+            step: 0,
+            act1: 0,
+            act2: 0,
+            hp: 0,
+            mana: 0,
+            endurance: 0,
+            lifeshield: 0,
+            level: 0,
+            exp: 0,
+            exp_used: 0,
+            gold: 0,
+            creation_time: 0,
+            saves: 0,
+            deaths: 0,
+            cursor_item: None,
+            current_container: None,
+            values: Character::empty_values(),
+            professions: Character::empty_professions(),
+            inventory: Character::empty_inventory(),
+            driver_state: None,
+            driver_messages: Vec::new(),
+        }
     }
 }
