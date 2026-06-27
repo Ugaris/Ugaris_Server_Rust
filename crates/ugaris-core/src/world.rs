@@ -13,8 +13,8 @@ use crate::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
         advance_action_step, can_attack, do_attack, do_ball, do_bless, do_drop, do_fireball,
         do_flash, do_freeze, do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk,
-        do_warcry, endurance_cost, reset_action_after_act, speed_ticks, ItemUseRequest,
-        DUR_MISC_ACTION,
+        do_warcry, endurance_cost, reset_action_after_act, speed_ticks, speed_ticks_inverse,
+        ItemUseRequest, DUR_MISC_ACTION,
     },
     drvlib::{char_dist, map_dist},
     effect::Effect,
@@ -5852,6 +5852,7 @@ impl World {
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            add_character_value_delta(target, CharacterValue::Speed, speed_modifier);
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             match driver {
                 IDR_FREEZE => {
@@ -6385,15 +6386,32 @@ impl World {
         if item.serial != item_serial {
             return false;
         }
+        let spell_driver = item.driver;
+        let speed_modifier = item_modifier_value(item, CharacterValue::Speed).unwrap_or_default();
         if character.inventory.get(slot).copied().flatten() != Some(item_id) {
             return false;
         }
 
+        let old_speed = character_value(character, CharacterValue::Speed);
+        let old_duration = character.duration;
         character.inventory[slot] = None;
         character
             .flags
             .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
         self.items.remove(&item_id);
+        if speed_modifier != 0 {
+            add_character_value_delta(character, CharacterValue::Speed, -i32::from(speed_modifier));
+        }
+        if spell_driver == IDR_FREEZE && old_duration != 0 {
+            let real_duration = speed_ticks_inverse(old_speed, character.speed_mode, old_duration);
+            let new_duration = speed_ticks(
+                character_value(character, CharacterValue::Speed),
+                character.speed_mode,
+                real_duration,
+            );
+            character.duration = new_duration;
+            character.step = character.step * new_duration / old_duration;
+        }
         true
     }
 
@@ -6496,6 +6514,16 @@ fn character_value(character: &Character, value: CharacterValue) -> i32 {
         .unwrap_or_default() as i32
 }
 
+fn add_character_value_delta(character: &mut Character, value: CharacterValue, delta: i32) {
+    if let Some(slot) = character
+        .values
+        .get_mut(0)
+        .and_then(|values| values.get_mut(value as usize))
+    {
+        *slot = (i32::from(*slot) + delta).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+    }
+}
+
 fn character_value_present(character: &Character, value: CharacterValue) -> i32 {
     character
         .values
@@ -6513,6 +6541,13 @@ fn spell_duration_ticks(character: &Character, base_duration: i32) -> i32 {
     } else {
         base_duration
     }
+}
+
+fn item_modifier_value(item: &Item, value: CharacterValue) -> Option<i16> {
+    item.modifier_index
+        .iter()
+        .zip(item.modifier_value.iter())
+        .find_map(|(&index, &modifier)| (index == value as i16).then_some(modifier))
 }
 
 fn is_back_attack_against_target(target: &Character, attacker_x: u16, attacker_y: u16) -> bool {
@@ -11787,6 +11822,7 @@ mod tests {
         assert_eq!(spell.modifier_index[0], CharacterValue::Speed as i16);
         assert_eq!(spell.modifier_value[0], -420);
         assert_eq!(spell.carried_by, Some(CharacterId(2)));
+        assert_eq!(target.values[0][CharacterValue::Speed as usize], -420);
         assert_eq!(
             u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
             396
@@ -12023,6 +12059,35 @@ mod tests {
         assert!(character.flags.contains(CharacterFlags::ITEMS));
         assert!(character.flags.contains(CharacterFlags::UPDATE));
         assert!(!world.items.contains_key(&spell_id));
+    }
+
+    #[test]
+    fn freeze_spell_timer_restores_speed_and_rescales_current_action() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[12] = Some(ItemId(7));
+        character.values[0][CharacterValue::Speed as usize] = -420;
+        character.duration = 50;
+        character.step = 25;
+        let mut spell = item(7, ItemFlags::USED);
+        spell.driver = IDR_FREEZE;
+        spell.carried_by = Some(CharacterId(1));
+        spell.modifier_index[0] = CharacterValue::Speed as i16;
+        spell.modifier_value[0] = -420;
+        spell.driver_data = 110_u32.to_le_bytes().to_vec();
+        world.add_character(character);
+        world.add_item(spell);
+
+        assert_eq!(world.schedule_existing_spell_timers(), 1);
+        world.tick = Tick(110);
+        assert!(world.process_due_timers(1).is_empty());
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[12], None);
+        assert_eq!(character.values[0][CharacterValue::Speed as usize], 0);
+        assert_eq!(character.duration, 13);
+        assert_eq!(character.step, 6);
+        assert!(!world.items.contains_key(&ItemId(7)));
     }
 
     #[test]

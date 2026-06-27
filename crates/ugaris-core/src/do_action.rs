@@ -130,6 +130,24 @@ pub fn speed_ticks(speedy: i32, mode: SpeedMode, ticks: i32) -> i32 {
     ((ticks as f64 / f) as i32).clamp(2, 255)
 }
 
+pub fn speed_ticks_inverse(speedy: i32, mode: SpeedMode, ticks: i32) -> i32 {
+    let mut speedy = if speedy > 0 {
+        speedy / 2
+    } else {
+        ((speedy as f64) * 0.75) as i32
+    };
+
+    if mode == SpeedMode::Fast {
+        speedy += 40;
+    }
+    if mode == SpeedMode::Stealth {
+        speedy -= 40;
+    }
+
+    let f = (0.75 + speedy as f64 / 288.0).clamp(0.2, 2.0);
+    ((ticks as f64 * f).ceil() as i32).clamp(2, 255)
+}
+
 pub fn endurance_cost(character: &Character) -> i32 {
     const END_COST: i32 = POWERSCALE / 4;
     let athlete = character
@@ -1404,6 +1422,14 @@ mod tests {
         assert_eq!(speed_ticks(40, SpeedMode::Fast, 8), 8);
         assert_eq!(speed_ticks(-40, SpeedMode::Stealth, 8), 15);
         assert_eq!(speed_ticks(1000, SpeedMode::Fast, 8), 4);
+    }
+
+    #[test]
+    fn speed_ticks_inverse_matches_legacy_formula_without_weather_modifier() {
+        assert_eq!(speed_ticks_inverse(0, SpeedMode::Normal, 50), 38);
+        assert_eq!(speed_ticks_inverse(-420, SpeedMode::Normal, 50), 10);
+        assert_eq!(speed_ticks_inverse(40, SpeedMode::Fast, 8), 8);
+        assert_eq!(speed_ticks_inverse(1000, SpeedMode::Fast, 8), 16);
     }
 
     #[test]
