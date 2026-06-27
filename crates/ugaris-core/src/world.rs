@@ -3646,6 +3646,21 @@ impl World {
             return true;
         }
 
+        if data.notsecure == 0
+            && current_tick - data.lastfight > (TICKS_PER_SECOND * 10) as i32
+            && self.secure_move_driver(
+                character_id,
+                target_x,
+                target_y,
+                target_dir as u8,
+                0,
+                0,
+                area_id,
+            )
+        {
+            return true;
+        }
+
         let min_dist = if data.notsecure != 0 {
             data.mindist.max(0) as usize
         } else {
@@ -5882,6 +5897,44 @@ impl World {
             return false;
         };
         do_walk(character, &mut self.map, direction as u8, area_id).is_ok()
+    }
+
+    pub fn secure_move_driver(
+        &mut self,
+        character_id: CharacterId,
+        target_x: u16,
+        target_y: u16,
+        direction: u8,
+        ret: i32,
+        last_action: u16,
+        area_id: u16,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+
+        if character.x != target_x || character.y != target_y {
+            if (last_action != action::USE || ret != 2)
+                && self.setup_walk_toward(
+                    character_id,
+                    usize::from(target_x),
+                    usize::from(target_y),
+                    0,
+                    area_id,
+                    false,
+                )
+            {
+                return true;
+            }
+            return self.teleport_character(character_id, target_x, target_y, false);
+        }
+
+        if character.dir != direction {
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                let _ = turn(character, direction);
+            }
+        }
+        false
     }
 
     fn setup_walk_direction(
@@ -9727,6 +9780,62 @@ mod tests {
         assert_eq!(npc.action, action::WALK);
         assert_eq!((npc.tox, npc.toy), (11, 10));
         assert_eq!(npc.dir, Direction::Right as u8);
+    }
+
+    #[test]
+    fn secure_move_driver_turns_at_target_without_claiming_action() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.dir = Direction::Left as u8;
+        world.spawn_character(npc, 10, 10);
+
+        assert!(!world.secure_move_driver(CharacterId(1), 10, 10, Direction::Down as u8, 0, 0, 1,));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.dir, Direction::Down as u8);
+        assert_eq!(npc.action, 0);
+    }
+
+    #[test]
+    fn secure_move_driver_skips_move_after_blocked_use_and_teleports() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        world.spawn_character(npc, 10, 10);
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+
+        assert!(world.secure_move_driver(
+            CharacterId(1),
+            12,
+            10,
+            Direction::Right as u8,
+            2,
+            action::USE,
+            1,
+        ));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((npc.x, npc.y), (12, 10));
+        assert_eq!(npc.action, 0);
+    }
+
+    #[test]
+    fn secure_move_driver_walks_before_teleport_when_not_blocked_use() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.secure_move_driver(CharacterId(1), 12, 10, Direction::Right as u8, 0, 0, 1,));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!((npc.tox, npc.toy), (11, 10));
     }
 
     #[test]
