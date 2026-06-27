@@ -1547,6 +1547,7 @@ impl World {
                 }
             }
             ItemDriverOutcome::SpecialPotionSecurity { .. } => outcome,
+            ItemDriverOutcome::SpecialShrine { .. } => outcome,
             ItemDriverOutcome::TorchExtractOrb { .. } => outcome,
             ItemDriverOutcome::NomadStack { .. } => outcome,
             ItemDriverOutcome::EnchantCursorItem {
@@ -4513,6 +4514,7 @@ fn timer_callback_character() -> Character {
         exp: 0,
         exp_used: 0,
         gold: 0,
+        creation_time: 0,
         saves: 0,
         deaths: 0,
         cursor_item: None,
@@ -7722,6 +7724,7 @@ mod tests {
             exp: 0,
             exp_used: 0,
             gold: 0,
+            creation_time: 0,
             saves: 0,
             deaths: 0,
             cursor_item: None,

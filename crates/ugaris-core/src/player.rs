@@ -2,7 +2,11 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{entity::Item, ids::CharacterId, legacy::DIST_OLD};
+use crate::{
+    entity::{Character, CharacterFlags, Item},
+    ids::CharacterId,
+    legacy::DIST_OLD,
+};
 
 pub const MAX_PLAYERS: usize = 512;
 pub const OUTPUT_BUFFER_SIZE: usize = 16_384 * 2;
@@ -29,6 +33,8 @@ pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAY
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
+pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
+pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
 
 pub const fn make_drd(dev_id: u32, nr: u32) -> u32 {
     (dev_id << 24) | nr
@@ -137,6 +143,14 @@ pub enum KeyringAddResult {
     Full,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SpecialShrineResult {
+    NothingHere,
+    ConfirmRequired,
+    HardcoreRemoved,
+    Unsupported,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AchievementState {
     pub chests_opened: u32,
@@ -191,6 +205,8 @@ pub struct PlayerRuntime {
     pub keyring_auto_add: bool,
     #[serde(default)]
     pub current_section_id: u16,
+    #[serde(default)]
+    pub special_shrine_hcsc_last_touch_seconds: u64,
 }
 
 impl PlayerRuntime {
@@ -223,7 +239,35 @@ impl PlayerRuntime {
             achievements: AchievementState::default(),
             keyring_auto_add: false,
             current_section_id: 0,
+            special_shrine_hcsc_last_touch_seconds: 0,
         }
+    }
+
+    pub fn touch_special_shrine(
+        &mut self,
+        character: &mut Character,
+        kind: u8,
+        realtime_seconds: u64,
+    ) -> SpecialShrineResult {
+        if kind != 0x0A {
+            return SpecialShrineResult::Unsupported;
+        }
+        if !character.flags.contains(CharacterFlags::HARDCORE)
+            || character.creation_time > SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS
+        {
+            return SpecialShrineResult::NothingHere;
+        }
+        if self.special_shrine_hcsc_last_touch_seconds == 0
+            || realtime_seconds.saturating_sub(self.special_shrine_hcsc_last_touch_seconds)
+                > SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS
+        {
+            self.special_shrine_hcsc_last_touch_seconds = realtime_seconds;
+            return SpecialShrineResult::ConfirmRequired;
+        }
+
+        character.flags.remove(CharacterFlags::HARDCORE);
+        self.special_shrine_hcsc_last_touch_seconds = 0;
+        SpecialShrineResult::HardcoreRemoved
     }
 
     pub fn chest_last_access_seconds(&self, treasure_index: u8) -> u64 {
@@ -984,7 +1028,7 @@ fn read_c_string(bytes: &[u8], offset: usize, len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use crate::{
-        entity::{ItemFlags, MAX_MODIFIERS},
+        entity::{Character, CharacterFlags, ItemFlags, MAX_MODIFIERS},
         ids::ItemId,
     };
 
@@ -1004,6 +1048,44 @@ mod tests {
         assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
+    }
+
+    #[test]
+    fn special_shrine_requires_confirmation_then_removes_hardcore() {
+        let mut player = PlayerRuntime::connected(7, 11);
+        let mut character = character(3);
+        character.flags.insert(CharacterFlags::HARDCORE);
+        character.creation_time = SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS;
+
+        assert_eq!(
+            player.touch_special_shrine(&mut character, 0x0A, 100),
+            SpecialShrineResult::ConfirmRequired,
+        );
+        assert!(character.flags.contains(CharacterFlags::HARDCORE));
+        assert_eq!(
+            player.touch_special_shrine(&mut character, 0x0A, 109),
+            SpecialShrineResult::HardcoreRemoved,
+        );
+        assert!(!character.flags.contains(CharacterFlags::HARDCORE));
+    }
+
+    #[test]
+    fn special_shrine_blocks_non_hardcore_and_new_hardcore() {
+        let mut player = PlayerRuntime::connected(7, 11);
+        let mut softcore = character(3);
+        assert_eq!(
+            player.touch_special_shrine(&mut softcore, 0x0A, 100),
+            SpecialShrineResult::NothingHere,
+        );
+
+        let mut new_hardcore = character(4);
+        new_hardcore.flags.insert(CharacterFlags::HARDCORE);
+        new_hardcore.creation_time = SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS + 1;
+        assert_eq!(
+            player.touch_special_shrine(&mut new_hardcore, 0x0A, 100),
+            SpecialShrineResult::NothingHere,
+        );
+        assert!(new_hardcore.flags.contains(CharacterFlags::HARDCORE));
     }
 
     #[test]
@@ -1521,5 +1603,45 @@ mod tests {
         assert_eq!(player.queue.len(), COMMAND_QUEUE_SIZE);
         assert_eq!(player.queue.front().unwrap().arg1, 0);
         assert_eq!(player.queue.back().unwrap().action, PlayerActionCode::Bless);
+    }
+
+    fn character(id: u32) -> Character {
+        Character {
+            id: CharacterId(id),
+            name: "Character".into(),
+            description: String::new(),
+            flags: CharacterFlags::USED,
+            sprite: 0,
+            speed_mode: crate::entity::SpeedMode::Normal,
+            x: 0,
+            y: 0,
+            rest_area: 0,
+            rest_x: 0,
+            rest_y: 0,
+            tox: 0,
+            toy: 0,
+            dir: 0,
+            action: 0,
+            duration: 0,
+            step: 0,
+            act1: 0,
+            act2: 0,
+            hp: 0,
+            mana: 0,
+            endurance: 0,
+            lifeshield: 0,
+            level: 1,
+            exp: 0,
+            exp_used: 0,
+            gold: 0,
+            creation_time: 0,
+            saves: 0,
+            deaths: 0,
+            cursor_item: None,
+            current_container: None,
+            values: Character::empty_values(),
+            professions: Character::empty_professions(),
+            inventory: Character::empty_inventory(),
+        }
     }
 }

@@ -522,6 +522,7 @@ fn login_character(
         exp: 0,
         exp_used: 0,
         gold: 0,
+        creation_time: 0,
         saves: 0,
         deaths: 0,
         cursor_item: None,
@@ -7182,6 +7183,39 @@ async fn main() -> anyhow::Result<()> {
                                                 NomadStackApplyResult::MissingPlayer
                                                 | NomadStackApplyResult::MissingItem => {
                                                     failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialShrine { character_id, kind, .. } => {
+                                            let result = match (
+                                                runtime.player_for_character_mut(character_id),
+                                                world.characters.get_mut(&character_id),
+                                            ) {
+                                                (Some(player), Some(character)) => player.touch_special_shrine(
+                                                    character,
+                                                    kind,
+                                                    realtime_seconds,
+                                                ),
+                                                _ => {
+                                                    failed += 1;
+                                                    continue;
+                                                }
+                                            };
+                                            match result {
+                                                ugaris_core::player::SpecialShrineResult::NothingHere => {
+                                                    feedback.push((character_id, "A mild voice speaks: There is nothing for thee here.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                ugaris_core::player::SpecialShrineResult::ConfirmRequired => {
+                                                    feedback.push((character_id, "A mild voice says: I can remove the perils of living on the edge from thee. If this is your wish, touch me again.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                ugaris_core::player::SpecialShrineResult::HardcoreRemoved => {
+                                                    feedback.push((character_id, "A mild voice speaks: Thou art no longer living on the edge, Ishtar will again save thee when thou art in need. The benefits of a hardcore character shant be thine any more.".to_string()));
+                                                    executed += 1;
+                                                }
+                                                ugaris_core::player::SpecialShrineResult::Unsupported => {
+                                                    blocked += 1;
                                                 }
                                             }
                                         }

@@ -315,6 +315,8 @@ pub struct Character {
     pub exp_used: u32,
     pub gold: u32,
     #[serde(default)]
+    pub creation_time: u64,
+    #[serde(default)]
     pub saves: u8,
     #[serde(default)]
     pub deaths: u32,

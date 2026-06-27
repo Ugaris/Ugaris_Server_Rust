@@ -41,6 +41,7 @@ pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
 pub const IDR_BEYONDPOTION: u16 = 133;
 pub const IDR_DEMONCHIP: u16 = 136;
+pub const IDR_SPECIAL_SHRINE: u16 = 147;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_ANTIENCHANTITEM: u16 = 160;
 pub const IDR_SPECIALANTIENCHANTITEM: u16 = 161;
@@ -452,6 +453,11 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         used: bool,
     },
+    SpecialShrine {
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+    },
     EnchantNeedsCursor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -623,6 +629,7 @@ pub fn execute_item_driver_with_context(
                 IDR_ORBSPAWN => orbspawn_driver(character, item, false),
                 IDR_ANTIORBSPAWN => orbspawn_driver(character, item, true),
                 IDR_SPECIAL_POTION => special_potion_driver(character, item, area_id, in_arena),
+                IDR_SPECIAL_SHRINE => special_shrine_driver(character, item),
                 IDR_NOMADSTACK => nomad_stack_driver(character, item),
                 IDR_DEMONCHIP => nomad_stack_driver(character, item),
                 IDR_SHRIKEAMULET => shrike_amulet_driver(character, item, context),
@@ -816,6 +823,18 @@ fn nomad_stack_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     ItemDriverOutcome::NomadStack {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn special_shrine_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::SpecialShrine {
+        item_id: item.id,
+        character_id: character.id,
+        kind: drdata(item, 0),
     }
 }
 
@@ -4148,6 +4167,33 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn special_shrine_dispatches_hc_to_sc_kind() {
+        let mut character = character(3);
+        let mut shrine = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_SHRINE);
+        shrine.driver_data = vec![0x0A];
+
+        assert_eq!(
+            execute_item_driver(
+                &mut character,
+                &mut shrine,
+                ItemDriverRequest::Driver {
+                    driver: IDR_SPECIAL_SHRINE,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(3),
+                    spec: 0,
+                },
+                1,
+                false,
+            ),
+            ItemDriverOutcome::SpecialShrine {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                kind: 0x0A,
+            }
+        );
+    }
+
     fn request(character_id: u32, item_id: u32, spec: i32) -> ItemUseRequest {
         ItemUseRequest {
             character_id: CharacterId(character_id),
@@ -4185,6 +4231,7 @@ mod tests {
             exp: 0,
             exp_used: 0,
             gold: 0,
+            creation_time: 0,
             saves: 0,
             deaths: 0,
             cursor_item: None,
