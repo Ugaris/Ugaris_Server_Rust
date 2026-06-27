@@ -3688,7 +3688,8 @@ impl World {
                 }
             }
             ItemDriverOutcome::SpecialPotionSecurity { .. }
-            | ItemDriverOutcome::SpecialPotionProfessionReset { .. } => outcome,
+            | ItemDriverOutcome::SpecialPotionProfessionReset { .. }
+            | ItemDriverOutcome::SpecialPotionBug { .. } => outcome,
             ItemDriverOutcome::SpecialShrine { .. } => outcome,
             ItemDriverOutcome::TorchExtractOrb { .. } => outcome,
             ItemDriverOutcome::NomadStack { .. }

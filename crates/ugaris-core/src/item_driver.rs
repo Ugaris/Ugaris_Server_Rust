@@ -562,6 +562,10 @@ pub enum ItemDriverOutcome {
         profession_points_lowered: u16,
         exp_refunded: u32,
     },
+    SpecialPotionBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     SpecialShrine {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2558,8 +2562,7 @@ fn special_potion_driver(
             character.regen_ticker = current_tick;
         }
         _ => {
-            return ItemDriverOutcome::Unsupported {
-                driver: IDR_SPECIAL_POTION,
+            return ItemDriverOutcome::SpecialPotionBug {
                 item_id: item.id,
                 character_id: character.id,
             };
@@ -5070,6 +5073,39 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(3),
                 used: false,
+            }
+        );
+    }
+
+    #[test]
+    fn special_potion_unknown_kind_reports_legacy_bug_without_consuming() {
+        let mut character = character(3);
+        character.level = 10;
+        character.inventory[30] = Some(ItemId(7));
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_POTION);
+        potion.carried_by = Some(character.id);
+        potion.driver_data = vec![99];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut potion,
+            ItemDriverRequest::Driver {
+                driver: IDR_SPECIAL_POTION,
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(character.inventory[30], Some(ItemId(7)));
+        assert!(potion.flags.contains(ItemFlags::USED));
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SpecialPotionBug {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
             }
         );
     }

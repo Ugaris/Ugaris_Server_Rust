@@ -9020,6 +9020,16 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionBug {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Please report bug #1734.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { character_id, .. } => {
                                             for message in keyring_show_messages(runtime.player_for_character(character_id)) {
                                                 feedback.push((character_id, message));
