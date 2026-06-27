@@ -3022,6 +3022,30 @@ impl World {
             }
         }
 
+        let target_x = usize::from(target.x);
+        let target_y = usize::from(target.y);
+        let partial = pathfinder(
+            &self.map,
+            usize::from(attacker.x),
+            usize::from(attacker.y),
+            target_x,
+            target_y,
+            usize::from(distance),
+            None,
+        );
+        if let Some(direction) = partial.best_direction {
+            if self.walk_or_use_driver(character_id, direction, area_id) {
+                if let Some(character) = self.characters.get_mut(&character_id) {
+                    if let Some(CharacterDriverState::SimpleBaddy(data)) =
+                        character.driver_state.as_mut()
+                    {
+                        data.lastfight = self.tick.0 as i32;
+                    }
+                }
+                return true;
+            }
+        }
+
         false
     }
 
@@ -9968,6 +9992,40 @@ mod tests {
         let target = world.characters.get(&CharacterId(2)).cloned().unwrap();
         assert!(!world.setup_simple_baddy_fireball_distance_attack(CharacterId(1), &target, 1));
         assert_eq!(world.characters[&CharacterId(1)].action, 0);
+    }
+
+    #[test]
+    fn simple_baddy_distance_driver_uses_best_partial_when_exact_spacing_blocked() {
+        let mut world = World::default();
+        world.tick = Tick(467);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FIREBALL_COST + 1;
+        npc.values[0][CharacterValue::Fireball as usize] = 1;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.values[1][CharacterValue::Fireball as usize] = 20;
+        npc.values[1][CharacterValue::Flash as usize] = 5;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 20, 10);
+        for y in 1..MAX_MAP - 1 {
+            world.map.set_flags(13, y, MapFlags::MOVEBLOCK);
+        }
+
+        let target = world.characters.get(&CharacterId(2)).cloned().unwrap();
+        assert!(world.setup_simple_baddy_fireball_distance_attack(CharacterId(1), &target, 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!(npc.tox, 11);
+        assert_eq!(npc.toy, 10);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 467);
     }
 
     #[test]
