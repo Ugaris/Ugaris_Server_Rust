@@ -677,19 +677,46 @@
         "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
         "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok"
       ]
+    },
+    {
+      "iteration": 24,
+      "startedAt": "2026-06-27T13:05:41.055Z",
+      "endedAt": "2026-06-27T13:13:22.453Z",
+      "durationMs": 461241,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: could not compile `ugaris-core` (lib test) due to 2 previous errors; 5 warnings emitted",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test result: ok. 368 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+      ]
     }
   ],
-  "totalDurationMs": 11153269,
+  "totalDurationMs": 11614510,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 22,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 21,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 20,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 23,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 22,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 21,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 17,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 14,
-      "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 10,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 15,
+      "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
       "test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
       "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/common/": 1,
@@ -768,7 +795,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 97 filtered out; finished in 0.00s": 1,
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 329 filtered out; finished in 0.01s": 1,
       "test result: ok. 362 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 2,
       "assertion failed: matches!(outcomes[0], ItemDriverOutcome::EdemonBallProjectile": 1,
       "test world::tests::world_edemonball_timer_creates_retained_projectile_effect ... FAILED": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
@@ -779,7 +806,10 @@
       "assertion failed: !world.effects.contains_key(&effect_id)": 1,
       "test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
       "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
-      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors; 5 warnings emitted": 1,
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.00s": 1,
+      "test result: ok. 368 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -509,6 +509,142 @@ impl World {
         effect_id
     }
 
+    fn find_edemonball_target_shot(
+        &self,
+        item_id: ItemId,
+        strength: i32,
+        base_sprite: i32,
+    ) -> Option<ItemDriverOutcome> {
+        let item = self.items.get(&item_id)?;
+        let item_x = i32::from(item.x);
+        let item_y = i32::from(item.y);
+
+        let mut candidates: Vec<_> = self
+            .characters
+            .values()
+            .filter(|character| {
+                (i32::from(character.x) - item_x).abs() <= 10
+                    && (i32::from(character.y) - item_y).abs() <= 10
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+
+        for character in candidates {
+            let (ox, oy) = if (i32::from(character.x) - item_x).abs()
+                > (i32::from(character.y) - item_y).abs()
+            {
+                ((i32::from(character.x) - item_x).signum(), 0)
+            } else {
+                (0, (i32::from(character.y) - item_y).signum())
+            };
+            let (target_x, target_y) = self.predict_edemonball_target(item, character);
+            let start_x = item_x + ox;
+            let start_y = item_y + oy;
+            if self.edemonball_can_hit(item_id, character.id, start_x, start_y, target_x, target_y)
+            {
+                return Some(ItemDriverOutcome::EdemonBallProjectile {
+                    item_id,
+                    character_id: CharacterId(0),
+                    start_x: start_x.clamp(0, i32::from(u16::MAX)) as u16,
+                    start_y: start_y.clamp(0, i32::from(u16::MAX)) as u16,
+                    target_x: target_x.clamp(0, i32::from(u16::MAX)) as u16,
+                    target_y: target_y.clamp(0, i32::from(u16::MAX)) as u16,
+                    strength,
+                    base_sprite,
+                    schedule_after_ticks: TICKS_PER_SECOND * 8,
+                });
+            }
+        }
+
+        None
+    }
+
+    fn predict_edemonball_target(&self, item: &Item, character: &Character) -> (i32, i32) {
+        if character.action != action::WALK {
+            return (i32::from(character.x), i32::from(character.y));
+        }
+
+        let Ok(direction) = Direction::try_from(character.dir) else {
+            return (i32::from(character.x), i32::from(character.y));
+        };
+        let (dx, dy) = direction.delta();
+        let dist = map_dist(item.x, item.y, character.x, character.y);
+        let mut eta = dist * 3 / 2;
+        eta -= character.duration - character.step;
+        if eta <= 0 {
+            return (i32::from(character.tox), i32::from(character.toy));
+        }
+
+        for step in 1..10 {
+            eta -= character.duration;
+            if eta <= 0 {
+                return (
+                    i32::from(character.x) + i32::from(dx) * step,
+                    i32::from(character.y) + i32::from(dy) * step,
+                );
+            }
+        }
+
+        (i32::from(character.x), i32::from(character.y))
+    }
+
+    fn edemonball_can_hit(
+        &self,
+        item_id: ItemId,
+        target_id: CharacterId,
+        from_x: i32,
+        from_y: i32,
+        target_x: i32,
+        target_y: i32,
+    ) -> bool {
+        let mut x = from_x * 1024 + 512;
+        let mut y = from_y * 1024 + 512;
+        let mut dx = target_x - from_x;
+        let mut dy = target_y - from_y;
+
+        if dx.abs() < 2 && dy.abs() < 2 {
+            return false;
+        }
+
+        if dx.abs() > dy.abs() {
+            dy = dy * 256 / dx.abs();
+            dx = dx * 256 / dx.abs();
+        } else {
+            dx = dx * 256 / dy.abs();
+            dy = dy * 256 / dy.abs();
+        }
+
+        for _ in 0..48 {
+            x += dx;
+            y += dy;
+            let tile_x = x / 1024;
+            let tile_y = y / 1024;
+            if tile_x == target_x && tile_y == target_y {
+                return true;
+            }
+
+            let (Ok(tile_x_usize), Ok(tile_y_usize)) =
+                (usize::try_from(tile_x), usize::try_from(tile_y))
+            else {
+                return false;
+            };
+            let Some(tile) = self.map.tile(tile_x_usize, tile_y_usize) else {
+                return false;
+            };
+            let item_blocks = tile.item != 0
+                && tile.item != item_id.0
+                && tile.flags.contains(MapFlags::TMOVEBLOCK);
+            let map_blocks = !tile.flags.contains(MapFlags::FIRETHRU)
+                && tile.flags.contains(MapFlags::MOVEBLOCK);
+            let blocked = tile.character != 0 || item_blocks || map_blocks;
+            if blocked {
+                return tile.character == target_id.0 as u16;
+            }
+        }
+
+        true
+    }
+
     fn create_or_refresh_strike_effect(
         &mut self,
         target_id: CharacterId,
@@ -2484,15 +2620,40 @@ impl World {
             }
             ItemDriverOutcome::EdemonBallProjectile {
                 item_id,
-                start_x,
-                start_y,
-                target_x,
-                target_y,
+                start_x: _,
+                start_y: _,
+                target_x: _,
+                target_y: _,
                 strength,
                 base_sprite,
-                schedule_after_ticks,
+                schedule_after_ticks: _,
                 ..
             } => {
+                let applied = if let Some(targeted) =
+                    self.find_edemonball_target_shot(item_id, strength, base_sprite)
+                {
+                    if let Some(item) = self.items.get_mut(&item_id) {
+                        if item.driver_data.len() > 3 {
+                            item.driver_data[3] = item.driver_data[3].saturating_sub(1);
+                        }
+                    }
+                    targeted
+                } else {
+                    outcome
+                };
+                let ItemDriverOutcome::EdemonBallProjectile {
+                    start_x,
+                    start_y,
+                    target_x,
+                    target_y,
+                    strength,
+                    base_sprite,
+                    schedule_after_ticks,
+                    ..
+                } = applied
+                else {
+                    return ItemDriverOutcome::Noop;
+                };
                 self.create_edemonball_effect(
                     start_x,
                     start_y,
@@ -2502,7 +2663,7 @@ impl World {
                     base_sprite,
                 );
                 self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
-                outcome
+                applied
             }
             ItemDriverOutcome::SpikeTrapTriggered {
                 item_id,
@@ -7354,6 +7515,80 @@ mod tests {
         assert_eq!((effect.to_x, effect.to_y), (10, 30));
         assert_eq!((effect.x, effect.y), (10 * 1024 + 512, 21 * 1024 + 512));
         assert_eq!(effect.stop_tick, 1 + (TICKS_PER_SECOND * 4) as i32);
+    }
+
+    #[test]
+    fn edemonball_timer_aims_at_nearby_character_before_fallback_rotation() {
+        let mut world = World::default();
+        let mut cannon = item(7, ItemFlags::USED | ItemFlags::USE);
+        cannon.driver = IDR_EDEMONBALL;
+        cannon.x = 10;
+        cannon.y = 20;
+        cannon.driver_data = vec![1, 2, 42, 0];
+        world.add_item(cannon);
+        assert!(world.spawn_character(character(1), 10, 25));
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+
+        world.advance();
+        let outcomes = world.process_due_timers(6);
+
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(
+            &outcomes[0],
+            &ItemDriverOutcome::EdemonBallProjectile {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                start_x: 10,
+                start_y: 21,
+                target_x: 10,
+                target_y: 25,
+                strength: 42,
+                base_sprite: 2,
+                schedule_after_ticks: TICKS_PER_SECOND * 8,
+            }
+        );
+        let cannon = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(cannon.driver_data[3], 0);
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!((effect.from_x, effect.from_y), (10, 21));
+        assert_eq!((effect.to_x, effect.to_y), (10, 25));
+    }
+
+    #[test]
+    fn edemonball_timer_predicts_walking_character_target_tile() {
+        let mut world = World::default();
+        let mut cannon = item(7, ItemFlags::USED | ItemFlags::USE);
+        cannon.driver = IDR_EDEMONBALL;
+        cannon.x = 10;
+        cannon.y = 20;
+        cannon.driver_data = vec![1, 2, 42, 0];
+        world.add_item(cannon);
+        let mut target = character(1);
+        target.action = action::WALK;
+        target.dir = Direction::Down as u8;
+        target.duration = 10;
+        target.step = 5;
+        target.tox = 10;
+        target.toy = 26;
+        assert!(world.spawn_character(target, 10, 25));
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+
+        world.advance();
+        let outcomes = world.process_due_timers(6);
+
+        assert!(matches!(
+            outcomes.first(),
+            Some(ItemDriverOutcome::EdemonBallProjectile {
+                start_x: 10,
+                start_y: 21,
+                target_x: 10,
+                target_y: 26,
+                schedule_after_ticks,
+                ..
+            }) if *schedule_after_ticks == TICKS_PER_SECOND * 8
+        ));
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!((effect.to_x, effect.to_y), (10, 26));
     }
 
     #[test]
