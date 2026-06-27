@@ -17,7 +17,7 @@ use ugaris_core::{
         CHARACTER_VALUE_NAMES, POWERSCALE,
     },
     ids::{CharacterId, ItemId},
-    item_driver::{IDR_ACCOUNT_DEPOT, IDR_KEY_RING, IDR_TORCH},
+    item_driver::{IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_KEY_RING, IDR_TORCH},
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
     legacy::INVENTORY_START_INVENTORY,
@@ -1980,13 +1980,19 @@ fn apply_account_depot_command(
             }
             account_depot_swap_slot(world, depot, character_id, slot)
         }
-        ClientAction::LookContainer { slot } => depot
-            .slots
-            .get(usize::from(slot))
-            .and_then(Option::as_ref)
-            .map(account_depot_look_text)
-            .map(AccountDepotCommandResult::Look)
-            .unwrap_or(AccountDepotCommandResult::Ignored),
+        ClientAction::LookContainer { slot } => {
+            let Some(character) = world.characters.get(&character_id) else {
+                return AccountDepotCommandResult::Ignored;
+            };
+            depot
+                .slots
+                .get(usize::from(slot))
+                .and_then(Option::as_ref)
+                .map(|item| legacy_item_look_text(item, character))
+                .filter(|text| !text.is_empty())
+                .map(AccountDepotCommandResult::Look)
+                .unwrap_or(AccountDepotCommandResult::Ignored)
+        }
         _ => AccountDepotCommandResult::Ignored,
     }
 }
@@ -2015,12 +2021,18 @@ fn apply_item_container_command(
         ClientAction::Container { slot, fast } => {
             apply_item_container_swap(world, character_id, container_id, usize::from(slot), fast)
         }
-        ClientAction::LookContainer { slot } => generic_container_item_ids(world, container_id)
-            .get(usize::from(slot))
-            .and_then(|item_id| world.items.get(item_id))
-            .map(account_depot_look_text)
-            .map(AccountDepotCommandResult::Look)
-            .unwrap_or(AccountDepotCommandResult::Ignored),
+        ClientAction::LookContainer { slot } => {
+            let Some(character) = world.characters.get(&character_id) else {
+                return AccountDepotCommandResult::Ignored;
+            };
+            generic_container_item_ids(world, container_id)
+                .get(usize::from(slot))
+                .and_then(|item_id| world.items.get(item_id))
+                .map(|item| legacy_item_look_text(item, character))
+                .filter(|text| !text.is_empty())
+                .map(AccountDepotCommandResult::Look)
+                .unwrap_or(AccountDepotCommandResult::Ignored)
+        }
         _ => AccountDepotCommandResult::Ignored,
     }
 }
@@ -2179,12 +2191,189 @@ fn account_depot_sort(depot: &mut AccountDepotState) {
     });
 }
 
-fn account_depot_look_text(item: &Item) -> String {
-    if item.description.is_empty() {
-        item.name.clone()
-    } else {
-        format!("{}\n{}", item.name, item.description)
+const IDR_FLASK: u16 = 32;
+const IDR_BEYONDPOTION: u16 = 133;
+const IID_HARDKILL: u32 = (1 << 24) | 0x00005D;
+
+fn legacy_item_look_text(item: &Item, character: &Character) -> String {
+    if item.name.is_empty() {
+        return String::new();
     }
+
+    let mut lines = vec![format!("{}:", item.name)];
+    if !item.description.is_empty() {
+        lines.push(item.description.clone());
+    }
+    if item.template_id == IID_HARDKILL {
+        lines.push(format!(
+            "This is a level {} holy weapon.",
+            item.driver_data.get(37).copied().unwrap_or_default()
+        ));
+    }
+
+    let mut showed_modifiers = false;
+    for (&index, &value) in item.modifier_index.iter().zip(item.modifier_value.iter()) {
+        if value == 0 || index < 0 {
+            continue;
+        }
+        if !showed_modifiers {
+            lines.push("Modifiers:".to_string());
+            showed_modifiers = true;
+        }
+        let name = value_name(index);
+        if item.driver == IDR_DECAYITEM {
+            lines.push(format!(
+                "{} +{} (active: {:+})",
+                name,
+                value,
+                item.driver_data.get(2).copied().unwrap_or_default() as i8
+            ));
+        } else if index == CharacterValue::Armor as i16 {
+            lines.push(format!("{} {:+.2}", name, f32::from(value) / 20.0));
+        } else {
+            lines.push(format!("{} {:+}", name, value));
+        }
+    }
+
+    let mut showed_requirements = false;
+    for (&index, &value) in item.modifier_index.iter().zip(item.modifier_value.iter()) {
+        if value == 0 || index >= 0 {
+            continue;
+        }
+        if !showed_requirements {
+            lines.push("Requirements:".to_string());
+            showed_requirements = true;
+        }
+        let required_index = -index;
+        let current = character
+            .values
+            .get(1)
+            .and_then(|values| values.get(required_index as usize))
+            .copied()
+            .unwrap_or_default();
+        lines.push(format!(
+            "{} {} (you have {})",
+            value_name(required_index),
+            value,
+            current
+        ));
+    }
+    if !showed_requirements && (item.min_level != 0 || item.max_level != 0 || item.needs_class != 0)
+    {
+        lines.push("Requirements:".to_string());
+    }
+    if item.min_level != 0 {
+        lines.push(format!("Minimum Level: {}", item.min_level));
+    }
+    if item.max_level != 0 {
+        lines.push(format!("Maximum Level: {}", item.max_level));
+    }
+    if item.needs_class & 1 != 0 {
+        lines.push("Only usable by a Warrior.".to_string());
+    }
+    if item.needs_class & 2 != 0 {
+        lines.push("Only usable by a Mage.".to_string());
+    }
+    if item.needs_class & 4 != 0 {
+        lines.push("Only usable by a Seyan'Du.".to_string());
+    }
+    if item.needs_class & 8 != 0 {
+        lines.push("Only usable by an Arch.".to_string());
+    }
+
+    if item.flags.contains(ItemFlags::BONDTAKE) {
+        let target = if item.owner_id == character.id.0 as i32 {
+            ("you", "you")
+        } else {
+            ("somebody else", "he")
+        };
+        lines.push(format!(
+            "This item is bonded to {}. Only {} can take it.",
+            target.0, target.1
+        ));
+    }
+    if item.flags.contains(ItemFlags::BONDWEAR) {
+        let target = if item.owner_id == character.id.0 as i32 {
+            ("you", "you")
+        } else {
+            ("somebody else", "he")
+        };
+        lines.push(format!(
+            "This item is bonded to {}. Only {} can wear it.",
+            target.0, target.1
+        ));
+    }
+    if item.flags.contains(ItemFlags::QUEST) {
+        lines.push("This is a quest item. You cannot drop it or give it away.".to_string());
+    }
+    if item.flags.contains(ItemFlags::NOENHANCE) {
+        lines.push(
+            "This item resists magic, so you cannot enhance it using orbs, metals or shrines."
+                .to_string(),
+        );
+    }
+    if item.flags.contains(ItemFlags::BEYONDMAXMOD) {
+        lines.push("This item goes beyond maximum modifier limits.".to_string());
+    }
+
+    if item.driver == IDR_FLASK && item.driver_data.get(2).copied().unwrap_or_default() != 0 {
+        lines.push(format!(
+            "Duration: {} minutes.",
+            item.driver_data.get(3).copied().unwrap_or_default()
+        ));
+    }
+    if item.driver == IDR_BEYONDPOTION {
+        lines.push(format!(
+            "Duration: {} minutes.",
+            item.driver_data.first().copied().unwrap_or_default()
+        ));
+    }
+    if item.driver == IDR_DECAYITEM {
+        let used = u16::from_le_bytes([
+            item.driver_data.get(3).copied().unwrap_or_default(),
+            item.driver_data.get(4).copied().unwrap_or_default(),
+        ]) as u32
+            * 2;
+        let max = u16::from_le_bytes([
+            item.driver_data.get(5).copied().unwrap_or_default(),
+            item.driver_data.get(6).copied().unwrap_or_default(),
+        ]) as u32
+            * 2;
+        lines.push(format!(
+            "Duration: {}:{:02}:{:02} of {}:{:02}:{:02} active time used up.",
+            used / 3600,
+            (used / 60) % 60,
+            used % 60,
+            max / 3600,
+            (max / 60) % 60,
+            max % 60
+        ));
+    }
+
+    if (59200..59299).contains(&item.sprite) || item.sprite == 59474 {
+        lines.push("The item has been gilded.".to_string());
+    }
+    if (59299..=59390).contains(&item.sprite) || item.sprite == 59473 {
+        lines.push("The item has been silvered.".to_string());
+    }
+    if (53000..=53006).contains(&item.sprite) {
+        lines.push("This is part of an earth demon suit.".to_string());
+    }
+    if (53025..=53030).contains(&item.sprite) {
+        lines.push("This is part of an ice demon suit.".to_string());
+    }
+    if (53031..=53036).contains(&item.sprite) {
+        lines.push("This is part of an fire demon suit.".to_string());
+    }
+
+    lines.join("\n")
+}
+
+fn value_name(index: i16) -> &'static str {
+    CHARACTER_VALUE_NAMES
+        .get(index as usize)
+        .copied()
+        .unwrap_or("Unknown")
 }
 
 fn next_runtime_item_id(world: &World) -> ItemId {
@@ -3222,6 +3411,88 @@ mod tests {
                     0,
                 ]
         }));
+    }
+
+    #[test]
+    fn legacy_item_look_text_includes_c_shaped_modifiers_requirements_and_flags() {
+        let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        character.values[1][CharacterValue::Strength as usize] = 12;
+
+        let mut item = test_item(ItemId(99), 59210, ItemFlags::QUEST | ItemFlags::NOENHANCE);
+        item.name = "Fine Sword".to_string();
+        item.description = "A carefully balanced blade.".to_string();
+        item.modifier_index = [
+            CharacterValue::Armor as i16,
+            CharacterValue::Sword as i16,
+            -(CharacterValue::Strength as i16),
+            0,
+            0,
+        ];
+        item.modifier_value = [15, 3, 20, 0, 0];
+        item.min_level = 4;
+        item.needs_class = 1 | 4;
+
+        let text = legacy_item_look_text(&item, &character);
+
+        assert_eq!(
+            text,
+            "Fine Sword:\nA carefully balanced blade.\nModifiers:\nArmor Value +0.75\nSword +3\nRequirements:\nStrength 20 (you have 12)\nMinimum Level: 4\nOnly usable by a Warrior.\nOnly usable by a Seyan'Du.\nThis is a quest item. You cannot drop it or give it away.\nThis item resists magic, so you cannot enhance it using orbs, metals or shrines.\nThe item has been gilded."
+        );
+    }
+
+    #[test]
+    fn legacy_item_look_text_includes_bonding_duration_and_sprite_notes() {
+        let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        let mut item = test_item(
+            ItemId(99),
+            53026,
+            ItemFlags::BONDTAKE | ItemFlags::BONDWEAR | ItemFlags::BEYONDMAXMOD,
+        );
+        item.name = "Frozen Charm".to_string();
+        item.owner_id = 12345;
+        item.driver = IDR_DECAYITEM;
+        item.modifier_index[0] = CharacterValue::Speed as i16;
+        item.modifier_value[0] = 5;
+        item.driver_data = vec![0; 7];
+        item.driver_data[2] = 253_u8;
+        item.driver_data[3..5].copy_from_slice(&30_u16.to_le_bytes());
+        item.driver_data[5..7].copy_from_slice(&1800_u16.to_le_bytes());
+
+        let text = legacy_item_look_text(&item, &character);
+
+        assert_eq!(
+            text,
+            "Frozen Charm:\nModifiers:\nSpeed +5 (active: -3)\nThis item is bonded to somebody else. Only he can take it.\nThis item is bonded to somebody else. Only he can wear it.\nThis item goes beyond maximum modifier limits.\nDuration: 0:01:00 of 1:00:00 active time used up.\nThis is part of an ice demon suit."
+        );
+    }
+
+    #[test]
+    fn container_look_uses_legacy_item_text() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.current_container = Some(ItemId(10));
+        world.add_character(character);
+
+        let mut container = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        container.content_id = 1;
+        world.add_item(container);
+        let mut stored = test_item(ItemId(20), 1234, ItemFlags::USED | ItemFlags::TAKE);
+        stored.name = "Stored Gem".to_string();
+        stored.description = "It sparkles.".to_string();
+        stored.contained_in = Some(ItemId(10));
+        world.add_item(stored);
+
+        let result = apply_item_container_command(
+            &mut world,
+            character_id,
+            &ClientAction::LookContainer { slot: 0 },
+        );
+
+        assert_eq!(
+            result,
+            AccountDepotCommandResult::Look("Stored Gem:\nIt sparkles.".to_string())
+        );
     }
 
     fn test_item(
