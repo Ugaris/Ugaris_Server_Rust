@@ -2563,6 +2563,9 @@ impl World {
             if self.regenerate_simple_baddy(character_id) {
                 return true;
             }
+            if self.spell_self_simple_baddy(character_id) {
+                return true;
+            }
             if random_below(2) == 0 {
                 return self.idle_simple_baddy(character_id);
             }
@@ -2615,6 +2618,7 @@ impl World {
 
         let Some((target_x, target_y)) = target.filter(|(x, y)| *x > 0 && *y > 0) else {
             return self.regenerate_simple_baddy(character_id)
+                || self.spell_self_simple_baddy(character_id)
                 || self.idle_simple_baddy(character_id);
         };
         let target_x = target_x as u16;
@@ -2629,6 +2633,7 @@ impl World {
                 data.home_y = target_y;
             }
             return self.regenerate_simple_baddy(character_id)
+                || self.spell_self_simple_baddy(character_id)
                 || self.idle_simple_baddy(character_id);
         }
 
@@ -2661,7 +2666,9 @@ impl World {
         }
 
         let _ = self.set_simple_baddy_home(character_id, character.x, character.y);
-        self.regenerate_simple_baddy(character_id) || self.idle_simple_baddy(character_id)
+        self.regenerate_simple_baddy(character_id)
+            || self.spell_self_simple_baddy(character_id)
+            || self.idle_simple_baddy(character_id)
     }
 
     pub fn process_simple_baddy_noncombat_actions(&mut self, area_id: u16) -> usize {
@@ -2704,6 +2711,47 @@ impl World {
                     false
                 }
             })
+    }
+
+    fn spell_self_simple_baddy(&mut self, character_id: CharacterId) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let current_tick = self.tick.0 as u32;
+
+        if character_value(&character, CharacterValue::Bless) > 0
+            && character.mana >= BLESS_COST
+            && may_add_spell(&character, &self.items, IDR_BLESS, current_tick).is_some()
+        {
+            return self
+                .characters
+                .get_mut(&character_id)
+                .is_some_and(|caster| {
+                    do_bless(caster, &character, &self.items, current_tick, None).is_ok()
+                });
+        }
+
+        if character_value(&character, CharacterValue::MagicShield) * POWERSCALE
+            > character.lifeshield
+            && character.mana >= POWERSCALE * 3
+        {
+            return self
+                .characters
+                .get_mut(&character_id)
+                .is_some_and(|character| do_magicshield(character).is_ok());
+        }
+
+        if character_value(&character, CharacterValue::Heal) > 0
+            && character.hp < character_value(&character, CharacterValue::Hp) * POWERSCALE / 2
+            && character.mana >= POWERSCALE * 3
+        {
+            return self
+                .characters
+                .get_mut(&character_id)
+                .is_some_and(|caster| do_heal(caster, &character, None).is_ok());
+        }
+
+        false
     }
 
     fn clear_simple_baddy_scavenger_direction(&mut self, character_id: CharacterId) {
@@ -7740,6 +7788,72 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::IDLE);
         assert_eq!(npc.duration, TICKS_PER_SECOND as i32);
+    }
+
+    #[test]
+    fn simple_baddy_noncombat_self_blesses_before_idle() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Bless as usize] = 20;
+        npc.values[0][CharacterValue::MagicShield as usize] = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::BLESS_SELF);
+        assert_eq!(npc.act1, 1);
+        assert_eq!(npc.mana, 8 * POWERSCALE);
+    }
+
+    #[test]
+    fn simple_baddy_noncombat_self_magicshields_when_bless_unavailable() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::MagicShield as usize] = 8;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::MAGICSHIELD);
+        assert_eq!(npc.act1, 8 * POWERSCALE);
+        assert_eq!(npc.mana, 6 * POWERSCALE);
+    }
+
+    #[test]
+    fn simple_baddy_noncombat_regenerates_before_self_spells() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = 10 * POWERSCALE;
+        npc.hp = 9 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 10;
+        npc.values[0][CharacterValue::Bless as usize] = 20;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::IDLE);
+        assert_eq!(npc.duration, TICKS_PER_SECOND as i32);
+        assert_eq!(npc.mana, 10 * POWERSCALE);
     }
 
     #[test]
