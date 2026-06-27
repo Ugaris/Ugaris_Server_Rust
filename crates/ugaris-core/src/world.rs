@@ -2681,6 +2681,69 @@ impl World {
         true
     }
 
+    pub fn attack_driver_direct(
+        &mut self,
+        character_id: CharacterId,
+        target_id: CharacterId,
+        area_id: u16,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        if attacker.id == target.id
+            || !char_see_char(&attacker, &target, &self.map, self.date.daylight)
+            || !can_attack(&attacker, &target, &self.map)
+        {
+            return false;
+        }
+
+        if let Some(direction) = adjacent_direction(
+            attacker.x,
+            attacker.y,
+            usize::from(target.x),
+            usize::from(target.y),
+        )
+        .or_else(|| {
+            (target.tox != 0).then(|| {
+                adjacent_direction(
+                    attacker.x,
+                    attacker.y,
+                    usize::from(target.tox),
+                    usize::from(target.toy),
+                )
+            })?
+        }) {
+            let Some(attacker_mut) = self.characters.get_mut(&character_id) else {
+                return false;
+            };
+            return do_attack(
+                attacker_mut,
+                &self.map,
+                &target,
+                direction as u8,
+                action::ATTACK1,
+            )
+            .is_ok();
+        }
+
+        let path = pathfinder(
+            &self.map,
+            usize::from(attacker.x),
+            usize::from(attacker.y),
+            usize::from(target.x),
+            usize::from(target.y),
+            1,
+            None,
+        );
+        let Some(direction) = path.direction else {
+            return false;
+        };
+        self.walk_or_use_driver(character_id, direction, area_id)
+    }
+
     fn simple_baddy_lastfight(&self, character_id: CharacterId) -> Option<i32> {
         let character = self.characters.get(&character_id)?;
         let CharacterDriverState::SimpleBaddy(data) = character.driver_state.as_ref()?;
@@ -10994,6 +11057,82 @@ mod tests {
             .effects
             .values()
             .any(|effect| effect.effect_type == EF_EARTHMUD && effect.strength == 6));
+    }
+
+    #[test]
+    fn attack_driver_direct_attacks_adjacent_target() {
+        let mut world = World::default();
+        let attacker = character(1);
+        let target = character(2);
+        assert!(world.spawn_character(attacker, 10, 10));
+        assert!(world.spawn_character(target, 11, 10));
+
+        assert!(world.attack_driver_direct(CharacterId(1), CharacterId(2), 1));
+
+        let attacker = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(attacker.action, action::ATTACK1);
+        assert_eq!(attacker.dir, Direction::Right as u8);
+        assert_eq!(attacker.act1, 2);
+    }
+
+    #[test]
+    fn attack_driver_direct_attacks_moving_target_tile() {
+        let mut world = World::default();
+        let attacker = character(1);
+        let mut target = character(2);
+        target.tox = 11;
+        target.toy = 10;
+        assert!(world.spawn_character(attacker, 10, 10));
+        assert!(world.spawn_character(target, 12, 10));
+        world.map.tile_mut(12, 10).unwrap().light = 255;
+
+        assert!(world.attack_driver_direct(CharacterId(1), CharacterId(2), 1));
+
+        let attacker = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(attacker.action, action::ATTACK1);
+        assert_eq!(attacker.dir, Direction::Right as u8);
+        assert_eq!(attacker.act1, 2);
+    }
+
+    #[test]
+    fn attack_driver_direct_walks_one_step_on_complete_path() {
+        let mut world = World::default();
+        let attacker = character(1);
+        let target = character(2);
+        assert!(world.spawn_character(attacker, 10, 10));
+        assert!(world.spawn_character(target, 13, 10));
+        world.map.tile_mut(13, 10).unwrap().light = 255;
+
+        assert!(world.attack_driver_direct(CharacterId(1), CharacterId(2), 1));
+
+        let attacker = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(attacker.action, action::WALK);
+        assert_eq!(attacker.dir, Direction::Right as u8);
+        assert_eq!((attacker.tox, attacker.toy), (11, 10));
+    }
+
+    #[test]
+    fn attack_driver_direct_does_not_idle_or_best_partial_when_no_path_exists() {
+        let mut world = World::default();
+        let attacker = character(1);
+        let target = character(2);
+        assert!(world.spawn_character(attacker, 10, 10));
+        assert!(world.spawn_character(target, 13, 10));
+        world.map.tile_mut(13, 10).unwrap().light = 255;
+        for (x, y) in [(11, 10), (9, 10), (10, 11), (10, 9)] {
+            world
+                .map
+                .tile_mut(x, y)
+                .unwrap()
+                .flags
+                .insert(MapFlags::MOVEBLOCK);
+        }
+
+        assert!(!world.attack_driver_direct(CharacterId(1), CharacterId(2), 1));
+
+        let attacker = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(attacker.action, 0);
+        assert_eq!((attacker.tox, attacker.toy), (0, 0));
     }
 
     #[test]
