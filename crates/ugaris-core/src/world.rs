@@ -16,7 +16,7 @@ use crate::{
         do_warcry, endurance_cost, reset_action_after_act, speed_ticks, speed_ticks_inverse,
         ItemUseRequest, DUR_MISC_ACTION,
     },
-    drvlib::{char_dist, map_dist, tile_char_dist},
+    drvlib::{char_dist, map_dist, step_char_dist, tile_char_dist},
     effect::Effect,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, INVENTORY_SIZE,
@@ -2365,6 +2365,9 @@ impl World {
             if self.setup_simple_baddy_pulse_attack(character_id) {
                 return true;
             }
+            if self.setup_simple_baddy_distance_attack(character_id, &target, area_id) {
+                return true;
+            }
             if self.setup_simple_baddy_attack_back_move(character_id, &target, area_id) {
                 return true;
             }
@@ -2442,6 +2445,107 @@ impl World {
                 return true;
             }
             self.remove_simple_baddy_enemy(character_id, enemy.target_id);
+        }
+
+        false
+    }
+
+    fn setup_simple_baddy_distance_attack(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+        area_id: u16,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let current_tick = self.tick.0 as u32;
+        let target_has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+        let tile_distance = tile_char_dist(&attacker, target);
+
+        let freeze_spacing = character_value_present(&attacker, CharacterValue::Freeze) != 0
+            && attacker.mana > POWERSCALE * 3
+            && tile_distance > 3
+            && may_add_spell(target, &self.items, IDR_FREEZE, current_tick).is_some()
+            && freeze_speed_modifier(
+                spell_power(
+                    character_value(&attacker, CharacterValue::Freeze),
+                    character_value(&attacker, CharacterValue::Tactics),
+                ),
+                character_value(target, CharacterValue::Immunity),
+                character_value(target, CharacterValue::Tactics),
+                target_has_tactics,
+                attacker.flags.contains(CharacterFlags::IDEMON),
+                character_value(&attacker, CharacterValue::Demon),
+                character_value(target, CharacterValue::Cold),
+            ) < -10;
+        let flash_spacing = character_value_present(&attacker, CharacterValue::Flash) != 0
+            && attacker.mana > POWERSCALE * 3
+            && may_add_spell(&attacker, &self.items, IDR_FLASH, current_tick).is_none();
+
+        if !freeze_spacing && !flash_spacing {
+            return false;
+        }
+
+        self.setup_simple_baddy_distance_driver(character_id, target, 3, area_id, true)
+    }
+
+    fn setup_simple_baddy_distance_driver(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+        distance: u16,
+        area_id: u16,
+        idle_when_already_there: bool,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if step_char_dist(&attacker, target) == distance {
+            if !idle_when_already_there {
+                return false;
+            }
+            let Some(character) = self.characters.get_mut(&character_id) else {
+                return false;
+            };
+            if do_idle(character, (TICKS_PER_SECOND / 4) as i32).is_err() {
+                return false;
+            }
+            if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
+                data.lastfight = self.tick.0 as i32;
+            }
+            return true;
+        }
+
+        let target_positions = if target.tox != 0 {
+            [
+                (usize::from(target.tox), usize::from(target.toy)),
+                (usize::from(target.x), usize::from(target.y)),
+            ]
+        } else {
+            [
+                (usize::from(target.x), usize::from(target.y)),
+                (usize::from(target.x), usize::from(target.y)),
+            ]
+        };
+        for (target_x, target_y) in target_positions {
+            if self.setup_walk_toward(
+                character_id,
+                target_x,
+                target_y,
+                usize::from(distance),
+                area_id,
+                false,
+            ) {
+                if let Some(character) = self.characters.get_mut(&character_id) {
+                    if let Some(CharacterDriverState::SimpleBaddy(data)) =
+                        character.driver_state.as_mut()
+                    {
+                        data.lastfight = self.tick.0 as i32;
+                    }
+                }
+                return true;
+            }
         }
 
         false
@@ -8216,6 +8320,78 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::ATTACK1);
         assert_eq!(npc.mana, 100 * POWERSCALE);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_idles_when_already_at_flash_spacing_distance() {
+        let mut world = World::default();
+        world.tick = Tick(464);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = 4 * POWERSCALE;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.values[1][CharacterValue::Flash as usize] = 20;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 13,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut active_flash = item(50, ItemFlags::empty());
+        active_flash.driver = IDR_FLASH;
+        world.items.insert(active_flash.id, active_flash);
+        npc.inventory[12] = Some(ItemId(50));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 13, 10);
+        world.map.tile_mut(13, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::IDLE);
+        assert_eq!(npc.duration, (TICKS_PER_SECOND / 4) as i32);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 464);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_does_not_distance_idle_without_active_flash_spell_slot() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = 4 * POWERSCALE;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.values[1][CharacterValue::Flash as usize] = 20;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 13,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 13, 10);
+        world.map.tile_mut(13, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!(npc.tox, 11);
+        assert_eq!(npc.toy, 10);
     }
 
     #[test]
