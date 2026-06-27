@@ -7311,6 +7311,9 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LollipopLicked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LollipopMemories { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ChristmasPopInspected { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoubleDoorToggle { .. }
@@ -7568,9 +7571,6 @@ async fn main() -> anyhow::Result<()> {
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::Unsupported { .. } => {
-                                            unsupported += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::UnsupportedSpecialFood { .. } => {
                                             unsupported += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::TorchExpired { .. } => {

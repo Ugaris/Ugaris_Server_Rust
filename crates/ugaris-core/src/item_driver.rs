@@ -214,6 +214,20 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         kind: u8,
     },
+    LollipopLicked {
+        item_id: ItemId,
+        character_id: CharacterId,
+        exp_added: u32,
+        lick_count: u8,
+    },
+    LollipopMemories {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ChristmasPopInspected {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     Teleport {
         item_id: ItemId,
         character_id: CharacterId,
@@ -520,11 +534,6 @@ pub enum ItemDriverOutcome {
         driver: u16,
         item_id: ItemId,
         character_id: CharacterId,
-    },
-    UnsupportedSpecialFood {
-        item_id: ItemId,
-        character_id: CharacterId,
-        kind: u8,
     },
 }
 
@@ -1831,11 +1840,13 @@ fn food_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome 
     }
 
     let kind = drdata(item, 0);
-    if kind == 2 || kind == 3 {
-        return ItemDriverOutcome::UnsupportedSpecialFood {
+    if kind == 2 {
+        return lollipop_driver(character, item);
+    }
+    if kind == 3 {
+        return ItemDriverOutcome::ChristmasPopInspected {
             item_id: item.id,
             character_id: character.id,
-            kind,
         };
     }
 
@@ -1845,6 +1856,48 @@ fn food_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome 
         character_id: character.id,
         kind,
     }
+}
+
+fn lollipop_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
+    let licks = drdata(item, 1);
+    if licks == 8 {
+        return ItemDriverOutcome::LollipopMemories {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let next_licks = licks.saturating_add(1);
+    set_drdata(item, 1, next_licks);
+    item.sprite += 1;
+
+    let exp_added = lollipop_exp(character.level);
+    character.exp = character.exp.saturating_add(exp_added);
+
+    if next_licks == 1 {
+        item.description = "A sweet lollipop. Well, it's already used.".to_string();
+    } else if next_licks == 8 {
+        item.description = "A lollipop stick.".to_string();
+    }
+
+    ItemDriverOutcome::LollipopLicked {
+        item_id: item.id,
+        character_id: character.id,
+        exp_added,
+        lick_count: next_licks,
+    }
+}
+
+fn lollipop_exp(level: u32) -> u32 {
+    legacy_level_value(level).saturating_div(750).max(5)
+}
+
+fn legacy_level_value(level: u32) -> u32 {
+    let level = u64::from(level);
+    let next = level.saturating_add(1);
+    next.saturating_pow(4)
+        .saturating_sub(level.saturating_pow(4))
+        .min(u64::from(u32::MAX)) as u32
 }
 
 fn special_potion_driver(
@@ -2541,7 +2594,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_food_driver_consumes_simple_food_and_defers_special_food() {
+    fn execute_food_driver_consumes_simple_food_and_ports_special_food() {
         let mut character = character(1);
         character.cursor_item = Some(ItemId(7));
         let mut food = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FOOD);
@@ -2572,14 +2625,17 @@ mod tests {
         assert_eq!(character.cursor_item, None);
         assert!(!food.flags.contains(ItemFlags::USED));
 
-        character.cursor_item = Some(ItemId(8));
-        let mut special = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FOOD);
-        special.carried_by = Some(CharacterId(1));
-        special.driver_data = vec![3];
+        let mut lollipop = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FOOD);
+        lollipop.carried_by = Some(CharacterId(1));
+        lollipop.driver_data = vec![2, 0];
+        lollipop.sprite = 100;
+        lollipop.description = "A sweet lollipop.".to_string();
+        character.level = 10;
+        character.exp = 7;
         assert_eq!(
             execute_item_driver(
                 &mut character,
-                &mut special,
+                &mut lollipop,
                 ItemDriverRequest::Driver {
                     driver: IDR_FOOD,
                     item_id: ItemId(8),
@@ -2589,13 +2645,87 @@ mod tests {
                 1,
                 false,
             ),
-            ItemDriverOutcome::UnsupportedSpecialFood {
+            ItemDriverOutcome::LollipopLicked {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
-                kind: 3,
+                exp_added: 6,
+                lick_count: 1,
             }
         );
-        assert!(special.flags.contains(ItemFlags::USED));
+        assert_eq!(lollipop.sprite, 101);
+        assert_eq!(lollipop.driver_data[1], 1);
+        assert_eq!(
+            lollipop.description,
+            "A sweet lollipop. Well, it's already used."
+        );
+        assert_eq!(character.exp, 13);
+        assert!(lollipop.flags.contains(ItemFlags::USED));
+
+        lollipop.driver_data[1] = 7;
+        assert_eq!(
+            execute_item_driver(
+                &mut character,
+                &mut lollipop,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FOOD,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                1,
+                false,
+            ),
+            ItemDriverOutcome::LollipopLicked {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                exp_added: 6,
+                lick_count: 8,
+            }
+        );
+        assert_eq!(lollipop.driver_data[1], 8);
+        assert_eq!(lollipop.description, "A lollipop stick.");
+
+        assert_eq!(
+            execute_item_driver(
+                &mut character,
+                &mut lollipop,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FOOD,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                1,
+                false,
+            ),
+            ItemDriverOutcome::LollipopMemories {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let mut xmaspop = item(9, ItemFlags::USED | ItemFlags::USE, 0, IDR_FOOD);
+        xmaspop.carried_by = Some(CharacterId(1));
+        xmaspop.driver_data = vec![3];
+        assert_eq!(
+            execute_item_driver(
+                &mut character,
+                &mut xmaspop,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FOOD,
+                    item_id: ItemId(9),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                1,
+                false,
+            ),
+            ItemDriverOutcome::ChristmasPopInspected {
+                item_id: ItemId(9),
+                character_id: CharacterId(1),
+            }
+        );
+        assert!(xmaspop.flags.contains(ItemFlags::USED));
     }
 
     #[test]
