@@ -251,9 +251,173 @@ impl ServerRuntime {
 }
 
 #[derive(Debug, Clone)]
-struct AccountDepotState {
+pub(crate) struct AccountDepotState {
     slots: Vec<Option<Item>>,
 }
+
+#[allow(dead_code)]
+mod legacy_account_depot_codec {
+    use super::*;
+
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_ITEM_SIZE: usize = 232;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_ITEM_PERSISTED_PREFIX: usize = 224;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_FLAGS_OFFSET: usize = 0;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_NAME_OFFSET: usize = 8;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_DESCRIPTION_OFFSET: usize = 48;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_VALUE_OFFSET: usize = 128;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_MIN_LEVEL_OFFSET: usize = 132;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_MAX_LEVEL_OFFSET: usize = 133;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_NEEDS_CLASS_OFFSET: usize = 134;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_OWNER_OFFSET: usize = 136;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_MOD_INDEX_OFFSET: usize = 140;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_MOD_VALUE_OFFSET: usize = 150;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_CONTENT_OFFSET: usize = 168;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_DRIVER_OFFSET: usize = 170;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_DRDATA_OFFSET: usize = 172;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_TEMPLATE_ID_OFFSET: usize = 212;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_SERIAL_OFFSET: usize = 216;
+    pub(crate) const LEGACY_ACCOUNT_DEPOT_SPRITE_OFFSET: usize = 220;
+
+    pub(crate) fn write_fixed_c_string(dst: &mut [u8], value: &str) {
+        dst.fill(0);
+        let bytes = value.as_bytes();
+        let len = bytes.len().min(dst.len().saturating_sub(1));
+        dst[..len].copy_from_slice(&bytes[..len]);
+    }
+
+    pub(crate) fn read_fixed_c_string(src: &[u8]) -> String {
+        let len = src.iter().position(|&byte| byte == 0).unwrap_or(src.len());
+        String::from_utf8_lossy(&src[..len]).into_owned()
+    }
+
+    pub(crate) fn encode_legacy_account_depot_item(
+        item: &Item,
+    ) -> [u8; LEGACY_ACCOUNT_DEPOT_ITEM_SIZE] {
+        let mut bytes = [0u8; LEGACY_ACCOUNT_DEPOT_ITEM_SIZE];
+        bytes[LEGACY_ACCOUNT_DEPOT_FLAGS_OFFSET..LEGACY_ACCOUNT_DEPOT_FLAGS_OFFSET + 8]
+            .copy_from_slice(&item.flags.bits().to_le_bytes());
+        write_fixed_c_string(
+            &mut bytes[LEGACY_ACCOUNT_DEPOT_NAME_OFFSET..LEGACY_ACCOUNT_DEPOT_NAME_OFFSET + 40],
+            &item.name,
+        );
+        write_fixed_c_string(
+            &mut bytes[LEGACY_ACCOUNT_DEPOT_DESCRIPTION_OFFSET
+                ..LEGACY_ACCOUNT_DEPOT_DESCRIPTION_OFFSET + 80],
+            &item.description,
+        );
+        bytes[LEGACY_ACCOUNT_DEPOT_VALUE_OFFSET..LEGACY_ACCOUNT_DEPOT_VALUE_OFFSET + 4]
+            .copy_from_slice(&item.value.to_le_bytes());
+        bytes[LEGACY_ACCOUNT_DEPOT_MIN_LEVEL_OFFSET] = item.min_level;
+        bytes[LEGACY_ACCOUNT_DEPOT_MAX_LEVEL_OFFSET] = item.max_level;
+        bytes[LEGACY_ACCOUNT_DEPOT_NEEDS_CLASS_OFFSET] = item.needs_class;
+        bytes[LEGACY_ACCOUNT_DEPOT_OWNER_OFFSET..LEGACY_ACCOUNT_DEPOT_OWNER_OFFSET + 4]
+            .copy_from_slice(&item.owner_id.to_le_bytes());
+        for index in 0..ugaris_core::entity::MAX_MODIFIERS {
+            let base = LEGACY_ACCOUNT_DEPOT_MOD_INDEX_OFFSET + index * 2;
+            bytes[base..base + 2].copy_from_slice(&item.modifier_index[index].to_le_bytes());
+            let base = LEGACY_ACCOUNT_DEPOT_MOD_VALUE_OFFSET + index * 2;
+            bytes[base..base + 2].copy_from_slice(&item.modifier_value[index].to_le_bytes());
+        }
+        bytes[LEGACY_ACCOUNT_DEPOT_CONTENT_OFFSET..LEGACY_ACCOUNT_DEPOT_CONTENT_OFFSET + 2]
+            .copy_from_slice(&item.content_id.to_le_bytes());
+        bytes[LEGACY_ACCOUNT_DEPOT_DRIVER_OFFSET..LEGACY_ACCOUNT_DEPOT_DRIVER_OFFSET + 2]
+            .copy_from_slice(&item.driver.to_le_bytes());
+        let drdata_len = item.driver_data.len().min(40);
+        bytes[LEGACY_ACCOUNT_DEPOT_DRDATA_OFFSET..LEGACY_ACCOUNT_DEPOT_DRDATA_OFFSET + drdata_len]
+            .copy_from_slice(&item.driver_data[..drdata_len]);
+        bytes[LEGACY_ACCOUNT_DEPOT_TEMPLATE_ID_OFFSET..LEGACY_ACCOUNT_DEPOT_TEMPLATE_ID_OFFSET + 4]
+            .copy_from_slice(&item.template_id.to_le_bytes());
+        bytes[LEGACY_ACCOUNT_DEPOT_SERIAL_OFFSET..LEGACY_ACCOUNT_DEPOT_SERIAL_OFFSET + 4]
+            .copy_from_slice(&item.serial.to_le_bytes());
+        bytes[LEGACY_ACCOUNT_DEPOT_SPRITE_OFFSET..LEGACY_ACCOUNT_DEPOT_SPRITE_OFFSET + 4]
+            .copy_from_slice(&item.sprite.to_le_bytes());
+        bytes
+    }
+
+    pub(crate) fn decode_legacy_account_depot_item(bytes: &[u8], slot: usize) -> Option<Item> {
+        if bytes.len() < LEGACY_ACCOUNT_DEPOT_ITEM_PERSISTED_PREFIX {
+            return None;
+        }
+        let read_u16 = |offset: usize| u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        let read_i16 = |offset: usize| i16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        let read_u32 = |offset: usize| {
+            u32::from_le_bytes([
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+            ])
+        };
+        let read_i32 = |offset: usize| {
+            i32::from_le_bytes([
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+            ])
+        };
+        let flags = u64::from_le_bytes(bytes[0..8].try_into().ok()?);
+        let mut modifier_index = [0i16; ugaris_core::entity::MAX_MODIFIERS];
+        let mut modifier_value = [0i16; ugaris_core::entity::MAX_MODIFIERS];
+        for index in 0..ugaris_core::entity::MAX_MODIFIERS {
+            modifier_index[index] = read_i16(LEGACY_ACCOUNT_DEPOT_MOD_INDEX_OFFSET + index * 2);
+            modifier_value[index] = read_i16(LEGACY_ACCOUNT_DEPOT_MOD_VALUE_OFFSET + index * 2);
+        }
+        Some(Item {
+            id: ItemId((slot + 1) as u32),
+            name: read_fixed_c_string(
+                &bytes[LEGACY_ACCOUNT_DEPOT_NAME_OFFSET..LEGACY_ACCOUNT_DEPOT_NAME_OFFSET + 40],
+            ),
+            description: read_fixed_c_string(
+                &bytes[LEGACY_ACCOUNT_DEPOT_DESCRIPTION_OFFSET
+                    ..LEGACY_ACCOUNT_DEPOT_DESCRIPTION_OFFSET + 80],
+            ),
+            flags: ItemFlags::from_bits_retain(flags),
+            sprite: read_i32(LEGACY_ACCOUNT_DEPOT_SPRITE_OFFSET),
+            value: read_u32(LEGACY_ACCOUNT_DEPOT_VALUE_OFFSET),
+            min_level: bytes[LEGACY_ACCOUNT_DEPOT_MIN_LEVEL_OFFSET],
+            max_level: bytes[LEGACY_ACCOUNT_DEPOT_MAX_LEVEL_OFFSET],
+            needs_class: bytes[LEGACY_ACCOUNT_DEPOT_NEEDS_CLASS_OFFSET],
+            template_id: read_u32(LEGACY_ACCOUNT_DEPOT_TEMPLATE_ID_OFFSET),
+            owner_id: read_i32(LEGACY_ACCOUNT_DEPOT_OWNER_OFFSET),
+            modifier_index,
+            modifier_value,
+            x: 0,
+            y: 0,
+            carried_by: None,
+            contained_in: None,
+            content_id: read_u16(LEGACY_ACCOUNT_DEPOT_CONTENT_OFFSET),
+            driver: read_u16(LEGACY_ACCOUNT_DEPOT_DRIVER_OFFSET),
+            driver_data: bytes
+                [LEGACY_ACCOUNT_DEPOT_DRDATA_OFFSET..LEGACY_ACCOUNT_DEPOT_DRDATA_OFFSET + 40]
+                .to_vec(),
+            serial: read_u32(LEGACY_ACCOUNT_DEPOT_SERIAL_OFFSET),
+        })
+    }
+
+    pub(crate) fn encode_legacy_account_depot_blob(depot: &AccountDepotState) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for item in depot.slots.iter().flatten() {
+            bytes.extend_from_slice(&encode_legacy_account_depot_item(item));
+        }
+        bytes
+    }
+
+    pub(crate) fn decode_legacy_account_depot_blob(bytes: &[u8]) -> AccountDepotState {
+        let mut depot = AccountDepotState::default();
+        for (slot, chunk) in bytes
+            .chunks_exact(LEGACY_ACCOUNT_DEPOT_ITEM_SIZE)
+            .take(depot.slots.len())
+            .enumerate()
+        {
+            depot.slots[slot] = decode_legacy_account_depot_item(chunk, slot);
+        }
+        depot
+    }
+}
+
+#[cfg(test)]
+use legacy_account_depot_codec::*;
 
 impl Default for AccountDepotState {
     fn default() -> Self {
@@ -5528,6 +5692,131 @@ mod tests {
         assert!(payload
             .windows(6)
             .any(|window| { window == [SV_CONTAINER, 2, 0x44, 0x33, 0x22, 0x11] }));
+    }
+
+    #[test]
+    fn account_depot_blob_encodes_c_struct_item_layout() {
+        let mut depot = AccountDepotState::default();
+        let mut item = test_item(
+            ItemId(99),
+            -12345,
+            ItemFlags::USED | ItemFlags::TAKE | ItemFlags::NODEPOT,
+        );
+        item.name = "Long Stored Relic Name That Fits".to_string();
+        item.description = "A relic in the account depot.".to_string();
+        item.value = 12_345;
+        item.min_level = 7;
+        item.max_level = 77;
+        item.needs_class = 3;
+        item.owner_id = -44;
+        item.modifier_index = [1, -2, 3, -4, 5];
+        item.modifier_value = [10, 20, 30, 40, 50];
+        item.content_id = 17;
+        item.driver = IDR_TORCH;
+        item.driver_data = (0..50).collect();
+        item.template_id = 0x0102_0304;
+        item.serial = 0xAABB_CCDD;
+        depot.slots[5] = Some(item);
+
+        let bytes = encode_legacy_account_depot_blob(&depot);
+
+        assert_eq!(bytes.len(), LEGACY_ACCOUNT_DEPOT_ITEM_SIZE);
+        assert_eq!(
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            (ItemFlags::USED | ItemFlags::TAKE | ItemFlags::NODEPOT).bits()
+        );
+        assert_eq!(
+            &bytes[LEGACY_ACCOUNT_DEPOT_NAME_OFFSET..LEGACY_ACCOUNT_DEPOT_NAME_OFFSET + 4],
+            b"Long"
+        );
+        assert_eq!(
+            u32::from_le_bytes(
+                bytes[LEGACY_ACCOUNT_DEPOT_VALUE_OFFSET..LEGACY_ACCOUNT_DEPOT_VALUE_OFFSET + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            12_345
+        );
+        assert_eq!(bytes[LEGACY_ACCOUNT_DEPOT_MIN_LEVEL_OFFSET], 7);
+        assert_eq!(
+            i16::from_le_bytes(
+                bytes[LEGACY_ACCOUNT_DEPOT_MOD_INDEX_OFFSET + 2
+                    ..LEGACY_ACCOUNT_DEPOT_MOD_INDEX_OFFSET + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            -2
+        );
+        assert_eq!(
+            u16::from_le_bytes(
+                bytes[LEGACY_ACCOUNT_DEPOT_DRIVER_OFFSET..LEGACY_ACCOUNT_DEPOT_DRIVER_OFFSET + 2]
+                    .try_into()
+                    .unwrap()
+            ),
+            IDR_TORCH
+        );
+        assert_eq!(
+            &bytes[LEGACY_ACCOUNT_DEPOT_DRDATA_OFFSET..LEGACY_ACCOUNT_DEPOT_DRDATA_OFFSET + 40],
+            &(0u8..40).collect::<Vec<_>>()[..]
+        );
+        assert_eq!(
+            u32::from_le_bytes(
+                bytes[LEGACY_ACCOUNT_DEPOT_TEMPLATE_ID_OFFSET
+                    ..LEGACY_ACCOUNT_DEPOT_TEMPLATE_ID_OFFSET + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            0x0102_0304
+        );
+        assert_eq!(
+            i32::from_le_bytes(
+                bytes[LEGACY_ACCOUNT_DEPOT_SPRITE_OFFSET..LEGACY_ACCOUNT_DEPOT_SPRITE_OFFSET + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            -12345
+        );
+        assert!(bytes[LEGACY_ACCOUNT_DEPOT_ITEM_PERSISTED_PREFIX..]
+            .iter()
+            .all(|&b| b == 0));
+    }
+
+    #[test]
+    fn account_depot_blob_decodes_items_into_dense_legacy_slots() {
+        let mut item = test_item(ItemId(99), 4321, ItemFlags::USED | ItemFlags::TAKE);
+        item.name = "Stored Gem".to_string();
+        item.description = "It sparkles.".to_string();
+        item.value = 88;
+        item.modifier_index = [7, 0, 0, 0, 0];
+        item.modifier_value = [9, 0, 0, 0, 0];
+        item.driver = IDR_FOOD;
+        item.driver_data = vec![3, 2, 1];
+        item.template_id = 0x1234_5678;
+        item.serial = 123;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&encode_legacy_account_depot_item(&item));
+        bytes.extend_from_slice(&[0xFF; 17]);
+
+        let depot = decode_legacy_account_depot_blob(&bytes);
+        let decoded = depot.slots[0].as_ref().unwrap();
+
+        assert_eq!(decoded.id, ItemId(1));
+        assert_eq!(decoded.name, "Stored Gem");
+        assert_eq!(decoded.description, "It sparkles.");
+        assert_eq!(decoded.flags, ItemFlags::USED | ItemFlags::TAKE);
+        assert_eq!(decoded.sprite, 4321);
+        assert_eq!(decoded.value, 88);
+        assert_eq!(decoded.modifier_index[0], 7);
+        assert_eq!(decoded.modifier_value[0], 9);
+        assert_eq!(decoded.driver, IDR_FOOD);
+        assert_eq!(&decoded.driver_data[..3], &[3, 2, 1]);
+        assert_eq!(decoded.template_id, 0x1234_5678);
+        assert_eq!(decoded.serial, 123);
+        assert_eq!(decoded.x, 0);
+        assert_eq!(decoded.y, 0);
+        assert_eq!(decoded.carried_by, None);
+        assert_eq!(decoded.contained_in, None);
+        assert!(depot.slots[1].is_none());
     }
 
     #[test]
