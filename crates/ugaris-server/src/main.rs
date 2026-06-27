@@ -1641,6 +1641,35 @@ fn grant_template_item_to_cursor(
     Some(item_name)
 }
 
+fn grant_template_item_smart(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    template: &str,
+) -> Option<String> {
+    let mut item = loader
+        .instantiate_item_template(template, Some(character_id))
+        .ok()?;
+    let item_name = item.name.clone();
+    let (give_result, drop_x, drop_y) = {
+        let character = world.characters.get_mut(&character_id)?;
+        let result = give_item_to_character(character, &mut item, GiveItemFlags::ALLOW_DROP);
+        (result, usize::from(character.x), usize::from(character.y))
+    };
+    match give_result {
+        GiveItemResult::Ok => {}
+        GiveItemResult::Dropped => {
+            if !world.map.drop_item_extended(&mut item, drop_x, drop_y, 1) {
+                return None;
+            }
+        }
+        GiveItemResult::Money => {}
+        GiveItemResult::Full | GiveItemResult::Failed => return None,
+    }
+    world.add_item(item);
+    Some(item_name)
+}
+
 fn apply_assemble_item(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -4047,6 +4076,59 @@ mod tests {
             driver_data: Vec::new(),
             serial: 1,
         }
+    }
+
+    #[test]
+    fn grant_template_item_smart_places_xmaspop_in_inventory_first() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::STAFF);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"xmaspop: name="Christmas Pop" flag=IF_TAKE driver=64 ;"#)
+            .unwrap();
+
+        assert_eq!(
+            grant_template_item_smart(&mut world, &mut loader, character_id, "xmaspop"),
+            Some("Christmas Pop".to_string())
+        );
+        let character = world.characters.get(&character_id).unwrap();
+        let item_id = character.inventory[INVENTORY_START_INVENTORY].unwrap();
+        let item = world.items.get(&item_id).unwrap();
+        assert_eq!(item.name, "Christmas Pop");
+        assert_eq!(item.carried_by, Some(character_id));
+    }
+
+    #[test]
+    fn grant_template_item_smart_uses_cursor_when_inventory_full() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        for slot in character
+            .inventory
+            .iter_mut()
+            .skip(INVENTORY_START_INVENTORY)
+        {
+            *slot = Some(ItemId(99));
+        }
+        let mut world = World::default();
+        world.add_character(character);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"xmaspop: name="Christmas Pop" flag=IF_TAKE driver=64 ;"#)
+            .unwrap();
+
+        assert_eq!(
+            grant_template_item_smart(&mut world, &mut loader, character_id, "xmaspop"),
+            Some("Christmas Pop".to_string())
+        );
+        let character = world.characters.get(&character_id).unwrap();
+        let item_id = character.cursor_item.unwrap();
+        assert_eq!(
+            world.items.get(&item_id).unwrap().carried_by,
+            Some(character_id)
+        );
     }
 
     #[test]
@@ -7380,6 +7462,19 @@ async fn main() -> anyhow::Result<()> {
                                                     feedback.push((character_id, "Bug 771".to_string()));
                                                     failed += 1;
                                                 }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::XmasMaker { character_id, .. } => {
+                                            if let Some(item_name) = grant_template_item_smart(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                "xmaspop",
+                                            ) {
+                                                feedback.push((character_id, format!("You received {item_name}.")));
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
                                             }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }

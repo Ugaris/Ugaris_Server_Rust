@@ -44,6 +44,7 @@ pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
 pub const IDR_BEYONDPOTION: u16 = 133;
 pub const IDR_DEMONCHIP: u16 = 136;
+pub const IDR_XMASMAKER: u16 = 143;
 pub const IDR_SPECIAL_SHRINE: u16 = 147;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_ANTIENCHANTITEM: u16 = 160;
@@ -513,6 +514,10 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         location_id: u32,
     },
+    XmasMaker {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     PalaceKeySplit {
         item_id: ItemId,
         character_id: CharacterId,
@@ -711,6 +716,7 @@ pub fn execute_item_driver_with_context(
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
+                IDR_XMASMAKER => xmasmaker_driver(character, item),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
                     driver,
@@ -895,6 +901,21 @@ fn nomad_stack_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     }
 
     ItemDriverOutcome::NomadStack {
+        item_id: item.id,
+        character_id: character.id,
+    }
+}
+
+fn xmasmaker_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0
+        || !character
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+    {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::XmasMaker {
         item_id: item.id,
         character_id: character.id,
     }
@@ -2689,6 +2710,32 @@ mod tests {
                 false,
             ),
             ItemDriverOutcome::NomadStack {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn xmasmaker_driver_only_dispatches_for_staff_or_god() {
+        let mut character = character(1);
+        let mut maker = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_XMASMAKER);
+
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_XMASMAKER,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver(&mut character, &mut maker, request, 1, false),
+            ItemDriverOutcome::Noop
+        );
+
+        character.flags.insert(CharacterFlags::STAFF);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut maker, request, 1, false),
+            ItemDriverOutcome::XmasMaker {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }
