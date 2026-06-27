@@ -10,12 +10,14 @@ pub const CDT_DEAD: u16 = 2;
 pub const CDT_RESPAWN: u16 = 3;
 pub const CDT_SPECIAL: u16 = 4;
 
+pub const CDR_SIMPLEBADDY: u16 = 7;
 pub const CDR_MACRO: u16 = 37;
 pub const CDR_TRADER: u16 = 72;
 pub const CDR_JANITOR: u16 = 85;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CharacterDriverKind {
+    SimpleBaddy,
     Macro,
     Trader,
     Janitor,
@@ -24,6 +26,7 @@ pub enum CharacterDriverKind {
 impl CharacterDriverKind {
     pub fn from_legacy_id(driver: u16) -> Option<Self> {
         match driver {
+            CDR_SIMPLEBADDY => Some(Self::SimpleBaddy),
             CDR_MACRO => Some(Self::Macro),
             CDR_TRADER => Some(Self::Trader),
             CDR_JANITOR => Some(Self::Janitor),
@@ -33,6 +36,7 @@ impl CharacterDriverKind {
 
     pub fn legacy_id(self) -> u16 {
         match self {
+            Self::SimpleBaddy => CDR_SIMPLEBADDY,
             Self::Macro => CDR_MACRO,
             Self::Trader => CDR_TRADER,
             Self::Janitor => CDR_JANITOR,
@@ -115,9 +119,14 @@ mod tests {
 
     #[test]
     fn base_character_driver_ids_match_c_drvlib() {
+        assert_eq!(CDR_SIMPLEBADDY, 7);
         assert_eq!(CDR_MACRO, 37);
         assert_eq!(CDR_TRADER, 72);
         assert_eq!(CDR_JANITOR, 85);
+        assert_eq!(
+            CharacterDriverKind::SimpleBaddy.legacy_id(),
+            CDR_SIMPLEBADDY
+        );
         assert_eq!(CharacterDriverKind::Macro.legacy_id(), CDR_MACRO);
         assert_eq!(CharacterDriverKind::Trader.legacy_id(), CDR_TRADER);
         assert_eq!(CharacterDriverKind::Janitor.legacy_id(), CDR_JANITOR);
@@ -126,6 +135,7 @@ mod tests {
     #[test]
     fn known_base_tick_drivers_are_handled_like_c_ch_driver() {
         for (driver, kind) in [
+            (CDR_SIMPLEBADDY, CharacterDriverKind::SimpleBaddy),
             (CDR_MACRO, CharacterDriverKind::Macro),
             (CDR_TRADER, CharacterDriverKind::Trader),
             (CDR_JANITOR, CharacterDriverKind::Janitor),
@@ -147,6 +157,18 @@ mod tests {
 
     #[test]
     fn known_base_death_and_respawn_drivers_are_handled_like_c() {
+        let simple_died = execute_character_died_driver(CDR_SIMPLEBADDY, 123);
+        assert_eq!(
+            simple_died,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::SimpleBaddy,
+                call: CharacterDriverCall::Died {
+                    killer_character_id: 123,
+                },
+            }
+        );
+        assert_eq!(simple_died.legacy_return_code(), 1);
+
         let died = execute_character_died_driver(CDR_JANITOR, 123);
         assert_eq!(
             died,
@@ -158,6 +180,16 @@ mod tests {
             }
         );
         assert_eq!(died.legacy_return_code(), 1);
+
+        let simple_respawn = execute_character_respawn_driver(CDR_SIMPLEBADDY);
+        assert_eq!(
+            simple_respawn,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::SimpleBaddy,
+                call: CharacterDriverCall::Respawn,
+            }
+        );
+        assert_eq!(simple_respawn.legacy_return_code(), 1);
 
         let respawn = execute_character_respawn_driver(CDR_TRADER);
         assert_eq!(
