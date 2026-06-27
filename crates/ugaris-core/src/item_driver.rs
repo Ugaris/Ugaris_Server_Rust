@@ -21,6 +21,7 @@ pub const IDR_TELEPORT: u16 = 10;
 pub const IDR_NIGHTLIGHT: u16 = 11;
 pub const IDR_TORCH: u16 = 12;
 pub const IDR_RECALL: u16 = 13;
+pub const IDR_ONOFFLIGHT: u16 = 17;
 pub const IDR_TRANSPORT: u16 = 18;
 pub const IDR_STATSCROLL: u16 = 19;
 pub const IDR_FLAMETHROW: u16 = 24;
@@ -767,6 +768,7 @@ pub fn execute_item_driver_with_context(
                 IDR_DOUBLE_DOOR => double_door_driver(character, item),
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
                 IDR_TELEPORT => teleport_driver(character, item),
+                IDR_ONOFFLIGHT => onofflight_driver(character, item, context),
                 IDR_NIGHTLIGHT => nightlight_driver(character, item, context),
                 IDR_TORCH => torch_driver(character, item, context),
                 IDR_FOOD => food_driver(character, item),
@@ -2203,6 +2205,42 @@ fn nightlight_driver(
         item_id: item.id,
         character_id: character.id,
         schedule_after_ticks: Some(LIGHT_TIMER_TICKS),
+    }
+}
+
+fn onofflight_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(7, 0);
+
+    if context.timer_call && character.id.0 == 0 {
+        if item.driver_data[0] == 0 {
+            return ItemDriverOutcome::Noop;
+        }
+        if item.driver_data[6] == 0 {
+            item.driver_data[6] = 1;
+            return ItemDriverOutcome::Noop;
+        }
+    }
+
+    if item.driver_data[0] != 0 {
+        item.driver_data[0] = 0;
+        item.modifier_value[0] = 0;
+        item.sprite -= 1;
+    } else {
+        let light = i16::from(item.driver_data[1]);
+        item.driver_data[0] = 1;
+        item.modifier_index[0] = V_LIGHT;
+        item.modifier_value[0] = light;
+        item.sprite += 1;
+    }
+
+    ItemDriverOutcome::LightChanged {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: None,
     }
 }
 
@@ -4439,6 +4477,66 @@ mod tests {
         assert_eq!(light.driver_data[0], 0);
         assert_eq!(light.modifier_value[0], 0);
         assert_eq!(light.sprite, 0);
+    }
+
+    #[test]
+    fn onofflight_timer_registers_and_use_toggles_light_state() {
+        let mut timer_character = character(0);
+        let mut light = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_ONOFFLIGHT);
+        light.driver_data = vec![1, 15];
+        light.modifier_index[0] = V_LIGHT;
+        light.modifier_value[0] = 15;
+        light.sprite = 101;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ONOFFLIGHT,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut light,
+                request,
+                3,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::Noop
+        );
+        assert_eq!(light.driver_data[6], 1);
+        assert_eq!(light.driver_data[0], 1);
+        assert_eq!(light.modifier_value[0], 15);
+        assert_eq!(light.sprite, 101);
+
+        let mut character = character(1);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ONOFFLIGHT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver(&mut character, &mut light, request, 3, false),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                schedule_after_ticks: None,
+            }
+        );
+        assert_eq!(light.driver_data[0], 0);
+        assert_eq!(light.modifier_value[0], 0);
+        assert_eq!(light.sprite, 100);
+
+        execute_item_driver(&mut character, &mut light, request, 3, false);
+        assert_eq!(light.driver_data[0], 1);
+        assert_eq!(light.modifier_index[0], V_LIGHT);
+        assert_eq!(light.modifier_value[0], 15);
+        assert_eq!(light.sprite, 101);
     }
 
     #[test]

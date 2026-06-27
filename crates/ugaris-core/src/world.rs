@@ -27,7 +27,7 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_FLAMETHROW, IDR_NIGHTLIGHT,
-        IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -1827,6 +1827,9 @@ impl World {
             .iter()
             .filter_map(|(&item_id, item)| match item.driver {
                 IDR_NIGHTLIGHT => Some(item_id),
+                IDR_ONOFFLIGHT if item.driver_data.first().copied().unwrap_or(0) != 0 => {
+                    Some(item_id)
+                }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
                 IDR_FLAMETHROW => Some(item_id),
                 _ => None,
@@ -7825,8 +7828,8 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_EDEMONBALL,
-            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_PALACEKEY, IDR_POTION,
-            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEKEY,
+            IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
@@ -10302,6 +10305,34 @@ mod tests {
             ItemDriverOutcome::LightChanged { .. }
         ));
         assert_eq!(world.map.tile(10, 10).unwrap().light, 12);
+    }
+
+    #[test]
+    fn world_schedules_existing_onofflight_and_preserves_first_timer_state() {
+        let mut world = World::default();
+        let mut light = item(7, ItemFlags::USED | ItemFlags::USE);
+        light.driver = IDR_ONOFFLIGHT;
+        light.driver_data = vec![1, 14];
+        light.modifier_index[0] = CharacterValue::Light as i16;
+        light.modifier_value[0] = 14;
+        light.sprite = 101;
+        light.x = 10;
+        light.y = 10;
+        world.map.tile_mut(10, 10).unwrap().item = 7;
+        world.add_item(light);
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 14);
+
+        assert_eq!(world.schedule_existing_light_timers(), 1);
+        world.advance();
+        let outcomes = world.process_due_timers(3);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let light = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(light.driver_data[6], 1);
+        assert_eq!(light.driver_data[0], 1);
+        assert_eq!(light.modifier_value[0], 14);
+        assert_eq!(light.sprite, 101);
+        assert_eq!(world.map.tile(10, 10).unwrap().light, 14);
     }
 
     #[test]

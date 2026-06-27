@@ -2100,14 +2100,42 @@
         "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 113 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
       ]
+    },
+    {
+      "iteration": 76,
+      "startedAt": "2026-06-27T19:23:58.722Z",
+      "endedAt": "2026-06-27T19:33:41.789Z",
+      "durationMs": 582891,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The core code now compiles past item-driver tests; the remaining failure is only the world test module import list. I’ll add the test import and rerun.",
+        "error: could not compile `ugaris-core` (lib test) due to 4 previous errors",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test item_driver::tests::onofflight_timer_registers_and_use_toggles_light_state ... FAILED",
+        "test world::tests::world_schedules_existing_onofflight_and_preserves_first_timer_state ... FAILED",
+        "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 440 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 440 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 33701219,
+  "totalDurationMs": 34284110,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 72,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 70,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 73,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 71,
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 65,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 49,
@@ -2123,7 +2151,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 20,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 21,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 4,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -2163,7 +2191,7 @@
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 344 filtered out; finished in 0.00s": 1,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 343 filtered out; finished in 0.00s": 1,
       "I’m running `cargo fmt` and then the targeted tests again after formatting. If those are clean, I’ll": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 2,
       "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 327 filtered out; finished in 0.00s": 1,
       "test result: ok. 348 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 348 filtered out; finished in 0.00s": 1,
@@ -2176,7 +2204,7 @@
       "assertion failed: world.process_simple_baddy_attack_action(CharacterId(1), 1)": 1,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 8,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 9,
       "test world::tests::simple_baddy_message_actions_add_defensive_gothit_enemy_without_sight ... FAILED": 1,
       "test world::tests::simple_baddy_message_actions_helper_seen_hit_adds_enemy_for_friend ... FAILED": 1,
       "test result: FAILED. 25 passed; 2 failed; 0 ignored; 0 measured; 327 filtered out; finished in 0.01s": 1,
@@ -2363,7 +2391,12 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 109 filtered out; finished in 0.00s": 1,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 105 filtered out; finished in 0.00s": 1,
       "test result: ok. 440 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
-      "test result: ok. 113 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
+      "test result: ok. 113 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "The core code now compiles past item-driver tests; the remaining failure is only the world test modu": 1,
+      "test item_driver::tests::onofflight_timer_registers_and_use_toggles_light_state ... FAILED": 1,
+      "test world::tests::world_schedules_existing_onofflight_and_preserves_first_timer_state ... FAILED": 1,
+      "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 440 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 440 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
