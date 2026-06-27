@@ -92,6 +92,8 @@ pub struct SimpleBaddyDriverData {
     pub lastfight: i32,
     #[serde(default)]
     pub last_hit: i32,
+    #[serde(default)]
+    pub pending_bless_friend: Option<CharacterId>,
     pub poison_power: i32,
     pub poison_chance: i32,
     pub poison_type: i32,
@@ -139,6 +141,7 @@ impl Default for SimpleBaddyDriverData {
             mindist: 0,
             lastfight: 0,
             last_hit: 0,
+            pending_bless_friend: None,
             poison_power: 0,
             poison_chance: 0,
             poison_type: 0,

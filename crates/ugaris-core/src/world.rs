@@ -2283,7 +2283,9 @@ impl World {
                 }
                 SimpleBaddyMessageOutcome::BlessFriend { target_id } => {
                     if self.simple_baddy_can_bless_friend(character_id, target_id) {
-                        let _ = self.setup_bless_spell(character_id, target_id);
+                        self.remember_simple_baddy_bless_friend(character_id, target_id);
+                    } else {
+                        self.clear_simple_baddy_bless_friend(character_id);
                     }
                     applied.push(ItemDriverOutcome::Noop);
                 }
@@ -3623,6 +3625,9 @@ impl World {
             if self.spell_self_simple_baddy(character_id) {
                 return true;
             }
+            if self.setup_pending_simple_baddy_friend_bless(character_id) {
+                return true;
+            }
             if random_below(2) == 0 {
                 return self.idle_simple_baddy(character_id);
             }
@@ -3678,6 +3683,7 @@ impl World {
             self.drink_special_poison_simple_baddy(character_id);
             return self.regenerate_simple_baddy(character_id)
                 || self.spell_self_simple_baddy(character_id)
+                || self.setup_pending_simple_baddy_friend_bless(character_id)
                 || self.idle_simple_baddy(character_id);
         };
         let target_x = target_x as u16;
@@ -3698,6 +3704,7 @@ impl World {
             }
             return self.regenerate_simple_baddy(character_id)
                 || self.spell_self_simple_baddy(character_id)
+                || self.setup_pending_simple_baddy_friend_bless(character_id)
                 || self.idle_simple_baddy(character_id);
         }
 
@@ -3748,6 +3755,7 @@ impl World {
         self.drink_special_poison_simple_baddy(character_id);
         self.regenerate_simple_baddy(character_id)
             || self.spell_self_simple_baddy(character_id)
+            || self.setup_pending_simple_baddy_friend_bless(character_id)
             || self.idle_simple_baddy(character_id)
     }
 
@@ -3832,6 +3840,47 @@ impl World {
         }
 
         false
+    }
+
+    fn remember_simple_baddy_bless_friend(
+        &mut self,
+        character_id: CharacterId,
+        target_id: CharacterId,
+    ) {
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+            .characters
+            .get_mut(&character_id)
+            .and_then(|character| character.driver_state.as_mut())
+        {
+            data.pending_bless_friend = Some(target_id);
+        }
+    }
+
+    fn clear_simple_baddy_bless_friend(&mut self, character_id: CharacterId) {
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+            .characters
+            .get_mut(&character_id)
+            .and_then(|character| character.driver_state.as_mut())
+        {
+            data.pending_bless_friend = None;
+        }
+    }
+
+    fn setup_pending_simple_baddy_friend_bless(&mut self, character_id: CharacterId) -> bool {
+        let target_id = self
+            .characters
+            .get(&character_id)
+            .and_then(|character| character.driver_state.as_ref())
+            .and_then(|state| match state {
+                CharacterDriverState::SimpleBaddy(data) => data.pending_bless_friend,
+            });
+        let Some(target_id) = target_id else {
+            return false;
+        };
+
+        self.clear_simple_baddy_bless_friend(character_id);
+        self.simple_baddy_can_bless_friend(character_id, target_id)
+            && self.setup_bless_spell(character_id, target_id)
     }
 
     fn drink_special_poison_simple_baddy(&mut self, character_id: CharacterId) {
@@ -8350,10 +8399,11 @@ mod tests {
     }
 
     #[test]
-    fn simple_baddy_message_actions_set_up_helper_bless() {
+    fn simple_baddy_message_actions_remember_helper_bless_for_noncombat_flow() {
         let mut world = World::default();
         world.tick = Tick(1_000);
         let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
         npc.group = 7;
         npc.mana = 10 * POWERSCALE;
         npc.values[0][CharacterValue::Bless as usize] = 40;
@@ -8363,8 +8413,12 @@ mod tests {
             ..SimpleBaddyDriverData::default()
         }));
         npc.push_driver_message(NT_CHAR, 2, 0, 0);
+        let mut existing_bless = item(20, ItemFlags::empty());
+        existing_bless.driver = IDR_BLESS;
+        npc.inventory[SPELL_SLOT_START] = Some(existing_bless.id);
         let mut friend = character(2);
         friend.group = 7;
+        world.items.insert(existing_bless.id, existing_bless);
         world.spawn_character(npc, 10, 10);
         world.spawn_character(friend, 12, 10);
 
@@ -8372,10 +8426,23 @@ mod tests {
 
         assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
         let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, 0);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.pending_bless_friend, Some(CharacterId(2)));
+        assert!(npc.driver_messages.is_empty());
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::BLESS1);
         assert_eq!(npc.act1, 2);
         assert_eq!(npc.mana, 8 * POWERSCALE);
-        assert!(npc.driver_messages.is_empty());
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.pending_bless_friend, None);
     }
 
     #[test]
@@ -8401,6 +8468,10 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, 0);
         assert_eq!(npc.mana, 10 * POWERSCALE);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.pending_bless_friend, None);
         assert!(npc.driver_messages.is_empty());
     }
 
