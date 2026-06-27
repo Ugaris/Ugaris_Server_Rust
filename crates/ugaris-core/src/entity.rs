@@ -315,6 +315,8 @@ pub struct Character {
     pub exp_used: u32,
     pub gold: u32,
     #[serde(default)]
+    pub saves: u8,
+    #[serde(default)]
     pub deaths: u32,
     pub cursor_item: Option<ItemId>,
     pub current_container: Option<ItemId>,

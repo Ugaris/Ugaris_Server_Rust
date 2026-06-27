@@ -669,6 +669,7 @@ mod tests {
             exp: 0,
             exp_used: 0,
             gold: 0,
+            saves: 0,
             deaths: 0,
             cursor_item: None,
             current_container: None,

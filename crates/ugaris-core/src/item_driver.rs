@@ -447,6 +447,11 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         installed: bool,
     },
+    SpecialPotionSecurity {
+        item_id: ItemId,
+        character_id: CharacterId,
+        used: bool,
+    },
     EnchantNeedsCursor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1841,6 +1846,22 @@ fn special_potion_driver(
                 character_id: character.id,
                 kind,
                 poison_removed: false,
+            };
+        }
+        5 => {
+            if character.saves < 10 && !character.flags.contains(CharacterFlags::HARDCORE) {
+                character.saves += 1;
+                consume_item(character, item);
+                return ItemDriverOutcome::SpecialPotionSecurity {
+                    item_id: item.id,
+                    character_id: character.id,
+                    used: true,
+                };
+            }
+            return ItemDriverOutcome::SpecialPotionSecurity {
+                item_id: item.id,
+                character_id: character.id,
+                used: false,
             };
         }
         6 => {
@@ -3961,6 +3982,94 @@ mod tests {
     }
 
     #[test]
+    fn special_potion_security_increments_saves_and_consumes_item() {
+        let mut character = character(3);
+        character.level = 10;
+        character.saves = 9;
+        character.inventory[30] = Some(ItemId(7));
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_POTION);
+        potion.carried_by = Some(character.id);
+        potion.driver_data = vec![5];
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut potion,
+            ItemDriverRequest::Driver {
+                driver: IDR_SPECIAL_POTION,
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(character.saves, 10);
+        assert_eq!(character.inventory[30], None);
+        assert!(!potion.flags.contains(ItemFlags::USED));
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SpecialPotionSecurity {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                used: true,
+            }
+        );
+    }
+
+    #[test]
+    fn special_potion_security_blocks_hardcore_or_capped_saves() {
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SPECIAL_POTION,
+            item_id: ItemId(7),
+            character_id: CharacterId(3),
+            spec: 0,
+        };
+
+        let mut capped = character(3);
+        capped.level = 10;
+        capped.saves = 10;
+        capped.inventory[30] = Some(ItemId(7));
+        let mut capped_potion = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_POTION);
+        capped_potion.carried_by = Some(capped.id);
+        capped_potion.driver_data = vec![5];
+        let capped_outcome =
+            execute_item_driver(&mut capped, &mut capped_potion, request, 1, false);
+
+        assert_eq!(capped.saves, 10);
+        assert_eq!(capped.inventory[30], Some(ItemId(7)));
+        assert_eq!(
+            capped_outcome,
+            ItemDriverOutcome::SpecialPotionSecurity {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                used: false,
+            }
+        );
+
+        let mut hardcore = character(3);
+        hardcore.level = 10;
+        hardcore.flags.insert(CharacterFlags::HARDCORE);
+        hardcore.inventory[30] = Some(ItemId(7));
+        let mut hardcore_potion = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SPECIAL_POTION);
+        hardcore_potion.carried_by = Some(hardcore.id);
+        hardcore_potion.driver_data = vec![5];
+        let hardcore_outcome =
+            execute_item_driver(&mut hardcore, &mut hardcore_potion, request, 1, false);
+
+        assert_eq!(hardcore.saves, 0);
+        assert_eq!(hardcore.inventory[30], Some(ItemId(7)));
+        assert_eq!(
+            hardcore_outcome,
+            ItemDriverOutcome::SpecialPotionSecurity {
+                item_id: ItemId(7),
+                character_id: CharacterId(3),
+                used: false,
+            }
+        );
+    }
+
+    #[test]
     fn beyond_potion_dispatch_copies_modifiers_and_duration() {
         let mut character = character(3);
         character.level = 12;
@@ -4076,6 +4185,7 @@ mod tests {
             exp: 0,
             exp_used: 0,
             gold: 0,
+            saves: 0,
             deaths: 0,
             cursor_item: None,
             current_container: None,

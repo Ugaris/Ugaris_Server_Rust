@@ -522,6 +522,7 @@ fn login_character(
         exp: 0,
         exp_used: 0,
         gold: 0,
+        saves: 0,
         deaths: 0,
         cursor_item: None,
         current_container: None,
@@ -7243,6 +7244,22 @@ async fn main() -> anyhow::Result<()> {
                                             ..
                                         } => {
                                             feedback.push((character_id, "Your eyes start to itch.".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionSecurity {
+                                            character_id,
+                                            used,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                if used {
+                                                    "You feel secure."
+                                                } else {
+                                                    "You don't feel like drinking this potion now."
+                                                }
+                                                .to_string(),
+                                            ));
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { character_id, .. } => {

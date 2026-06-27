@@ -400,6 +400,7 @@ impl ZoneLoader {
                 exp: 0,
                 exp_used: 0,
                 gold: template.gold,
+                saves: 0,
                 deaths: 0,
                 cursor_item: None,
                 current_container: None,
