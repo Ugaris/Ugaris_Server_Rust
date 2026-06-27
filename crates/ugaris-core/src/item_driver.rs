@@ -436,6 +436,17 @@ pub enum ItemDriverOutcome {
         mana_delta: i32,
         endurance_delta: i32,
     },
+    SpecialPotionAntidote {
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+        poison_removed: bool,
+    },
+    SpecialPotionInfravision {
+        item_id: ItemId,
+        character_id: CharacterId,
+        installed: bool,
+    },
     EnchantNeedsCursor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1823,6 +1834,22 @@ fn special_potion_driver(
     let old_endurance = character.endurance;
 
     match kind {
+        0..=4 => {
+            consume_item(character, item);
+            return ItemDriverOutcome::SpecialPotionAntidote {
+                item_id: item.id,
+                character_id: character.id,
+                kind,
+                poison_removed: false,
+            };
+        }
+        6 => {
+            return ItemDriverOutcome::SpecialPotionInfravision {
+                item_id: item.id,
+                character_id: character.id,
+                installed: false,
+            };
+        }
         8 => {
             character.hp = (character.hp - 10 * POWERSCALE).max(1);
             character.endurance = (character.endurance - 10 * POWERSCALE).max(0);

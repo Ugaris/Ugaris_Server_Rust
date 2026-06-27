@@ -7197,6 +7197,29 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionAntidote {
+                                            character_id,
+                                            poison_removed,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                if poison_removed {
+                                                    "You feel better."
+                                                } else {
+                                                    "It didn't have any effect."
+                                                }
+                                                .to_string(),
+                                            ));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionInfravision {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "Your eyes start to itch.".to_string()));
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { character_id, .. } => {
                                             for message in keyring_show_messages(runtime.player_for_character(character_id)) {
                                                 feedback.push((character_id, message));

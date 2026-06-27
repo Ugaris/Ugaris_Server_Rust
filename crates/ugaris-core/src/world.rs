@@ -40,8 +40,8 @@ use crate::{
         fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell,
         read_spell_expire_tick, spell_power, strike_damage, warcry_damage, warcry_speed_modifier,
         BLESS_DURATION, EF_BALL, EF_BURN, EF_FIREBALL, EF_STRIKE, FLASH_DURATION, FREEZE_DURATION,
-        IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_POISON0, IDR_POISON3, IDR_POTION_SP,
-        IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
+        IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3,
+        IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -1510,6 +1510,40 @@ impl World {
                         item_id,
                         character_id,
                     }
+                }
+            }
+            ItemDriverOutcome::SpecialPotionAntidote {
+                item_id,
+                character_id,
+                kind,
+                ..
+            } => {
+                let poison_removed = if kind <= 3 {
+                    self.remove_poison(character_id, u16::from(kind))
+                } else {
+                    self.remove_all_poison(character_id)
+                };
+                self.destroy_item(item_id);
+                ItemDriverOutcome::SpecialPotionAntidote {
+                    item_id,
+                    character_id,
+                    kind,
+                    poison_removed,
+                }
+            }
+            ItemDriverOutcome::SpecialPotionInfravision {
+                item_id,
+                character_id,
+                ..
+            } => {
+                let installed = self.install_infravision_spell(character_id);
+                if installed {
+                    self.destroy_item(item_id);
+                }
+                ItemDriverOutcome::SpecialPotionInfravision {
+                    item_id,
+                    character_id,
+                    installed,
                 }
             }
             ItemDriverOutcome::TorchExtractOrb { .. } => outcome,
@@ -3745,6 +3779,65 @@ impl World {
         }
     }
 
+    fn install_infravision_spell(&mut self, target_id: CharacterId) -> bool {
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        let Some(slot) = may_add_spell(&target, &self.items, IDR_INFRARED, self.tick.0 as u32)
+        else {
+            return false;
+        };
+
+        let item_id = self.next_runtime_item_id();
+        let start_tick = self.tick.0 as u32;
+        let expire_tick = start_tick.wrapping_add((TICKS_PER_SECOND * 60 * 10) as u32);
+        let mut driver_data = Vec::with_capacity(8);
+        driver_data.extend_from_slice(&expire_tick.to_le_bytes());
+        driver_data.extend_from_slice(&start_tick.to_le_bytes());
+
+        let item = Item {
+            id: item_id,
+            name: "Infravision".to_string(),
+            description: "A Spell of Infravision.".to_string(),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [0, 0, 0, 0, 0],
+            modifier_value: [0, 0, 0, 0, 0],
+            x: 0,
+            y: 0,
+            carried_by: Some(target_id),
+            contained_in: None,
+            content_id: 0,
+            driver: IDR_INFRARED,
+            driver_data,
+            serial: item_id.0,
+        };
+
+        self.items.insert(item_id, item);
+        if let Some(target) = self.characters.get_mut(&target_id) {
+            if target.inventory.len() <= slot {
+                self.items.remove(&item_id);
+                return false;
+            }
+            target.inventory[slot] = Some(item_id);
+            let character_serial = target.id.0;
+            target
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+            true
+        } else {
+            self.items.remove(&item_id);
+            false
+        }
+    }
+
     pub fn poison_character(
         &mut self,
         character_id: CharacterId,
@@ -4441,12 +4534,13 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_ENCHANTITEM,
-            IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP,
+            IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
-        spell::IDR_POISON2,
+        spell::{IDR_INFRARED, IDR_POISON2},
         tick::TICKS_PER_SECOND,
     };
 
@@ -7516,6 +7610,85 @@ mod tests {
         assert_eq!(character.inventory[29], None);
         assert!(!world.items.contains_key(&spell_id));
         assert!(character.flags.contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
+    fn special_potion_antidote_clears_matching_poison_and_consumes_item() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(10));
+        world.add_character(character);
+        assert!(world.poison_character(CharacterId(1), 5, 2));
+        let poison_id = world.characters[&CharacterId(1)].inventory[29].unwrap();
+        let mut potion = item(10, ItemFlags::USED);
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver = IDR_SPECIAL_POTION;
+        potion.driver_data = vec![2];
+        world.items.insert(ItemId(10), potion);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_SPECIAL_POTION,
+                item_id: ItemId(10),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::SpecialPotionAntidote {
+                kind: 2,
+                poison_removed: true,
+                ..
+            }
+        ));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[29], None);
+        assert_eq!(character.inventory[30], None);
+        assert!(!world.items.contains_key(&poison_id));
+        assert!(!world.items.contains_key(&ItemId(10)));
+    }
+
+    #[test]
+    fn special_potion_infravision_installs_timed_spell_and_consumes_item() {
+        let mut world = World::default();
+        world.tick = Tick(42);
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(10));
+        world.add_character(character);
+        let mut potion = item(10, ItemFlags::USED);
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver = IDR_SPECIAL_POTION;
+        potion.driver_data = vec![6];
+        world.items.insert(ItemId(10), potion);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_SPECIAL_POTION,
+                item_id: ItemId(10),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::SpecialPotionInfravision {
+                installed: true,
+                ..
+            }
+        ));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.name, "Infravision");
+        assert_eq!(spell.driver, IDR_INFRARED);
+        assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(14_442));
+        assert_eq!(character.inventory[30], None);
+        assert!(!world.items.contains_key(&ItemId(10)));
     }
 
     fn character(id: u32) -> Character {
