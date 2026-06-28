@@ -30,6 +30,8 @@ pub const LEGACY_DEMONSHRINE_PPD_SIZE: usize = DEMONSHRINE_MAX_ENTRIES * 4;
 pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
+pub const PK_HATE_MAX_ENTRIES: usize = 50;
+pub const LEGACY_PK_PPD_SIZE: usize = 4 * 4 + PK_HATE_MAX_ENTRIES * 4;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
@@ -37,6 +39,7 @@ pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TRANSPORT_PPD: u32 = make_drd(DEV_ID_DB, 44 | PERSISTENT_PLAYER_DATA);
+pub const DRD_PK_PPD: u32 = make_drd(DEV_ID_DB, 47 | PERSISTENT_PLAYER_DATA);
 pub const TRANSPORT_MAJOR_CITIES_MASK: u64 = 0x03E0_0205;
 pub const TRANSPORT_ALL_TELEPORTS_MASK: u64 = 0x03F3_F7FF;
 pub const TRANSPORT_EARTH_UNDERGROUND_MASK: u64 = 0x01F8;
@@ -73,6 +76,11 @@ const ORBSPAWN_PPD_IDS_OFFSET: usize = 0;
 const ORBSPAWN_PPD_LAST_USED_OFFSET: usize = ORBSPAWN_PPD_IDS_OFFSET + ORBSPAWN_MAX_ENTRIES * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
+const PK_PPD_KILLS_OFFSET: usize = 0;
+const PK_PPD_DEATHS_OFFSET: usize = 4;
+const PK_PPD_LAST_KILL_OFFSET: usize = 8;
+const PK_PPD_LAST_DEATH_OFFSET: usize = 12;
+const PK_PPD_HATE_OFFSET: usize = 16;
 
 pub const DEFERRED_ACHIEVEMENTS: u32 = 1 << 0;
 pub const DEFERRED_MOTD: u32 = 1 << 1;
@@ -242,6 +250,16 @@ pub struct PlayerRuntime {
     pub treasure_dig_last_seconds: [u64; TREASURE_DIG_PPD_ENTRIES],
     #[serde(default)]
     pub misc_ppd: Vec<u8>,
+    #[serde(default)]
+    pub pk_kills: u32,
+    #[serde(default)]
+    pub pk_deaths: u32,
+    #[serde(default)]
+    pub pk_last_kill: u32,
+    #[serde(default)]
+    pub pk_last_death: u32,
+    #[serde(default)]
+    pub pk_hate: Vec<u32>,
     pub achievements: AchievementState,
     #[serde(default)]
     pub keyring_auto_add: bool,
@@ -285,6 +303,11 @@ impl PlayerRuntime {
             demonshrines: Vec::new(),
             treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
+            pk_kills: 0,
+            pk_deaths: 0,
+            pk_last_kill: 0,
+            pk_last_death: 0,
+            pk_hate: Vec::new(),
             achievements: AchievementState::default(),
             keyring_auto_add: false,
             current_section_id: 0,
@@ -334,6 +357,78 @@ impl PlayerRuntime {
             return false;
         }
         self.transport_seen = read_u64(bytes, 0);
+        true
+    }
+
+    pub fn encode_legacy_pk_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_PK_PPD_SIZE];
+        write_i32(
+            &mut bytes,
+            PK_PPD_KILLS_OFFSET,
+            self.pk_kills.min(i32::MAX as u32) as i32,
+        );
+        write_i32(
+            &mut bytes,
+            PK_PPD_DEATHS_OFFSET,
+            self.pk_deaths.min(i32::MAX as u32) as i32,
+        );
+        write_i32(
+            &mut bytes,
+            PK_PPD_LAST_KILL_OFFSET,
+            self.pk_last_kill.min(i32::MAX as u32) as i32,
+        );
+        write_i32(
+            &mut bytes,
+            PK_PPD_LAST_DEATH_OFFSET,
+            self.pk_last_death.min(i32::MAX as u32) as i32,
+        );
+        for (index, character_id) in self
+            .pk_hate
+            .iter()
+            .copied()
+            .take(PK_HATE_MAX_ENTRIES)
+            .enumerate()
+        {
+            write_i32(
+                &mut bytes,
+                PK_PPD_HATE_OFFSET + index * 4,
+                character_id.min(i32::MAX as u32) as i32,
+            );
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_pk_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_PK_PPD_SIZE {
+            return false;
+        }
+
+        self.pk_kills = read_i32(bytes, PK_PPD_KILLS_OFFSET).max(0) as u32;
+        self.pk_deaths = read_i32(bytes, PK_PPD_DEATHS_OFFSET).max(0) as u32;
+        self.pk_last_kill = read_i32(bytes, PK_PPD_LAST_KILL_OFFSET).max(0) as u32;
+        self.pk_last_death = read_i32(bytes, PK_PPD_LAST_DEATH_OFFSET).max(0) as u32;
+        self.pk_hate.clear();
+        for index in 0..PK_HATE_MAX_ENTRIES {
+            let character_id = read_i32(bytes, PK_PPD_HATE_OFFSET + index * 4);
+            if character_id > 0 {
+                self.pk_hate.push(character_id as u32);
+            }
+        }
+        true
+    }
+
+    pub fn has_pk_hate_for(&self, character_id: u32) -> bool {
+        character_id != 0 && self.pk_hate.iter().any(|hate_id| *hate_id == character_id)
+    }
+
+    pub fn add_pk_hate(&mut self, character_id: u32) -> bool {
+        if character_id == 0
+            || self.has_pk_hate_for(character_id)
+            || self.pk_hate.len() >= PK_HATE_MAX_ENTRIES
+        {
+            return false;
+        }
+        self.pk_hate.push(character_id);
         true
     }
 
@@ -689,6 +784,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_PK_PPD => {
+                    if !self.decode_legacy_pk_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_RANDCHEST_PPD => {
                     if !self.decode_legacy_randchest_ppd(block.data) {
                         return false;
@@ -725,6 +825,7 @@ impl PlayerRuntime {
         let mut had_keyring = false;
         let mut had_treasure_chest = false;
         let mut had_transport = false;
+        let mut had_pk = false;
         let mut had_randchest = false;
         let mut had_demonshrine = false;
         let mut had_orbspawn = false;
@@ -761,6 +862,9 @@ impl PlayerRuntime {
                     DRD_TRANSPORT_PPD,
                     &self.encode_legacy_transport_ppd(),
                 );
+            } else if block.id == DRD_PK_PPD {
+                had_pk = true;
+                write_ppd_block(&mut encoded, DRD_PK_PPD, &self.encode_legacy_pk_ppd());
             } else if block.id == DRD_RANDCHEST_PPD {
                 had_randchest = true;
                 write_ppd_block(
@@ -822,6 +926,16 @@ impl PlayerRuntime {
                 DRD_TRANSPORT_PPD,
                 &self.encode_legacy_transport_ppd(),
             );
+        }
+        if !had_pk && (existing_was_valid || existing.is_empty()) {
+            if self.pk_kills != 0
+                || self.pk_deaths != 0
+                || self.pk_last_kill != 0
+                || self.pk_last_death != 0
+                || !self.pk_hate.is_empty()
+            {
+                write_ppd_block(&mut encoded, DRD_PK_PPD, &self.encode_legacy_pk_ppd());
+            }
         }
         if !had_randchest && (existing_was_valid || existing.is_empty()) {
             if !self.random_chests.is_empty() {
@@ -1791,6 +1905,83 @@ mod tests {
         assert!(decoded.decode_legacy_transport_ppd(&encoded));
         assert_eq!(decoded.transport_seen, 0x0102_0304_0506_0708);
         assert!(!decoded.decode_legacy_transport_ppd(&encoded[..7]));
+    }
+
+    #[test]
+    fn pk_ppd_codec_matches_legacy_c_layout() {
+        assert_eq!(
+            PK_PPD_HATE_OFFSET + PK_HATE_MAX_ENTRIES * 4,
+            LEGACY_PK_PPD_SIZE
+        );
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.pk_kills = 3;
+        player.pk_deaths = 4;
+        player.pk_last_kill = 0x1122_3344;
+        player.pk_last_death = i32::MAX as u32 + 99;
+        assert!(player.add_pk_hate(1001));
+        assert!(player.add_pk_hate(1002));
+        assert!(!player.add_pk_hate(1002));
+
+        let encoded = player.encode_legacy_pk_ppd();
+        assert_eq!(encoded.len(), LEGACY_PK_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, PK_PPD_KILLS_OFFSET), 3);
+        assert_eq!(read_i32(&encoded, PK_PPD_DEATHS_OFFSET), 4);
+        assert_eq!(read_i32(&encoded, PK_PPD_LAST_KILL_OFFSET), 0x1122_3344);
+        assert_eq!(read_i32(&encoded, PK_PPD_LAST_DEATH_OFFSET), i32::MAX);
+        assert_eq!(read_i32(&encoded, PK_PPD_HATE_OFFSET), 1001);
+        assert_eq!(read_i32(&encoded, PK_PPD_HATE_OFFSET + 4), 1002);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_pk_ppd(&encoded));
+        assert_eq!(decoded.pk_kills, 3);
+        assert_eq!(decoded.pk_deaths, 4);
+        assert_eq!(decoded.pk_last_kill, 0x1122_3344);
+        assert_eq!(decoded.pk_last_death, i32::MAX as u32);
+        assert_eq!(decoded.pk_hate, vec![1001, 1002]);
+        assert!(decoded.has_pk_hate_for(1001));
+        assert!(!decoded.has_pk_hate_for(1003));
+        assert!(!decoded.decode_legacy_pk_ppd(&encoded[..LEGACY_PK_PPD_SIZE - 1]));
+    }
+
+    #[test]
+    fn pk_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_pk = vec![0; LEGACY_PK_PPD_SIZE];
+        write_i32(&mut existing_pk, PK_PPD_KILLS_OFFSET, 1);
+        write_i32(&mut existing_pk, PK_PPD_HATE_OFFSET, 999);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_PK_PPD, &existing_pk);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.pk_deaths = 2;
+        assert!(player.add_pk_hate(1234));
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_PK_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_PK_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20 + PK_PPD_KILLS_OFFSET), 0);
+        assert_eq!(read_i32(&encoded, 20 + PK_PPD_DEATHS_OFFSET), 2);
+        assert_eq!(read_i32(&encoded, 20 + PK_PPD_HATE_OFFSET), 1234);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.pk_deaths, 2);
+        assert_eq!(decoded.pk_hate, vec![1234]);
+    }
+
+    #[test]
+    fn ppd_blob_appends_pk_without_existing_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.add_pk_hate(777));
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_PK_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_PK_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 8 + PK_PPD_HATE_OFFSET), 777);
     }
 
     #[test]
