@@ -22,6 +22,7 @@ pub const IDR_TELEPORT: u16 = 10;
 pub const IDR_NIGHTLIGHT: u16 = 11;
 pub const IDR_TORCH: u16 = 12;
 pub const IDR_RECALL: u16 = 13;
+pub const IDR_SHRINE: u16 = 14;
 pub const IDR_ONOFFLIGHT: u16 = 17;
 pub const IDR_TRANSPORT: u16 = 18;
 pub const IDR_STATSCROLL: u16 = 19;
@@ -61,6 +62,9 @@ pub const IDR_ANTIORBSPAWN: u16 = 162;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_KEY_RING: u16 = 200;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
+pub const IID_AREA2_ZOMBIESKULL1: u32 = (0x01 << 24) | 0x000025;
+pub const IID_AREA2_ZOMBIESKULL2: u32 = (0x01 << 24) | 0x000026;
+pub const IID_AREA2_ZOMBIESKULL3: u32 = (0x01 << 24) | 0x000027;
 pub const IID_AREA11_PALACEKEY: u32 = (0x01 << 24) | 0x000050;
 pub const IID_AREA11_PALACEKEYPART: u32 = (0x01 << 24) | 0x000051;
 const V_LIGHT: i16 = 9;
@@ -592,6 +596,16 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         location_id: u32,
     },
+    ZombieShrine {
+        item_id: ItemId,
+        character_id: CharacterId,
+        shrine_type: u8,
+    },
+    ZombieShrineNeedsOffering {
+        item_id: ItemId,
+        character_id: CharacterId,
+        shrine_type: u8,
+    },
     XmasMaker {
         item_id: ItemId,
         character_id: CharacterId,
@@ -789,6 +803,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
+                IDR_SHRINE => zombie_shrine_driver(character, item, context),
                 IDR_DEMONSHRINE => demonshrine_driver(character, item, area_id),
                 IDR_PALACEKEY => palace_key_driver(character, item, context),
                 IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
@@ -1120,6 +1135,36 @@ fn xmasmaker_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     ItemDriverOutcome::XmasMaker {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn zombie_shrine_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let shrine_type = drdata(item, 0);
+    let required_skull = match shrine_type {
+        0 => IID_AREA2_ZOMBIESKULL1,
+        1 => IID_AREA2_ZOMBIESKULL2,
+        _ => IID_AREA2_ZOMBIESKULL3,
+    };
+    if context.cursor_template_id != Some(required_skull) {
+        return ItemDriverOutcome::ZombieShrineNeedsOffering {
+            item_id: item.id,
+            character_id: character.id,
+            shrine_type,
+        };
+    }
+
+    ItemDriverOutcome::ZombieShrine {
+        item_id: item.id,
+        character_id: character.id,
+        shrine_type,
     }
 }
 
@@ -3211,6 +3256,54 @@ mod tests {
             ItemDriverOutcome::XmasMaker {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn zombie_shrine_requires_matching_skull_on_cursor() {
+        let mut character = character(1);
+        let mut shrine = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SHRINE);
+        shrine.driver_data = vec![1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SHRINE,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut shrine,
+                request,
+                2,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::ZombieShrineNeedsOffering {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                shrine_type: 1,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut shrine,
+                request,
+                2,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(IID_AREA2_ZOMBIESKULL2),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::ZombieShrine {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                shrine_type: 1,
             }
         );
     }

@@ -21,7 +21,8 @@ use ugaris_core::{
     ids::{CharacterId, ItemId},
     item_driver::{
         ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE,
-        IDR_FOOD, IDR_KEY_RING, IDR_SPECIAL_POTION, IDR_TORCH,
+        IDR_FOOD, IDR_KEY_RING, IDR_SPECIAL_POTION, IDR_TORCH, IID_AREA2_ZOMBIESKULL1,
+        IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
@@ -2057,6 +2058,164 @@ fn grant_template_item_smart(
 
 fn apply_xmasmaker(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) -> bool {
     grant_template_item_smart(world, loader, character_id, "xmaspop").is_some()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ZombieShrineApplyResult {
+    NeedsOffering(u8),
+    Gift(String),
+    Experience(u32),
+    Bonus(&'static str),
+    MissingGift,
+    MissingPlayer,
+}
+
+fn zombie_shrine_required_skull(shrine_type: u8) -> u32 {
+    match shrine_type {
+        0 => IID_AREA2_ZOMBIESKULL1,
+        1 => IID_AREA2_ZOMBIESKULL2,
+        _ => IID_AREA2_ZOMBIESKULL3,
+    }
+}
+
+fn zombie_shrine_offering_message(shrine_type: u8) -> &'static str {
+    match shrine_type {
+        0 => "You sense that this ancient shrine used to receive gifts. Strange gifts. You feel a craving for bone.",
+        1 => "You sense that this ancient shrine used to receive gifts. Strange gifts. You feel a craving for bone and silver.",
+        _ => "You sense that this ancient shrine used to receive gifts. Strange gifts. You feel a craving for bone and gold.",
+    }
+}
+
+fn zombie_shrine_reward_template(
+    shrine_type: u8,
+    roll: u32,
+    flags: CharacterFlags,
+) -> Option<&'static str> {
+    match shrine_type {
+        0 => match roll {
+            0 | 1 | 20 | 21 => Some("zombie_skull2"),
+            2..=9 => Some("torch"),
+            10 | 11 => Some(if flags.contains(CharacterFlags::MAGE) {
+                "mana_potion1"
+            } else {
+                "healing_potion1"
+            }),
+            12 | 13 => Some(if flags.contains(CharacterFlags::WARRIOR) {
+                "healing_potion1"
+            } else {
+                "mana_potion1"
+            }),
+            _ => None,
+        },
+        1 => match roll {
+            0 | 1 => Some(if flags.contains(CharacterFlags::MAGE) {
+                "mana_potion2"
+            } else {
+                "healing_potion2"
+            }),
+            2 | 11 | 12 => Some("zombie_skull3"),
+            3 => Some(if flags.contains(CharacterFlags::WARRIOR) {
+                "healing_potion2"
+            } else {
+                "mana_potion2"
+            }),
+            _ => None,
+        },
+        _ => match roll {
+            0 | 1 => Some(if flags.contains(CharacterFlags::MAGE) {
+                "mana_potion3"
+            } else {
+                "healing_potion3"
+            }),
+            2 | 3 => Some(if flags.contains(CharacterFlags::WARRIOR) {
+                "healing_potion3"
+            } else {
+                "mana_potion3"
+            }),
+            _ => None,
+        },
+    }
+}
+
+fn zombie_shrine_experience(shrine_type: u8, roll: u32) -> Option<u32> {
+    match shrine_type {
+        0 if roll == 14 || roll == 15 => Some(250),
+        1 if (4..=6).contains(&roll) => Some(750),
+        2..=u8::MAX if (4..=6).contains(&roll) => Some(2250),
+        _ => None,
+    }
+}
+
+fn zombie_shrine_bonus_message(shrine_type: u8, roll: u32) -> Option<&'static str> {
+    match shrine_type {
+        0 => match roll {
+            16 => Some("You have been protected for a short while."),
+            17 => Some("You are more dangerous for a short while."),
+            18 | 19 => Some("Your capacity was increased for a short while."),
+            _ => None,
+        },
+        1 => match roll {
+            7 => Some("You have been protected for a while."),
+            8 => Some("You are more dangerous for a while."),
+            9 | 10 => Some("Your capacity was increased for a while."),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn apply_zombie_shrine(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    shrine_type: u8,
+    random_seed: u64,
+) -> ZombieShrineApplyResult {
+    let Some(character) = world.characters.get(&character_id) else {
+        return ZombieShrineApplyResult::MissingPlayer;
+    };
+    let Some(cursor_item_id) = character.cursor_item else {
+        return ZombieShrineApplyResult::NeedsOffering(shrine_type);
+    };
+    if world
+        .items
+        .get(&cursor_item_id)
+        .is_none_or(|item| item.template_id != zombie_shrine_required_skull(shrine_type))
+    {
+        return ZombieShrineApplyResult::NeedsOffering(shrine_type);
+    }
+    let character_flags = character.flags;
+
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return ZombieShrineApplyResult::MissingPlayer;
+    };
+    character.cursor_item = None;
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.items.remove(&cursor_item_id);
+
+    let roll_max = match shrine_type {
+        0 => 22,
+        1 => 13,
+        _ => 7,
+    };
+    let roll = legacy_random(random_seed, roll_max);
+    if let Some(template) = zombie_shrine_reward_template(shrine_type, roll, character_flags) {
+        return match grant_template_item_to_cursor(world, loader, character_id, template) {
+            Some(item_name) => ZombieShrineApplyResult::Gift(item_name),
+            None => ZombieShrineApplyResult::MissingGift,
+        };
+    }
+    if let Some(exp_added) = zombie_shrine_experience(shrine_type, roll) {
+        if let Some(character) = world.characters.get_mut(&character_id) {
+            character.exp = character.exp.saturating_add(exp_added);
+        }
+        return ZombieShrineApplyResult::Experience(exp_added);
+    }
+    if let Some(message) = zombie_shrine_bonus_message(shrine_type, roll) {
+        return ZombieShrineApplyResult::Bonus(message);
+    }
+
+    ZombieShrineApplyResult::MissingGift
 }
 
 const XMAS_TREE_GIFT_TEMPLATES: [&str; 17] = [
@@ -5457,6 +5616,100 @@ mod tests {
         let item = world.items.get(&item_id).unwrap();
         assert_eq!(item.name, "Christmas Pop");
         assert_eq!(item.carried_by, Some(character_id));
+    }
+
+    #[test]
+    fn apply_zombie_shrine_requires_matching_skull() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(ItemId(20));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut skull = test_item(ItemId(20), 1, ItemFlags::USED | ItemFlags::TAKE);
+        skull.template_id = IID_AREA2_ZOMBIESKULL1;
+        skull.carried_by = Some(character_id);
+        world.add_item(skull);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_zombie_shrine(&mut world, &mut loader, character_id, 1, 0),
+            ZombieShrineApplyResult::NeedsOffering(1)
+        );
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().cursor_item,
+            Some(ItemId(20))
+        );
+        assert!(world.items.contains_key(&ItemId(20)));
+    }
+
+    #[test]
+    fn apply_zombie_shrine_consumes_skull_and_grants_item_to_cursor() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(ItemId(20));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut skull = test_item(ItemId(20), 1, ItemFlags::USED | ItemFlags::TAKE);
+        skull.template_id = IID_AREA2_ZOMBIESKULL1;
+        skull.carried_by = Some(character_id);
+        world.add_item(skull);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"zombie_skull2: name="Silver Skull" ID=01000026 flag=IF_TAKE ;"#,
+            )
+            .unwrap();
+
+        assert_eq!(
+            apply_zombie_shrine(
+                &mut world,
+                &mut loader,
+                character_id,
+                0,
+                seed_for_legacy_random(22, 0)
+            ),
+            ZombieShrineApplyResult::Gift("Silver Skull".to_string())
+        );
+        assert!(!world.items.contains_key(&ItemId(20)));
+        let cursor_item_id = world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .cursor_item
+            .unwrap();
+        let gift = world.items.get(&cursor_item_id).unwrap();
+        assert_eq!(gift.name, "Silver Skull");
+        assert_eq!(gift.carried_by, Some(character_id));
+    }
+
+    #[test]
+    fn apply_zombie_shrine_consumes_skull_and_grants_experience() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(ItemId(20));
+        character.exp = 100;
+        let mut world = World::default();
+        world.add_character(character);
+        let mut skull = test_item(ItemId(20), 1, ItemFlags::USED | ItemFlags::TAKE);
+        skull.template_id = IID_AREA2_ZOMBIESKULL3;
+        skull.carried_by = Some(character_id);
+        world.add_item(skull);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_zombie_shrine(
+                &mut world,
+                &mut loader,
+                character_id,
+                2,
+                seed_for_legacy_random(7, 4)
+            ),
+            ZombieShrineApplyResult::Experience(2250)
+        );
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert_eq!(character.exp, 2350);
+        assert!(!world.items.contains_key(&ItemId(20)));
     }
 
     #[test]
@@ -9339,6 +9592,45 @@ async fn main() -> anyhow::Result<()> {
                                                     blocked += 1;
                                                 }
                                             }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ZombieShrine { item_id, character_id, shrine_type } => {
+                                            let random_seed = world.tick.0
+                                                ^ (u64::from(item_id.0) << 16)
+                                                ^ u64::from(character_id.0);
+                                            match apply_zombie_shrine(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                shrine_type,
+                                                random_seed,
+                                            ) {
+                                                ZombieShrineApplyResult::Gift(_) => {
+                                                    feedback.push((character_id, "You received a gift.".to_string()));
+                                                    executed += 1;
+                                                }
+                                                ZombieShrineApplyResult::Experience(_) => {
+                                                    feedback.push((character_id, "You have been blessed with experience.".to_string()));
+                                                    executed += 1;
+                                                }
+                                                ZombieShrineApplyResult::Bonus(message) => {
+                                                    feedback.push((character_id, message.to_string()));
+                                                    executed += 1;
+                                                }
+                                                ZombieShrineApplyResult::NeedsOffering(shrine_type) => {
+                                                    feedback.push((character_id, zombie_shrine_offering_message(shrine_type).to_string()));
+                                                    blocked += 1;
+                                                }
+                                                ZombieShrineApplyResult::MissingGift => {
+                                                    failed += 1;
+                                                }
+                                                ZombieShrineApplyResult::MissingPlayer => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ZombieShrineNeedsOffering { character_id, shrine_type, .. } => {
+                                            feedback.push((character_id, zombie_shrine_offering_message(shrine_type).to_string()));
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::SpecialShrine { character_id, kind, .. } => {
                                             let result = match (
