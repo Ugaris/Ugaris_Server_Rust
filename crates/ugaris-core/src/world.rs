@@ -232,6 +232,7 @@ pub struct World {
     pub area3_palace_lamps: Area3PalaceLampState,
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,
+    pending_hurt_events: Vec<LegacyHurtEvent>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -248,6 +249,13 @@ pub struct LegacyHurtOutcome {
     pub hp_damage: i32,
     pub killed: bool,
     pub nodeath_saved: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LegacyHurtEvent {
+    pub target_id: CharacterId,
+    pub cause_id: CharacterId,
+    pub outcome: LegacyHurtOutcome,
 }
 
 impl World {
@@ -371,6 +379,11 @@ impl World {
             if let Some(cause) = self.characters.get_mut(&cause_id) {
                 cause.push_driver_message(NT_DIDHIT, target_id.0 as i32, outcome.hp_damage, 0);
             }
+            self.pending_hurt_events.push(LegacyHurtEvent {
+                target_id,
+                cause_id,
+                outcome,
+            });
         }
 
         if outcome.killed {
@@ -394,6 +407,10 @@ impl World {
         }
 
         Some(outcome)
+    }
+
+    pub fn drain_legacy_hurt_events(&mut self) -> Vec<LegacyHurtEvent> {
+        self.pending_hurt_events.drain(..).collect()
     }
 
     pub fn add_character(&mut self, character: Character) {

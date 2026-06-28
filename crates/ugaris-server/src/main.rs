@@ -54,6 +54,40 @@ impl ClanAttackPolicy for RuntimePlayerAttackPolicy<'_> {
         self.attacker_runtime.has_pk_hate_for(defender.id.0)
     }
 }
+
+fn apply_pk_hate_from_hurt_events(runtime: &mut ServerRuntime, world: &mut World) -> usize {
+    let mut applied = 0;
+    for event in world.drain_legacy_hurt_events() {
+        let eligible = match (
+            world.characters.get(&event.target_id),
+            world.characters.get(&event.cause_id),
+        ) {
+            (Some(target), Some(cause)) => {
+                target.id != cause.id
+                    && target
+                        .flags
+                        .contains(CharacterFlags::PLAYER | CharacterFlags::PK)
+                    && cause
+                        .flags
+                        .contains(CharacterFlags::PLAYER | CharacterFlags::PK)
+                    && target.level.abs_diff(cause.level) <= 3
+            }
+            _ => false,
+        };
+        if !eligible {
+            continue;
+        }
+        let Some(player) = runtime.player_for_character_mut(event.target_id) else {
+            continue;
+        };
+        let Some(target) = world.characters.get_mut(&event.target_id) else {
+            continue;
+        };
+        player.add_pk_hate_from_hit(target, event.cause_id.0);
+        applied += 1;
+    }
+    applied
+}
 use ugaris_db::{
     CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
     LoginRequest,
@@ -8893,6 +8927,74 @@ mod tests {
     }
 
     #[test]
+    fn hurt_events_add_pk_hate_and_clear_lag_for_valid_player_hit() {
+        let mut world = World::default();
+        let mut target = login_character(CharacterId(1), &login_block("Target"), 1, 10, 10);
+        target
+            .flags
+            .insert(CharacterFlags::PK | CharacterFlags::LAG);
+        target.level = 10;
+        let mut attacker = login_character(CharacterId(2), &login_block("Attacker"), 1, 11, 10);
+        attacker.flags.insert(CharacterFlags::PK);
+        attacker.level = 12;
+        world.add_character(target);
+        world.add_character(attacker);
+
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        runtime.players.insert(1, player);
+
+        world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
+
+        assert_eq!(apply_pk_hate_from_hurt_events(&mut runtime, &mut world), 1);
+        assert!(runtime
+            .player_for_character(CharacterId(1))
+            .unwrap()
+            .has_pk_hate_for(2));
+        assert!(!world
+            .characters
+            .get(&CharacterId(1))
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::LAG));
+    }
+
+    #[test]
+    fn hurt_events_respect_legacy_pk_hate_level_gate() {
+        let mut world = World::default();
+        let mut target = login_character(CharacterId(1), &login_block("Target"), 1, 10, 10);
+        target
+            .flags
+            .insert(CharacterFlags::PK | CharacterFlags::LAG);
+        target.level = 10;
+        let mut attacker = login_character(CharacterId(2), &login_block("Attacker"), 1, 11, 10);
+        attacker.flags.insert(CharacterFlags::PK);
+        attacker.level = 14;
+        world.add_character(target);
+        world.add_character(attacker);
+
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        runtime.players.insert(1, player);
+
+        world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
+
+        assert_eq!(apply_pk_hate_from_hurt_events(&mut runtime, &mut world), 0);
+        assert!(!runtime
+            .player_for_character(CharacterId(1))
+            .unwrap()
+            .has_pk_hate_for(2));
+        assert!(world
+            .characters
+            .get(&CharacterId(1))
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::LAG));
+    }
+
+    #[test]
     fn resource_percent_matches_legacy_scaled_resource_math() {
         assert_eq!(resource_percent(50 * POWERSCALE, 50), 100);
         assert_eq!(resource_percent(25 * POWERSCALE, 50), 50);
@@ -10355,6 +10457,11 @@ async fn main() -> anyhow::Result<()> {
                     );
                 if simple_baddy_noncombat != 0 {
                     info!(simple_baddy_noncombat, tick = world.tick.0, "queued simple-baddy noncombat actions");
+                }
+
+                let pk_hate_updates = apply_pk_hate_from_hurt_events(&mut runtime, &mut world);
+                if pk_hate_updates != 0 {
+                    info!(pk_hate_updates, tick = world.tick.0, "applied PK hate updates from hurt events");
                 }
 
                 let (periodic_diff_sessions, periodic_empty_frames) =
