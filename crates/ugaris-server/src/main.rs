@@ -27,7 +27,7 @@ use ugaris_core::{
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
-    legacy::INVENTORY_START_INVENTORY,
+    legacy::{action, INVENTORY_START_INVENTORY},
     map::{MapFlags, MapTile},
     player::{
         DemonShrineResult, KeyringAddResult, PlayerActionCode, PlayerConnectionState,
@@ -1228,6 +1228,7 @@ fn apply_pk_hate_command(
     player: &mut PlayerRuntime,
     character_id: CharacterId,
     command: &str,
+    realtime_seconds: u64,
 ) -> Option<KeyringCommandResult> {
     let (verb, rest) = command
         .split_once(char::is_whitespace)
@@ -1236,6 +1237,132 @@ fn apply_pk_hate_command(
     let name = rest.trim();
 
     match verb {
+        "playerkiller" => {
+            let mut messages = Vec::new();
+            let Some(character) = world.characters.get_mut(&character_id) else {
+                return Some(KeyringCommandResult::default());
+            };
+
+            if character.flags.contains(CharacterFlags::PK) {
+                if character.action != action::IDLE
+                    || world
+                        .tick
+                        .0
+                        .saturating_sub(u64::from(character.regen_ticker))
+                        < TICKS_PER_SECOND * 3
+                {
+                    messages.push("Pant, pant. Too tired.".to_string());
+                } else if player.pk_last_kill.saturating_add(60 * 60 * 24 * 28)
+                    > realtime_seconds.min(u64::from(u32::MAX)) as u32
+                {
+                    let elapsed = realtime_seconds.saturating_sub(u64::from(player.pk_last_kill))
+                        as f64
+                        / (60.0 * 60.0 * 24.0);
+                    let remaining = (u64::from(player.pk_last_kill) + 60 * 60 * 24 * 28)
+                        .saturating_sub(realtime_seconds)
+                        as f64
+                        / (60.0 * 60.0 * 24.0);
+                    messages.push(format!(
+                        "You have killed {elapsed:.2} days ago, you need to wait {remaining:.2} more days."
+                    ));
+                } else {
+                    character.flags.remove(CharacterFlags::PK);
+                    player.pk_kills = 0;
+                    player.pk_deaths = 0;
+                    player.pk_last_kill = 0;
+                    player.pk_last_death = 0;
+                    player.pk_hate.clear();
+                }
+            } else if character.level < 10 {
+                messages.push(
+                    "Sorry, you may not become a player killer before reaching level 10."
+                        .to_string(),
+                );
+            } else if !character.flags.contains(CharacterFlags::PAID) {
+                messages.push("Sorry, only paying players may become player killers.".to_string());
+            } else {
+                messages.push(format!(
+                    "Please take a moment to consider this decision. If another player kills you, he will be able to take all your belongings, or kill you over and over again. Do you really want this? Type: '/iwilldie {}' to confirm.",
+                    character.id.0
+                ));
+            }
+
+            let status = if character.flags.contains(CharacterFlags::PK) {
+                "on"
+            } else {
+                "off"
+            };
+            messages.push(format!("PK is {status}."));
+            Some(KeyringCommandResult {
+                messages,
+                inventory_changed: false,
+            })
+        }
+        "iwilldie" => {
+            let mut messages = Vec::new();
+            let Some(character) = world.characters.get_mut(&character_id) else {
+                return Some(KeyringCommandResult::default());
+            };
+
+            if character.flags.contains(CharacterFlags::PK) {
+                if character.action != action::IDLE
+                    || world
+                        .tick
+                        .0
+                        .saturating_sub(u64::from(character.regen_ticker))
+                        < TICKS_PER_SECOND * 3
+                {
+                    messages.push("Pant, pant. Too tired.".to_string());
+                } else if player.pk_last_kill.saturating_add(60 * 60 * 24 * 28)
+                    > realtime_seconds.min(u64::from(u32::MAX)) as u32
+                {
+                    let elapsed = realtime_seconds.saturating_sub(u64::from(player.pk_last_kill))
+                        as f64
+                        / (60.0 * 60.0 * 24.0);
+                    let remaining = (u64::from(player.pk_last_kill) + 60 * 60 * 24 * 28)
+                        .saturating_sub(realtime_seconds)
+                        as f64
+                        / (60.0 * 60.0 * 24.0);
+                    messages.push(format!(
+                        "You have killed {elapsed:.2} days ago, you need to wait {remaining:.2} more days."
+                    ));
+                } else {
+                    character.flags.remove(CharacterFlags::PK);
+                    player.pk_kills = 0;
+                    player.pk_deaths = 0;
+                    player.pk_last_kill = 0;
+                    player.pk_last_death = 0;
+                    player.pk_hate.clear();
+                }
+            } else if character.level < 10 {
+                messages.push(
+                    "Sorry, you may not become a player killer before reaching level 10."
+                        .to_string(),
+                );
+            } else if !character.flags.contains(CharacterFlags::PAID) {
+                messages.push("Sorry, only paying players may become player killers.".to_string());
+            } else if name.parse::<u32>().ok() != Some(character.id.0) {
+                messages.push("Please type: '/playerkiller' first.".to_string());
+            } else {
+                player.pk_kills = 0;
+                player.pk_deaths = 0;
+                player.pk_last_kill = 0;
+                player.pk_last_death = 0;
+                player.pk_hate.clear();
+                character.flags.insert(CharacterFlags::PK);
+            }
+
+            let status = if character.flags.contains(CharacterFlags::PK) {
+                "on"
+            } else {
+                "off"
+            };
+            messages.push(format!("PK is {status}."));
+            Some(KeyringCommandResult {
+                messages,
+                inventory_changed: false,
+            })
+        }
         "listhate" => {
             if !world
                 .characters
@@ -7030,8 +7157,9 @@ mod tests {
         let mut player = PlayerRuntime::connected(1, 0);
         player.character_id = Some(CharacterId(7));
 
-        let result = apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/hate target")
-            .expect("hate command should be recognized");
+        let result =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/hate target", 0)
+                .expect("hate command should be recognized");
 
         assert!(result.messages.is_empty());
         assert!(player.has_pk_hate_for(8));
@@ -7056,12 +7184,12 @@ mod tests {
         player.character_id = Some(CharacterId(7));
         assert!(player.add_pk_hate(8));
 
-        let listed = apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/listhate")
+        let listed = apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/listhate", 0)
             .expect("listhate command should be recognized");
         let removed =
-            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/nohate target")
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/nohate target", 0)
                 .expect("nohate command should be recognized");
-        let empty = apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/listhate")
+        let empty = apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/listhate", 0)
             .expect("listhate command should be recognized");
 
         assert_eq!(listed.messages, vec!["Hate: Target"]);
@@ -7080,7 +7208,7 @@ mod tests {
         player.character_id = Some(CharacterId(7));
         assert!(player.add_pk_hate(8));
 
-        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate")
+        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate", 0)
             .expect("clearhate command should be recognized");
         assert!(player.has_pk_hate_for(8));
 
@@ -7090,9 +7218,144 @@ mod tests {
             .unwrap()
             .flags
             .insert(CharacterFlags::PK);
-        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate")
+        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate", 0)
             .expect("clearhate command should be recognized");
         assert!(player.pk_hate.is_empty());
+    }
+
+    #[test]
+    fn pk_playerkiller_command_requires_level_and_paid_before_confirmation() {
+        let mut character = login_character(CharacterId(77), &login_block("Tester"), 1, 10, 10);
+        character.level = 9;
+        let mut world = World::default();
+        world.add_character(character);
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let low_level =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(77), "/playerkiller", 0)
+                .expect("playerkiller command should be recognized");
+        assert_eq!(
+            low_level.messages,
+            vec![
+                "Sorry, you may not become a player killer before reaching level 10.",
+                "PK is off."
+            ]
+        );
+
+        let character = world.characters.get_mut(&CharacterId(77)).unwrap();
+        character.level = 10;
+        let unpaid =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(77), "/playerkiller", 0)
+                .expect("playerkiller command should be recognized");
+        assert_eq!(
+            unpaid.messages,
+            vec![
+                "Sorry, only paying players may become player killers.",
+                "PK is off."
+            ]
+        );
+
+        world
+            .characters
+            .get_mut(&CharacterId(77))
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::PAID);
+        let confirm =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(77), "/playerkiller", 0)
+                .expect("playerkiller command should be recognized");
+        assert_eq!(confirm.messages.len(), 2);
+        assert!(confirm.messages[0].contains("Type: '/iwilldie 77' to confirm."));
+        assert_eq!(confirm.messages[1], "PK is off.");
+    }
+
+    #[test]
+    fn pk_iwilldie_command_toggles_pk_and_clears_ppd_like_state() {
+        let mut character = login_character(CharacterId(77), &login_block("Tester"), 1, 10, 10);
+        character.level = 10;
+        character.flags.insert(CharacterFlags::PAID);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.pk_kills = 3;
+        player.pk_deaths = 2;
+        player.pk_last_kill = 123;
+        player.pk_last_death = 456;
+        assert!(player.add_pk_hate(999));
+
+        let wrong =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(77), "/iwilldie 76", 0)
+                .expect("iwilldie command should be recognized");
+        assert_eq!(
+            wrong.messages,
+            vec!["Please type: '/playerkiller' first.", "PK is off."]
+        );
+
+        let joined =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(77), "/iwilldie 77", 0)
+                .expect("iwilldie command should be recognized");
+        assert_eq!(joined.messages, vec!["PK is on."]);
+        assert!(world
+            .characters
+            .get(&CharacterId(77))
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::PK));
+        assert_eq!(player.pk_kills, 0);
+        assert_eq!(player.pk_deaths, 0);
+        assert_eq!(player.pk_last_kill, 0);
+        assert_eq!(player.pk_last_death, 0);
+        assert!(player.pk_hate.is_empty());
+    }
+
+    #[test]
+    fn pk_playerkiller_leave_respects_tired_and_kill_cooldown() {
+        let mut character = login_character(CharacterId(77), &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::PK);
+        character.regen_ticker = 10;
+        let mut world = World::default();
+        world.tick.0 = 20;
+        world.add_character(character);
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let tired =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(77), "/playerkiller", 0)
+                .expect("playerkiller command should be recognized");
+        assert_eq!(tired.messages, vec!["Pant, pant. Too tired.", "PK is on."]);
+
+        world.tick.0 = TICKS_PER_SECOND * 4;
+        player.pk_last_kill = 60 * 60 * 24 * 27;
+        let blocked = apply_pk_hate_command(
+            &mut world,
+            &mut player,
+            CharacterId(77),
+            "/playerkiller",
+            60 * 60 * 24 * 27,
+        )
+        .expect("playerkiller command should be recognized");
+        assert_eq!(
+            blocked.messages,
+            vec![
+                "You have killed 0.00 days ago, you need to wait 28.00 more days.",
+                "PK is on."
+            ]
+        );
+
+        let left = apply_pk_hate_command(
+            &mut world,
+            &mut player,
+            CharacterId(77),
+            "/playerkiller",
+            60 * 60 * 24 * 56,
+        )
+        .expect("playerkiller command should be recognized");
+        assert_eq!(left.messages, vec!["PK is off."]);
+        assert!(!world
+            .characters
+            .get(&CharacterId(77))
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::PK));
     }
 
     #[test]
@@ -9527,7 +9790,8 @@ async fn main() -> anyhow::Result<()> {
                             let Some(player) = runtime.players.get_mut(&session_id) else {
                                 continue;
                             };
-                            if let Some(result) = apply_pk_hate_command(&mut world, player, character_id, &command) {
+                            let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
+                            if let Some(result) = apply_pk_hate_command(&mut world, player, character_id, &command, realtime_seconds) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
