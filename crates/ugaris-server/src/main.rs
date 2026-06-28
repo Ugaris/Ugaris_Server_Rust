@@ -10261,11 +10261,12 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoubleDoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Teleport { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::FireballMachineProjectile { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerPulse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerExtinguished { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapTriggered { .. }

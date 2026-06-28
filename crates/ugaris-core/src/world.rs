@@ -759,6 +759,33 @@ impl World {
         effect_id
     }
 
+    fn create_fireball_machine_effect(
+        &mut self,
+        start_x: u16,
+        start_y: u16,
+        target_x: u16,
+        target_y: u16,
+        power: u8,
+    ) -> u32 {
+        let effect_id = self.next_effect_id();
+        let mut effect = Effect::new(
+            EF_FIREBALL,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(TICKS_PER_SECOND) as i32,
+        );
+        effect.strength = i32::from(power);
+        effect.light = 200;
+        effect.from_x = i32::from(start_x);
+        effect.from_y = i32::from(start_y);
+        effect.to_x = i32::from(target_x);
+        effect.to_y = i32::from(target_y);
+        effect.x = i32::from(start_x) * 1024 + 512;
+        effect.y = i32::from(start_y) * 1024 + 512;
+        self.effects.insert(effect_id, effect);
+        effect_id
+    }
+
     fn create_edemonball_effect(
         &mut self,
         start_x: u16,
@@ -5597,6 +5624,22 @@ impl World {
                 self.create_ball_trap_effect(start_x, start_y, target_x, target_y, power);
                 outcome
             }
+            ItemDriverOutcome::FireballMachineProjectile {
+                item_id,
+                start_x,
+                start_y,
+                target_x,
+                target_y,
+                power,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.create_fireball_machine_effect(start_x, start_y, target_x, target_y, power);
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
+                }
+                outcome
+            }
             ItemDriverOutcome::EdemonBallProjectile {
                 item_id,
                 start_x: _,
@@ -9922,9 +9965,9 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_EDEMONBALL,
-            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-            IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION,
-            IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            IDR_ENCHANTITEM, IDR_FIREBALL, IDR_FLAMETHROW, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT,
+            IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION,
+            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
@@ -14166,6 +14209,53 @@ mod tests {
         assert_eq!((effect.x, effect.y), (11 * 1024 + 512, 19 * 1024 + 512));
         assert_eq!(effect.caster, None);
         assert_eq!(effect.stop_tick, (TICKS_PER_SECOND * 5) as i32);
+    }
+
+    #[test]
+    fn world_fireball_machine_timer_creates_retained_projectile_and_reschedules() {
+        let mut world = World::default();
+        let mut machine = item(7, ItemFlags::USED | ItemFlags::USE);
+        machine.driver = IDR_FIREBALL;
+        machine.x = 10;
+        machine.y = 20;
+        machine.driver_data = vec![130, 125, 42, 9];
+        world.add_item(machine);
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+
+        world.advance();
+        let outcomes = world.process_due_timers(1);
+
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(
+            outcomes[0],
+            ItemDriverOutcome::FireballMachineProjectile {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                start_x: 11,
+                start_y: 19,
+                target_x: 12,
+                target_y: 17,
+                power: 42,
+                schedule_after_ticks: Some(9),
+            }
+        );
+        assert_eq!(world.effects.len(), 1);
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_FIREBALL);
+        assert_eq!(effect.strength, 42);
+        assert_eq!(effect.light, 200);
+        assert_eq!((effect.from_x, effect.from_y), (11, 19));
+        assert_eq!((effect.to_x, effect.to_y), (12, 17));
+        assert_eq!((effect.x, effect.y), (11 * 1024 + 512, 19 * 1024 + 512));
+        assert_eq!(effect.caster, None);
+        assert_eq!(effect.stop_tick, 1 + TICKS_PER_SECOND as i32);
+
+        for _ in 0..8 {
+            world.advance();
+        }
+        assert!(world.process_due_timers(1).is_empty());
+        world.advance();
+        assert_eq!(world.process_due_timers(1).len(), 1);
     }
 
     #[test]
