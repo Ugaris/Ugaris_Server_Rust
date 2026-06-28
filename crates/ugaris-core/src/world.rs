@@ -6988,6 +6988,12 @@ impl World {
                     area_id,
                     &attack_policy,
                 ) {
+                    self.remove_stale_pvp_hate_if_legacy_check_fails(
+                        player,
+                        character_id,
+                        target_id,
+                        area_id,
+                    );
                     return self.set_player_idle(player, character_id);
                 }
                 let direction = adjacent_direction(attacker.x, attacker.y, target_x, target_y);
@@ -7225,7 +7231,7 @@ impl World {
 
     fn player_can_attack_target(
         &self,
-        player: &PlayerRuntime,
+        player: &mut PlayerRuntime,
         attacker_id: CharacterId,
         target_id: CharacterId,
         area_id: u16,
@@ -7239,7 +7245,52 @@ impl World {
         let attack_policy = RuntimePlayerAttackPolicy {
             attacker_runtime: player,
         };
-        can_attack_in_area_with_clan_policy(attacker, target, &self.map, area_id, &attack_policy)
+        let can_attack = can_attack_in_area_with_clan_policy(
+            attacker,
+            target,
+            &self.map,
+            area_id,
+            &attack_policy,
+        );
+        if !can_attack {
+            self.remove_stale_pvp_hate_if_legacy_check_fails(
+                player,
+                attacker_id,
+                target_id,
+                area_id,
+            );
+        }
+        can_attack
+    }
+
+    fn remove_stale_pvp_hate_if_legacy_check_fails(
+        &self,
+        player: &mut PlayerRuntime,
+        attacker_id: CharacterId,
+        target_id: CharacterId,
+        area_id: u16,
+    ) {
+        if area_id == 1 {
+            return;
+        }
+        let Some(attacker) = self.characters.get(&attacker_id) else {
+            return;
+        };
+        let Some(target) = self.characters.get(&target_id) else {
+            return;
+        };
+        if !attacker.flags.contains(CharacterFlags::PLAYER)
+            || !target.flags.contains(CharacterFlags::PLAYER)
+            || !attacker.flags.contains(CharacterFlags::PK)
+        {
+            return;
+        }
+        if attacker.id == target.id
+            || !target.flags.contains(CharacterFlags::PK)
+            || attacker.level.abs_diff(target.level) > 3
+        {
+            player.remove_pk_hate(target.id.0);
+        }
     }
 
     fn setup_fireball_character(
@@ -15363,6 +15414,76 @@ mod tests {
         assert!(world.apply_player_action_setup(&mut player, 2));
         let attacker = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(attacker.action, action::IDLE);
+        assert_eq!(player.action.action, PlayerActionCode::Idle);
+    }
+
+    #[test]
+    fn world_removes_stale_pk_hate_when_pvp_level_check_fails() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        attacker.level = 10;
+        attacker.x = 10;
+        attacker.y = 10;
+        let mut defender = character(2);
+        defender
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        defender.level = 14;
+        defender.x = 11;
+        defender.y = 10;
+        world.map.tile_mut(11, 10).unwrap().character = 2;
+        world.add_character(attacker);
+        world.add_character(defender);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        assert!(player.add_pk_hate(2));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Kill,
+            arg1: 2,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 2));
+
+        assert!(!player.has_pk_hate_for(2));
+        assert_eq!(player.action.action, PlayerActionCode::Idle);
+    }
+
+    #[test]
+    fn world_keeps_pk_hate_when_area_one_blocks_pvp() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        attacker.level = 10;
+        attacker.x = 10;
+        attacker.y = 10;
+        let mut defender = character(2);
+        defender
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        defender.level = 10;
+        defender.x = 11;
+        defender.y = 10;
+        world.map.tile_mut(11, 10).unwrap().character = 2;
+        world.add_character(attacker);
+        world.add_character(defender);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        assert!(player.add_pk_hate(2));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Kill,
+            arg1: 2,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+
+        assert!(player.has_pk_hate_for(2));
         assert_eq!(player.action.action, PlayerActionCode::Idle);
     }
 
