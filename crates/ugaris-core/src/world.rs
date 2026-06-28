@@ -3051,6 +3051,56 @@ impl World {
         })
     }
 
+    fn simple_baddy_calc_ball_steps(
+        &self,
+        caster_id: CharacterId,
+        from_x: usize,
+        from_y: usize,
+        target_x: usize,
+        target_y: usize,
+    ) -> i32 {
+        let mut dx = target_x as i32 - from_x as i32;
+        let mut dy = target_y as i32 - from_y as i32;
+        if dx == 0 && dy == 0 {
+            return 0;
+        }
+
+        let mut x = from_x as i32 * 1024 + 512;
+        let mut y = from_y as i32 * 1024 + 512;
+        if dx.abs() > dy.abs() {
+            dy = dy * 512 / dx.abs();
+            dx = dx * 512 / dx.abs();
+        } else {
+            dx = dx * 512 / dy.abs();
+            dy = dy * 512 / dy.abs();
+        }
+
+        let max_steps = (TICKS_PER_SECOND * 5 / 4) as i32;
+        for step in 0..max_steps {
+            x += dx;
+            y += dy;
+            let tile_x = x / 1024;
+            let tile_y = y / 1024;
+            if self.ball_path_blocked_for_caster(tile_x, tile_y, caster_id) {
+                return step;
+            }
+        }
+        max_steps
+    }
+
+    fn ball_path_blocked_for_caster(&self, x: i32, y: i32, caster_id: CharacterId) -> bool {
+        let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
+            return true;
+        };
+        let Some(tile) = self.map.tile(x, y) else {
+            return true;
+        };
+        let map_blocks = tile.flags.contains(MapFlags::TMOVEBLOCK)
+            || (!tile.flags.contains(MapFlags::FIRETHRU)
+                && tile.flags.contains(MapFlags::MOVEBLOCK));
+        map_blocks && tile.character != caster_id.0 as u16
+    }
+
     fn setup_simple_baddy_flash_attack(
         &mut self,
         character_id: CharacterId,
@@ -3776,7 +3826,14 @@ impl World {
             ) > POWERSCALE
             && attacker.mana >= FLASH_COST
         {
-            if character_distance > 10 && character_distance < 30 {
+            let ball_reaches_target = self.simple_baddy_calc_ball_steps(
+                attacker.id,
+                usize::from(attacker.x),
+                usize::from(attacker.y),
+                usize::from(target.x),
+                usize::from(target.y),
+            ) > i32::from(tile_distance) * 2 - 5;
+            if character_distance > 10 && character_distance < 30 && ball_reaches_target {
                 tasks.push(FightDriverTask {
                     kind: FightDriverTaskKind::Ball,
                     value: FIGHT_DRIVER_MED_PRIO + character_value(attacker, CharacterValue::Flash),
@@ -11114,6 +11171,43 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 461);
+    }
+
+    #[test]
+    fn simple_baddy_ball_task_requires_unblocked_legacy_intercept_steps() {
+        let mut world = World::default();
+        world.tick = Tick(461);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FLASH_COST;
+        npc.values[0][CharacterValue::Flash as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 16,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 16, 10);
+        world.map.tile_mut(16, 10).unwrap().light = 255;
+        world
+            .map
+            .tile_mut(12, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_ne!(npc.action, action::BALL1);
     }
 
     #[test]
