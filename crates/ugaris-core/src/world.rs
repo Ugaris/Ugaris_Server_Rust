@@ -69,6 +69,7 @@ pub struct WorldActionCompletion {
     pub action_id: u16,
     pub action_item_id: Option<ItemId>,
     pub ok: bool,
+    pub legacy_return_code: i32,
     pub item_use: Option<ItemUseRequest>,
     pub old_x: u16,
     pub old_y: u16,
@@ -4195,16 +4196,7 @@ impl World {
                     .iter()
                     .rev()
                     .find(|completion| completion.character_id == character_id)
-                    .map(|completion| {
-                        let ret = if completion.ok {
-                            1
-                        } else if completion.action_id == action::USE {
-                            2
-                        } else {
-                            0
-                        };
-                        (ret, completion.action_id)
-                    })
+                    .map(|completion| (completion.legacy_return_code, completion.action_id))
                     .unwrap_or((0, 0));
                 self.process_simple_baddy_noncombat_action_with_context(
                     character_id,
@@ -6805,6 +6797,7 @@ impl World {
                 action_id,
                 action_item_id,
                 ok,
+                legacy_return_code: i32::from(ok),
                 item_use,
                 old_x,
                 old_y,
@@ -10982,6 +10975,7 @@ mod tests {
             action_id: action::USE,
             action_item_id: None,
             ok: false,
+            legacy_return_code: 2,
             item_use: None,
             old_x: 10,
             old_y: 10,
@@ -10997,6 +10991,43 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!((npc.x, npc.y), (12, 10));
         assert_eq!(npc.action, 0);
+    }
+
+    #[test]
+    fn simple_baddy_noncombat_failed_use_without_retry_code_still_walks() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 20) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 12;
+        npc.rest_y = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        world.spawn_character(npc, 10, 10);
+
+        let completions = [WorldActionCompletion {
+            character_id: CharacterId(1),
+            action_id: action::USE,
+            action_item_id: None,
+            ok: false,
+            legacy_return_code: 0,
+            item_use: None,
+            old_x: 10,
+            old_y: 10,
+            new_x: 10,
+            new_y: 10,
+        }];
+
+        assert_eq!(
+            world.process_simple_baddy_noncombat_actions_with_completions(1, &completions),
+            1
+        );
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!((npc.tox, npc.toy), (11, 10));
     }
 
     #[test]

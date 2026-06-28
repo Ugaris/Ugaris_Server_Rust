@@ -1723,6 +1723,22 @@ fn item_driver_context_for_request(
     }
 }
 
+fn legacy_item_driver_return_code(
+    driver: Option<u16>,
+    outcome: &ugaris_core::item_driver::ItemDriverOutcome,
+) -> i32 {
+    use ugaris_core::item_driver::{ItemDriverOutcome, IDR_DOOR, IDR_DOUBLE_DOOR};
+
+    match outcome {
+        ItemDriverOutcome::DoorToggle { .. }
+        | ItemDriverOutcome::KeyedDoorToggle { .. }
+        | ItemDriverOutcome::DoubleDoorToggle { .. } => 1,
+        ItemDriverOutcome::Noop if matches!(driver, Some(IDR_DOOR) | Some(IDR_DOUBLE_DOOR)) => 2,
+        ItemDriverOutcome::Noop | ItemDriverOutcome::Unsupported { .. } => 0,
+        _ => 1,
+    }
+}
+
 fn infinite_chest_key_access(
     world: &World,
     character_id: CharacterId,
@@ -8905,7 +8921,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                     info!(look_sessions, tick = world.tick.0, "queued look-map feedback");
                 }
-                let completed_actions = world.tick_basic_actions();
+                let mut completed_actions = world.tick_basic_actions();
                 if !completed_actions.is_empty() {
                     info!(count = completed_actions.len(), tick = world.tick.0, "completed world actions");
                     let mut auto_keyring_feedback = Vec::new();
@@ -8971,7 +8987,10 @@ async fn main() -> anyhow::Result<()> {
                     }
                     let item_use_requests: Vec<_> = completed_actions
                         .iter()
-                        .filter_map(|completion| completion.item_use)
+                        .enumerate()
+                        .filter_map(|(index, completion)| {
+                            completion.item_use.map(|request| (index, request))
+                        })
                         .collect();
                     if !item_use_requests.is_empty() {
                         let mut opened = 0;
@@ -8984,19 +9003,29 @@ async fn main() -> anyhow::Result<()> {
                         let mut feedback = Vec::new();
                         let mut area_feedback = Vec::new();
                         let mut container_refresh = Vec::new();
-                        for request in item_use_requests {
+                        for (completion_index, request) in item_use_requests {
                             let use_character_id = request.character_id;
                             match world.use_item_request(request, true) {
                                 Ok(ugaris_core::item_driver::UseItemOutcome::OpenContainer { .. })
                                 | Ok(ugaris_core::item_driver::UseItemOutcome::OpenDepot { .. }) => {
+                                    if let Some(completion) = completed_actions.get_mut(completion_index) {
+                                        completion.legacy_return_code = 1;
+                                    }
                                     opened += 1;
                                 }
                                 Ok(ugaris_core::item_driver::UseItemOutcome::OpenAccountDepot { .. }) => {
+                                    if let Some(completion) = completed_actions.get_mut(completion_index) {
+                                        completion.legacy_return_code = 1;
+                                    }
                                     runtime.ensure_account_depot(use_character_id);
                                     container_refresh.push(use_character_id);
                                     opened += 1;
                                 }
                                 Ok(ugaris_core::item_driver::UseItemOutcome::Dispatch(request)) => {
+                                    let driver = match request {
+                                        ugaris_core::item_driver::ItemDriverRequest::Driver { driver, .. } => Some(driver),
+                                        ugaris_core::item_driver::ItemDriverRequest::AccountDepot { .. } => None,
+                                    };
                                     let is_chest_request = matches!(
                                         request,
                                         ugaris_core::item_driver::ItemDriverRequest::Driver {
@@ -9013,7 +9042,11 @@ async fn main() -> anyhow::Result<()> {
                                         runtime.player_for_character(request_character_id),
                                         &request,
                                     );
-                                    match world.execute_item_driver_request_with_context(request, config.area_id, &driver_context) {
+                                    let outcome = world.execute_item_driver_request_with_context(request, config.area_id, &driver_context);
+                                    if let Some(completion) = completed_actions.get_mut(completion_index) {
+                                        completion.legacy_return_code = legacy_item_driver_return_code(driver, &outcome);
+                                    }
+                                    match outcome {
                                         ugaris_core::item_driver::ItemDriverOutcome::ChestTreasure { item_id, character_id, treasure_index } => {
                                             match apply_chest_treasure(
                                                 &mut world,
