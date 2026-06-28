@@ -104,6 +104,7 @@ enum DoorToggleResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 enum FightDriverTaskKind {
     Freeze,
     Fireball,
@@ -130,15 +131,20 @@ enum FightDriverTaskKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 struct FightDriverTask {
     kind: FightDriverTaskKind,
     value: i32,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 const FIGHT_DRIVER_LOW_PRIO: i32 = 1;
+#[cfg_attr(not(test), allow(dead_code))]
 const FIGHT_DRIVER_MED_PRIO: i32 = 500;
+#[cfg_attr(not(test), allow(dead_code))]
 const FIGHT_DRIVER_HIGH_PRIO: i32 = 750;
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn order_fight_driver_tasks(
     tasks: &mut [FightDriverTask],
     character_level: i32,
@@ -2450,17 +2456,21 @@ impl World {
             return false;
         }
 
-        let mut enemies = self.refresh_simple_baddy_enemy_tracking(&attacker);
+        let enemies = self.refresh_simple_baddy_enemy_tracking(&attacker);
         if enemies.is_empty() {
             return false;
         }
-        enemies.sort_by(|a, b| {
-            b.priority
-                .cmp(&a.priority)
-                .then_with(|| b.last_seen_tick.cmp(&a.last_seen_tick))
+        let mut visible_enemies: Vec<_> = enemies
+            .iter()
+            .filter(|enemy| enemy.visible)
+            .copied()
+            .collect();
+        visible_enemies.sort_by(|left, right| {
+            self.simple_baddy_visible_enemy_score(&attacker, right)
+                .cmp(&self.simple_baddy_visible_enemy_score(&attacker, left))
         });
 
-        for enemy in enemies.iter().filter(|enemy| enemy.visible) {
+        for enemy in visible_enemies {
             let previous_lastfight = self
                 .simple_baddy_lastfight(character_id)
                 .unwrap_or_default();
@@ -2537,6 +2547,21 @@ impl World {
         }
 
         false
+    }
+
+    fn simple_baddy_visible_enemy_score(
+        &self,
+        attacker: &Character,
+        enemy: &SimpleBaddyEnemy,
+    ) -> i32 {
+        let Some(target) = self.characters.get(&enemy.target_id) else {
+            return i32::MIN;
+        };
+        let mut score = (999 - char_dist(attacker, target)) * 10;
+        if character_is_facing(attacker, target) {
+            score += 5;
+        }
+        score
     }
 
     fn setup_simple_baddy_attack_move(
@@ -8412,6 +8437,26 @@ fn is_back_attack_against_target(target: &Character, attacker_x: u16, attacker_y
     }
 }
 
+fn character_is_facing(character: &Character, other: &Character) -> bool {
+    let Ok(direction) = Direction::try_from(character.dir) else {
+        return false;
+    };
+    let (dx, dy) = direction.delta();
+    let delta_x = i32::from(other.x) - i32::from(character.x);
+    let delta_y = i32::from(other.y) - i32::from(character.y);
+    match (dx, dy) {
+        (1, 0) => delta_x > 0 && delta_y.abs() <= delta_x,
+        (-1, 0) => delta_x < 0 && delta_y.abs() <= -delta_x,
+        (0, 1) => delta_y > 0 && delta_x.abs() <= delta_y,
+        (0, -1) => delta_y < 0 && delta_x.abs() <= -delta_y,
+        (1, 1) => delta_x > 0 && delta_y > 0,
+        (-1, 1) => delta_x < 0 && delta_y > 0,
+        (1, -1) => delta_x > 0 && delta_y < 0,
+        (-1, -1) => delta_x < 0 && delta_y < 0,
+        _ => false,
+    }
+}
+
 fn predicted_fireball_target(caster: &Character, target: &Character) -> (usize, usize) {
     if target.action != action::WALK {
         return (usize::from(target.x), usize::from(target.y));
@@ -10536,6 +10581,53 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 458);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_prefers_c_visible_enemy_score_over_priority() {
+        let mut world = World::default();
+        world.tick = Tick(459);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Attack as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![
+                SimpleBaddyEnemy {
+                    target_id: CharacterId(2),
+                    priority: 99,
+                    last_seen_tick: 999,
+                    visible: true,
+                    last_x: 14,
+                    last_y: 10,
+                },
+                SimpleBaddyEnemy {
+                    target_id: CharacterId(3),
+                    priority: 0,
+                    last_seen_tick: 1,
+                    visible: true,
+                    last_x: 11,
+                    last_y: 10,
+                },
+            ],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut far_target = character(2);
+        far_target.values[0][CharacterValue::Attack as usize] = 1;
+        let mut close_target = character(3);
+        close_target.values[0][CharacterValue::Attack as usize] = 1;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(far_target, 14, 10);
+        world.spawn_character(close_target, 11, 10);
+        world.map.tile_mut(14, 10).unwrap().light = 255;
+        world.map.tile_mut(11, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::ATTACK1);
+        assert_eq!(npc.act1, 3);
+        assert_eq!(npc.dir, Direction::Right as u8);
     }
 
     #[test]
