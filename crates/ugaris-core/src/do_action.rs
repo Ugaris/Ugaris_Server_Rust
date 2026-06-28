@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
@@ -1173,6 +1173,20 @@ pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> 
     if attacker_flags.contains(MapFlags::PEACE) || defender_flags.contains(MapFlags::PEACE) {
         return false;
     }
+    if attacker_flags.contains(MapFlags::ARENA) || defender_flags.contains(MapFlags::ARENA) {
+        if !(attacker_flags.contains(MapFlags::ARENA)
+            && defender_flags.contains(MapFlags::ARENA)
+            && arena_tiles_connected(
+                map,
+                usize::from(attacker.x),
+                usize::from(attacker.y),
+                usize::from(defender.x),
+                usize::from(defender.y),
+            ))
+        {
+            return false;
+        }
+    }
     if attacker
         .flags
         .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
@@ -1191,6 +1205,68 @@ pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> 
         return false;
     }
     true
+}
+
+fn arena_tiles_connected(
+    map: &MapGrid,
+    from_x: usize,
+    from_y: usize,
+    to_x: usize,
+    to_y: usize,
+) -> bool {
+    if !map.legacy_inner_bounds(from_x, from_y) || !map.legacy_inner_bounds(to_x, to_y) {
+        return false;
+    }
+    let Some(start) = map.tile(from_x, from_y) else {
+        return false;
+    };
+    let Some(target) = map.tile(to_x, to_y) else {
+        return false;
+    };
+    if !start.flags.contains(MapFlags::ARENA) || !target.flags.contains(MapFlags::ARENA) {
+        return false;
+    }
+
+    let mut visited = vec![false; map.width() * map.height()];
+    let mut queue = VecDeque::new();
+    visited[from_x + from_y * map.width()] = true;
+    queue.push_back((from_x, from_y));
+
+    while let Some((x, y)) = queue.pop_front() {
+        if x == to_x && y == to_y {
+            return true;
+        }
+        for dy in -1isize..=1 {
+            for dx in -1isize..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let nx = x as isize + dx;
+                let ny = y as isize + dy;
+                if nx < 0 || ny < 0 {
+                    continue;
+                }
+                let nx = nx as usize;
+                let ny = ny as usize;
+                if !map.legacy_inner_bounds(nx, ny) {
+                    continue;
+                }
+                let idx = nx + ny * map.width();
+                if visited[idx] {
+                    continue;
+                }
+                if map
+                    .tile(nx, ny)
+                    .is_some_and(|tile| tile.flags.contains(MapFlags::ARENA))
+                {
+                    visited[idx] = true;
+                    queue.push_back((nx, ny));
+                }
+            }
+        }
+    }
+
+    false
 }
 
 pub fn can_attack_in_area(
@@ -1792,6 +1868,37 @@ mod tests {
         assert!(can_attack(&attacker, &defender, &map));
         assert!(!can_attack_in_area(&attacker, &defender, &map, 1));
         assert!(can_attack_in_area(&attacker, &defender, &map, 2));
+    }
+
+    #[test]
+    fn can_attack_requires_same_connected_arena() {
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        attacker.x = 5;
+        attacker.y = 5;
+        defender.x = 6;
+        defender.y = 5;
+
+        map.tile_mut(5, 5).unwrap().flags.insert(MapFlags::ARENA);
+        assert!(!can_attack(&attacker, &defender, &map));
+
+        map.tile_mut(6, 5).unwrap().flags.insert(MapFlags::ARENA);
+        assert!(can_attack(&attacker, &defender, &map));
+
+        defender.x = 12;
+        defender.y = 12;
+        map.tile_mut(12, 12).unwrap().flags.insert(MapFlags::ARENA);
+        assert!(!can_attack(&attacker, &defender, &map));
+
+        for x in 5..=12 {
+            map.tile_mut(x, 5).unwrap().flags.insert(MapFlags::ARENA);
+        }
+        for y in 5..=12 {
+            map.tile_mut(12, y).unwrap().flags.insert(MapFlags::ARENA);
+        }
+        assert!(can_attack(&attacker, &defender, &map));
     }
 
     #[test]
