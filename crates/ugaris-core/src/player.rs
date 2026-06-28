@@ -422,13 +422,35 @@ impl PlayerRuntime {
     }
 
     pub fn add_pk_hate(&mut self, character_id: u32) -> bool {
-        if character_id == 0
-            || self.has_pk_hate_for(character_id)
-            || self.pk_hate.len() >= PK_HATE_MAX_ENTRIES
-        {
+        if character_id == 0 {
             return false;
         }
-        self.pk_hate.push(character_id);
+
+        let newly_added = if let Some(position) = self
+            .pk_hate
+            .iter()
+            .position(|hate_id| *hate_id == character_id)
+        {
+            self.pk_hate.remove(position);
+            false
+        } else {
+            true
+        };
+
+        self.pk_hate.insert(0, character_id);
+        self.pk_hate.truncate(PK_HATE_MAX_ENTRIES);
+        newly_added
+    }
+
+    pub fn remove_pk_hate(&mut self, character_id: u32) -> bool {
+        let Some(position) = self
+            .pk_hate
+            .iter()
+            .position(|hate_id| *hate_id == character_id)
+        else {
+            return false;
+        };
+        self.pk_hate.remove(position);
         true
     }
 
@@ -1929,8 +1951,8 @@ mod tests {
         assert_eq!(read_i32(&encoded, PK_PPD_DEATHS_OFFSET), 4);
         assert_eq!(read_i32(&encoded, PK_PPD_LAST_KILL_OFFSET), 0x1122_3344);
         assert_eq!(read_i32(&encoded, PK_PPD_LAST_DEATH_OFFSET), i32::MAX);
-        assert_eq!(read_i32(&encoded, PK_PPD_HATE_OFFSET), 1001);
-        assert_eq!(read_i32(&encoded, PK_PPD_HATE_OFFSET + 4), 1002);
+        assert_eq!(read_i32(&encoded, PK_PPD_HATE_OFFSET), 1002);
+        assert_eq!(read_i32(&encoded, PK_PPD_HATE_OFFSET + 4), 1001);
 
         let mut decoded = PlayerRuntime::connected(2, 0);
         assert!(decoded.decode_legacy_pk_ppd(&encoded));
@@ -1938,10 +1960,35 @@ mod tests {
         assert_eq!(decoded.pk_deaths, 4);
         assert_eq!(decoded.pk_last_kill, 0x1122_3344);
         assert_eq!(decoded.pk_last_death, i32::MAX as u32);
-        assert_eq!(decoded.pk_hate, vec![1001, 1002]);
+        assert_eq!(decoded.pk_hate, vec![1002, 1001]);
         assert!(decoded.has_pk_hate_for(1001));
         assert!(!decoded.has_pk_hate_for(1003));
         assert!(!decoded.decode_legacy_pk_ppd(&encoded[..LEGACY_PK_PPD_SIZE - 1]));
+    }
+
+    #[test]
+    fn pk_hate_helpers_preserve_legacy_front_priority_and_eviction() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(!player.add_pk_hate(0));
+        assert!(player.add_pk_hate(10));
+        assert!(player.add_pk_hate(20));
+        assert!(player.add_pk_hate(30));
+        assert_eq!(player.pk_hate, vec![30, 20, 10]);
+
+        assert!(!player.add_pk_hate(10));
+        assert_eq!(player.pk_hate, vec![10, 30, 20]);
+
+        assert!(player.remove_pk_hate(30));
+        assert_eq!(player.pk_hate, vec![10, 20]);
+        assert!(!player.remove_pk_hate(30));
+
+        for id in 100..(100 + PK_HATE_MAX_ENTRIES as u32 + 5) {
+            player.add_pk_hate(id);
+        }
+        assert_eq!(player.pk_hate.len(), PK_HATE_MAX_ENTRIES);
+        assert_eq!(player.pk_hate[0], 154);
+        assert_eq!(player.pk_hate[PK_HATE_MAX_ENTRIES - 1], 105);
+        assert!(!player.has_pk_hate_for(104));
     }
 
     #[test]
