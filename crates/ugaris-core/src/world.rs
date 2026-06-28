@@ -4630,6 +4630,14 @@ impl World {
     }
 
     pub fn process_simple_baddy_attack_actions(&mut self, area_id: u16) -> usize {
+        self.process_simple_baddy_attack_actions_with_random(area_id, |_| 1)
+    }
+
+    pub fn process_simple_baddy_attack_actions_with_random(
+        &mut self,
+        area_id: u16,
+        mut random: impl FnMut(u32) -> u32,
+    ) -> usize {
         let character_ids: Vec<_> = self
             .characters
             .iter()
@@ -4645,7 +4653,13 @@ impl World {
 
         character_ids
             .into_iter()
-            .filter(|&character_id| self.process_simple_baddy_attack_action(character_id, area_id))
+            .filter(|&character_id| {
+                self.process_simple_baddy_attack_action_with_random(
+                    character_id,
+                    area_id,
+                    &mut random,
+                )
+            })
             .count()
     }
 
@@ -11090,6 +11104,43 @@ mod tests {
             world.process_simple_baddy_attack_action_with_random(CharacterId(1), 1, |_| {
                 rolls.next().unwrap()
             })
+        );
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::BALL1);
+        assert_eq!(npc.act1, 15);
+        assert_eq!(npc.act2, 11);
+    }
+
+    #[test]
+    fn simple_baddy_attack_batch_threads_runtime_random() {
+        let mut world = World::default();
+        world.tick = Tick(461);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FLASH_COST;
+        npc.values[0][CharacterValue::Flash as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 16,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 16, 10);
+        world.map.tile_mut(16, 10).unwrap().light = 255;
+        let mut rolls = [0, 0, 0, 2].into_iter();
+
+        assert_eq!(
+            world.process_simple_baddy_attack_actions_with_random(1, |_| rolls.next().unwrap()),
+            1
         );
 
         let npc = world.characters.get(&CharacterId(1)).unwrap();
