@@ -3052,6 +3052,65 @@ impl World {
         false
     }
 
+    pub fn distance_driver(
+        &mut self,
+        character_id: CharacterId,
+        target_id: CharacterId,
+        distance: u16,
+        area_id: u16,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        if attacker.id == target.id
+            || !char_see_char(&attacker, &target, &self.map, self.date.daylight)
+        {
+            return false;
+        }
+        if step_char_dist(&attacker, &target) == distance {
+            return false;
+        }
+
+        if target.tox != 0
+            && self.setup_walk_toward(
+                character_id,
+                usize::from(target.tox),
+                usize::from(target.toy),
+                usize::from(distance),
+                area_id,
+                false,
+            )
+        {
+            return true;
+        }
+        if self.setup_walk_toward(
+            character_id,
+            usize::from(target.x),
+            usize::from(target.y),
+            usize::from(distance),
+            area_id,
+            false,
+        ) {
+            return true;
+        }
+
+        let partial = pathfinder(
+            &self.map,
+            usize::from(attacker.x),
+            usize::from(attacker.y),
+            usize::from(target.x),
+            usize::from(target.y),
+            usize::from(distance),
+            None,
+        );
+        partial
+            .best_direction
+            .is_some_and(|direction| self.walk_or_use_driver(character_id, direction, area_id))
+    }
+
     fn setup_simple_baddy_attack_back_move(
         &mut self,
         character_id: CharacterId,
@@ -10532,6 +10591,67 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::IDLE);
         assert_eq!(npc.duration, (TICKS_PER_SECOND / 4) as i32);
+    }
+
+    #[test]
+    fn distance_driver_prefers_moving_target_position_like_c() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        let mut target = character(2);
+        target.tox = 10;
+        target.toy = 14;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 16, 10);
+        world.map.tile_mut(16, 10).unwrap().light = 255;
+
+        assert!(world.distance_driver(CharacterId(1), CharacterId(2), 1, 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!((npc.tox, npc.toy), (10, 11));
+        assert_eq!(npc.dir, Direction::Down as u8);
+    }
+
+    #[test]
+    fn distance_driver_returns_false_when_already_at_requested_distance() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 18, 10);
+        world.map.tile_mut(18, 10).unwrap().light = 255;
+
+        assert!(!world.distance_driver(CharacterId(1), CharacterId(2), 8, 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, 0);
+    }
+
+    #[test]
+    fn distance_driver_uses_best_partial_path_when_exact_distance_unreachable() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 15, 10);
+        world.map.tile_mut(15, 10).unwrap().light = 255;
+        for y in 1..MAX_MAP - 1 {
+            world
+                .map
+                .tile_mut(12, y)
+                .unwrap()
+                .flags
+                .insert(MapFlags::MOVEBLOCK);
+        }
+
+        assert!(world.distance_driver(CharacterId(1), CharacterId(2), 1, 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!((npc.tox, npc.toy), (11, 10));
     }
 
     #[test]
