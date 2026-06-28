@@ -1381,6 +1381,9 @@ impl World {
         if let Some(effect) = self.effects.get_mut(&effect_id) {
             effect.number_of_enemies = targets.len() as i32;
         }
+        if !targets.is_empty() && self.tick.0 & 7 == 0 {
+            self.queue_sound_area(usize::from(caster.x), usize::from(caster.y), 30);
+        }
         for (target_id, damage) in targets {
             self.create_or_refresh_strike_effect(target_id, x, y, effect.strength);
             if damage == 0 {
@@ -16431,6 +16434,38 @@ mod tests {
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert_eq!(target.hp, 28_675);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].character_id, CharacterId(1));
+        assert_eq!(sounds[0].special.special_type, 30);
+    }
+
+    #[test]
+    fn ball_strike_sound_keeps_legacy_eighth_tick_cadence() {
+        let mut world = World {
+            tick: Tick(1),
+            ..World::default()
+        };
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 15;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Flash as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.hp = 30 * POWERSCALE;
+        target.values[0][CharacterValue::Immunity as usize] = 20;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        world.create_ball_effect(&caster);
+
+        world.tick_effects();
+
+        assert!(world.drain_pending_sound_specials().is_empty());
     }
 
     #[test]
