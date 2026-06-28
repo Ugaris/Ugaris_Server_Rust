@@ -4224,7 +4224,12 @@ impl World {
                 || (!tile.flags.contains(MapFlags::FIRETHRU)
                     && tile.flags.contains(MapFlags::MOVEBLOCK));
             if fire_block && tile.character != attacker_id.0 as u16 {
-                return self.fireball_block_hits_target(target_id, cx_usize, cy_usize);
+                return self.fireball_block_hits_recorded_enemy(
+                    attacker_id,
+                    target_id,
+                    cx_usize,
+                    cy_usize,
+                );
             }
             x += dx;
             y += dy;
@@ -4233,7 +4238,15 @@ impl World {
         false
     }
 
-    fn fireball_block_hits_target(&self, target_id: CharacterId, x: usize, y: usize) -> bool {
+    fn fireball_block_hits_recorded_enemy(
+        &self,
+        attacker_id: CharacterId,
+        target_id: CharacterId,
+        x: usize,
+        y: usize,
+    ) -> bool {
+        let recorded_enemies = self.simple_baddy_recorded_enemy_ids(attacker_id);
+        let mut hits_enemy = false;
         for (dx, dy) in [
             (0, 0),
             (1, 0),
@@ -4251,15 +4264,38 @@ impl World {
             let Some(check_y) = offset_coordinate(y, dy) else {
                 continue;
             };
-            if self
+            let Some(character_id) = self
                 .map
                 .tile(check_x, check_y)
-                .is_some_and(|tile| tile.character == target_id.0 as u16)
-            {
-                return true;
+                .map(|tile| CharacterId(u32::from(tile.character)))
+                .filter(|id| id.0 != 0)
+            else {
+                continue;
+            };
+            if character_id == attacker_id {
+                continue;
+            }
+            if character_id == target_id || recorded_enemies.contains(&character_id) {
+                hits_enemy = true;
+            } else {
+                return false;
             }
         }
-        false
+        hits_enemy
+    }
+
+    fn simple_baddy_recorded_enemy_ids(&self, character_id: CharacterId) -> Vec<CharacterId> {
+        self.characters
+            .get(&character_id)
+            .and_then(|character| match character.driver_state.as_ref()? {
+                CharacterDriverState::SimpleBaddy(data) => Some(
+                    data.enemies
+                        .iter()
+                        .map(|enemy| enemy.target_id)
+                        .collect::<Vec<_>>(),
+                ),
+            })
+            .unwrap_or_default()
     }
 
     #[allow(dead_code)]
@@ -10790,6 +10826,72 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, 0);
         assert_eq!(npc.mana, FIREBALL_COST);
+    }
+
+    #[test]
+    fn simple_baddy_fireball_line_accepts_recorded_enemy_blast() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![
+                SimpleBaddyEnemy {
+                    target_id: CharacterId(2),
+                    priority: 1,
+                    last_seen_tick: 123,
+                    visible: true,
+                    last_x: 15,
+                    last_y: 10,
+                },
+                SimpleBaddyEnemy {
+                    target_id: CharacterId(3),
+                    priority: 1,
+                    last_seen_tick: 123,
+                    visible: true,
+                    last_x: 12,
+                    last_y: 11,
+                },
+            ],
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(character(2), 15, 10);
+        world.spawn_character(character(3), 12, 11);
+        world
+            .map
+            .tile_mut(12, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+
+        assert!(world.fireball_line_hits_target(CharacterId(1), CharacterId(2), 10, 10, 15, 10));
+    }
+
+    #[test]
+    fn simple_baddy_fireball_line_rejects_friendly_blast() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 15,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(character(2), 15, 10);
+        world.spawn_character(character(3), 12, 11);
+        world
+            .map
+            .tile_mut(12, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+
+        assert!(!world.fireball_line_hits_target(CharacterId(1), CharacterId(2), 10, 10, 15, 10));
     }
 
     #[test]
