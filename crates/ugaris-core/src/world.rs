@@ -3650,7 +3650,7 @@ impl World {
             .get(&character_id)
             .map(|character| character.level as i32)
             .unwrap_or_default();
-        order_fight_driver_tasks(&mut tasks, level, |_| 1);
+        order_fight_driver_tasks(&mut tasks, level, |below| random(below as u32) as i32);
 
         for task in tasks {
             let ret = match task.kind {
@@ -10967,6 +10967,46 @@ mod tests {
     }
 
     #[test]
+    fn simple_baddy_attack_action_applies_legacy_task_silliness_rolls() {
+        let mut world = World::default();
+        world.tick = Tick(459);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FLASH_COST;
+        npc.values[0][CharacterValue::Attack as usize] = 100;
+        npc.values[1][CharacterValue::Attack as usize] = 100;
+        npc.values[0][CharacterValue::Flash as usize] = 26;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+        world.map.tile_mut(11, 10).unwrap().light = 255;
+        let mut rolls = [0, 4].into_iter();
+
+        assert!(
+            world.process_simple_baddy_attack_action_with_random(CharacterId(1), 1, |below| {
+                assert_eq!(below, 5);
+                rolls.next().unwrap_or(0)
+            })
+        );
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::ATTACK1);
+        assert_eq!(npc.mana, FLASH_COST);
+    }
+
+    #[test]
     fn simple_baddy_attack_action_uses_warcry_when_close_and_unshielded() {
         let mut world = World::default();
         world.tick = Tick(460);
@@ -11064,7 +11104,7 @@ mod tests {
         world.spawn_character(npc, 10, 10);
         world.spawn_character(target, 16, 10);
         world.map.tile_mut(16, 10).unwrap().light = 255;
-        let mut rolls = [0, 2].into_iter();
+        let mut rolls = [0, 0, 0, 2].into_iter();
 
         assert!(
             world.process_simple_baddy_attack_action_with_random(CharacterId(1), 1, |_| {
