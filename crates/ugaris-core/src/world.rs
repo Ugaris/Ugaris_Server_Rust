@@ -2490,10 +2490,6 @@ impl World {
             if !can_attack(&attacker, &target, &self.map) {
                 continue;
             }
-            if self.setup_simple_baddy_self_preservation(character_id) {
-                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
-                return true;
-            }
             if self.setup_simple_baddy_weighted_fight_task(
                 character_id,
                 &target,
@@ -2894,65 +2890,6 @@ impl World {
                             .is_none_or(|effect| effect.effect_type != EF_EARTHMUD)
                 })
         })
-    }
-
-    fn setup_simple_baddy_self_preservation(&mut self, character_id: CharacterId) -> bool {
-        let Some(character) = self.characters.get(&character_id).cloned() else {
-            return false;
-        };
-        let max_hp = character_value(&character, CharacterValue::Hp) * POWERSCALE;
-        let max_mana = character_value(&character, CharacterValue::Mana) * POWERSCALE;
-
-        if character_value(&character, CharacterValue::Heal) > 1
-            && character.mana >= POWERSCALE * 2
-            && character.hp < max_hp / 2
-        {
-            let target = character.clone();
-            if self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
-                do_heal(character, &target, None)
-            }) {
-                return true;
-            }
-        }
-
-        if character_value(&character, CharacterValue::MagicShield) > 1
-            && character.mana >= POWERSCALE * 2
-            && character.lifeshield
-                < character_value(&character, CharacterValue::MagicShield) * POWERSCALE / 2
-        {
-            if self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
-                do_magicshield(character)
-            }) {
-                return true;
-            }
-        }
-
-        if character_value(&character, CharacterValue::Bless) > 1
-            && character.mana >= BLESS_COST
-            && may_add_spell(&character, &self.items, IDR_BLESS, self.tick.0 as u32).is_some()
-        {
-            let target = character.clone();
-            if self.setup_simple_baddy_spell_action(character_id, |character, items, tick| {
-                do_bless(character, &target, items, tick, None)
-            }) {
-                return true;
-            }
-        }
-
-        if character.mana < max_mana || character.hp < max_hp {
-            let Some(character) = self.characters.get_mut(&character_id) else {
-                return false;
-            };
-            if do_idle(character, (TICKS_PER_SECOND / 2) as i32).is_err() {
-                return false;
-            }
-            if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
-                data.lastfight = self.tick.0 as i32;
-            }
-            return true;
-        }
-
-        false
     }
 
     fn simple_baddy_can_heal_self(&self, character: &Character) -> bool {
@@ -10436,6 +10373,7 @@ mod tests {
         world.tick = Tick(450);
         let mut npc = character(1);
         npc.driver = CDR_SIMPLEBADDY;
+        npc.regen_ticker = 450;
         npc.hp = 40 * POWERSCALE;
         npc.mana = 10 * POWERSCALE;
         npc.values[0][CharacterValue::Hp as usize] = 100;
