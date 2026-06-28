@@ -1193,6 +1193,24 @@ pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> 
     true
 }
 
+pub fn can_attack_in_area(
+    attacker: &Character,
+    defender: &Character,
+    map: &MapGrid,
+    area_id: u16,
+) -> bool {
+    if !can_attack(attacker, defender, map) {
+        return false;
+    }
+    if area_id == 1
+        && attacker.flags.contains(CharacterFlags::PLAYER)
+        && defender.flags.contains(CharacterFlags::PLAYER)
+    {
+        return false;
+    }
+    true
+}
+
 pub fn advance_action_step(character: &mut Character) -> bool {
     character.step += 1;
     character.step >= character.duration
@@ -1758,6 +1776,22 @@ mod tests {
             ),
             Err(DoError::IllegalAttack)
         );
+    }
+
+    #[test]
+    fn can_attack_in_area_blocks_legacy_area_one_player_vs_player() {
+        let map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        attacker.flags.insert(CharacterFlags::PLAYER);
+        defender.flags.insert(CharacterFlags::PLAYER);
+
+        assert!(can_attack(&attacker, &defender, &map));
+        assert!(!can_attack_in_area(&attacker, &defender, &map, 1));
+        assert!(can_attack_in_area(&attacker, &defender, &map, 2));
     }
 
     #[test]

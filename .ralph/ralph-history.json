@@ -3102,15 +3102,43 @@
         "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
         "test result: ok. 484 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s"
       ]
+    },
+    {
+      "iteration": 112,
+      "startedAt": "2026-06-28T20:28:58.248Z",
+      "endedAt": "2026-06-28T20:36:32.265Z",
+      "durationMs": 453786,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/do_action.rs",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/ src/module/simple_baddy.c",
+        "error: could not compile `ugaris-core` (lib test) due to 3 previous errors",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 484 filtered out; finished in 0.00s",
+        "error: unexpected argument 'world_blocks_player_kill_setup_against_area_one_player' found",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 484 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 49090405,
+  "totalDurationMs": 49544191,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 108,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 106,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 97,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 109,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 107,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 98,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 52,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 53,
@@ -3412,7 +3440,7 @@
       "test result: ok. 454 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
       "The walk-or-use behavior was already partially present, but the path selection can miss a C-like imm": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 22,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 23,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 454 filtered out; finished in 0.02s": 1,
       "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.05s": 1,
       "test result: ok. 455 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -3436,7 +3464,7 @@
       "error: unexpected argument 'secure_move_driver_skips_move_after_blocked_use_and_teleports' found": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 464 filtered out; finished in 0.00s": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_noncombat_threads_failed_use_into_secure_move": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 15,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 16,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 466 filtered out; finished in 0.00s": 1,
       "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 15,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s": 1,
@@ -3480,7 +3508,12 @@
       "test result: ok. 483 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 483 filtered out; finished in 0.00s": 2,
       "test result: ok. 484 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 2,
-      "- Extended `do_attack` coverage to assert same-clan targets return `DoError::IllegalAttack`.": 1
+      "- Extended `do_attack` coverage to assert same-clan targets return `DoError::IllegalAttack`.": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/ src/module": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 3 previous errors": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 484 filtered out; finished in 0.00s": 1,
+      "error: unexpected argument 'world_blocks_player_kill_setup_against_area_one_player' found": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 484 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

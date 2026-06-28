@@ -11,9 +11,9 @@ use crate::{
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
-        advance_action_step, can_attack, do_attack, do_ball, do_bless, do_drop, do_earthmud,
-        do_fireball, do_flash, do_freeze, do_heal, do_idle, do_magicshield, do_pulse, do_take,
-        do_use, do_walk, do_warcry, endurance_cost, reset_action_after_act, speed_ticks,
+        advance_action_step, can_attack, can_attack_in_area, do_attack, do_ball, do_bless, do_drop,
+        do_earthmud, do_fireball, do_flash, do_freeze, do_heal, do_idle, do_magicshield, do_pulse,
+        do_take, do_use, do_walk, do_warcry, endurance_cost, reset_action_after_act, speed_ticks,
         speed_ticks_inverse, turn, ItemUseRequest, DUR_MISC_ACTION,
     },
     drvlib::{char_dist, map_dist, step_char_dist, tile_char_dist},
@@ -2493,7 +2493,7 @@ impl World {
             let Some(target) = self.characters.get(&enemy.target_id).cloned() else {
                 continue;
             };
-            if !can_attack(&attacker, &target, &self.map) {
+            if !can_attack_in_area(&attacker, &target, &self.map, area_id) {
                 continue;
             }
             if self.setup_simple_baddy_weighted_fight_task(
@@ -2760,7 +2760,7 @@ impl World {
         };
         if attacker.id == target.id
             || !char_see_char(&attacker, &target, &self.map, self.date.daylight)
-            || !can_attack(&attacker, &target, &self.map)
+            || !can_attack_in_area(&attacker, &target, &self.map, area_id)
         {
             return false;
         }
@@ -6774,6 +6774,9 @@ impl World {
                 let Some(attacker) = self.characters.get(&character_id) else {
                     return false;
                 };
+                if !can_attack_in_area(attacker, target, &self.map, area_id) {
+                    return self.set_player_idle(player, character_id);
+                }
                 let direction = adjacent_direction(attacker.x, attacker.y, target_x, target_y);
 
                 if let Some(direction) = direction {
@@ -14968,6 +14971,34 @@ mod tests {
         assert_eq!(attacker.action, action::ATTACK1);
         assert_eq!(attacker.act1, 2);
         assert_eq!(attacker.dir, Direction::Right as u8);
+    }
+
+    #[test]
+    fn world_blocks_player_kill_setup_against_area_one_player() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker.flags.insert(CharacterFlags::PLAYER);
+        attacker.x = 10;
+        attacker.y = 10;
+        let mut defender = character(2);
+        defender.flags.insert(CharacterFlags::PLAYER);
+        defender.x = 11;
+        defender.y = 10;
+        world.map.tile_mut(11, 10).unwrap().character = 2;
+        world.add_character(attacker);
+        world.add_character(defender);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Kill,
+            arg1: 2,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        let attacker = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(attacker.action, action::IDLE);
+        assert_eq!(player.action.action, PlayerActionCode::Idle);
     }
 
     #[test]
