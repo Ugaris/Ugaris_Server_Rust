@@ -1187,6 +1187,9 @@ pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> 
     {
         return false;
     }
+    if attacker.clan != 0 && attacker.clan == defender.clan {
+        return false;
+    }
     true
 }
 
@@ -1731,6 +1734,20 @@ mod tests {
 
         defender.flags.remove(CharacterFlags::DEAD);
         map.set_flags(10, 10, MapFlags::PEACE);
+        assert_eq!(
+            do_attack(
+                &mut attacker,
+                &map,
+                &defender,
+                Direction::Right as u8,
+                action::ATTACK1,
+            ),
+            Err(DoError::IllegalAttack)
+        );
+
+        map.tile_mut(10, 10).unwrap().flags.remove(MapFlags::PEACE);
+        attacker.clan = 42;
+        defender.clan = 42;
         assert_eq!(
             do_attack(
                 &mut attacker,
