@@ -2803,15 +2803,42 @@
         "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
         "test result: ok. 475 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s"
       ]
+    },
+    {
+      "iteration": 101,
+      "startedAt": "2026-06-28T19:19:36.469Z",
+      "endedAt": "2026-06-28T19:30:48.898Z",
+      "durationMs": 672267,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_attack_action_self_heals_before_offense_when_badly_hurt ... FAILED",
+        "test world::tests::simple_baddy_ball_attack_uses_legacy_random_target_offset ... FAILED",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_fireball_repositions_for_blocked_line_of_fire ... FAILED"
+      ]
     }
   ],
-  "totalDurationMs": 44960527,
+  "totalDurationMs": 45632794,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 97,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 95,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 87,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 98,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 96,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 88,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 52,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 53,
@@ -2922,7 +2949,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 63,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 64,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -3041,7 +3068,7 @@
       "test result: ok. 429 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
       "The ledger is updated. I’m running broader verification now; if the workspace test suite is too slow": 1,
       "test result: ok. 64 passed; 0 failed; 0 ignored; 0 measured; 365 filtered out; finished in 0.01s": 1,
-      "test world::tests::simple_baddy_fireball_repositions_for_blocked_line_of_fire ... FAILED": 1,
+      "test world::tests::simple_baddy_fireball_repositions_for_blocked_line_of_fire ... FAILED": 2,
       "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.00s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.00s": 1,
       "test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 365 filtered out; finished in 0.01s": 1,
@@ -3113,7 +3140,7 @@
       "test result: ok. 454 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
       "The walk-or-use behavior was already partially present, but the path selection can miss a C-like imm": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 12,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 13,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 454 filtered out; finished in 0.02s": 1,
       "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.05s": 1,
       "test result: ok. 455 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -3137,9 +3164,9 @@
       "error: unexpected argument 'secure_move_driver_skips_move_after_blocked_use_and_teleports' found": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 464 filtered out; finished in 0.00s": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_noncombat_threads_failed_use_into_secure_move": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 6,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 7,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 466 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 5,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 6,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s": 1,
       "error: no library targets found in package `ugaris-server`": 1,
       "test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -3152,7 +3179,9 @@
       "test result: ok. 473 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "error: unexpected argument 'add_simple_baddy_enemy_keeps_legacy_ten_entry_table' found": 1,
       "test result: ok. 88 passed; 0 failed; 0 ignored; 0 measured; 387 filtered out; finished in 0.07s": 1,
-      "test result: ok. 475 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1
+      "test result: ok. 475 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
+      "test world::tests::simple_baddy_attack_action_self_heals_before_offense_when_badly_hurt ... FAILED": 1,
+      "test world::tests::simple_baddy_ball_attack_uses_legacy_random_target_offset ... FAILED": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -2487,38 +2487,12 @@ impl World {
                 self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
-            if self.setup_simple_baddy_earthmud_attack(character_id, &target) {
-                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
-                return true;
-            }
-            if self.setup_simple_baddy_fireball_attack(character_id, &target, area_id) {
-                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
-                return true;
-            }
-            if self.setup_simple_baddy_spell_attack(character_id, &target, &mut random) {
-                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
-                return true;
-            }
-            if self.setup_simple_baddy_pulse_attack(character_id) {
-                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
-                return true;
-            }
-            if self.setup_simple_baddy_distance_attack(character_id, &target, area_id) {
-                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
-                return true;
-            }
-            if self.setup_simple_baddy_fireball_distance_attack(character_id, &target, area_id) {
-                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
-                return true;
-            }
-            if self.setup_simple_baddy_attack_back_move(character_id, &target, area_id) {
-                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
-                return true;
-            }
-            if self.setup_simple_baddy_attack_driver(character_id, &target) {
-                self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
-                return true;
-            } else if self.setup_simple_baddy_attack_move(character_id, &target, area_id) {
+            if self.setup_simple_baddy_weighted_fight_task(
+                character_id,
+                &target,
+                area_id,
+                &mut random,
+            ) {
                 self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
@@ -2974,6 +2948,220 @@ impl World {
         false
     }
 
+    fn simple_baddy_can_heal_self(&self, character: &Character) -> bool {
+        character_value(character, CharacterValue::Heal) > 1
+            && character.mana >= POWERSCALE * 2
+            && character.hp < character_value(character, CharacterValue::Hp) * POWERSCALE / 2
+    }
+
+    fn setup_simple_baddy_heal_action(&mut self, character_id: CharacterId) -> bool {
+        let Some(target) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if !self.simple_baddy_can_heal_self(&target) {
+            return false;
+        }
+        self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
+            do_heal(character, &target, None)
+        })
+    }
+
+    fn simple_baddy_can_magicshield_self(&self, character: &Character) -> bool {
+        character_value(character, CharacterValue::MagicShield) > 1
+            && character.mana >= POWERSCALE * 2
+            && character.lifeshield
+                < character_value(character, CharacterValue::MagicShield) * POWERSCALE / 2
+    }
+
+    fn setup_simple_baddy_magicshield_action(&mut self, character_id: CharacterId) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if !self.simple_baddy_can_magicshield_self(&character) {
+            return false;
+        }
+        self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
+            do_magicshield(character)
+        })
+    }
+
+    fn simple_baddy_can_bless_self(&self, character: &Character) -> bool {
+        character_value(character, CharacterValue::Bless) > 1
+            && character.mana >= BLESS_COST
+            && may_add_spell(character, &self.items, IDR_BLESS, self.tick.0 as u32).is_some()
+    }
+
+    fn setup_simple_baddy_self_bless_action(&mut self, character_id: CharacterId) -> bool {
+        let Some(target) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if !self.simple_baddy_can_bless_self(&target) {
+            return false;
+        }
+        self.setup_simple_baddy_spell_action(character_id, |character, items, tick| {
+            do_bless(character, &target, items, tick, None)
+        })
+    }
+
+    fn simple_baddy_needs_regeneration(&self, character: &Character) -> bool {
+        character.mana < character_value(character, CharacterValue::Mana) * POWERSCALE
+            || character.hp < character_value(character, CharacterValue::Hp) * POWERSCALE
+    }
+
+    fn setup_simple_baddy_regenerate_action(&mut self, character_id: CharacterId) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if !self.simple_baddy_needs_regeneration(&character) {
+            return false;
+        }
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        if do_idle(character, (TICKS_PER_SECOND / 2) as i32).is_err() {
+            return false;
+        }
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
+            data.lastfight = self.tick.0 as i32;
+        }
+        true
+    }
+
+    fn simple_baddy_regenerate_task_value(&self, character: &Character) -> i32 {
+        let base = character_value(character, CharacterValue::Fireball)
+            .max(character_value(character, CharacterValue::Flash))
+            .max(character_value(character, CharacterValue::Freeze))
+            .max(character_value(character, CharacterValue::Attack))
+            * 2;
+        let last_hit = match character.driver_state.as_ref() {
+            Some(CharacterDriverState::SimpleBaddy(data)) => data.last_hit,
+            _ => 0,
+        };
+        let tick = self.tick.0 as i32;
+        let regen_time = TICKS_PER_SECOND as i32;
+        let regen_diff = character.regen_ticker as i32 + regen_time - tick;
+        if regen_diff <= 0 {
+            return base + FIGHT_DRIVER_HIGH_PRIO;
+        }
+        let hit_diff = last_hit + regen_time * 2 - tick;
+        if hit_diff <= 0 {
+            return base + FIGHT_DRIVER_LOW_PRIO;
+        }
+        (base * regen_time * 2 - base * hit_diff) / (regen_time * 2) + FIGHT_DRIVER_LOW_PRIO
+    }
+
+    fn simple_baddy_freeze_modifier(&self, attacker: &Character, target: &Character) -> i32 {
+        freeze_speed_modifier(
+            spell_power(
+                character_value(attacker, CharacterValue::Freeze),
+                character_value(attacker, CharacterValue::Tactics),
+            ),
+            character_value(target, CharacterValue::Immunity),
+            character_value(target, CharacterValue::Tactics),
+            character_value_present(target, CharacterValue::Tactics) != 0,
+            attacker.flags.contains(CharacterFlags::IDEMON),
+            character_value(attacker, CharacterValue::Demon),
+            character_value(target, CharacterValue::Cold),
+        )
+    }
+
+    fn setup_simple_baddy_freeze_attack(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if character_value(&attacker, CharacterValue::Freeze) <= 1
+            || attacker.mana < FREEZE_COST
+            || tile_char_dist(&attacker, target) >= 4
+            || may_add_spell(target, &self.items, IDR_FREEZE, self.tick.0 as u32).is_none()
+            || self.simple_baddy_freeze_modifier(&attacker, target) >= -10
+        {
+            return false;
+        }
+        self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
+            do_freeze(character)
+        })
+    }
+
+    fn setup_simple_baddy_ball_attack(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+        random: &mut impl FnMut(u32) -> u32,
+    ) -> bool {
+        let target_x = usize::from(target.x).saturating_sub(1)
+            + usize::try_from(random(3).min(2)).unwrap_or(0);
+        let target_y = usize::from(target.y).saturating_sub(1)
+            + usize::try_from(random(3).min(2)).unwrap_or(0);
+        self.setup_simple_baddy_spell_action(character_id, |character, items, tick| {
+            do_ball(character, items, target_x, target_y, tick)
+        })
+    }
+
+    fn setup_simple_baddy_flash_attack(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if tile_char_dist(&attacker, target) >= 4
+            || may_add_spell(&attacker, &self.items, IDR_FLASH, self.tick.0 as u32).is_none()
+        {
+            return false;
+        }
+        self.setup_simple_baddy_spell_action(character_id, |character, items, tick| {
+            do_flash(character, items, tick)
+        })
+    }
+
+    fn simple_baddy_can_warcry(&self, attacker: &Character, target: &Character) -> bool {
+        if character_value(attacker, CharacterValue::Warcry) <= 1
+            || attacker.endurance
+                < character_value(attacker, CharacterValue::Warcry) * POWERSCALE / 3
+            || char_dist(attacker, target) >= 8
+        {
+            return false;
+        }
+        let modifier = warcry_speed_modifier(
+            spell_power(
+                character_value(attacker, CharacterValue::Warcry),
+                character_value(attacker, CharacterValue::Tactics),
+            ),
+            character_value(target, CharacterValue::Immunity),
+            character_value(target, CharacterValue::Tactics),
+            character_value_present(target, CharacterValue::Tactics) != 0,
+        );
+        let target_accepts = modifier < -10
+            && may_add_spell(target, &self.items, IDR_WARCRY, self.tick.0 as u32).is_some();
+        let caster_needs_shield = character_value_present(attacker, CharacterValue::MagicShield)
+            == 0
+            && attacker.lifeshield
+                < character_value(attacker, CharacterValue::Warcry) * POWERSCALE / 4;
+        target_accepts || caster_needs_shield
+    }
+
+    fn setup_simple_baddy_warcry_attack(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if !self.simple_baddy_can_warcry(&attacker, target) {
+            return false;
+        }
+        self.setup_simple_baddy_spell_action(character_id, |character, items, _tick| {
+            do_warcry(character, items)
+        })
+    }
+
+    #[allow(dead_code)]
     fn setup_simple_baddy_distance_attack(
         &mut self,
         character_id: CharacterId,
@@ -3014,6 +3202,7 @@ impl World {
         self.setup_simple_baddy_distance_driver(character_id, target, 3, area_id, true)
     }
 
+    #[allow(dead_code)]
     fn setup_simple_baddy_fireball_distance_attack(
         &mut self,
         character_id: CharacterId,
@@ -3448,6 +3637,259 @@ impl World {
         true
     }
 
+    fn setup_simple_baddy_weighted_fight_task(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+        area_id: u16,
+        random: &mut impl FnMut(u32) -> u32,
+    ) -> bool {
+        let mut tasks = self.simple_baddy_fight_tasks(character_id, target);
+        let level = self
+            .characters
+            .get(&character_id)
+            .map(|character| character.level as i32)
+            .unwrap_or_default();
+        order_fight_driver_tasks(&mut tasks, level, |_| 1);
+
+        for task in tasks {
+            let ret = match task.kind {
+                FightDriverTaskKind::Freeze => {
+                    self.setup_simple_baddy_freeze_attack(character_id, target)
+                }
+                FightDriverTaskKind::Heal => self.setup_simple_baddy_heal_action(character_id),
+                FightDriverTaskKind::MagicShield => {
+                    self.setup_simple_baddy_magicshield_action(character_id)
+                }
+                FightDriverTaskKind::EarthMud => {
+                    self.setup_simple_baddy_earthmud_attack(character_id, target)
+                }
+                FightDriverTaskKind::Bless => {
+                    self.setup_simple_baddy_self_bless_action(character_id)
+                }
+                FightDriverTaskKind::Fireball | FightDriverTaskKind::FireRing => {
+                    self.setup_simple_baddy_fireball_attack(character_id, target, area_id)
+                }
+                FightDriverTaskKind::Ball => {
+                    self.setup_simple_baddy_ball_attack(character_id, target, random)
+                }
+                FightDriverTaskKind::Flash => {
+                    self.setup_simple_baddy_flash_attack(character_id, target)
+                }
+                FightDriverTaskKind::Warcry => {
+                    self.setup_simple_baddy_warcry_attack(character_id, target)
+                }
+                FightDriverTaskKind::Attack => {
+                    self.setup_simple_baddy_attack_driver(character_id, target)
+                        || self.setup_simple_baddy_attack_move(character_id, target, area_id)
+                }
+                FightDriverTaskKind::Regenerate => {
+                    self.setup_simple_baddy_regenerate_action(character_id)
+                }
+                FightDriverTaskKind::Distance3 => {
+                    self.setup_simple_baddy_distance_driver(character_id, target, 3, area_id, true)
+                }
+                FightDriverTaskKind::Distance7 => {
+                    self.setup_simple_baddy_distance_driver(character_id, target, 7, area_id, false)
+                }
+                FightDriverTaskKind::Pulse => self.setup_simple_baddy_pulse_attack(character_id),
+                FightDriverTaskKind::AttackBack => {
+                    self.setup_simple_baddy_attack_back_move(character_id, target, area_id)
+                }
+                FightDriverTaskKind::MoveRight => {
+                    self.setup_simple_baddy_lane_walk(character_id, Direction::Right, area_id)
+                }
+                FightDriverTaskKind::MoveLeft => {
+                    self.setup_simple_baddy_lane_walk(character_id, Direction::Left, area_id)
+                }
+                FightDriverTaskKind::MoveUp => {
+                    self.setup_simple_baddy_lane_walk(character_id, Direction::Up, area_id)
+                }
+                FightDriverTaskKind::MoveDown => {
+                    self.setup_simple_baddy_lane_walk(character_id, Direction::Down, area_id)
+                }
+                FightDriverTaskKind::Flee | FightDriverTaskKind::EarthRain => false,
+            };
+            if ret {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn simple_baddy_fight_tasks(
+        &self,
+        character_id: CharacterId,
+        target: &Character,
+    ) -> Vec<FightDriverTask> {
+        let Some(attacker) = self.characters.get(&character_id) else {
+            return Vec::new();
+        };
+        let mut tasks = Vec::new();
+        let character_distance = char_dist(attacker, target);
+        let tile_distance = tile_char_dist(attacker, target);
+        let current_tick = self.tick.0 as u32;
+        let target_has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+
+        if character_value(attacker, CharacterValue::Freeze) > 1
+            && attacker.mana >= FREEZE_COST
+            && tile_distance < 4
+            && may_add_spell(target, &self.items, IDR_FREEZE, current_tick).is_some()
+            && self.simple_baddy_freeze_modifier(attacker, target) < -10
+        {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Freeze,
+                value: FIGHT_DRIVER_HIGH_PRIO + character_value(attacker, CharacterValue::Freeze),
+            });
+        }
+        if self.simple_baddy_can_heal_self(attacker) {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Heal,
+                value: FIGHT_DRIVER_HIGH_PRIO + character_value(attacker, CharacterValue::Heal),
+            });
+        }
+        if self.simple_baddy_can_magicshield_self(attacker) {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::MagicShield,
+                value: FIGHT_DRIVER_HIGH_PRIO
+                    + character_value(attacker, CharacterValue::MagicShield),
+            });
+        }
+        let earthmud_good = self.simple_baddy_earthmud_value(target);
+        if attacker.flags.contains(CharacterFlags::EDEMON)
+            && character_value_present(attacker, CharacterValue::Demon) == 30
+            && attacker.hp >= character_value(attacker, CharacterValue::Hp) * POWERSCALE / 2
+            && earthmud_good > 0
+        {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::EarthMud,
+                value: simple_baddy_earth_task_value(earthmud_good),
+            });
+        }
+        if self.simple_baddy_can_bless_self(attacker) {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Bless,
+                value: FIGHT_DRIVER_HIGH_PRIO + character_value(attacker, CharacterValue::Bless),
+            });
+        }
+        let fireball_damage_value = fireball_damage(
+            character_value(attacker, CharacterValue::Fireball),
+            character_value(target, CharacterValue::Immunity),
+            character_value(target, CharacterValue::Tactics),
+            target_has_tactics,
+        );
+        if character_value(attacker, CharacterValue::Fireball) > 1
+            && fireball_damage_value >= POWERSCALE
+            && attacker.mana >= FIREBALL_COST
+        {
+            let fireball_value =
+                FIGHT_DRIVER_MED_PRIO + character_value(attacker, CharacterValue::Fireball);
+            if tile_distance < 2
+                && may_add_spell(attacker, &self.items, IDR_FIRERING, current_tick).is_some()
+            {
+                tasks.push(FightDriverTask {
+                    kind: FightDriverTaskKind::FireRing,
+                    value: fireball_value,
+                });
+            } else if self.fireball_line_hits_target(
+                character_id,
+                target.id,
+                usize::from(attacker.x),
+                usize::from(attacker.y),
+                usize::from(target.x),
+                usize::from(target.y),
+            ) {
+                tasks.push(FightDriverTask {
+                    kind: FightDriverTaskKind::Fireball,
+                    value: fireball_value,
+                });
+            } else if let Some((kind, distance)) =
+                self.simple_baddy_fireball_lane_task(attacker, target)
+            {
+                tasks.push(FightDriverTask {
+                    kind,
+                    value: fireball_value / distance + 1,
+                });
+            }
+        }
+        if character_value(attacker, CharacterValue::Flash) > 1
+            && strike_damage(
+                spell_power(
+                    character_value(attacker, CharacterValue::Flash),
+                    character_value(attacker, CharacterValue::Tactics),
+                ),
+                character_value(target, CharacterValue::Immunity),
+                character_value(target, CharacterValue::Tactics),
+                target_has_tactics,
+            ) > POWERSCALE
+            && attacker.mana >= FLASH_COST
+        {
+            if character_distance > 10 && character_distance < 30 {
+                tasks.push(FightDriverTask {
+                    kind: FightDriverTaskKind::Ball,
+                    value: FIGHT_DRIVER_MED_PRIO + character_value(attacker, CharacterValue::Flash),
+                });
+            }
+            if tile_distance < 4
+                && may_add_spell(attacker, &self.items, IDR_FLASH, current_tick).is_some()
+            {
+                tasks.push(FightDriverTask {
+                    kind: FightDriverTaskKind::Flash,
+                    value: FIGHT_DRIVER_MED_PRIO
+                        + character_value(attacker, CharacterValue::Flash)
+                        + character_value(attacker, CharacterValue::Flash) / 2,
+                });
+            }
+        }
+        if self.simple_baddy_can_warcry(attacker, target) {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Warcry,
+                value: FIGHT_DRIVER_HIGH_PRIO
+                    + character_value(attacker, CharacterValue::Warcry) / 2,
+            });
+        }
+        tasks.push(FightDriverTask {
+            kind: FightDriverTaskKind::Attack,
+            value: simple_baddy_attack_task_value(attacker),
+        });
+        if self.simple_baddy_needs_regeneration(attacker) {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Regenerate,
+                value: self.simple_baddy_regenerate_task_value(attacker),
+            });
+        }
+        let distance3 = self.simple_baddy_distance3_task_value(attacker, target);
+        if distance3 > 0 {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Distance3,
+                value: distance3,
+            });
+        }
+        let distance7 = self.simple_baddy_distance7_task_value(attacker, target);
+        if distance7 > 0 {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Distance7,
+                value: distance7,
+            });
+        }
+        let pulse = self.simple_baddy_pulse_value(character_id);
+        if pulse > 0 {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Pulse,
+                value: FIGHT_DRIVER_HIGH_PRIO + pulse,
+            });
+        }
+        if self.simple_baddy_attackback_value(character_id, target) > 0 {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::AttackBack,
+                value: FIGHT_DRIVER_HIGH_PRIO,
+            });
+        }
+
+        tasks
+    }
+
     fn simple_baddy_pulse_value(&self, character_id: CharacterId) -> i32 {
         let Some(caster) = self.characters.get(&character_id) else {
             return 0;
@@ -3675,6 +4117,72 @@ impl World {
         false
     }
 
+    fn simple_baddy_fireball_lane_task(
+        &self,
+        attacker: &Character,
+        target: &Character,
+    ) -> Option<(FightDriverTaskKind, i32)> {
+        let directions = [
+            (Direction::Right, FightDriverTaskKind::MoveRight),
+            (Direction::Left, FightDriverTaskKind::MoveLeft),
+            (Direction::Down, FightDriverTaskKind::MoveDown),
+            (Direction::Up, FightDriverTaskKind::MoveUp),
+        ];
+        let mut blocked_directions = [false; 4];
+
+        for distance in 1..5 {
+            for (index, (direction, kind)) in directions.into_iter().enumerate() {
+                if blocked_directions[index] {
+                    continue;
+                }
+                let (dx, dy) = direction.delta();
+                let Some(x) = offset_coordinate(usize::from(attacker.x), dx * distance as i16)
+                else {
+                    blocked_directions[index] = true;
+                    continue;
+                };
+                let Some(y) = offset_coordinate(usize::from(attacker.y), dy * distance as i16)
+                else {
+                    blocked_directions[index] = true;
+                    continue;
+                };
+                if x >= MAX_MAP || y >= MAX_MAP || self.map.blocks_movement(x, y) {
+                    blocked_directions[index] = true;
+                    continue;
+                }
+                if self.fireball_line_hits_target(
+                    attacker.id,
+                    target.id,
+                    x,
+                    y,
+                    usize::from(target.x),
+                    usize::from(target.y),
+                ) {
+                    return Some((kind, distance));
+                }
+            }
+        }
+
+        None
+    }
+
+    fn setup_simple_baddy_lane_walk(
+        &mut self,
+        character_id: CharacterId,
+        direction: Direction,
+        area_id: u16,
+    ) -> bool {
+        if !self.setup_walk_direction(character_id, direction, area_id) {
+            return false;
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
+                data.lastfight = self.tick.0 as i32;
+            }
+        }
+        true
+    }
+
     fn fireball_line_hits_target(
         &self,
         attacker_id: CharacterId,
@@ -3754,6 +4262,7 @@ impl World {
         false
     }
 
+    #[allow(dead_code)]
     fn setup_simple_baddy_spell_attack(
         &mut self,
         character_id: CharacterId,
@@ -3876,6 +4385,126 @@ impl World {
             data.lastfight = self.tick.0 as i32;
         }
         true
+    }
+
+    fn simple_baddy_distance3_task_value(&self, attacker: &Character, target: &Character) -> i32 {
+        let current_tick = self.tick.0 as u32;
+        let mut value = 0;
+        if attacker.mana > POWERSCALE * 3
+            && character_value_present(attacker, CharacterValue::Freeze) != 0
+            && tile_char_dist(attacker, target) > 3
+            && may_add_spell(target, &self.items, IDR_FREEZE, current_tick).is_some()
+            && self.simple_baddy_freeze_modifier(attacker, target) < -10
+        {
+            value += if character_value_present(attacker, CharacterValue::Attack) != 0 {
+                FIGHT_DRIVER_LOW_PRIO + character_value(attacker, CharacterValue::Freeze)
+            } else {
+                FIGHT_DRIVER_MED_PRIO + character_value(attacker, CharacterValue::Freeze)
+            };
+        }
+        if attacker.mana > POWERSCALE * 3
+            && character_value_present(attacker, CharacterValue::Flash) != 0
+            && may_add_spell(attacker, &self.items, IDR_FLASH, current_tick).is_none()
+        {
+            value += if character_value_present(attacker, CharacterValue::Attack) != 0 {
+                FIGHT_DRIVER_LOW_PRIO + character_value(attacker, CharacterValue::Flash)
+            } else {
+                FIGHT_DRIVER_MED_PRIO + character_value(attacker, CharacterValue::Flash)
+            };
+        }
+        value
+    }
+
+    fn simple_baddy_distance7_task_value(&self, attacker: &Character, target: &Character) -> i32 {
+        if attacker.mana <= FIREBALL_COST
+            || character_value_present(attacker, CharacterValue::Fireball) == 0
+            || character_value_present(attacker, CharacterValue::Fireball)
+                <= character_value_present(attacker, CharacterValue::Flash)
+            || may_add_spell(attacker, &self.items, IDR_FLASH, self.tick.0 as u32).is_none()
+        {
+            return 0;
+        }
+        let damage = fireball_damage(
+            character_value(attacker, CharacterValue::Fireball),
+            character_value(target, CharacterValue::Immunity),
+            character_value(target, CharacterValue::Tactics),
+            character_value_present(target, CharacterValue::Tactics) != 0,
+        );
+        if damage < POWERSCALE {
+            return 0;
+        }
+        if character_value_present(attacker, CharacterValue::Attack) != 0 {
+            FIGHT_DRIVER_LOW_PRIO + character_value(attacker, CharacterValue::Fireball)
+        } else {
+            FIGHT_DRIVER_MED_PRIO + character_value(attacker, CharacterValue::Fireball)
+        }
+    }
+
+    fn simple_baddy_attackback_value(&self, character_id: CharacterId, target: &Character) -> i32 {
+        let Some(attacker) = self.characters.get(&character_id) else {
+            return 0;
+        };
+        let Ok(direction) = Direction::try_from(target.dir) else {
+            return 0;
+        };
+        let (dx, dy) = direction.delta();
+        if dx != 0 && dy != 0 {
+            return 0;
+        }
+        let Some(back_x) = offset_coordinate(usize::from(target.x), -dx) else {
+            return 0;
+        };
+        let Some(back_y) = offset_coordinate(usize::from(target.y), -dy) else {
+            return 0;
+        };
+        if back_x < 1 || back_y < 1 || back_x >= MAX_MAP || back_y >= MAX_MAP {
+            return 0;
+        }
+        if self.map.blocks_movement(back_x, back_y) {
+            return 0;
+        }
+        let Some(front_x) = offset_coordinate(usize::from(target.x), dx) else {
+            return 0;
+        };
+        let Some(front_y) = offset_coordinate(usize::from(target.y), dy) else {
+            return 0;
+        };
+        if usize::from(attacker.x) == front_x && usize::from(attacker.y) == front_y {
+            return 0;
+        }
+        if target.action == action::IDLE
+            && self.tick.0.saturating_sub(u64::from(target.regen_ticker)) > TICKS_PER_SECOND / 2
+        {
+            return FIGHT_DRIVER_HIGH_PRIO;
+        }
+        let front_occupied = self
+            .map
+            .tile(front_x, front_y)
+            .is_some_and(|tile| tile.character != 0);
+        if !front_occupied {
+            return 0;
+        }
+        let Some(side_x) = offset_coordinate(usize::from(target.x), dy) else {
+            return 0;
+        };
+        let Some(side_y) = offset_coordinate(usize::from(target.y), dx) else {
+            return 0;
+        };
+        let same_group_side_occupied = self
+            .map
+            .tile(side_x, side_y)
+            .and_then(|tile| {
+                (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+            })
+            .and_then(|side_id| self.characters.get(&side_id))
+            .is_some_and(|side_character| {
+                side_character.id != character_id && side_character.group == attacker.group
+            });
+        if same_group_side_occupied {
+            0
+        } else {
+            FIGHT_DRIVER_HIGH_PRIO
+        }
     }
 
     fn simple_baddy_enemy_tracking(
@@ -8452,6 +9081,27 @@ fn character_value_present(character: &Character, value: CharacterValue) -> i32 
         .and_then(|values| values.get(value as usize))
         .copied()
         .unwrap_or_default() as i32
+}
+
+fn simple_baddy_earth_task_value(good_fields: i32) -> i32 {
+    if good_fields < 1 {
+        0
+    } else if good_fields < 2 {
+        FIGHT_DRIVER_LOW_PRIO
+    } else if good_fields < 4 {
+        FIGHT_DRIVER_MED_PRIO
+    } else {
+        FIGHT_DRIVER_HIGH_PRIO + good_fields * 20
+    }
+}
+
+fn simple_baddy_attack_task_value(character: &Character) -> i32 {
+    let attack = character_value(character, CharacterValue::Attack);
+    if character_value_present(character, CharacterValue::Attack) != 0 {
+        FIGHT_DRIVER_MED_PRIO + attack * 2 / 7 + 10
+    } else {
+        FIGHT_DRIVER_LOW_PRIO + attack / 3
+    }
 }
 
 fn spell_duration_ticks(character: &Character, base_duration: i32) -> i32 {
