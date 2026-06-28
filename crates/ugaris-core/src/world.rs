@@ -103,6 +103,56 @@ enum DoorToggleResult {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FightDriverTaskKind {
+    Freeze,
+    Fireball,
+    Ball,
+    Flash,
+    Warcry,
+    Attack,
+    MoveRight,
+    MoveLeft,
+    MoveUp,
+    MoveDown,
+    Regenerate,
+    Distance3,
+    Distance7,
+    Bless,
+    EarthRain,
+    EarthMud,
+    Heal,
+    MagicShield,
+    Pulse,
+    AttackBack,
+    Flee,
+    FireRing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FightDriverTask {
+    kind: FightDriverTaskKind,
+    value: i32,
+}
+
+const FIGHT_DRIVER_LOW_PRIO: i32 = 1;
+const FIGHT_DRIVER_MED_PRIO: i32 = 500;
+const FIGHT_DRIVER_HIGH_PRIO: i32 = 750;
+
+fn order_fight_driver_tasks(
+    tasks: &mut [FightDriverTask],
+    character_level: i32,
+    mut random_below: impl FnMut(i32) -> i32,
+) {
+    let silliness = character_level / 2 + 5;
+    if silliness > 1 {
+        for task in tasks.iter_mut() {
+            task.value += random_below(silliness).clamp(0, silliness - 1);
+        }
+    }
+    tasks.sort_by(|left, right| right.value.cmp(&left.value));
+}
+
 fn item_light_may_have_changed(outcome: &ItemDriverOutcome) -> bool {
     matches!(
         outcome,
@@ -9292,6 +9342,88 @@ mod tests {
                 last_y: 10,
             }]
         );
+    }
+
+    #[test]
+    fn fight_driver_task_order_sorts_by_descending_legacy_value() {
+        let all_legacy_task_kinds = [
+            FightDriverTaskKind::Freeze,
+            FightDriverTaskKind::Fireball,
+            FightDriverTaskKind::Ball,
+            FightDriverTaskKind::Flash,
+            FightDriverTaskKind::Warcry,
+            FightDriverTaskKind::Attack,
+            FightDriverTaskKind::MoveRight,
+            FightDriverTaskKind::MoveLeft,
+            FightDriverTaskKind::MoveUp,
+            FightDriverTaskKind::MoveDown,
+            FightDriverTaskKind::Regenerate,
+            FightDriverTaskKind::Distance3,
+            FightDriverTaskKind::Distance7,
+            FightDriverTaskKind::Bless,
+            FightDriverTaskKind::EarthRain,
+            FightDriverTaskKind::EarthMud,
+            FightDriverTaskKind::Heal,
+            FightDriverTaskKind::MagicShield,
+            FightDriverTaskKind::Pulse,
+            FightDriverTaskKind::AttackBack,
+            FightDriverTaskKind::Flee,
+            FightDriverTaskKind::FireRing,
+        ];
+        assert_eq!(all_legacy_task_kinds.len(), 22);
+
+        let mut tasks = [
+            FightDriverTask {
+                kind: FightDriverTaskKind::Attack,
+                value: FIGHT_DRIVER_LOW_PRIO + 20,
+            },
+            FightDriverTask {
+                kind: FightDriverTaskKind::Fireball,
+                value: FIGHT_DRIVER_MED_PRIO + 5,
+            },
+            FightDriverTask {
+                kind: FightDriverTaskKind::Heal,
+                value: FIGHT_DRIVER_HIGH_PRIO + 1,
+            },
+        ];
+
+        order_fight_driver_tasks(&mut tasks, -10, |_| {
+            unreachable!("no silliness at level -10")
+        });
+
+        assert_eq!(
+            tasks.iter().map(|task| task.kind).collect::<Vec<_>>(),
+            vec![
+                FightDriverTaskKind::Heal,
+                FightDriverTaskKind::Fireball,
+                FightDriverTaskKind::Attack,
+            ]
+        );
+    }
+
+    #[test]
+    fn fight_driver_task_order_adds_c_silliness_rolls_before_sorting() {
+        let mut tasks = [
+            FightDriverTask {
+                kind: FightDriverTaskKind::Attack,
+                value: 100,
+            },
+            FightDriverTask {
+                kind: FightDriverTaskKind::Flash,
+                value: 103,
+            },
+        ];
+        let mut rolls = [4, 0].into_iter();
+
+        order_fight_driver_tasks(&mut tasks, 0, |below| {
+            assert_eq!(below, 5);
+            rolls.next().unwrap()
+        });
+
+        assert_eq!(tasks[0].kind, FightDriverTaskKind::Attack);
+        assert_eq!(tasks[0].value, 104);
+        assert_eq!(tasks[1].kind, FightDriverTaskKind::Flash);
+        assert_eq!(tasks[1].value, 103);
     }
 
     #[test]
