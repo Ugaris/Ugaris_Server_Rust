@@ -1151,17 +1151,40 @@ impl World {
     }
 
     pub fn tick_effects(&mut self) {
-        let mut state = self.tick.0.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-        self.tick_effects_with_random(|limit| {
-            if limit <= 0 {
-                return 0;
-            }
-            state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-            (state % limit as u64) as i32
+        self.tick_effects_with_attack_policy(|_caster_id, caster, target, map| {
+            can_attack(caster, target, map)
         });
     }
 
+    pub fn tick_effects_with_attack_policy(
+        &mut self,
+        mut can_effect_attack: impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) {
+        let mut state = self.tick.0.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        self.tick_effects_with_random_and_attack_policy(
+            |limit| {
+                if limit <= 0 {
+                    return 0;
+                }
+                state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                (state % limit as u64) as i32
+            },
+            &mut can_effect_attack,
+        );
+    }
+
     pub fn tick_effects_with_random(&mut self, mut random_below: impl FnMut(i32) -> i32) {
+        self.tick_effects_with_random_and_attack_policy(
+            &mut random_below,
+            |_, caster, target, map| can_attack(caster, target, map),
+        );
+    }
+
+    pub fn tick_effects_with_random_and_attack_policy(
+        &mut self,
+        mut random_below: impl FnMut(i32) -> i32,
+        mut can_effect_attack: impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) {
         let effect_ids: Vec<u32> = self.effects.keys().copied().collect();
         for effect_id in effect_ids {
             match self
@@ -1169,8 +1192,8 @@ impl World {
                 .get(&effect_id)
                 .map(|effect| effect.effect_type)
             {
-                Some(EF_FIREBALL) => self.tick_fireball_effect(effect_id),
-                Some(EF_BALL) => self.tick_ball_effect(effect_id),
+                Some(EF_FIREBALL) => self.tick_fireball_effect(effect_id, &mut can_effect_attack),
+                Some(EF_BALL) => self.tick_ball_effect(effect_id, &mut can_effect_attack),
                 Some(EF_EDEMONBALL) => self.tick_edemonball_effect(effect_id),
                 Some(EF_STRIKE | EF_PULSE) => self.tick_strike_effect(effect_id),
                 Some(EF_BURN) => self.tick_burn_effect(effect_id),
@@ -1261,7 +1284,11 @@ impl World {
         }
     }
 
-    fn tick_ball_effect(&mut self, effect_id: u32) {
+    fn tick_ball_effect(
+        &mut self,
+        effect_id: u32,
+        can_effect_attack: &mut impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) {
         let Some(effect) = self.effects.get(&effect_id).cloned() else {
             return;
         };
@@ -1321,10 +1348,16 @@ impl World {
             self.remove_effect_from_map(effect_id);
             self.set_effect_on_map(effect_id, tile_x, tile_y);
         }
-        self.apply_ball_strikes(effect_id, tile_x, tile_y);
+        self.apply_ball_strikes(effect_id, tile_x, tile_y, can_effect_attack);
     }
 
-    fn apply_ball_strikes(&mut self, effect_id: u32, x: i32, y: i32) {
+    fn apply_ball_strikes(
+        &mut self,
+        effect_id: u32,
+        x: i32,
+        y: i32,
+        can_effect_attack: &mut impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) {
         let Some(effect) = self.effects.get(&effect_id).cloned() else {
             return;
         };
@@ -1362,7 +1395,7 @@ impl World {
                 let Some(target) = self.characters.get(&target_id) else {
                     continue;
                 };
-                if !can_attack(&caster, target, &self.map) {
+                if !can_effect_attack(caster_id, &caster, target, &self.map) {
                     continue;
                 }
                 let (Ok(ball_x), Ok(ball_y)) = (usize::try_from(x), usize::try_from(y)) else {
@@ -1405,7 +1438,11 @@ impl World {
         }
     }
 
-    fn tick_fireball_effect(&mut self, effect_id: u32) {
+    fn tick_fireball_effect(
+        &mut self,
+        effect_id: u32,
+        can_effect_attack: &mut impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) {
         let Some(effect) = self.effects.get(&effect_id).cloned() else {
             return;
         };
@@ -1427,7 +1464,12 @@ impl World {
         let raw_dx = effect.to_x - effect.from_x;
         let raw_dy = effect.to_y - effect.from_y;
         if raw_dx == 0 && raw_dy == 0 {
-            self.explode_fireball_effect(effect_id, effect.x / 1024, effect.y / 1024);
+            self.explode_fireball_effect(
+                effect_id,
+                effect.x / 1024,
+                effect.y / 1024,
+                can_effect_attack,
+            );
             return;
         }
 
@@ -1458,7 +1500,7 @@ impl World {
                     effect.last_x = last_x;
                     effect.last_y = last_y;
                 }
-                self.explode_fireball_effect(effect_id, tile_x, tile_y);
+                self.explode_fireball_effect(effect_id, tile_x, tile_y, can_effect_attack);
                 return;
             }
         }
@@ -1639,7 +1681,13 @@ impl World {
         }
     }
 
-    fn explode_fireball_effect(&mut self, effect_id: u32, x: i32, y: i32) {
+    fn explode_fireball_effect(
+        &mut self,
+        effect_id: u32,
+        x: i32,
+        y: i32,
+        can_effect_attack: &mut impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) {
         let Some(effect) = self.effects.get(&effect_id).cloned() else {
             return;
         };
@@ -1692,7 +1740,7 @@ impl World {
                 let Some(target) = self.characters.get(&target_id) else {
                     continue;
                 };
-                if !can_attack(&caster, target, &self.map) {
+                if !can_effect_attack(caster_id, &caster, target, &self.map) {
                     return;
                 }
                 let target = target.clone();
@@ -16586,6 +16634,34 @@ mod tests {
     }
 
     #[test]
+    fn fireball_effect_respects_runtime_attack_policy() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 15;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        let mut target = character(2);
+        target
+            .flags
+            .insert(CharacterFlags::ALIVE | CharacterFlags::PLAYER);
+        target.hp = 30 * POWERSCALE;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        world.create_fireball_effect(&caster);
+
+        world.tick_effects_with_attack_policy(|_, _, _, _| false);
+        world.tick_effects_with_attack_policy(|_, _, _, _| false);
+
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 30 * POWERSCALE);
+        assert!(!target.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
     fn fireball_impact_uses_legacy_hurt_reduction() {
         let mut world = World::default();
         let mut caster = character(1);
@@ -16873,6 +16949,40 @@ mod tests {
         assert_eq!(sounds.len(), 1);
         assert_eq!(sounds[0].character_id, CharacterId(1));
         assert_eq!(sounds[0].special.special_type, 30);
+    }
+
+    #[test]
+    fn ball_effect_respects_runtime_attack_policy() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 15;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Flash as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
+        let mut target = character(2);
+        target
+            .flags
+            .insert(CharacterFlags::ALIVE | CharacterFlags::PLAYER);
+        target.hp = 30 * POWERSCALE;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        let effect_id = world.create_ball_effect(&caster);
+
+        world.tick_effects_with_attack_policy(|_, _, _, _| false);
+
+        let effect = world.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.number_of_enemies, 0);
+        assert!(!world
+            .effects
+            .values()
+            .any(|effect| effect.effect_type == EF_STRIKE));
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 30 * POWERSCALE);
+        assert!(!target.flags.contains(CharacterFlags::UPDATE));
     }
 
     #[test]

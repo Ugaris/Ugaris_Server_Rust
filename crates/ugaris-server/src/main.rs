@@ -13,6 +13,7 @@ use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{CharacterDriverState, CDR_SIMPLEBADDY},
+    do_action::{can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy},
     effect::Effect,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
@@ -43,6 +44,16 @@ use ugaris_core::{
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
 };
+
+struct RuntimePlayerAttackPolicy<'a> {
+    attacker_runtime: &'a PlayerRuntime,
+}
+
+impl ClanAttackPolicy for RuntimePlayerAttackPolicy<'_> {
+    fn has_pk_hate(&self, _attacker: &Character, defender: &Character) -> bool {
+        self.attacker_runtime.has_pk_hate_for(defender.id.0)
+    }
+}
 use ugaris_db::{
     CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
     LoginRequest,
@@ -9005,7 +9016,20 @@ async fn main() -> anyhow::Result<()> {
         tokio::select! {
             _ = tick.tick() => {
                 world.advance();
-                world.tick_effects();
+                world.tick_effects_with_attack_policy(|caster_id, caster, target, map| {
+                    if let Some(player) = runtime.player_for_character(caster_id) {
+                        let attack_policy = RuntimePlayerAttackPolicy { attacker_runtime: player };
+                        can_attack_in_area_with_clan_policy(
+                            caster,
+                            target,
+                            map,
+                            config.area_id,
+                            &attack_policy,
+                        )
+                    } else {
+                        can_attack_in_area(caster, target, map, config.area_id)
+                    }
+                });
                 let timer_outcomes = world.process_due_timers(config.area_id);
                 if !timer_outcomes.is_empty() {
                     info!(count = timer_outcomes.len(), tick = world.tick.0, "processed timer callbacks");
