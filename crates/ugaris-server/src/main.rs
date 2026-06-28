@@ -124,6 +124,19 @@ fn apply_pk_hate_from_hurt_events(
     }
     applied
 }
+
+fn send_pending_world_system_texts(runtime: &mut ServerRuntime, world: &mut World) -> usize {
+    let mut sent = 0;
+    for event in world.drain_pending_system_texts() {
+        let payload = ugaris_protocol::packet::system_text(&event.message);
+        for (session_id, _) in runtime.sessions_for_character(event.character_id) {
+            if runtime.send_to_session(session_id, payload.clone()) {
+                sent += 1;
+            }
+        }
+    }
+    sent
+}
 use ugaris_db::{
     CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
     LoginRequest,
@@ -10582,6 +10595,11 @@ async fn main() -> anyhow::Result<()> {
                     apply_pk_hate_from_hurt_events(&mut runtime, &mut world, realtime_seconds);
                 if pk_hate_updates != 0 {
                     info!(pk_hate_updates, tick = world.tick.0, "applied PK hate updates from hurt events");
+                }
+
+                let world_text_sessions = send_pending_world_system_texts(&mut runtime, &mut world);
+                if world_text_sessions != 0 {
+                    info!(world_text_sessions, tick = world.tick.0, "queued world system text feedback");
                 }
 
                 let (periodic_diff_sessions, periodic_empty_frames) =

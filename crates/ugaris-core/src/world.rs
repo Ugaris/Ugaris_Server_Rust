@@ -94,6 +94,12 @@ pub struct WorldSoundSpecial {
     pub special: AreaSoundSpecial,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorldSystemText {
+    pub character_id: CharacterId,
+    pub message: String,
+}
+
 const ITEM_DRIVER_TIMER: &str = "item_driver";
 const REMOVE_SPELL_TIMER: &str = "remove_spell";
 const POISON_CALLBACK_TIMER: &str = "poison_callback";
@@ -232,6 +238,7 @@ pub struct World {
     pub area3_palace_lamps: Area3PalaceLampState,
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,
+    pending_system_texts: Vec<WorldSystemText>,
     pending_hurt_events: Vec<LegacyHurtEvent>,
 }
 
@@ -506,6 +513,10 @@ impl World {
 
     pub fn drain_pending_sound_specials(&mut self) -> Vec<WorldSoundSpecial> {
         self.pending_sound_specials.drain(..).collect()
+    }
+
+    pub fn drain_pending_system_texts(&mut self) -> Vec<WorldSystemText> {
+        self.pending_system_texts.drain(..).collect()
     }
 
     pub fn add_item(&mut self, item: Item) {
@@ -8221,7 +8232,15 @@ impl World {
             let curse_strength = character_value_present(&caster, CharacterValue::Demon)
                 - character_value(target, CharacterValue::Cold);
             if caster.flags.contains(CharacterFlags::IDEMON) && curse_strength > 0 {
-                self.install_curse_spell(target_id, curse_strength, curse_strength * 50);
+                if self.install_curse_spell(target_id, curse_strength, curse_strength * 50) {
+                    self.pending_system_texts.push(WorldSystemText {
+                        character_id: target_id,
+                        message: format!(
+                            "You have been frozen by {}. You feel like you'll never thaw again.",
+                            caster.name
+                        ),
+                    });
+                }
             }
         }
         self.queue_sound_area(caster_x, caster_y, 31);
@@ -17592,6 +17611,7 @@ mod tests {
         let mut world = World::default();
         world.tick = Tick(300);
         let mut caster = character(1);
+        caster.name = "Ice Demon".into();
         caster
             .flags
             .insert(CharacterFlags::PLAYER | CharacterFlags::IDEMON);
@@ -17648,6 +17668,15 @@ mod tests {
         assert_eq!(curse_effect.stop_tick, 43_500);
         assert_eq!(curse_effect.strength, 7);
         assert_eq!(world.timers.used_timers(), 2);
+        assert_eq!(
+            world.drain_pending_system_texts(),
+            vec![WorldSystemText {
+                character_id: CharacterId(2),
+                message:
+                    "You have been frozen by Ice Demon. You feel like you'll never thaw again."
+                        .into(),
+            }]
+        );
     }
 
     #[test]
