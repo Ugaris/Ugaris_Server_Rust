@@ -2373,6 +2373,7 @@ impl World {
                             let _ = add_simple_baddy_enemy(character, &caller, target_id, tick);
                             Self::apply_simple_baddy_enemy_tracking(character, target_id, tracking);
                         }
+                        self.sort_simple_baddy_enemies_like_c(character_id);
                     }
                     applied.push(ItemDriverOutcome::Noop);
                 }
@@ -2396,6 +2397,7 @@ impl World {
                             );
                             Self::apply_simple_baddy_enemy_tracking(character, target_id, tracking);
                         }
+                        self.sort_simple_baddy_enemies_like_c(character_id);
                     }
                     applied.push(ItemDriverOutcome::Noop);
                 }
@@ -2415,6 +2417,7 @@ impl World {
                             );
                             Self::apply_simple_baddy_enemy_tracking(character, target_id, tracking);
                         }
+                        self.sort_simple_baddy_enemies_like_c(character_id);
                     }
                     applied.push(ItemDriverOutcome::Noop);
                 }
@@ -3940,7 +3943,53 @@ impl World {
                 data.enemies = updated.clone();
             }
         }
+        self.sort_simple_baddy_enemies_like_c(attacker.id);
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+            .characters
+            .get(&attacker.id)
+            .and_then(|character| character.driver_state.as_ref())
+        {
+            return data.enemies.clone();
+        }
         updated
+    }
+
+    fn sort_simple_baddy_enemies_like_c(&mut self, character_id: CharacterId) {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return;
+        };
+        let mut enemies = match attacker.driver_state.as_ref() {
+            Some(CharacterDriverState::SimpleBaddy(data)) => data.enemies.clone(),
+            _ => return,
+        };
+        enemies.sort_by(|left, right| {
+            let left_distance = attacker.x.abs_diff(left.last_x) + attacker.y.abs_diff(left.last_y);
+            let right_distance =
+                attacker.x.abs_diff(right.last_x) + attacker.y.abs_diff(right.last_y);
+            let left_facing = self
+                .characters
+                .get(&left.target_id)
+                .is_some_and(|target| character_is_facing(&attacker, target));
+            let right_facing = self
+                .characters
+                .get(&right.target_id)
+                .is_some_and(|target| character_is_facing(&attacker, target));
+
+            right
+                .visible
+                .cmp(&left.visible)
+                .then_with(|| (right.priority > 0).cmp(&(left.priority > 0)))
+                .then_with(|| left_distance.cmp(&right_distance))
+                .then_with(|| right_facing.cmp(&left_facing))
+        });
+        enemies.truncate(10);
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+            .characters
+            .get_mut(&character_id)
+            .and_then(|character| character.driver_state.as_mut())
+        {
+            data.enemies = enemies;
+        }
     }
 
     fn simple_baddy_enemy_past_stop_dist(&self, character: &Character, target: &Character) -> bool {
@@ -9316,6 +9365,44 @@ mod tests {
                 last_y: 10,
             }]
         );
+    }
+
+    #[test]
+    fn simple_baddy_enemy_memory_sorts_and_caps_like_c_table() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: (2..14)
+                .map(|id| SimpleBaddyEnemy {
+                    target_id: CharacterId(id),
+                    priority: if id == 12 { 1 } else { 0 },
+                    last_seen_tick: id as i32,
+                    visible: id != 13,
+                    last_x: 10 + id as u16,
+                    last_y: 10,
+                })
+                .collect(),
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+        for id in 2..14 {
+            world.spawn_character(character(id), 10 + id as usize, 10);
+        }
+
+        world.sort_simple_baddy_enemies_like_c(CharacterId(1));
+
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.enemies.len(), 10);
+        assert_eq!(data.enemies[0].target_id, CharacterId(12));
+        assert_eq!(data.enemies[1].target_id, CharacterId(2));
+        assert!(!data
+            .enemies
+            .iter()
+            .any(|enemy| enemy.target_id == CharacterId(13)));
     }
 
     #[test]

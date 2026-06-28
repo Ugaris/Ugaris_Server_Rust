@@ -433,17 +433,22 @@ pub fn add_simple_baddy_enemy_unchecked(
     {
         enemy.priority = enemy.priority.max(priority);
         enemy.last_seen_tick = current_tick;
-        return true;
+        return false;
     }
 
-    data.enemies.push(SimpleBaddyEnemy {
+    let enemy = SimpleBaddyEnemy {
         target_id,
         priority,
         last_seen_tick: current_tick,
         visible: false,
         last_x: 0,
         last_y: 0,
-    });
+    };
+    if data.enemies.len() < 10 {
+        data.enemies.push(enemy);
+    } else {
+        data.enemies[9] = enemy;
+    }
     true
 }
 
@@ -1060,7 +1065,7 @@ mod tests {
             crate::ids::CharacterId(99),
             10,
         ));
-        assert!(add_simple_baddy_enemy(
+        assert!(!add_simple_baddy_enemy(
             &mut character,
             &caller,
             crate::ids::CharacterId(99),
@@ -1081,6 +1086,31 @@ mod tests {
                 last_y: 0,
             }]
         );
+    }
+
+    #[test]
+    fn add_simple_baddy_enemy_keeps_legacy_ten_entry_table() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+
+        for target in 10..22 {
+            assert!(add_simple_baddy_enemy_unchecked(
+                &mut character,
+                crate::ids::CharacterId(target),
+                0,
+                target as i32,
+            ));
+        }
+
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.enemies.len(), 10);
+        assert_eq!(data.enemies[0].target_id, crate::ids::CharacterId(10));
+        assert_eq!(data.enemies[8].target_id, crate::ids::CharacterId(18));
+        assert_eq!(data.enemies[9].target_id, crate::ids::CharacterId(21));
     }
 
     fn test_character() -> Character {
