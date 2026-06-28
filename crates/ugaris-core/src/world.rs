@@ -5903,6 +5903,27 @@ impl World {
                     }
                 }
             }
+            ItemDriverOutcome::LizardFlowerMixed {
+                item_id,
+                character_id,
+                cursor_item_id,
+                combined_bits,
+                ..
+            } => {
+                if self.apply_lizard_flower_mixed(
+                    item_id,
+                    character_id,
+                    cursor_item_id,
+                    combined_bits,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::LizardFlowerDoesNotFit {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             _ => outcome,
         }
     }
@@ -6121,6 +6142,40 @@ impl World {
             item.flags.remove(ItemFlags::USE);
             item.name = "Palace Key".to_string();
             item.description = "The key to the ice palace.".to_string();
+        }
+        self.destroy_item(cursor_item_id)
+    }
+
+    fn apply_lizard_flower_mixed(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        combined_bits: u8,
+    ) -> bool {
+        if !self.character_holds_cursor_item(character_id, cursor_item_id) {
+            return false;
+        }
+        if !self.items.contains_key(&cursor_item_id) {
+            return false;
+        }
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.carried_by != Some(character_id) {
+            return false;
+        }
+
+        item.driver_data.resize(1, 0);
+        item.driver_data[0] = combined_bits;
+        if combined_bits == 7 {
+            item.sprite = 11188;
+            item.driver = crate::item_driver::IDR_OXYPOTION;
+            item.name = "Scuba Potion".to_string();
+            item.description = "A bubbly fluid in a nice bottle.".to_string();
+        } else {
+            item.sprite = 11189;
+            item.description = "A partially finished scuba potion.".to_string();
         }
         self.destroy_item(cursor_item_id)
     }
@@ -9619,9 +9674,9 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_EDEMONBALL,
-            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION,
-            IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP,
-            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
+            IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION,
+            IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
@@ -17720,6 +17775,59 @@ mod tests {
         assert!(character.flags.contains(CharacterFlags::ITEMS));
         assert!(character.flags.contains(CharacterFlags::UPDATE));
         assert!(!world.items.contains_key(&ItemId(10)));
+    }
+
+    #[test]
+    fn lizard_flower_mixer_updates_carried_flower_and_consumes_cursor() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(10));
+        character.cursor_item = Some(ItemId(11));
+        world.add_character(character);
+
+        let mut carried = item(10, ItemFlags::USED | ItemFlags::USE);
+        carried.carried_by = Some(CharacterId(1));
+        carried.driver = IDR_LIZARDFLOWER;
+        carried.driver_data = vec![1];
+        carried.sprite = 11190;
+        world.items.insert(ItemId(10), carried);
+
+        let mut cursor = item(11, ItemFlags::USED | ItemFlags::USE);
+        cursor.carried_by = Some(CharacterId(1));
+        cursor.driver = IDR_LIZARDFLOWER;
+        cursor.driver_data = vec![6];
+        cursor.sprite = 11191;
+        world.items.insert(ItemId(11), cursor);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_LIZARDFLOWER,
+                item_id: ItemId(10),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            31,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::LizardFlowerMixed {
+                combined_bits: 7,
+                complete: true,
+                bottle_message: true,
+                ..
+            }
+        ));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        assert!(!world.items.contains_key(&ItemId(11)));
+        let item = world.items.get(&ItemId(10)).unwrap();
+        assert_eq!(item.driver_data[0], 7);
+        assert_eq!(item.sprite, 11188);
+        assert_eq!(item.driver, IDR_OXYPOTION);
+        assert_eq!(item.name, "Scuba Potion");
+        assert_eq!(item.description, "A bubbly fluid in a nice bottle.");
     }
 
     #[test]

@@ -10061,6 +10061,32 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Interesting idea. Really. Doesn't work, though.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerMixed {
+                                            character_id,
+                                            complete,
+                                            bottle_message,
+                                            ..
+                                        } => {
+                                            if bottle_message {
+                                                feedback.push((
+                                                    character_id,
+                                                    "A bottle pops out of thin air as you try to combine the flowers. You're stunned for a moment, but then you mix the flowers in the bottle."
+                                                        .to_string(),
+                                                ));
+                                            }
+                                            if complete {
+                                                feedback.push((character_id, "The potion seems finished.".to_string()));
+                                            }
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerNeedsCursor { character_id, .. } => {
+                                            feedback.push((character_id, "No, eating this berry isn't a good idea.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerDoesNotFit { character_id, .. } => {
+                                            feedback.push((character_id, "This cannot be used together. Try something else.".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::LabExitWrongOwner { character_id, .. } => {
                                             feedback.push((character_id, "This gate has not been created for you. You cannot use it.".to_string()));
                                             blocked += 1;

@@ -49,6 +49,7 @@ pub const IDR_LABEXIT: u16 = 102;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
 pub const IDR_OXYPOTION: u16 = 128;
+pub const IDR_LIZARDFLOWER: u16 = 130;
 pub const IDR_BEYONDPOTION: u16 = 133;
 pub const IDR_DEMONCHIP: u16 = 136;
 pub const IDR_XMASTREE: u16 = 142;
@@ -685,6 +686,22 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         installed: bool,
     },
+    LizardFlowerMixed {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        combined_bits: u8,
+        complete: bool,
+        bottle_message: bool,
+    },
+    LizardFlowerNeedsCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    LizardFlowerDoesNotFit {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     AccountDepotOpened {
         item_id: ItemId,
         character_id: CharacterId,
@@ -835,6 +852,7 @@ pub fn execute_item_driver_with_context(
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
+                IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
@@ -895,6 +913,47 @@ fn oxy_potion_driver(character: &Character, item: &Item, area_id: u16) -> ItemDr
         item_id: item.id,
         character_id: character.id,
         installed: false,
+    }
+}
+
+fn lizard_flower_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+    area_id: u16,
+) -> ItemDriverOutcome {
+    if area_id != 31 {
+        return ItemDriverOutcome::BlockedByArea {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if character.id.0 == 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::LizardFlowerNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    if context.cursor_driver != Some(IDR_LIZARDFLOWER) {
+        return ItemDriverOutcome::LizardFlowerDoesNotFit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let combined_bits = drdata(item, 0) | context.cursor_drdata0.unwrap_or_default();
+    ItemDriverOutcome::LizardFlowerMixed {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        combined_bits,
+        complete: combined_bits == 7,
+        bottle_message: item.sprite != 11189 && context.cursor_sprite != Some(11189),
     }
 }
 
@@ -3066,6 +3125,93 @@ mod tests {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
                 installed: false,
+            }
+        );
+    }
+
+    #[test]
+    fn lizard_flower_mixer_requires_cursor_flower_and_combines_bits() {
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(9));
+        let mut flower = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LIZARDFLOWER);
+        flower.carried_by = Some(CharacterId(1));
+        flower.driver_data = vec![1];
+        flower.sprite = 11190;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LIZARDFLOWER,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut flower,
+                request,
+                30,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::BlockedByArea {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut flower,
+                request,
+                31,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::LizardFlowerDoesNotFit {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let context = ItemDriverContext {
+            cursor_driver: Some(IDR_LIZARDFLOWER),
+            cursor_sprite: Some(11191),
+            cursor_drdata0: Some(6),
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut flower,
+                request,
+                31,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::LizardFlowerMixed {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
+                combined_bits: 7,
+                complete: true,
+                bottle_message: true,
+            }
+        );
+
+        character.cursor_item = None;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut flower,
+                request,
+                31,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::LizardFlowerNeedsCursor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
             }
         );
     }
