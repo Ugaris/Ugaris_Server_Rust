@@ -7110,6 +7110,9 @@ impl World {
             PlayerActionCode::FireballCharacter => {
                 let target_id = CharacterId(player.action.arg1 as u32);
                 let target_serial = player.action.arg2 as u32;
+                if !self.player_can_attack_target(player, character_id, target_id, area_id) {
+                    return self.set_player_idle(player, character_id);
+                }
                 self.setup_fireball_character(character_id, target_id, target_serial)
                     || self.set_player_idle(player, character_id)
             }
@@ -7130,6 +7133,9 @@ impl World {
             PlayerActionCode::BallCharacter => {
                 let target_id = CharacterId(player.action.arg1 as u32);
                 let target_serial = player.action.arg2 as u32;
+                if !self.player_can_attack_target(player, character_id, target_id, area_id) {
+                    return self.set_player_idle(player, character_id);
+                }
                 self.setup_ball_character(character_id, target_id, target_serial)
                     || self.set_player_idle(player, character_id)
             }
@@ -7150,6 +7156,25 @@ impl World {
                 }
             }
         }
+    }
+
+    fn player_can_attack_target(
+        &self,
+        player: &PlayerRuntime,
+        attacker_id: CharacterId,
+        target_id: CharacterId,
+        area_id: u16,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&attacker_id) else {
+            return false;
+        };
+        let Some(target) = self.characters.get(&target_id) else {
+            return false;
+        };
+        let attack_policy = RuntimePlayerAttackPolicy {
+            attacker_runtime: player,
+        };
+        can_attack_in_area_with_clan_policy(attacker, target, &self.map, area_id, &attack_policy)
     }
 
     fn setup_fireball_character(
@@ -16981,6 +17006,99 @@ mod tests {
         let caster = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(caster.action, action::IDLE);
         assert_eq!(caster.mana, 10 * POWERSCALE);
+    }
+
+    #[test]
+    fn character_fireball_blocks_player_target_without_pk_hate_entry() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        let mut target = character(2);
+        target
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 15, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::FireballCharacter,
+            arg1: 2,
+            arg2: 2,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 2));
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::IDLE);
+        assert_eq!(caster.mana, 10 * POWERSCALE);
+        assert_eq!(player.action.action, PlayerActionCode::Idle);
+    }
+
+    #[test]
+    fn character_fireball_allows_player_target_with_pk_hate_entry() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        let mut target = character(2);
+        target
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 15, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        assert!(player.add_pk_hate(2));
+        player.action = QueuedAction {
+            action: PlayerActionCode::FireballCharacter,
+            arg1: 2,
+            arg2: 2,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 2));
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::FIREBALL1);
+        assert_eq!((caster.act1, caster.act2), (15, 10));
+    }
+
+    #[test]
+    fn character_ball_blocks_player_target_without_pk_hate_entry() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Flash as usize] = 50;
+        let mut target = character(2);
+        target
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 15, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::BallCharacter,
+            arg1: 2,
+            arg2: 2,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 2));
+
+        let caster = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(caster.action, action::IDLE);
+        assert_eq!(caster.mana, 10 * POWERSCALE);
+        assert_eq!(player.action.action, PlayerActionCode::Idle);
     }
 
     #[test]
