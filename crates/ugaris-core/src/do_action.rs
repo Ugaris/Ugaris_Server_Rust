@@ -87,6 +87,25 @@ pub struct AttackResolution {
     pub shield_absorbed: i32,
 }
 
+pub trait ClanAttackPolicy {
+    fn are_allied(&self, _attacker_clan: u16, _defender_clan: u16) -> bool {
+        false
+    }
+
+    fn can_attack_inside_clan_area(&self, _attacker_clan: u16, _defender_clan: u16) -> bool {
+        false
+    }
+
+    fn can_attack_outside_clan_area(&self, _attacker_clan: u16, _defender_clan: u16) -> bool {
+        false
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoClanAttackPolicy;
+
+impl ClanAttackPolicy for NoClanAttackPolicy {}
+
 pub fn do_idle(character: &mut Character, duration: i32) -> Result<(), DoError> {
     let max_duration = (TICKS_PER_SECOND as i32) * 2;
     let duration = duration.clamp(2, max_duration);
@@ -1139,6 +1158,16 @@ pub fn act_heal(caster: &Character, target: &mut Character) -> bool {
 }
 
 pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> bool {
+    can_attack_internal(attacker, defender, map, None, &NoClanAttackPolicy)
+}
+
+fn can_attack_internal(
+    attacker: &Character,
+    defender: &Character,
+    map: &MapGrid,
+    area_id: Option<u16>,
+    clan_policy: &impl ClanAttackPolicy,
+) -> bool {
     if defender.id == attacker.id || defender.flags.is_empty() {
         return false;
     }
@@ -1189,12 +1218,29 @@ pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> 
         if attacker_flags.contains(MapFlags::CLAN)
             && defender_flags.contains(MapFlags::CLAN)
             && attacker.clan != 0
-            && attacker.clan == defender.clan
+            && defender.clan != 0
+            && (attacker.clan == defender.clan
+                || clan_policy.are_allied(attacker.clan, defender.clan))
         {
             return false;
         }
         return true;
     }
+
+    if attacker.clan != 0 && defender.clan != 0 && area_id != Some(1) {
+        if attacker_flags.contains(MapFlags::CLAN)
+            && defender_flags.contains(MapFlags::CLAN)
+            && clan_policy.can_attack_inside_clan_area(attacker.clan, defender.clan)
+        {
+            return true;
+        }
+        if clan_policy.can_attack_outside_clan_area(attacker.clan, defender.clan)
+            && attacker.level.abs_diff(defender.level) <= 3
+        {
+            return true;
+        }
+    }
+
     if attacker
         .flags
         .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
@@ -1209,10 +1255,35 @@ pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> 
     {
         return false;
     }
+
+    if let Some(area_id) = area_id {
+        if attacker.flags.contains(CharacterFlags::PLAYER)
+            && defender.flags.contains(CharacterFlags::PLAYER)
+        {
+            if area_id == 1 {
+                return false;
+            }
+            if !attacker.flags.contains(CharacterFlags::PK)
+                || !defender.flags.contains(CharacterFlags::PK)
+            {
+                return false;
+            }
+            if attacker.level.abs_diff(defender.level) > 3 {
+                return false;
+            }
+        }
+    }
+
     if attacker.group != 0 && attacker.group == defender.group {
         return false;
     }
     if attacker.clan != 0 && attacker.clan == defender.clan {
+        return false;
+    }
+    if attacker.clan != 0
+        && defender.clan != 0
+        && clan_policy.are_allied(attacker.clan, defender.clan)
+    {
         return false;
     }
     true
@@ -1286,25 +1357,17 @@ pub fn can_attack_in_area(
     map: &MapGrid,
     area_id: u16,
 ) -> bool {
-    if !can_attack(attacker, defender, map) {
-        return false;
-    }
-    if attacker.flags.contains(CharacterFlags::PLAYER)
-        && defender.flags.contains(CharacterFlags::PLAYER)
-    {
-        if area_id == 1 {
-            return false;
-        }
-        if !attacker.flags.contains(CharacterFlags::PK)
-            || !defender.flags.contains(CharacterFlags::PK)
-        {
-            return false;
-        }
-        if attacker.level.abs_diff(defender.level) > 3 {
-            return false;
-        }
-    }
-    true
+    can_attack_in_area_with_clan_policy(attacker, defender, map, area_id, &NoClanAttackPolicy)
+}
+
+pub fn can_attack_in_area_with_clan_policy(
+    attacker: &Character,
+    defender: &Character,
+    map: &MapGrid,
+    area_id: u16,
+    clan_policy: &impl ClanAttackPolicy,
+) -> bool {
+    can_attack_internal(attacker, defender, map, Some(area_id), clan_policy)
 }
 
 pub fn advance_action_step(character: &mut Character) -> bool {
@@ -1978,6 +2041,116 @@ mod tests {
         map.tile_mut(6, 5).unwrap().flags.insert(MapFlags::CLAN);
 
         assert!(!can_attack(&attacker, &defender, &map));
+    }
+
+    struct TestClanPolicy;
+
+    impl ClanAttackPolicy for TestClanPolicy {
+        fn are_allied(&self, attacker_clan: u16, defender_clan: u16) -> bool {
+            (attacker_clan, defender_clan) == (10, 11)
+        }
+
+        fn can_attack_inside_clan_area(&self, attacker_clan: u16, defender_clan: u16) -> bool {
+            (attacker_clan, defender_clan) == (20, 21)
+        }
+
+        fn can_attack_outside_clan_area(&self, attacker_clan: u16, defender_clan: u16) -> bool {
+            (attacker_clan, defender_clan) == (30, 31)
+        }
+    }
+
+    #[test]
+    fn can_attack_clan_area_alliance_blocks_arena_attack() {
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        attacker.x = 5;
+        attacker.y = 5;
+        defender.x = 6;
+        defender.y = 5;
+        attacker.clan = 10;
+        defender.clan = 11;
+        map.tile_mut(5, 5)
+            .unwrap()
+            .flags
+            .insert(MapFlags::ARENA | MapFlags::CLAN);
+        map.tile_mut(6, 5)
+            .unwrap()
+            .flags
+            .insert(MapFlags::ARENA | MapFlags::CLAN);
+
+        assert!(can_attack(&attacker, &defender, &map));
+        assert!(!can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            2,
+            &TestClanPolicy
+        ));
+    }
+
+    #[test]
+    fn can_attack_clan_war_inside_clan_area_before_pvp_pk_gate() {
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        attacker.clan = 20;
+        defender.clan = 21;
+        attacker.flags.insert(CharacterFlags::PLAYER);
+        defender.flags.insert(CharacterFlags::PLAYER);
+        map.tile_mut(10, 10).unwrap().flags.insert(MapFlags::CLAN);
+        map.tile_mut(11, 10).unwrap().flags.insert(MapFlags::CLAN);
+
+        assert!(!can_attack_in_area(&attacker, &defender, &map, 2));
+        assert!(can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            2,
+            &TestClanPolicy
+        ));
+    }
+
+    #[test]
+    fn can_attack_clan_feud_outside_clan_area_uses_level_range_and_area_one_gate() {
+        let map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        attacker.clan = 30;
+        defender.clan = 31;
+        attacker.flags.insert(CharacterFlags::PLAYER);
+        defender.flags.insert(CharacterFlags::PLAYER);
+
+        assert!(can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            2,
+            &TestClanPolicy
+        ));
+        assert!(!can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            1,
+            &TestClanPolicy
+        ));
+
+        defender.level = attacker.level + 4;
+        assert!(!can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            2,
+            &TestClanPolicy
+        ));
     }
 
     #[test]
