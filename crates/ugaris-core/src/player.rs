@@ -442,6 +442,18 @@ impl PlayerRuntime {
         newly_added
     }
 
+    pub fn add_pk_hate_from_hit(
+        &mut self,
+        character: &mut Character,
+        attacker_character_id: u32,
+    ) -> bool {
+        let newly_added = self.add_pk_hate(attacker_character_id);
+        if attacker_character_id != 0 {
+            character.flags.remove(CharacterFlags::LAG);
+        }
+        newly_added
+    }
+
     pub fn remove_pk_hate(&mut self, character_id: u32) -> bool {
         let Some(position) = self
             .pk_hate
@@ -1989,6 +2001,26 @@ mod tests {
         assert_eq!(player.pk_hate[0], 154);
         assert_eq!(player.pk_hate[PK_HATE_MAX_ENTRIES - 1], 105);
         assert!(!player.has_pk_hate_for(104));
+    }
+
+    #[test]
+    fn pk_hate_hit_helper_clears_legacy_lag_flag() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::LAG);
+
+        assert!(player.add_pk_hate_from_hit(&mut character, 20));
+        assert_eq!(player.pk_hate, vec![20]);
+        assert!(!character.flags.contains(CharacterFlags::LAG));
+
+        character.flags.insert(CharacterFlags::LAG);
+        assert!(!player.add_pk_hate_from_hit(&mut character, 20));
+        assert_eq!(player.pk_hate, vec![20]);
+        assert!(!character.flags.contains(CharacterFlags::LAG));
+
+        character.flags.insert(CharacterFlags::LAG);
+        assert!(!player.add_pk_hate_from_hit(&mut character, 0));
+        assert!(character.flags.contains(CharacterFlags::LAG));
     }
 
     #[test]
