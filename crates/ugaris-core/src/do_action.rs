@@ -99,6 +99,10 @@ pub trait ClanAttackPolicy {
     fn can_attack_outside_clan_area(&self, _attacker_clan: u16, _defender_clan: u16) -> bool {
         false
     }
+
+    fn has_pk_hate(&self, _attacker: &Character, _defender: &Character) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -1271,6 +1275,9 @@ fn can_attack_internal(
             if attacker.level.abs_diff(defender.level) > 3 {
                 return false;
             }
+            if !clan_policy.has_pk_hate(attacker, defender) {
+                return false;
+            }
         }
     }
 
@@ -2057,6 +2064,10 @@ mod tests {
         fn can_attack_outside_clan_area(&self, attacker_clan: u16, defender_clan: u16) -> bool {
             (attacker_clan, defender_clan) == (30, 31)
         }
+
+        fn has_pk_hate(&self, attacker: &Character, defender: &Character) -> bool {
+            (attacker.id, defender.id) == (CharacterId(100), CharacterId(200))
+        }
     }
 
     #[test]
@@ -2144,6 +2155,40 @@ mod tests {
         ));
 
         defender.level = attacker.level + 4;
+        assert!(!can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            2,
+            &TestClanPolicy
+        ));
+    }
+
+    #[test]
+    fn can_attack_player_vs_player_uses_policy_hate_list_after_pk_checks() {
+        let map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        attacker.id = CharacterId(100);
+        defender.id = CharacterId(200);
+        defender.x = 11;
+        defender.y = 10;
+        attacker
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        defender
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+
+        assert!(can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            2,
+            &TestClanPolicy
+        ));
+
+        defender.id = CharacterId(201);
         assert!(!can_attack_in_area_with_clan_policy(
             &attacker,
             &defender,
