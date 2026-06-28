@@ -55,6 +55,29 @@ impl ClanAttackPolicy for RuntimePlayerAttackPolicy<'_> {
     }
 }
 
+fn remove_stale_pvp_hate_if_effect_check_fails(
+    player: &mut PlayerRuntime,
+    attacker: &Character,
+    target: &Character,
+    area_id: u16,
+) {
+    if area_id == 1 {
+        return;
+    }
+    if !attacker.flags.contains(CharacterFlags::PLAYER)
+        || !target.flags.contains(CharacterFlags::PLAYER)
+        || !attacker.flags.contains(CharacterFlags::PK)
+    {
+        return;
+    }
+    if attacker.id == target.id
+        || !target.flags.contains(CharacterFlags::PK)
+        || attacker.level.abs_diff(target.level) > 3
+    {
+        player.remove_pk_hate(target.id.0);
+    }
+}
+
 fn apply_pk_hate_from_hurt_events(
     runtime: &mut ServerRuntime,
     world: &mut World,
@@ -9049,6 +9072,38 @@ mod tests {
     }
 
     #[test]
+    fn retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails() {
+        let mut attacker = login_character(CharacterId(1), &login_block("Attacker"), 1, 10, 10);
+        attacker.flags.insert(CharacterFlags::PK);
+        attacker.level = 10;
+        let mut target = login_character(CharacterId(2), &login_block("Target"), 1, 11, 10);
+        target.flags.insert(CharacterFlags::PK);
+        target.level = 14;
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.add_pk_hate(2));
+
+        remove_stale_pvp_hate_if_effect_check_fails(&mut player, &attacker, &target, 2);
+
+        assert!(!player.has_pk_hate_for(2));
+    }
+
+    #[test]
+    fn retained_effect_policy_preserves_hate_for_area_one_town_block() {
+        let mut attacker = login_character(CharacterId(1), &login_block("Attacker"), 1, 10, 10);
+        attacker.flags.insert(CharacterFlags::PK);
+        attacker.level = 10;
+        let mut target = login_character(CharacterId(2), &login_block("Target"), 1, 11, 10);
+        target.flags.insert(CharacterFlags::PK);
+        target.level = 14;
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.add_pk_hate(2));
+
+        remove_stale_pvp_hate_if_effect_check_fails(&mut player, &attacker, &target, 1);
+
+        assert!(player.has_pk_hate_for(2));
+    }
+
+    #[test]
     fn resource_percent_matches_legacy_scaled_resource_math() {
         assert_eq!(resource_percent(50 * POWERSCALE, 50), 100);
         assert_eq!(resource_percent(25 * POWERSCALE, 50), 50);
@@ -9173,15 +9228,24 @@ async fn main() -> anyhow::Result<()> {
             _ = tick.tick() => {
                 world.advance();
                 world.tick_effects_with_attack_policy(|caster_id, caster, target, map| {
-                    if let Some(player) = runtime.player_for_character(caster_id) {
-                        let attack_policy = RuntimePlayerAttackPolicy { attacker_runtime: player };
-                        can_attack_in_area_with_clan_policy(
+                    if let Some(player) = runtime.player_for_character_mut(caster_id) {
+                        let attack_policy = RuntimePlayerAttackPolicy { attacker_runtime: &*player };
+                        let can_attack = can_attack_in_area_with_clan_policy(
                             caster,
                             target,
                             map,
                             config.area_id,
                             &attack_policy,
-                        )
+                        );
+                        if !can_attack {
+                            remove_stale_pvp_hate_if_effect_check_fails(
+                                player,
+                                caster,
+                                target,
+                                config.area_id,
+                            );
+                        }
+                        can_attack
                     } else {
                         can_attack_in_area(caster, target, map, config.area_id)
                     }

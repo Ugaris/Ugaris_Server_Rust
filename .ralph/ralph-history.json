@@ -3651,15 +3651,42 @@
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
       ]
+    },
+    {
+      "iteration": 132,
+      "startedAt": "2026-06-28T22:39:50.884Z",
+      "endedAt": "2026-06-28T22:43:56.590Z",
+      "durationMs": 245540,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.00s",
+        "test result: ok. 122 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: direct `PAC_KILL` plus character-targeted fireball/ball admission remove a hated defender from the a",
+        "+- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup rules as direct/character-targeted setup: runtime effect attack checks use the attacking player's `DRD_P",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 56884432,
+  "totalDurationMs": 57129972,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 128,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 126,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 117,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 129,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 127,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 118,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 52,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 53,
@@ -3770,7 +3797,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 91,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 92,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -3987,7 +4014,7 @@
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_noncombat_threads_failed_use_into_secure_move": 1,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 32,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 466 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 34,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 35,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s": 1,
       "error: no library targets found in package `ugaris-server`": 1,
       "test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -4080,7 +4107,12 @@
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 2,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 511 filtered out; finished in 0.00s": 1,
-      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 481 filtered out; finished in 0.01s": 1
+      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 481 filtered out; finished in 0.01s": 1,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.00s": 1,
+      "test result: ok. 122 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: ": 1,
+      "+- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup rule": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
