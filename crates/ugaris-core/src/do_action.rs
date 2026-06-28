@@ -1289,11 +1289,20 @@ pub fn can_attack_in_area(
     if !can_attack(attacker, defender, map) {
         return false;
     }
-    if area_id == 1
-        && attacker.flags.contains(CharacterFlags::PLAYER)
+    if attacker.flags.contains(CharacterFlags::PLAYER)
         && defender.flags.contains(CharacterFlags::PLAYER)
     {
-        return false;
+        if area_id == 1 {
+            return false;
+        }
+        if !attacker.flags.contains(CharacterFlags::PK)
+            || !defender.flags.contains(CharacterFlags::PK)
+        {
+            return false;
+        }
+        if attacker.level.abs_diff(defender.level) > 3 {
+            return false;
+        }
     }
     true
 }
@@ -1878,7 +1887,29 @@ mod tests {
 
         assert!(can_attack(&attacker, &defender, &map));
         assert!(!can_attack_in_area(&attacker, &defender, &map, 1));
+    }
+
+    #[test]
+    fn can_attack_in_area_requires_pk_and_level_range_for_player_vs_player() {
+        let map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        attacker.flags.insert(CharacterFlags::PLAYER);
+        defender.flags.insert(CharacterFlags::PLAYER);
+
+        assert!(!can_attack_in_area(&attacker, &defender, &map, 2));
+
+        attacker.flags.insert(CharacterFlags::PK);
+        assert!(!can_attack_in_area(&attacker, &defender, &map, 2));
+
+        defender.flags.insert(CharacterFlags::PK);
         assert!(can_attack_in_area(&attacker, &defender, &map, 2));
+
+        defender.level = attacker.level + 4;
+        assert!(!can_attack_in_area(&attacker, &defender, &map, 2));
     }
 
     #[test]
