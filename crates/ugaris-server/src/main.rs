@@ -55,7 +55,11 @@ impl ClanAttackPolicy for RuntimePlayerAttackPolicy<'_> {
     }
 }
 
-fn apply_pk_hate_from_hurt_events(runtime: &mut ServerRuntime, world: &mut World) -> usize {
+fn apply_pk_hate_from_hurt_events(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    realtime_seconds: u64,
+) -> usize {
     let mut applied = 0;
     for event in world.drain_legacy_hurt_events() {
         let eligible = match (
@@ -85,6 +89,15 @@ fn apply_pk_hate_from_hurt_events(runtime: &mut ServerRuntime, world: &mut World
         };
         player.add_pk_hate_from_hit(target, event.cause_id.0);
         applied += 1;
+
+        if event.outcome.killed {
+            if let Some(player) = runtime.player_for_character_mut(event.target_id) {
+                player.add_pk_death(realtime_seconds);
+            }
+            if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+                player.add_pk_kill(realtime_seconds);
+            }
+        }
     }
     applied
 }
@@ -8947,7 +8960,10 @@ mod tests {
 
         world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
 
-        assert_eq!(apply_pk_hate_from_hurt_events(&mut runtime, &mut world), 1);
+        assert_eq!(
+            apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 123),
+            1
+        );
         assert!(runtime
             .player_for_character(CharacterId(1))
             .unwrap()
@@ -8981,7 +8997,10 @@ mod tests {
 
         world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
 
-        assert_eq!(apply_pk_hate_from_hurt_events(&mut runtime, &mut world), 0);
+        assert_eq!(
+            apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 123),
+            0
+        );
         assert!(!runtime
             .player_for_character(CharacterId(1))
             .unwrap()
@@ -8992,6 +9011,41 @@ mod tests {
             .unwrap()
             .flags
             .contains(CharacterFlags::LAG));
+    }
+
+    #[test]
+    fn lethal_pk_hurt_events_update_kill_and_death_counters() {
+        let mut world = World::default();
+        let mut target = login_character(CharacterId(1), &login_block("Target"), 1, 10, 10);
+        target.flags.insert(CharacterFlags::PK);
+        target.level = 10;
+        target.hp = 100;
+        let mut attacker = login_character(CharacterId(2), &login_block("Attacker"), 1, 11, 10);
+        attacker.flags.insert(CharacterFlags::PK);
+        attacker.level = 11;
+        world.add_character(target);
+        world.add_character(attacker);
+
+        let mut runtime = ServerRuntime::default();
+        let mut target_player = PlayerRuntime::connected(1, 0);
+        target_player.character_id = Some(CharacterId(1));
+        let mut attacker_player = PlayerRuntime::connected(2, 0);
+        attacker_player.character_id = Some(CharacterId(2));
+        runtime.players.insert(1, target_player);
+        runtime.players.insert(2, attacker_player);
+
+        world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 1_000, 1, 0, 0);
+
+        assert_eq!(
+            apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 12_345),
+            1
+        );
+        let target_player = runtime.player_for_character(CharacterId(1)).unwrap();
+        assert_eq!(target_player.pk_deaths, 1);
+        assert_eq!(target_player.pk_last_death, 12_345);
+        let attacker_player = runtime.player_for_character(CharacterId(2)).unwrap();
+        assert_eq!(attacker_player.pk_kills, 1);
+        assert_eq!(attacker_player.pk_last_kill, 12_345);
     }
 
     #[test]
@@ -10459,7 +10513,9 @@ async fn main() -> anyhow::Result<()> {
                     info!(simple_baddy_noncombat, tick = world.tick.0, "queued simple-baddy noncombat actions");
                 }
 
-                let pk_hate_updates = apply_pk_hate_from_hurt_events(&mut runtime, &mut world);
+                let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
+                let pk_hate_updates =
+                    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, realtime_seconds);
                 if pk_hate_updates != 0 {
                     info!(pk_hate_updates, tick = world.tick.0, "applied PK hate updates from hurt events");
                 }

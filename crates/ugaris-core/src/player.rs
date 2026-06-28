@@ -454,6 +454,16 @@ impl PlayerRuntime {
         newly_added
     }
 
+    pub fn add_pk_kill(&mut self, realtime_seconds: u64) {
+        self.pk_kills = self.pk_kills.saturating_add(1);
+        self.pk_last_kill = realtime_seconds.min(i32::MAX as u64) as u32;
+    }
+
+    pub fn add_pk_death(&mut self, realtime_seconds: u64) {
+        self.pk_deaths = self.pk_deaths.saturating_add(1);
+        self.pk_last_death = realtime_seconds.min(i32::MAX as u64) as u32;
+    }
+
     pub fn remove_pk_hate(&mut self, character_id: u32) -> bool {
         let Some(position) = self
             .pk_hate
