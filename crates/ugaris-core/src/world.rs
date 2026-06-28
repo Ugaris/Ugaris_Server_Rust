@@ -20,8 +20,8 @@ use crate::{
     drvlib::{char_dist, map_dist, step_char_dist, tile_char_dist},
     effect::Effect,
     entity::{
-        Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, INVENTORY_SIZE,
-        MAX_MODIFIERS, POWERSCALE,
+        Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
+        CHARACTER_VALUE_COUNT, INVENTORY_SIZE, MAX_MODIFIERS, POWERSCALE,
     },
     game_time::GameDate,
     ids::{CharacterId, ItemId},
@@ -8336,6 +8336,12 @@ impl World {
         };
         let old_item_id = target.inventory.get(slot).copied().flatten();
         if let Some(item_id) = old_item_id {
+            if let (Some(target), Some(item)) = (
+                self.characters.get_mut(&target_id),
+                self.items.get(&item_id),
+            ) {
+                apply_item_modifier_deltas(target, item, -1);
+            }
             self.items.remove(&item_id);
             self.remove_show_effect_type(target_id, EF_BLESS);
         }
@@ -8394,6 +8400,9 @@ impl World {
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            if let Some(item) = self.items.get(&item_id) {
+                apply_item_modifier_deltas(target, item, 1);
+            }
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             self.create_show_effect(
                 EF_BLESS,
@@ -8483,6 +8492,9 @@ impl World {
             character
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            if let Some(item) = self.items.get(&item_id) {
+                apply_item_modifier_deltas(character, item, 1);
+            }
             self.schedule_spell_remove_timer(
                 character_id,
                 item_id,
@@ -8562,7 +8574,9 @@ impl World {
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            add_character_value_delta(target, CharacterValue::Speed, speed_modifier);
+            if let Some(item) = self.items.get(&item_id) {
+                apply_item_modifier_deltas(target, item, 1);
+            }
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             match driver {
                 IDR_FREEZE => {
@@ -8634,6 +8648,14 @@ impl World {
                 );
             }
             if let Some(target) = self.characters.get_mut(&target_id) {
+                for value in [
+                    CharacterValue::Intelligence,
+                    CharacterValue::Wisdom,
+                    CharacterValue::Agility,
+                    CharacterValue::Strength,
+                ] {
+                    add_character_value_delta(target, value, -added_strength);
+                }
                 target
                     .flags
                     .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
@@ -8692,6 +8714,9 @@ impl World {
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            if let Some(item) = self.items.get(&item_id) {
+                apply_item_modifier_deltas(target, item, 1);
+            }
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             self.create_show_effect(EF_CURSE, target_id, start_tick, expire_tick, 0, strength);
             true
@@ -8938,6 +8963,9 @@ impl World {
             character
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            if let Some(item) = self.items.get(&item_id) {
+                apply_item_modifier_deltas(character, item, 1);
+            }
             self.schedule_spell_remove_timer(
                 character_id,
                 item_id,
@@ -9285,8 +9313,8 @@ impl World {
         if item.serial != item_serial {
             return false;
         }
+        let item_for_modifier_removal = item.clone();
         let spell_driver = item.driver;
-        let speed_modifier = item_modifier_value(item, CharacterValue::Speed).unwrap_or_default();
         if character.inventory.get(slot).copied().flatten() != Some(item_id) {
             return false;
         }
@@ -9298,9 +9326,7 @@ impl World {
             .flags
             .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
         self.items.remove(&item_id);
-        if speed_modifier != 0 {
-            add_character_value_delta(character, CharacterValue::Speed, -i32::from(speed_modifier));
-        }
+        apply_item_modifier_deltas(character, &item_for_modifier_removal, -1);
         if spell_driver == IDR_FREEZE && old_duration != 0 {
             let real_duration = speed_ticks_inverse(old_speed, character.speed_mode, old_duration);
             let new_duration = speed_ticks(
@@ -9428,6 +9454,75 @@ fn add_character_value_delta(character: &mut Character, value: CharacterValue, d
     }
 }
 
+fn apply_item_modifier_deltas(character: &mut Character, item: &Item, sign: i32) {
+    for (&modifier_index, &modifier_value) in
+        item.modifier_index.iter().zip(item.modifier_value.iter())
+    {
+        if modifier_value == 0 || modifier_index < 0 {
+            continue;
+        }
+        let Ok(value_index) = usize::try_from(modifier_index) else {
+            continue;
+        };
+        if value_index >= CHARACTER_VALUE_COUNT {
+            continue;
+        }
+        let Some(value) = character_value_from_index(value_index) else {
+            continue;
+        };
+        add_character_value_delta(character, value, i32::from(modifier_value) * sign);
+    }
+}
+
+fn character_value_from_index(index: usize) -> Option<CharacterValue> {
+    Some(match index {
+        0 => CharacterValue::Hp,
+        1 => CharacterValue::Endurance,
+        2 => CharacterValue::Mana,
+        3 => CharacterValue::Wisdom,
+        4 => CharacterValue::Intelligence,
+        5 => CharacterValue::Agility,
+        6 => CharacterValue::Strength,
+        7 => CharacterValue::Armor,
+        8 => CharacterValue::Weapon,
+        9 => CharacterValue::Light,
+        10 => CharacterValue::Speed,
+        11 => CharacterValue::Pulse,
+        12 => CharacterValue::Dagger,
+        13 => CharacterValue::Hand,
+        14 => CharacterValue::Staff,
+        15 => CharacterValue::Sword,
+        16 => CharacterValue::TwoHand,
+        17 => CharacterValue::ArmorSkill,
+        18 => CharacterValue::Attack,
+        19 => CharacterValue::Parry,
+        20 => CharacterValue::Warcry,
+        21 => CharacterValue::Tactics,
+        22 => CharacterValue::Surround,
+        23 => CharacterValue::BodyControl,
+        24 => CharacterValue::SpeedSkill,
+        25 => CharacterValue::Barter,
+        26 => CharacterValue::Percept,
+        27 => CharacterValue::Stealth,
+        28 => CharacterValue::Bless,
+        29 => CharacterValue::Heal,
+        30 => CharacterValue::Freeze,
+        31 => CharacterValue::MagicShield,
+        32 => CharacterValue::Flash,
+        33 => CharacterValue::Fireball,
+        34 => CharacterValue::Empty,
+        35 => CharacterValue::Regenerate,
+        36 => CharacterValue::Meditate,
+        37 => CharacterValue::Immunity,
+        38 => CharacterValue::Demon,
+        39 => CharacterValue::Duration,
+        40 => CharacterValue::Rage,
+        41 => CharacterValue::Cold,
+        42 => CharacterValue::Profession,
+        _ => return None,
+    })
+}
+
 fn character_value_present(character: &Character, value: CharacterValue) -> i32 {
     character
         .values
@@ -9466,13 +9561,6 @@ fn spell_duration_ticks(character: &Character, base_duration: i32) -> i32 {
     } else {
         base_duration
     }
-}
-
-fn item_modifier_value(item: &Item, value: CharacterValue) -> Option<i16> {
-    item.modifier_index
-        .iter()
-        .zip(item.modifier_value.iter())
-        .find_map(|(&index, &modifier)| (index == value as i16).then_some(modifier))
 }
 
 fn is_back_attack_against_target(target: &Character, attacker_x: u16, attacker_y: u16) -> bool {
@@ -16582,6 +16670,13 @@ mod tests {
         assert_eq!(spell.modifier_index[..4], [4, 3, 5, 6]);
         assert_eq!(spell.modifier_value[..4], [10, 10, 10, 10]);
         assert_eq!(
+            character.values[0][CharacterValue::Intelligence as usize],
+            10
+        );
+        assert_eq!(character.values[0][CharacterValue::Wisdom as usize], 10);
+        assert_eq!(character.values[0][CharacterValue::Agility as usize], 10);
+        assert_eq!(character.values[0][CharacterValue::Strength as usize], 10);
+        assert_eq!(
             u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
             2_980
         );
@@ -16604,6 +16699,18 @@ mod tests {
             world.drain_pending_sound_specials()[0].special.special_type,
             29
         );
+
+        world.tick = Tick(2_980);
+        world.process_due_timers(1);
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert!(character.inventory[29].is_none());
+        assert_eq!(
+            character.values[0][CharacterValue::Intelligence as usize],
+            0
+        );
+        assert_eq!(character.values[0][CharacterValue::Wisdom as usize], 0);
+        assert_eq!(character.values[0][CharacterValue::Agility as usize], 0);
+        assert_eq!(character.values[0][CharacterValue::Strength as usize], 0);
     }
 
     #[test]
@@ -16638,6 +16745,7 @@ mod tests {
         assert_eq!(spell.modifier_index[0], CharacterValue::Speed as i16);
         assert_eq!(spell.modifier_value[0], 100);
         assert_eq!(spell.carried_by, Some(CharacterId(1)));
+        assert_eq!(character.values[0][CharacterValue::Speed as usize], 100);
         assert_eq!(
             u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
             248
@@ -17518,6 +17626,10 @@ mod tests {
         assert_eq!(curse.modifier_index[3], CharacterValue::Strength as i16);
         assert_eq!(curse.modifier_value[..4], [-7, -7, -7, -7]);
         assert_eq!(curse.carried_by, Some(CharacterId(2)));
+        assert_eq!(target.values[0][CharacterValue::Intelligence as usize], -7);
+        assert_eq!(target.values[0][CharacterValue::Wisdom as usize], -7);
+        assert_eq!(target.values[0][CharacterValue::Agility as usize], -7);
+        assert_eq!(target.values[0][CharacterValue::Strength as usize], -7);
         assert_eq!(
             u32::from_le_bytes(curse.driver_data[0..4].try_into().unwrap()),
             43_500
@@ -17555,6 +17667,10 @@ mod tests {
         assert_eq!(curse.driver, IDR_CURSE);
         assert_eq!(curse.modifier_value[..4], [-10, -10, -10, -10]);
         assert!(target.inventory[28].is_none());
+        assert_eq!(target.values[0][CharacterValue::Intelligence as usize], -10);
+        assert_eq!(target.values[0][CharacterValue::Wisdom as usize], -10);
+        assert_eq!(target.values[0][CharacterValue::Agility as usize], -10);
+        assert_eq!(target.values[0][CharacterValue::Strength as usize], -10);
         let effects: Vec<_> = world
             .effects
             .values()
