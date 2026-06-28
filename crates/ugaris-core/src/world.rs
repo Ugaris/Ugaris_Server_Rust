@@ -4777,7 +4777,6 @@ impl World {
                     return true;
                 }
             }
-            self.drink_special_poison_simple_baddy(character_id);
             if self.regenerate_simple_baddy(character_id) {
                 return true;
             }
@@ -4822,7 +4821,11 @@ impl World {
             }
 
             self.clear_simple_baddy_scavenger_direction(character_id);
-            return self.idle_simple_baddy(character_id);
+            self.drink_special_poison_simple_baddy(character_id);
+            return self.regenerate_simple_baddy(character_id)
+                || self.spell_self_simple_baddy(character_id)
+                || self.setup_pending_simple_baddy_friend_bless(character_id)
+                || self.idle_simple_baddy(character_id);
         }
 
         let target = if data.dayx != 0 {
@@ -12409,6 +12412,41 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::IDLE);
         assert_eq!(npc.duration, TICKS_PER_SECOND as i32);
+    }
+
+    #[test]
+    fn simple_baddy_scavenger_regenerates_before_drinkspecial_poison() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.hp = 9 * POWERSCALE;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 10;
+        npc.values[0][CharacterValue::Mana as usize] = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            scavenger: 4,
+            drinkspecial: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut poison0 = item(10, ItemFlags::empty());
+        poison0.driver = IDR_POISON0;
+        npc.inventory[SPELL_SLOT_START] = Some(poison0.id);
+        world.items.insert(poison0.id, poison0);
+        world.spawn_character(npc, 10, 10);
+
+        assert!(
+            world.process_simple_baddy_noncombat_action_with_random(CharacterId(1), 1, |_| {
+                panic!("regenerate_driver should run before drinkspecial and RANDOM wander gates")
+            })
+        );
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::IDLE);
+        assert_eq!(npc.inventory[SPELL_SLOT_START], Some(ItemId(10)));
+        assert!(world.items.contains_key(&ItemId(10)));
     }
 
     #[test]
