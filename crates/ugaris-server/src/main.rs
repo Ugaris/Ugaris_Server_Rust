@@ -9985,7 +9985,11 @@ async fn main() -> anyhow::Result<()> {
                     info!(simple_baddy_attacks, tick = world.tick.0, "queued simple-baddy attack actions");
                 }
 
-                let simple_baddy_noncombat = world.process_simple_baddy_noncombat_actions(config.area_id);
+                let simple_baddy_noncombat = world
+                    .process_simple_baddy_noncombat_actions_with_completions(
+                        config.area_id,
+                        &completed_actions,
+                    );
                 if simple_baddy_noncombat != 0 {
                     info!(simple_baddy_noncombat, tick = world.tick.0, "queued simple-baddy noncombat actions");
                 }

@@ -3919,13 +3919,52 @@ impl World {
         character_id: CharacterId,
         area_id: u16,
     ) -> bool {
-        self.process_simple_baddy_noncombat_action_with_random(character_id, area_id, |_| 0)
+        self.process_simple_baddy_noncombat_action_with_random_and_context(
+            character_id,
+            area_id,
+            0,
+            0,
+            |_| 0,
+        )
     }
 
     pub fn process_simple_baddy_noncombat_action_with_random(
         &mut self,
         character_id: CharacterId,
         area_id: u16,
+        mut random_below: impl FnMut(i32) -> i32,
+    ) -> bool {
+        self.process_simple_baddy_noncombat_action_with_random_and_context(
+            character_id,
+            area_id,
+            0,
+            0,
+            &mut random_below,
+        )
+    }
+
+    pub fn process_simple_baddy_noncombat_action_with_context(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        ret: i32,
+        last_action: u16,
+    ) -> bool {
+        self.process_simple_baddy_noncombat_action_with_random_and_context(
+            character_id,
+            area_id,
+            ret,
+            last_action,
+            |_| 0,
+        )
+    }
+
+    pub fn process_simple_baddy_noncombat_action_with_random_and_context(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        ret: i32,
+        last_action: u16,
         mut random_below: impl FnMut(i32) -> i32,
     ) -> bool {
         let Some(character) = self.characters.get(&character_id).cloned() else {
@@ -4088,8 +4127,8 @@ impl World {
                 target_x,
                 target_y,
                 target_dir as u8,
-                0,
-                0,
+                ret,
+                last_action,
                 area_id,
             )
         {
@@ -4128,6 +4167,14 @@ impl World {
     }
 
     pub fn process_simple_baddy_noncombat_actions(&mut self, area_id: u16) -> usize {
+        self.process_simple_baddy_noncombat_actions_with_completions(area_id, &[])
+    }
+
+    pub fn process_simple_baddy_noncombat_actions_with_completions(
+        &mut self,
+        area_id: u16,
+        completions: &[WorldActionCompletion],
+    ) -> usize {
         let character_ids: Vec<_> = self
             .characters
             .iter()
@@ -4144,7 +4191,27 @@ impl World {
         character_ids
             .into_iter()
             .filter(|&character_id| {
-                self.process_simple_baddy_noncombat_action(character_id, area_id)
+                let (ret, last_action) = completions
+                    .iter()
+                    .rev()
+                    .find(|completion| completion.character_id == character_id)
+                    .map(|completion| {
+                        let ret = if completion.ok {
+                            1
+                        } else if completion.action_id == action::USE {
+                            2
+                        } else {
+                            0
+                        };
+                        (ret, completion.action_id)
+                    })
+                    .unwrap_or((0, 0));
+                self.process_simple_baddy_noncombat_action_with_context(
+                    character_id,
+                    area_id,
+                    ret,
+                    last_action,
+                )
             })
             .count()
     }
@@ -10890,6 +10957,42 @@ mod tests {
             action::USE,
             1,
         ));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((npc.x, npc.y), (12, 10));
+        assert_eq!(npc.action, 0);
+    }
+
+    #[test]
+    fn simple_baddy_noncombat_threads_failed_use_into_secure_move() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 20) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 12;
+        npc.rest_y = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        world.spawn_character(npc, 10, 10);
+
+        let completions = [WorldActionCompletion {
+            character_id: CharacterId(1),
+            action_id: action::USE,
+            action_item_id: None,
+            ok: false,
+            item_use: None,
+            old_x: 10,
+            old_y: 10,
+            new_x: 10,
+            new_y: 10,
+        }];
+
+        assert_eq!(
+            world.process_simple_baddy_noncombat_actions_with_completions(1, &completions),
+            1
+        );
 
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!((npc.x, npc.y), (12, 10));
