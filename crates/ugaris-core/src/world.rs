@@ -159,6 +159,13 @@ fn order_fight_driver_tasks(
     tasks.sort_by(|left, right| right.value.cmp(&left.value));
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+fn fight_driver_attackback_may_run(tasks: &[FightDriverTask], index: usize) -> bool {
+    tasks
+        .get(index + 1)
+        .is_some_and(|task| task.kind == FightDriverTaskKind::Attack)
+}
+
 fn item_light_may_have_changed(outcome: &ItemDriverOutcome) -> bool {
     matches!(
         outcome,
@@ -3652,7 +3659,7 @@ impl World {
             .unwrap_or_default();
         order_fight_driver_tasks(&mut tasks, level, |below| random(below as u32) as i32);
 
-        for task in tasks {
+        for (index, task) in tasks.iter().copied().enumerate() {
             let ret = match task.kind {
                 FightDriverTaskKind::Freeze => {
                     self.setup_simple_baddy_freeze_attack(character_id, target)
@@ -3694,7 +3701,8 @@ impl World {
                 }
                 FightDriverTaskKind::Pulse => self.setup_simple_baddy_pulse_attack(character_id),
                 FightDriverTaskKind::AttackBack => {
-                    self.setup_simple_baddy_attack_back_move(character_id, target, area_id)
+                    fight_driver_attackback_may_run(&tasks, index)
+                        && self.setup_simple_baddy_attack_back_move(character_id, target, area_id)
                 }
                 FightDriverTaskKind::MoveRight => {
                     self.setup_simple_baddy_lane_walk(character_id, Direction::Right, area_id)
@@ -10386,6 +10394,40 @@ mod tests {
         assert_eq!(tasks[0].value, 104);
         assert_eq!(tasks[1].kind, FightDriverTaskKind::Flash);
         assert_eq!(tasks[1].value, 103);
+    }
+
+    #[test]
+    fn fight_driver_attackback_requires_attack_as_next_task_like_c() {
+        let tasks = [
+            FightDriverTask {
+                kind: FightDriverTaskKind::AttackBack,
+                value: FIGHT_DRIVER_HIGH_PRIO,
+            },
+            FightDriverTask {
+                kind: FightDriverTaskKind::Fireball,
+                value: FIGHT_DRIVER_MED_PRIO,
+            },
+            FightDriverTask {
+                kind: FightDriverTaskKind::Attack,
+                value: FIGHT_DRIVER_LOW_PRIO,
+            },
+        ];
+
+        assert!(!fight_driver_attackback_may_run(&tasks, 0));
+        assert!(!fight_driver_attackback_may_run(&tasks, 2));
+
+        let tasks = [
+            FightDriverTask {
+                kind: FightDriverTaskKind::AttackBack,
+                value: FIGHT_DRIVER_HIGH_PRIO,
+            },
+            FightDriverTask {
+                kind: FightDriverTaskKind::Attack,
+                value: FIGHT_DRIVER_MED_PRIO,
+            },
+        ];
+
+        assert!(fight_driver_attackback_may_run(&tasks, 0));
     }
 
     #[test]
