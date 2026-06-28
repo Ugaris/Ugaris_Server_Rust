@@ -51,8 +51,9 @@ use crate::{
         EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_MAGICSHIELD,
         EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY, FIREBALL_COST,
         FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION, IDR_BLESS, IDR_CURSE,
-        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3, IDR_POTION_SP,
-        IDR_WARCRY, POISON_DURATION, SPELL_SLOT_END, SPELL_SLOT_START, WARCRY_DURATION,
+        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_OXYGEN, IDR_POISON0, IDR_POISON3,
+        IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, SPELL_SLOT_END, SPELL_SLOT_START,
+        WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -5760,6 +5761,21 @@ impl World {
                     installed,
                 }
             }
+            ItemDriverOutcome::OxygenPotion {
+                item_id,
+                character_id,
+                ..
+            } => {
+                let installed = self.install_oxygen_spell(character_id);
+                if installed {
+                    self.destroy_item(item_id);
+                }
+                ItemDriverOutcome::OxygenPotion {
+                    item_id,
+                    character_id,
+                    installed,
+                }
+            }
             ItemDriverOutcome::SpecialPotionSecurity { .. }
             | ItemDriverOutcome::SpecialPotionProfessionReset { .. }
             | ItemDriverOutcome::SpecialPotionBug { .. } => outcome,
@@ -8587,6 +8603,64 @@ impl World {
         }
     }
 
+    fn install_oxygen_spell(&mut self, target_id: CharacterId) -> bool {
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        let Some(slot) = may_add_spell(&target, &self.items, IDR_OXYGEN, self.tick.0 as u32) else {
+            return false;
+        };
+
+        let item_id = self.next_runtime_item_id();
+        let start_tick = self.tick.0 as u32;
+        let expire_tick = start_tick.wrapping_add((TICKS_PER_SECOND * 60) as u32);
+        let mut driver_data = Vec::with_capacity(8);
+        driver_data.extend_from_slice(&expire_tick.to_le_bytes());
+        driver_data.extend_from_slice(&start_tick.to_le_bytes());
+
+        let item = Item {
+            id: item_id,
+            name: "Oxygen".to_string(),
+            description: "A Spell of Oxygen.".to_string(),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [0, 0, 0, 0, 0],
+            modifier_value: [0, 0, 0, 0, 0],
+            x: 0,
+            y: 0,
+            carried_by: Some(target_id),
+            contained_in: None,
+            content_id: 0,
+            driver: IDR_OXYGEN,
+            driver_data,
+            serial: item_id.0,
+        };
+
+        self.items.insert(item_id, item);
+        if let Some(target) = self.characters.get_mut(&target_id) {
+            if target.inventory.len() <= slot {
+                self.items.remove(&item_id);
+                return false;
+            }
+            target.inventory[slot] = Some(item_id);
+            let character_serial = target.id.0;
+            target
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+            true
+        } else {
+            self.items.remove(&item_id);
+            false
+        }
+    }
+
     pub fn poison_character(
         &mut self,
         character_id: CharacterId,
@@ -9525,14 +9599,14 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_EDEMONBALL,
-            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEGATE,
-            IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH,
-            IDR_USETRAP,
+            IDR_ENCHANTITEM, IDR_FLAMETHROW, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION,
+            IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP,
+            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
-        spell::{IDR_INFRARED, IDR_POISON0, IDR_POISON1, IDR_POISON2},
+        spell::{IDR_INFRARED, IDR_OXYGEN, IDR_POISON0, IDR_POISON1, IDR_POISON2},
         tick::TICKS_PER_SECOND,
     };
 
@@ -17519,6 +17593,47 @@ mod tests {
         assert_eq!(spell.driver, IDR_INFRARED);
         assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(14_442));
         assert_eq!(character.inventory[30], None);
+        assert!(!world.items.contains_key(&ItemId(10)));
+    }
+
+    #[test]
+    fn oxy_potion_installs_one_minute_oxygen_spell_and_consumes_item() {
+        let mut world = World::default();
+        world.tick = Tick(77);
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(10));
+        world.add_character(character);
+        let mut potion = item(10, ItemFlags::USED);
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver = IDR_OXYPOTION;
+        world.items.insert(ItemId(10), potion);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_OXYPOTION,
+                item_id: ItemId(10),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            31,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::OxygenPotion {
+                installed: true,
+                ..
+            }
+        ));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.name, "Oxygen");
+        assert_eq!(spell.driver, IDR_OXYGEN);
+        assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(1_517));
+        assert_eq!(character.inventory[30], None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
         assert!(!world.items.contains_key(&ItemId(10)));
     }
 

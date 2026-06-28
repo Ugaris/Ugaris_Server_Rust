@@ -47,6 +47,7 @@ pub const IDR_NOMADSTACK: u16 = 96;
 pub const IDR_LABEXIT: u16 = 102;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
+pub const IDR_OXYPOTION: u16 = 128;
 pub const IDR_BEYONDPOTION: u16 = 133;
 pub const IDR_DEMONCHIP: u16 = 136;
 pub const IDR_XMASTREE: u16 = 142;
@@ -665,6 +666,11 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    OxygenPotion {
+        item_id: ItemId,
+        character_id: CharacterId,
+        installed: bool,
+    },
     AccountDepotOpened {
         item_id: ItemId,
         character_id: CharacterId,
@@ -813,6 +819,7 @@ pub fn execute_item_driver_with_context(
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
+                IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
@@ -855,6 +862,24 @@ fn balltrap_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         target_x: clamp_legacy_coordinate(item_x + i32::from(dx)),
         target_y: clamp_legacy_coordinate(item_y + i32::from(dy)),
         power: drdata(item, 2),
+    }
+}
+
+fn oxy_potion_driver(character: &Character, item: &Item, area_id: u16) -> ItemDriverOutcome {
+    if area_id != 31 {
+        return ItemDriverOutcome::BlockedByArea {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::OxygenPotion {
+        item_id: item.id,
+        character_id: character.id,
+        installed: false,
     }
 }
 
@@ -2961,6 +2986,41 @@ mod tests {
             ItemDriverOutcome::AccountDepotOpened {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn oxy_potion_driver_requires_area31_and_carried_item() {
+        let mut character = character(1);
+        let mut potion = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_OXYPOTION);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_OXYPOTION,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut potion, request, 30, false),
+            ItemDriverOutcome::BlockedByArea {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(
+            execute_item_driver(&mut character, &mut potion, request, 31, false),
+            ItemDriverOutcome::Noop
+        );
+
+        potion.carried_by = Some(CharacterId(1));
+        character.inventory[30] = Some(ItemId(8));
+        assert_eq!(
+            execute_item_driver(&mut character, &mut potion, request, 31, false),
+            ItemDriverOutcome::OxygenPotion {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                installed: false,
             }
         );
     }
