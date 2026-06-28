@@ -11,10 +11,11 @@ use crate::{
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
-        advance_action_step, can_attack, can_attack_in_area, do_attack, do_ball, do_bless, do_drop,
-        do_earthmud, do_fireball, do_flash, do_freeze, do_heal, do_idle, do_magicshield, do_pulse,
-        do_take, do_use, do_walk, do_warcry, endurance_cost, reset_action_after_act, speed_ticks,
-        speed_ticks_inverse, turn, ItemUseRequest, DUR_MISC_ACTION,
+        advance_action_step, can_attack, can_attack_in_area, can_attack_in_area_with_clan_policy,
+        do_attack, do_ball, do_bless, do_drop, do_earthmud, do_fireball, do_flash, do_freeze,
+        do_heal, do_idle, do_magicshield, do_pulse, do_take, do_use, do_walk, do_warcry,
+        endurance_cost, reset_action_after_act, speed_ticks, speed_ticks_inverse, turn,
+        ClanAttackPolicy, ItemUseRequest, DUR_MISC_ACTION,
     },
     drvlib::{char_dist, map_dist, step_char_dist, tile_char_dist},
     effect::Effect,
@@ -136,6 +137,16 @@ enum FightDriverTaskKind {
 struct FightDriverTask {
     kind: FightDriverTaskKind,
     value: i32,
+}
+
+struct RuntimePlayerAttackPolicy<'a> {
+    attacker_runtime: &'a PlayerRuntime,
+}
+
+impl ClanAttackPolicy for RuntimePlayerAttackPolicy<'_> {
+    fn has_pk_hate(&self, _attacker: &Character, defender: &Character) -> bool {
+        self.attacker_runtime.has_pk_hate_for(defender.id.0)
+    }
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -6847,7 +6858,16 @@ impl World {
                 let Some(attacker) = self.characters.get(&character_id) else {
                     return false;
                 };
-                if !can_attack_in_area(attacker, target, &self.map, area_id) {
+                let attack_policy = RuntimePlayerAttackPolicy {
+                    attacker_runtime: player,
+                };
+                if !can_attack_in_area_with_clan_policy(
+                    attacker,
+                    target,
+                    &self.map,
+                    area_id,
+                    &attack_policy,
+                ) {
                     return self.set_player_idle(player, character_id);
                 }
                 let direction = adjacent_direction(attacker.x, attacker.y, target_x, target_y);
@@ -15167,6 +15187,71 @@ mod tests {
         let attacker = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(attacker.action, action::IDLE);
         assert_eq!(player.action.action, PlayerActionCode::Idle);
+    }
+
+    #[test]
+    fn world_blocks_player_kill_setup_without_pk_hate_entry() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        attacker.x = 10;
+        attacker.y = 10;
+        let mut defender = character(2);
+        defender
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        defender.x = 11;
+        defender.y = 10;
+        world.map.tile_mut(11, 10).unwrap().character = 2;
+        world.add_character(attacker);
+        world.add_character(defender);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Kill,
+            arg1: 2,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 2));
+        let attacker = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(attacker.action, action::IDLE);
+        assert_eq!(player.action.action, PlayerActionCode::Idle);
+    }
+
+    #[test]
+    fn world_allows_player_kill_setup_with_pk_hate_entry() {
+        let mut world = World::default();
+        let mut attacker = character(1);
+        attacker
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        attacker.x = 10;
+        attacker.y = 10;
+        let mut defender = character(2);
+        defender
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        defender.x = 11;
+        defender.y = 10;
+        world.map.tile_mut(11, 10).unwrap().character = 2;
+        world.add_character(attacker);
+        world.add_character(defender);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        assert!(player.add_pk_hate(2));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Kill,
+            arg1: 2,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 2));
+        let attacker = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(attacker.action, action::ATTACK1);
+        assert_eq!(attacker.act1, 2);
     }
 
     #[test]
