@@ -1204,6 +1204,136 @@ fn normalize_text_command(bytes: &[u8]) -> Option<String> {
     Some(text.to_ascii_lowercase())
 }
 
+fn find_online_character_by_name(world: &World, name: &str) -> Option<CharacterId> {
+    world
+        .characters
+        .values()
+        .find(|character| character.name.eq_ignore_ascii_case(name))
+        .map(|character| character.id)
+}
+
+fn pk_hate_prerequisites(source: &Character, target: &Character) -> bool {
+    source.id != target.id
+        && source
+            .flags
+            .contains(CharacterFlags::PLAYER | CharacterFlags::PK)
+        && target
+            .flags
+            .contains(CharacterFlags::PLAYER | CharacterFlags::PK)
+        && source.level.abs_diff(target.level) <= 3
+}
+
+fn apply_pk_hate_command(
+    world: &mut World,
+    player: &mut PlayerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let name = rest.trim();
+
+    match verb {
+        "listhate" => {
+            if !world
+                .characters
+                .get(&character_id)
+                .is_some_and(|character| {
+                    character
+                        .flags
+                        .contains(CharacterFlags::PLAYER | CharacterFlags::PK)
+                })
+            {
+                return Some(KeyringCommandResult::default());
+            }
+            let messages = if player.pk_hate.is_empty() {
+                vec!["List is empty.".to_string()]
+            } else {
+                player
+                    .pk_hate
+                    .iter()
+                    .map(|hated_id| {
+                        let name = world
+                            .characters
+                            .get(&CharacterId(*hated_id))
+                            .map(|character| character.name.as_str())
+                            .unwrap_or("Unknown");
+                        format!("Hate: {name}")
+                    })
+                    .collect()
+            };
+            Some(KeyringCommandResult {
+                messages,
+                inventory_changed: false,
+            })
+        }
+        "clearhate" => {
+            if world
+                .characters
+                .get(&character_id)
+                .is_some_and(|character| character.flags.contains(CharacterFlags::PK))
+            {
+                player.pk_hate.clear();
+            }
+            Some(KeyringCommandResult::default())
+        }
+        "hate" => {
+            let Some(target_id) = find_online_character_by_name(world, name) else {
+                return Some(KeyringCommandResult {
+                    messages: vec![format!("Sorry, no one by the name {name} around.")],
+                    inventory_changed: false,
+                });
+            };
+            let can_add = match (
+                world.characters.get(&character_id),
+                world.characters.get(&target_id),
+            ) {
+                (Some(source), Some(target)) => pk_hate_prerequisites(source, target),
+                _ => false,
+            };
+            if can_add {
+                player.add_pk_hate(target_id.0);
+                if let Some(source) = world.characters.get_mut(&character_id) {
+                    source.flags.remove(CharacterFlags::LAG);
+                }
+            }
+            Some(KeyringCommandResult::default())
+        }
+        "nohate" => {
+            let Some(target_id) = find_online_character_by_name(world, name) else {
+                return Some(KeyringCommandResult {
+                    messages: vec![format!("Sorry, no player by the name {name}.")],
+                    inventory_changed: false,
+                });
+            };
+            let Some(source) = world.characters.get(&character_id) else {
+                return Some(KeyringCommandResult::default());
+            };
+            if !source.flags.contains(CharacterFlags::PK) {
+                return Some(KeyringCommandResult::default());
+            }
+            let removed = player.remove_pk_hate(target_id.0);
+            let messages = if removed {
+                let target_name = world
+                    .characters
+                    .get(&target_id)
+                    .map(|character| character.name.as_str())
+                    .unwrap_or(name);
+                vec![format!("Removed {target_name} from hate list")]
+            } else {
+                Vec::new()
+            };
+            Some(KeyringCommandResult {
+                messages,
+                inventory_changed: false,
+            })
+        }
+        _ => None,
+    }
+}
+
 fn keyring_entry_to_item(
     loader: &mut ZoneLoader,
     character_id: CharacterId,
@@ -6885,6 +7015,87 @@ mod tests {
     }
 
     #[test]
+    fn pk_hate_command_adds_online_player_and_clears_lag() {
+        let mut attacker = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
+        attacker
+            .flags
+            .insert(CharacterFlags::PK | CharacterFlags::LAG);
+        attacker.level = 12;
+        let mut target = login_character(CharacterId(8), &login_block("Target"), 1, 11, 10);
+        target.flags.insert(CharacterFlags::PK);
+        target.level = 10;
+        let mut world = World::default();
+        world.add_character(attacker);
+        world.add_character(target);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(7));
+
+        let result = apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/hate target")
+            .expect("hate command should be recognized");
+
+        assert!(result.messages.is_empty());
+        assert!(player.has_pk_hate_for(8));
+        assert!(!world
+            .characters
+            .get(&CharacterId(7))
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::LAG));
+    }
+
+    #[test]
+    fn pk_hate_command_list_and_remove_match_legacy_feedback() {
+        let mut attacker = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
+        attacker.flags.insert(CharacterFlags::PK);
+        let mut target = login_character(CharacterId(8), &login_block("Target"), 1, 11, 10);
+        target.flags.insert(CharacterFlags::PK);
+        let mut world = World::default();
+        world.add_character(attacker);
+        world.add_character(target);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(7));
+        assert!(player.add_pk_hate(8));
+
+        let listed = apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/listhate")
+            .expect("listhate command should be recognized");
+        let removed =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/nohate target")
+                .expect("nohate command should be recognized");
+        let empty = apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/listhate")
+            .expect("listhate command should be recognized");
+
+        assert_eq!(listed.messages, vec!["Hate: Target"]);
+        assert_eq!(removed.messages, vec!["Removed Target from hate list"]);
+        assert_eq!(empty.messages, vec!["List is empty."]);
+        assert!(!player.has_pk_hate_for(8));
+    }
+
+    #[test]
+    fn pk_hate_command_clear_requires_pk_and_clears_runtime_list() {
+        let mut character = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
+        character.flags.remove(CharacterFlags::PK);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(7));
+        assert!(player.add_pk_hate(8));
+
+        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate")
+            .expect("clearhate command should be recognized");
+        assert!(player.has_pk_hate_for(8));
+
+        world
+            .characters
+            .get_mut(&CharacterId(7))
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::PK);
+        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate")
+            .expect("clearhate command should be recognized");
+        assert!(player.pk_hate.is_empty());
+    }
+
+    #[test]
     fn initial_map_payloads_send_visible_diamond_and_center_character() {
         let login = login_block("Tester");
         let mut character =
@@ -9316,6 +9527,12 @@ async fn main() -> anyhow::Result<()> {
                             let Some(player) = runtime.players.get_mut(&session_id) else {
                                 continue;
                             };
+                            if let Some(result) = apply_pk_hate_command(&mut world, player, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
                             if let Some(result) = apply_keyring_command(&mut world, &mut zone_loader, player, character_id, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
