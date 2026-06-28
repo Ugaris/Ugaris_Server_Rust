@@ -2334,6 +2334,9 @@ impl World {
         let Some(character) = self.characters.get_mut(&character_id) else {
             return Vec::new();
         };
+        if character.action != action::IDLE || character.flags.contains(CharacterFlags::DEAD) {
+            return Vec::new();
+        }
         let message_outcomes = process_simple_baddy_messages(character, &carried_items);
 
         let mut applied = Vec::new();
@@ -9766,6 +9769,36 @@ mod tests {
         };
         assert_eq!(data.last_hit, world.tick.0 as i32);
         assert!(npc.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_wait_until_current_action_completes() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.action = action::WALK;
+        npc.hp = 40 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 100;
+        npc.values[1][CharacterValue::Hp as usize] = 100;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            drink_inventory_potions: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_GOTHIT, 0, 0, 0);
+        npc.inventory[30] = Some(ItemId(7));
+        let mut potion = item(7, ItemFlags::USED | ItemFlags::USE);
+        potion.carried_by = Some(CharacterId(1));
+        potion.driver = IDR_POTION;
+        potion.driver_data = vec![0, 20, 0, 0];
+        world.add_character(npc);
+        world.items.insert(ItemId(7), potion);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert!(outcomes.is_empty());
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.hp, 40 * POWERSCALE);
+        assert_eq!(npc.inventory[30], Some(ItemId(7)));
+        assert_eq!(npc.driver_messages.len(), 1);
     }
 
     #[test]
