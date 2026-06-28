@@ -1723,22 +1723,6 @@ fn item_driver_context_for_request(
     }
 }
 
-fn legacy_item_driver_return_code(
-    driver: Option<u16>,
-    outcome: &ugaris_core::item_driver::ItemDriverOutcome,
-) -> i32 {
-    use ugaris_core::item_driver::{ItemDriverOutcome, IDR_DOOR, IDR_DOUBLE_DOOR};
-
-    match outcome {
-        ItemDriverOutcome::DoorToggle { .. }
-        | ItemDriverOutcome::KeyedDoorToggle { .. }
-        | ItemDriverOutcome::DoubleDoorToggle { .. } => 1,
-        ItemDriverOutcome::Noop if matches!(driver, Some(IDR_DOOR) | Some(IDR_DOUBLE_DOOR)) => 2,
-        ItemDriverOutcome::Noop | ItemDriverOutcome::Unsupported { .. } => 0,
-        _ => 1,
-    }
-}
-
 fn infinite_chest_key_access(
     world: &World,
     character_id: CharacterId,
@@ -9044,7 +9028,7 @@ async fn main() -> anyhow::Result<()> {
                                     );
                                     let outcome = world.execute_item_driver_request_with_context(request, config.area_id, &driver_context);
                                     if let Some(completion) = completed_actions.get_mut(completion_index) {
-                                        completion.legacy_return_code = legacy_item_driver_return_code(driver, &outcome);
+                                        completion.legacy_return_code = ugaris_core::item_driver::legacy_item_driver_return_code(driver, &outcome);
                                     }
                                     match outcome {
                                         ugaris_core::item_driver::ItemDriverOutcome::ChestTreasure { item_id, character_id, treasure_index } => {

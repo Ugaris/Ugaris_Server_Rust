@@ -677,6 +677,17 @@ pub enum ItemDriverOutcome {
     },
 }
 
+pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverOutcome) -> i32 {
+    match outcome {
+        ItemDriverOutcome::DoorToggle { .. }
+        | ItemDriverOutcome::KeyedDoorToggle { .. }
+        | ItemDriverOutcome::DoubleDoorToggle { .. } => 1,
+        ItemDriverOutcome::Noop if matches!(driver, Some(IDR_DOOR) | Some(IDR_DOUBLE_DOOR)) => 2,
+        ItemDriverOutcome::Noop | ItemDriverOutcome::Unsupported { .. } => 0,
+        _ => 1,
+    }
+}
+
 pub fn use_item(
     character: &mut Character,
     item: &Item,
@@ -2951,6 +2962,60 @@ mod tests {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
             }
+        );
+    }
+
+    #[test]
+    fn legacy_item_driver_return_code_matches_c_driver_contract() {
+        assert_eq!(
+            legacy_item_driver_return_code(None, &ItemDriverOutcome::Noop),
+            0
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(
+                Some(IDR_POTION),
+                &ItemDriverOutcome::Unsupported {
+                    driver: IDR_POTION,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                },
+            ),
+            0
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_DOOR), &ItemDriverOutcome::Noop),
+            2
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(
+                Some(IDR_DOOR),
+                &ItemDriverOutcome::DoorToggle {
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                },
+            ),
+            1
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(
+                Some(IDR_DOUBLE_DOOR),
+                &ItemDriverOutcome::DoubleDoorToggle {
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                },
+            ),
+            1
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(
+                Some(IDR_CHEST),
+                &ItemDriverOutcome::ChestTreasure {
+                    item_id: ItemId(9),
+                    character_id: CharacterId(1),
+                    treasure_index: 3,
+                },
+            ),
+            1
         );
     }
 
