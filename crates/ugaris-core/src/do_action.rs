@@ -1174,7 +1174,7 @@ pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> 
         return false;
     }
     if attacker_flags.contains(MapFlags::ARENA) || defender_flags.contains(MapFlags::ARENA) {
-        if !(attacker_flags.contains(MapFlags::ARENA)
+        let same_arena = attacker_flags.contains(MapFlags::ARENA)
             && defender_flags.contains(MapFlags::ARENA)
             && arena_tiles_connected(
                 map,
@@ -1182,10 +1182,18 @@ pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> 
                 usize::from(attacker.y),
                 usize::from(defender.x),
                 usize::from(defender.y),
-            ))
+            );
+        if !same_arena {
+            return false;
+        }
+        if attacker_flags.contains(MapFlags::CLAN)
+            && defender_flags.contains(MapFlags::CLAN)
+            && attacker.clan != 0
+            && attacker.clan == defender.clan
         {
             return false;
         }
+        return true;
     }
     if attacker
         .flags
@@ -1199,6 +1207,9 @@ pub fn can_attack(attacker: &Character, defender: &Character, map: &MapGrid) -> 
         .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
         && attacker.flags.contains(CharacterFlags::PLAYERLIKE)
     {
+        return false;
+    }
+    if attacker.group != 0 && attacker.group == defender.group {
         return false;
     }
     if attacker.clan != 0 && attacker.clan == defender.clan {
@@ -1899,6 +1910,43 @@ mod tests {
             map.tile_mut(12, y).unwrap().flags.insert(MapFlags::ARENA);
         }
         assert!(can_attack(&attacker, &defender, &map));
+    }
+
+    #[test]
+    fn can_attack_blocks_same_group_npcs_outside_arena() {
+        let map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        attacker.group = 7;
+        defender.group = 7;
+
+        assert!(!can_attack(&attacker, &defender, &map));
+    }
+
+    #[test]
+    fn can_attack_arena_allows_same_clan_unless_clan_area() {
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        attacker.x = 5;
+        attacker.y = 5;
+        defender.x = 6;
+        defender.y = 5;
+        attacker.clan = 42;
+        defender.clan = 42;
+        map.tile_mut(5, 5).unwrap().flags.insert(MapFlags::ARENA);
+        map.tile_mut(6, 5).unwrap().flags.insert(MapFlags::ARENA);
+
+        assert!(can_attack(&attacker, &defender, &map));
+
+        map.tile_mut(5, 5).unwrap().flags.insert(MapFlags::CLAN);
+        map.tile_mut(6, 5).unwrap().flags.insert(MapFlags::CLAN);
+
+        assert!(!can_attack(&attacker, &defender, &map));
     }
 
     #[test]
