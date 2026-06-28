@@ -44,15 +44,15 @@ use crate::{
     sector::{DirtySectors, SoundSectors},
     see::char_see_char,
     spell::{
-        fireball_damage, freeze_speed_modifier, is_timed_spell_driver, may_add_spell, pulse_damage,
-        pulse_spend, read_spell_expire_tick, spell_power, strike_damage, warcry_damage,
-        warcry_speed_modifier, BLESS_COST, BLESS_DURATION, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN,
-        EF_EARTHMUD, EF_EARTHRAIN, EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH,
-        EF_FREEZE, EF_HEAL, EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE,
-        EF_WARCRY, FIREBALL_COST, FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION,
-        IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3,
-        IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, SPELL_SLOT_END, SPELL_SLOT_START,
-        WARCRY_DURATION,
+        add_same_spell_slot, fireball_damage, freeze_speed_modifier, is_timed_spell_driver,
+        may_add_spell, pulse_damage, pulse_spend, read_spell_expire_tick, spell_power,
+        strike_damage, warcry_damage, warcry_speed_modifier, BLESS_COST, BLESS_DURATION, EF_BALL,
+        EF_BLESS, EF_BUBBLE, EF_BURN, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN, EF_EDEMONBALL,
+        EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_MAGICSHIELD,
+        EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY, FIREBALL_COST,
+        FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION, IDR_BLESS, IDR_CURSE,
+        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_POISON0, IDR_POISON3, IDR_POTION_SP,
+        IDR_WARCRY, POISON_DURATION, SPELL_SLOT_END, SPELL_SLOT_START, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -7216,6 +7216,14 @@ impl World {
         let duration = spell_duration_ticks(&caster, FREEZE_DURATION);
         for (target_id, modifier) in targets {
             self.install_speed_spell(target_id, IDR_FREEZE, "Freeze", modifier, duration);
+            let Some(target) = self.characters.get(&target_id) else {
+                continue;
+            };
+            let curse_strength = character_value_present(&caster, CharacterValue::Demon)
+                - character_value(target, CharacterValue::Cold);
+            if caster.flags.contains(CharacterFlags::IDEMON) && curse_strength > 0 {
+                self.install_curse_spell(target_id, curse_strength, curse_strength * 50);
+            }
         }
         self.queue_sound_area(caster_x, caster_y, 31);
         true
@@ -7573,6 +7581,127 @@ impl World {
         }
     }
 
+    fn install_curse_spell(
+        &mut self,
+        target_id: CharacterId,
+        strength: i32,
+        max_strength: i32,
+    ) -> bool {
+        if strength <= 0 || max_strength <= 0 {
+            return false;
+        }
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        let Some(slot) = add_same_spell_slot(&target, &self.items, IDR_CURSE) else {
+            return false;
+        };
+
+        let start_tick = self.tick.0 as u32;
+        let expire_tick = start_tick.wrapping_add((30 * 60 * TICKS_PER_SECOND) as u32);
+        if let Some(item_id) = target.inventory.get(slot).copied().flatten() {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            let current_strength = -i32::from(item.modifier_value[0]);
+            if current_strength >= max_strength {
+                return false;
+            }
+            let added_strength = strength.min(max_strength - current_strength);
+            for value in &mut item.modifier_value[..4] {
+                *value = (i32::from(*value) - added_strength)
+                    .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            }
+            let mut missing_effect = None;
+            if let Some(effect) = self.effects.values_mut().find(|effect| {
+                effect.effect_type == EF_CURSE && effect.target_character == Some(target_id)
+            }) {
+                effect.strength += added_strength;
+            } else {
+                missing_effect = Some((
+                    read_spell_start_tick(&item.driver_data).unwrap_or(start_tick),
+                    read_spell_expire_tick(&item.driver_data).unwrap_or(expire_tick),
+                    -i32::from(item.modifier_value[0]),
+                ));
+            }
+            if let Some((effect_start, effect_stop, effect_strength)) = missing_effect {
+                self.create_show_effect(
+                    EF_CURSE,
+                    target_id,
+                    effect_start,
+                    effect_stop,
+                    0,
+                    effect_strength,
+                );
+            }
+            if let Some(target) = self.characters.get_mut(&target_id) {
+                target
+                    .flags
+                    .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            }
+            return true;
+        }
+
+        let item_id = self.next_runtime_item_id();
+        let mut driver_data = Vec::with_capacity(8);
+        driver_data.extend_from_slice(&expire_tick.to_le_bytes());
+        driver_data.extend_from_slice(&start_tick.to_le_bytes());
+        let item = Item {
+            id: item_id,
+            name: "Curse".to_string(),
+            description: "A Spell of Curse.".to_string(),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [
+                CharacterValue::Intelligence as i16,
+                CharacterValue::Wisdom as i16,
+                CharacterValue::Agility as i16,
+                CharacterValue::Strength as i16,
+                0,
+            ],
+            modifier_value: [
+                (-strength).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                (-strength).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                (-strength).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                (-strength).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                0,
+            ],
+            x: 0,
+            y: 0,
+            carried_by: Some(target_id),
+            contained_in: None,
+            content_id: 0,
+            driver: IDR_CURSE,
+            driver_data,
+            serial: item_id.0,
+        };
+
+        self.items.insert(item_id, item);
+        if let Some(target) = self.characters.get_mut(&target_id) {
+            if target.inventory.len() <= slot {
+                self.items.remove(&item_id);
+                return false;
+            }
+            target.inventory[slot] = Some(item_id);
+            let character_serial = target.id.0;
+            target
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+            self.create_show_effect(EF_CURSE, target_id, start_tick, expire_tick, 0, strength);
+            true
+        } else {
+            self.items.remove(&item_id);
+            false
+        }
+    }
+
     fn install_firering_spell(&mut self, target_id: CharacterId) -> bool {
         let Some(target) = self.characters.get(&target_id).cloned() else {
             return false;
@@ -7923,6 +8052,16 @@ impl World {
                                         i32::from(modifier_value),
                                     );
                                 }
+                                IDR_CURSE => {
+                                    self.create_show_effect(
+                                        EF_CURSE,
+                                        character_id,
+                                        start_tick,
+                                        stop_tick,
+                                        0,
+                                        -i32::from(modifier_value),
+                                    );
+                                }
                                 _ => {}
                             }
                         }
@@ -8178,6 +8317,11 @@ impl World {
 fn read_poison_power(driver_data: &[u8]) -> Option<u16> {
     let bytes = driver_data.get(8..10)?;
     Some(u16::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn read_spell_start_tick(driver_data: &[u8]) -> Option<u32> {
+    let bytes = driver_data.get(4..8)?;
+    Some(u32::from_le_bytes(bytes.try_into().ok()?))
 }
 
 fn read_poison_tick(driver_data: &[u8]) -> Option<u16> {
@@ -15520,6 +15664,92 @@ mod tests {
         assert_eq!(world.timers.used_timers(), 1);
         let sounds = world.drain_pending_sound_specials();
         assert!(sounds.iter().any(|sound| sound.special.special_type == 31));
+    }
+
+    #[test]
+    fn ice_demon_freeze_installs_legacy_curse_spell() {
+        let mut world = World::default();
+        world.tick = Tick(300);
+        let mut caster = character(1);
+        caster
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::IDEMON);
+        caster.mana = 10 * POWERSCALE;
+        caster.values[0][CharacterValue::Freeze as usize] = 50;
+        caster.values[1][CharacterValue::Demon as usize] = 10;
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        target.values[0][CharacterValue::Cold as usize] = 3;
+        target.values[0][CharacterValue::Immunity as usize] = 30;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Freeze,
+            arg1: 0,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 1));
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        assert!(world.tick_basic_actions()[0].ok);
+
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        let curse_id = target.inventory[28].unwrap();
+        let curse = world.items.get(&curse_id).unwrap();
+        assert_eq!(curse.driver, IDR_CURSE);
+        assert_eq!(curse.modifier_index[0], CharacterValue::Intelligence as i16);
+        assert_eq!(curse.modifier_index[1], CharacterValue::Wisdom as i16);
+        assert_eq!(curse.modifier_index[2], CharacterValue::Agility as i16);
+        assert_eq!(curse.modifier_index[3], CharacterValue::Strength as i16);
+        assert_eq!(curse.modifier_value[..4], [-7, -7, -7, -7]);
+        assert_eq!(curse.carried_by, Some(CharacterId(2)));
+        assert_eq!(
+            u32::from_le_bytes(curse.driver_data[0..4].try_into().unwrap()),
+            43_500
+        );
+        assert_eq!(
+            u32::from_le_bytes(curse.driver_data[4..8].try_into().unwrap()),
+            300
+        );
+        let curse_effect = world
+            .effects
+            .values()
+            .find(|effect| effect.effect_type == EF_CURSE)
+            .unwrap();
+        assert_eq!(curse_effect.target_character, Some(CharacterId(2)));
+        assert_eq!(curse_effect.start_tick, 300);
+        assert_eq!(curse_effect.stop_tick, 43_500);
+        assert_eq!(curse_effect.strength, 7);
+        assert_eq!(world.timers.used_timers(), 2);
+    }
+
+    #[test]
+    fn curse_spell_stack_uses_existing_slot_and_caps_strength() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        let mut target = character(2);
+        target.flags.insert(CharacterFlags::ALIVE);
+        world.spawn_character(target, 10, 10);
+
+        assert!(world.install_curse_spell(CharacterId(2), 7, 10));
+        assert!(world.install_curse_spell(CharacterId(2), 7, 10));
+
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        let curse_id = target.inventory[29].unwrap();
+        let curse = world.items.get(&curse_id).unwrap();
+        assert_eq!(curse.driver, IDR_CURSE);
+        assert_eq!(curse.modifier_value[..4], [-10, -10, -10, -10]);
+        assert!(target.inventory[28].is_none());
+        let effects: Vec<_> = world
+            .effects
+            .values()
+            .filter(|effect| effect.effect_type == EF_CURSE)
+            .collect();
+        assert_eq!(effects.len(), 1);
+        assert_eq!(effects[0].strength, 10);
+        assert_eq!(world.timers.used_timers(), 1);
     }
 
     #[test]
