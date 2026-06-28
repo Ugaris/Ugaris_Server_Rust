@@ -1620,6 +1620,9 @@ impl World {
                 if self.reflect_fireball_from_target(&target, &caster, effect.strength) {
                     return;
                 }
+                if target.flags.contains(CharacterFlags::EDEMON) {
+                    self.create_reflected_fireball_effect(&target, &caster, effect.strength - 1);
+                }
                 let has_tactics = character_value_present(&target, CharacterValue::Tactics) != 0;
                 let damage = fireball_damage(
                     effect.strength,
@@ -14647,6 +14650,44 @@ mod tests {
             world.characters[&CharacterId(1)].driver_messages[0].message_type,
             NT_DIDHIT
         );
+    }
+
+    #[test]
+    fn fireball_hit_earth_demon_shoots_weaker_fireball_back() {
+        let mut world = World::default();
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.x = 10;
+        caster.y = 10;
+        caster.act1 = 15;
+        caster.act2 = 10;
+        caster.values[0][CharacterValue::Fireball as usize] = 50;
+        caster.values[0][CharacterValue::Tactics as usize] = 24;
+        let mut target = character(2);
+        target
+            .flags
+            .insert(CharacterFlags::ALIVE | CharacterFlags::EDEMON);
+        target.hp = 30 * POWERSCALE;
+        target.values[0][CharacterValue::Immunity as usize] = 20;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+        world.create_fireball_effect(&caster);
+
+        world.tick_effects();
+        world.tick_effects();
+
+        let shootback = world
+            .effects
+            .values()
+            .find(|effect| effect.effect_type == EF_FIREBALL)
+            .unwrap();
+        assert_eq!(shootback.strength, 52);
+        assert_eq!(shootback.caster, Some(CharacterId(2)));
+        assert_eq!((shootback.from_x, shootback.from_y), (12, 10));
+        assert_eq!((shootback.to_x, shootback.to_y), (10, 10));
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 14_100);
     }
 
     #[test]
