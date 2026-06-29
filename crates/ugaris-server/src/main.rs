@@ -1223,6 +1223,29 @@ fn pk_hate_prerequisites(source: &Character, target: &Character) -> bool {
         && source.level.abs_diff(target.level) <= 3
 }
 
+fn legacy_pk_command_verb(verb: &str) -> Option<&'static str> {
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if verb.eq_ignore_ascii_case("playerkiller") {
+        return Some("playerkiller");
+    }
+    if verb.eq_ignore_ascii_case("iwilldie") {
+        return Some("iwilldie");
+    }
+    if verb.len() >= 2 && "listhate".starts_with(&verb.to_ascii_lowercase()) {
+        return Some("listhate");
+    }
+    if verb.len() >= 3 && "hate".starts_with(&verb.to_ascii_lowercase()) {
+        return Some("hate");
+    }
+    if verb.len() >= 3 && "nohate".starts_with(&verb.to_ascii_lowercase()) {
+        return Some("nohate");
+    }
+    if verb.eq_ignore_ascii_case("clearhate") {
+        return Some("clearhate");
+    }
+    None
+}
+
 fn apply_pk_hate_command(
     world: &mut World,
     player: &mut PlayerRuntime,
@@ -1233,7 +1256,9 @@ fn apply_pk_hate_command(
     let (verb, rest) = command
         .split_once(char::is_whitespace)
         .unwrap_or((command, ""));
-    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let Some(verb) = legacy_pk_command_verb(verb) else {
+        return None;
+    };
     let name = rest.trim();
 
     match verb {
@@ -7199,6 +7224,40 @@ mod tests {
         assert_eq!(removed.messages, vec!["Removed Target from hate list"]);
         assert_eq!(empty.messages, vec!["List is empty."]);
         assert!(!player.has_pk_hate_for(8));
+    }
+
+    #[test]
+    fn pk_hate_commands_accept_legacy_abbreviations() {
+        let mut attacker = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
+        attacker
+            .flags
+            .insert(CharacterFlags::PK | CharacterFlags::LAG);
+        attacker.level = 12;
+        let mut target = login_character(CharacterId(8), &login_block("Target"), 1, 11, 10);
+        target.flags.insert(CharacterFlags::PK);
+        target.level = 10;
+        let mut world = World::default();
+        world.add_character(attacker);
+        world.add_character(target);
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let added =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/hat target", 0)
+                .expect("abbreviated hate command should be recognized");
+        let listed = apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/li", 0)
+            .expect("abbreviated listhate command should be recognized");
+        let removed =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/noh target", 0)
+                .expect("abbreviated nohate command should be recognized");
+
+        assert!(added.messages.is_empty());
+        assert_eq!(listed.messages, vec!["Hate: Target"]);
+        assert_eq!(removed.messages, vec!["Removed Target from hate list"]);
+        assert!(!player.has_pk_hate_for(8));
+        assert!(
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/ha target", 0)
+                .is_none()
+        );
     }
 
     #[test]

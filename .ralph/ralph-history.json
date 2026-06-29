@@ -3810,9 +3810,29 @@
         "test result: ok. 128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
         "- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup rules as direct/character-targeted setup: runtime effect attack checks use the attacking player's `DRD_PK"
       ]
+    },
+    {
+      "iteration": 138,
+      "startedAt": "2026-06-29T00:24:17.799Z",
+      "endedAt": "2026-06-29T00:27:47.171Z",
+      "durationMs": 209196,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+      ]
     }
   ],
-  "totalDurationMs": 63133609,
+  "totalDurationMs": 63342805,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -4240,7 +4260,7 @@
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 511 filtered out; finished in 0.00s": 1,
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 481 filtered out; finished in 0.01s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 3,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 4,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.00s": 1,
       "test result: ok. 122 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: ": 1,
@@ -4253,7 +4273,9 @@
       "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 118 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 127 filtered out; finished in 0.00s": 1,
       "test result: ok. 128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup rules": 1
+      "- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup rules": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s": 1,
+      "test result: ok. 129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
