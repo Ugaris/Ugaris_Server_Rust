@@ -5968,6 +5968,20 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::ClanJewelRescheduled {
+                item_id,
+                schedule_after_ticks,
+            } => {
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::ClanJewelExpired { item_id, .. } => {
+                if self.destroy_item(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::DecayItemToggled {
                 item_id,
                 character_id,
@@ -21255,6 +21269,38 @@ mod tests {
             }
         );
         assert_eq!(world.items.get(&ItemId(8)).unwrap().driver_data[1], 0);
+    }
+
+    #[test]
+    fn world_applies_clanjewel_expiry_to_carried_inventory_item() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(8));
+        world.add_character(character);
+
+        let mut jewel = item(8, ItemFlags::USED);
+        jewel.name = "Clan Jewel".into();
+        jewel.driver = crate::item_driver::IDR_CLANJEWEL;
+        jewel.carried_by = Some(CharacterId(1));
+        world.add_item(jewel);
+
+        let outcome = world.apply_item_driver_outcome(
+            ItemDriverOutcome::ClanJewelExpired {
+                item_id: ItemId(8),
+                character_id: Some(CharacterId(1)),
+                item_name: crate::item_driver::outcome_item_name("Clan Jewel"),
+            },
+            30,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::ClanJewelExpired { .. }
+        ));
+        assert!(!world.items.contains_key(&ItemId(8)));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[30], None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
     }
 
     fn character(id: u32) -> Character {

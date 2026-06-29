@@ -84,6 +84,9 @@ pub const IDR_ANTIORBSPAWN: u16 = 162;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_LAB3_PLANT: u16 = 193;
 pub const IDR_KEY_RING: u16 = 200;
+
+pub const CLANJEWEL_CHECK_INTERVAL_TICKS: u64 = TICKS_PER_SECOND * 30;
+pub const CLANJEWEL_LIFETIME_SECONDS: u32 = 60 * 60;
 pub const IID_ALCHEMY_INGREDIENT: u32 = (0x01 << 24) | 0x000043;
 pub const IID_AREA18_BONE: u32 = (0x01 << 24) | 0x000077;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
@@ -493,6 +496,15 @@ pub enum ItemDriverOutcome {
     TorchExpired {
         item_id: ItemId,
         character_id: CharacterId,
+        item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
+    },
+    ClanJewelRescheduled {
+        item_id: ItemId,
+        schedule_after_ticks: u64,
+    },
+    ClanJewelExpired {
+        item_id: ItemId,
+        character_id: Option<CharacterId>,
         item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
     },
     DecayItemToggled {
@@ -1102,6 +1114,7 @@ pub fn execute_item_driver_with_context(
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
                 IDR_TRANSPORT => transport_driver(character, item, spec),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
+                IDR_CLANJEWEL => clanjewel_driver(character, item, context),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
                 IDR_FLASK => flask_driver(character, item, context, area_id, in_arena),
@@ -1168,6 +1181,36 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
         _ => None,
+    }
+}
+
+fn clanjewel_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if !context.timer_call || character.id.0 != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let current_seconds = context.current_tick / TICKS_PER_SECOND as u32;
+    let mut creation_time = drdata_u32(item, 0);
+    if creation_time == 0 {
+        creation_time = current_seconds;
+        set_drdata_u32(item, 0, creation_time);
+    }
+
+    if current_seconds > creation_time.saturating_add(CLANJEWEL_LIFETIME_SECONDS) {
+        return ItemDriverOutcome::ClanJewelExpired {
+            item_id: item.id,
+            character_id: item.carried_by,
+            item_name: outcome_item_name(&item.name),
+        };
+    }
+
+    ItemDriverOutcome::ClanJewelRescheduled {
+        item_id: item.id,
+        schedule_after_ticks: CLANJEWEL_CHECK_INTERVAL_TICKS,
     }
 }
 
@@ -4844,6 +4887,98 @@ mod tests {
                 character_id: CharacterId(1),
             }
         );
+    }
+
+    #[test]
+    fn clanjewel_driver_initializes_creation_time_and_reschedules_timer() {
+        let mut timer_character = character(0);
+        let mut jewel = item(8, ItemFlags::USED, 0, IDR_CLANJEWEL);
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut jewel,
+            ItemDriverRequest::Driver {
+                driver: IDR_CLANJEWEL,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            30,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                current_tick: 123 * TICKS_PER_SECOND as u32,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(drdata_u32(&jewel, 0), 123);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::ClanJewelRescheduled {
+                item_id: ItemId(8),
+                schedule_after_ticks: CLANJEWEL_CHECK_INTERVAL_TICKS,
+            }
+        );
+    }
+
+    #[test]
+    fn clanjewel_driver_expires_after_one_hour_timer_lifetime() {
+        let mut timer_character = character(0);
+        let mut jewel = item(8, ItemFlags::USED, 0, IDR_CLANJEWEL);
+        jewel.name = "Clan Jewel".into();
+        jewel.carried_by = Some(CharacterId(42));
+        set_drdata_u32(&mut jewel, 0, 100);
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut jewel,
+            ItemDriverRequest::Driver {
+                driver: IDR_CLANJEWEL,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            30,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                current_tick: (100 + CLANJEWEL_LIFETIME_SECONDS + 1) * TICKS_PER_SECOND as u32,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::ClanJewelExpired {
+                item_id: ItemId(8),
+                character_id: Some(CharacterId(42)),
+                item_name: outcome_item_name("Clan Jewel"),
+            }
+        );
+    }
+
+    #[test]
+    fn clanjewel_driver_ignores_direct_character_use() {
+        let mut character = character(1);
+        let mut jewel = item(8, ItemFlags::USED, 0, IDR_CLANJEWEL);
+
+        let outcome = execute_item_driver_with_context(
+            &mut character,
+            &mut jewel,
+            ItemDriverRequest::Driver {
+                driver: IDR_CLANJEWEL,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            30,
+            false,
+            &ItemDriverContext::default(),
+        );
+
+        assert_eq!(outcome, ItemDriverOutcome::Noop);
+        assert_eq!(drdata_u32(&jewel, 0), 0);
     }
 
     #[test]

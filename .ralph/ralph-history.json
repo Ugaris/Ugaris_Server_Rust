@@ -573,9 +573,38 @@
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
         "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok"
       ]
+    },
+    {
+      "iteration": 22,
+      "startedAt": "2026-06-29T12:32:48.121Z",
+      "endedAt": "2026-06-29T12:42:23.397Z",
+      "durationMs": 575080,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/world.rs:",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 615 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 619 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 10390677,
+  "totalDurationMs": 10965757,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 3,
@@ -583,18 +612,18 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 2,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 2,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 16,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 17,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 15,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 14,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 10,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 17,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 18,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 16,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 15,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 11,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 6,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 7,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 2,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
@@ -667,7 +696,9 @@
       "The failed assertion was test-only timing; the rescheduled callback is due at tick 13 after firing a": 1,
       "test world::tests::caligar_gun_timer_creates_fixed_edemonball_projectiles ... FAILED": 1,
       "test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 603 filtered out; finished in 0.00s": 1,
-      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 603 filtered out; finished in 0.00s": 1
+      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 603 filtered out; finished in 0.00s": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 615 filtered out; finished in 0.00s": 1,
+      "test result: ok. 619 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
