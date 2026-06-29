@@ -52,9 +52,9 @@ use crate::{
         EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_MAGICSHIELD,
         EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY, FIREBALL_COST,
         FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION, IDR_ARMOR, IDR_BLESS, IDR_CURSE,
-        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_HP, IDR_INFRARED, IDR_MANA, IDR_OXYGEN,
-        IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, IDR_WEAPON, POISON_DURATION,
-        SPELL_SLOT_END, SPELL_SLOT_START, WARCRY_DURATION,
+        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_HP, IDR_INFRARED, IDR_MANA, IDR_NONOMAGIC,
+        IDR_OXYGEN, IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, IDR_WEAPON,
+        POISON_DURATION, SPELL_SLOT_END, SPELL_SLOT_START, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -8914,6 +8914,7 @@ impl World {
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            refresh_driver_spell_flags(target, &self.items);
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             true
         } else {
@@ -8973,6 +8974,7 @@ impl World {
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            refresh_driver_spell_flags(target, &self.items);
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             true
         } else {
@@ -9031,6 +9033,7 @@ impl World {
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            refresh_driver_spell_flags(target, &self.items);
             self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
             true
         } else {
@@ -9177,6 +9180,13 @@ impl World {
     }
 
     pub fn schedule_existing_spell_timers(&mut self) -> usize {
+        let character_ids: Vec<_> = self.characters.keys().copied().collect();
+        for character_id in character_ids {
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                refresh_driver_spell_flags(character, &self.items);
+            }
+        }
+
         let mut spells = Vec::new();
         for (&character_id, character) in &self.characters {
             for (slot, item_id) in character.inventory.iter().copied().enumerate() {
@@ -9464,6 +9474,7 @@ impl World {
             .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
         self.items.remove(&item_id);
         apply_item_modifier_deltas(character, &item_for_modifier_removal, -1);
+        refresh_driver_spell_flags(character, &self.items);
         if spell_driver == IDR_FREEZE && old_duration != 0 {
             let real_duration = speed_ticks_inverse(old_speed, character.speed_mode, old_duration);
             let new_duration = speed_ticks(
@@ -9618,6 +9629,38 @@ fn apply_item_modifier_deltas(character: &mut Character, item: &Item, sign: i32)
             continue;
         };
         add_character_value_delta(character, value, i32::from(modifier_value) * sign);
+    }
+}
+
+fn refresh_driver_spell_flags(character: &mut Character, items: &HashMap<ItemId, Item>) {
+    let mut has_infravision_spell = false;
+    let mut has_nonomagic_spell = false;
+    let mut has_oxygen_spell = false;
+
+    for item_id in character.inventory.iter().take(30).flatten() {
+        let Some(item) = items.get(item_id) else {
+            continue;
+        };
+        match item.driver {
+            IDR_INFRARED => has_infravision_spell = true,
+            IDR_NONOMAGIC => has_nonomagic_spell = true,
+            IDR_OXYGEN => has_oxygen_spell = true,
+            _ => {}
+        }
+    }
+
+    let old_flags = character.flags;
+    character
+        .flags
+        .set(CharacterFlags::INFRAVISION, has_infravision_spell);
+    character
+        .flags
+        .set(CharacterFlags::NONOMAGIC, has_nonomagic_spell);
+    character
+        .flags
+        .set(CharacterFlags::OXYGEN, has_oxygen_spell);
+    if character.flags != old_flags {
+        character.flags.insert(CharacterFlags::UPDATE);
     }
 }
 
@@ -10057,7 +10100,7 @@ mod tests {
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
-        spell::{IDR_INFRARED, IDR_OXYGEN, IDR_POISON0, IDR_POISON1, IDR_POISON2},
+        spell::{IDR_INFRARED, IDR_NONOMAGIC, IDR_OXYGEN, IDR_POISON0, IDR_POISON1, IDR_POISON2},
         tick::TICKS_PER_SECOND,
     };
 
@@ -18419,7 +18462,14 @@ mod tests {
         assert_eq!(spell.driver, IDR_INFRARED);
         assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(14_442));
         assert_eq!(character.inventory[30], None);
+        assert!(character.flags.contains(CharacterFlags::INFRAVISION));
         assert!(!world.items.contains_key(&ItemId(10)));
+
+        world.tick = Tick(14_442);
+        world.process_due_timers(1);
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert!(!character.flags.contains(CharacterFlags::INFRAVISION));
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
     }
 
     #[test]
@@ -18458,9 +18508,50 @@ mod tests {
         assert_eq!(spell.driver, IDR_OXYGEN);
         assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(1_517));
         assert_eq!(character.inventory[30], None);
+        assert!(character.flags.contains(CharacterFlags::OXYGEN));
         assert!(character.flags.contains(CharacterFlags::ITEMS));
         assert!(character.flags.contains(CharacterFlags::UPDATE));
         assert!(!world.items.contains_key(&ItemId(10)));
+
+        world.tick = Tick(1_517);
+        world.process_due_timers(31);
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert!(!character.flags.contains(CharacterFlags::OXYGEN));
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn existing_driver_spell_items_refresh_legacy_character_flags() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[12] = Some(ItemId(12));
+        character.inventory[13] = Some(ItemId(13));
+        character.inventory[30] = Some(ItemId(30));
+        world.add_character(character);
+
+        let mut nonomagic = item(12, ItemFlags::USED);
+        nonomagic.carried_by = Some(CharacterId(1));
+        nonomagic.driver = IDR_NONOMAGIC;
+        nonomagic.driver_data = 100u32.to_le_bytes().to_vec();
+        world.items.insert(ItemId(12), nonomagic);
+
+        let mut oxygen = item(13, ItemFlags::USED);
+        oxygen.carried_by = Some(CharacterId(1));
+        oxygen.driver = IDR_OXYGEN;
+        oxygen.driver_data = 200u32.to_le_bytes().to_vec();
+        world.items.insert(ItemId(13), oxygen);
+
+        let mut ignored_infravision = item(30, ItemFlags::USED);
+        ignored_infravision.carried_by = Some(CharacterId(1));
+        ignored_infravision.driver = IDR_INFRARED;
+        ignored_infravision.driver_data = 300u32.to_le_bytes().to_vec();
+        world.items.insert(ItemId(30), ignored_infravision);
+
+        assert_eq!(world.schedule_existing_spell_timers(), 3);
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert!(character.flags.contains(CharacterFlags::NONOMAGIC));
+        assert!(character.flags.contains(CharacterFlags::OXYGEN));
+        assert!(!character.flags.contains(CharacterFlags::INFRAVISION));
     }
 
     #[test]
