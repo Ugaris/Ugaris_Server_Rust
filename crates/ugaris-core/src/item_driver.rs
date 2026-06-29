@@ -746,6 +746,15 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    JunkpileSearch {
+        item_id: ItemId,
+        character_id: CharacterId,
+        level: u8,
+    },
+    JunkpileCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     ChestTreasure {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1609,6 +1618,8 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::TrapdoorClose { .. }
         | ItemDriverOutcome::TrapdoorBusy { .. }
         | ItemDriverOutcome::TrapdoorNeedsStick { .. }
+        | ItemDriverOutcome::JunkpileSearch { .. }
+        | ItemDriverOutcome::JunkpileCursorOccupied { .. }
         | ItemDriverOutcome::StafferSpecDoorToggle { .. }
         | ItemDriverOutcome::EdemonDoorToggle { .. } => 1,
         ItemDriverOutcome::StafferSpecDoorLocked { .. }
@@ -1766,6 +1777,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_TRAPDOOR => trapdoor_driver(character, item, context),
+                IDR_JUNKPILE => junkpile_driver(character, item, context),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
@@ -4011,6 +4023,29 @@ fn trapdoor_driver(
     ItemDriverOutcome::TrapdoorNeedsStick {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn junkpile_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if context.timer_call || character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::JunkpileCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::JunkpileSearch {
+        item_id: item.id,
+        character_id: character.id,
+        level: drdata(item, 0),
     }
 }
 
@@ -14336,6 +14371,59 @@ mod tests {
         assert_eq!(
             outcome,
             ItemDriverOutcome::TrapdoorClose { item_id: ItemId(8) }
+        );
+    }
+
+    #[test]
+    fn junkpile_search_requires_empty_cursor_and_carries_level() {
+        let mut actor = character(1);
+        let mut junkpile = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_JUNKPILE);
+        junkpile.driver_data = vec![17];
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut junkpile,
+            ItemDriverRequest::Driver {
+                driver: IDR_JUNKPILE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext::default(),
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::JunkpileSearch {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                level: 17,
+            }
+        );
+
+        actor.cursor_item = Some(ItemId(99));
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut junkpile,
+            ItemDriverRequest::Driver {
+                driver: IDR_JUNKPILE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext::default(),
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::JunkpileCursorOccupied {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
         );
     }
 

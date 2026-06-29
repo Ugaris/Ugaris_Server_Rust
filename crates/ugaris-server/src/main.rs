@@ -894,6 +894,15 @@ enum ForestSpadeApplyResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum JunkpileApplyResult {
+    Found { item_name: String },
+    FoundMoney { amount: u32 },
+    Nothing,
+    CursorOccupied,
+    MissingPlayer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum KeyringAddApplyResult {
     Added { key_name: String },
     Duplicate,
@@ -5321,6 +5330,49 @@ fn apply_forest_spade_find(
             ForestSpadeApplyResult::FoundMoney { amount }
         }
     }
+}
+
+fn apply_junkpile_search(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    item_id: ItemId,
+    character_id: CharacterId,
+    level: u8,
+    random_seed: u64,
+) -> JunkpileApplyResult {
+    if world.characters.get(&character_id).is_none() {
+        return JunkpileApplyResult::MissingPlayer;
+    }
+    if world
+        .characters
+        .get(&character_id)
+        .is_some_and(|character| character.cursor_item.is_some())
+    {
+        return JunkpileApplyResult::CursorOccupied;
+    }
+
+    let roll = legacy_random(random_seed, 10);
+    let result = match roll {
+        1 | 2 | 4 | 5 | 7 | 9 => {
+            grant_template_item_to_cursor(world, loader, character_id, "steelbar")
+                .map(|item_name| JunkpileApplyResult::Found { item_name })
+                .unwrap_or(JunkpileApplyResult::Nothing)
+        }
+        3 => {
+            let max = 100_u32.saturating_mul(u32::from(level));
+            let amount =
+                legacy_random(random_seed.wrapping_add(1), max).saturating_add(u32::from(level));
+            if grant_money_to_cursor(world, loader, character_id, amount) {
+                JunkpileApplyResult::FoundMoney { amount }
+            } else {
+                JunkpileApplyResult::Nothing
+            }
+        }
+        _ => JunkpileApplyResult::Nothing,
+    };
+
+    world.destroy_item(item_id);
+    result
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14934,6 +14986,88 @@ mod tests {
     }
 
     #[test]
+    fn junkpile_search_grants_steelbar_and_destroys_pile() {
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"
+                steelbar:
+                    name="Steel Bar"
+                    sprite=321
+                    flag=IF_TAKE
+                ;
+                "#,
+            )
+            .unwrap();
+        let mut world = World::default();
+        world.add_character(login_character(
+            CharacterId(7),
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut pile = test_item(ItemId(70), 1, ItemFlags::USED | ItemFlags::USE);
+        assert!(world.map.set_item_map(&mut pile, 10, 10));
+        world.add_item(pile);
+
+        let result = apply_junkpile_search(
+            &mut world,
+            &mut loader,
+            ItemId(70),
+            CharacterId(7),
+            5,
+            seed_for_legacy_random(10, 1),
+        );
+
+        assert_eq!(
+            result,
+            JunkpileApplyResult::Found {
+                item_name: "Steel Bar".to_string(),
+            }
+        );
+        assert!(!world.items.contains_key(&ItemId(70)));
+        assert_eq!(world.map.tile(10, 10).unwrap().item, 0);
+        let character = world.characters.get(&CharacterId(7)).unwrap();
+        let item = world.items.get(&character.cursor_item.unwrap()).unwrap();
+        assert_eq!(item.name, "Steel Bar");
+        assert_eq!(item.carried_by, Some(CharacterId(7)));
+    }
+
+    #[test]
+    fn junkpile_search_grants_money_for_roll_three() {
+        let mut loader = ZoneLoader::new();
+        let mut world = World::default();
+        world.add_character(login_character(
+            CharacterId(7),
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut pile = test_item(ItemId(70), 1, ItemFlags::USED | ItemFlags::USE);
+        assert!(world.map.set_item_map(&mut pile, 10, 10));
+        world.add_item(pile);
+        let seed = seed_for_legacy_random(10, 3);
+        let expected_amount = legacy_random(seed.wrapping_add(1), 700).saturating_add(7);
+
+        let result =
+            apply_junkpile_search(&mut world, &mut loader, ItemId(70), CharacterId(7), 7, seed);
+
+        assert_eq!(
+            result,
+            JunkpileApplyResult::FoundMoney {
+                amount: expected_amount,
+            }
+        );
+        let character = world.characters.get(&CharacterId(7)).unwrap();
+        let item = world.items.get(&character.cursor_item.unwrap()).unwrap();
+        assert_eq!(item.name, "Money");
+        assert_eq!(item.value, expected_amount);
+        assert!(!world.items.contains_key(&ItemId(70)));
+    }
+
+    #[test]
     fn infinite_chest_context_uses_inventory_key_not_keyring() {
         let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
         character.inventory[30] = Some(ItemId(30));
@@ -16988,6 +17122,39 @@ async fn main() -> anyhow::Result<()> {
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeCursorOccupied { character_id, .. } => {
+                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::JunkpileSearch { item_id, character_id, level } => {
+                                            let random_seed = world.tick.0
+                                                ^ (u64::from(item_id.0) << 16)
+                                                ^ u64::from(character_id.0);
+                                            match apply_junkpile_search(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                item_id,
+                                                character_id,
+                                                level,
+                                                random_seed,
+                                            ) {
+                                                JunkpileApplyResult::Found { .. }
+                                                | JunkpileApplyResult::FoundMoney { .. } => {
+                                                    feedback.push((character_id, "You found something between all that junk.".to_string()));
+                                                    executed += 1;
+                                                }
+                                                JunkpileApplyResult::Nothing => {
+                                                    executed += 1;
+                                                }
+                                                JunkpileApplyResult::CursorOccupied => {
+                                                    feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                JunkpileApplyResult::MissingPlayer => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::JunkpileCursorOccupied { character_id, .. } => {
                                             feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
                                             blocked += 1;
                                         }
