@@ -318,6 +318,7 @@ pub struct ItemDriverContext {
     pub character_underwater: bool,
     pub current_tick: u32,
     pub edemon_section_power: Option<u8>,
+    pub fdemon_loader_power: Option<u16>,
     pub bone_hint_nr: Option<u8>,
     pub bone_hint_pos: Option<u8>,
 }
@@ -1240,6 +1241,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EDEMONBALL => edemonball_driver(character, item, context),
                 IDR_EDEMONSWITCH => edemon_switch_driver(character, item, context),
                 IDR_EDEMONLIGHT => edemon_light_driver(character, item, context),
+                IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -1324,6 +1326,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
+        IDR_FDEMONLIGHT => Some(8),
         _ => None,
     }
 }
@@ -4509,6 +4512,31 @@ fn edemon_light_driver(
     } else {
         (0, 14189)
     };
+
+    item.modifier_index[0] = V_LIGHT;
+    item.modifier_value[0] = light;
+    item.sprite = sprite;
+
+    ItemDriverOutcome::LightChanged {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: Some(TICKS_PER_SECOND),
+    }
+}
+
+fn fdemon_light_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 || !context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(power) = context.fdemon_loader_power else {
+        return ItemDriverOutcome::Noop;
+    };
+    let (light, sprite) = if power != 0 { (200, 14192) } else { (0, 14189) };
 
     item.modifier_index[0] = V_LIGHT;
     item.modifier_value[0] = light;
@@ -8969,6 +8997,108 @@ mod tests {
                     spec: 0,
                 },
                 6,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn fdemon_light_timer_follows_loader_power_and_reschedules() {
+        let mut timer_character = character(0);
+        let mut light = item(7, ItemFlags::USED, 0, IDR_FDEMONLIGHT);
+        light.sprite = 14189;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONLIGHT,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut light,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    fdemon_loader_power: Some(300),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: Some(TICKS_PER_SECOND),
+            }
+        );
+        assert_eq!(light.sprite, 14192);
+        assert_eq!(light.modifier_index[0], V_LIGHT);
+        assert_eq!(light.modifier_value[0], 200);
+
+        execute_item_driver_with_context(
+            &mut timer_character,
+            &mut light,
+            request,
+            8,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                fdemon_loader_power: Some(0),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(light.sprite, 14189);
+        assert_eq!(light.modifier_value[0], 0);
+    }
+
+    #[test]
+    fn fdemon_light_preserves_area8_libload_guard_and_player_noop() {
+        let mut timer_character = character(0);
+        let mut light = item(7, ItemFlags::USED, 0, IDR_FDEMONLIGHT);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONLIGHT,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut light,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    fdemon_loader_power: Some(300),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_FDEMONLIGHT,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                required_area: 8,
+            }
+        );
+
+        let mut user = character(1);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut user,
+                &mut light,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FDEMONLIGHT,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                8,
                 false,
                 &ItemDriverContext::default(),
             ),

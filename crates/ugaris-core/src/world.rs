@@ -28,8 +28,8 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_CALIGAR, IDR_CALIGARFLAME,
-        IDR_EDEMONLIGHT, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-        IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        IDR_EDEMONLIGHT, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT,
+        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2150,7 +2150,9 @@ impl World {
                     Some(item_id)
                 }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
-                IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT => Some(item_id),
+                IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_FDEMONLIGHT => {
+                    Some(item_id)
+                }
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
@@ -2499,16 +2501,17 @@ impl World {
         area_id: u16,
         context: &ItemDriverContext,
     ) -> ItemDriverOutcome {
-        let (character_id, item_id) = match request {
+        let (driver, character_id, item_id) = match request {
             ItemDriverRequest::Driver {
+                driver,
                 character_id,
                 item_id,
                 ..
-            }
-            | ItemDriverRequest::AccountDepot {
+            } => (Some(driver), character_id, item_id),
+            ItemDriverRequest::AccountDepot {
                 character_id,
                 item_id,
-            } => (character_id, item_id),
+            } => (None, character_id, item_id),
         };
         let character_tile_flags = self
             .characters
@@ -2533,6 +2536,10 @@ impl World {
                     item.driver_data.first().copied().unwrap_or(0),
                 )
             });
+        let fdemon_loader_power = (driver == Some(IDR_FDEMONLIGHT)
+            && context.fdemon_loader_power.is_none())
+        .then(|| fdemon_loader_power_for_light(&self.items, item_id))
+        .flatten();
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -2541,6 +2548,9 @@ impl World {
         };
         let mut effective_context = context.clone();
         effective_context.current_tick = self.tick.0 as u32;
+        if effective_context.fdemon_loader_power.is_none() {
+            effective_context.fdemon_loader_power = fdemon_loader_power;
+        }
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
         {
@@ -10951,6 +10961,38 @@ impl World {
 fn read_poison_power(driver_data: &[u8]) -> Option<u16> {
     let bytes = driver_data.get(8..10)?;
     Some(u16::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn fdemon_loader_power_for_light(
+    items: &HashMap<ItemId, Item>,
+    light_item_id: ItemId,
+) -> Option<u16> {
+    let light = items.get(&light_item_id)?;
+    let mut max_power = 0u16;
+    let mut found = false;
+
+    for loader_nr in 1..=3u8 {
+        let nearest = items
+            .values()
+            .filter(|item| {
+                item.driver == IDR_FDEMONLOADER && item.driver_data.first() == Some(&loader_nr)
+            })
+            .min_by_key(|item| {
+                i32::from(light.x).abs_diff(i32::from(item.x))
+                    + i32::from(light.y).abs_diff(i32::from(item.y))
+            });
+
+        if let Some(loader) = nearest {
+            found = true;
+            if let Some(bytes) = loader.driver_data.get(1..3) {
+                if let Ok(bytes) = <[u8; 2]>::try_from(bytes) {
+                    max_power = max_power.max(u16::from_le_bytes(bytes));
+                }
+            }
+        }
+    }
+
+    found.then_some(max_power)
 }
 
 fn read_spell_start_tick(driver_data: &[u8]) -> Option<u32> {
