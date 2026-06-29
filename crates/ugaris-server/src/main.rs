@@ -196,10 +196,19 @@ struct ServerRuntime {
     map_caches: HashMap<u64, VisibleMapCache>,
     effect_caches: HashMap<u64, ClientEffectCache>,
     account_depots: HashMap<CharacterId, AccountDepotState>,
+    staff_codes: HashMap<CharacterId, String>,
     action_queue: VecDeque<(u64, ClientAction)>,
     next_character_id: u32,
     dlight_override: i32,
     show_attack: bool,
+}
+
+fn runtime_staff_code(runtime: &ServerRuntime, character_id: CharacterId) -> &str {
+    runtime
+        .staff_codes
+        .get(&character_id)
+        .map(String::as_str)
+        .unwrap_or("")
 }
 
 impl ServerRuntime {
@@ -2109,6 +2118,49 @@ fn apply_admin_character_command(
         .split_once(char::is_whitespace)
         .unwrap_or((command, ""));
     let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+
+    if lower.len() >= 6 && "staffcode".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let rest = rest.trim_start();
+        let (name, code_text) = take_legacy_alpha_name(rest);
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+
+        let mut letters = code_text.trim_start().chars();
+        let first = letters
+            .next()
+            .filter(char::is_ascii_alphabetic)
+            .map(|ch| ch.to_ascii_uppercase())
+            .unwrap_or('A');
+        let second = letters
+            .next()
+            .filter(char::is_ascii_alphabetic)
+            .map(|ch| ch.to_ascii_uppercase())
+            .unwrap_or('A');
+        let code = format!("{first}{second}");
+        let target_name = world
+            .characters
+            .get(&target_id)
+            .map(|target| target.name.clone())
+            .unwrap_or_else(|| name.to_string());
+        runtime.staff_codes.insert(target_id, code.clone());
+        return Some(KeyringCommandResult {
+            messages: vec![format!("Set {target_name}'s staff code to {code}.")],
+            ..Default::default()
+        });
+    }
+
     let Some(character) = world.characters.get_mut(&character_id) else {
         return Some(KeyringCommandResult::default());
     };
@@ -2116,8 +2168,6 @@ fn apply_admin_character_command(
     let is_lqmaster = character.flags.contains(CharacterFlags::GOD)
         || character.flags.contains(CharacterFlags::EVENTMASTER)
         || (area_id == 20 && character.flags.contains(CharacterFlags::LQMASTER));
-    let lower = verb.to_ascii_lowercase();
-
     if lower == "itemmod" {
         if !character.flags.contains(CharacterFlags::GOD) {
             return None;
@@ -2529,6 +2579,7 @@ fn legacy_chat_command_channel(command: &str) -> Option<(u8, &str)> {
 
 fn legacy_chat_line(
     sender: &Character,
+    staff_code: &str,
     mirror: u16,
     channel: ChatChannelInfo,
     text: &str,
@@ -2565,7 +2616,9 @@ fn legacy_chat_line(
     out.extend_from_slice(sender_name.as_bytes());
     out.extend_from_slice(&runtime_color(color));
     if sender.flags.contains(CharacterFlags::STAFF) && !sender.flags.contains(CharacterFlags::GOD) {
-        out.extend_from_slice(b"[]");
+        out.extend_from_slice(b"[");
+        out.extend_from_slice(staff_code.as_bytes());
+        out.extend_from_slice(b"]");
     }
     out.extend_from_slice(b" ");
     if channel.number == 4 {
@@ -2773,7 +2826,8 @@ fn apply_chat_command(
     let sender_mirror = sender_runtime
         .map(|player| player.current_mirror_id)
         .unwrap_or_default();
-    let line = legacy_chat_line(sender, sender_mirror, channel, text);
+    let staff_code = runtime_staff_code(runtime, sender_id);
+    let line = legacy_chat_line(sender, staff_code, sender_mirror, channel, text);
     let sender_public_id = if sender
         .flags
         .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
@@ -3158,9 +3212,9 @@ fn apply_tell_command(
         .map(|player| player.current_mirror_id)
         .unwrap_or_default();
     let staff_code = if sender.flags.contains(CharacterFlags::STAFF) {
-        " []"
+        format!(" [{}]", runtime_staff_code(runtime, sender_id))
     } else {
-        ""
+        String::new()
     };
     let tell_text = format!(
         "{}{} ({}) tells you: \"{}\"",
@@ -3273,6 +3327,7 @@ fn apply_nowho_command(
 
 fn apply_who_command(
     world: &World,
+    runtime: Option<&ServerRuntime>,
     caller_flags: CharacterFlags,
     command: &str,
 ) -> Option<KeyringCommandResult> {
@@ -3304,8 +3359,11 @@ fn apply_who_command(
             }
 
             messages.push(format!(
-                "{} []{}",
+                "{} [{}]{}",
                 character.name,
+                runtime
+                    .map(|runtime| runtime_staff_code(runtime, character.id))
+                    .unwrap_or(""),
                 if character.driver == 0 {
                     ""
                 } else {
@@ -10303,6 +10361,52 @@ mod tests {
     }
 
     #[test]
+    fn god_staffcode_command_sets_runtime_code_with_legacy_parsing() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let staff_id = CharacterId(8);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let mut staff = login_character(staff_id, &login_block("Staffer"), 1, 11, 10);
+        staff.flags.insert(CharacterFlags::STAFF);
+        world.add_character(staff);
+        let mut runtime = ServerRuntime::default();
+
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/staffc Staffer xy",
+            1,
+        )
+        .expect("legacy cmdcmp accepts staffcode prefix length six");
+
+        assert_eq!(result.messages, vec!["Set Staffer's staff code to XY."]);
+        assert_eq!(runtime_staff_code(&runtime, staff_id), "XY");
+
+        let defaulted = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/staffcode Staffer 7",
+            1,
+        )
+        .expect("god staffcode command should be recognized");
+        assert_eq!(defaulted.messages, vec!["Set Staffer's staff code to AA."]);
+        assert_eq!(runtime_staff_code(&runtime, staff_id), "AA");
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            staff_id,
+            "/staffcode Staffer zz",
+            1,
+        )
+        .is_none());
+    }
+
+    #[test]
     fn dlight_and_showattack_are_god_only_and_keep_full_dlight_minlen() {
         let mut world = World::default();
         let character_id = CharacterId(7);
@@ -10846,6 +10950,36 @@ mod tests {
     }
 
     #[test]
+    fn tell_command_includes_runtime_staff_code_for_staff_senders() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut sender = login_character(sender_id, &login_block("Helper"), 1, 10, 10);
+        sender.flags.insert(CharacterFlags::STAFF);
+        world.add_character(sender);
+        world.add_character(login_character(target_id, &login_block("Bob"), 1, 11, 10));
+
+        let mut runtime = ServerRuntime::default();
+        runtime.staff_codes.insert(sender_id, "HM".to_string());
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.insert(2, PlayerRuntime::connected(2, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+        runtime.players.get_mut(&1).unwrap().current_mirror_id = 4;
+        runtime.players.get_mut(&2).unwrap().character_id = Some(target_id);
+
+        let result = apply_tell_command(&world, &mut runtime, sender_id, "/tell Bob Secret", 100)
+            .expect("tell command should be recognized");
+
+        assert_eq!(
+            result.delivered_messages,
+            vec![(
+                target_id,
+                "HELPER [HM] (4) tells you: \"Secret\"".to_string()
+            )]
+        );
+    }
+
+    #[test]
     fn tell_command_preserves_legacy_errors_and_self_feedback() {
         let mut world = World::default();
         let sender_id = CharacterId(7);
@@ -11019,6 +11153,35 @@ mod tests {
         assert!(result.delivered_message_bytes[0]
             .1
             .starts_with(&[0xb0, b'c']));
+    }
+
+    #[test]
+    fn chat_command_includes_runtime_staff_code_for_staff_senders() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut sender = login_character(sender_id, &login_block("Helper"), 1, 10, 10);
+        sender.flags.insert(CharacterFlags::STAFF);
+        world.add_character(sender);
+        world.add_character(login_character(target_id, &login_block("Bob"), 1, 11, 10));
+
+        let mut runtime = ServerRuntime::default();
+        runtime.staff_codes.insert(sender_id, "HM".to_string());
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.insert(2, PlayerRuntime::connected(2, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+        runtime.players.get_mut(&1).unwrap().current_mirror_id = 4;
+        runtime.players.get_mut(&1).unwrap().chat_channels = 1_u32 << 1;
+        runtime.players.get_mut(&2).unwrap().character_id = Some(target_id);
+        runtime.players.get_mut(&2).unwrap().chat_channels = 1_u32 << 1;
+
+        let result = apply_chat_command(&world, &mut runtime, sender_id, "/gossip Hello", 1)
+            .expect("chat channel command should be recognized");
+
+        let text = String::from_utf8_lossy(&result.delivered_message_bytes[0].1);
+        assert!(text.contains("HELPER"));
+        assert!(text.contains("[HM]"));
+        assert!(text.contains("(4) says: \"Hello\""));
     }
 
     #[test]
@@ -11313,7 +11476,7 @@ mod tests {
         npc.flags.remove(CharacterFlags::PLAYER);
         world.add_character(npc);
 
-        let result = apply_who_command(&world, CharacterFlags::empty(), "/who")
+        let result = apply_who_command(&world, None, CharacterFlags::empty(), "/who")
             .expect("who command should be recognized");
 
         assert_eq!(
@@ -11333,14 +11496,14 @@ mod tests {
         character.level = 9;
         world.add_character(character);
 
-        let result = apply_who_command(&world, CharacterFlags::empty(), "/w")
+        let result = apply_who_command(&world, None, CharacterFlags::empty(), "/w")
             .expect("legacy cmdcmp accepts short who");
 
         assert_eq!(
             result.messages,
             vec!["Currently online in this area:", "Tester (9)"]
         );
-        assert!(apply_who_command(&world, CharacterFlags::empty(), "/whostaff").is_none());
+        assert!(apply_who_command(&world, None, CharacterFlags::empty(), "/whostaff").is_none());
     }
 
     #[test]
@@ -11366,13 +11529,23 @@ mod tests {
         let player = login_character(CharacterId(10), &login_block("Player"), 1, 13, 10);
         world.add_character(player);
 
-        assert!(apply_who_command(&world, caller_flags, "/who").is_some());
-        assert!(apply_who_command(&world, caller_flags, "/whoo").is_none());
+        assert!(apply_who_command(&world, None, caller_flags, "/who").is_some());
+        assert!(apply_who_command(&world, None, caller_flags, "/whoo").is_none());
 
-        let result = apply_who_command(&world, caller_flags, "/whos")
+        let result = apply_who_command(&world, None, caller_flags, "/whos")
             .expect("legacy cmdcmp accepts whostaff prefix length four");
 
         assert_eq!(result.messages, vec!["Staffer []", "LagGod [] (lagging)"]);
+
+        let mut runtime = ServerRuntime::default();
+        runtime.staff_codes.insert(CharacterId(7), "ST".to_string());
+        runtime.staff_codes.insert(CharacterId(8), "GD".to_string());
+        let result = apply_who_command(&world, Some(&runtime), caller_flags, "/whos")
+            .expect("runtime whostaff should use stored staff codes");
+        assert_eq!(
+            result.messages,
+            vec!["Staffer [ST]", "LagGod [GD] (lagging)"]
+        );
     }
 
     #[test]
@@ -16576,7 +16749,9 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
-                            if let Some(result) = apply_who_command(&world, character_flags, &command) {
+                            if let Some(result) =
+                                apply_who_command(&world, Some(&runtime), character_flags, &command)
+                            {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
