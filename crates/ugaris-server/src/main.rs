@@ -303,6 +303,21 @@ impl ServerRuntime {
             .collect()
     }
 
+    fn refresh_known_character_name(&mut self, character: &Character) -> Vec<u64> {
+        let character_id = client_character_id(character);
+        let packet = character_name_packet(character).to_vec();
+        let mut sessions = Vec::new();
+        for (session_id, cache) in &mut self.map_caches {
+            if cache.known_character_names.contains_key(&character_id) {
+                cache
+                    .known_character_names
+                    .insert(character_id, packet.clone());
+                sessions.push(*session_id);
+            }
+        }
+        sessions
+    }
+
     fn sessions_for_area_message(
         &self,
         world: &World,
@@ -891,6 +906,7 @@ struct KeyringCommandResult {
     messages: Vec<String>,
     message_bytes: Vec<Vec<u8>>,
     inventory_changed: bool,
+    name_changed: bool,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -955,7 +971,7 @@ fn legacy_help_result(messages: Vec<String>) -> KeyringCommandResult {
     KeyringCommandResult {
         messages,
         message_bytes,
-        inventory_changed: false,
+        ..Default::default()
     }
 }
 
@@ -992,6 +1008,9 @@ fn login_character(
         description: String::new(),
         flags: CharacterFlags::USED | CharacterFlags::PLAYER | CharacterFlags::ALIVE,
         sprite: 1,
+        c1: 0,
+        c2: 0,
+        c3: 0,
         driver: 0,
         group: 0,
         clan: 0,
@@ -1456,6 +1475,64 @@ fn legacy_atoi_prefix(input: &str) -> i64 {
     } else {
         0
     }
+}
+
+fn legacy_color_word(red: i64, green: i64, blue: i64) -> u16 {
+    ((red << 10) + (green << 5) + blue) as u16
+}
+
+fn parse_legacy_color_triplet(rest: &str) -> [i64; 3] {
+    let mut values = [0; 3];
+    for (index, part) in rest.split_whitespace().take(3).enumerate() {
+        values[index] = legacy_atoi_prefix(part);
+    }
+    values
+}
+
+fn apply_color_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+
+    if lower.len() >= 4 && "color".starts_with(&lower) {
+        let character = world.characters.get(&character_id)?;
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "c1={:X}, c2={:X}, c3={:X}",
+                character.c1, character.c2, character.c3
+            )],
+            ..Default::default()
+        });
+    }
+
+    let color_slot = match lower.as_str() {
+        "col1" => Some(1),
+        "col2" => Some(2),
+        "col3" => Some(3),
+        _ => None,
+    }?;
+    let [red, green, blue] = parse_legacy_color_triplet(rest);
+    let color = legacy_color_word(red, green, blue);
+    let character = world.characters.get_mut(&character_id)?;
+    match color_slot {
+        1 => character.c1 = color,
+        2 => character.c2 = color,
+        3 => character.c3 = color,
+        _ => unreachable!(),
+    }
+    Some(KeyringCommandResult {
+        name_changed: true,
+        ..Default::default()
+    })
 }
 
 fn apply_gold_command(
@@ -7246,7 +7323,7 @@ fn character_name_packet(character: &Character) -> bytes::BytesMut {
     ugaris_protocol::packet::character_name(
         client_character_id(character),
         character.level.min(u32::from(u8::MAX)) as u8,
-        [0, 0, 0],
+        [character.c1, character.c2, character.c3],
         0,
         0,
         &name,
@@ -10388,6 +10465,80 @@ mod tests {
     }
 
     #[test]
+    fn color_commands_pack_legacy_rgb_words_and_report_for_gods() {
+        let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        let mut world = World::default();
+        world.add_character(character);
+
+        let changed = apply_color_command(&mut world, CharacterId(7), "/col1 1 2 3")
+            .expect("col1 should be recognized");
+        assert!(changed.name_changed);
+        let character = world.characters.get(&CharacterId(7)).unwrap();
+        assert_eq!(character.c1, (1 << 10) + (2 << 5) + 3);
+        assert_eq!(character.c2, 0);
+        assert_eq!(character.c3, 0);
+
+        assert!(apply_color_command(&mut world, CharacterId(7), "/color").is_none());
+        world
+            .characters
+            .get_mut(&CharacterId(7))
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let report = apply_color_command(&mut world, CharacterId(7), "/color")
+            .expect("god color command should be recognized");
+        assert_eq!(report.messages, vec!["c1=443, c2=0, c3=0"]);
+    }
+
+    #[test]
+    fn character_name_packet_uses_legacy_color_words() {
+        let mut character = login_character(CharacterId(0x1234), &login_block("Tester"), 1, 10, 10);
+        character.c1 = 0x0443;
+        character.c2 = 0x0884;
+        character.c3 = 0x0cc5;
+
+        let packet = character_name_packet(&character);
+
+        assert_eq!(packet[0], ugaris_protocol::packet::SV_NAME);
+        assert_eq!(&packet[1..3], &0x1234_u16.to_le_bytes());
+        assert_eq!(&packet[4..6], &0x0443_u16.to_le_bytes());
+        assert_eq!(&packet[6..8], &0x0884_u16.to_le_bytes());
+        assert_eq!(&packet[8..10], &0x0cc5_u16.to_le_bytes());
+    }
+
+    #[test]
+    fn runtime_refreshes_known_character_name_cache_after_color_change() {
+        let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        let old_packet = character_name_packet(&character).to_vec();
+        let mut runtime = ServerRuntime::default();
+        runtime.map_caches.insert(
+            11,
+            VisibleMapCache {
+                center_x: 10,
+                center_y: 10,
+                view_distance: 8,
+                cells: HashMap::new(),
+                known_character_names: HashMap::from([(7, old_packet.clone())]),
+            },
+        );
+
+        character.c1 = 0x0443;
+        let sessions = runtime.refresh_known_character_name(&character);
+
+        assert_eq!(sessions, vec![11]);
+        assert_ne!(
+            runtime
+                .map_caches
+                .get(&11)
+                .unwrap()
+                .known_character_names
+                .get(&7)
+                .unwrap(),
+            &old_packet
+        );
+    }
+
+    #[test]
     fn help_command_includes_staff_and_god_sections_by_flag() {
         let staff = apply_help_command("/help", CharacterFlags::STAFF, 1)
             .expect("staff help should be recognized");
@@ -13064,6 +13215,7 @@ async fn main() -> anyhow::Result<()> {
                 let mut command_feedback_bytes = Vec::new();
                 let mut command_inventory_refresh = Vec::new();
                 let mut command_container_refresh = Vec::new();
+                let mut command_name_refresh = Vec::new();
                 for (character_id, message) in
                     drain_expired_tell_feedback(&world, &mut runtime, world.tick.0)
                 {
@@ -13135,6 +13287,15 @@ async fn main() -> anyhow::Result<()> {
                                     for message in result.message_bytes {
                                         command_feedback_bytes.push((character_id, message));
                                     }
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_color_command(&mut world, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                if result.name_changed {
+                                    command_name_refresh.push(character_id);
                                 }
                                 continue;
                             }
@@ -13285,7 +13446,7 @@ async fn main() -> anyhow::Result<()> {
                         _ => {}
                     }
                 }
-                if !command_feedback.is_empty() || !command_feedback_bytes.is_empty() || !command_inventory_refresh.is_empty() || !command_container_refresh.is_empty() {
+                if !command_feedback.is_empty() || !command_feedback_bytes.is_empty() || !command_inventory_refresh.is_empty() || !command_container_refresh.is_empty() || !command_name_refresh.is_empty() {
                     let mut feedback_sessions = 0;
                     for (character_id, message) in command_feedback {
                         let payload = ugaris_protocol::packet::system_text(&message);
@@ -13333,7 +13494,21 @@ async fn main() -> anyhow::Result<()> {
                             }
                         }
                     }
-                    info!(feedback_sessions, inventory_sessions, container_sessions, tick = world.tick.0, "processed text/container commands");
+                    let mut name_sessions = 0;
+                    command_name_refresh.sort_unstable_by_key(|id| id.0);
+                    command_name_refresh.dedup();
+                    for character_id in command_name_refresh {
+                        let Some(character) = world.characters.get(&character_id).cloned() else {
+                            continue;
+                        };
+                        let payload = character_name_packet(&character);
+                        for session_id in runtime.refresh_known_character_name(&character) {
+                            if runtime.send_to_session(session_id, payload.clone()) {
+                                name_sessions += 1;
+                            }
+                        }
+                    }
+                    info!(feedback_sessions, inventory_sessions, container_sessions, name_sessions, tick = world.tick.0, "processed text/container commands");
                 }
                 let setup_count = runtime.setup_world_actions(&mut world, config.area_id);
                 if setup_count != 0 {

@@ -294,6 +294,12 @@ pub struct Character {
     pub flags: CharacterFlags,
     pub sprite: i32,
     #[serde(default)]
+    pub c1: u16,
+    #[serde(default)]
+    pub c2: u16,
+    #[serde(default)]
+    pub c3: u16,
+    #[serde(default)]
     pub driver: u16,
     #[serde(default)]
     pub group: u16,
@@ -465,6 +471,9 @@ mod tests {
 
         assert!(character.driver_state.is_none());
         assert!(character.driver_messages.is_empty());
+        assert_eq!(character.c1, 0);
+        assert_eq!(character.c2, 0);
+        assert_eq!(character.c3, 0);
         assert_eq!(character.driver, 0);
     }
 
@@ -476,6 +485,9 @@ mod tests {
             description: String::new(),
             flags: CharacterFlags::USED,
             sprite: 0,
+            c1: 0,
+            c2: 0,
+            c3: 0,
             driver: 0,
             group: 0,
             clan: 0,
