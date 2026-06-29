@@ -26,6 +26,7 @@ pub const IDR_RECALL: u16 = 13;
 pub const IDR_SHRINE: u16 = 14;
 pub const IDR_FIREBALL: u16 = 15;
 pub const IDR_BOOK: u16 = 16;
+pub const BOOK_NOOK_JOKES: u8 = 48;
 pub const IDR_ONOFFLIGHT: u16 = 17;
 pub const IDR_TRANSPORT: u16 = 18;
 pub const IDR_STATSCROLL: u16 = 19;
@@ -1316,6 +1317,32 @@ pub fn book_text_line_bytes(kind: u8) -> Vec<Vec<u8>> {
             .map(|line| plain_book_line_bytes(line))
             .collect(),
     }
+}
+
+pub fn book_nook_joke_line_bytes(roll: u32) -> Vec<Vec<u8>> {
+    let lines: &[&str] = match roll % 5 {
+        0 => &[
+            "What did the fisherman say to the card magician?",
+            "Pick a cod, any cod!",
+        ],
+        1 => &[
+            "Who can shave 25 times a day and still have a beard?",
+            "A barber.",
+        ],
+        2 => &[
+            "Did you hear about the fire at the circus?",
+            "It was in tents.",
+        ],
+        3 => &[
+            "What did the rude prism say to the light beam that smacked into him?",
+            "Get bent!",
+        ],
+        _ => &["What bone will a dog never eat?", "A trombone."],
+    };
+    lines
+        .iter()
+        .map(|line| plain_book_line_bytes(line))
+        .collect()
 }
 
 fn plain_book_line_bytes(line: &str) -> Vec<u8> {
@@ -3792,6 +3819,25 @@ mod tests {
             .windows(3)
             .any(|bytes| bytes == crate::text::COL_RESET));
         assert!(mad_mages[2].ends_with(b"Bretl, Anna-Sofia, Leaner, Crem, Guiwynn."));
+    }
+
+    #[test]
+    fn book_nook_joke_lines_match_legacy_random_cases() {
+        assert_eq!(
+            book_nook_joke_line_bytes(0),
+            vec![
+                b"What did the fisherman say to the card magician?".to_vec(),
+                b"Pick a cod, any cod!".to_vec(),
+            ]
+        );
+        assert_eq!(
+            book_nook_joke_line_bytes(4),
+            vec![
+                b"What bone will a dog never eat?".to_vec(),
+                b"A trombone.".to_vec(),
+            ]
+        );
+        assert_eq!(book_nook_joke_line_bytes(9), book_nook_joke_line_bytes(4));
     }
 
     #[test]

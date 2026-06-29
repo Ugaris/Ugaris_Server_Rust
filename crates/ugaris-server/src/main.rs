@@ -12147,7 +12147,14 @@ async fn main() -> anyhow::Result<()> {
                                             kind,
                                             ..
                                         } => {
-                                            for line in ugaris_core::item_driver::book_text_line_bytes(kind) {
+                                            let lines = if kind == ugaris_core::item_driver::BOOK_NOOK_JOKES {
+                                                ugaris_core::item_driver::book_nook_joke_line_bytes(
+                                                    runtime_random_below(5) as u32,
+                                                )
+                                            } else {
+                                                ugaris_core::item_driver::book_text_line_bytes(kind)
+                                            };
+                                            for line in lines {
                                                 feedback_bytes.push((character_id, line));
                                             }
                                             executed += 1;
