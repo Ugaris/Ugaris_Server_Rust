@@ -95,6 +95,7 @@ pub const IID_AREA2_ZOMBIESKULL2: u32 = (0x01 << 24) | 0x000026;
 pub const IID_AREA2_ZOMBIESKULL3: u32 = (0x01 << 24) | 0x000027;
 pub const IID_AREA11_PALACEKEY: u32 = (0x01 << 24) | 0x000050;
 pub const IID_AREA11_PALACEKEYPART: u32 = (0x01 << 24) | 0x000051;
+pub const IID_CALIGAR_PALACE_KEY_PART: u32 = (0x01 << 24) | 0x0000B3;
 const V_LIGHT: i16 = 9;
 const LIGHT_TIMER_TICKS: u64 = TICKS_PER_SECOND * 30;
 pub const OUTCOME_ITEM_NAME_BYTES: usize = 32;
@@ -914,6 +915,21 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    CaligarKeyAssemble {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        result_sprite: i32,
+        final_key: bool,
+    },
+    CaligarKeyNeedsCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    CaligarKeyDoesNotFit {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BookText {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1151,7 +1167,7 @@ pub fn execute_item_driver_with_context(
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
                 IDR_XMASMAKER => xmasmaker_driver(character, item),
-                IDR_CALIGAR => caligar_driver(character, item),
+                IDR_CALIGAR => caligar_driver(character, item, context),
                 IDR_ARKHATA => arkhata_driver(character, item, context),
                 IDR_CALIGARFLAME => flamethrow_driver(character, item, context),
                 IDR_KEY_RING => keyring_driver(character, item),
@@ -1258,17 +1274,69 @@ fn parkshrine_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     }
 }
 
-fn caligar_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+fn caligar_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
     match drdata(item, 0) {
         1 => caligar_training_driver(character, item),
         2 | 4 => caligar_weight_driver(character, item),
         3 => caligar_weight_door_driver(character, item),
         5..=9 => caligar_gun_driver(character, item),
+        10 => caligar_key_assembly_driver(character, item, context),
         _ => ItemDriverOutcome::Unsupported {
             driver: IDR_CALIGAR,
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+fn caligar_key_assembly_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::CaligarKeyNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    if context.cursor_template_id != Some(IID_CALIGAR_PALACE_KEY_PART) {
+        return ItemDriverOutcome::CaligarKeyNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let sp1 = item.sprite.min(context.cursor_sprite.unwrap_or_default());
+    let sp2 = item.sprite.max(context.cursor_sprite.unwrap_or_default());
+    let result = match (sp1, sp2) {
+        (13414, 13415) => Some((13421, false)),
+        (13415, 13416) => Some((13420, false)),
+        (13414, 13420) | (13416, 13421) => Some((0, true)),
+        _ => None,
+    };
+
+    let Some((result_sprite, final_key)) = result else {
+        return ItemDriverOutcome::CaligarKeyDoesNotFit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::CaligarKeyAssemble {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        result_sprite,
+        final_key,
     }
 }
 
@@ -5203,6 +5271,70 @@ mod tests {
                 false
             ),
             ItemDriverOutcome::CaligarWeightTimer { item_id: ItemId(8) }
+        );
+    }
+
+    #[test]
+    fn caligar_key_assembly_ports_piece_matrix() {
+        let mut actor = character(1);
+        actor.cursor_item = Some(ItemId(9));
+        let mut key = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_CALIGAR);
+        key.driver_data = vec![10];
+        key.sprite = 13414;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_CALIGAR,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let mut context = ItemDriverContext {
+            cursor_template_id: Some(IID_CALIGAR_PALACE_KEY_PART),
+            cursor_sprite: Some(13415),
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(IID_CALIGAR_PALACE_KEY_PART, 0x0100_00B3);
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut key, request, 36, false, &context),
+            ItemDriverOutcome::CaligarKeyAssemble {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
+                result_sprite: 13421,
+                final_key: false,
+            }
+        );
+
+        key.sprite = 13420;
+        context.cursor_sprite = Some(13414);
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut key, request, 36, false, &context),
+            ItemDriverOutcome::CaligarKeyAssemble {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
+                result_sprite: 0,
+                final_key: true,
+            }
+        );
+
+        context.cursor_template_id = Some(IID_AREA11_PALACEKEYPART);
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut key, request, 36, false, &context),
+            ItemDriverOutcome::CaligarKeyNeedsCursor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        context.cursor_template_id = Some(IID_CALIGAR_PALACE_KEY_PART);
+        context.cursor_sprite = Some(13416);
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut key, request, 36, false, &context),
+            ItemDriverOutcome::CaligarKeyDoesNotFit {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
         );
     }
 

@@ -5763,6 +5763,54 @@ fn apply_assemble_item(
     AssembleApplyResult::Assembled
 }
 
+fn apply_caligar_key_final(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    item_id: ItemId,
+    character_id: CharacterId,
+    cursor_item_id: ItemId,
+) -> AssembleApplyResult {
+    let Some(character) = world.characters.get(&character_id) else {
+        return AssembleApplyResult::MissingPlayer;
+    };
+    if character.cursor_item != Some(cursor_item_id) {
+        return AssembleApplyResult::MissingItem;
+    }
+    let Some(slot) = character
+        .inventory
+        .iter()
+        .position(|slot_item| *slot_item == Some(item_id))
+    else {
+        return AssembleApplyResult::MissingItem;
+    };
+    if world
+        .items
+        .get(&item_id)
+        .is_none_or(|item| item.carried_by != Some(character_id))
+        || !world.items.contains_key(&cursor_item_id)
+    {
+        return AssembleApplyResult::MissingItem;
+    }
+
+    let Ok(new_item) =
+        loader.instantiate_item_template("caligar_palace_chest_key", Some(character_id))
+    else {
+        return AssembleApplyResult::TemplateUnavailable;
+    };
+    let new_item_id = new_item.id;
+
+    world.items.remove(&cursor_item_id);
+    world.items.remove(&item_id);
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return AssembleApplyResult::MissingPlayer;
+    };
+    character.cursor_item = Some(new_item_id);
+    character.inventory[slot] = None;
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(new_item);
+    AssembleApplyResult::Assembled
+}
+
 fn apply_palace_key_split(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -15900,7 +15948,8 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyAssemble { .. }
-                                           | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble { final_key: false, .. }
+                                            | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::NomadDice { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
@@ -16104,10 +16153,10 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockMove { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockTimer { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightMove { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoor { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightTimer { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarGunProjectile { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorToggle { .. } => {
+                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoor { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightTimer { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarGunProjectile { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorToggle { .. } => {
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BoneHint {
@@ -16308,8 +16357,43 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You can only use this item with another item.".to_string()));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyDoesNotFit { character_id, .. } => {
+                                         ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyDoesNotFit { character_id, .. } => {
                                             feedback.push((character_id, "This doesn't seem to fit.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble {
+                                            item_id,
+                                            character_id,
+                                            cursor_item_id,
+                                            final_key: true,
+                                            ..
+                                        } => {
+                                            match apply_caligar_key_final(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                item_id,
+                                                character_id,
+                                                cursor_item_id,
+                                            ) {
+                                                AssembleApplyResult::Assembled => {
+                                                    executed += 1;
+                                                }
+                                                AssembleApplyResult::TemplateUnavailable => {
+                                                    feedback.push((character_id, "This does not seem to fit.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                AssembleApplyResult::MissingPlayer
+                                                | AssembleApplyResult::MissingItem => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyNeedsCursor { character_id, .. } => {
+                                            feedback.push((character_id, "Nothing happens.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyDoesNotFit { character_id, .. } => {
+                                            feedback.push((character_id, "This does not seem to fit.".to_string()));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ParkShrine { character_id, shrine, .. } => {

@@ -443,3 +443,7 @@ Recommended next chest steps:
 ### Iteration 21 Additional Progress
 
 - Area 36 `IDR_CALIGAR` now dispatches the C `caligar_gun` branch (`drdata[0] == 5..=9`): subtypes map to the legacy east/south/west/north/all-direction shots, timer and character calls return a typed projectile outcome, world application creates retained `EF_EDEMONBALL` effects with C strength/base/start/target fields, and guns reschedule themselves after 12 ticks. Focused core/world tests cover subtype dispatch, four-way projectile placement, and timer rescheduling. Remaining Caligar item gaps are key assembly, skelly-door, extinguish, quest NPC PPD state, exact log_area/dlog side effects, and live area-data smoke coverage.
+
+### Iteration 25 Additional Progress
+
+- Area 36 `IDR_CALIGAR` now dispatches the C `caligar_key_assembly` branch (`drdata[0] == 10`): carried palace-key parts require a cursor item with legacy `IID_CALIGARPALACEKEYPART`, preserve the C sprite-combination matrix for partial key sprites `13420`/`13421`, destroy the cursor component on successful partial assembly, create the final `caligar_palace_chest_key` template on the cursor for the two final pairings, and emit the legacy `Nothing happens.` / `This does not seem to fit.` feedback for missing or mismatched cursor parts. Focused core/server compile tests cover dispatch, item-ID parity, partial/final combinations, and feedback/runtime application paths. Remaining Caligar item gaps are skelly-door, extinguish, quest NPC PPD state, exact log_area/dlog side effects, and live area-data smoke coverage.

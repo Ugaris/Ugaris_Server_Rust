@@ -6370,6 +6370,28 @@ impl World {
                     }
                 }
             }
+            ItemDriverOutcome::CaligarKeyAssemble {
+                item_id,
+                character_id,
+                cursor_item_id,
+                result_sprite,
+                final_key,
+            } => {
+                if self.apply_caligar_key_assemble(
+                    item_id,
+                    character_id,
+                    cursor_item_id,
+                    result_sprite,
+                    final_key,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::CaligarKeyDoesNotFit {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             ItemDriverOutcome::PalaceKeyCombine {
                 item_id,
                 character_id,
@@ -6632,6 +6654,35 @@ impl World {
             item.description =
                 "A finished key. Should open something now. A door, perhaps.".to_string();
         }
+        self.destroy_item(cursor_item_id)
+    }
+
+    fn apply_caligar_key_assemble(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        result_sprite: i32,
+        final_key: bool,
+    ) -> bool {
+        if !self.character_holds_cursor_item(character_id, cursor_item_id) {
+            return false;
+        }
+        if !self.items.contains_key(&cursor_item_id) {
+            return false;
+        }
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.carried_by != Some(character_id) {
+            return false;
+        }
+
+        if final_key {
+            return true;
+        }
+
+        item.sprite = result_sprite;
         self.destroy_item(cursor_item_id)
     }
 
