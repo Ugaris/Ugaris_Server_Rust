@@ -190,6 +190,8 @@ struct ServerRuntime {
     account_depots: HashMap<CharacterId, AccountDepotState>,
     action_queue: VecDeque<(u64, ClientAction)>,
     next_character_id: u32,
+    dlight_override: i32,
+    show_attack: bool,
 }
 
 impl ServerRuntime {
@@ -1912,6 +1914,7 @@ fn apply_status_command(
 
 fn apply_admin_character_command(
     world: &mut World,
+    runtime: &mut ServerRuntime,
     character_id: CharacterId,
     command: &str,
     area_id: u32,
@@ -2025,6 +2028,22 @@ fn apply_admin_character_command(
             )],
             ..Default::default()
         });
+    }
+
+    if lower.len() >= 6 && "dlight".starts_with(&lower) {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        runtime.dlight_override = legacy_atoi_prefix(rest) as i32;
+        return Some(KeyringCommandResult::default());
+    }
+
+    if lower.len() >= 6 && "showattack".starts_with(&lower) {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        runtime.show_attack = !runtime.show_attack;
+        return Some(KeyringCommandResult::default());
     }
 
     None
@@ -9250,8 +9269,16 @@ mod tests {
         let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
         character.saves = 3;
         world.add_character(character);
+        let mut runtime = ServerRuntime::default();
 
-        assert!(apply_admin_character_command(&mut world, character_id, "/saves 12", 1).is_none());
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/saves 12",
+            1
+        )
+        .is_none());
         assert_eq!(world.characters.get(&character_id).unwrap().saves, 3);
 
         world
@@ -9260,14 +9287,15 @@ mod tests {
             .unwrap()
             .flags
             .insert(CharacterFlags::GOD);
-        let result = apply_admin_character_command(&mut world, character_id, "/save 12abc", 1)
-            .expect("god saves command should be recognized by minlen 4 abbreviation");
+        let result =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/save 12abc", 1)
+                .expect("god saves command should be recognized by minlen 4 abbreviation");
 
         assert!(result.messages.is_empty());
         assert!(!result.inventory_changed);
         assert_eq!(world.characters.get(&character_id).unwrap().saves, 12);
 
-        apply_admin_character_command(&mut world, character_id, "/saves nope", 1)
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/saves nope", 1)
             .expect("god saves command should be recognized");
         assert_eq!(world.characters.get(&character_id).unwrap().saves, 0);
     }
@@ -9279,11 +9307,16 @@ mod tests {
         let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
         character.flags.insert(CharacterFlags::LQMASTER);
         world.add_character(character);
+        let mut runtime = ServerRuntime::default();
 
-        assert!(apply_admin_character_command(&mut world, character_id, "/im", 1).is_none());
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/im", 1)
+                .is_none()
+        );
 
-        let immortal = apply_admin_character_command(&mut world, character_id, "/im", 20)
-            .expect("area-20 lqmaster immortal command should be recognized");
+        let immortal =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/im", 20)
+                .expect("area-20 lqmaster immortal command should be recognized");
         assert_eq!(immortal.messages, vec!["Immortal is on."]);
         assert!(world
             .characters
@@ -9292,8 +9325,9 @@ mod tests {
             .flags
             .contains(CharacterFlags::IMMORTAL));
 
-        let infrared = apply_admin_character_command(&mut world, character_id, "/inf", 20)
-            .expect("area-20 lqmaster infrared command should be recognized");
+        let infrared =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/inf", 20)
+                .expect("area-20 lqmaster infrared command should be recognized");
         assert_eq!(infrared.messages, vec!["Infrared is on."]);
         assert!(world
             .characters
@@ -9302,8 +9336,9 @@ mod tests {
             .flags
             .contains(CharacterFlags::INFRARED));
 
-        let invisible = apply_admin_character_command(&mut world, character_id, "/inv", 20)
-            .expect("area-20 lqmaster invisible command should be recognized");
+        let invisible =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/inv", 20)
+                .expect("area-20 lqmaster invisible command should be recognized");
         assert_eq!(invisible.messages, vec!["Invisible is on."]);
         assert!(world
             .characters
@@ -9320,9 +9355,11 @@ mod tests {
         let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
         character.flags.insert(CharacterFlags::GOD);
         world.add_character(character);
+        let mut runtime = ServerRuntime::default();
 
-        let xray = apply_admin_character_command(&mut world, character_id, "/xray", 1)
-            .expect("god xray command should be recognized");
+        let xray =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/xray", 1)
+                .expect("god xray command should be recognized");
         assert_eq!(xray.messages, vec!["Turned x-ray mode on."]);
         assert!(xray.inventory_changed);
         assert!(world
@@ -9332,7 +9369,7 @@ mod tests {
             .flags
             .contains(CharacterFlags::XRAY));
 
-        let spy = apply_admin_character_command(&mut world, character_id, "/spy", 1)
+        let spy = apply_admin_character_command(&mut world, &mut runtime, character_id, "/spy", 1)
             .expect("god spy command should be recognized");
         assert_eq!(
             spy.messages,
@@ -9345,12 +9382,98 @@ mod tests {
             .flags
             .contains(CharacterFlags::SPY));
 
-        let spy_off = apply_admin_character_command(&mut world, character_id, "/spy", 1)
-            .expect("god spy command should toggle off");
+        let spy_off =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/spy", 1)
+                .expect("god spy command should toggle off");
         assert_eq!(
             spy_off.messages,
             vec!["Turned spy mode off. You will no longer see all tells, clan, alliance, club, area, and mirror chat."]
         );
+    }
+
+    #[test]
+    fn god_dlight_and_showattack_commands_mutate_runtime_without_feedback() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::GOD);
+        world.add_character(character);
+        let mut runtime = ServerRuntime::default();
+
+        let dlight = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/dlight 123abc",
+            1,
+        )
+        .expect("god dlight command should be recognized");
+        assert!(dlight.messages.is_empty());
+        assert_eq!(runtime.dlight_override, 123);
+
+        let showattack =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/showat", 1)
+                .expect("god showattack command should allow C minlen 6 abbreviation");
+        assert!(showattack.messages.is_empty());
+        assert!(runtime.show_attack);
+
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/showattack", 1)
+            .expect("god showattack command should toggle back off");
+        assert!(!runtime.show_attack);
+    }
+
+    #[test]
+    fn dlight_and_showattack_are_god_only_and_keep_full_dlight_minlen() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/dlight 1",
+            1,
+        )
+        .is_none());
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/showattack",
+            1,
+        )
+        .is_none());
+        assert_eq!(runtime.dlight_override, 0);
+        assert!(!runtime.show_attack);
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/dligh 7",
+            1,
+        )
+        .is_none());
+        assert_eq!(runtime.dlight_override, 0);
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/showa", 1,)
+                .is_none()
+        );
+        assert!(!runtime.show_attack);
     }
 
     #[test]
@@ -14778,6 +14901,7 @@ async fn main() -> anyhow::Result<()> {
                             }
                             if let Some(result) = apply_admin_character_command(
                                 &mut world,
+                                &mut runtime,
                                 character_id,
                                 &command,
                                 u32::from(config.area_id),

@@ -213,9 +213,36 @@
         "-- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: direct `PAC_KILL` plus character-targeted fireball/ball admission remove a hated defender from the ",
         "+- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: direct `PAC_KILL` plus character-targeted fireball/ball admission remove a hated defender from the "
       ]
+    },
+    {
+      "iteration": 9,
+      "startedAt": "2026-06-29T10:46:00.720Z",
+      "endedAt": "2026-06-29T10:54:25.916Z",
+      "durationMs": 505029,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The failure caught an incorrect test assumption: C’s `cmdcmp(..., minlen=6)` accepts `/showat`, not `/showa`. I’m correcting the test to pin the actual C abbreviation rule.",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/PORTING_LEDGER.md:",
+        "error: unexpected argument 'dlight_and_showattack_are_god_only_and_keep_full_dlight_minlen' found",
+        "test tests::god_dlight_and_showattack_commands_mutate_runtime_without_feedback ... FAILED",
+        "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 185 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 185 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 4023191,
+  "totalDurationMs": 4528220,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 1,
@@ -223,8 +250,8 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 1,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 1,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 6,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 6,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 7,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 7,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 5,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 5,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 3,
@@ -234,7 +261,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 3,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 2,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
@@ -242,7 +269,7 @@
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 2,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
-      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 1,
+      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 2,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 1,
@@ -265,7 +292,12 @@
       "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: ": 1,
       "- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup rules": 1,
       "-- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary:": 1,
-      "+- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary:": 1
+      "+- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary:": 1,
+      "The failure caught an incorrect test assumption: C’s `cmdcmp(..., minlen=6)` accepts `/showat`, not ": 1,
+      "error: unexpected argument 'dlight_and_showattack_are_god_only_and_keep_full_dlight_minlen' found": 1,
+      "test tests::god_dlight_and_showattack_commands_mutate_runtime_without_feedback ... FAILED": 1,
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 185 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 185 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
