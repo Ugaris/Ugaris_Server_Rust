@@ -4797,9 +4797,36 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 175,
+      "startedAt": "2026-06-29T04:47:42.012Z",
+      "endedAt": "2026-06-29T04:56:48.678Z",
+      "durationMs": 546493,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The failing test exposed that `login_character` records rest coordinates but does not place the character on the map. I’m adjusting the weather tests to set the live character position explicitly befo",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "test tests::weather_command_reports_indoor_protection_and_outdoor_effects ... FAILED",
+        "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 157 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 78832963,
+  "totalDurationMs": 79379456,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -4822,7 +4849,7 @@
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 32,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 10,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 11,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.00s": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 325 filtered out; finished in 0.00s": 1,
@@ -5015,7 +5042,7 @@
       "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 404 filtered out; finished in 0.00s": 1,
       "test result: ok. 418 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test tests::transport_clan_travel_uses_legacy_hall_coordinates ... FAILED": 1,
-      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 2,
+      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 3,
       "test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 100 filtered out; finished in 0.00s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 100 filtered out; finished in 0.00s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.00s": 1,
@@ -5107,7 +5134,7 @@
       "test result: ok. 454 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
       "The walk-or-use behavior was already partially present, but the path selection can miss a C-like imm": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 74,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 75,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 454 filtered out; finished in 0.02s": 1,
       "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.05s": 1,
       "test result: ok. 455 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -5133,7 +5160,7 @@
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_noncombat_threads_failed_use_into_secure_move": 1,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 61,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 466 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 67,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 68,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s": 1,
       "error: no library targets found in package `ugaris-server`": 1,
       "test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -5227,7 +5254,7 @@
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 511 filtered out; finished in 0.00s": 1,
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 481 filtered out; finished in 0.01s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 14,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 15,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.00s": 1,
       "test result: ok. 122 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: ": 1,
@@ -5328,7 +5355,12 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 548 filtered out; finished in 0.01s": 1,
       "test world::tests::player_warcry_does_not_pass_soundblocking_tiles ... FAILED": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out; finished in 0.00s": 1,
-      "test result: ok. 549 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1
+      "test result: ok. 549 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
+      "The failing test exposed that `login_character` records rest coordinates but does not place the char": 1,
+      "test tests::weather_command_reports_indoor_protection_and_outdoor_effects ... FAILED": 1,
+      "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.00s": 1,
+      "test result: ok. 157 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

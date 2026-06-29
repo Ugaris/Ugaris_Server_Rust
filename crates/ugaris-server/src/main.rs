@@ -47,7 +47,7 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
     zone::ZoneLoader,
-    ServerConfig, TickRate, World,
+    ServerConfig, Tick, TickRate, World,
 };
 
 struct RuntimePlayerAttackPolicy<'a> {
@@ -1955,6 +1955,183 @@ fn apply_time_command(date: GameDate, command: &str) -> Option<KeyringCommandRes
             "Winter Solstice will be in {} days.",
             DAYS_PER_YEAR - date.yday
         ));
+    }
+
+    Some(KeyringCommandResult {
+        messages,
+        ..Default::default()
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WeatherState {
+    current_weather: i32,
+    weather_intensity: usize,
+    weather_effects: u32,
+    is_transitioning: bool,
+    transition_start: u64,
+    transition_duration: u64,
+    prev_weather: i32,
+    weather_change_time: u64,
+    affected_areas: &'static [u16],
+}
+
+const WEATHER_EFFECT_SLOW: u32 = 0x01;
+const WEATHER_EFFECT_BLIND: u32 = 0x02;
+const WEATHER_EFFECT_DAMAGE: u32 = 0x04;
+const WEATHER_EFFECT_SLIP: u32 = 0x08;
+const WEATHER_INTENSITY_NAMES: [&str; 4] = ["None", "Light", "Moderate", "Heavy"];
+
+impl Default for WeatherState {
+    fn default() -> Self {
+        Self {
+            current_weather: 0,
+            weather_intensity: 0,
+            weather_effects: 0,
+            is_transitioning: false,
+            transition_start: 0,
+            transition_duration: 0,
+            prev_weather: 0,
+            weather_change_time: 0,
+            affected_areas: &[],
+        }
+    }
+}
+
+fn weather_name(weather_type: i32) -> &'static str {
+    match weather_type {
+        0 => "Clear",
+        1 => "Rain",
+        2 => "Storm",
+        3 => "Snow",
+        4 => "Sandstorm",
+        5 => "Fog",
+        _ => "Unknown",
+    }
+}
+
+fn weather_description(weather_type: i32, intensity: usize) -> &'static str {
+    if weather_type == 0 || intensity == 0 {
+        return "Clear skies";
+    }
+    match (weather_type, intensity.min(3)) {
+        (1, 1) => "Light rain",
+        (1, 2) => "Moderate rain",
+        (1, _) => "Heavy rain",
+        (2, 1) => "Light storm",
+        (2, 2) => "Moderate storm",
+        (2, _) => "Heavy storm",
+        (3, 1) => "Light snow",
+        (3, 2) => "Moderate snow",
+        (3, _) => "Heavy snow",
+        (4, 1) => "Light sandstorm",
+        (4, 2) => "Moderate sandstorm",
+        (4, _) => "Heavy sandstorm",
+        (5, 1) => "Light fog",
+        (5, 2) => "Moderate fog",
+        (5, _) => "Heavy fog",
+        _ => "Unknown weather",
+    }
+}
+
+fn apply_weather_command(
+    world: &World,
+    character_id: CharacterId,
+    area_id: u16,
+    weather: WeatherState,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("weather") {
+        return None;
+    }
+
+    let Some(character) = world.characters.get(&character_id) else {
+        return Some(KeyringCommandResult::default());
+    };
+    let mut messages = vec![format!(
+        "Current weather in this area: {}",
+        weather_description(weather.current_weather, weather.weather_intensity)
+    )];
+
+    if character.flags.contains(CharacterFlags::GOD) {
+        let intensity = WEATHER_INTENSITY_NAMES
+            .get(weather.weather_intensity)
+            .copied()
+            .unwrap_or("Unknown");
+        messages.extend([
+            "Global Weather Debug Info:".to_string(),
+            format!(
+                "- Current Weather: {}",
+                weather_name(weather.current_weather)
+            ),
+            format!("- Intensity: {intensity}"),
+            format!("- Effects: 0x{:x}", weather.weather_effects),
+        ]);
+        if weather.is_transitioning {
+            let end = weather
+                .transition_start
+                .saturating_add(weather.transition_duration);
+            let time_left = end.saturating_sub(world.tick.0) / TICKS_PER_SECOND;
+            let progress = if weather.transition_duration == 0 {
+                100.0
+            } else {
+                (world.tick.0.saturating_sub(weather.transition_start) as f64
+                    / weather.transition_duration as f64)
+                    .clamp(0.0, 1.0)
+                    * 100.0
+            };
+            messages.push(format!("- Transitioning: Yes ({time_left} seconds left)"));
+            messages.push(format!(
+                "- Previous Weather: {}",
+                weather_name(weather.prev_weather)
+            ));
+            messages.push(format!("- Progress: {progress:.1}%"));
+        } else {
+            messages.push("- Transitioning: No".to_string());
+        }
+        messages.push(format!(
+            "- Next Change: {} seconds",
+            weather.weather_change_time.saturating_sub(world.tick.0) / TICKS_PER_SECOND
+        ));
+        messages.push(format!(
+            "- Affected Areas ({}):",
+            weather.affected_areas.len()
+        ));
+        if !weather.affected_areas.is_empty() {
+            let mut areas = weather
+                .affected_areas
+                .iter()
+                .map(u16::to_string)
+                .collect::<Vec<_>>()
+                .join(" ");
+            areas.push(' ');
+            messages.push(format!("  {areas}"));
+        }
+    }
+
+    let indoors = world
+        .map
+        .tile(usize::from(character.x), usize::from(character.y))
+        .is_some_and(|tile| tile.flags.contains(MapFlags::INDOORS));
+    if indoors {
+        messages.push("You are indoors and protected from weather effects.".to_string());
+    } else if weather.affected_areas.is_empty() || weather.affected_areas.contains(&area_id) {
+        if weather.weather_effects & WEATHER_EFFECT_SLOW != 0 {
+            messages.push("Movement is affected by the weather.".to_string());
+        }
+        if weather.weather_effects & WEATHER_EFFECT_BLIND != 0 {
+            messages.push("Visibility is reduced by the weather.".to_string());
+        }
+        if weather.weather_effects & WEATHER_EFFECT_DAMAGE != 0 {
+            messages.push("The weather is causing damage.".to_string());
+        }
+        if weather.weather_effects & WEATHER_EFFECT_SLIP != 0 {
+            messages.push("The weather makes the ground slippery.".to_string());
+        }
     }
 
     Some(KeyringCommandResult {
@@ -7863,6 +8040,113 @@ mod tests {
     }
 
     #[test]
+    fn weather_command_reports_default_clear_area_weather() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Weather"), 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        world.add_character(character);
+
+        let result =
+            apply_weather_command(&world, character_id, 1, WeatherState::default(), "/weather")
+                .expect("weather command should be recognized");
+
+        assert_eq!(
+            result.messages,
+            vec!["Current weather in this area: Clear skies"]
+        );
+        assert!(
+            apply_weather_command(&world, character_id, 1, WeatherState::default(), "/weath")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn weather_command_reports_indoor_protection_and_outdoor_effects() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Weather"), 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        world.add_character(character);
+        let weather = WeatherState {
+            current_weather: 2,
+            weather_intensity: 3,
+            weather_effects: WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP,
+            affected_areas: &[1],
+            ..WeatherState::default()
+        };
+
+        let outdoor = apply_weather_command(&world, character_id, 1, weather, "/weather")
+            .expect("weather command should be recognized");
+        assert_eq!(
+            outdoor.messages,
+            vec![
+                "Current weather in this area: Heavy storm",
+                "Movement is affected by the weather.",
+                "Visibility is reduced by the weather.",
+                "The weather makes the ground slippery.",
+            ]
+        );
+
+        world.map.set_flags(10, 10, MapFlags::INDOORS);
+        let indoor = apply_weather_command(&world, character_id, 1, weather, "/weather")
+            .expect("weather command should be recognized");
+        assert_eq!(
+            indoor.messages,
+            vec![
+                "Current weather in this area: Heavy storm",
+                "You are indoors and protected from weather effects.",
+            ]
+        );
+    }
+
+    #[test]
+    fn weather_command_reports_god_debug_info() {
+        let mut world = World::default();
+        world.tick = Tick(24);
+        let character_id = CharacterId(7);
+        let mut god = login_character(character_id, &login_block("WeatherGod"), 1, 10, 10);
+        god.x = 10;
+        god.y = 10;
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let weather = WeatherState {
+            current_weather: 1,
+            weather_intensity: 2,
+            weather_effects: WEATHER_EFFECT_DAMAGE,
+            is_transitioning: true,
+            transition_start: 0,
+            transition_duration: 48,
+            prev_weather: 0,
+            weather_change_time: 240,
+            affected_areas: &[1, 3],
+        };
+
+        let result = apply_weather_command(&world, character_id, 1, weather, "/weather")
+            .expect("weather command should be recognized");
+
+        assert_eq!(
+            result.messages,
+            vec![
+                "Current weather in this area: Moderate rain",
+                "Global Weather Debug Info:",
+                "- Current Weather: Rain",
+                "- Intensity: Moderate",
+                "- Effects: 0x4",
+                "- Transitioning: Yes (1 seconds left)",
+                "- Previous Weather: Clear",
+                "- Progress: 50.0%",
+                "- Next Change: 9 seconds",
+                "- Affected Areas (2):",
+                "  1 3 ",
+                "The weather is causing damage.",
+            ]
+        );
+    }
+
+    #[test]
     fn nowho_command_toggles_staff_visibility_only_for_staff_or_gods() {
         let mut world = World::default();
         let mut staff = login_character(CharacterId(7), &login_block("Staffer"), 1, 10, 10);
@@ -12176,6 +12460,18 @@ async fn main() -> anyhow::Result<()> {
                                 .get(&character_id)
                                 .map(|character| character.flags)
                                 .unwrap_or_else(CharacterFlags::empty);
+                            if let Some(result) = apply_weather_command(
+                                &world,
+                                character_id,
+                                config.area_id,
+                                WeatherState::default(),
+                                &command,
+                            ) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
                             if let Some(result) = apply_time_command(world.date, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
