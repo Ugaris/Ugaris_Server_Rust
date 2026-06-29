@@ -5863,6 +5863,31 @@ fn raise_skeleton_from_template(
     world.apply_skelraise_raise(item_id, character_id, cursor_item_id, raised_id, 0)
 }
 
+fn spawn_edemon_gate_character(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    item_id: ItemId,
+    template: &str,
+    slot: usize,
+    x: u16,
+    y: u16,
+) -> bool {
+    let character_id = runtime.allocate_character_id();
+    let Ok((character, inventory_items)) =
+        loader.instantiate_character_template(template, character_id)
+    else {
+        return false;
+    };
+    if !world.spawn_character(character, usize::from(x), usize::from(y)) {
+        return false;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+    world.apply_edemon_gate_spawn_result(item_id, slot, character_id, 0)
+}
+
 fn apply_xmasmaker(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) -> bool {
     grant_template_item_smart(world, loader, character_id, "xmaspop").is_some()
 }
@@ -16500,6 +16525,34 @@ async fn main() -> anyhow::Result<()> {
                 if !timer_outcomes.is_empty() {
                     info!(count = timer_outcomes.len(), tick = world.tick.0, "processed timer callbacks");
                 }
+                let mut edemon_gate_spawns = 0;
+                for outcome in &timer_outcomes {
+                    if let ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn {
+                        item_id,
+                        template,
+                        slot,
+                        x,
+                        y,
+                        ..
+                    } = outcome
+                    {
+                        if spawn_edemon_gate_character(
+                            &mut world,
+                            &mut zone_loader,
+                            &mut runtime,
+                            *item_id,
+                            template,
+                            *slot,
+                            *x,
+                            *y,
+                        ) {
+                            edemon_gate_spawns += 1;
+                        }
+                    }
+                }
+                if edemon_gate_spawns != 0 {
+                    info!(count = edemon_gate_spawns, tick = world.tick.0, "spawned edemon gate characters");
+                }
                 let timer_feedback = timer_outcome_feedback(&timer_outcomes);
                 if !timer_feedback.is_empty() {
                     let mut feedback_sessions = 0;
@@ -17989,9 +18042,10 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::FireballMachineProjectile { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
-                                          | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
-                                           | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
                                            | ugaris_core::item_driver::ItemDriverOutcome::FdemonWaypoint { .. }
                                             | ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderChanged { .. }
                                             | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmChanged { .. }

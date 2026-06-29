@@ -26,12 +26,12 @@ use crate::{
     game_time::GameDate,
     ids::{CharacterId, ItemId},
     item_driver::{
-        execute_item_driver_with_context, reset_flask_empty_state, use_item, ItemDriverContext,
-        ItemDriverOutcome, ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL,
-        IDR_CALIGAR, IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONBLOCK, IDR_EDEMONDOOR,
-        IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONFARM, IDR_FDEMONLIGHT,
-        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-        IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        execute_item_driver_with_context, reset_flask_empty_state, use_item,
+        EdemonGateSpawnContext, ItemDriverContext, ItemDriverOutcome, ItemDriverRequest,
+        UseItemError, UseItemOutcome, IDR_BONEWALL, IDR_CALIGAR, IDR_CALIGARFLAME, IDR_DUNGEONDOOR,
+        IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
+        IDR_EDEMONTUBE, IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW,
+        IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -67,6 +67,16 @@ const IID_REFLECT_FIREBALL: u32 = (0x01 << 24) | 0x00004E;
 const IID_AREA6_GREENCRYSTAL: u32 = (0x01 << 24) | 0x000048;
 const LEGACY_EQUIPMENT_SLOTS: std::ops::Range<usize> = 0..12;
 const IID_HARDKILL: u32 = (0x01 << 24) | 0x00005D;
+const EDEMON_GATE_MODE0_POSITIONS: [(u16, u16); 7] = [
+    (62, 157),
+    (62, 164),
+    (62, 174),
+    (62, 184),
+    (62, 191),
+    (56, 174),
+    (67, 174),
+];
+const EDEMON_GATE_MODE1_SLOT_BASE: usize = 404;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorldActionCompletion {
@@ -515,6 +525,79 @@ impl World {
         }
         self.add_character(character);
         true
+    }
+
+    pub fn apply_edemon_gate_spawn_result(
+        &mut self,
+        item_id: ItemId,
+        slot: usize,
+        character_id: CharacterId,
+        _serial: u32,
+    ) -> bool {
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        let mode = item.driver_data.first().copied().unwrap_or_default();
+        let offset = edemon_gate_slot_offset(mode, slot);
+        item.driver_data.resize(offset + 4, 0);
+        let character_id = character_id.0 as u16;
+        let serial = 0_u16;
+        item.driver_data[offset..offset + 2].copy_from_slice(&character_id.to_le_bytes());
+        item.driver_data[offset + 2..offset + 4].copy_from_slice(&serial.to_le_bytes());
+        true
+    }
+
+    fn edemon_gate_spawn_context(&self, item_id: ItemId) -> Option<EdemonGateSpawnContext> {
+        let item = self.items.get(&item_id)?;
+        match item.driver_data.first().copied().unwrap_or_default() {
+            0 => EDEMON_GATE_MODE0_POSITIONS
+                .iter()
+                .copied()
+                .enumerate()
+                .find_map(|(slot, (x, y))| {
+                    self.edemon_gate_slot_is_stale(item, 0, slot)
+                        .then_some(EdemonGateSpawnContext { slot, x, y })
+                }),
+            1 => {
+                let mut positions = self
+                    .items
+                    .values()
+                    .filter(|candidate| {
+                        candidate.driver == IDR_EDEMONLIGHT
+                            && candidate.driver_data.first() == Some(&4)
+                    })
+                    .map(|candidate| (candidate.id, candidate.x, candidate.y))
+                    .collect::<Vec<_>>();
+                positions.sort_by_key(|(id, _, _)| id.0);
+                positions
+                    .into_iter()
+                    .take(100)
+                    .enumerate()
+                    .find_map(|(slot, (_, x, y))| {
+                        self.edemon_gate_slot_is_stale(item, 1, slot)
+                            .then_some(EdemonGateSpawnContext { slot, x, y })
+                    })
+            }
+            _ => None,
+        }
+    }
+
+    fn edemon_gate_slot_is_stale(&self, item: &Item, mode: u8, slot: usize) -> bool {
+        let offset = edemon_gate_slot_offset(mode, slot);
+        let Some(bytes) = item.driver_data.get(offset..offset + 4) else {
+            return true;
+        };
+        let character_id = u16::from_le_bytes([bytes[0], bytes[1]]);
+        let _serial = u16::from_le_bytes([bytes[2], bytes[3]]);
+        if character_id == 0 {
+            return true;
+        }
+        self.characters
+            .get(&CharacterId(u32::from(character_id)))
+            .is_none_or(|character| {
+                !character.flags.contains(CharacterFlags::USED)
+                    || character.flags.contains(CharacterFlags::DEAD)
+            })
     }
 
     pub fn remove_character(&mut self, character_id: CharacterId) -> Option<Character> {
@@ -2645,6 +2728,10 @@ impl World {
             && context.edemon_tube_target.is_none())
         .then(|| edemon_tube_target(&self.items, &self.map, item_id))
         .flatten();
+        let edemon_gate_spawn = (driver == Some(IDR_EDEMONGATE)
+            && context.edemon_gate_spawn.is_none())
+        .then(|| self.edemon_gate_spawn_context(item_id))
+        .flatten();
         let dungeon_door_context = (driver == Some(IDR_DUNGEONDOOR))
             .then(|| self.dungeon_door_context(character_id, item_id));
         let Some(character) = self.characters.get_mut(&character_id) else {
@@ -2663,6 +2750,9 @@ impl World {
         }
         if effective_context.edemon_tube_target.is_none() {
             effective_context.edemon_tube_target = edemon_tube_target;
+        }
+        if effective_context.edemon_gate_spawn.is_none() {
+            effective_context.edemon_gate_spawn = edemon_gate_spawn;
         }
         if let Some((has_key1, has_key2, defender_count)) = dungeon_door_context {
             effective_context.has_dungeon_door_key1 |= has_key1;
@@ -5741,6 +5831,9 @@ impl World {
             effective_context.edemon_tube_target =
                 edemon_tube_target(&self.items, &self.map, item_id);
         }
+        if driver == IDR_EDEMONGATE && effective_context.edemon_gate_spawn.is_none() {
+            effective_context.edemon_gate_spawn = self.edemon_gate_spawn_context(item_id);
+        }
         if driver == IDR_FDEMONLIGHT && effective_context.fdemon_loader_power.is_none() {
             effective_context.fdemon_loader_power =
                 fdemon_loader_power_for_light(&self.items, item_id);
@@ -5982,6 +6075,14 @@ impl World {
                 }
             }
             ItemDriverOutcome::EdemonBlockBlocked { .. } => outcome,
+            ItemDriverOutcome::EdemonGateSpawn {
+                item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
             ItemDriverOutcome::FreakDoorUse {
                 item_id,
                 character_id,
@@ -12433,6 +12534,14 @@ fn edemon_tube_target(
     None
 }
 
+fn edemon_gate_slot_offset(mode: u8, slot: usize) -> usize {
+    match mode {
+        0 => 4 + slot * 4,
+        1 => EDEMON_GATE_MODE1_SLOT_BASE + slot * 4,
+        _ => 4 + slot * 4,
+    }
+}
+
 fn read_spell_start_tick(driver_data: &[u8]) -> Option<u32> {
     let bytes = driver_data.get(4..8)?;
     Some(u32::from_le_bytes(bytes.try_into().ok()?))
@@ -17653,6 +17762,34 @@ mod tests {
             u16::from_le_bytes([tube.driver_data[4], tube.driver_data[5]]),
             21
         );
+    }
+
+    #[test]
+    fn world_edemon_gate_timer_finds_stale_slot_and_reschedules() {
+        let mut world = World::default();
+        let mut gate = item(7, ItemFlags::USED);
+        gate.driver = IDR_EDEMONGATE;
+        gate.driver_data = vec![0];
+        world.add_item(gate);
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+        world.advance();
+
+        let outcomes = world.process_due_timers(6);
+
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(
+            outcomes[0],
+            ItemDriverOutcome::EdemonGateSpawn {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                template: "edemon2s",
+                slot: 0,
+                x: 62,
+                y: 157,
+                schedule_after_ticks: TICKS_PER_SECOND * 10,
+            }
+        );
+        assert_eq!(world.timers.used_timers(), 1);
     }
 
     #[test]

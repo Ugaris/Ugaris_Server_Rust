@@ -355,6 +355,7 @@ pub struct ItemDriverContext {
     pub current_tick: u32,
     pub edemon_section_power: Option<u8>,
     pub edemon_tube_target: Option<(u16, u16)>,
+    pub edemon_gate_spawn: Option<EdemonGateSpawnContext>,
     pub fdemon_loader_power: Option<u16>,
     pub bone_hint_nr: Option<u8>,
     pub bone_hint_pos: Option<u8>,
@@ -365,6 +366,13 @@ pub struct ItemDriverContext {
     pub dungeon_defender_count: Option<u16>,
     pub pent_last_solve_tick: Option<u32>,
     pub pent_demon_lord_access_seconds: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EdemonGateSpawnContext {
+    pub slot: usize,
+    pub x: u16,
+    pub y: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -637,6 +645,15 @@ pub enum ItemDriverOutcome {
     EdemonBlockBlocked {
         item_id: ItemId,
         character_id: CharacterId,
+    },
+    EdemonGateSpawn {
+        item_id: ItemId,
+        character_id: CharacterId,
+        template: &'static str,
+        slot: usize,
+        x: u16,
+        y: u16,
+        schedule_after_ticks: u64,
     },
     FreakDoorUse {
         item_id: ItemId,
@@ -1765,6 +1782,7 @@ pub fn execute_item_driver_with_context(
                 IDR_FIREBALL => fireball_machine_driver(character, item, context),
                 IDR_EDEMONBALL => edemonball_driver(character, item, context),
                 IDR_EDEMONSWITCH => edemon_switch_driver(character, item, context),
+                IDR_EDEMONGATE => edemon_gate_driver(character, item, context),
                 IDR_EDEMONLOADER => edemon_loader_driver(character, item, context),
                 IDR_EDEMONLIGHT => edemon_light_driver(character, item, context),
                 IDR_EDEMONDOOR => edemon_door_driver(character, item, context),
@@ -5801,6 +5819,41 @@ fn edemon_switch_driver(
         item_id: item.id,
         character_id: character.id,
         schedule_after_ticks: Some(EDEMON_SWITCH_COOLDOWN_TICKS + 1),
+    }
+}
+
+fn edemon_gate_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 || !context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let mode = item.driver_data.first().copied().unwrap_or_default();
+    let schedule_after_ticks = match mode {
+        0 => TICKS_PER_SECOND * 10,
+        1 => TICKS_PER_SECOND * 20,
+        _ => return ItemDriverOutcome::Noop,
+    };
+
+    let Some(spawn) = context.edemon_gate_spawn else {
+        return ItemDriverOutcome::LightChanged {
+            item_id: item.id,
+            character_id: CharacterId(0),
+            schedule_after_ticks: Some(schedule_after_ticks),
+        };
+    };
+
+    ItemDriverOutcome::EdemonGateSpawn {
+        item_id: item.id,
+        character_id: CharacterId(0),
+        template: if mode == 0 { "edemon2s" } else { "edemon6s" },
+        slot: spawn.slot,
+        x: spawn.x,
+        y: spawn.y,
+        schedule_after_ticks,
     }
 }
 
@@ -11994,6 +12047,49 @@ mod tests {
         assert_eq!(lever.modifier_index[0], V_LIGHT);
         assert_eq!(lever.modifier_value[0], 64);
         assert_eq!(lever.sprite, 100);
+    }
+
+    #[test]
+    fn edemon_gate_timer_requests_one_spawn_and_reschedule() {
+        let mut timer_character = character(0);
+        let mut gate = item(7, ItemFlags::USED, 0, IDR_EDEMONGATE);
+        gate.driver_data = vec![0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONGATE,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut gate,
+            request,
+            6,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                edemon_gate_spawn: Some(EdemonGateSpawnContext {
+                    slot: 2,
+                    x: 62,
+                    y: 174,
+                }),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::EdemonGateSpawn {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                template: "edemon2s",
+                slot: 2,
+                x: 62,
+                y: 174,
+                schedule_after_ticks: TICKS_PER_SECOND * 10,
+            }
+        );
     }
 
     #[test]
