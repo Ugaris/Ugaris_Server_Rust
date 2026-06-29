@@ -245,6 +245,7 @@ fn integer_sqrt_for_light(strength: i16) -> usize {
 pub struct World {
     pub tick: Tick,
     pub date: GameDate,
+    pub show_attack_debug: bool,
     pub timers: TimerQueue,
     pub scheduler: TaskScheduler,
     pub map: MapGrid,
@@ -298,11 +299,16 @@ impl World {
     ) -> Option<LegacyHurtOutcome> {
         let cause_id = cause_id.filter(|id| id.0 != 0 && self.characters.contains_key(id));
         let mut outcome = LegacyHurtOutcome::default();
+        let show_attack_debug = self.show_attack_debug;
         let cause_position = cause_id.and_then(|id| {
             self.characters
                 .get(&id)
                 .map(|character| (character.x, character.y))
         });
+        let cause_name = cause_id
+            .and_then(|id| self.characters.get(&id))
+            .map(|character| character.name.clone())
+            .unwrap_or_else(|| "unknown".to_string());
         let cause_hardkill_weapon = cause_id.and_then(|id| {
             let item_id = self
                 .characters
@@ -322,6 +328,7 @@ impl World {
         });
         let mut create_magicshield_effect = false;
 
+        let mut show_attack_messages = Vec::new();
         let (target_x, target_y, target_was_player, target_was_male) = {
             let target = self.characters.get_mut(&target_id)?;
             if target.flags.contains(CharacterFlags::DEAD) {
@@ -335,6 +342,23 @@ impl World {
             let mut damage_after_armor =
                 reduce_hurt_by_armor(damage, armor_value, armor_divisor, armor_percent);
             outcome.damage_after_armor = damage_after_armor;
+
+            if show_attack_debug && damage != 0 {
+                show_attack_messages.push(format!(
+                    "hurt by {}, dam={:.2}, armor={:.2} armorper={} shieldper={}",
+                    cause_name,
+                    damage as f64 / f64::from(POWERSCALE),
+                    armor_value as f64 / 20.0 / f64::from(armor_divisor.max(1)),
+                    armor_percent,
+                    shield_percent
+                ));
+                if damage_after_armor != 0 {
+                    show_attack_messages.push(format!(
+                        "dam after armor: {:.2}",
+                        damage_after_armor as f64 / f64::from(POWERSCALE)
+                    ));
+                }
+            }
 
             if target.flags.contains(CharacterFlags::FDEMON)
                 && !cause_position.is_some_and(|(x, y)| is_back_attack_against_target(target, x, y))
@@ -389,6 +413,16 @@ impl World {
             );
             (target.x, target.y, target_was_player, target_was_male)
         };
+
+        self.pending_system_texts
+            .extend(
+                show_attack_messages
+                    .into_iter()
+                    .map(|message| WorldSystemText {
+                        character_id: target_id,
+                        message,
+                    }),
+            );
 
         if target_was_player && outcome.hp_damage >= POWERSCALE {
             self.queue_sound_area(
@@ -11320,6 +11354,41 @@ mod tests {
         assert_eq!(
             world.characters[&CharacterId(3)].driver_messages[0].message_type,
             NT_SEEHIT
+        );
+    }
+
+    #[test]
+    fn legacy_hurt_queues_showattack_debug_text_when_enabled() {
+        let mut world = World::default();
+        world.show_attack_debug = true;
+        let mut target = character(1);
+        target.hp = 5 * POWERSCALE;
+        target.values[0][CharacterValue::Armor as usize] = 20;
+        assert!(world.spawn_character(target, 10, 10));
+        assert!(world.spawn_character(character(2), 11, 10));
+
+        world.apply_legacy_hurt(
+            CharacterId(1),
+            Some(CharacterId(2)),
+            5 * POWERSCALE,
+            5,
+            90,
+            75,
+        );
+
+        assert_eq!(
+            world.drain_pending_system_texts(),
+            vec![
+                WorldSystemText {
+                    character_id: CharacterId(1),
+                    message: "hurt by Character, dam=5.00, armor=0.20 armorper=90 shieldper=75"
+                        .to_string(),
+                },
+                WorldSystemText {
+                    character_id: CharacterId(1),
+                    message: "dam after armor: 4.80".to_string(),
+                },
+            ]
         );
     }
 

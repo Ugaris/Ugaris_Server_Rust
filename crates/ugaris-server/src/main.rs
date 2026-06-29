@@ -2044,6 +2044,7 @@ fn apply_admin_character_command(
             return None;
         }
         runtime.show_attack = !runtime.show_attack;
+        world.show_attack_debug = runtime.show_attack;
         return Some(KeyringCommandResult::default());
     }
 
@@ -9456,10 +9457,12 @@ mod tests {
                 .expect("god showattack command should allow C minlen 6 abbreviation");
         assert!(showattack.messages.is_empty());
         assert!(runtime.show_attack);
+        assert!(world.show_attack_debug);
 
         apply_admin_character_command(&mut world, &mut runtime, character_id, "/showattack", 1)
             .expect("god showattack command should toggle back off");
         assert!(!runtime.show_attack);
+        assert!(!world.show_attack_debug);
     }
 
     #[test]
