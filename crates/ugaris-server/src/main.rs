@@ -1349,6 +1349,27 @@ fn apply_gold_command(
         .split_once(char::is_whitespace)
         .unwrap_or((command, ""));
     let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if verb.eq_ignore_ascii_case("ggold") {
+        let Some(character) = world.characters.get_mut(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let amount = legacy_atoi_prefix(rest).saturating_mul(100);
+        if amount >= 0 {
+            let amount = u32::try_from(amount).unwrap_or(u32::MAX);
+            character.gold = character.gold.saturating_add(amount);
+        } else {
+            let amount = u32::try_from(amount.unsigned_abs()).unwrap_or(u32::MAX);
+            character.gold = character.gold.saturating_sub(amount);
+        }
+        character.flags.insert(CharacterFlags::ITEMS);
+        return Some(KeyringCommandResult {
+            inventory_changed: true,
+            ..Default::default()
+        });
+    }
     if !verb.eq_ignore_ascii_case("gold") {
         return None;
     }
@@ -6689,6 +6710,34 @@ mod tests {
             occupied.messages,
             vec!["Please free your hand (mouse cursor) first."]
         );
+    }
+
+    #[test]
+    fn ggold_command_is_god_only_and_uses_atoi_prefix() {
+        let mut world = World::default();
+        let mut loader = ZoneLoader::new();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.gold = 500;
+        world.add_character(character);
+
+        assert!(apply_gold_command(&mut world, &mut loader, character_id, "/ggold 12").is_none());
+        assert_eq!(world.characters.get(&character_id).unwrap().gold, 500);
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let result = apply_gold_command(&mut world, &mut loader, character_id, "/ggold 12abc")
+            .expect("god gold command should be recognized");
+
+        assert!(result.messages.is_empty());
+        assert!(result.inventory_changed);
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.gold, 1_700);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
     }
 
     #[test]
