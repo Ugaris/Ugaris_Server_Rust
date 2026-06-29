@@ -1420,6 +1420,31 @@ fn apply_gold_command(
     })
 }
 
+fn apply_admin_character_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if verb.len() < 4 || !"saves".starts_with(&verb.to_ascii_lowercase()) {
+        return None;
+    }
+
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return Some(KeyringCommandResult::default());
+    };
+    if !character.flags.contains(CharacterFlags::GOD) {
+        return None;
+    }
+
+    let saves = legacy_atoi_prefix(rest).clamp(0, i64::from(u8::MAX)) as u8;
+    character.saves = saves;
+    Some(KeyringCommandResult::default())
+}
+
 fn apply_help_command(
     command: &str,
     flags: CharacterFlags,
@@ -6741,6 +6766,35 @@ mod tests {
     }
 
     #[test]
+    fn saves_command_is_god_only_and_uses_legacy_prefix_parsing() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.saves = 3;
+        world.add_character(character);
+
+        assert!(apply_admin_character_command(&mut world, character_id, "/saves 12").is_none());
+        assert_eq!(world.characters.get(&character_id).unwrap().saves, 3);
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let result = apply_admin_character_command(&mut world, character_id, "/save 12abc")
+            .expect("god saves command should be recognized by minlen 4 abbreviation");
+
+        assert!(result.messages.is_empty());
+        assert!(!result.inventory_changed);
+        assert_eq!(world.characters.get(&character_id).unwrap().saves, 12);
+
+        apply_admin_character_command(&mut world, character_id, "/saves nope")
+            .expect("god saves command should be recognized");
+        assert_eq!(world.characters.get(&character_id).unwrap().saves, 0);
+    }
+
+    #[test]
     fn legacy_item_look_text_includes_c_shaped_modifiers_requirements_and_flags() {
         let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
         character.values[1][CharacterValue::Strength as usize] = 12;
@@ -11036,6 +11090,15 @@ async fn main() -> anyhow::Result<()> {
                                     for message in result.message_bytes {
                                         command_feedback_bytes.push((character_id, message));
                                     }
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_admin_character_command(&mut world, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                if result.inventory_changed {
+                                    command_inventory_refresh.push(character_id);
                                 }
                                 continue;
                             }
