@@ -64,6 +64,7 @@ pub const IDR_SPECIALANTIENCHANTITEM: u16 = 161;
 pub const IDR_CITY_RECALL: u16 = 159;
 pub const IDR_ANTIORBSPAWN: u16 = 162;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
+pub const IDR_LAB3_PLANT: u16 = 193;
 pub const IDR_KEY_RING: u16 = 200;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
 pub const IID_AREA2_ZOMBIESKULL1: u32 = (0x01 << 24) | 0x000025;
@@ -715,6 +716,18 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    Lab3YellowBerry {
+        item_id: ItemId,
+        character_id: CharacterId,
+        duration_ticks: u64,
+        installed: bool,
+    },
+    Lab3BrownBerry {
+        item_id: ItemId,
+        character_id: CharacterId,
+        duration_ticks: u64,
+        installed: bool,
+    },
     BookText {
         item_id: ItemId,
         character_id: CharacterId,
@@ -873,6 +886,7 @@ pub fn execute_item_driver_with_context(
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
                 IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
+                IDR_LAB3_PLANT => lab3_plant_driver(character, item),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
@@ -999,6 +1013,38 @@ fn lizard_flower_driver(
         combined_bits,
         complete: combined_bits == 7,
         bottle_message: item.sprite != 11189 && context.cursor_sprite != Some(11189),
+    }
+}
+
+fn lab3_plant_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    match drdata(item, 0) {
+        5 => {
+            const OXYGEN_SECONDS: [u64; 5] = [3, 8, 10, 12, 15];
+            let freshness = usize::from(drdata(item, 2).min(4));
+            let count = u64::from(drdata(item, 1));
+            ItemDriverOutcome::Lab3YellowBerry {
+                item_id: item.id,
+                character_id: character.id,
+                duration_ticks: OXYGEN_SECONDS[freshness] * count * TICKS_PER_SECOND,
+                installed: false,
+            }
+        }
+        6 => ItemDriverOutcome::Unsupported {
+            driver: IDR_LAB3_PLANT,
+            item_id: item.id,
+            character_id: character.id,
+        },
+        11 => ItemDriverOutcome::Lab3BrownBerry {
+            item_id: item.id,
+            character_id: character.id,
+            duration_ticks: 10 * TICKS_PER_SECOND,
+            installed: false,
+        },
+        _ => ItemDriverOutcome::Noop,
     }
 }
 
@@ -3515,6 +3561,54 @@ mod tests {
                 &context,
             ),
             ItemDriverOutcome::LizardFlowerNeedsCursor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn lab3_berry_driver_decodes_yellow_brown_and_unsupported_white() {
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(8));
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LAB3_PLANT,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let mut yellow = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB3_PLANT);
+        yellow.carried_by = Some(CharacterId(1));
+        yellow.driver_data = vec![5, 3, 4];
+        assert_eq!(
+            execute_item_driver(&mut character, &mut yellow, request, 22, false),
+            ItemDriverOutcome::Lab3YellowBerry {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                duration_ticks: 45 * TICKS_PER_SECOND,
+                installed: false,
+            }
+        );
+
+        let mut brown = yellow.clone();
+        brown.driver_data = vec![11];
+        assert_eq!(
+            execute_item_driver(&mut character, &mut brown, request, 22, false),
+            ItemDriverOutcome::Lab3BrownBerry {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                duration_ticks: 10 * TICKS_PER_SECOND,
+                installed: false,
+            }
+        );
+
+        let mut white = yellow;
+        white.driver_data = vec![6, 1, 2];
+        assert_eq!(
+            execute_item_driver(&mut character, &mut white, request, 22, false),
+            ItemDriverOutcome::Unsupported {
+                driver: IDR_LAB3_PLANT,
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
             }

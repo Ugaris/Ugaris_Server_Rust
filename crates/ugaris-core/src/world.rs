@@ -53,7 +53,7 @@ use crate::{
         EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY, FIREBALL_COST,
         FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION, IDR_ARMOR, IDR_BLESS, IDR_CURSE,
         IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_HP, IDR_INFRARED, IDR_MANA, IDR_NONOMAGIC,
-        IDR_OXYGEN, IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, IDR_WEAPON,
+        IDR_OXYGEN, IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_UWTALK, IDR_WARCRY, IDR_WEAPON,
         POISON_DURATION, SPELL_SLOT_END, SPELL_SLOT_START, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
@@ -5911,6 +5911,41 @@ impl World {
                     installed,
                 }
             }
+            ItemDriverOutcome::Lab3YellowBerry {
+                item_id,
+                character_id,
+                duration_ticks,
+                ..
+            } => {
+                self.remove_driver_spells(character_id, IDR_OXYGEN);
+                let installed = self.install_oxygen_spell_for_ticks(character_id, duration_ticks);
+                if installed {
+                    self.destroy_item(item_id);
+                }
+                ItemDriverOutcome::Lab3YellowBerry {
+                    item_id,
+                    character_id,
+                    duration_ticks,
+                    installed,
+                }
+            }
+            ItemDriverOutcome::Lab3BrownBerry {
+                item_id,
+                character_id,
+                duration_ticks,
+                ..
+            } => {
+                let installed = self.install_underwater_talk_spell(character_id, duration_ticks);
+                if installed {
+                    self.destroy_item(item_id);
+                }
+                ItemDriverOutcome::Lab3BrownBerry {
+                    item_id,
+                    character_id,
+                    duration_ticks,
+                    installed,
+                }
+            }
             ItemDriverOutcome::SpecialPotionSecurity { .. }
             | ItemDriverOutcome::SpecialPotionProfessionReset { .. }
             | ItemDriverOutcome::SpecialPotionBug { .. } => outcome,
@@ -8929,25 +8964,76 @@ impl World {
     }
 
     fn install_infravision_spell(&mut self, target_id: CharacterId) -> bool {
+        self.install_timed_identity_spell(
+            target_id,
+            IDR_INFRARED,
+            TICKS_PER_SECOND * 60 * 10,
+            "Infravision",
+            "A Spell of Infravision.",
+        )
+    }
+
+    fn install_oxygen_spell(&mut self, target_id: CharacterId) -> bool {
+        self.install_oxygen_spell_for_ticks(target_id, TICKS_PER_SECOND * 60)
+    }
+
+    fn install_oxygen_spell_for_ticks(
+        &mut self,
+        target_id: CharacterId,
+        duration_ticks: u64,
+    ) -> bool {
+        self.install_timed_identity_spell(
+            target_id,
+            IDR_OXYGEN,
+            duration_ticks,
+            "Oxygen",
+            "A Spell of Oxygen.",
+        )
+    }
+
+    fn install_underwater_talk_spell(
+        &mut self,
+        target_id: CharacterId,
+        duration_ticks: u64,
+    ) -> bool {
+        self.install_timed_identity_spell(
+            target_id,
+            IDR_UWTALK,
+            duration_ticks,
+            "Underwater Talk",
+            "A Spell of Underwater Talk.",
+        )
+    }
+
+    fn install_timed_identity_spell(
+        &mut self,
+        target_id: CharacterId,
+        driver: u16,
+        duration_ticks: u64,
+        name: &str,
+        description: &str,
+    ) -> bool {
+        if duration_ticks == 0 {
+            return false;
+        }
         let Some(target) = self.characters.get(&target_id).cloned() else {
             return false;
         };
-        let Some(slot) = may_add_spell(&target, &self.items, IDR_INFRARED, self.tick.0 as u32)
-        else {
+        let Some(slot) = may_add_spell(&target, &self.items, driver, self.tick.0 as u32) else {
             return false;
         };
 
         let item_id = self.next_runtime_item_id();
         let start_tick = self.tick.0 as u32;
-        let expire_tick = start_tick.wrapping_add((TICKS_PER_SECOND * 60 * 10) as u32);
+        let expire_tick = start_tick.wrapping_add(duration_ticks as u32);
         let mut driver_data = Vec::with_capacity(8);
         driver_data.extend_from_slice(&expire_tick.to_le_bytes());
         driver_data.extend_from_slice(&start_tick.to_le_bytes());
 
         let item = Item {
             id: item_id,
-            name: "Infravision".to_string(),
-            description: "A Spell of Infravision.".to_string(),
+            name: name.to_string(),
+            description: description.to_string(),
             flags: ItemFlags::USED,
             sprite: 0,
             value: 0,
@@ -8963,7 +9049,7 @@ impl World {
             carried_by: Some(target_id),
             contained_in: None,
             content_id: 0,
-            driver: IDR_INFRARED,
+            driver,
             driver_data,
             serial: item_id.0,
         };
@@ -8988,62 +9074,28 @@ impl World {
         }
     }
 
-    fn install_oxygen_spell(&mut self, target_id: CharacterId) -> bool {
-        let Some(target) = self.characters.get(&target_id).cloned() else {
-            return false;
-        };
-        let Some(slot) = may_add_spell(&target, &self.items, IDR_OXYGEN, self.tick.0 as u32) else {
-            return false;
-        };
+    fn remove_driver_spells(&mut self, target_id: CharacterId, driver: u16) {
+        let item_ids: Vec<ItemId> = self
+            .characters
+            .get(&target_id)
+            .map(|character| {
+                character.inventory[SPELL_SLOT_START..SPELL_SLOT_END]
+                    .iter()
+                    .filter_map(|slot| *slot)
+                    .filter(|item_id| {
+                        self.items
+                            .get(item_id)
+                            .is_some_and(|item| item.driver == driver)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
-        let item_id = self.next_runtime_item_id();
-        let start_tick = self.tick.0 as u32;
-        let expire_tick = start_tick.wrapping_add((TICKS_PER_SECOND * 60) as u32);
-        let mut driver_data = Vec::with_capacity(8);
-        driver_data.extend_from_slice(&expire_tick.to_le_bytes());
-        driver_data.extend_from_slice(&start_tick.to_le_bytes());
-
-        let item = Item {
-            id: item_id,
-            name: "Oxygen".to_string(),
-            description: "A Spell of Oxygen.".to_string(),
-            flags: ItemFlags::USED,
-            sprite: 0,
-            value: 0,
-            min_level: 0,
-            max_level: 0,
-            needs_class: 0,
-            template_id: 0,
-            owner_id: 0,
-            modifier_index: [0, 0, 0, 0, 0],
-            modifier_value: [0, 0, 0, 0, 0],
-            x: 0,
-            y: 0,
-            carried_by: Some(target_id),
-            contained_in: None,
-            content_id: 0,
-            driver: IDR_OXYGEN,
-            driver_data,
-            serial: item_id.0,
-        };
-
-        self.items.insert(item_id, item);
-        if let Some(target) = self.characters.get_mut(&target_id) {
-            if target.inventory.len() <= slot {
-                self.items.remove(&item_id);
-                return false;
-            }
-            target.inventory[slot] = Some(item_id);
-            let character_serial = target.id.0;
-            target
-                .flags
-                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            refresh_driver_spell_flags(target, &self.items);
-            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
-            true
-        } else {
-            self.items.remove(&item_id);
-            false
+        for item_id in item_ids {
+            self.destroy_item(item_id);
+        }
+        if let Some(character) = self.characters.get_mut(&target_id) {
+            refresh_driver_spell_flags(character, &self.items);
         }
     }
 
@@ -10098,14 +10150,17 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_EDEMONBALL,
-            IDR_ENCHANTITEM, IDR_FIREBALL, IDR_FLAMETHROW, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT,
-            IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION,
-            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            IDR_ENCHANTITEM, IDR_FIREBALL, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_LIZARDFLOWER,
+            IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY,
+            IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
         },
         legacy::action,
         map::MapFlags,
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
-        spell::{IDR_INFRARED, IDR_NONOMAGIC, IDR_OXYGEN, IDR_POISON0, IDR_POISON1, IDR_POISON2},
+        spell::{
+            IDR_INFRARED, IDR_NONOMAGIC, IDR_OXYGEN, IDR_POISON0, IDR_POISON1, IDR_POISON2,
+            IDR_UWTALK,
+        },
         tick::TICKS_PER_SECOND,
     };
 
@@ -18551,6 +18606,108 @@ mod tests {
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert!(!character.flags.contains(CharacterFlags::OXYGEN));
         assert!(character.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn lab3_yellow_berry_replaces_existing_oxygen_with_fresh_duration() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        let mut character = character(1);
+        character.inventory[12] = Some(ItemId(12));
+        character.inventory[30] = Some(ItemId(10));
+        world.add_character(character);
+
+        let mut old_oxygen = item(12, ItemFlags::USED);
+        old_oxygen.carried_by = Some(CharacterId(1));
+        old_oxygen.driver = IDR_OXYGEN;
+        old_oxygen.driver_data = 10_000u32.to_le_bytes().to_vec();
+        world.items.insert(ItemId(12), old_oxygen);
+
+        let mut berry = item(10, ItemFlags::USED | ItemFlags::USE);
+        berry.carried_by = Some(CharacterId(1));
+        berry.driver = IDR_LAB3_PLANT;
+        berry.driver_data = vec![5, 2, 3];
+        world.items.insert(ItemId(10), berry);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_LAB3_PLANT,
+                item_id: ItemId(10),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            22,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::Lab3YellowBerry {
+                duration_ticks,
+                installed: true,
+                ..
+            } if duration_ticks == 24 * TICKS_PER_SECOND
+        ));
+        assert!(!world.items.contains_key(&ItemId(12)));
+        assert!(!world.items.contains_key(&ItemId(10)));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[12], None);
+        assert_eq!(character.inventory[30], None);
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_OXYGEN);
+        assert_eq!(
+            read_spell_expire_tick(&spell.driver_data),
+            Some(100 + (24 * TICKS_PER_SECOND) as u32)
+        );
+        assert!(character.flags.contains(CharacterFlags::OXYGEN));
+    }
+
+    #[test]
+    fn lab3_brown_berry_installs_timed_underwater_talk_spell() {
+        let mut world = World::default();
+        world.tick = Tick(200);
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(10));
+        world.add_character(character);
+
+        let mut berry = item(10, ItemFlags::USED | ItemFlags::USE);
+        berry.carried_by = Some(CharacterId(1));
+        berry.driver = IDR_LAB3_PLANT;
+        berry.driver_data = vec![11];
+        world.items.insert(ItemId(10), berry);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_LAB3_PLANT,
+                item_id: ItemId(10),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            22,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::Lab3BrownBerry {
+                duration_ticks,
+                installed: true,
+                ..
+            } if duration_ticks == 10 * TICKS_PER_SECOND
+        ));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_UWTALK);
+        assert_eq!(
+            read_spell_expire_tick(&spell.driver_data),
+            Some(200 + (10 * TICKS_PER_SECOND) as u32)
+        );
+        assert_eq!(character.inventory[30], None);
+
+        world.tick = Tick(200 + 10 * TICKS_PER_SECOND);
+        world.process_due_timers(22);
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[29], None);
     }
 
     #[test]

@@ -12350,6 +12350,22 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "This cannot be used together. Try something else.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab3YellowBerry { character_id, installed, .. } => {
+                                            if installed {
+                                                executed += 1;
+                                            } else {
+                                                feedback.push((character_id, "Due to some strange reasons thou canst not eat those berries now.".to_string()));
+                                                blocked += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab3BrownBerry { character_id, installed, .. } => {
+                                            if installed {
+                                                executed += 1;
+                                            } else {
+                                                feedback.push((character_id, "Thou art still chewing a brown berry.".to_string()));
+                                                blocked += 1;
+                                            }
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::LabExitWrongOwner { character_id, .. } => {
                                             feedback.push((character_id, "This gate has not been created for you. You cannot use it.".to_string()));
                                             blocked += 1;
