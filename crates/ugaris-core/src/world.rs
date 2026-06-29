@@ -3297,17 +3297,8 @@ impl World {
         {
             return false;
         }
-        let modifier = warcry_speed_modifier(
-            spell_power(
-                character_value(attacker, CharacterValue::Warcry),
-                character_value(attacker, CharacterValue::Tactics),
-            ),
-            character_value(target, CharacterValue::Immunity),
-            character_value(target, CharacterValue::Tactics),
-            character_value_present(target, CharacterValue::Tactics) != 0,
-        );
-        let target_accepts = modifier < -10
-            && may_add_spell(target, &self.items, IDR_WARCRY, self.tick.0 as u32).is_some();
+        let target_accepts =
+            may_add_spell(target, &self.items, IDR_WARCRY, self.tick.0 as u32).is_some();
         let caster_needs_shield = character_value_present(attacker, CharacterValue::MagicShield)
             == 0
             && attacker.lifeshield
@@ -12840,6 +12831,42 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 460);
+    }
+
+    #[test]
+    fn simple_baddy_warcry_task_does_not_precheck_modifier_like_c() {
+        let mut world = World::default();
+        world.tick = Tick(460);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.endurance = 10 * POWERSCALE;
+        npc.lifeshield = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Warcry as usize] = 2;
+        npc.values[0][CharacterValue::MagicShield as usize] = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.values[1][CharacterValue::MagicShield as usize] = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 12,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut target = character(2);
+        target.values[0][CharacterValue::Immunity as usize] = 100;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 12, 10);
+        world.map.tile_mut(12, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WARCRY);
+        assert_eq!(npc.endurance, 10 * POWERSCALE - 2 * POWERSCALE / 3);
     }
 
     #[test]
