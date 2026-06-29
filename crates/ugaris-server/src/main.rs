@@ -1765,6 +1765,64 @@ fn apply_maxlag_command(player: &mut PlayerRuntime, command: &str) -> Option<Key
     })
 }
 
+fn apply_lag_command(
+    world: &mut World,
+    player: &PlayerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("lag") {
+        return None;
+    }
+
+    let Some(character) = world.characters.get(&character_id) else {
+        return Some(KeyringCommandResult::default());
+    };
+    let turning_on = !character.flags.contains(CharacterFlags::LAG);
+    let in_arena = world
+        .map
+        .tile(usize::from(character.x), usize::from(character.y))
+        .is_some_and(|tile| tile.flags.contains(MapFlags::ARENA));
+
+    if turning_on && in_arena {
+        return Some(KeyringCommandResult {
+            messages: vec!["You cannot simulate lag in an arena.".to_string()],
+            ..Default::default()
+        });
+    }
+    if turning_on && !player.pk_hate.is_empty() {
+        return Some(KeyringCommandResult {
+            messages: vec!["You cannot simulate lag while your hate list is not empty.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return Some(KeyringCommandResult::default());
+    };
+    character.flags.toggle(CharacterFlags::LAG);
+    let enabled = character.flags.contains(CharacterFlags::LAG);
+    let mut messages = vec![format!(
+        "Turned artificial lag {}.",
+        if enabled { "on" } else { "off" }
+    )];
+    if enabled {
+        messages.push(
+            "PLEASE turn this option off (type /lag again) before you complain about lag!"
+                .to_string(),
+        );
+    }
+
+    Some(KeyringCommandResult {
+        messages,
+        ..Default::default()
+    })
+}
+
 fn apply_status_command(
     character: &Character,
     player: &PlayerRuntime,
@@ -9051,6 +9109,81 @@ mod tests {
     }
 
     #[test]
+    fn lag_command_toggles_artificial_lag_with_legacy_feedback() {
+        let mut world = World::default();
+        world.map = ugaris_core::map::MapGrid::new(20, 20);
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        world.add_character(character);
+        let player = PlayerRuntime::connected(1, 0);
+
+        let enabled = apply_lag_command(&mut world, &player, character_id, "/lag")
+            .expect("lag command should be recognized");
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::LAG));
+        assert_eq!(
+            enabled.messages,
+            vec![
+                "Turned artificial lag on.".to_string(),
+                "PLEASE turn this option off (type /lag again) before you complain about lag!"
+                    .to_string(),
+            ]
+        );
+
+        let disabled = apply_lag_command(&mut world, &player, character_id, "/lag")
+            .expect("lag command should be recognized");
+        assert!(!world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::LAG));
+        assert_eq!(
+            disabled.messages,
+            vec!["Turned artificial lag off.".to_string()]
+        );
+        assert!(apply_lag_command(&mut world, &player, character_id, "/la").is_none());
+    }
+
+    #[test]
+    fn lag_command_blocks_enabling_in_arena_or_with_hate() {
+        let mut world = World::default();
+        world.map = ugaris_core::map::MapGrid::new(20, 20);
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.x = 10;
+        character.y = 10;
+        world.add_character(character);
+        world.map.set_flags(10, 10, MapFlags::ARENA);
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let arena = apply_lag_command(&mut world, &player, character_id, "/lag")
+            .expect("lag command should be recognized");
+        assert_eq!(arena.messages, vec!["You cannot simulate lag in an arena."]);
+        assert!(!world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::LAG));
+
+        world.map.set_flags(10, 10, MapFlags::empty());
+        assert!(player.add_pk_hate(99));
+        let hate = apply_lag_command(&mut world, &player, character_id, "/lag")
+            .expect("lag command should be recognized");
+        assert_eq!(
+            hate.messages,
+            vec!["You cannot simulate lag while your hate list is not empty."]
+        );
+    }
+
+    #[test]
     fn status_command_shows_represented_lostcon_and_account_state() {
         let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
         character
@@ -14738,6 +14871,12 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             }
                             if let Some(result) = apply_maxlag_command(player, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_lag_command(&mut world, player, character_id, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
