@@ -1392,9 +1392,36 @@
         "test result: ok. 138 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 0.00s",
         "- `IDR_PALACEKEY = 59` now dispatches from the base item-driver path for C `palace_key`: the full legacy sprite-combination table is ported, carried-only/non-character guards are preserved, no-cursor "
       ]
+    },
+    {
+      "iteration": 52,
+      "startedAt": "2026-06-29T16:59:12.662Z",
+      "endedAt": "2026-06-29T17:05:20.854Z",
+      "durationMs": 368025,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The failed assertion exposed that legacy `char_dist == 2` means one cardinal tile away under the ported distance metric. I corrected the test setup and am rerunning verification.",
+        "error: unexpected argument 'simple_baddy_fight_tasks_allow_nomove_attack_at_distance_two_like_c' found",
+        "test world::tests::simple_baddy_fight_tasks_allow_nomove_attack_at_distance_two_like_c ... FAILED",
+        "assertion failed: tasks.iter().any(|task| task.kind == FightDriverTaskKind::Attack)",
+        "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 654 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 654 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 26285341,
+  "totalDurationMs": 26653366,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 8,
@@ -1402,10 +1429,10 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 7,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 7,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 39,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 39,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 40,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 40,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 36,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 35,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 36,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 28,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
@@ -1428,7 +1455,7 @@
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 13,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 14,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test player::tests::pk_hate_helpers_preserve_legacy_front_priority_and_eviction ... FAILED": 1,
       "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.00s": 1,
@@ -1590,7 +1617,13 @@
       "test world::tests::completed_attack_queues_legacy_weapon_clash_miss_sound ... FAILED": 1,
       "error: unexpected argument 'item_driver::tests::arena_toplist_lines_match_legacy_rank_window' found": 1,
       "test result: ok. 138 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 0.00s": 1,
-      "- `IDR_PALACEKEY = 59` now dispatches from the base item-driver path for C `palace_key`: the full le": 1
+      "- `IDR_PALACEKEY = 59` now dispatches from the base item-driver path for C `palace_key`: the full le": 1,
+      "The failed assertion exposed that legacy `char_dist == 2` means one cardinal tile away under the por": 1,
+      "error: unexpected argument 'simple_baddy_fight_tasks_allow_nomove_attack_at_distance_two_like_c' fou": 1,
+      "test world::tests::simple_baddy_fight_tasks_allow_nomove_attack_at_distance_two_like_c ... FAILED": 1,
+      "assertion failed: tasks.iter().any(|task| task.kind == FightDriverTaskKind::Attack)": 1,
+      "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 654 filtered out; finished in 0.00s": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 654 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

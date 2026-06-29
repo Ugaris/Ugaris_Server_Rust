@@ -3912,7 +3912,7 @@ impl World {
         area_id: u16,
         random: &mut impl FnMut(u32) -> u32,
     ) -> bool {
-        let mut tasks = self.simple_baddy_fight_tasks(character_id, target, area_id);
+        let mut tasks = self.simple_baddy_fight_tasks(character_id, target, area_id, false);
         let level = self
             .characters
             .get(&character_id)
@@ -3992,6 +3992,7 @@ impl World {
         character_id: CharacterId,
         target: &Character,
         area_id: u16,
+        nomove: bool,
     ) -> Vec<FightDriverTask> {
         let Some(attacker) = self.characters.get(&character_id) else {
             return Vec::new();
@@ -4126,10 +4127,12 @@ impl World {
                     + character_value(attacker, CharacterValue::Warcry) / 2,
             });
         }
-        tasks.push(FightDriverTask {
-            kind: FightDriverTaskKind::Attack,
-            value: simple_baddy_attack_task_value(attacker),
-        });
+        if !nomove || character_distance == 2 {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Attack,
+                value: simple_baddy_attack_task_value(attacker),
+            });
+        }
         if area_id != 33 && self.simple_baddy_needs_regeneration(attacker) {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::Regenerate,
@@ -12820,11 +12823,13 @@ mod tests {
             CharacterId(1),
             world.characters.get(&CharacterId(2)).unwrap(),
             1,
+            false,
         );
         let area_thirty_three_tasks = world.simple_baddy_fight_tasks(
             CharacterId(1),
             world.characters.get(&CharacterId(2)).unwrap(),
             33,
+            false,
         );
 
         assert!(area_one_tasks
@@ -12833,6 +12838,63 @@ mod tests {
         assert!(!area_thirty_three_tasks
             .iter()
             .any(|task| task.kind == FightDriverTaskKind::Regenerate));
+    }
+
+    #[test]
+    fn simple_baddy_fight_tasks_honor_legacy_nomove_attack_gate() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 13, 10);
+
+        let moving_tasks = world.simple_baddy_fight_tasks(
+            CharacterId(1),
+            world.characters.get(&CharacterId(2)).unwrap(),
+            1,
+            false,
+        );
+        let no_move_tasks = world.simple_baddy_fight_tasks(
+            CharacterId(1),
+            world.characters.get(&CharacterId(2)).unwrap(),
+            1,
+            true,
+        );
+
+        assert!(moving_tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::Attack));
+        assert!(!no_move_tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::Attack));
+    }
+
+    #[test]
+    fn simple_baddy_fight_tasks_allow_nomove_attack_at_distance_two_like_c() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        let tasks = world.simple_baddy_fight_tasks(
+            CharacterId(1),
+            world.characters.get(&CharacterId(2)).unwrap(),
+            1,
+            true,
+        );
+
+        assert!(tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::Attack));
     }
 
     #[test]
@@ -13147,6 +13209,7 @@ mod tests {
             CharacterId(1),
             world.characters.get(&CharacterId(2)).unwrap(),
             1,
+            false,
         );
 
         assert!(!tasks
