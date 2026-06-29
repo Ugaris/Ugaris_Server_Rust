@@ -284,6 +284,8 @@ pub struct PlayerRuntime {
     pub transport_seen: u64,
     #[serde(default)]
     pub current_mirror_id: u16,
+    #[serde(default)]
+    pub max_lag_seconds: u8,
 }
 
 impl PlayerRuntime {
@@ -328,7 +330,12 @@ impl PlayerRuntime {
             special_shrine_hcsc_last_touch_seconds: 0,
             transport_seen: 0,
             current_mirror_id: 0,
+            max_lag_seconds: 0,
         }
+    }
+
+    pub fn set_max_lag_seconds(&mut self, seconds: u8) {
+        self.max_lag_seconds = seconds;
     }
 
     pub fn set_current_mirror(&mut self, mirror_id: u32) {

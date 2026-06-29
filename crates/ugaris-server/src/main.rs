@@ -1420,6 +1420,34 @@ fn apply_gold_command(
     })
 }
 
+fn apply_maxlag_command(player: &mut PlayerRuntime, command: &str) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 4 || !"maxlag".starts_with(&lower) {
+        return None;
+    }
+
+    let lag = legacy_atoi_prefix(rest);
+    if !(3..=20).contains(&lag) {
+        return Some(KeyringCommandResult {
+            messages: vec!["Number must be between 3 and 20.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    player.set_max_lag_seconds(lag as u8);
+    Some(KeyringCommandResult {
+        messages: vec![format!(
+            "Set delay for lag control to kick in to {} seconds.",
+            player.max_lag_seconds
+        )],
+        ..Default::default()
+    })
+}
+
 fn apply_admin_character_command(
     world: &mut World,
     character_id: CharacterId,
@@ -7165,6 +7193,37 @@ mod tests {
     }
 
     #[test]
+    fn maxlag_command_matches_legacy_range_and_feedback() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let invalid = apply_maxlag_command(&mut player, "/maxlag 2")
+            .expect("maxlag command should be recognized");
+        assert_eq!(
+            invalid.messages,
+            vec!["Number must be between 3 and 20.".to_string()]
+        );
+        assert_eq!(player.max_lag_seconds, 0);
+
+        let high = apply_maxlag_command(&mut player, "/maxlag 21")
+            .expect("maxlag command should be recognized");
+        assert_eq!(
+            high.messages,
+            vec!["Number must be between 3 and 20.".to_string()]
+        );
+        assert_eq!(player.max_lag_seconds, 0);
+
+        let result = apply_maxlag_command(&mut player, "/maxl 12abc")
+            .expect("legacy maxlag abbreviation should be recognized");
+        assert_eq!(player.max_lag_seconds, 12);
+        assert_eq!(
+            result.messages,
+            vec!["Set delay for lag control to kick in to 12 seconds.".to_string()]
+        );
+
+        assert!(apply_maxlag_command(&mut player, "/ma 12").is_none());
+    }
+
+    #[test]
     fn saves_command_is_god_only_and_uses_legacy_prefix_parsing() {
         let mut world = World::default();
         let character_id = CharacterId(7);
@@ -11729,6 +11788,12 @@ async fn main() -> anyhow::Result<()> {
                             };
                             let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
                             if let Some(result) = apply_pk_hate_command(&mut world, player, character_id, &command, realtime_seconds) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_maxlag_command(player, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
