@@ -17955,6 +17955,11 @@ async fn main() -> anyhow::Result<()> {
                                         } => {
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonTubePulse {
+                                            ..
+                                        } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderBlocked {
                                             character_id,
                                             reason,

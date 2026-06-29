@@ -47,7 +47,7 @@ use crate::{
     player::{PlayerActionCode, PlayerRuntime},
     scheduler::{TaskScheduler, TimerPayload, TimerQueue},
     sector::{DirtySectors, SoundSectors},
-    see::char_see_char,
+    see::{char_see_char, char_see_item},
     spell::{
         add_same_spell_slot, fireball_damage, freeze_speed_modifier, is_timed_spell_driver,
         may_add_spell, pulse_damage, pulse_spend, read_spell_expire_tick, spell_power,
@@ -776,6 +776,39 @@ impl World {
             item.y = target_y;
         }
         true
+    }
+
+    fn pulse_edemon_tube(&mut self, item_id: ItemId, target_x: u16, target_y: u16) {
+        if target_x == 0 || target_y == 0 {
+            return;
+        }
+        let Some(item) = self.items.get(&item_id).cloned() else {
+            return;
+        };
+        let item_x = i32::from(item.x);
+        let item_y = i32::from(item.y);
+        let targets: Vec<_> = self
+            .characters
+            .values()
+            .filter(|character| {
+                character
+                    .flags
+                    .contains(CharacterFlags::USED | CharacterFlags::PLAYER)
+                    && (i32::from(character.x) - item_x).abs() <= 10
+                    && (i32::from(character.y) - item_y).abs() <= 10
+                    && char_see_item(character, &item, &self.map, self.date.daylight)
+            })
+            .map(|character| character.id)
+            .collect();
+
+        for character_id in targets {
+            if self.teleport_character(character_id, target_x, target_y, false) {
+                self.pending_system_texts.push(WorldSystemText {
+                    character_id,
+                    message: "The strange tube teleported you.".to_string(),
+                });
+            }
+        }
     }
 
     pub fn skip_x_sector(&self, x: isize, y: isize, ticker: u64) -> usize {
@@ -6157,6 +6190,17 @@ impl World {
                 }
             }
             ItemDriverOutcome::EdemonBlockBlocked { .. } => outcome,
+            ItemDriverOutcome::EdemonTubePulse {
+                item_id,
+                x,
+                y,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.pulse_edemon_tube(item_id, x, y);
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
             ItemDriverOutcome::EdemonGateSpawn {
                 item_id,
                 schedule_after_ticks,
@@ -17856,6 +17900,50 @@ mod tests {
             u16::from_le_bytes([tube.driver_data[4], tube.driver_data[5]]),
             21
         );
+    }
+
+    #[test]
+    fn world_edemon_tube_overload_teleports_visible_nearby_players() {
+        let mut world = World::default();
+        world.add_character(character(0));
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(player, 12, 10));
+
+        let mut tube = item(7, ItemFlags::USED | ItemFlags::USE);
+        tube.driver = IDR_EDEMONTUBE;
+        tube.driver_data = vec![4, 0, 0, 0, 0, 0];
+        assert!(world.map.set_item_map(&mut tube, 10, 10));
+        world.add_item(tube);
+
+        let mut loader = item(8, ItemFlags::USED | ItemFlags::USE);
+        loader.driver = IDR_EDEMONLOADER;
+        loader.driver_data = vec![4, 251, 0];
+        loader.x = 20;
+        loader.y = 20;
+        world.add_item(loader);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_EDEMONTUBE,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            6,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::EdemonTubePulse { .. }));
+        let player = &world.characters[&CharacterId(1)];
+        assert_eq!((player.x, player.y), (20, 21));
+        assert_eq!(
+            world.drain_pending_system_texts(),
+            vec![WorldSystemText {
+                character_id: CharacterId(1),
+                message: "The strange tube teleported you.".to_string(),
+            }]
+        );
+        assert_eq!(world.timers.used_timers(), 1);
     }
 
     #[test]

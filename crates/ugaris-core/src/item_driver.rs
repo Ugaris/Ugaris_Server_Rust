@@ -665,6 +665,13 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    EdemonTubePulse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+        schedule_after_ticks: u64,
+    },
     EdemonGateSpawn {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1684,7 +1691,8 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::PentBossDoorLocked { .. }
         | ItemDriverOutcome::PentBossDoorBusy { .. } => 2,
         ItemDriverOutcome::EdemonBlockMove { .. }
-        | ItemDriverOutcome::EdemonBlockBlocked { .. } => 1,
+        | ItemDriverOutcome::EdemonBlockBlocked { .. }
+        | ItemDriverOutcome::EdemonTubePulse { .. } => 1,
         ItemDriverOutcome::Noop
             if matches!(
                 driver,
@@ -5922,10 +5930,20 @@ fn edemon_light_driver(
     item.modifier_value[0] = light;
     item.sprite = sprite;
 
-    ItemDriverOutcome::LightChanged {
-        item_id: item.id,
-        character_id: character.id,
-        schedule_after_ticks: Some(TICKS_PER_SECOND),
+    if power > 250 {
+        ItemDriverOutcome::EdemonTubePulse {
+            item_id: item.id,
+            character_id: character.id,
+            x: drdata_u16(item, 2),
+            y: drdata_u16(item, 4),
+            schedule_after_ticks: TICKS_PER_SECOND,
+        }
+    } else {
+        ItemDriverOutcome::LightChanged {
+            item_id: item.id,
+            character_id: character.id,
+            schedule_after_ticks: Some(TICKS_PER_SECOND),
+        }
     }
 }
 
@@ -6074,10 +6092,20 @@ fn edemon_tube_driver(
         }
     }
 
-    ItemDriverOutcome::LightChanged {
-        item_id: item.id,
-        character_id: character.id,
-        schedule_after_ticks: Some(TICKS_PER_SECOND),
+    if power > 250 {
+        ItemDriverOutcome::EdemonTubePulse {
+            item_id: item.id,
+            character_id: character.id,
+            x: drdata_u16(item, 2),
+            y: drdata_u16(item, 4),
+            schedule_after_ticks: TICKS_PER_SECOND,
+        }
+    } else {
+        ItemDriverOutcome::LightChanged {
+            item_id: item.id,
+            character_id: character.id,
+            schedule_after_ticks: Some(TICKS_PER_SECOND),
+        }
     }
 }
 
@@ -12470,6 +12498,28 @@ mod tests {
         assert_eq!(tube.modifier_value[0], 200);
         assert_eq!(drdata_u16(&tube, 2), 50);
         assert_eq!(drdata_u16(&tube, 4), 61);
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut tube,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    edemon_section_power: Some(251),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::EdemonTubePulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                x: 50,
+                y: 61,
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }
+        );
 
         execute_item_driver_with_context(
             &mut timer_character,
