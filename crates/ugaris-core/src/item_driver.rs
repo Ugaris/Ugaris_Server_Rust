@@ -681,6 +681,20 @@ pub enum ItemDriverOutcome {
         y: u16,
         schedule_after_ticks: u64,
     },
+    ChestSpawn {
+        item_id: ItemId,
+        character_id: CharacterId,
+        template: &'static str,
+        x: u16,
+        y: u16,
+        schedule_after_ticks: u64,
+    },
+    ChestSpawnCheck {
+        item_id: ItemId,
+        character_id: CharacterId,
+        spawned_character_id: CharacterId,
+        schedule_after_ticks: u64,
+    },
     FdemonGateSpawn {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1851,6 +1865,7 @@ pub fn execute_item_driver_with_context(
                 IDR_COLORTILE => colortile_driver(character, item),
                 IDR_SKELRAISE => skelraise_driver(character, item, context),
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
+                IDR_CHESTSPAWN => chestspawn_driver(character, item),
                 IDR_PARKSHRINE => parkshrine_driver(character, item),
                 IDR_BOOK => book_driver(character, item),
                 IDR_BOOKCASE => bookcase_driver(character, item, context),
@@ -2031,6 +2046,37 @@ fn parkshrine_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         item_id: item.id,
         character_id: character.id,
         shrine,
+    }
+}
+
+fn chestspawn_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 != 0 {
+        if drdata(item, 1) != 0 {
+            return ItemDriverOutcome::Noop;
+        }
+
+        return match drdata(item, 0) {
+            0 => ItemDriverOutcome::ChestSpawn {
+                item_id: item.id,
+                character_id: character.id,
+                template: "normal_vampire",
+                x: item.x,
+                y: item.y,
+                schedule_after_ticks: TICKS_PER_SECOND * 10,
+            },
+            _ => ItemDriverOutcome::Noop,
+        };
+    }
+
+    if drdata(item, 1) == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::ChestSpawnCheck {
+        item_id: item.id,
+        character_id: character.id,
+        spawned_character_id: CharacterId(u32::from(drdata_u16(item, 2))),
+        schedule_after_ticks: TICKS_PER_SECOND * 10,
     }
 }
 
@@ -7818,6 +7864,58 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut timer_character, &mut shrine, request, 2, false),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn chestspawn_driver_ports_area2_spawn_and_timer_boundaries() {
+        let mut actor = character(1);
+        let mut spawner = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_CHESTSPAWN);
+        spawner.x = 42;
+        spawner.y = 43;
+        spawner.driver_data = vec![0, 0, 0, 0, 0, 0, 0, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_CHESTSPAWN,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_CHESTSPAWN, 27);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut spawner, request, 2, false),
+            ItemDriverOutcome::ChestSpawn {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                template: "normal_vampire",
+                x: 42,
+                y: 43,
+                schedule_after_ticks: TICKS_PER_SECOND * 10,
+            }
+        );
+
+        spawner.driver_data = vec![1, 0];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut spawner, request, 2, false),
+            ItemDriverOutcome::Noop
+        );
+
+        spawner.driver_data = vec![0, 1, 0x34, 0x12, 0, 0, 0, 0];
+        let mut timer_character = character(0);
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_CHESTSPAWN,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver(&mut timer_character, &mut spawner, timer_request, 2, false),
+            ItemDriverOutcome::ChestSpawnCheck {
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spawned_character_id: CharacterId(0x1234),
+                schedule_after_ticks: TICKS_PER_SECOND * 10,
+            }
         );
     }
 

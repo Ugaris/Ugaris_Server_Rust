@@ -548,6 +548,54 @@ impl World {
         true
     }
 
+    pub fn apply_chestspawn_spawn_result(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        _serial: u32,
+    ) -> bool {
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        item.driver_data.resize(8, 0);
+        if item.driver_data[1] != 0 {
+            return false;
+        }
+        item.sprite += 1;
+        item.driver_data[1] = 1;
+        item.driver_data[2..4].copy_from_slice(&(character_id.0 as u16).to_le_bytes());
+        item.driver_data[6..8].copy_from_slice(&0_u16.to_le_bytes());
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        self.mark_dirty_sector(x, y);
+        self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
+        true
+    }
+
+    fn chestspawn_spawn_alive(&self, character_id: CharacterId) -> bool {
+        character_id.0 != 0
+            && self
+                .characters
+                .get(&character_id)
+                .is_some_and(|character| !character.flags.contains(CharacterFlags::DEAD))
+    }
+
+    fn reset_chestspawn_item(&mut self, item_id: ItemId) -> bool {
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        item.driver_data.resize(8, 0);
+        if item.driver_data[1] == 0 {
+            return false;
+        }
+        item.sprite -= 1;
+        item.driver_data[1] = 0;
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        self.mark_dirty_sector(x, y);
+        true
+    }
+
     pub fn apply_fdemon_gate_spawn_result(
         &mut self,
         item_id: ItemId,
@@ -6207,6 +6255,20 @@ impl World {
                 ..
             } => {
                 self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::ChestSpawn { .. } => outcome,
+            ItemDriverOutcome::ChestSpawnCheck {
+                item_id,
+                spawned_character_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                if self.chestspawn_spawn_alive(spawned_character_id) {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                } else {
+                    self.reset_chestspawn_item(item_id);
+                }
                 outcome
             }
             ItemDriverOutcome::FdemonGateSpawn {
@@ -13297,11 +13359,11 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGAR,
-            IDR_CALIGARFLAME, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT, IDR_ENCHANTITEM,
-            IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW, IDR_FLASK,
-            IDR_LAB3_PLANT, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION,
-            IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP,
-            IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_CALIGARFLAME, IDR_CHESTSPAWN, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT,
+            IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW,
+            IDR_FLASK, IDR_LAB3_PLANT, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
+            IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION,
+            IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -13360,6 +13422,49 @@ mod tests {
         );
         assert_eq!(world.map.tile(11, 10).unwrap().character, 1);
         assert_eq!(world.map.tile(10, 10).unwrap().character, 2);
+    }
+
+    #[test]
+    fn chestspawn_spawn_result_marks_active_and_schedules_poll() {
+        let mut world = World::default();
+        let mut spawner = item(8, ItemFlags::USE);
+        spawner.driver = IDR_CHESTSPAWN;
+        spawner.sprite = 1234;
+        spawner.x = 10;
+        spawner.y = 10;
+        spawner.driver_data = vec![0, 0, 0, 0, 0, 0, 0, 0];
+        world.items.insert(spawner.id, spawner);
+
+        assert!(world.apply_chestspawn_spawn_result(ItemId(8), CharacterId(44), 0));
+        let spawner = &world.items[&ItemId(8)];
+        assert_eq!(spawner.sprite, 1235);
+        assert_eq!(spawner.driver_data[1], 1);
+        assert_eq!(&spawner.driver_data[2..4], &44_u16.to_le_bytes());
+        assert_eq!(world.process_due_timers(2), Vec::<ItemDriverOutcome>::new());
+        world.tick.0 = TICKS_PER_SECOND * 10;
+        let outcomes = world.process_due_timers(2);
+        assert_eq!(outcomes.len(), 1);
+    }
+
+    #[test]
+    fn chestspawn_timer_resets_when_spawn_is_gone() {
+        let mut world = World::default();
+        let mut spawner = item(8, ItemFlags::USE);
+        spawner.driver = IDR_CHESTSPAWN;
+        spawner.sprite = 1235;
+        spawner.x = 10;
+        spawner.y = 10;
+        spawner.driver_data = vec![0, 1, 44, 0, 0, 0, 0, 0];
+        world.items.insert(spawner.id, spawner);
+        assert!(world.schedule_item_driver_timer(ItemId(8), CharacterId(0), 1));
+        world.tick.0 = 1;
+
+        let outcomes = world.process_due_timers(2);
+
+        assert_eq!(outcomes.len(), 1);
+        let spawner = &world.items[&ItemId(8)];
+        assert_eq!(spawner.sprite, 1234);
+        assert_eq!(spawner.driver_data[1], 0);
     }
 
     #[test]

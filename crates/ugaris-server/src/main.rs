@@ -5888,6 +5888,42 @@ fn spawn_edemon_gate_character(
     world.apply_edemon_gate_spawn_result(item_id, slot, character_id, 0)
 }
 
+fn spawn_chestspawn_character(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    item_id: ItemId,
+    template: &str,
+    x: u16,
+    y: u16,
+) -> bool {
+    let character_id = runtime.allocate_character_id();
+    let Ok((mut character, inventory_items)) =
+        loader.instantiate_character_template(template, character_id)
+    else {
+        return false;
+    };
+    character.dir = ugaris_core::direction::Direction::RightDown as u8;
+    character.hp = i32::from(character.values[0][ugaris_core::entity::CharacterValue::Hp as usize])
+        * ugaris_core::entity::POWERSCALE;
+    character.endurance =
+        i32::from(character.values[0][ugaris_core::entity::CharacterValue::Endurance as usize])
+            * ugaris_core::entity::POWERSCALE;
+    character.mana =
+        i32::from(character.values[0][ugaris_core::entity::CharacterValue::Mana as usize])
+            * ugaris_core::entity::POWERSCALE;
+    character
+        .flags
+        .remove(ugaris_core::entity::CharacterFlags::RESPAWN);
+    if !world.spawn_character(character, usize::from(x), usize::from(y)) {
+        return false;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+    world.apply_chestspawn_spawn_result(item_id, character_id, 0)
+}
+
 fn spawn_fdemon_gate_character(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -16561,6 +16597,7 @@ async fn main() -> anyhow::Result<()> {
                 }
                 let mut edemon_gate_spawns = 0;
                 let mut fdemon_gate_spawns = 0;
+                let mut chest_spawns = 0;
                 for outcome in &timer_outcomes {
                     if let ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn {
                         item_id,
@@ -16582,6 +16619,26 @@ async fn main() -> anyhow::Result<()> {
                             *y,
                         ) {
                             edemon_gate_spawns += 1;
+                        }
+                    }
+                    if let ugaris_core::item_driver::ItemDriverOutcome::ChestSpawn {
+                        item_id,
+                        template,
+                        x,
+                        y,
+                        ..
+                    } = outcome
+                    {
+                        if spawn_chestspawn_character(
+                            &mut world,
+                            &mut zone_loader,
+                            &mut runtime,
+                            *item_id,
+                            template,
+                            *x,
+                            *y,
+                        ) {
+                            chest_spawns += 1;
                         }
                     }
                     if let ugaris_core::item_driver::ItemDriverOutcome::FdemonGateSpawn {
@@ -16609,6 +16666,9 @@ async fn main() -> anyhow::Result<()> {
                 }
                 if edemon_gate_spawns != 0 {
                     info!(count = edemon_gate_spawns, tick = world.tick.0, "spawned edemon gate characters");
+                }
+                if chest_spawns != 0 {
+                    info!(count = chest_spawns, tick = world.tick.0, "spawned chestspawn characters");
                 }
                 if fdemon_gate_spawns != 0 {
                     info!(count = fdemon_gate_spawns, tick = world.tick.0, "spawned fdemon gate characters");
@@ -17836,6 +17896,22 @@ async fn main() -> anyhow::Result<()> {
                                                 failed += 1;
                                             }
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ChestSpawn { item_id, character_id: _, template, x, y, .. } => {
+                                            if spawn_chestspawn_character(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                &mut runtime,
+                                                item_id,
+                                                template,
+                                                x,
+                                                y,
+                                            ) {
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ChestSpawnCheck { .. } => {}
                                         ugaris_core::item_driver::ItemDriverOutcome::XmasTree { character_id, .. } => {
                                             let (is_xmas, event_year) = current_xmas_event();
                                             let gift_seed = world.tick.0;
