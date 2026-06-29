@@ -16275,6 +16275,24 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "BUG #55343, please report".to_string()));
                                             failed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarTraining { character_id, lesson, .. } => {
+                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                if player.observe_caligar_training(lesson).unwrap_or(false) {
+                                                    let text = match lesson {
+                                                        1 => "You observe the skeletons fighting techniques: Melee.",
+                                                        2 => "You observe the vampires fighting techniques: Magic and Melee.",
+                                                        3 => "You observe the zombies fighting techniques: Magic.",
+                                                        _ => "",
+                                                    };
+                                                    if !text.is_empty() {
+                                                        feedback.push((character_id, text.to_string()));
+                                                    }
+                                                }
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::PickBerry {
                                             character_id,
                                             kind,

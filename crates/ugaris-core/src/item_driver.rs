@@ -847,6 +847,11 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         shrine: u8,
     },
+    CaligarTraining {
+        item_id: ItemId,
+        character_id: CharacterId,
+        lesson: u8,
+    },
     BookText {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1082,6 +1087,7 @@ pub fn execute_item_driver_with_context(
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
                 IDR_XMASMAKER => xmasmaker_driver(character, item),
+                IDR_CALIGAR => caligar_driver(character, item),
                 IDR_CALIGARFLAME => flamethrow_driver(character, item, context),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
@@ -1154,6 +1160,32 @@ fn parkshrine_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         item_id: item.id,
         character_id: character.id,
         shrine,
+    }
+}
+
+fn caligar_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    match drdata(item, 0) {
+        1 => caligar_training_driver(character, item),
+        _ => ItemDriverOutcome::Unsupported {
+            driver: IDR_CALIGAR,
+            item_id: item.id,
+            character_id: character.id,
+        },
+    }
+}
+
+fn caligar_training_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    match drdata(item, 1) {
+        1..=3 => ItemDriverOutcome::CaligarTraining {
+            item_id: item.id,
+            character_id: character.id,
+            lesson: drdata(item, 1),
+        },
+        _ => ItemDriverOutcome::Noop,
     }
 }
 
@@ -4776,6 +4808,46 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut timer_character, &mut shrine, request, 2, false),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn caligar_training_driver_ports_watch_lesson_boundary() {
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        let mut training = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_CALIGAR);
+        training.driver_data = vec![1, 2];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_CALIGAR,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_CALIGAR, 144);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut training, request, 36, false),
+            ItemDriverOutcome::CaligarTraining {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                lesson: 2,
+            }
+        );
+
+        training.driver_data = vec![1, 9];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut training, request, 36, false),
+            ItemDriverOutcome::Noop
+        );
+
+        training.driver_data = vec![2, 1];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut training, request, 36, false),
+            ItemDriverOutcome::Unsupported {
+                driver: IDR_CALIGAR,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
         );
     }
 

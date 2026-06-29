@@ -420,3 +420,7 @@ Recommended next chest steps:
 ### Iteration 193 Additional Progress
 
 - `IDR_FLASK` shake item-state parity now mirrors C `flask_driver`: successful unfinished-flask mixes set the carried item to `Magical Potion` with size-specific magical sprites/descriptions, and failed mixes reset the item to an `Empty Potion` with size-specific empty bottle sprites/descriptions, cleared modifiers/drdata except size, value `10`, class requirements cleared, and the legacy stinking-liquid feedback. Focused core tests cover both final and ruined bottle states.
+
+### Iteration 13 Additional Progress
+
+- Area 36 `IDR_CALIGAR` now dispatches the C `caligar_training` branch (`drdata[0] == 1`): player-only uses of lesson IDs `1..3` return a typed training outcome, `PlayerRuntime` preserves the fixed-size legacy `DRD_CALIGAR_PPD` block, training observations update `watch_flag` bits with C's skeleton/vampire/zombie bit mapping, the outer PPD blob load/save replaces or appends the Caligar block, and the server emits the exact one-time training observation feedback while repeated observations stay silent. Focused core/server compile tests cover dispatch, fixed-layout PPD, outer blob integration, and runtime outcome handling. Remaining Caligar item gaps are weight/weight-door/gun/key/skelly-door/extinguish branches, quest NPC PPD state, exact dlog/logging side effects, and live area-data smoke coverage.

@@ -35,6 +35,7 @@ pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
 pub const LEGACY_AREA3_PPD_SIZE: usize = 17 * 4;
+pub const LEGACY_CALIGAR_PPD_SIZE: usize = 14 * 4 + 4;
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
 pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
@@ -75,6 +76,7 @@ pub const DRD_SWEAR_PPD: u32 = make_drd(DEV_ID_DB, 109 | PERSISTENT_PLAYER_DATA)
 pub const DRD_TREASURE_DIG_PPD: u32 = make_drd(DEV_ID_ED, 5 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RUNE_PPD: u32 = make_drd(DEV_ID_DB, 108 | PERSISTENT_PLAYER_DATA);
+pub const DRD_CALIGAR_PPD: u32 = make_drd(DEV_ID_DB, 159 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
 
@@ -105,6 +107,7 @@ const FLOWER_PPD_LAST_USED_OFFSET: usize = FLOWER_PPD_IDS_OFFSET + FLOWER_MAX_EN
 const AREA3_PPD_KELLY_FOUND1_OFFSET: usize = 3 * 4;
 const AREA3_PPD_KELLY_FOUND2_OFFSET: usize = 4 * 4;
 const AREA3_PPD_KELLY_FOUND3_OFFSET: usize = 5 * 4;
+const CALIGAR_PPD_WATCH_FLAG_OFFSET: usize = 4 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const LOSTCON_PPD_MAXLAG_OFFSET: usize = 17 * 4;
@@ -310,6 +313,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub area3_ppd: Vec<u8>,
     #[serde(default)]
+    pub caligar_ppd: Vec<u8>,
+    #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
     pub pk_deaths: u32,
@@ -397,6 +402,7 @@ impl PlayerRuntime {
             treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
             area3_ppd: Vec::new(),
+            caligar_ppd: Vec::new(),
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,
@@ -1284,6 +1290,21 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_caligar_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_CALIGAR_PPD_SIZE];
+        let copy_len = self.caligar_ppd.len().min(LEGACY_CALIGAR_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.caligar_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_caligar_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return false;
+        }
+        self.caligar_ppd = bytes[..LEGACY_CALIGAR_PPD_SIZE].to_vec();
+        true
+    }
+
     pub fn encode_legacy_swear_ppd(&self) -> Vec<u8> {
         let mut bytes = vec![0; LEGACY_SWEAR_PPD_SIZE];
         let copy_len = self.swear_ppd.len().min(LEGACY_SWEAR_PPD_SIZE);
@@ -1361,6 +1382,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_CALIGAR_PPD => {
+                    if !self.decode_legacy_caligar_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TREASURE_DIG_PPD => {
                     if !self.decode_legacy_treasure_dig_ppd(block.data) {
                         return false;
@@ -1409,6 +1435,7 @@ impl PlayerRuntime {
         let mut had_lostcon = false;
         let mut had_flower = false;
         let mut had_area3 = false;
+        let mut had_caligar = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
         let mut had_rune = false;
@@ -1487,6 +1514,13 @@ impl PlayerRuntime {
             } else if block.id == DRD_AREA3_PPD {
                 had_area3 = true;
                 write_ppd_block(&mut encoded, DRD_AREA3_PPD, &self.encode_legacy_area3_ppd());
+            } else if block.id == DRD_CALIGAR_PPD {
+                had_caligar = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_CALIGAR_PPD,
+                    &self.encode_legacy_caligar_ppd(),
+                );
             } else if block.id == DRD_TREASURE_DIG_PPD {
                 had_treasure_dig = true;
                 write_ppd_block(
@@ -1605,6 +1639,16 @@ impl PlayerRuntime {
         if !had_area3 && (existing_was_valid || existing.is_empty()) && !self.area3_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_AREA3_PPD, &self.encode_legacy_area3_ppd());
         }
+        if !had_caligar
+            && (existing_was_valid || existing.is_empty())
+            && !self.caligar_ppd.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_CALIGAR_PPD,
+                &self.encode_legacy_caligar_ppd(),
+            );
+        }
         if !had_treasure_dig && (existing_was_valid || existing.is_empty()) {
             if self
                 .treasure_dig_last_seconds
@@ -1696,6 +1740,26 @@ impl PlayerRuntime {
         }
         let was_new = read_i32(&self.area3_ppd, offset) == 0;
         write_i32(&mut self.area3_ppd, offset, 1);
+        Some(was_new)
+    }
+
+    pub fn observe_caligar_training(&mut self, lesson: u8) -> Option<bool> {
+        let bit = match lesson {
+            1 => 1,
+            2 => 4,
+            3 => 2,
+            _ => return None,
+        };
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            self.caligar_ppd.resize(LEGACY_CALIGAR_PPD_SIZE, 0);
+        }
+        let watch_flag = read_i32(&self.caligar_ppd, CALIGAR_PPD_WATCH_FLAG_OFFSET);
+        let was_new = watch_flag & bit == 0;
+        write_i32(
+            &mut self.caligar_ppd,
+            CALIGAR_PPD_WATCH_FLAG_OFFSET,
+            watch_flag | bit,
+        );
         Some(was_new)
     }
 
@@ -3295,6 +3359,44 @@ mod tests {
         assert!(decoded.decode_legacy_area3_ppd(&encoded));
         assert_eq!(decoded.memorize_park_shrine(2), Some(false));
         assert_eq!(decoded.memorize_park_shrine(3), Some(true));
+    }
+
+    #[test]
+    fn caligar_ppd_tracks_training_observations() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(player.observe_caligar_training(2), Some(true));
+        assert_eq!(player.observe_caligar_training(2), Some(false));
+        assert_eq!(player.observe_caligar_training(3), Some(true));
+        assert_eq!(player.observe_caligar_training(4), None);
+
+        let encoded = player.encode_legacy_caligar_ppd();
+        assert_eq!(encoded.len(), LEGACY_CALIGAR_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, CALIGAR_PPD_WATCH_FLAG_OFFSET), 6);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_caligar_ppd(&encoded));
+        assert_eq!(decoded.observe_caligar_training(1), Some(true));
+        assert_eq!(decoded.observe_caligar_training(3), Some(false));
+    }
+
+    #[test]
+    fn caligar_ppd_blob_replaces_and_appends_legacy_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(DRD_CALIGAR_PPD, 0x8100_009f);
+        assert_eq!(player.observe_caligar_training(1), Some(true));
+
+        let mut existing = Vec::new();
+        let mut existing_caligar = vec![0; LEGACY_CALIGAR_PPD_SIZE];
+        write_i32(&mut existing_caligar, CALIGAR_PPD_WATCH_FLAG_OFFSET, 4);
+        write_ppd_block(&mut existing, DRD_CALIGAR_PPD, &existing_caligar);
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), DRD_CALIGAR_PPD);
+        assert_eq!(read_i32(&encoded, 8 + CALIGAR_PPD_WATCH_FLAG_OFFSET), 1);
+
+        let appended = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended, 0), DRD_CALIGAR_PPD);
+        assert_eq!(read_i32(&appended, 8 + CALIGAR_PPD_WATCH_FLAG_OFFSET), 1);
     }
 
     #[test]
