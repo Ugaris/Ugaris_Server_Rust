@@ -189,6 +189,7 @@ pub const IID_AREA2_ZOMBIESKULL3: u32 = (0x01 << 24) | 0x000027;
 pub const IID_AREA11_PALACEKEY: u32 = (0x01 << 24) | 0x000050;
 pub const IID_AREA11_PALACEKEYPART: u32 = (0x01 << 24) | 0x000051;
 pub const IID_AREA17_LIBRARYKEY: u32 = (0x01 << 24) | 0x00006F;
+pub const IID_AREA17_BLOODBOWL: u32 = (0x01 << 24) | 0x000071;
 pub const IID_AREA17_LOCKPICK: u32 = (0x01 << 24) | 0x000062;
 pub const IID_CALIGAR_PALACE_KEY_PART: u32 = (0x01 << 24) | 0x0000B3;
 const V_LIGHT: i16 = 9;
@@ -1269,6 +1270,23 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         kind: u8,
     },
+    SkelRaiseDust {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    SkelRaiseTouch {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    SkelRaiseRaise {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        template: &'static str,
+    },
+    SkelRaiseTimer {
+        item_id: ItemId,
+    },
     BookcaseLocked {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1483,6 +1501,7 @@ pub fn execute_item_driver_with_context(
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
                 IDR_BURNDOWN => burndown_driver(character, item, context),
                 IDR_COLORTILE => colortile_driver(character, item),
+                IDR_SKELRAISE => skelraise_driver(character, item, context),
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
                 IDR_PARKSHRINE => parkshrine_driver(character, item),
                 IDR_BOOK => book_driver(character, item),
@@ -1556,7 +1575,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
     match driver {
         IDR_BONEBRIDGE | IDR_BONELADDER | IDR_BONEHINT => Some(18),
         IDR_NOMADDICE => Some(19),
-        IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE => Some(17),
+        IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
@@ -4065,6 +4084,58 @@ fn colortile_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         character_id: character.id,
         row: drdata(item, 0),
         color: drdata(item, 1),
+    }
+}
+
+fn skelraise_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if context.timer_call || character.id.0 == 0 {
+        return ItemDriverOutcome::SkelRaiseTimer { item_id: item.id };
+    }
+
+    if drdata(item, 2) != 0 {
+        return ItemDriverOutcome::SkelRaiseTouch {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::SkelRaiseDust {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    if context.cursor_template_id != Some(IID_AREA17_BLOODBOWL) {
+        return ItemDriverOutcome::SkelRaiseDust {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let template = match drdata(item, 0) {
+        0 => "raised_skeleton_green",
+        1 => "raised_skeleton_red",
+        2 => "raised_skeleton_green_key",
+        3 => "raised_skeleton_red_key",
+        4 => "raised_skeleton_nolight",
+        5 => "quest_skeleton",
+        _ => {
+            return ItemDriverOutcome::SkelRaiseDust {
+                item_id: item.id,
+                character_id: character.id,
+            }
+        }
+    };
+
+    ItemDriverOutcome::SkelRaiseRaise {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        template,
     }
 }
 
@@ -11700,6 +11771,85 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(42),
             }
+        );
+    }
+
+    #[test]
+    fn skelraise_dispatches_blood_bowl_and_dust_paths() {
+        let mut character = character(42);
+        character.flags.insert(CharacterFlags::PLAYER);
+        let mut chair = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SKELRAISE);
+        chair.driver_data = vec![2, 0, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SKELRAISE,
+            item_id: ItemId(7),
+            character_id: CharacterId(42),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut chair, request, 17, false),
+            ItemDriverOutcome::SkelRaiseDust {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+            }
+        );
+
+        character.cursor_item = Some(ItemId(9));
+        let outcome = execute_item_driver_with_context(
+            &mut character,
+            &mut chair,
+            request,
+            17,
+            false,
+            &ItemDriverContext {
+                cursor_template_id: Some(IID_AREA17_BLOODBOWL),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SkelRaiseRaise {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                cursor_item_id: ItemId(9),
+                template: "raised_skeleton_green_key",
+            }
+        );
+    }
+
+    #[test]
+    fn skelraise_active_chair_and_timer_paths_match_c_boundary() {
+        let mut character = character(42);
+        let mut chair = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SKELRAISE);
+        chair.driver_data = vec![1, 0, 1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SKELRAISE,
+            item_id: ItemId(7),
+            character_id: CharacterId(42),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut chair, request, 17, false),
+            ItemDriverOutcome::SkelRaiseTouch {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+            }
+        );
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut chair,
+                request,
+                17,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::SkelRaiseTimer { item_id: ItemId(7) }
         );
     }
 

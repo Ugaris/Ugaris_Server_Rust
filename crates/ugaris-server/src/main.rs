@@ -5584,6 +5584,36 @@ fn grant_template_item_smart(
     Some(item_name)
 }
 
+fn raise_skeleton_from_template(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    item_id: ItemId,
+    character_id: CharacterId,
+    cursor_item_id: ItemId,
+    template: &str,
+) -> bool {
+    let Some((x, y)) = world
+        .items
+        .get(&item_id)
+        .map(|item| (usize::from(item.x), usize::from(item.y)))
+    else {
+        return false;
+    };
+    let raised_id = runtime.allocate_character_id();
+    let Ok((raised, inventory_items)) = loader.instantiate_character_template(template, raised_id)
+    else {
+        return false;
+    };
+    if !world.spawn_character(raised, x, y) {
+        return false;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+    world.apply_skelraise_raise(item_id, character_id, cursor_item_id, raised_id, 0)
+}
+
 fn apply_xmasmaker(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) -> bool {
     grant_template_item_smart(world, loader, character_id, "xmaspop").is_some()
 }
@@ -16630,6 +16660,33 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BurndownIgnite { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseDust { character_id, .. } => {
+                                            feedback.push((character_id, "The skeleton crumbles to dust as you touch it.".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseTouch { character_id, .. } => {
+                                            feedback.push((character_id, "You touch the chair.".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseRaise { item_id, character_id, cursor_item_id, template } => {
+                                            if raise_skeleton_from_template(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                &mut runtime,
+                                                item_id,
+                                                character_id,
+                                                cursor_item_id,
+                                                template,
+                                            ) {
+                                                feedback.push((character_id, "The skeleton comes to life as you pour the blood over it.".to_string()));
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseTimer { .. } => {
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ColorTile { character_id, row, color, .. } => {

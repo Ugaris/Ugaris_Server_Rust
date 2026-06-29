@@ -6239,6 +6239,13 @@ impl World {
                 CaligarWeightDoorResult::Noop => ItemDriverOutcome::Noop,
             },
             ItemDriverOutcome::CaligarSkellyDoor { .. } => outcome,
+            ItemDriverOutcome::SkelRaiseTimer { item_id } => {
+                if self.apply_skelraise_timer(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::StafferMineExhausted { .. }
             | ItemDriverOutcome::StafferBlockBlocked { .. }
             | ItemDriverOutcome::CaligarWeightBlocked { .. }
@@ -7162,6 +7169,89 @@ impl World {
         if item.x != 0 {
             self.map.remove_item_map(&mut item);
         }
+        true
+    }
+
+    pub fn apply_skelraise_raise(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        raised_id: CharacterId,
+        raised_serial: u32,
+    ) -> bool {
+        if !self.characters.contains_key(&character_id) || !self.characters.contains_key(&raised_id)
+        {
+            return false;
+        }
+        let (x, y) = {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            item.driver_data.resize(12, 0);
+            item.driver_data[2] = 1;
+            item.driver_data[4..8].copy_from_slice(&raised_id.0.to_le_bytes());
+            item.driver_data[8..12].copy_from_slice(&raised_serial.to_le_bytes());
+            item.sprite += 1;
+            (usize::from(item.x), usize::from(item.y))
+        };
+        self.destroy_item(cursor_item_id);
+        self.mark_dirty_sector(x, y);
+        self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
+        true
+    }
+
+    fn apply_skelraise_timer(&mut self, item_id: ItemId) -> bool {
+        let (raised_id, raised_serial, active, x, y) = {
+            let Some(item) = self.items.get(&item_id) else {
+                return false;
+            };
+            let active = item.driver_data.get(2).copied().unwrap_or_default() != 0;
+            let raised_id = if item.driver_data.len() >= 8 {
+                CharacterId(u32::from_le_bytes([
+                    item.driver_data[4],
+                    item.driver_data[5],
+                    item.driver_data[6],
+                    item.driver_data[7],
+                ]))
+            } else {
+                CharacterId(0)
+            };
+            let raised_serial = if item.driver_data.len() >= 12 {
+                u32::from_le_bytes([
+                    item.driver_data[8],
+                    item.driver_data[9],
+                    item.driver_data[10],
+                    item.driver_data[11],
+                ])
+            } else {
+                0
+            };
+            (
+                raised_id,
+                raised_serial,
+                active,
+                usize::from(item.x),
+                usize::from(item.y),
+            )
+        };
+        if !active {
+            return true;
+        }
+        let still_alive = raised_id.0 != 0
+            && self.characters.get(&raised_id).is_some_and(|character| {
+                (raised_serial == 0 || character.id.0 == raised_id.0) && !character.flags.is_empty()
+            });
+        if still_alive {
+            self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
+            return true;
+        }
+        if let Some(item) = self.items.get_mut(&item_id) {
+            item.driver_data.resize(12, 0);
+            item.driver_data[2] = 0;
+            item.sprite -= 1;
+        }
+        self.mark_dirty_sector(x, y);
         true
     }
 
