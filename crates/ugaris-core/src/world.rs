@@ -28,9 +28,9 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item, ItemDriverContext,
         ItemDriverOutcome, ItemDriverRequest, UseItemError, UseItemOutcome, IDR_CALIGAR,
-        IDR_CALIGARFLAME, IDR_EDEMONLIGHT, IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER,
-        IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP,
-        IDR_TORCH,
+        IDR_CALIGARFLAME, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_FDEMONFARM, IDR_FDEMONLIGHT,
+        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
+        IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2151,8 +2151,8 @@ impl World {
                     Some(item_id)
                 }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
-                IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_FDEMONLIGHT
-                | IDR_FDEMONLOADER | IDR_FDEMONFARM => Some(item_id),
+                IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_EDEMONLOADER
+                | IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONFARM => Some(item_id),
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
@@ -2540,6 +2540,10 @@ impl World {
             && context.fdemon_loader_power.is_none())
         .then(|| fdemon_loader_power_for_light(&self.items, item_id))
         .flatten();
+        let edemon_section_power = (driver == Some(IDR_EDEMONLIGHT)
+            && context.edemon_section_power.is_none())
+        .then(|| edemon_section_power_for_light(&self.items, item_id))
+        .flatten();
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -2550,6 +2554,9 @@ impl World {
         effective_context.current_tick = self.tick.0 as u32;
         if effective_context.fdemon_loader_power.is_none() {
             effective_context.fdemon_loader_power = fdemon_loader_power;
+        }
+        if effective_context.edemon_section_power.is_none() {
+            effective_context.edemon_section_power = edemon_section_power;
         }
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
@@ -5610,6 +5617,16 @@ impl World {
             return self.execute_item_driver_request_with_context(request, area_id, context);
         }
 
+        let mut effective_context = context.clone();
+        if driver == IDR_EDEMONLIGHT && effective_context.edemon_section_power.is_none() {
+            effective_context.edemon_section_power =
+                edemon_section_power_for_light(&self.items, item_id);
+        }
+        if driver == IDR_FDEMONLIGHT && effective_context.fdemon_loader_power.is_none() {
+            effective_context.fdemon_loader_power =
+                fdemon_loader_power_for_light(&self.items, item_id);
+        }
+
         let Some(item) = self.items.get_mut(&item_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -5626,7 +5643,7 @@ impl World {
             },
             area_id,
             false,
-            context,
+            &effective_context,
         );
         if item_light_may_have_changed(&outcome) {
             self.refresh_item_light_after_mutation(&before, item_id);
@@ -6026,6 +6043,40 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::FdemonLoaderBlocked { .. } => outcome,
+            ItemDriverOutcome::EdemonLoaderChanged {
+                item_id,
+                character_id,
+                consumed_cursor_item_id,
+                ground_overlay_sprite,
+                sound_type,
+                schedule_after_ticks,
+            } => {
+                if let Some(cursor_item_id) = consumed_cursor_item_id {
+                    self.destroy_item(cursor_item_id);
+                }
+                let item_pos = self
+                    .items
+                    .get(&item_id)
+                    .map(|item| (usize::from(item.x), usize::from(item.y)));
+                if let Some((x, y)) = item_pos {
+                    if let Some(tile) = self.map.tile_mut(x, y) {
+                        let new_ground_sprite =
+                            (tile.ground_sprite & 0xffff) | (ground_overlay_sprite << 16);
+                        if tile.ground_sprite != new_ground_sprite {
+                            tile.ground_sprite = new_ground_sprite;
+                            self.mark_dirty_sector(x, y);
+                        }
+                    }
+                    if let Some(sound_type) = sound_type {
+                        self.queue_sound_area(x, y, sound_type);
+                    }
+                }
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, character_id, after_ticks);
+                }
+                outcome
+            }
+            ItemDriverOutcome::EdemonLoaderBlocked { .. } => outcome,
             ItemDriverOutcome::FdemonFarmChanged {
                 item_id,
                 foreground_sprite,
@@ -11449,6 +11500,25 @@ fn fdemon_loader_power_for_light(
     found.then_some(max_power)
 }
 
+fn edemon_section_power_for_light(
+    items: &HashMap<ItemId, Item>,
+    light_item_id: ItemId,
+) -> Option<u8> {
+    let light = items.get(&light_item_id)?;
+    let section = light.driver_data.first().copied().unwrap_or_default();
+    let mut max_power = 0u8;
+    let mut found = false;
+
+    for loader in items.values().filter(|item| {
+        item.driver == IDR_EDEMONLOADER && item.driver_data.first() == Some(&section)
+    }) {
+        found = true;
+        max_power = max_power.max(loader.driver_data.get(1).copied().unwrap_or_default());
+    }
+
+    found.then_some(max_power)
+}
+
 fn read_spell_start_tick(driver_data: &[u8]) -> Option<u32> {
     let bytes = driver_data.get(4..8)?;
     Some(u32::from_le_bytes(bytes.try_into().ok()?))
@@ -16435,6 +16505,8 @@ mod tests {
         unlit_torch.driver_data = vec![0, 0, 10, 20];
         let mut edemon_light = item(10, ItemFlags::USED);
         edemon_light.driver = IDR_EDEMONLIGHT;
+        let mut edemon_loader = item(13, ItemFlags::USED);
+        edemon_loader.driver = IDR_EDEMONLOADER;
         let mut fdemon_loader = item(11, ItemFlags::USED);
         fdemon_loader.driver = IDR_FDEMONLOADER;
         let mut fdemon_farm = item(12, ItemFlags::USED);
@@ -16443,11 +16515,12 @@ mod tests {
         world.add_item(burning_torch);
         world.add_item(unlit_torch);
         world.add_item(edemon_light);
+        world.add_item(edemon_loader);
         world.add_item(fdemon_loader);
         world.add_item(fdemon_farm);
 
-        assert_eq!(world.schedule_existing_light_timers(), 5);
-        assert_eq!(world.timers.used_timers(), 5);
+        assert_eq!(world.schedule_existing_light_timers(), 6);
+        assert_eq!(world.timers.used_timers(), 6);
     }
 
     #[test]
@@ -16505,6 +16578,68 @@ mod tests {
             ItemDriverOutcome::FdemonLoaderChanged { .. }
         ));
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_applies_edemon_loader_and_powers_matching_section_light() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.cursor_item = Some(ItemId(9));
+        assert!(world.spawn_character(player, 11, 10));
+        let mut loader = item(7, ItemFlags::USED | ItemFlags::USE);
+        loader.driver = IDR_EDEMONLOADER;
+        loader.driver_data = vec![2, 0, 0];
+        assert!(world.map.set_item_map(&mut loader, 10, 10));
+        world.map.tile_mut(10, 10).unwrap().ground_sprite = 123;
+        world.add_item(loader);
+        let mut crystal = item(9, ItemFlags::USED);
+        crystal.template_id = 0x01000049;
+        crystal.driver_data = vec![86];
+        crystal.carried_by = Some(CharacterId(1));
+        world.add_item(crystal);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_EDEMONLOADER,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            6,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::EdemonLoaderChanged { .. }
+        ));
+        assert!(!world.items.contains_key(&ItemId(9)));
+        assert_eq!(world.characters[&CharacterId(1)].cursor_item, None);
+        assert_eq!(world.items[&ItemId(7)].driver_data, vec![2, 86, 7]);
+        assert_eq!(world.items[&ItemId(7)].sprite, 14260);
+        assert_eq!(
+            world.map.tile(10, 10).unwrap().ground_sprite,
+            (14240 << 16) | 123
+        );
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            41
+        );
+
+        let mut light = item(10, ItemFlags::USED);
+        light.driver = IDR_EDEMONLIGHT;
+        light.driver_data = vec![2];
+        assert!(world.map.set_item_map(&mut light, 12, 10));
+        world.add_item(light);
+        assert!(world.schedule_item_driver_timer(ItemId(10), CharacterId(0), 1));
+        world.advance();
+        let light_outcomes = world.process_due_timers(6);
+
+        assert!(light_outcomes
+            .iter()
+            .any(|outcome| matches!(outcome, ItemDriverOutcome::LightChanged { .. })));
+        assert_eq!(world.items[&ItemId(10)].sprite, 14191);
+        assert_eq!(world.items[&ItemId(10)].modifier_value[0], 200);
     }
 
     #[test]

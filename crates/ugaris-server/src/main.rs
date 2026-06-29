@@ -17080,6 +17080,20 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, text.to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderBlocked {
+                                            character_id,
+                                            reason,
+                                            ..
+                                        } => {
+                                            let text = match reason {
+                                                ugaris_core::item_driver::EdemonLoaderBlockReason::CrystalAlreadyPresent => "There is already a crystal, you cannot add another item.",
+                                                ugaris_core::item_driver::EdemonLoaderBlockReason::CrystalStuck => "The crystal is stuck.",
+                                                ugaris_core::item_driver::EdemonLoaderBlockReason::NeedsCrystal => "Nothing happens.",
+                                                ugaris_core::item_driver::EdemonLoaderBlockReason::WrongCrystal => "That doesn't fit.",
+                                            };
+                                            feedback.push((character_id, text.to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmHarvest {
                                             character_id,
                                             template,
@@ -17194,6 +17208,7 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
                                           | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
                                           | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
+                                          | ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderChanged { .. }
                                           | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmChanged { .. }
                                           | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerPulse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerExtinguished { .. }
