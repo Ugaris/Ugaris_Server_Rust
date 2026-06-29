@@ -3163,6 +3163,21 @@ fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
+    if *driver == ugaris_core::item_driver::IDR_BONEHINT {
+        let needs_init = world
+            .items
+            .get(item_id)
+            .map(|item| item.driver_data.get(1).copied().unwrap_or_default() == 0)
+            .unwrap_or(false);
+        if needs_init {
+            return ugaris_core::item_driver::ItemDriverContext {
+                bone_hint_nr: Some((runtime_random_below(25) as f64).sqrt() as u8),
+                bone_hint_pos: Some(runtime_random_below(3).max(0) as u8),
+                ..ugaris_core::item_driver::ItemDriverContext::default()
+            };
+        }
+        return ugaris_core::item_driver::ItemDriverContext::default();
+    }
     if *driver != ugaris_core::item_driver::IDR_DOOR
         && *driver != ugaris_core::item_driver::IDR_INFINITE_CHEST
     {
@@ -12966,6 +12981,28 @@ async fn main() -> anyhow::Result<()> {
                                                         )[..],
                                                     ),
                                                 ));
+                                            }
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BoneHint {
+                                            character_id,
+                                            level,
+                                            nr,
+                                            pos,
+                                            ..
+                                        } => {
+                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                match player.bone_hint(level, nr, pos, |limit| {
+                                                    runtime_random_below(limit as i32).max(0) as u32
+                                                }) {
+                                                    ugaris_core::player::BoneHintResult::Hint { page, rune, position } => {
+                                                        feedback.push((character_id, format!("Rune Diary, Page {page}:")));
+                                                        feedback.push((character_id, format!("Used the rune {rune} in the {position} position.")));
+                                                    }
+                                                    ugaris_core::player::BoneHintResult::Bug { level, nr, pos, value } => {
+                                                        feedback.push((character_id, format!("You found bug #197-{level}-{nr}-{pos}-{value}")));
+                                                    }
+                                                }
                                             }
                                             executed += 1;
                                         }

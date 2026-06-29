@@ -204,6 +204,8 @@ pub struct ItemDriverContext {
     pub daylight: u8,
     pub character_underwater: bool,
     pub current_tick: u32,
+    pub bone_hint_nr: Option<u8>,
+    pub bone_hint_pos: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -770,6 +772,13 @@ pub enum ItemDriverOutcome {
         kind: u8,
         demon_value: i32,
     },
+    BoneHint {
+        item_id: ItemId,
+        character_id: CharacterId,
+        level: u8,
+        nr: u8,
+        pos: u8,
+    },
     BoneBridgePlace {
         item_id: ItemId,
         character_id: CharacterId,
@@ -898,6 +907,7 @@ pub fn execute_item_driver_with_context(
                 IDR_DOOR => door_driver(character, item, context),
                 IDR_BALLTRAP => balltrap_driver(character, item),
                 IDR_BONEBRIDGE => bonebridge_driver(character, item, context),
+                IDR_BONEHINT => bonehint_driver(character, item, context),
                 IDR_FIREBALL => fireball_machine_driver(character, item, context),
                 IDR_EDEMONBALL => edemonball_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
@@ -1035,6 +1045,36 @@ fn bonebridge_driver(
         item_id: item.id,
         character_id: character.id,
         cursor_item_id,
+    }
+}
+
+fn bonehint_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if drdata(item, 1) == 0 {
+        let Some(nr) = context.bone_hint_nr else {
+            return ItemDriverOutcome::Noop;
+        };
+        let Some(pos) = context.bone_hint_pos else {
+            return ItemDriverOutcome::Noop;
+        };
+        set_drdata(item, 1, 1);
+        set_drdata(item, 2, nr.min(4));
+        set_drdata(item, 3, pos.min(2));
+    }
+
+    ItemDriverOutcome::BoneHint {
+        item_id: item.id,
+        character_id: character.id,
+        level: drdata(item, 0),
+        nr: drdata(item, 2),
+        pos: drdata(item, 3),
     }
 }
 
@@ -4114,6 +4154,63 @@ mod tests {
 
         assert_eq!(
             execute_item_driver(&mut character, &mut book, request, 2, false),
+            ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn bonehint_driver_initializes_carried_diary_hint() {
+        let mut character = character(1);
+        let mut diary = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEHINT);
+        diary.carried_by = Some(character.id);
+        set_drdata(&mut diary, 0, 7);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEHINT,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_BONEHINT, 94);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut diary,
+                request,
+                18,
+                false,
+                &ItemDriverContext {
+                    bone_hint_nr: Some(3),
+                    bone_hint_pos: Some(2),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::BoneHint {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                level: 7,
+                nr: 3,
+                pos: 2,
+            }
+        );
+        assert_eq!(drdata(&diary, 1), 1);
+        assert_eq!(drdata(&diary, 2), 3);
+        assert_eq!(drdata(&diary, 3), 2);
+    }
+
+    #[test]
+    fn bonehint_driver_requires_carried_item() {
+        let mut character = character(1);
+        let mut diary = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEHINT);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEHINT,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut diary, request, 18, false),
             ItemDriverOutcome::Noop
         );
     }

@@ -33,6 +33,9 @@ pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
+pub const RUNE_USED_WORDS: usize = 1024 / 32;
+pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
+pub const LEGACY_RUNE_PPD_SIZE: usize = RUNE_USED_WORDS * 4 + RUNE_SPECIAL_EXEC_COUNT * 4;
 pub const PK_HATE_MAX_ENTRIES: usize = 50;
 pub const LEGACY_PK_PPD_SIZE: usize = 4 * 4 + PK_HATE_MAX_ENTRIES * 4;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
@@ -54,6 +57,7 @@ pub const DRD_FLOWER_PPD: u32 = make_drd(DEV_ID_DB, 62 | PERSISTENT_PLAYER_DATA)
 pub const DRD_MISC_PPD: u32 = make_drd(DEV_ID_DB, 113 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_DIG_PPD: u32 = make_drd(DEV_ID_ED, 5 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
+pub const DRD_RUNE_PPD: u32 = make_drd(DEV_ID_DB, 108 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
 
@@ -89,6 +93,7 @@ const PK_PPD_DEATHS_OFFSET: usize = 4;
 const PK_PPD_LAST_KILL_OFFSET: usize = 8;
 const PK_PPD_LAST_DEATH_OFFSET: usize = 12;
 const PK_PPD_HATE_OFFSET: usize = 16;
+const RUNE_PPD_SPECIAL_EXEC_OFFSET: usize = RUNE_USED_WORDS * 4;
 
 pub const DEFERRED_ACHIEVEMENTS: u32 = 1 << 0;
 pub const DEFERRED_MOTD: u32 = 1 << 1;
@@ -203,6 +208,21 @@ pub enum XmasTreeResult {
     GiftGranted,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoneHintResult {
+    Hint {
+        page: u16,
+        rune: &'static str,
+        position: &'static str,
+    },
+    Bug {
+        level: u8,
+        nr: u8,
+        pos: u8,
+        value: i32,
+    },
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AchievementState {
     pub chests_opened: u32,
@@ -289,6 +309,10 @@ pub struct PlayerRuntime {
     pub current_mirror_id: u16,
     #[serde(default)]
     pub max_lag_seconds: u8,
+    #[serde(default)]
+    pub rune_used_words: [u32; RUNE_USED_WORDS],
+    #[serde(default)]
+    pub rune_special_exec: [i32; RUNE_SPECIAL_EXEC_COUNT],
 }
 
 impl PlayerRuntime {
@@ -334,7 +358,115 @@ impl PlayerRuntime {
             transport_seen: 0,
             current_mirror_id: 0,
             max_lag_seconds: 0,
+            rune_used_words: [0; RUNE_USED_WORDS],
+            rune_special_exec: [0; RUNE_SPECIAL_EXEC_COUNT],
         }
+    }
+
+    pub fn ensure_rune_special_execs<F>(&mut self, mut random_below: F)
+    where
+        F: FnMut(u32) -> u32,
+    {
+        if self.rune_special_exec[0] != 0 {
+            return;
+        }
+
+        const BADLIST: [i32; 15] = [555, 55, 5, 666, 66, 6, 777, 77, 7, 888, 88, 8, 999, 99, 9];
+        for level in 5..10 {
+            for offset in 0..5 {
+                loop {
+                    let value = random_below(level * 111) as i32;
+                    if value < 100 || BADLIST.contains(&value) {
+                        continue;
+                    }
+                    let base = (level - 5) as usize * 5;
+                    if self.rune_special_exec[base..base + offset as usize].contains(&value) {
+                        continue;
+                    }
+                    let digits = format!("{value:03}");
+                    let level_digit = char::from_digit(level, 10).unwrap();
+                    if digits.chars().any(|ch| ch == '0' || ch > level_digit) {
+                        continue;
+                    }
+                    if !digits.chars().any(|ch| ch == level_digit) {
+                        continue;
+                    }
+                    self.rune_special_exec[base + offset as usize] = value;
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn bone_hint<F>(&mut self, level: u8, nr: u8, pos: u8, random_below: F) -> BoneHintResult
+    where
+        F: FnMut(u32) -> u32,
+    {
+        self.ensure_rune_special_execs(random_below);
+        let index = usize::from(level.saturating_sub(5)) * 5 + usize::from(nr);
+        let value = self
+            .rune_special_exec
+            .get(index)
+            .copied()
+            .unwrap_or_default();
+        let digits = value.to_string();
+        let digit = digits
+            .as_bytes()
+            .get(usize::from(pos))
+            .copied()
+            .unwrap_or(b'0');
+        let result = digit.saturating_sub(b'0');
+        const RUNE_NAMES: [&str; 10] = [
+            "none", "Ansuz", "Berkano", "Dagaz", "Ehwaz", "Fehu", "Hagalaz", "Isa", "Ingwaz",
+            "Raidho",
+        ];
+        const POS_NAMES: [&str; 3] = ["first", "second", "third"];
+        let Some(rune) = RUNE_NAMES.get(usize::from(result)).copied() else {
+            return BoneHintResult::Bug {
+                level,
+                nr,
+                pos,
+                value,
+            };
+        };
+        let Some(position) = POS_NAMES.get(usize::from(pos)).copied() else {
+            return BoneHintResult::Bug {
+                level,
+                nr,
+                pos,
+                value,
+            };
+        };
+        BoneHintResult::Hint {
+            page: u16::from(level) * 10 + u16::from(nr),
+            rune,
+            position,
+        }
+    }
+
+    pub fn encode_legacy_rune_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_RUNE_PPD_SIZE];
+        for (index, word) in self.rune_used_words.iter().copied().enumerate() {
+            write_u32(&mut bytes, index * 4, word);
+        }
+        for (index, value) in self.rune_special_exec.iter().copied().enumerate() {
+            write_i32(&mut bytes, RUNE_PPD_SPECIAL_EXEC_OFFSET + index * 4, value);
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_rune_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_RUNE_PPD_SIZE {
+            return false;
+        }
+        for index in 0..RUNE_USED_WORDS {
+            self.rune_used_words[index] = read_u32(bytes, index * 4);
+        }
+        for index in 0..RUNE_SPECIAL_EXEC_COUNT {
+            self.rune_special_exec[index] =
+                read_i32(bytes, RUNE_PPD_SPECIAL_EXEC_OFFSET + index * 4);
+        }
+        true
     }
 
     pub fn set_max_lag_seconds(&mut self, seconds: u8) {
@@ -983,6 +1115,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_RUNE_PPD => {
+                    if !self.decode_legacy_rune_ppd(block.data) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -1002,6 +1139,7 @@ impl PlayerRuntime {
         let mut had_flower = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
+        let mut had_rune = false;
         let mut existing_was_valid = true;
 
         for block in LegacyPpdBlocks::parse(existing) {
@@ -1081,6 +1219,9 @@ impl PlayerRuntime {
             } else if block.id == DRD_MISC_PPD {
                 had_misc = true;
                 write_ppd_block(&mut encoded, DRD_MISC_PPD, &self.encode_legacy_misc_ppd());
+            } else if block.id == DRD_RUNE_PPD {
+                had_rune = true;
+                write_ppd_block(&mut encoded, DRD_RUNE_PPD, &self.encode_legacy_rune_ppd());
             } else {
                 write_ppd_block(&mut encoded, block.id, block.data);
             }
@@ -1179,6 +1320,13 @@ impl PlayerRuntime {
         }
         if !had_misc && (existing_was_valid || existing.is_empty()) && !self.misc_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_MISC_PPD, &self.encode_legacy_misc_ppd());
+        }
+        if !had_rune && (existing_was_valid || existing.is_empty()) {
+            if self.rune_used_words.iter().any(|word| *word != 0)
+                || self.rune_special_exec.iter().any(|value| *value != 0)
+            {
+                write_ppd_block(&mut encoded, DRD_RUNE_PPD, &self.encode_legacy_rune_ppd());
+            }
         }
 
         encoded
@@ -2522,6 +2670,79 @@ mod tests {
         let mut decoded = PlayerRuntime::connected(2, 0);
         assert!(decoded.decode_legacy_ppd_blob(&encoded));
         assert_eq!(decoded.flower_last_used_seconds(7), Some(99));
+    }
+
+    #[test]
+    fn rune_special_exec_generation_matches_legacy_constraints() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut seed = 0_u32;
+        player.ensure_rune_special_execs(|limit| {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            seed % limit
+        });
+
+        for level in 5..10_u32 {
+            let base = (level - 5) as usize * 5;
+            let mut seen = Vec::new();
+            for value in player.rune_special_exec[base..base + 5].iter().copied() {
+                assert!(value >= 100);
+                assert!(
+                    ![555, 55, 5, 666, 66, 6, 777, 77, 7, 888, 88, 8, 999, 99, 9].contains(&value)
+                );
+                let digits = format!("{value:03}");
+                assert!(digits
+                    .chars()
+                    .all(|ch| ch != '0' && ch <= char::from_digit(level, 10).unwrap()));
+                assert!(digits
+                    .chars()
+                    .any(|ch| ch == char::from_digit(level, 10).unwrap()));
+                assert!(!seen.contains(&value));
+                seen.push(value);
+            }
+        }
+    }
+
+    #[test]
+    fn bone_hint_uses_generated_special_exec_digit() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.rune_special_exec[0] = 511;
+        player.rune_special_exec[(7 - 5) * 5 + 2] = 731;
+
+        assert_eq!(
+            player.bone_hint(7, 2, 1, |_| 0),
+            BoneHintResult::Hint {
+                page: 72,
+                rune: "Dagaz",
+                position: "second",
+            }
+        );
+    }
+
+    #[test]
+    fn rune_ppd_blob_replaces_and_appends_legacy_block() {
+        let mut existing_rune = vec![0; LEGACY_RUNE_PPD_SIZE];
+        write_u32(&mut existing_rune, 0, 0x8000_0001);
+        write_i32(&mut existing_rune, RUNE_PPD_SPECIAL_EXEC_OFFSET, 555);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, 0x1122_3344, &[1, 2, 3]);
+        write_ppd_block(&mut existing, DRD_RUNE_PPD, &existing_rune);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.rune_used_words[0] = 0x8000_0002;
+        player.rune_special_exec[0] = 654;
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+
+        assert_eq!(read_u32(&encoded, 0), 0x1122_3344);
+        assert_eq!(read_u32(&encoded, 11), DRD_RUNE_PPD);
+        assert_eq!(read_u32(&encoded, 15), LEGACY_RUNE_PPD_SIZE as u32);
+        assert_eq!(read_u32(&encoded, 19), 0x8000_0002);
+        assert_eq!(read_i32(&encoded, 19 + RUNE_PPD_SPECIAL_EXEC_OFFSET), 654);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.rune_used_words[0], 0x8000_0002);
+        assert_eq!(decoded.rune_special_exec[0], 654);
     }
 
     #[test]
