@@ -44,7 +44,10 @@ use ugaris_core::{
         IDR_ARMOR, IDR_HP, IDR_MANA, IDR_WEAPON,
     },
     tell::tell_not_listening_message,
-    text::{COL_DARK_GRAY, COL_LIGHT_BLUE, COL_LIGHT_GREEN, COL_LIGHT_RED, COL_ORANGE, COL_RESET},
+    text::{
+        runtime_color, COL_DARK_GRAY, COL_LIGHT_BLUE, COL_LIGHT_GREEN, COL_LIGHT_RED, COL_ORANGE,
+        COL_RESET,
+    },
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
     zone::ZoneLoader,
@@ -922,6 +925,12 @@ fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {
 struct TellCommandResult {
     sender_messages: Vec<String>,
     delivered_messages: Vec<(CharacterId, String)>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct ChatCommandResult {
+    sender_messages: Vec<String>,
+    delivered_message_bytes: Vec<(CharacterId, Vec<u8>)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2111,6 +2120,256 @@ fn legacy_chat_channel(number: u8) -> Option<ChatChannelInfo> {
         .iter()
         .copied()
         .find(|channel| channel.number == number)
+}
+
+fn legacy_chat_channel_color(channel: u8) -> u8 {
+    match channel {
+        0 => 3,
+        1 => 12,
+        2 => 2,
+        3 => 9,
+        4 => 14,
+        5 => 15,
+        6 => 10,
+        7 => 16,
+        8 => 13,
+        9 => 11,
+        10 | 11 => 14,
+        12 | 13 => 16,
+        14 => 11,
+        31 => 7,
+        32 => 8,
+        _ => 2,
+    }
+}
+
+fn legacy_chat_command_channel(command: &str) -> Option<(u8, &str)> {
+    let (verb, rest) = chat_command_verb(command);
+    let lower = verb.to_ascii_lowercase();
+    if lower.is_empty() {
+        return None;
+    }
+
+    for channel in LEGACY_CHAT_CHANNELS {
+        let alias = format!("c{}", channel.number);
+        if alias.starts_with(&lower) || channel.name.to_ascii_lowercase().starts_with(&lower) {
+            return Some((channel.number, rest));
+        }
+    }
+    None
+}
+
+fn legacy_chat_line(
+    sender: &Character,
+    mirror: u16,
+    channel: ChatChannelInfo,
+    text: &str,
+) -> Vec<u8> {
+    let color = legacy_chat_channel_color(channel.number);
+    if channel.number == 0 {
+        let mut out = runtime_color(color);
+        out.extend_from_slice(text.as_bytes());
+        return out;
+    }
+
+    let mut sender_name = if sender.flags.contains(CharacterFlags::STAFF) {
+        sender.name.to_ascii_uppercase()
+    } else {
+        sender.name.clone()
+    };
+    sender_name.truncate(75);
+
+    let player_color = if sender.flags.contains(CharacterFlags::GOD) {
+        COL_LIGHT_RED
+    } else if sender
+        .flags
+        .intersects(CharacterFlags::STAFF | CharacterFlags::EVENTMASTER)
+    {
+        COL_LIGHT_GREEN
+    } else {
+        COL_RESET
+    };
+
+    let mut out = runtime_color(color);
+    out.extend_from_slice(channel.name.as_bytes());
+    out.extend_from_slice(b": ");
+    out.extend_from_slice(player_color);
+    out.extend_from_slice(sender_name.as_bytes());
+    out.extend_from_slice(&runtime_color(color));
+    if sender.flags.contains(CharacterFlags::STAFF) && !sender.flags.contains(CharacterFlags::GOD) {
+        out.extend_from_slice(b"[]");
+    }
+    out.extend_from_slice(b" ");
+    if channel.number == 4 {
+        out.extend_from_slice(format!("(OW) says: \"{text}\"").as_bytes());
+    } else {
+        out.extend_from_slice(format!("({mirror}) says: \"{text}\"").as_bytes());
+    }
+    out
+}
+
+fn apply_chat_command(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    sender_id: CharacterId,
+    command: &str,
+    area_id: u16,
+) -> Option<ChatCommandResult> {
+    let (channel_nr, raw_text) = legacy_chat_command_channel(command)?;
+    let Some(channel) = legacy_chat_channel(channel_nr) else {
+        return None;
+    };
+    let Some(sender) = world.characters.get(&sender_id) else {
+        return Some(ChatCommandResult::default());
+    };
+    let text = raw_text.trim_start();
+    if text.is_empty() {
+        return Some(ChatCommandResult {
+            sender_messages: vec!["You cannot send empty chat messages.".to_string()],
+            delivered_message_bytes: Vec::new(),
+        });
+    }
+    if text.len() > 200 {
+        return Some(ChatCommandResult {
+            sender_messages: vec!["This chat message is too long.".to_string()],
+            delivered_message_bytes: Vec::new(),
+        });
+    }
+
+    if sender.flags.contains(CharacterFlags::PLAYER)
+        && (channel_nr == 0 || channel_nr == 32)
+        && !sender.flags.contains(CharacterFlags::GOD)
+    {
+        return Some(ChatCommandResult {
+            sender_messages: vec!["Access denied.".to_string()],
+            delivered_message_bytes: Vec::new(),
+        });
+    }
+    if sender.flags.contains(CharacterFlags::PLAYER)
+        && channel_nr == 31
+        && !sender
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD | CharacterFlags::EVENTMASTER)
+    {
+        return Some(ChatCommandResult {
+            sender_messages: vec!["Access denied.".to_string()],
+            delivered_message_bytes: Vec::new(),
+        });
+    }
+    if sender.flags.contains(CharacterFlags::PLAYER)
+        && channel_nr == 14
+        && !sender
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD | CharacterFlags::DEVELOPER)
+    {
+        return Some(ChatCommandResult {
+            sender_messages: vec!["Access denied.".to_string()],
+            delivered_message_bytes: Vec::new(),
+        });
+    }
+
+    let sender_runtime = runtime.player_for_character(sender_id);
+    if sender.flags.contains(CharacterFlags::PLAYER) && channel_nr != 0 {
+        let bit = 1_u32 << (channel_nr - 1);
+        if !sender_runtime.is_some_and(|player| player.chat_channels & bit != 0) {
+            return Some(ChatCommandResult {
+                sender_messages: vec!["You must join a channel before you can use it.".to_string()],
+                delivered_message_bytes: Vec::new(),
+            });
+        }
+    }
+    if sender.flags.contains(CharacterFlags::PLAYER)
+        && (channel_nr == 7 || channel_nr == 12)
+        && sender.clan == 0
+    {
+        return Some(ChatCommandResult {
+            sender_messages: vec!["Access denied - clan members only.".to_string()],
+            delivered_message_bytes: Vec::new(),
+        });
+    }
+    if sender.flags.contains(CharacterFlags::PLAYER) && channel_nr == 13 {
+        return Some(ChatCommandResult {
+            sender_messages: vec!["Access denied - club members only.".to_string()],
+            delivered_message_bytes: Vec::new(),
+        });
+    }
+
+    let sender_mirror = sender_runtime
+        .map(|player| player.current_mirror_id)
+        .unwrap_or_default();
+    let line = legacy_chat_line(sender, sender_mirror, channel, text);
+    let sender_public_id = if sender
+        .flags
+        .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+    {
+        0
+    } else {
+        sender.id.0
+    };
+    let sender_clan = sender.clan;
+
+    let mut delivered_message_bytes = Vec::new();
+    for player in runtime.players.values_mut() {
+        let Some(target_id) = player.character_id else {
+            continue;
+        };
+        let Some(target) = world.characters.get(&target_id) else {
+            continue;
+        };
+        if channel_nr == 0 {
+            delivered_message_bytes.push((target_id, line.clone()));
+            continue;
+        }
+
+        let bit = 1_u32 << (channel_nr - 1);
+        if player.chat_channels & bit == 0 {
+            continue;
+        }
+        if channel_nr == 14
+            && !target
+                .flags
+                .intersects(CharacterFlags::DEVELOPER | CharacterFlags::GOD)
+        {
+            player.chat_channels &= !bit;
+            continue;
+        }
+        if channel_nr == 31
+            && !target.flags.intersects(
+                CharacterFlags::STAFF | CharacterFlags::GOD | CharacterFlags::EVENTMASTER,
+            )
+        {
+            player.chat_channels &= !bit;
+            continue;
+        }
+        if channel_nr == 32 && !target.flags.contains(CharacterFlags::GOD) {
+            player.chat_channels &= !bit;
+            continue;
+        }
+        if sender_public_id != 0 && player.ignores_character(sender_public_id) {
+            continue;
+        }
+        if channel_nr == 7 && target.clan != sender_clan {
+            continue;
+        }
+        if channel_nr == 12 && target.clan != sender_clan {
+            continue;
+        }
+        if channel_nr == 8 && area_id == 0 {
+            continue;
+        }
+        if channel_nr == 9 && (area_id == 0 || player.current_mirror_id != sender_mirror) {
+            continue;
+        }
+        if channel_nr == 13 {
+            continue;
+        }
+        delivered_message_bytes.push((target_id, line.clone()));
+    }
+
+    Some(ChatCommandResult {
+        sender_messages: Vec::new(),
+        delivered_message_bytes,
+    })
 }
 
 fn apply_channels_command(command: &str) -> Option<KeyringCommandResult> {
@@ -9096,6 +9355,110 @@ mod tests {
     }
 
     #[test]
+    fn chat_command_delivers_joined_local_channel_with_legacy_formatting() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        world.add_character(login_character(sender_id, &login_block("Alice"), 1, 10, 10));
+        world.add_character(login_character(target_id, &login_block("Bob"), 1, 11, 10));
+
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.insert(2, PlayerRuntime::connected(2, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+        runtime.players.get_mut(&1).unwrap().current_mirror_id = 3;
+        runtime.players.get_mut(&1).unwrap().chat_channels = 1_u32 << 1;
+        runtime.players.get_mut(&2).unwrap().character_id = Some(target_id);
+        runtime.players.get_mut(&2).unwrap().chat_channels = 1_u32 << 1;
+
+        let result = apply_chat_command(&world, &mut runtime, sender_id, "/gossip Hello", 1)
+            .expect("chat channel command should be recognized");
+
+        assert!(result.sender_messages.is_empty());
+        assert_eq!(result.delivered_message_bytes.len(), 2);
+        let text = String::from_utf8_lossy(&result.delivered_message_bytes[0].1);
+        assert!(text.contains("Gossip: "));
+        assert!(text.contains("Alice"));
+        assert!(text.contains("(3) says: \"Hello\""));
+        assert!(result.delivered_message_bytes[0]
+            .1
+            .starts_with(&[0xb0, b'c']));
+    }
+
+    #[test]
+    fn chat_command_preserves_join_and_access_gates() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        world.add_character(login_character(sender_id, &login_block("Alice"), 1, 10, 10));
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+
+        let unjoined = apply_chat_command(&world, &mut runtime, sender_id, "/gossip Hello", 1)
+            .expect("chat command should be recognized");
+        assert_eq!(
+            unjoined.sender_messages,
+            vec!["You must join a channel before you can use it."]
+        );
+
+        runtime.players.get_mut(&1).unwrap().chat_channels = 1_u32 << 31;
+        let god_denied = apply_chat_command(&world, &mut runtime, sender_id, "/god Hello", 1)
+            .expect("god chat command should be recognized");
+        assert_eq!(god_denied.sender_messages, vec!["Access denied."]);
+
+        let empty = apply_chat_command(&world, &mut runtime, sender_id, "/c2   ", 1)
+            .expect("c2 chat command should be recognized");
+        assert_eq!(
+            empty.sender_messages,
+            vec!["You cannot send empty chat messages."]
+        );
+    }
+
+    #[test]
+    fn chat_command_filters_ignored_sender_and_private_clan_channel() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let outsider_id = CharacterId(9);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.clan = 4;
+        world.add_character(sender);
+        let mut target = login_character(target_id, &login_block("Bob"), 1, 11, 10);
+        target.clan = 4;
+        world.add_character(target);
+        let mut outsider = login_character(outsider_id, &login_block("Eve"), 1, 12, 10);
+        outsider.clan = 5;
+        world.add_character(outsider);
+
+        let mut runtime = ServerRuntime::default();
+        for (session, id) in [(1, sender_id), (2, target_id), (3, outsider_id)] {
+            runtime
+                .players
+                .insert(session, PlayerRuntime::connected(session, 0));
+            let player = runtime.players.get_mut(&session).unwrap();
+            player.character_id = Some(id);
+            player.chat_channels = 1_u32 << 6;
+        }
+        runtime
+            .player_for_character_mut(target_id)
+            .unwrap()
+            .ignored_characters
+            .push(sender_id.0);
+
+        let result = apply_chat_command(&world, &mut runtime, sender_id, "/clan2 Secret", 1)
+            .expect("clan chat command should be recognized");
+
+        assert_eq!(
+            result
+                .delivered_message_bytes
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+            vec![sender_id]
+        );
+    }
+
+    #[test]
     fn who_command_lists_visible_players_like_legacy_command() {
         let mut world = World::default();
         let mut warrior = login_character(CharacterId(7), &login_block("Warrior"), 1, 10, 10);
@@ -14008,6 +14371,21 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 for (target_id, message) in result.delivered_messages {
                                     command_feedback.push((target_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_chat_command(
+                                &world,
+                                &mut runtime,
+                                character_id,
+                                &command,
+                                config.area_id,
+                            ) {
+                                for message in result.sender_messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                for (target_id, message) in result.delivered_message_bytes {
+                                    command_feedback_bytes.push((target_id, message));
                                 }
                                 continue;
                             }
