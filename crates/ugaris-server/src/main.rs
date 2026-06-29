@@ -1794,7 +1794,7 @@ fn apply_lag_command(
             ..Default::default()
         });
     }
-    if turning_on && !player.pk_hate.is_empty() {
+    if turning_on && player.has_any_pk_hate() {
         return Some(KeyringCommandResult {
             messages: vec!["You cannot simulate lag while your hate list is not empty.".to_string()],
             ..Default::default()
@@ -3824,16 +3824,15 @@ fn apply_pk_hate_command(
             {
                 return Some(KeyringCommandResult::default());
             }
-            let messages = if player.pk_hate.is_empty() {
+            let messages = if !player.has_any_pk_hate() {
                 vec!["List is empty.".to_string()]
             } else {
                 player
-                    .pk_hate
-                    .iter()
+                    .active_pk_hate_ids()
                     .map(|hated_id| {
                         let name = world
                             .characters
-                            .get(&CharacterId(*hated_id))
+                            .get(&CharacterId(hated_id))
                             .map(|character| character.name.as_str())
                             .unwrap_or("Unknown");
                         format!("Hate: {name}")

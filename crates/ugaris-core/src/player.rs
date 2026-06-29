@@ -774,11 +774,24 @@ impl PlayerRuntime {
         self.pk_hate.clear();
         for index in 0..PK_HATE_MAX_ENTRIES {
             let character_id = read_i32(bytes, PK_PPD_HATE_OFFSET + index * 4);
-            if character_id > 0 {
-                self.pk_hate.push(character_id as u32);
-            }
+            self.pk_hate.push(character_id.max(0) as u32);
         }
+        Self::trim_pk_hate_slots(&mut self.pk_hate);
         true
+    }
+
+    fn trim_pk_hate_slots(slots: &mut Vec<u32>) {
+        while slots.last().copied() == Some(0) {
+            slots.pop();
+        }
+    }
+
+    pub fn has_any_pk_hate(&self) -> bool {
+        self.pk_hate.iter().any(|hate_id| *hate_id != 0)
+    }
+
+    pub fn active_pk_hate_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        self.pk_hate.iter().copied().filter(|hate_id| *hate_id != 0)
     }
 
     pub fn has_pk_hate_for(&self, character_id: u32) -> bool {
@@ -790,19 +803,27 @@ impl PlayerRuntime {
             return false;
         }
 
-        let newly_added = if let Some(position) = self
+        let mut slots = [0_u32; PK_HATE_MAX_ENTRIES];
+        for (index, hate_id) in self
             .pk_hate
             .iter()
-            .position(|hate_id| *hate_id == character_id)
+            .copied()
+            .take(PK_HATE_MAX_ENTRIES)
+            .enumerate()
         {
-            self.pk_hate.remove(position);
-            false
-        } else {
-            true
-        };
+            slots[index] = hate_id;
+        }
 
-        self.pk_hate.insert(0, character_id);
-        self.pk_hate.truncate(PK_HATE_MAX_ENTRIES);
+        let position = (0..PK_HATE_MAX_ENTRIES - 1).find(|index| slots[*index] == character_id);
+        let newly_added = position.is_none();
+        let shift_count = position.unwrap_or(PK_HATE_MAX_ENTRIES - 1);
+        for index in (1..=shift_count).rev() {
+            slots[index] = slots[index - 1];
+        }
+        slots[0] = character_id;
+
+        self.pk_hate = slots.to_vec();
+        Self::trim_pk_hate_slots(&mut self.pk_hate);
         newly_added
     }
 
@@ -836,7 +857,8 @@ impl PlayerRuntime {
         else {
             return false;
         };
-        self.pk_hate.remove(position);
+        self.pk_hate[position] = 0;
+        Self::trim_pk_hate_slots(&mut self.pk_hate);
         true
     }
 
@@ -1529,7 +1551,7 @@ impl PlayerRuntime {
                 || self.pk_deaths != 0
                 || self.pk_last_kill != 0
                 || self.pk_last_death != 0
-                || !self.pk_hate.is_empty()
+                || self.has_any_pk_hate()
             {
                 write_ppd_block(&mut encoded, DRD_PK_PPD, &self.encode_legacy_pk_ppd());
             }
@@ -2799,8 +2821,14 @@ mod tests {
         assert_eq!(player.pk_hate, vec![10, 30, 20]);
 
         assert!(player.remove_pk_hate(30));
-        assert_eq!(player.pk_hate, vec![10, 20]);
+        assert_eq!(player.pk_hate, vec![10, 0, 20]);
+        assert!(player.has_any_pk_hate());
         assert!(!player.remove_pk_hate(30));
+
+        let encoded = player.encode_legacy_pk_ppd();
+        assert_eq!(read_i32(&encoded, PK_PPD_HATE_OFFSET), 10);
+        assert_eq!(read_i32(&encoded, PK_PPD_HATE_OFFSET + 4), 0);
+        assert_eq!(read_i32(&encoded, PK_PPD_HATE_OFFSET + 8), 20);
 
         for id in 100..(100 + PK_HATE_MAX_ENTRIES as u32 + 5) {
             player.add_pk_hate(id);
@@ -2809,6 +2837,27 @@ mod tests {
         assert_eq!(player.pk_hate[0], 154);
         assert_eq!(player.pk_hate[PK_HATE_MAX_ENTRIES - 1], 105);
         assert!(!player.has_pk_hate_for(104));
+    }
+
+    #[test]
+    fn pk_hate_decode_preserves_legacy_removed_slot_holes() {
+        let mut bytes = vec![0; LEGACY_PK_PPD_SIZE];
+        write_i32(&mut bytes, PK_PPD_HATE_OFFSET, 10);
+        write_i32(&mut bytes, PK_PPD_HATE_OFFSET + 4, 0);
+        write_i32(&mut bytes, PK_PPD_HATE_OFFSET + 8, 20);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.decode_legacy_pk_ppd(&bytes));
+        assert_eq!(player.pk_hate, vec![10, 0, 20]);
+        assert_eq!(
+            player.active_pk_hate_ids().collect::<Vec<_>>(),
+            vec![10, 20]
+        );
+        assert!(player.remove_pk_hate(10));
+        assert_eq!(player.pk_hate, vec![0, 0, 20]);
+        assert!(player.remove_pk_hate(20));
+        assert!(player.pk_hate.is_empty());
+        assert!(!player.has_any_pk_hate());
     }
 
     #[test]
