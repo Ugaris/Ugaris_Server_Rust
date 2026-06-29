@@ -18765,6 +18765,49 @@ mod tests {
     }
 
     #[test]
+    fn finished_alchemy_flask_installs_timed_potion_spell_and_consumes_flask() {
+        let mut world = World::default();
+        world.tick = Tick(2_000);
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.inventory[30] = Some(ItemId(7));
+        world.add_character(character);
+
+        let mut flask = item(7, ItemFlags::USED | ItemFlags::USE);
+        flask.driver = crate::item_driver::IDR_FLASK;
+        flask.carried_by = Some(CharacterId(1));
+        flask.driver_data = vec![2, 3, 1, 10];
+        flask.modifier_index = [CharacterValue::Agility as i16, 0, 0, 0, 0];
+        flask.modifier_value = [4, 0, 0, 0, 0];
+        world.add_item(flask);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_FLASK,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::BeyondPotion { .. }));
+        assert!(!world.items.contains_key(&ItemId(7)));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[30], None);
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_POTION_SP);
+        assert_eq!(spell.modifier_index[0], CharacterValue::Agility as i16);
+        assert_eq!(spell.modifier_value[0], 4);
+        assert!(!spell.flags.contains(ItemFlags::BEYONDMAXMOD));
+        assert_eq!(read_spell_expire_tick(&spell.driver_data), Some(16_400));
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_POTION);
+        assert_eq!(effect.strength, 4);
+    }
+
+    #[test]
     fn world_spell_timer_removes_carried_spell_at_expiry() {
         let mut world = World::default();
         world.tick = Tick(100);

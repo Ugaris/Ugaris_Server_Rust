@@ -1277,7 +1277,23 @@ fn flask_driver(
     }
 
     let Some(cursor_item_id) = character.cursor_item else {
-        if shaken || used != 0 {
+        if shaken {
+            if !check_item_requirements(character, item) {
+                return ItemDriverOutcome::BlockedByRequirements {
+                    item_id: item.id,
+                    character_id: character.id,
+                };
+            }
+            return ItemDriverOutcome::BeyondPotion {
+                item_id: item.id,
+                character_id: character.id,
+                duration_minutes: drdata(item, 3),
+                modifier_index: item.modifier_index,
+                modifier_value: item.modifier_value,
+                beyond_max_mod: false,
+            };
+        }
+        if used != 0 {
             return ItemDriverOutcome::FlaskShakeUnported {
                 item_id: item.id,
                 character_id: character.id,
@@ -4146,6 +4162,46 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut actor, &mut flask, request, 1, false),
             ItemDriverOutcome::FlaskFinishedNoMoreIngredients {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn flask_driver_ports_finished_potion_use_boundary() {
+        let mut actor = character(1);
+        actor.level = 10;
+        actor.flags.insert(CharacterFlags::WARRIOR);
+        let mut flask = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLASK);
+        flask.carried_by = Some(CharacterId(1));
+        flask.min_level = 10;
+        flask.driver_data = vec![2, 3, 1, 20];
+        flask.modifier_index = [CharacterValue::Strength as i16, 0, 0, 0, 0];
+        flask.modifier_value = [7, 0, 0, 0, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FLASK,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut flask, request, 1, false),
+            ItemDriverOutcome::BeyondPotion {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                duration_minutes: 20,
+                modifier_index: [CharacterValue::Strength as i16, 0, 0, 0, 0],
+                modifier_value: [7, 0, 0, 0, 0],
+                beyond_max_mod: false,
+            }
+        );
+
+        actor.level = 9;
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut flask, request, 1, false),
+            ItemDriverOutcome::BlockedByRequirements {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
             }

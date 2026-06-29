@@ -3784,18 +3784,20 @@ fn is_torch_item(world: &World, item_id: ItemId) -> bool {
         .is_some_and(|item| item.driver == IDR_TORCH)
 }
 
-fn is_beyond_potion_item(world: &World, item_id: ItemId) -> bool {
+fn is_timed_potion_source_item(world: &World, item_id: ItemId) -> bool {
     world
         .items
         .get(&item_id)
-        .is_some_and(|item| item.driver == IDR_BEYONDPOTION)
+        .is_some_and(|item| matches!(item.driver, IDR_BEYONDPOTION | IDR_FLASK))
 }
 
 fn is_no_potion_area_blocked_item(world: &World, item_id: ItemId) -> bool {
-    world
-        .items
-        .get(&item_id)
-        .is_some_and(|item| matches!(item.driver, IDR_BEYONDPOTION | IDR_SPECIAL_POTION))
+    world.items.get(&item_id).is_some_and(|item| {
+        matches!(
+            item.driver,
+            IDR_BEYONDPOTION | IDR_SPECIAL_POTION | IDR_FLASK
+        )
+    })
 }
 
 fn is_demonshrine_item(world: &World, item_id: ItemId) -> bool {
@@ -15035,7 +15037,7 @@ async fn main() -> anyhow::Result<()> {
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
-                                            if is_beyond_potion_item(&world, item_id) =>
+                                            if is_timed_potion_source_item(&world, item_id) =>
                                         {
                                             let message = if character_has_active_beyond_potion(&world, character_id) {
                                                 "Another potion is still active."
