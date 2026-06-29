@@ -4086,6 +4086,32 @@ fn pick_berry_template(kind: u8) -> Option<&'static str> {
     }
 }
 
+fn alchemy_flower_template(kind: u8) -> Option<&'static str> {
+    match kind {
+        1 => Some("alc_flower1"),
+        2 => Some("alc_flower2"),
+        3 => Some("alc_flower3"),
+        4 => Some("alc_flower4"),
+        5 => Some("alc_flower5"),
+        6 => Some("alc_flower6"),
+        7 => Some("alc_flower7"),
+        8 => Some("alc_mushroom1"),
+        9 => Some("alc_mushroom2"),
+        10 => Some("alc_mushroom3"),
+        11 => Some("alc_mushroom4"),
+        12 => Some("alc_mushroom5"),
+        13 => Some("alc_mushroom6"),
+        14 => Some("alc_mushroom7"),
+        15 => Some("alc_mushroom8"),
+        16 => Some("alc_mushroom9"),
+        17 => Some("alc_berry1"),
+        18 => Some("alc_berry2"),
+        19 => Some("alc_berry3"),
+        20 => Some("alc_berry4"),
+        _ => None,
+    }
+}
+
 fn pick_berry_ripe_seconds(character: &Character) -> u64 {
     match character.professions[profession::HERBALIST] {
         value if value >= 30 => 60 * 60 * 4,
@@ -4112,6 +4138,44 @@ fn apply_pick_berry(
     }
 
     let Some(template) = pick_berry_template(kind) else {
+        return PickBerryApplyResult::Bug;
+    };
+
+    let ripe_seconds = pick_berry_ripe_seconds(character);
+    let Some(player) = player else {
+        return PickBerryApplyResult::MissingPlayer;
+    };
+    if let Some(last_used) = player.flower_last_used_seconds(location_id) {
+        if realtime_seconds.saturating_sub(last_used) < ripe_seconds {
+            return PickBerryApplyResult::NotRipe;
+        }
+    }
+
+    let Some(item_name) = grant_template_item_to_cursor(world, loader, character_id, template)
+    else {
+        return PickBerryApplyResult::CursorOccupied;
+    };
+    player.mark_flower_used(location_id, realtime_seconds);
+    PickBerryApplyResult::Picked(item_name)
+}
+
+fn apply_pick_alchemy_flower(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    player: Option<&mut PlayerRuntime>,
+    character_id: CharacterId,
+    kind: u8,
+    location_id: u32,
+    realtime_seconds: u64,
+) -> PickBerryApplyResult {
+    let Some(character) = world.characters.get(&character_id) else {
+        return PickBerryApplyResult::MissingPlayer;
+    };
+    if character.cursor_item.is_some() {
+        return PickBerryApplyResult::CursorOccupied;
+    }
+
+    let Some(template) = alchemy_flower_template(kind) else {
         return PickBerryApplyResult::Bug;
     };
 
@@ -7652,6 +7716,55 @@ mod tests {
         );
 
         assert_eq!(picked, PickBerryApplyResult::Picked("Flower H".to_string()));
+    }
+
+    #[test]
+    fn alchemy_flower_runtime_grants_ingredient_and_marks_flower_ppd() {
+        let mut world = World::default();
+        world.add_character(login_character(
+            CharacterId(1),
+            &login_block("Ralph"),
+            1,
+            10,
+            10,
+        ));
+        let mut loader = ZoneLoader::new();
+        loader.item_templates.insert(
+            "alc_berry1".to_string(),
+            ugaris_core::zone::ItemTemplate {
+                key: "alc_berry1".to_string(),
+                name: "Berry A".to_string(),
+                description: String::new(),
+                flags: ItemFlags::USED,
+                sprite: 50280,
+                value: 0,
+                min_level: 0,
+                max_level: 0,
+                needs_class: 0,
+                template_id: 0x1f11,
+                modifier_index: [0; ugaris_core::entity::MAX_MODIFIERS],
+                modifier_value: [0; ugaris_core::entity::MAX_MODIFIERS],
+                driver: ugaris_core::item_driver::IDR_FLOWER,
+                driver_data: vec![17],
+            },
+        );
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let result = apply_pick_alchemy_flower(
+            &mut world,
+            &mut loader,
+            Some(&mut player),
+            CharacterId(1),
+            17,
+            0x0001_2814,
+            60_000,
+        );
+
+        assert_eq!(result, PickBerryApplyResult::Picked("Berry A".to_string()));
+        assert_eq!(player.flower_last_used_seconds(0x0001_2814), Some(60_000));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let cursor_item = character.cursor_item.unwrap();
+        assert_eq!(world.items.get(&cursor_item).unwrap().name, "Berry A");
     }
 
     #[test]
@@ -14554,6 +14667,45 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PickBerryCursorOccupied { character_id, .. } => {
+                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickAlchemyFlower {
+                                            character_id,
+                                            kind,
+                                            location_id,
+                                            ..
+                                        } => {
+                                            match apply_pick_alchemy_flower(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                runtime.player_for_character_mut(character_id),
+                                                character_id,
+                                                kind,
+                                                location_id,
+                                                realtime_seconds,
+                                            ) {
+                                                PickBerryApplyResult::Picked(_) => {
+                                                    executed += 1;
+                                                }
+                                                PickBerryApplyResult::NotRipe => {
+                                                    feedback.push((character_id, "It's not ripe yet.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                PickBerryApplyResult::CursorOccupied => {
+                                                    feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                PickBerryApplyResult::Bug => {
+                                                    feedback.push((character_id, "Bug # 4111".to_string()));
+                                                    failed += 1;
+                                                }
+                                                PickBerryApplyResult::MissingPlayer => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickAlchemyFlowerCursorOccupied { character_id, .. } => {
                                             feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
                                             blocked += 1;
                                         }

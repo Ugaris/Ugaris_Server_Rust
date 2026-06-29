@@ -39,6 +39,8 @@ pub const IDR_SPIKETRAP: u16 = 26;
 pub const IDR_EXTINGUISH: u16 = 28;
 pub const IDR_ASSEMBLE: u16 = 29;
 pub const IDR_TELE_DOOR: u16 = 31;
+pub const IDR_FLASK: u16 = 32;
+pub const IDR_FLOWER: u16 = 33;
 pub const IDR_RANDCHEST: u16 = 34;
 pub const IDR_DEMONSHRINE: u16 = 35;
 pub const IDR_EDEMONBALL: u16 = 36;
@@ -727,6 +729,16 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    PickAlchemyFlower {
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+        location_id: u32,
+    },
+    PickAlchemyFlowerCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     LizardFlowerMixed {
         item_id: ItemId,
         character_id: CharacterId,
@@ -952,6 +964,7 @@ pub fn execute_item_driver_with_context(
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
+                IDR_FLOWER => alchemy_flower_driver(character, item, area_id),
                 IDR_PICKBERRY => pick_berry_driver(character, item, area_id),
                 IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
                 IDR_LAB3_PLANT => lab3_plant_driver(character, item, context),
@@ -1142,6 +1155,25 @@ fn pick_berry_driver(character: &Character, item: &Item, area_id: u16) -> ItemDr
         item_id: item.id,
         character_id: character.id,
         kind: drdata(item, 0),
+        location_id: u32::from(item.x) + (u32::from(item.y) << 8) + (u32::from(area_id) << 16),
+    }
+}
+
+fn alchemy_flower_driver(character: &Character, item: &Item, area_id: u16) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::PickAlchemyFlowerCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::PickAlchemyFlower {
+        item_id: item.id,
+        character_id: character.id,
+        kind: item.driver_data.first().copied().unwrap_or_default(),
         location_id: u32::from(item.x) + (u32::from(item.y) << 8) + (u32::from(area_id) << 16),
     }
 }
@@ -3839,6 +3871,48 @@ mod tests {
         let mut timer_character = character(0);
         assert_eq!(
             execute_item_driver(&mut timer_character, &mut berry, request, 31, false),
+            ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn alchemy_flower_driver_ports_location_and_cursor_gate() {
+        let mut actor = character(1);
+        let mut flower = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLOWER);
+        flower.x = 20;
+        flower.y = 40;
+        flower.driver_data = vec![17];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FLOWER,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_FLASK, 32);
+        assert_eq!(IDR_FLOWER, 33);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut flower, request, 7, false),
+            ItemDriverOutcome::PickAlchemyFlower {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                kind: 17,
+                location_id: 20 + (40 << 8) + (7 << 16),
+            }
+        );
+
+        actor.cursor_item = Some(ItemId(99));
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut flower, request, 7, false),
+            ItemDriverOutcome::PickAlchemyFlowerCursorOccupied {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let mut timer_character = character(0);
+        assert_eq!(
+            execute_item_driver(&mut timer_character, &mut flower, request, 7, false),
             ItemDriverOutcome::Noop
         );
     }
