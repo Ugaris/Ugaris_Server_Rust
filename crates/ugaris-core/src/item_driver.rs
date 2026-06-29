@@ -356,6 +356,7 @@ pub struct ItemDriverContext {
     pub edemon_section_power: Option<u8>,
     pub edemon_tube_target: Option<(u16, u16)>,
     pub edemon_gate_spawn: Option<EdemonGateSpawnContext>,
+    pub fdemon_gate_spawn: Option<FdemonGateSpawnContext>,
     pub fdemon_loader_power: Option<u16>,
     pub bone_hint_nr: Option<u8>,
     pub bone_hint_pos: Option<u8>,
@@ -370,6 +371,13 @@ pub struct ItemDriverContext {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EdemonGateSpawnContext {
+    pub slot: usize,
+    pub x: u16,
+    pub y: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FdemonGateSpawnContext {
     pub slot: usize,
     pub x: u16,
     pub y: u16,
@@ -661,6 +669,15 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         template: &'static str,
+        slot: usize,
+        x: u16,
+        y: u16,
+        schedule_after_ticks: u64,
+    },
+    FdemonGateSpawn {
+        item_id: ItemId,
+        character_id: CharacterId,
+        level: u8,
         slot: usize,
         x: u16,
         y: u16,
@@ -1801,6 +1818,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EDEMONTUBE => edemon_tube_driver(character, item, context),
                 IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
                 IDR_FDEMONLOADER => fdemon_loader_driver(character, item, context),
+                IDR_FDEMONGATE => fdemon_gate_driver(character, item, context),
                 IDR_FDEMONWAYPOINT => fdemon_waypoint_driver(character, item, context),
                 IDR_FDEMONFARM => fdemon_farm_driver(character, item, context),
                 IDR_FDEMONBLOOD => fdemon_blood_driver(character, item, context),
@@ -1912,8 +1930,8 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
         IDR_DUNGEONTELE | IDR_DUNGEONFAKE | IDR_DUNGEONDOOR | IDR_DUNGEONKEY => Some(13),
-        IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONWAYPOINT | IDR_FDEMONFARM
-        | IDR_FDEMONBLOOD | IDR_FDEMONLAVA => Some(8),
+        IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONCANNON | IDR_FDEMONGATE
+        | IDR_FDEMONWAYPOINT | IDR_FDEMONFARM | IDR_FDEMONBLOOD | IDR_FDEMONLAVA => Some(8),
         _ => None,
     }
 }
@@ -6288,6 +6306,38 @@ fn fdemon_waypoint_driver(
         target_character_id: spotted_enemy.then_some(character_id),
         target_serial: spotted_enemy.then_some(character_id.0),
         schedule_after_ticks: TICKS_PER_SECOND * 3,
+    }
+}
+
+fn fdemon_gate_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 || !context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let level = drdata(item, 0);
+    let rate = u64::from(drdata(item, 1));
+    let schedule_after_ticks = rate.saturating_mul(TICKS_PER_SECOND);
+
+    let Some(spawn) = context.fdemon_gate_spawn else {
+        return ItemDriverOutcome::LightChanged {
+            item_id: item.id,
+            character_id: CharacterId(0),
+            schedule_after_ticks: Some(schedule_after_ticks),
+        };
+    };
+
+    ItemDriverOutcome::FdemonGateSpawn {
+        item_id: item.id,
+        character_id: CharacterId(0),
+        level,
+        slot: spawn.slot,
+        x: spawn.x,
+        y: spawn.y,
+        schedule_after_ticks,
     }
 }
 
@@ -12557,6 +12607,101 @@ mod tests {
                 &mut light,
                 ItemDriverRequest::Driver {
                     driver: IDR_FDEMONLIGHT,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                8,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn fdemon_gate_timer_requests_one_spawn_and_reschedule() {
+        let mut timer_character = character(0);
+        let mut gate = item(7, ItemFlags::USED, 0, IDR_FDEMONGATE);
+        gate.x = 100;
+        gate.y = 101;
+        gate.driver_data = vec![4, 7];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONGATE,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_FDEMONGATE, 47);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut gate,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    fdemon_gate_spawn: Some(FdemonGateSpawnContext {
+                        slot: 2,
+                        x: 100,
+                        y: 101,
+                    }),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonGateSpawn {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                level: 4,
+                slot: 2,
+                x: 100,
+                y: 101,
+                schedule_after_ticks: 7 * TICKS_PER_SECOND,
+            }
+        );
+    }
+
+    #[test]
+    fn fdemon_gate_preserves_area8_and_timer_only_guards() {
+        let mut timer_character = character(0);
+        let mut gate = item(7, ItemFlags::USED, 0, IDR_FDEMONGATE);
+        gate.driver_data = vec![3, 5];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONGATE,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut gate,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_FDEMONGATE,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                required_area: 8,
+            }
+        );
+
+        let mut player = character(1);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut player,
+                &mut gate,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FDEMONGATE,
                     item_id: ItemId(7),
                     character_id: CharacterId(1),
                     spec: 0,

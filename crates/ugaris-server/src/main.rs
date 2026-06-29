@@ -5888,6 +5888,35 @@ fn spawn_edemon_gate_character(
     world.apply_edemon_gate_spawn_result(item_id, slot, character_id, 0)
 }
 
+fn spawn_fdemon_gate_character(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    item_id: ItemId,
+    level: u8,
+    slot: usize,
+    x: u16,
+    y: u16,
+) -> bool {
+    let character_id = runtime.allocate_character_id();
+    let template = format!("fdemon{}s", level);
+    let Ok((mut character, inventory_items)) =
+        loader.instantiate_character_template(&template, character_id)
+    else {
+        return false;
+    };
+    character.rest_x = x;
+    character.rest_y = y;
+    character.dir = ugaris_core::direction::Direction::RightDown as u8;
+    if !world.spawn_character(character, usize::from(x), usize::from(y)) {
+        return false;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+    world.apply_fdemon_gate_spawn_result(item_id, slot, character_id, 0)
+}
+
 fn apply_xmasmaker(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) -> bool {
     grant_template_item_smart(world, loader, character_id, "xmaspop").is_some()
 }
@@ -16526,6 +16555,7 @@ async fn main() -> anyhow::Result<()> {
                     info!(count = timer_outcomes.len(), tick = world.tick.0, "processed timer callbacks");
                 }
                 let mut edemon_gate_spawns = 0;
+                let mut fdemon_gate_spawns = 0;
                 for outcome in &timer_outcomes {
                     if let ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn {
                         item_id,
@@ -16549,9 +16579,34 @@ async fn main() -> anyhow::Result<()> {
                             edemon_gate_spawns += 1;
                         }
                     }
+                    if let ugaris_core::item_driver::ItemDriverOutcome::FdemonGateSpawn {
+                        item_id,
+                        level,
+                        slot,
+                        x,
+                        y,
+                        ..
+                    } = outcome
+                    {
+                        if spawn_fdemon_gate_character(
+                            &mut world,
+                            &mut zone_loader,
+                            &mut runtime,
+                            *item_id,
+                            *level,
+                            *slot,
+                            *x,
+                            *y,
+                        ) {
+                            fdemon_gate_spawns += 1;
+                        }
+                    }
                 }
                 if edemon_gate_spawns != 0 {
                     info!(count = edemon_gate_spawns, tick = world.tick.0, "spawned edemon gate characters");
+                }
+                if fdemon_gate_spawns != 0 {
+                    info!(count = fdemon_gate_spawns, tick = world.tick.0, "spawned fdemon gate characters");
                 }
                 let timer_feedback = timer_outcome_feedback(&timer_outcomes);
                 if !timer_feedback.is_empty() {
@@ -18057,6 +18112,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonGateSpawn { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
                                            | ugaris_core::item_driver::ItemDriverOutcome::FdemonWaypoint { .. }
                                             | ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderChanged { .. }
