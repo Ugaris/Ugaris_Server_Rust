@@ -19,6 +19,10 @@ use ugaris_core::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
         CHARACTER_VALUE_NAMES, POWERSCALE,
     },
+    game_time::{
+        GameDate, DAYS_PER_MOON_CYCLE, DAYS_PER_YEAR, FALL_EQUINOX_DAY, HALF_MOON_CYCLE, HOUR_LEN,
+        MIN_LEN, SPRING_EQUINOX_DAY, SUMMER_SOLSTICE_DAY,
+    },
     ids::{CharacterId, ItemId},
     item_driver::{
         ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE,
@@ -1694,6 +1698,101 @@ fn apply_who_command(
         messages.push(format!(
             "{} ({}{}{}{})",
             character.name, arch, warrior, mage, character.level
+        ));
+    }
+
+    Some(KeyringCommandResult {
+        messages,
+        ..Default::default()
+    })
+}
+
+fn apply_time_command(date: GameDate, command: &str) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 2 || !"time".starts_with(&lower) {
+        return None;
+    }
+
+    let mut messages = vec![format!(
+        "It's {:02}:{:02} on the {}/{}/{}. Sunrise is at {:02}:{:02}, sunset at {:02}:{:02}. Moonrise is at {:02}:{:02}, moonset at {:02}:{:02}.",
+        date.hour,
+        date.minute,
+        date.month + 1,
+        date.mday + 1,
+        date.year,
+        date.sunrise / HOUR_LEN,
+        (date.sunrise % HOUR_LEN) / MIN_LEN,
+        date.sunset / HOUR_LEN,
+        (date.sunset % HOUR_LEN) / MIN_LEN,
+        date.moonrise / HOUR_LEN,
+        (date.moonrise % HOUR_LEN) / MIN_LEN,
+        date.moonset / HOUR_LEN,
+        (date.moonset % HOUR_LEN) / MIN_LEN,
+    )];
+
+    if !date.fullmoon && !date.newmoon {
+        if date.moonsize < 3 {
+            messages.push("Quarter Moon.".to_string());
+        } else if date.moonsize < 10 {
+            messages.push("Half Moon.".to_string());
+        } else {
+            messages.push("Three Quarter Moon.".to_string());
+        }
+    }
+    if date.newmoon {
+        messages.push("Be careful, New Moon tonight!".to_string());
+    }
+    if date.fullmoon {
+        messages.push("It's a fine day, Full Moon tonight!".to_string());
+    }
+    if date.summer_solstice {
+        messages.push("It's a great day, it's Summer Solstice today!".to_string());
+    }
+    if date.winter_solstice {
+        messages.push("It's a scary day, it's Winter Solstice today!".to_string());
+    }
+    if date.spring_equinox {
+        messages.push("Everything is in balance, it's Spring Equinox today!".to_string());
+    }
+    if date.fall_equinox {
+        messages.push("Everything is in balance, it's Fall Equinox today!".to_string());
+    }
+
+    if date.moonday < HALF_MOON_CYCLE {
+        messages.push(format!(
+            "Next full moon is in {} days.",
+            HALF_MOON_CYCLE - date.moonday
+        ));
+    } else {
+        messages.push(format!(
+            "Next new moon is in {} days.",
+            DAYS_PER_MOON_CYCLE - date.moonday
+        ));
+    }
+
+    if date.yday < SPRING_EQUINOX_DAY {
+        messages.push(format!(
+            "Spring Equinox will be in {} days.",
+            SPRING_EQUINOX_DAY - date.yday
+        ));
+    } else if date.yday < SUMMER_SOLSTICE_DAY {
+        messages.push(format!(
+            "Summer Solstice will be in {} days.",
+            SUMMER_SOLSTICE_DAY - date.yday
+        ));
+    } else if date.yday < FALL_EQUINOX_DAY {
+        messages.push(format!(
+            "Fall Equinox will be in {} days.",
+            FALL_EQUINOX_DAY - date.yday
+        ));
+    } else {
+        messages.push(format!(
+            "Winter Solstice will be in {} days.",
+            DAYS_PER_YEAR - date.yday
         ));
     }
 
@@ -7425,6 +7524,45 @@ mod tests {
     }
 
     #[test]
+    fn time_command_preserves_legacy_showtime_output_and_prefix_gate() {
+        let date = GameDate::calculate(ugaris_core::game_time::START_TIME, 1, None);
+
+        let result = apply_time_command(date, "/ti").expect("legacy cmdcmp accepts /ti");
+
+        assert_eq!(
+            result.messages,
+            vec![
+                "It's 00:00 on the 1/1/0. Sunrise is at 07:30, sunset at 16:30. Moonrise is at 06:00, moonset at 18:00.",
+                "Be careful, New Moon tonight!",
+                "It's a scary day, it's Winter Solstice today!",
+                "Next full moon is in 14 days.",
+                "Spring Equinox will be in 90 days.",
+            ]
+        );
+        assert!(apply_time_command(date, "/t").is_none());
+        assert!(apply_time_command(date, "/timex").is_none());
+    }
+
+    #[test]
+    fn time_command_reports_legacy_moon_phase_and_next_events() {
+        let date = GameDate::calculate(
+            ugaris_core::game_time::START_TIME + ugaris_core::game_time::DAY_LEN * 7,
+            1,
+            None,
+        );
+
+        let result = apply_time_command(date, "/time").expect("time command should match");
+
+        assert!(result.messages.contains(&"Half Moon.".to_string()));
+        assert!(result
+            .messages
+            .contains(&"Next full moon is in 7 days.".to_string()));
+        assert!(result
+            .messages
+            .contains(&"Spring Equinox will be in 83 days.".to_string()));
+    }
+
+    #[test]
     fn nowho_command_toggles_staff_visibility_only_for_staff_or_gods() {
         let mut world = World::default();
         let mut staff = login_character(CharacterId(7), &login_block("Staffer"), 1, 10, 10);
@@ -11738,6 +11876,12 @@ async fn main() -> anyhow::Result<()> {
                                 .get(&character_id)
                                 .map(|character| character.flags)
                                 .unwrap_or_else(CharacterFlags::empty);
+                            if let Some(result) = apply_time_command(world.date, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
                             if let Some(result) = apply_help_command(&command, character_flags, u32::from(config.area_id)) {
                                 if result.message_bytes.is_empty() {
                                     for message in result.messages {
