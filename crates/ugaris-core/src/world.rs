@@ -6364,7 +6364,8 @@ impl World {
             ItemDriverOutcome::NomadStack { .. }
             | ItemDriverOutcome::TransportOpen { .. }
             | ItemDriverOutcome::TransportTravel { .. }
-            | ItemDriverOutcome::TransportInvalid { .. } => outcome,
+            | ItemDriverOutcome::TransportInvalid { .. }
+            | ItemDriverOutcome::ArenaToplist { .. } => outcome,
             ItemDriverOutcome::EnchantCursorItem {
                 item_id,
                 character_id,

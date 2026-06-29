@@ -880,6 +880,10 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         point: u8,
     },
+    ArenaToplist {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     SpecialPotionDrunk {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1453,6 +1457,7 @@ pub fn execute_item_driver_with_context(
                 IDR_NIGHTLIGHT => nightlight_driver(character, item, context),
                 IDR_TORCH => torch_driver(character, item, context),
                 IDR_FOOD => food_driver(character, item),
+                IDR_TOPLIST => toplist_driver(character, item),
                 IDR_ENCHANTITEM => enchant_driver(character, item),
                 IDR_ANTIENCHANTITEM => anti_enchant_driver(character, item, false),
                 IDR_SPECIALANTIENCHANTITEM => anti_enchant_driver(character, item, true),
@@ -3543,6 +3548,65 @@ fn transport_driver(character: &Character, item: &Item, spec: i32) -> ItemDriver
         item_id: item.id,
         character_id: character.id,
         point,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArenaToplistEntry {
+    pub name: String,
+    pub score: i32,
+}
+
+pub fn arena_toplist_lines(
+    entries: &[ArenaToplistEntry],
+    score: i32,
+    wins: i32,
+    losses: i32,
+    fights: i32,
+) -> Vec<String> {
+    let player_score = if fights == 0 { -2000 } else { score };
+    let mut lines = Vec::new();
+
+    for (index, entry) in entries.iter().take(10).enumerate() {
+        if entry.name.is_empty() {
+            break;
+        }
+        lines.push(format!("{}: {} {}", index + 1, entry.name, entry.score));
+    }
+
+    let mut rank_index = 10usize;
+    while rank_index < entries.len().min(100) {
+        let entry = &entries[rank_index];
+        if entry.name.is_empty() || entry.score < player_score {
+            break;
+        }
+        rank_index += 1;
+    }
+
+    let start = rank_index.saturating_sub(5).max(10);
+    let end = (rank_index + 5).min(entries.len()).min(100);
+    for index in start..end {
+        let entry = &entries[index];
+        if entry.name.is_empty() {
+            break;
+        }
+        lines.push(format!("{}: {} {}", index + 1, entry.name, entry.score));
+    }
+
+    lines.push(format!(
+        "Your score is {player_score}, you have won {wins} fights and lost {losses} fights."
+    ));
+    lines
+}
+
+fn toplist_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::ArenaToplist {
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -7875,6 +7939,69 @@ mod tests {
                 character_id: CharacterId(1),
                 spec: 22 + 5 * 256,
             }
+        );
+    }
+
+    #[test]
+    fn toplist_driver_dispatches_for_players_only() {
+        let mut character = character(1);
+        let mut toplist = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_TOPLIST);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TOPLIST,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut toplist, request, 1, false),
+            ItemDriverOutcome::ArenaToplist {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.id = CharacterId(0);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut toplist, request, 1, false),
+            ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn arena_toplist_lines_match_legacy_rank_window() {
+        let entries: Vec<ArenaToplistEntry> = (0..20)
+            .map(|index| ArenaToplistEntry {
+                name: format!("Fighter{index}"),
+                score: 2000 - index * 100,
+            })
+            .collect();
+
+        let lines = arena_toplist_lines(&entries, 650, 3, 2, 5);
+
+        assert_eq!(lines[0], "1: Fighter0 2000");
+        assert_eq!(lines[9], "10: Fighter9 1100");
+        assert_eq!(lines[10], "11: Fighter10 1000");
+        assert_eq!(lines[14], "15: Fighter14 600");
+        assert_eq!(
+            lines.last().unwrap(),
+            "Your score is 650, you have won 3 fights and lost 2 fights."
+        );
+    }
+
+    #[test]
+    fn arena_toplist_lines_use_legacy_newcomer_score() {
+        let entries = vec![ArenaToplistEntry {
+            name: "Champion".to_string(),
+            score: 42,
+        }];
+
+        let lines = arena_toplist_lines(&entries, 500, 0, 0, 0);
+
+        assert_eq!(lines[0], "1: Champion 42");
+        assert_eq!(
+            lines[1],
+            "Your score is -2000, you have won 0 fights and lost 0 fights."
         );
     }
 

@@ -16767,6 +16767,10 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                             }
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { .. } => {
+                                            // Legacy C returns without output when arena rankings are not loaded.
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ZombieShrine { item_id, character_id, shrine_type } => {
                                             let random_seed = world.tick.0
                                                 ^ (u64::from(item_id.0) << 16)
