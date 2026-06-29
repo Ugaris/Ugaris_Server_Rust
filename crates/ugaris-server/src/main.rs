@@ -3884,6 +3884,22 @@ fn apply_pk_hate_command(
         }
         "nohate" => {
             let Some(target_id) = find_online_character_by_name(world, name) else {
+                if let Ok(target_id) = name.parse::<u32>() {
+                    let removed = world
+                        .characters
+                        .get(&character_id)
+                        .is_some_and(|source| source.flags.contains(CharacterFlags::PK))
+                        && player.remove_pk_hate(target_id);
+                    return Some(KeyringCommandResult {
+                        messages: if removed {
+                            vec!["Removed from hate list".to_string()]
+                        } else {
+                            Vec::new()
+                        },
+                        inventory_changed: false,
+                        ..Default::default()
+                    });
+                }
                 return Some(KeyringCommandResult {
                     messages: vec![format!("Sorry, no player by the name {name}.")],
                     inventory_changed: false,
@@ -11814,6 +11830,24 @@ mod tests {
         assert_eq!(removed.messages, vec!["Removed Target from hate list"]);
         assert_eq!(empty.messages, vec!["List is empty."]);
         assert!(!player.has_pk_hate_for(8));
+    }
+
+    #[test]
+    fn pk_nohate_numeric_id_uses_legacy_del_hate_id_feedback() {
+        let mut attacker = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
+        attacker.flags.insert(CharacterFlags::PK);
+        let mut world = World::default();
+        world.add_character(attacker);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(7));
+        assert!(player.add_pk_hate(1234));
+
+        let removed =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/nohate 1234", 0)
+                .expect("nohate command should be recognized");
+
+        assert_eq!(removed.messages, vec!["Removed from hate list"]);
+        assert!(!player.has_pk_hate_for(1234));
     }
 
     #[test]

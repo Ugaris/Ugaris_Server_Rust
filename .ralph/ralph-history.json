@@ -189,9 +189,33 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
       ]
+    },
+    {
+      "iteration": 8,
+      "startedAt": "2026-06-29T10:41:30.945Z",
+      "endedAt": "2026-06-29T10:45:58.215Z",
+      "durationMs": 267074,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 184 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 185 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: direct `PAC_KILL` plus character-targeted fireball/ball admission remove a hated defender from the a",
+        "- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup rules as direct/character-targeted setup: runtime effect attack checks use the attacking player's `DRD_PK",
+        "-- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: direct `PAC_KILL` plus character-targeted fireball/ball admission remove a hated defender from the ",
+        "+- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: direct `PAC_KILL` plus character-targeted fireball/ball admission remove a hated defender from the "
+      ]
     }
   ],
-  "totalDurationMs": 3756117,
+  "totalDurationMs": 4023191,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 1,
@@ -216,7 +240,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 1,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 2,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 1,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -235,7 +259,13 @@
       "test world::tests::staffer2_spec_door_opens_schedules_and_timer_closes ... FAILED": 1,
       "assertion failed: world.map.set_item_map(&mut marker, 51, 234)": 1,
       "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
-      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1
+      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 184 filtered out; finished in 0.00s": 1,
+      "test result: ok. 185 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: ": 1,
+      "- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup rules": 1,
+      "-- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary:": 1,
+      "+- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary:": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
