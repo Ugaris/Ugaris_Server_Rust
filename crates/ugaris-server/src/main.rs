@@ -14502,7 +14502,8 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
+                                          | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::NomadDice { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
                                             executed += 1;

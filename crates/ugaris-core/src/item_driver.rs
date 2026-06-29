@@ -740,6 +740,11 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    NomadDice {
+        item_id: ItemId,
+        character_id: CharacterId,
+        luck: u8,
+    },
     FlaskIngredientAdded {
         item_id: ItemId,
         character_id: CharacterId,
@@ -990,6 +995,7 @@ pub fn execute_item_driver_with_context(
                     special_potion_driver(character, item, area_id, in_arena, context.current_tick)
                 }
                 IDR_SPECIAL_SHRINE => special_shrine_driver(character, item),
+                IDR_NOMADDICE => nomad_dice_driver(character, item),
                 IDR_NOMADSTACK => nomad_stack_driver(character, item),
                 IDR_DEMONCHIP => nomad_stack_driver(character, item),
                 IDR_SHRIKEAMULET => shrike_amulet_driver(character, item, context),
@@ -1209,6 +1215,38 @@ fn alchemy_flower_driver(character: &Character, item: &Item, area_id: u16) -> It
         kind: item.driver_data.first().copied().unwrap_or_default(),
         location_id: u32::from(item.x) + (u32::from(item.y) << 8) + (u32::from(area_id) << 16),
     }
+}
+
+fn nomad_dice_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::NomadDice {
+        item_id: item.id,
+        character_id: character.id,
+        luck: drdata(item, 0),
+    }
+}
+
+pub fn legacy_lucky_die_from_rolls(sides: u8, luck: u8, rolls: impl IntoIterator<Item = u8>) -> u8 {
+    let needed = usize::from(luck) + 1;
+    rolls
+        .into_iter()
+        .take(needed)
+        .map(|roll| roll.clamp(1, sides.max(1)))
+        .max()
+        .unwrap_or(1)
+}
+
+pub fn legacy_nomad_dice_total<const ROLLS_PER_DIE: usize>(
+    luck: u8,
+    rolls: [[u8; ROLLS_PER_DIE]; 3],
+) -> u8 {
+    rolls
+        .into_iter()
+        .map(|die_rolls| legacy_lucky_die_from_rolls(6, luck, die_rolls))
+        .sum()
 }
 
 fn flask_driver(
@@ -4320,6 +4358,62 @@ mod tests {
                 character_id: CharacterId(1),
                 required_area: 18,
             }
+        );
+    }
+
+    #[test]
+    fn nomad_dice_driver_requires_carried_item_and_reports_luck() {
+        let mut character = character(1);
+        let mut dice = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_NOMADDICE);
+        set_drdata(&mut dice, 0, 2);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_NOMADDICE,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut dice, request, 19, false),
+            ItemDriverOutcome::Noop
+        );
+
+        dice.carried_by = Some(CharacterId(1));
+        assert_eq!(
+            execute_item_driver(&mut character, &mut dice, request, 19, false),
+            ItemDriverOutcome::NomadDice {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                luck: 2,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut dice, request, 1, false),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_NOMADDICE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                required_area: 19,
+            }
+        );
+    }
+
+    #[test]
+    fn legacy_lucky_die_uses_best_of_luck_plus_one_rolls() {
+        assert_eq!(legacy_lucky_die_from_rolls(6, 0, [2, 6, 6]), 2);
+        assert_eq!(legacy_lucky_die_from_rolls(6, 2, [2, 5, 3, 6]), 5);
+        assert_eq!(legacy_lucky_die_from_rolls(6, 1, [0, 9]), 6);
+        assert_eq!(
+            legacy_nomad_dice_total(
+                1,
+                [
+                    [1, 6, 1, 1, 1, 1, 1, 1],
+                    [2, 4, 1, 1, 1, 1, 1, 1],
+                    [3, 1, 1, 1, 1, 1, 1, 1]
+                ]
+            ),
+            13
         );
     }
 
