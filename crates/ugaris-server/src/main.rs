@@ -4399,6 +4399,11 @@ fn item_driver_context_for_request(
             cursor_driver: cursor_item.map(|item| item.driver),
             cursor_sprite: cursor_item.map(|item| item.sprite),
             cursor_drdata0: cursor_item.and_then(|item| item.driver_data.first().copied()),
+            hour: world.date.hour as u8,
+            fullmoon: world.date.fullmoon,
+            newmoon: world.date.newmoon,
+            solstice: world.date.solstice,
+            equinox: world.date.equinox,
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
@@ -15682,8 +15687,11 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "BUG # 231...".to_string()));
                                             failed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskShakeUnported { character_id, .. } => {
-                                            feedback.push((character_id, "The potion mixer is not fully ported yet.".to_string()));
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskMixed { character_id, .. } => {
+                                            feedback.push((character_id, "The potion seems finished.".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskShakeUnported { .. } => {
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerMixed {

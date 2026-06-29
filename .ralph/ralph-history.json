@@ -5284,9 +5284,37 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 192,
+      "startedAt": "2026-06-29T07:14:46.126Z",
+      "endedAt": "2026-06-29T07:31:14.817Z",
+      "durationMs": 988506,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The unported user-facing message is removed from the failed shake path; invalid mixes now just fail silently like the C function returning `0`. I’m adding focused tests for successful recipe matching,",
+        "The failing assertions exposed the C midnight penalty from default test context (`hour == 0`), which correctly lowers power by one unless a pair recipe bypasses it. I’ll update the expected values to ",
+        "error: could not compile `ugaris-core` (lib test) due to 2 previous errors",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test item_driver::tests::flask_driver_ports_fallback_attribute_mix_and_stone_class ... FAILED",
+        "test item_driver::tests::flask_driver_ports_successful_shake_recipe_mix ... FAILED",
+        "test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 569 filtered out; finished in 0.00s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 569 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 87607488,
+  "totalDurationMs": 88595994,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -5307,7 +5335,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 35,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 36,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 2,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 12,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -5439,7 +5467,7 @@
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 387 filtered out; finished in 0.00s": 1,
       "test result: ok. 391 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 383 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 3,
+      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
       "test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 3,
       "test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 394 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
@@ -5594,7 +5622,7 @@
       "test result: ok. 454 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
       "The walk-or-use behavior was already partially present, but the path selection can miss a C-like imm": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 90,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 91,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 454 filtered out; finished in 0.02s": 1,
       "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.05s": 1,
       "test result: ok. 455 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -5620,7 +5648,7 @@
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_noncombat_threads_failed_use_into_secure_move": 1,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 75,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 466 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 81,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 82,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s": 1,
       "error: no library targets found in package `ugaris-server`": 1,
       "test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -5871,7 +5899,13 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 571 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 570 filtered out; finished in 0.00s": 1,
       "test result: ok. 572 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 2,
-      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 172 filtered out; finished in 0.00s": 1
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 172 filtered out; finished in 0.00s": 1,
+      "The unported user-facing message is removed from the failed shake path; invalid mixes now just fail ": 1,
+      "The failing assertions exposed the C midnight penalty from default test context (`hour == 0`), which": 1,
+      "test item_driver::tests::flask_driver_ports_fallback_attribute_mix_and_stone_class ... FAILED": 1,
+      "test item_driver::tests::flask_driver_ports_successful_shake_recipe_mix ... FAILED": 1,
+      "test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 569 filtered out; finished in 0.00s": 1,
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 569 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
