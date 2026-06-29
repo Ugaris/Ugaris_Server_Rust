@@ -160,9 +160,38 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test result: ok. 595 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s"
       ]
+    },
+    {
+      "iteration": 7,
+      "startedAt": "2026-06-29T10:30:20.457Z",
+      "endedAt": "2026-06-29T10:41:27.625Z",
+      "durationMs": 666996,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "One test failed because the default unit-test map is smaller than the legacy Area 29 coordinates. I’ll size that test’s map explicitly to cover the marker coordinates and rerun.",
+        "test world::tests::staffer2_spec_door_opens_schedules_and_timer_closes ... FAILED",
+        "assertion failed: world.map.set_item_map(&mut marker, 51, 234)",
+        "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 3089121,
+  "totalDurationMs": 3756117,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 1,
@@ -170,10 +199,10 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 1,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 1,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 5,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 5,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 4,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 4,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 6,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 6,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 5,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 5,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 3,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
@@ -196,12 +225,17 @@
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 3,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test player::tests::pk_hate_helpers_preserve_legacy_front_priority_and_eviction ... FAILED": 1,
       "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.00s": 1,
       "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.00s": 1,
-      "test result: ok. 595 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1
+      "test result: ok. 595 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
+      "One test failed because the default unit-test map is smaller than the legacy Area 29 coordinates. I’": 1,
+      "test world::tests::staffer2_spec_door_opens_schedules_and_timer_closes ... FAILED": 1,
+      "assertion failed: world.map.set_item_map(&mut marker, 51, 234)": 1,
+      "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
+      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -112,6 +112,14 @@ enum DoorToggleResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StafferSpecDoorResult {
+    Toggled,
+    Locked,
+    Blocked,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(test), allow(dead_code))]
 enum FightDriverTaskKind {
     Freeze,
@@ -5637,6 +5645,20 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::StafferSpecDoorToggle {
+                item_id,
+                character_id,
+                kind,
+            } => match self.toggle_staffer_spec_door(item_id, character_id, kind) {
+                StafferSpecDoorResult::Toggled => outcome,
+                StafferSpecDoorResult::Locked => ItemDriverOutcome::StafferSpecDoorLocked {
+                    item_id,
+                    character_id,
+                },
+                StafferSpecDoorResult::Blocked | StafferSpecDoorResult::Failed => {
+                    ItemDriverOutcome::Noop
+                }
+            },
             ItemDriverOutcome::TriggerMapItem {
                 x,
                 y,
@@ -7151,6 +7173,123 @@ impl World {
         self.queue_sound_area(x, y, if character_id.0 == 0 { 2 } else { 3 });
 
         DoorToggleResult::Toggled
+    }
+
+    fn toggle_staffer_spec_door(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+    ) -> StafferSpecDoorResult {
+        let Some(item) = self.items.get(&item_id) else {
+            return StafferSpecDoorResult::Failed;
+        };
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        let is_open = item.driver_data.get(1).copied().unwrap_or_default() != 0;
+
+        if x == 0 || y == 0 {
+            return StafferSpecDoorResult::Failed;
+        }
+        let Some(tile) = self.map.tile(x, y) else {
+            return StafferSpecDoorResult::Failed;
+        };
+        if tile.item != item_id.0 {
+            return StafferSpecDoorResult::Failed;
+        }
+
+        if character_id.0 == 0 {
+            let mut should_continue = true;
+            if let Some(item) = self.items.get_mut(&item_id) {
+                item.driver_data.resize(40, 0);
+                if item.driver_data[39] != 0 {
+                    item.driver_data[39] = item.driver_data[39].saturating_sub(1);
+                }
+                should_continue = item.driver_data[1] != 0 && item.driver_data[39] == 0;
+            }
+            if !should_continue {
+                return StafferSpecDoorResult::Blocked;
+            }
+        }
+
+        if is_open
+            && tile
+                .flags
+                .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+        {
+            if character_id.0 == 0 {
+                if let Some(item) = self.items.get_mut(&item_id) {
+                    item.driver_data.resize(40, 0);
+                    item.driver_data[39] = item.driver_data[39].saturating_add(1);
+                }
+                self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 5);
+            }
+            return StafferSpecDoorResult::Blocked;
+        }
+
+        if character_id.0 != 0 {
+            let marker = match kind {
+                4 => Some((51, 234)),
+                5 => Some((59, 240)),
+                _ => None,
+            };
+            if marker
+                .and_then(|(mx, my)| self.map.tile(mx, my))
+                .is_some_and(|tile| tile.item == 0)
+            {
+                return StafferSpecDoorResult::Locked;
+            }
+        }
+
+        let mut schedule_auto_close = false;
+        {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return StafferSpecDoorResult::Failed;
+            };
+            item.driver_data.resize(40, 0);
+            let Some(tile) = self.map.tile_mut(x, y) else {
+                return StafferSpecDoorResult::Failed;
+            };
+
+            if is_open {
+                let restored = door_stored_flags(item);
+                item.flags.insert(restored);
+                apply_door_tile_flags(tile, item.flags);
+                item.driver_data[1] = 0;
+                item.sprite -= 1;
+            } else {
+                let stored = item.flags
+                    & (ItemFlags::MOVEBLOCK
+                        | ItemFlags::SIGHTBLOCK
+                        | ItemFlags::DOOR
+                        | ItemFlags::SOUNDBLOCK);
+                store_door_flags(item, stored);
+                item.flags.remove(
+                    ItemFlags::MOVEBLOCK
+                        | ItemFlags::SIGHTBLOCK
+                        | ItemFlags::DOOR
+                        | ItemFlags::SOUNDBLOCK,
+                );
+                tile.flags.remove(
+                    MapFlags::TMOVEBLOCK
+                        | MapFlags::TSIGHTBLOCK
+                        | MapFlags::DOOR
+                        | MapFlags::TSOUNDBLOCK,
+                );
+                item.driver_data[1] = 1;
+                item.sprite += 1;
+                item.driver_data[39] = item.driver_data[39].saturating_add(1);
+                schedule_auto_close = item.driver_data[5] == 0;
+            }
+        }
+
+        if schedule_auto_close {
+            self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
+        }
+        self.queue_sound_area(x, y, if character_id.0 == 0 { 2 } else { 3 });
+        self.mark_dirty_sector(x, y);
+
+        StafferSpecDoorResult::Toggled
     }
 
     fn tick_area3_palace_gate(&mut self, item_id: ItemId) -> Option<(bool, bool, bool)> {
@@ -10797,7 +10936,7 @@ mod tests {
             IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
-        map::MapFlags,
+        map::{MapFlags, MapGrid},
         player::{PlayerActionCode, PlayerRuntime, QueuedAction},
         spell::{
             IDR_INFRARED, IDR_NONOMAGIC, IDR_OXYGEN, IDR_POISON0, IDR_POISON1, IDR_POISON2,
@@ -20187,6 +20326,121 @@ mod tests {
         );
         assert_eq!(world.map.tile(10, 10).unwrap().item, 8);
         assert_eq!(world.map.tile(11, 10).unwrap().item, 0);
+    }
+
+    #[test]
+    fn staffer2_spec_door_opens_schedules_and_timer_closes() {
+        let mut world = World::default();
+        world.map = MapGrid::new(300, 300);
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        world.add_character(player);
+        let mut door = item(
+            8,
+            ItemFlags::USED
+                | ItemFlags::USE
+                | ItemFlags::MOVEBLOCK
+                | ItemFlags::SIGHTBLOCK
+                | ItemFlags::DOOR,
+        );
+        door.driver = IDR_STAFFER2;
+        door.driver_data = vec![4, 0, 0, 0, 0, 0];
+        door.sprite = 1200;
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+        let mut marker = item(9, ItemFlags::USED);
+        marker.sprite = 21203;
+        assert!(world.map.set_item_map(&mut marker, 51, 234));
+        world.add_item(marker);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER2,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            29,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::StafferSpecDoorToggle {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                kind: 4,
+            }
+        );
+        let door = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(door.driver_data[1], 1);
+        assert_eq!(door.driver_data[39], 1);
+        assert_eq!(door.sprite, 1201);
+        assert!(!door
+            .flags
+            .contains(ItemFlags::MOVEBLOCK | ItemFlags::SIGHTBLOCK));
+        assert!(!world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK | MapFlags::DOOR));
+
+        world.tick = Tick(TICKS_PER_SECOND * 10);
+        let outcomes = world.process_due_timers(29);
+
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::StafferSpecDoorToggle {
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                kind: 4,
+            }]
+        );
+        let door = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(door.driver_data[1], 0);
+        assert_eq!(door.driver_data[39], 0);
+        assert_eq!(door.sprite, 1200);
+        assert!(door
+            .flags
+            .contains(ItemFlags::MOVEBLOCK | ItemFlags::SIGHTBLOCK));
+        assert!(world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK | MapFlags::DOOR));
+    }
+
+    #[test]
+    fn staffer2_spec_door_reports_locked_without_marker_item() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        world.add_character(player);
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK);
+        door.driver = IDR_STAFFER2;
+        door.driver_data = vec![5, 0, 0, 0, 0, 0];
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER2,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            29,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::StafferSpecDoorLocked {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(world.items.get(&ItemId(8)).unwrap().driver_data[1], 0);
     }
 
     fn character(id: u32) -> Character {

@@ -325,6 +325,15 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    StafferSpecDoorToggle {
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+    },
+    StafferSpecDoorLocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BallTrapProjectile {
         item_id: ItemId,
         character_id: CharacterId,
@@ -901,8 +910,17 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
     match outcome {
         ItemDriverOutcome::DoorToggle { .. }
         | ItemDriverOutcome::KeyedDoorToggle { .. }
-        | ItemDriverOutcome::DoubleDoorToggle { .. } => 1,
-        ItemDriverOutcome::Noop if matches!(driver, Some(IDR_DOOR) | Some(IDR_DOUBLE_DOOR)) => 2,
+        | ItemDriverOutcome::DoubleDoorToggle { .. }
+        | ItemDriverOutcome::StafferSpecDoorToggle { .. } => 1,
+        ItemDriverOutcome::StafferSpecDoorLocked { .. } => 2,
+        ItemDriverOutcome::Noop
+            if matches!(
+                driver,
+                Some(IDR_DOOR) | Some(IDR_DOUBLE_DOOR) | Some(IDR_STAFFER2)
+            ) =>
+        {
+            2
+        }
         ItemDriverOutcome::Noop | ItemDriverOutcome::Unsupported { .. } => 0,
         _ => 1,
     }
@@ -1237,6 +1255,7 @@ fn staffer2_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutc
         }
         2 => staffer_mine_driver(character, item),
         3 => staffer_block_driver(character, item),
+        4 | 5 => staffer_spec_door_driver(character, item),
         6 => {
             if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
                 return ItemDriverOutcome::Noop;
@@ -1259,6 +1278,17 @@ fn staffer2_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutc
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+fn staffer_spec_door_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if item.x == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    ItemDriverOutcome::StafferSpecDoorToggle {
+        item_id: item.id,
+        character_id: character.id,
+        kind: drdata(item, 0),
     }
 }
 
@@ -5862,7 +5892,7 @@ mod tests {
     }
 
     #[test]
-    fn staffer2_unported_subtypes_stay_explicitly_unsupported() {
+    fn staffer2_special_door_subtypes_dispatch_to_typed_outcome() {
         let mut character = character(1);
         character.flags.insert(CharacterFlags::PLAYER);
         let request = ItemDriverRequest::Driver {
@@ -5875,12 +5905,14 @@ mod tests {
         for subtype in 4..=5 {
             let mut item = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
             set_drdata(&mut item, 0, subtype);
+            item.x = 10;
+            item.y = 10;
             assert_eq!(
                 execute_item_driver(&mut character, &mut item, request, 29, false),
-                ItemDriverOutcome::Unsupported {
-                    driver: IDR_STAFFER2,
+                ItemDriverOutcome::StafferSpecDoorToggle {
                     item_id: ItemId(8),
                     character_id: CharacterId(1),
+                    kind: subtype,
                 }
             );
         }
