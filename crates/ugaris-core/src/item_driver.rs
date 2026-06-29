@@ -1859,9 +1859,13 @@ fn arkhata_stopwatch_driver(character: &Character, item: &Item) -> ItemDriverOut
         return ItemDriverOutcome::Noop;
     }
 
+    let Some(character_id) = item.carried_by.filter(|id| id.0 != 0) else {
+        return ItemDriverOutcome::Noop;
+    };
+
     ItemDriverOutcome::ArkhataStopwatch {
         item_id: item.id,
-        character_id: item.carried_by.unwrap_or(CharacterId(0)),
+        character_id,
         schedule_after_ticks: 10,
     }
 }
@@ -7432,6 +7436,13 @@ mod tests {
         );
 
         character.id = CharacterId(7);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut stopwatch, request, 37, false),
+            ItemDriverOutcome::Noop
+        );
+
+        character.id = CharacterId(0);
+        stopwatch.carried_by = None;
         assert_eq!(
             execute_item_driver(&mut character, &mut stopwatch, request, 37, false),
             ItemDriverOutcome::Noop
