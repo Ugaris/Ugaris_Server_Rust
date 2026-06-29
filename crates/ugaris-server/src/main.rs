@@ -12324,6 +12324,13 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Interesting idea. Really. Doesn't work, though.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickBerry { .. } => {
+                                            failed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickBerryCursorOccupied { character_id, .. } => {
+                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerMixed {
                                             character_id,
                                             complete,

@@ -52,6 +52,7 @@ pub const IDR_LABEXIT: u16 = 102;
 pub const IDR_TOYLIGHT: u16 = 117;
 pub const IDR_DECAYITEM: u16 = 132;
 pub const IDR_OXYPOTION: u16 = 128;
+pub const IDR_PICKBERRY: u16 = 129;
 pub const IDR_LIZARDFLOWER: u16 = 130;
 pub const IDR_BEYONDPOTION: u16 = 133;
 pub const IDR_DEMONCHIP: u16 = 136;
@@ -700,6 +701,16 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         installed: bool,
     },
+    PickBerry {
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+        location_id: u32,
+    },
+    PickBerryCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     LizardFlowerMixed {
         item_id: ItemId,
         character_id: CharacterId,
@@ -885,6 +896,7 @@ pub fn execute_item_driver_with_context(
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
+                IDR_PICKBERRY => pick_berry_driver(character, item, area_id),
                 IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
                 IDR_LAB3_PLANT => lab3_plant_driver(character, item),
                 IDR_LABEXIT => labexit_driver(character, item, context),
@@ -972,6 +984,31 @@ fn oxy_potion_driver(character: &Character, item: &Item, area_id: u16) -> ItemDr
         item_id: item.id,
         character_id: character.id,
         installed: false,
+    }
+}
+
+fn pick_berry_driver(character: &Character, item: &Item, area_id: u16) -> ItemDriverOutcome {
+    if area_id != 31 {
+        return ItemDriverOutcome::BlockedByArea {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::PickBerryCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::PickBerry {
+        item_id: item.id,
+        character_id: character.id,
+        kind: drdata(item, 0),
+        location_id: u32::from(item.x) + (u32::from(item.y) << 8) + (u32::from(area_id) << 16),
     }
 }
 
@@ -3477,6 +3514,56 @@ mod tests {
                 character_id: CharacterId(1),
                 installed: false,
             }
+        );
+    }
+
+    #[test]
+    fn pick_berry_driver_ports_area31_boundary_and_location_id() {
+        let mut actor = character(1);
+        let mut berry = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_PICKBERRY);
+        berry.x = 12;
+        berry.y = 34;
+        berry.driver_data = vec![3];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PICKBERRY,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_PICKBERRY, 129);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut berry, request, 30, false),
+            ItemDriverOutcome::BlockedByArea {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.cursor_item = Some(ItemId(99));
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut berry, request, 31, false),
+            ItemDriverOutcome::PickBerryCursorOccupied {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.cursor_item = None;
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut berry, request, 31, false),
+            ItemDriverOutcome::PickBerry {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                kind: 3,
+                location_id: 12 + (34 << 8) + (31 << 16),
+            }
+        );
+
+        let mut timer_character = character(0);
+        assert_eq!(
+            execute_item_driver(&mut timer_character, &mut berry, request, 31, false),
+            ItemDriverOutcome::Noop
         );
     }
 
