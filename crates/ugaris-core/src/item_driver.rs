@@ -1285,7 +1285,16 @@ pub fn book_text_line_bytes(kind: u8) -> Vec<Vec<u8>> {
 }
 
 pub fn book_text_line_bytes_for_reader(kind: u8, demon_value: i32) -> Vec<Vec<u8>> {
+    book_text_line_bytes_for_reader_id(kind, demon_value, 0)
+}
+
+pub fn book_text_line_bytes_for_reader_id(
+    kind: u8,
+    demon_value: i32,
+    reader_id: u32,
+) -> Vec<Vec<u8>> {
     match kind {
+        13..=17 => demon_book_line_bytes(kind, reader_id),
         18 => edemon_sign_line_bytes(demon_value, &["Defense Systems Control Room"]),
         19 => edemon_sign_line_bytes(
             demon_value,
@@ -1327,6 +1336,58 @@ pub fn book_text_line_bytes_for_reader(kind: u8, demon_value: i32) -> Vec<Vec<u8
             .map(|line| plain_book_line_bytes(line))
             .collect(),
     }
+}
+
+fn demon_book_line_bytes(kind: u8, reader_id: u32) -> Vec<Vec<u8>> {
+    let ritual = demonspeak(reader_id, u32::from(kind - 13));
+    let line = match kind {
+        13 => format!(
+            "I have seen in written in fiery letters upon the sky: Those who have the knowledge can invoke protection against demonic might by uttering the words: '{ritual}'"
+        ),
+        14 => format!(
+            "Those who need better protection against earth demons, those who have the knowledge, use these words: '{ritual}'"
+        ),
+        15..=17 => format!("'{ritual}' will give thee even better protection."),
+        _ => return Vec::new(),
+    };
+    vec![plain_book_line_bytes(&line)]
+}
+
+fn demonspeak(reader_id: u32, nr: u32) -> String {
+    const SYLLABLES: [&str; 10] = [
+        "shir", "ka", "dor", "lagh", "kir", "dul", "arl", "sli", "dlu", "usga",
+    ];
+    const LEADS: [&str; 5] = ["ki", "do", "sa", "mi", "ru"];
+
+    let mut val = id_rand(reader_id, nr);
+    let v1 = (val % SYLLABLES.len() as u32) as usize;
+    val >>= 4;
+    let v2 = (val % SYLLABLES.len() as u32) as usize;
+    val >>= 3;
+    let v3 = (val % SYLLABLES.len() as u32) as usize;
+    val >>= 5;
+    let v4 = (val % SYLLABLES.len() as u32) as usize;
+    let lead = LEADS.get(nr as usize).copied().unwrap_or(LEADS[0]);
+
+    format!(
+        "{}{} {}{}{}",
+        SYLLABLES[v1], SYLLABLES[v2], lead, SYLLABLES[v3], SYLLABLES[v4]
+    )
+}
+
+fn id_rand(base: u32, step: u32) -> u32 {
+    const VALUES: [u32; 16] = [
+        0x12345678, 0x87654321, 0x17263524, 0xabef53ac, 0xbd341ace, 0x1045fe45, 0xea6deb2a,
+        0x1d40fb4a, 0x1a83be1d, 0x1d441eff, 0x1a15e63f, 0x192502de, 0x90ae3ce2, 0x1de94be3,
+        0x1e358f3b, 0xa1e3ff56,
+    ];
+    let mut ret = base
+        .wrapping_add(step)
+        .wrapping_add(base.wrapping_mul(step));
+    for _ in 0..4 {
+        ret ^= VALUES[(ret % VALUES.len() as u32) as usize];
+    }
+    ret
 }
 
 fn edemon_sign_line_bytes(demon_value: i32, readable_lines: &[&str]) -> Vec<Vec<u8>> {
@@ -3878,6 +3939,23 @@ mod tests {
                 b"Research Laboratorium".to_vec(),
                 b"Caution, live demons!".to_vec(),
             ]
+        );
+    }
+
+    #[test]
+    fn demon_books_generate_legacy_character_specific_ritual_words() {
+        assert_eq!(demonspeak(6, 2), "shirsli sausgadul");
+        assert_eq!(
+            book_text_line_bytes_for_reader_id(15, 0, 6),
+            vec![b"'shirsli sausgadul' will give thee even better protection.".to_vec()]
+        );
+        assert_eq!(
+            book_text_line_bytes_for_reader_id(13, 0, 6),
+            vec![b"I have seen in written in fiery letters upon the sky: Those who have the knowledge can invoke protection against demonic might by uttering the words: 'dorsli kilaghshir'".to_vec()]
+        );
+        assert_ne!(
+            book_text_line_bytes_for_reader_id(13, 0, 6),
+            book_text_line_bytes_for_reader_id(13, 0, 7)
         );
     }
 

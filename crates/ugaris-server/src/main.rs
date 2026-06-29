@@ -12323,9 +12323,10 @@ async fn main() -> anyhow::Result<()> {
                                                     runtime_random_below(5) as u32,
                                                 )
                                             } else {
-                                                ugaris_core::item_driver::book_text_line_bytes_for_reader(
+                                                ugaris_core::item_driver::book_text_line_bytes_for_reader_id(
                                                     kind,
                                                     demon_value,
+                                                    character_id.0,
                                                 )
                                             };
                                             for line in lines {
