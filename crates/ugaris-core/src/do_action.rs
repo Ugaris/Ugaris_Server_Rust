@@ -1190,6 +1190,9 @@ fn can_attack_internal(
     {
         return false;
     }
+    if attacker.id.0 == 0 {
+        return true;
+    }
     if attacker
         .flags
         .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
@@ -1990,6 +1993,30 @@ mod tests {
 
         defender.level = attacker.level + 4;
         assert!(!can_attack_in_area(&attacker, &defender, &map, 2));
+    }
+
+    #[test]
+    fn can_attack_allows_legacy_zero_attacker_after_basic_defender_guards() {
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        attacker.id = CharacterId(0);
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        attacker.group = 7;
+        defender.group = 7;
+        attacker.clan = 42;
+        defender.clan = 42;
+        attacker.flags.insert(CharacterFlags::NOPLRATT);
+        defender.flags.insert(CharacterFlags::PLAYERLIKE);
+        map.tile_mut(10, 10).unwrap().flags.insert(MapFlags::PEACE);
+        map.tile_mut(11, 10).unwrap().flags.insert(MapFlags::PEACE);
+
+        assert!(can_attack_in_area(&attacker, &defender, &map, 1));
+
+        defender.flags.insert(CharacterFlags::DEAD);
+        assert!(!can_attack_in_area(&attacker, &defender, &map, 1));
     }
 
     #[test]
