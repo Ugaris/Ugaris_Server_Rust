@@ -16616,6 +16616,33 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "The door is locked and you don't have the right key.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ColorTile { character_id, row, color, .. } => {
+                                            let matched = if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                let colors = player.ensure_twocity_goodtile_with(|| {
+                                                    runtime_random_below(6) as u8 + 1
+                                                });
+                                                colors
+                                                    .get(usize::from(row))
+                                                    .is_some_and(|expected| *expected == color)
+                                            } else {
+                                                false
+                                            };
+                                            if matched {
+                                                executed += 1;
+                                            } else {
+                                                if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                    for goodtile in &mut player.twocity_goodtile {
+                                                        *goodtile = runtime_random_below(6) as u8 + 1;
+                                                    }
+                                                }
+                                                feedback.push((character_id, "You see colors dancing before your eyes, and you sense that something has changed.".to_string()));
+                                                if world.teleport_character_same_area(character_id, 5, 250, true) {
+                                                    executed += 1;
+                                                } else {
+                                                    blocked += 1;
+                                                }
+                                            }
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::OrbSpawn { item_id, character_id, anti, special } => {
                                             let random_seed = world.tick.0
                                                 ^ (u64::from(item_id.0) << 16)

@@ -678,6 +678,12 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    ColorTile {
+        item_id: ItemId,
+        character_id: CharacterId,
+        row: u8,
+        color: u8,
+    },
     KeyringShow {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1456,6 +1462,7 @@ pub fn execute_item_driver_with_context(
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
+                IDR_COLORTILE => colortile_driver(character, item),
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
                 IDR_PARKSHRINE => parkshrine_driver(character, item),
                 IDR_BOOK => book_driver(character, item),
@@ -1529,7 +1536,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
     match driver {
         IDR_BONEBRIDGE | IDR_BONELADDER | IDR_BONEHINT => Some(18),
         IDR_NOMADDICE => Some(19),
-        IDR_PICKDOOR | IDR_PICKCHEST => Some(17),
+        IDR_PICKDOOR | IDR_PICKCHEST | IDR_COLORTILE => Some(17),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
@@ -3987,6 +3994,19 @@ fn pick_door_driver(
     ItemDriverOutcome::PickDoorToggle {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn colortile_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::ColorTile {
+        item_id: item.id,
+        character_id: character.id,
+        row: drdata(item, 0),
+        color: drdata(item, 1),
     }
 }
 
@@ -9486,6 +9506,50 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(0),
             }
+        );
+    }
+
+    #[test]
+    fn colortile_reports_legacy_row_and_color_for_players_only() {
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        let mut tile = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_COLORTILE);
+        tile.driver_data = vec![3, 5];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_COLORTILE,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut tile,
+                request,
+                17,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::ColorTile {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                row: 3,
+                color: 5,
+            }
+        );
+
+        character.flags.remove(CharacterFlags::PLAYER);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut tile,
+                request,
+                17,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::Noop
         );
     }
 
