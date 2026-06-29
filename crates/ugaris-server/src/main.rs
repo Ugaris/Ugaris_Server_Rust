@@ -920,6 +920,7 @@ struct KeyringCommandResult {
     target_message_bytes: Vec<(CharacterId, Vec<u8>)>,
     inventory_changed: bool,
     name_changed: bool,
+    name_refresh: Vec<CharacterId>,
 }
 
 fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {
@@ -3909,6 +3910,10 @@ fn apply_pk_hate_command(
                         .get(&character_id)
                         .is_some_and(|source| source.flags.contains(CharacterFlags::PK))
                         && player.remove_pk_hate(target_id);
+                    let mut name_refresh = Vec::new();
+                    if removed {
+                        name_refresh.push(character_id);
+                    }
                     return Some(KeyringCommandResult {
                         messages: if removed {
                             vec!["Removed from hate list".to_string()]
@@ -3916,6 +3921,7 @@ fn apply_pk_hate_command(
                             Vec::new()
                         },
                         inventory_changed: false,
+                        name_refresh,
                         ..Default::default()
                     });
                 }
@@ -3932,7 +3938,10 @@ fn apply_pk_hate_command(
                 return Some(KeyringCommandResult::default());
             }
             let removed = player.remove_pk_hate(target_id.0);
+            let mut name_refresh = Vec::new();
             let messages = if removed {
+                name_refresh.push(character_id);
+                name_refresh.push(target_id);
                 let target_name = world
                     .characters
                     .get(&target_id)
@@ -3945,6 +3954,7 @@ fn apply_pk_hate_command(
             Some(KeyringCommandResult {
                 messages,
                 inventory_changed: false,
+                name_refresh,
                 ..Default::default()
             })
         }
@@ -11981,6 +11991,7 @@ mod tests {
 
         assert_eq!(listed.messages, vec!["Hate: Target"]);
         assert_eq!(removed.messages, vec!["Removed Target from hate list"]);
+        assert_eq!(removed.name_refresh, vec![CharacterId(7), CharacterId(8)]);
         assert_eq!(empty.messages, vec!["List is empty."]);
         assert!(!player.has_pk_hate_for(8));
     }
@@ -12000,6 +12011,7 @@ mod tests {
                 .expect("nohate command should be recognized");
 
         assert_eq!(removed.messages, vec!["Removed from hate list"]);
+        assert_eq!(removed.name_refresh, vec![CharacterId(7)]);
         assert!(!player.has_pk_hate_for(1234));
     }
 
@@ -15055,6 +15067,7 @@ async fn main() -> anyhow::Result<()> {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
+                                command_name_refresh.extend(result.name_refresh);
                                 continue;
                             }
                             if let Some(result) = apply_maxlag_command(player, &command) {
