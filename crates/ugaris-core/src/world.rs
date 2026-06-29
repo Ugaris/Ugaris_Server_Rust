@@ -5968,6 +5968,23 @@ impl World {
                 }
                 outcome
             }
+            ItemDriverOutcome::BurndownIgnite { item_id, .. } => {
+                if self.ignite_burndown_barrel(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::BurndownTimerTick { item_id } => {
+                if self.tick_burndown_barrel(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::BurndownTouch { .. }
+            | ItemDriverOutcome::BurndownTooHot { .. }
+            | ItemDriverOutcome::BurndownAlreadyBurned { .. } => outcome,
             ItemDriverOutcome::FdemonLoaderChanged {
                 item_id,
                 character_id,
@@ -7965,6 +7982,86 @@ impl World {
                     .tile(nx, ny)
                     .is_some_and(|tile| tile.character != 0)
             })
+    }
+
+    fn ignite_burndown_barrel(&mut self, item_id: ItemId) -> bool {
+        let Some(before) = self.items.get(&item_id).cloned() else {
+            return false;
+        };
+        let x = usize::from(before.x);
+        let y = usize::from(before.y);
+        if self.map.tile(x, y).is_none() {
+            return false;
+        }
+
+        if let Some(item) = self.items.get_mut(&item_id) {
+            item.driver_data.resize(1, 0);
+            item.driver_data[0] = 20;
+            item.sprite = 51077;
+            item.modifier_index[0] = CharacterValue::Light as i16;
+            item.modifier_value[0] = 200;
+        } else {
+            return false;
+        }
+
+        if let Some(tile) = self.map.tile_mut(x, y) {
+            tile.foreground_sprite = 1024 << 16;
+            self.mark_dirty_sector(x, y);
+        }
+        self.refresh_item_light_after_mutation(&before, item_id);
+        self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 5);
+        true
+    }
+
+    fn tick_burndown_barrel(&mut self, item_id: ItemId) -> bool {
+        let Some(before) = self.items.get(&item_id).cloned() else {
+            return false;
+        };
+        let x = usize::from(before.x);
+        let y = usize::from(before.y);
+        let Some(state) = before.driver_data.first().copied() else {
+            return false;
+        };
+        if state == 0 {
+            return false;
+        }
+
+        let mut schedule_next = false;
+        let mut light_changed = false;
+        if let Some(item) = self.items.get_mut(&item_id) {
+            item.driver_data.resize(1, 0);
+            item.driver_data[0] = item.driver_data[0].saturating_sub(1);
+            let new_state = item.driver_data[0];
+            if new_state > 15 {
+                item.sprite += 1;
+                schedule_next = true;
+            } else if new_state == 15 {
+                item.modifier_index[0] = CharacterValue::Light as i16;
+                item.modifier_value[0] = 0;
+                light_changed = true;
+                schedule_next = true;
+            } else if new_state == 0 {
+                item.sprite = 21115;
+            } else {
+                schedule_next = true;
+            }
+        } else {
+            return false;
+        }
+
+        if let Some(tile) = self.map.tile_mut(x, y) {
+            if state == 16 {
+                tile.foreground_sprite = 0;
+            }
+            self.mark_dirty_sector(x, y);
+        }
+        if light_changed {
+            self.refresh_item_light_after_mutation(&before, item_id);
+        }
+        if schedule_next {
+            self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 5);
+        }
+        true
     }
 
     fn toggle_staffer_spec_door(
@@ -18834,6 +18931,74 @@ mod tests {
         assert!(door.flags.contains(ItemFlags::SIGHTBLOCK));
         assert!(door.flags.contains(ItemFlags::SOUNDBLOCK));
         assert!(door.flags.contains(ItemFlags::DOOR));
+    }
+
+    #[test]
+    fn world_executes_area17_burndown_barrel_ignite_and_timer() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.x = 8;
+        actor.y = 8;
+        world.add_character(actor);
+        let mut barrel = item(7, ItemFlags::USED | ItemFlags::USE);
+        barrel.driver = crate::item_driver::IDR_BURNDOWN;
+        barrel.sprite = 51076;
+        barrel.driver_data = vec![0];
+        assert!(world.map.set_item_map(&mut barrel, 10, 10));
+        world.add_item(barrel);
+
+        let request = ItemDriverRequest::Driver {
+            driver: crate::item_driver::IDR_BURNDOWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            world.execute_item_driver_request_with_context(
+                request,
+                17,
+                &ItemDriverContext {
+                    cursor_driver: Some(crate::item_driver::IDR_TORCH),
+                    cursor_drdata0: Some(1),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::BurndownIgnite {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        let barrel = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(barrel.driver_data[0], 20);
+        assert_eq!(barrel.sprite, 51077);
+        assert_eq!(barrel.modifier_index[0], CharacterValue::Light as i16);
+        assert_eq!(barrel.modifier_value[0], 200);
+        assert_eq!(
+            world.map.tile(10, 10).unwrap().foreground_sprite,
+            1024 << 16
+        );
+        assert_eq!(world.timers.used_timers(), 1);
+
+        world.tick = Tick(TICKS_PER_SECOND * 5);
+        let outcomes = world.process_due_timers(17);
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::BurndownTimerTick { item_id: ItemId(7) }]
+        );
+        let barrel = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(barrel.driver_data[0], 19);
+        assert_eq!(barrel.sprite, 51078);
+        assert_eq!(world.timers.used_timers(), 1);
+
+        world.items.get_mut(&ItemId(7)).unwrap().driver_data[0] = 16;
+        world.tick = Tick(TICKS_PER_SECOND * 10);
+        let outcomes = world.process_due_timers(17);
+        assert_eq!(outcomes.len(), 1);
+        let barrel = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(barrel.driver_data[0], 15);
+        assert_eq!(barrel.modifier_value[0], 0);
+        assert_eq!(world.map.tile(10, 10).unwrap().foreground_sprite, 0);
     }
 
     #[test]

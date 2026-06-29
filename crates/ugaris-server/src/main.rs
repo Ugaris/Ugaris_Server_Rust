@@ -16616,6 +16616,22 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "The door is locked and you don't have the right key.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownTooHot { character_id, .. } => {
+                                            feedback.push((character_id, "It is too hot to touch.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownAlreadyBurned { character_id, .. } => {
+                                            feedback.push((character_id, "It was burned down already.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownTouch { character_id, .. } => {
+                                            feedback.push((character_id, "You touch the barrel.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownIgnite { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ColorTile { character_id, row, color, .. } => {
                                             let matched = if let Some(player) = runtime.player_for_character_mut(character_id) {
                                                 let colors = player.ensure_twocity_goodtile_with(|| {
