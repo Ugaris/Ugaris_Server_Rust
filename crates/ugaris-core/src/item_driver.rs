@@ -915,6 +915,19 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    CaligarSkellyDoor {
+        item_id: ItemId,
+        character_id: CharacterId,
+        door_index: u8,
+    },
+    CaligarSkellyDoorLocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    CaligarSkellyDoorBusy {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     CaligarKeyAssemble {
         item_id: ItemId,
         character_id: CharacterId,
@@ -997,7 +1010,8 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::DoubleDoorToggle { .. }
         | ItemDriverOutcome::StafferSpecDoorToggle { .. } => 1,
         ItemDriverOutcome::StafferSpecDoorLocked { .. }
-        | ItemDriverOutcome::CaligarWeightDoorLocked { .. } => 2,
+        | ItemDriverOutcome::CaligarWeightDoorLocked { .. }
+        | ItemDriverOutcome::CaligarSkellyDoorLocked { .. } => 2,
         ItemDriverOutcome::Noop
             if matches!(
                 driver,
@@ -1286,11 +1300,24 @@ fn caligar_driver(
         5..=9 => caligar_gun_driver(character, item),
         10 => caligar_key_assembly_driver(character, item, context),
         11 => extinguish_driver(character, item),
+        12 => caligar_skelly_door_driver(character, item),
         _ => ItemDriverOutcome::Unsupported {
             driver: IDR_CALIGAR,
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+fn caligar_skelly_door_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::CaligarSkellyDoor {
+        item_id: item.id,
+        character_id: character.id,
+        door_index: drdata(item, 1),
     }
 }
 
@@ -5263,6 +5290,26 @@ mod tests {
                 character_id: CharacterId(1),
                 extinguished: false,
             }
+        );
+
+        training.driver_data = vec![12, 3];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut training, request, 36, false),
+            ItemDriverOutcome::CaligarSkellyDoor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                door_index: 3,
+            }
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(
+                Some(IDR_CALIGAR),
+                &ItemDriverOutcome::CaligarSkellyDoorLocked {
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                },
+            ),
+            2
         );
 
         let mut timer_character = character(0);

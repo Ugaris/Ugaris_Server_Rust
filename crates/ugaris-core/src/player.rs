@@ -108,6 +108,8 @@ const AREA3_PPD_KELLY_FOUND1_OFFSET: usize = 3 * 4;
 const AREA3_PPD_KELLY_FOUND2_OFFSET: usize = 4 * 4;
 const AREA3_PPD_KELLY_FOUND3_OFFSET: usize = 5 * 4;
 const CALIGAR_PPD_WATCH_FLAG_OFFSET: usize = 4 * 4;
+const CALIGAR_PPD_DOOR_FLAG_OFFSET: usize = 14 * 4;
+const CALIGAR_PPD_DOOR_FLAG_COUNT: usize = 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const LOSTCON_PPD_MAXLAG_OFFSET: usize = 17 * 4;
@@ -1763,6 +1765,13 @@ impl PlayerRuntime {
         Some(was_new)
     }
 
+    pub fn caligar_skelly_door_unlocked(&self, door_index: u8) -> bool {
+        let idx = usize::from(door_index);
+        idx < CALIGAR_PPD_DOOR_FLAG_COUNT
+            && self.caligar_ppd.len() >= LEGACY_CALIGAR_PPD_SIZE
+            && self.caligar_ppd[CALIGAR_PPD_DOOR_FLAG_OFFSET + idx] & 0x07 == 0x07
+    }
+
     pub fn unmark_xmas_tree(&mut self, area_id: u16) {
         if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
             return;
@@ -3378,6 +3387,20 @@ mod tests {
         assert!(decoded.decode_legacy_caligar_ppd(&encoded));
         assert_eq!(decoded.observe_caligar_training(1), Some(true));
         assert_eq!(decoded.observe_caligar_training(3), Some(false));
+    }
+
+    #[test]
+    fn caligar_ppd_checks_skelly_door_unlock_flags() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(!player.caligar_skelly_door_unlocked(0));
+
+        player.caligar_ppd.resize(LEGACY_CALIGAR_PPD_SIZE, 0);
+        player.caligar_ppd[CALIGAR_PPD_DOOR_FLAG_OFFSET + 2] = 0x03;
+        assert!(!player.caligar_skelly_door_unlocked(2));
+
+        player.caligar_ppd[CALIGAR_PPD_DOOR_FLAG_OFFSET + 2] = 0x07;
+        assert!(player.caligar_skelly_door_unlocked(2));
+        assert!(!player.caligar_skelly_door_unlocked(4));
     }
 
     #[test]

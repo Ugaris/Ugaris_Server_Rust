@@ -6116,11 +6116,14 @@ impl World {
                 },
                 CaligarWeightDoorResult::Noop => ItemDriverOutcome::Noop,
             },
+            ItemDriverOutcome::CaligarSkellyDoor { .. } => outcome,
             ItemDriverOutcome::StafferMineExhausted { .. }
             | ItemDriverOutcome::StafferBlockBlocked { .. }
             | ItemDriverOutcome::CaligarWeightBlocked { .. }
             | ItemDriverOutcome::CaligarWeightDoorLocked { .. }
-            | ItemDriverOutcome::CaligarWeightDoorBusy { .. } => outcome,
+            | ItemDriverOutcome::CaligarWeightDoorBusy { .. }
+            | ItemDriverOutcome::CaligarSkellyDoorLocked { .. }
+            | ItemDriverOutcome::CaligarSkellyDoorBusy { .. } => outcome,
             ItemDriverOutcome::BeyondPotion {
                 item_id,
                 character_id,
@@ -7540,6 +7543,60 @@ impl World {
             character.duration = 0;
         }
         CaligarWeightDoorResult::Moved
+    }
+
+    pub fn apply_caligar_skelly_door(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        door_index: u8,
+    ) -> ItemDriverOutcome {
+        let Some(item) = self.items.get(&item_id) else {
+            return ItemDriverOutcome::Noop;
+        };
+        let Some(character) = self.characters.get(&character_id) else {
+            return ItemDriverOutcome::Noop;
+        };
+        let dx = i32::from(character.x) - i32::from(item.x);
+        let dy = i32::from(character.y) - i32::from(item.y);
+        if dx != 0 && dy != 0 {
+            return ItemDriverOutcome::Noop;
+        }
+
+        let target_x = i32::from(item.x) - dx;
+        let target_y = i32::from(item.y) - dy;
+        if target_x < 1
+            || target_y < 1
+            || target_x as usize > self.map.width().saturating_sub(2)
+            || target_y as usize > self.map.height().saturating_sub(2)
+        {
+            return ItemDriverOutcome::Noop;
+        }
+
+        if !self.teleport_character_exact(character_id, target_x as usize, target_y as usize) {
+            return ItemDriverOutcome::CaligarSkellyDoorBusy {
+                item_id,
+                character_id,
+            };
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.dir = match character.dir {
+                value if value == Direction::Right as u8 => Direction::Left as u8,
+                value if value == Direction::Left as u8 => Direction::Right as u8,
+                value if value == Direction::Up as u8 => Direction::Down as u8,
+                value if value == Direction::Down as u8 => Direction::Up as u8,
+                value => value,
+            };
+            character.action = 0;
+            character.step = 0;
+            character.duration = 0;
+        }
+
+        ItemDriverOutcome::CaligarSkellyDoor {
+            item_id,
+            character_id,
+            door_index,
+        }
     }
 
     fn teleport_character_exact(&mut self, character_id: CharacterId, x: usize, y: usize) -> bool {
@@ -21290,6 +21347,59 @@ mod tests {
             }
         );
         assert_eq!(world.characters.get(&CharacterId(1)).unwrap().y, 9);
+    }
+
+    #[test]
+    fn caligar_skelly_door_teleports_to_opposite_side_and_reverses_facing() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.dir = Direction::Right as u8;
+        assert!(world.spawn_character(player, 9, 10));
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_CALIGAR;
+        door.driver_data = vec![12, 2];
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        let outcome = world.apply_caligar_skelly_door(ItemId(8), CharacterId(1), 2);
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::CaligarSkellyDoor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                door_index: 2,
+            }
+        );
+        let player = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((player.x, player.y), (11, 10));
+        assert_eq!(player.dir, Direction::Left as u8);
+        assert_eq!(world.map.tile(9, 10).unwrap().character, 0);
+        assert_eq!(world.map.tile(11, 10).unwrap().character, 1);
+    }
+
+    #[test]
+    fn caligar_skelly_door_reports_busy_target() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(player, 9, 10));
+        assert!(world.spawn_character(character(2), 11, 10));
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_CALIGAR;
+        door.driver_data = vec![12, 1];
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        assert_eq!(
+            world.apply_caligar_skelly_door(ItemId(8), CharacterId(1), 1),
+            ItemDriverOutcome::CaligarSkellyDoorBusy {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(world.characters.get(&CharacterId(1)).unwrap().x, 9);
     }
 
     #[test]

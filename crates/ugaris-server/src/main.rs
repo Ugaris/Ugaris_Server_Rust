@@ -16430,6 +16430,44 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "This does not seem to fit.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoor {
+                                            item_id,
+                                            character_id,
+                                            door_index,
+                                        } => {
+                                            if runtime
+                                                .player_for_character(character_id)
+                                                .is_some_and(|player| player.caligar_skelly_door_unlocked(door_index))
+                                            {
+                                                match world.apply_caligar_skelly_door(
+                                                    item_id,
+                                                    character_id,
+                                                    door_index,
+                                                ) {
+                                                    ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoor { .. } => {
+                                                        executed += 1;
+                                                    }
+                                                    ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoorBusy { character_id, .. } => {
+                                                        feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
+                                                        blocked += 1;
+                                                    }
+                                                    _ => {
+                                                        failed += 1;
+                                                    }
+                                                }
+                                            } else {
+                                                feedback.push((character_id, "The door appears to be locked by some strange mechanism. It seems you need to open three seperate locks.".to_string()));
+                                                blocked += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoorLocked { character_id, .. } => {
+                                            feedback.push((character_id, "The door appears to be locked by some strange mechanism. It seems you need to open three seperate locks.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoorBusy { character_id, .. } => {
+                                            feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ParkShrine { character_id, shrine, .. } => {
                                             if let Some(player) = runtime.player_for_character_mut(character_id) {
                                                 if player.memorize_park_shrine(shrine).unwrap_or(false) {
