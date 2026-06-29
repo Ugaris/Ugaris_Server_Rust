@@ -13246,6 +13246,10 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You sense that the potion would not work.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LibloadAreaBlocked { character_id, .. } => {
+                                            feedback.push((character_id, "This does not work outside its area.".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByArea { .. } => {
                                             blocked += 1;
                                         }

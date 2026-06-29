@@ -26,6 +26,9 @@ pub const IDR_RECALL: u16 = 13;
 pub const IDR_SHRINE: u16 = 14;
 pub const IDR_FIREBALL: u16 = 15;
 pub const IDR_BOOK: u16 = 16;
+pub const IDR_BONEBRIDGE: u16 = 89;
+pub const IDR_BONEHINT: u16 = 94;
+pub const IDR_NOMADDICE: u16 = 95;
 pub const BOOK_NOOK_JOKES: u8 = 48;
 pub const IDR_ONOFFLIGHT: u16 = 17;
 pub const IDR_TRANSPORT: u16 = 18;
@@ -51,6 +54,7 @@ pub const IDR_SPECIAL_POTION: u16 = 88;
 pub const IDR_NOMADSTACK: u16 = 96;
 pub const IDR_LABEXIT: u16 = 102;
 pub const IDR_TOYLIGHT: u16 = 117;
+pub const IDR_STAFFER2: u16 = 122;
 pub const IDR_DECAYITEM: u16 = 132;
 pub const IDR_OXYPOTION: u16 = 128;
 pub const IDR_PICKBERRY: u16 = 129;
@@ -59,6 +63,8 @@ pub const IDR_BEYONDPOTION: u16 = 133;
 pub const IDR_DEMONCHIP: u16 = 136;
 pub const IDR_XMASTREE: u16 = 142;
 pub const IDR_XMASMAKER: u16 = 143;
+pub const IDR_CALIGAR: u16 = 144;
+pub const IDR_ARKHATA: u16 = 146;
 pub const IDR_SPECIAL_SHRINE: u16 = 147;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
 pub const IDR_ANTIENCHANTITEM: u16 = 160;
@@ -697,6 +703,12 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    LibloadAreaBlocked {
+        driver: u16,
+        item_id: ItemId,
+        character_id: CharacterId,
+        required_area: u16,
+    },
     OxygenPotion {
         item_id: ItemId,
         character_id: CharacterId,
@@ -857,6 +869,17 @@ pub fn execute_item_driver_with_context(
             if character.id != character_id || item.id != item_id {
                 return ItemDriverOutcome::Noop;
             }
+            if let Some(required_area) = legacy_libload_required_area(driver) {
+                if area_id != required_area {
+                    return ItemDriverOutcome::LibloadAreaBlocked {
+                        driver,
+                        item_id,
+                        character_id,
+                        required_area,
+                    };
+                }
+            }
+
             match driver {
                 0 => ItemDriverOutcome::LookItem {
                     item_id,
@@ -931,6 +954,18 @@ pub fn execute_item_driver_with_context(
             item_id,
             character_id,
         },
+    }
+}
+
+fn legacy_libload_required_area(driver: u16) -> Option<u16> {
+    match driver {
+        IDR_BONEBRIDGE | IDR_BONEHINT => Some(18),
+        IDR_NOMADDICE => Some(19),
+        IDR_STAFFER2 => Some(29),
+        IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
+        IDR_CALIGAR => Some(36),
+        IDR_ARKHATA => Some(37),
+        _ => None,
     }
 }
 
@@ -3648,9 +3683,11 @@ mod tests {
 
         assert_eq!(
             execute_item_driver(&mut character, &mut potion, request, 30, false),
-            ItemDriverOutcome::BlockedByArea {
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_OXYPOTION,
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+                required_area: 31,
             }
         );
         assert_eq!(
@@ -3744,9 +3781,11 @@ mod tests {
                 false,
                 &ItemDriverContext::default(),
             ),
-            ItemDriverOutcome::BlockedByArea {
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_LIZARDFLOWER,
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+                required_area: 31,
             }
         );
 
@@ -3910,6 +3949,55 @@ mod tests {
         assert_eq!(
             book_text_lines(8)[0],
             "There are two kinds of vampires. One is known under varying names, such as 'Vampire', 'Lesser Vampire', 'Dracul' or 'Necrifah'."
+        );
+    }
+
+    #[test]
+    fn libload_area_guards_block_outside_legacy_area() {
+        let mut character = character(1);
+        let mut bridge = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEBRIDGE);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEBRIDGE,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_BONEBRIDGE, 89);
+        assert_eq!(IDR_BONEHINT, 94);
+        assert_eq!(IDR_NOMADDICE, 95);
+        assert_eq!(IDR_STAFFER2, 122);
+        assert_eq!(IDR_CALIGAR, 144);
+        assert_eq!(IDR_ARKHATA, 146);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut bridge, request, 1, false),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_BONEBRIDGE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                required_area: 18,
+            }
+        );
+    }
+
+    #[test]
+    fn libload_area_guards_fall_through_inside_legacy_area() {
+        let mut character = character(1);
+        let mut bridge = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEBRIDGE);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEBRIDGE,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut bridge, request, 18, false),
+            ItemDriverOutcome::Unsupported {
+                driver: IDR_BONEBRIDGE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
         );
     }
 
