@@ -5937,6 +5937,7 @@ impl World {
                 }
                 outcome
             }
+            ItemDriverOutcome::EdemonSwitchStuck { .. } => outcome,
             ItemDriverOutcome::OnOffLightChanged {
                 item_id,
                 character_id,

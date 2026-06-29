@@ -16469,6 +16469,16 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonSwitchStuck {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "The lever seems stuck.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk {
                                             character_id,
                                             ..

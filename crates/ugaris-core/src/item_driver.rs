@@ -569,6 +569,10 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         schedule_after_ticks: Option<u64>,
     },
+    EdemonSwitchStuck {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     OnOffLightChanged {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1219,6 +1223,7 @@ pub fn execute_item_driver_with_context(
                 IDR_BONEHINT => bonehint_driver(character, item, context),
                 IDR_FIREBALL => fireball_machine_driver(character, item, context),
                 IDR_EDEMONBALL => edemonball_driver(character, item, context),
+                IDR_EDEMONSWITCH => edemon_switch_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -4384,6 +4389,59 @@ fn onofflight_driver(
         now_on,
         remaining_off: None,
         gates_opened: false,
+    }
+}
+
+const EDEMON_SWITCH_COOLDOWN_TICKS: u64 = TICKS_PER_SECOND * 60 * 5;
+
+fn edemon_switch_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(5, 0);
+    let fire = item.driver_data[0] != 0;
+    let pause_until = u32::from_le_bytes([
+        item.driver_data[1],
+        item.driver_data[2],
+        item.driver_data[3],
+        item.driver_data[4],
+    ]);
+
+    if context.timer_call || character.id.0 == 0 {
+        if fire || context.current_tick <= pause_until {
+            return ItemDriverOutcome::Noop;
+        }
+        item.driver_data[0] = 1;
+        item.sprite -= 1;
+        item.modifier_index[0] = V_LIGHT;
+        item.modifier_value[0] = 64;
+        return ItemDriverOutcome::LightChanged {
+            item_id: item.id,
+            character_id: character.id,
+            schedule_after_ticks: None,
+        };
+    }
+
+    if !fire {
+        return ItemDriverOutcome::EdemonSwitchStuck {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    item.driver_data[0] = 0;
+    let pause_until = context
+        .current_tick
+        .wrapping_add(EDEMON_SWITCH_COOLDOWN_TICKS as u32);
+    item.driver_data[1..5].copy_from_slice(&pause_until.to_le_bytes());
+    item.sprite += 1;
+    item.modifier_value[0] = 0;
+
+    ItemDriverOutcome::LightChanged {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: Some(EDEMON_SWITCH_COOLDOWN_TICKS + 1),
     }
 }
 
@@ -8588,6 +8646,125 @@ mod tests {
         assert_eq!(light.modifier_index[0], V_LIGHT);
         assert_eq!(light.modifier_value[0], 15);
         assert_eq!(light.sprite, 101);
+    }
+
+    #[test]
+    fn edemon_switch_use_disables_fire_and_schedules_reenable() {
+        let mut character = character(1);
+        let mut lever = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_EDEMONSWITCH);
+        lever.sprite = 100;
+        lever.driver_data = vec![1, 0, 0, 0, 0];
+        lever.modifier_index[0] = V_LIGHT;
+        lever.modifier_value[0] = 64;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONSWITCH,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut lever,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    current_tick: 123,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                schedule_after_ticks: Some(EDEMON_SWITCH_COOLDOWN_TICKS + 1),
+            }
+        );
+        assert_eq!(lever.driver_data[0], 0);
+        assert_eq!(
+            u32::from_le_bytes(lever.driver_data[1..5].try_into().unwrap()),
+            123 + EDEMON_SWITCH_COOLDOWN_TICKS as u32
+        );
+        assert_eq!(lever.modifier_value[0], 0);
+        assert_eq!(lever.sprite, 101);
+    }
+
+    #[test]
+    fn edemon_switch_timer_reenables_after_cooldown() {
+        let mut timer_character = character(0);
+        let mut lever = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_EDEMONSWITCH);
+        lever.sprite = 101;
+        lever.driver_data = vec![0, 10, 0, 0, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONSWITCH,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut lever,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    current_tick: 10,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::Noop
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut lever,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    current_tick: 11,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: None,
+            }
+        );
+        assert_eq!(lever.driver_data[0], 1);
+        assert_eq!(lever.modifier_index[0], V_LIGHT);
+        assert_eq!(lever.modifier_value[0], 64);
+        assert_eq!(lever.sprite, 100);
+    }
+
+    #[test]
+    fn edemon_switch_reports_stuck_while_fire_is_disabled() {
+        let mut character = character(1);
+        let mut lever = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_EDEMONSWITCH);
+        lever.sprite = 100;
+        lever.driver_data = vec![0, 0, 0, 0, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONSWITCH,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut lever, request, 6, false),
+            ItemDriverOutcome::EdemonSwitchStuck {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(lever.sprite, 100);
     }
 
     #[test]
