@@ -2150,9 +2150,8 @@ impl World {
                     Some(item_id)
                 }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
-                IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_FDEMONLIGHT => {
-                    Some(item_id)
-                }
+                IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_FDEMONLIGHT
+                | IDR_FDEMONLOADER => Some(item_id),
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
@@ -5947,6 +5946,40 @@ impl World {
                 }
                 outcome
             }
+            ItemDriverOutcome::FdemonLoaderChanged {
+                item_id,
+                character_id,
+                consumed_cursor_item_id,
+                ground_overlay_sprite,
+                sound_type,
+                schedule_after_ticks,
+            } => {
+                if let Some(cursor_item_id) = consumed_cursor_item_id {
+                    self.destroy_item(cursor_item_id);
+                }
+                let item_pos = self
+                    .items
+                    .get(&item_id)
+                    .map(|item| (usize::from(item.x), usize::from(item.y)));
+                if let Some((x, y)) = item_pos {
+                    if let Some(tile) = self.map.tile_mut(x, y) {
+                        let new_ground_sprite =
+                            (tile.ground_sprite & 0xffff) | (ground_overlay_sprite << 16);
+                        if tile.ground_sprite != new_ground_sprite {
+                            tile.ground_sprite = new_ground_sprite;
+                            self.mark_dirty_sector(x, y);
+                        }
+                    }
+                    if let Some(sound_type) = sound_type {
+                        self.queue_sound_area(x, y, sound_type);
+                    }
+                }
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, character_id, after_ticks);
+                }
+                outcome
+            }
+            ItemDriverOutcome::FdemonLoaderBlocked { .. } => outcome,
             ItemDriverOutcome::EdemonSwitchStuck { .. } => outcome,
             ItemDriverOutcome::OnOffLightChanged {
                 item_id,
@@ -15921,13 +15954,73 @@ mod tests {
         unlit_torch.driver_data = vec![0, 0, 10, 20];
         let mut edemon_light = item(10, ItemFlags::USED);
         edemon_light.driver = IDR_EDEMONLIGHT;
+        let mut fdemon_loader = item(11, ItemFlags::USED);
+        fdemon_loader.driver = IDR_FDEMONLOADER;
         world.add_item(nightlight);
         world.add_item(burning_torch);
         world.add_item(unlit_torch);
         world.add_item(edemon_light);
+        world.add_item(fdemon_loader);
 
-        assert_eq!(world.schedule_existing_light_timers(), 3);
-        assert_eq!(world.timers.used_timers(), 3);
+        assert_eq!(world.schedule_existing_light_timers(), 4);
+        assert_eq!(world.timers.used_timers(), 4);
+    }
+
+    #[test]
+    fn world_applies_fdemon_loader_cursor_ground_sound_and_timer() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.cursor_item = Some(ItemId(9));
+        assert!(world.spawn_character(player, 11, 10));
+        let mut loader = item(7, ItemFlags::USED | ItemFlags::USE);
+        loader.driver = IDR_FDEMONLOADER;
+        assert!(world.map.set_item_map(&mut loader, 10, 10));
+        world.map.tile_mut(10, 10).unwrap().ground_sprite = 123;
+        world.add_item(loader);
+        let mut crystal = item(9, ItemFlags::USED);
+        crystal.template_id = 0x0100004A;
+        crystal.driver_data = vec![12];
+        crystal.carried_by = Some(CharacterId(1));
+        world.add_item(crystal);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONLOADER,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            8,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonLoaderChanged { .. }
+        ));
+        assert!(!world.items.contains_key(&ItemId(9)));
+        assert_eq!(world.characters[&CharacterId(1)].cursor_item, None);
+        assert_eq!(world.items[&ItemId(7)].sprite, 59036);
+        assert_eq!(
+            world.map.tile(10, 10).unwrap().ground_sprite,
+            (59021 << 16) | 123
+        );
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            41
+        );
+        assert_eq!(world.timers.used_timers(), 0);
+
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+        world.advance();
+        let outcomes = world.process_due_timers(8);
+
+        assert_eq!(outcomes.len(), 1);
+        assert!(matches!(
+            outcomes[0],
+            ItemDriverOutcome::FdemonLoaderChanged { .. }
+        ));
+        assert_eq!(world.timers.used_timers(), 1);
     }
 
     #[test]

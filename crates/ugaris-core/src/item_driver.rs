@@ -355,6 +355,14 @@ pub enum UseItemOutcome {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FdemonLoaderBlockReason {
+    CrystalAlreadyPresent,
+    CrystalStuck,
+    NeedsCrystal,
+    WrongCrystal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemDriverOutcome {
     LookItem {
         item_id: ItemId,
@@ -570,6 +578,19 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         schedule_after_ticks: Option<u64>,
+    },
+    FdemonLoaderChanged {
+        item_id: ItemId,
+        character_id: CharacterId,
+        consumed_cursor_item_id: Option<ItemId>,
+        ground_overlay_sprite: u32,
+        sound_type: Option<u32>,
+        schedule_after_ticks: Option<u64>,
+    },
+    FdemonLoaderBlocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+        reason: FdemonLoaderBlockReason,
     },
     EdemonSwitchStuck {
         item_id: ItemId,
@@ -1242,6 +1263,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EDEMONSWITCH => edemon_switch_driver(character, item, context),
                 IDR_EDEMONLIGHT => edemon_light_driver(character, item, context),
                 IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
+                IDR_FDEMONLOADER => fdemon_loader_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -1326,7 +1348,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
-        IDR_FDEMONLIGHT => Some(8),
+        IDR_FDEMONLIGHT | IDR_FDEMONLOADER => Some(8),
         _ => None,
     }
 }
@@ -3692,6 +3714,7 @@ const fn make_item_id(dev_id: u32, nr: u32) -> u32 {
 }
 
 const IID_AREA2_SUN1: u32 = make_item_id(DEV_ID_DB, 0x00003A);
+const IID_AREA8_REDCRYSTAL: u32 = make_item_id(DEV_ID_DB, 0x00004A);
 const IID_AREA2_SUN2: u32 = make_item_id(DEV_ID_DB, 0x00003B);
 const IID_AREA2_SUN3: u32 = make_item_id(DEV_ID_DB, 0x00003C);
 const IID_AREA2_SUN12: u32 = make_item_id(DEV_ID_DB, 0x00003D);
@@ -4546,6 +4569,109 @@ fn fdemon_light_driver(
         item_id: item.id,
         character_id: character.id,
         schedule_after_ticks: Some(TICKS_PER_SECOND),
+    }
+}
+
+fn fdemon_loader_driver(
+    character: &mut Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(7, 0);
+
+    let mut power = drdata_u16(item, 1);
+    let mut animation = item.driver_data[3];
+    let mut next_power = drdata_u16(item, 4);
+    let mut consumed_cursor_item_id = None;
+    let mut sound_type = None;
+
+    if context.timer_call || character.id.0 == 0 {
+        if animation != 0 {
+            animation = animation.saturating_sub(1);
+            if animation == 0 {
+                power = next_power;
+            }
+        }
+        if power != 0 {
+            power = power.saturating_sub(1);
+        }
+    } else {
+        if power != 0 || animation != 0 {
+            if character.flags.contains(CharacterFlags::FDEMON) {
+                power = 0;
+                animation = 0;
+                next_power = 0;
+            } else if character.cursor_item.is_some() {
+                return ItemDriverOutcome::FdemonLoaderBlocked {
+                    item_id: item.id,
+                    character_id: character.id,
+                    reason: FdemonLoaderBlockReason::CrystalAlreadyPresent,
+                };
+            } else {
+                return ItemDriverOutcome::FdemonLoaderBlocked {
+                    item_id: item.id,
+                    character_id: character.id,
+                    reason: FdemonLoaderBlockReason::CrystalStuck,
+                };
+            }
+        } else {
+            let Some(cursor_item_id) = character.cursor_item else {
+                return ItemDriverOutcome::FdemonLoaderBlocked {
+                    item_id: item.id,
+                    character_id: character.id,
+                    reason: FdemonLoaderBlockReason::NeedsCrystal,
+                };
+            };
+            if context.cursor_template_id != Some(IID_AREA8_REDCRYSTAL) {
+                return ItemDriverOutcome::FdemonLoaderBlocked {
+                    item_id: item.id,
+                    character_id: character.id,
+                    reason: FdemonLoaderBlockReason::WrongCrystal,
+                };
+            }
+
+            next_power = u16::from(context.cursor_drdata0.unwrap_or_default()).saturating_mul(100);
+            animation = 7;
+            character.cursor_item = None;
+            character.flags.insert(CharacterFlags::ITEMS);
+            consumed_cursor_item_id = Some(cursor_item_id);
+            sound_type = Some(41);
+        }
+    }
+
+    if animation == 0 {
+        next_power = power;
+    }
+    set_drdata_u16(item, 4, next_power);
+    item.driver_data[3] = animation;
+    set_drdata_u16(item, 1, power);
+
+    let overlay = if animation != 0 {
+        59028u32.saturating_sub(u32::from(animation))
+    } else if next_power != 0 {
+        59029
+    } else {
+        59021
+    };
+
+    let old_sprite = item.sprite;
+    item.sprite = if next_power != 0 {
+        59030 + 9 - (i32::from(next_power.min(2880)) / 320)
+    } else {
+        14234
+    };
+    if old_sprite != 14234 && item.sprite == 14234 {
+        sound_type = Some(43);
+    }
+
+    ItemDriverOutcome::FdemonLoaderChanged {
+        item_id: item.id,
+        character_id: character.id,
+        consumed_cursor_item_id,
+        ground_overlay_sprite: overlay,
+        sound_type,
+        schedule_after_ticks: (context.timer_call || character.id.0 == 0)
+            .then_some(TICKS_PER_SECOND),
     }
 }
 
@@ -9250,6 +9376,133 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
                 item_name: outcome_item_name("Item"),
+            }
+        );
+    }
+
+    #[test]
+    fn fdemon_loader_accepts_red_crystal_and_starts_animation() {
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(9));
+        let mut loader = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONLOADER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONLOADER,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut character,
+            &mut loader,
+            request,
+            8,
+            false,
+            &ItemDriverContext {
+                cursor_template_id: Some(IID_AREA8_REDCRYSTAL),
+                cursor_drdata0: Some(12),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(character.cursor_item, None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        assert_eq!(drdata_u16(&loader, 1), 0);
+        assert_eq!(loader.driver_data[3], 7);
+        assert_eq!(drdata_u16(&loader, 4), 1200);
+        assert_eq!(loader.sprite, 59036);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::FdemonLoaderChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                consumed_cursor_item_id: Some(ItemId(9)),
+                ground_overlay_sprite: 59021,
+                sound_type: Some(41),
+                schedule_after_ticks: None,
+            }
+        );
+    }
+
+    #[test]
+    fn fdemon_loader_timer_counts_animation_and_power() {
+        let mut timer_character = character(0);
+        let mut loader = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONLOADER);
+        loader.driver_data = vec![1, 0, 0, 1, 2, 0, 0];
+        loader.sprite = 59030;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONLOADER,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut loader,
+            request,
+            8,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(drdata_u16(&loader, 1), 1);
+        assert_eq!(loader.driver_data[3], 0);
+        assert_eq!(drdata_u16(&loader, 4), 1);
+        assert_eq!(loader.sprite, 59039);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::FdemonLoaderChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                consumed_cursor_item_id: None,
+                ground_overlay_sprite: 59029,
+                sound_type: None,
+                schedule_after_ticks: Some(TICKS_PER_SECOND),
+            }
+        );
+    }
+
+    #[test]
+    fn fdemon_loader_blocks_wrong_or_missing_crystal() {
+        let mut character = character(1);
+        let mut loader = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONLOADER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONLOADER,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut loader, request, 8, false),
+            ItemDriverOutcome::FdemonLoaderBlocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                reason: FdemonLoaderBlockReason::NeedsCrystal,
+            }
+        );
+
+        character.cursor_item = Some(ItemId(9));
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut loader,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(123),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonLoaderBlocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                reason: FdemonLoaderBlockReason::WrongCrystal,
             }
         );
     }

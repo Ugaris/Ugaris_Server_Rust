@@ -1110,9 +1110,38 @@
         "test result: ok. 635 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 42,
+      "startedAt": "2026-06-29T15:09:10.465Z",
+      "endedAt": "2026-06-29T15:21:47.216Z",
+      "durationMs": 756570,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The direct driver tests pass; the world sound assertion failed because the test player was registered but not placed on the map, so `sound_area` correctly had no recipient. I’m fixing the test setup t",
+        "The next failure is also test setup: placing the loader on the player’s occupied tile violates map placement rules. I’m moving the test player adjacent so the sound fan-out still has a recipient.",
+        "test world::tests::world_applies_fdemon_loader_cursor_ground_sound_and_timer ... FAILED",
+        "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 635 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "assertion failed: world.map.set_item_map(&mut loader, 10, 10)",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 635 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 19714741,
+  "totalDurationMs": 20471311,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 6,
@@ -1120,9 +1149,9 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 5,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 5,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 33,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 34,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 31,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 34,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 35,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 32,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 30,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 24,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
@@ -1146,7 +1175,7 @@
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 8,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 9,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test player::tests::pk_hate_helpers_preserve_legacy_front_priority_and_eviction ... FAILED": 1,
       "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.00s": 1,
@@ -1258,7 +1287,13 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 199 filtered out; finished in 0.00s": 1,
       "test result: ok. 633 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 633 filtered out; finished in 0.00s": 1,
-      "test result: ok. 635 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 635 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "The direct driver tests pass; the world sound assertion failed because the test player was registere": 1,
+      "The next failure is also test setup: placing the loader on the player’s occupied tile violates map p": 1,
+      "test world::tests::world_applies_fdemon_loader_cursor_ground_sound_and_timer ... FAILED": 1,
+      "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 635 filtered out; finished in 0.00s": 1,
+      "assertion failed: world.map.set_item_map(&mut loader, 10, 10)": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 635 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

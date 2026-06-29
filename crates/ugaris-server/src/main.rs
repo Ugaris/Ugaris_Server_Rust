@@ -16732,6 +16732,20 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderBlocked {
+                                            character_id,
+                                            reason,
+                                            ..
+                                        } => {
+                                            let text = match reason {
+                                                ugaris_core::item_driver::FdemonLoaderBlockReason::CrystalAlreadyPresent => "There is already a crystal, you cannot add another item.",
+                                                ugaris_core::item_driver::FdemonLoaderBlockReason::CrystalStuck => "The crystal is stuck.",
+                                                ugaris_core::item_driver::FdemonLoaderBlockReason::NeedsCrystal => "Nothing happens.",
+                                                ugaris_core::item_driver::FdemonLoaderBlockReason::WrongCrystal => "That doesn't fit.",
+                                            };
+                                            feedback.push((character_id, text.to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk {
                                             character_id,
                                             ..
@@ -16754,7 +16768,8 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::FireballMachineProjectile { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerPulse { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerPulse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerExtinguished { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapTriggered { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapReset { .. }
