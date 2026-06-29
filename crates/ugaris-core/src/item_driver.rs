@@ -397,6 +397,13 @@ pub enum FdemonLoaderBlockReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FdemonBloodBlockReason {
+    BareHands,
+    WrongItem,
+    ContainerFull,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FdemonCrystalTemplate {
     Small,
     Medium,
@@ -757,6 +764,22 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         crystal_number: u8,
+    },
+    FdemonBloodBlocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+        reason: FdemonBloodBlockReason,
+    },
+    FdemonBloodDestroyedFlask {
+        item_id: ItemId,
+        character_id: CharacterId,
+        flask_item_id: ItemId,
+    },
+    FdemonBloodFilled {
+        item_id: ItemId,
+        character_id: CharacterId,
+        container_item_id: ItemId,
+        amount: u8,
     },
     EdemonSwitchStuck {
         item_id: ItemId,
@@ -1488,6 +1511,7 @@ pub fn execute_item_driver_with_context(
                 IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
                 IDR_FDEMONLOADER => fdemon_loader_driver(character, item, context),
                 IDR_FDEMONFARM => fdemon_farm_driver(character, item, context),
+                IDR_FDEMONBLOOD => fdemon_blood_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -1580,7 +1604,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
-        IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONFARM => Some(8),
+        IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONFARM | IDR_FDEMONBLOOD => Some(8),
         _ => None,
     }
 }
@@ -4311,6 +4335,7 @@ const fn make_item_id(dev_id: u32, nr: u32) -> u32 {
 
 const IID_AREA2_SUN1: u32 = make_item_id(DEV_ID_DB, 0x00003A);
 const IID_AREA8_REDCRYSTAL: u32 = make_item_id(DEV_ID_DB, 0x00004A);
+const IID_AREA8_BLOOD: u32 = make_item_id(DEV_ID_DB, 0x00004B);
 const IID_AREA2_SUN2: u32 = make_item_id(DEV_ID_DB, 0x00003B);
 const IID_AREA2_SUN3: u32 = make_item_id(DEV_ID_DB, 0x00003C);
 const IID_AREA2_SUN12: u32 = make_item_id(DEV_ID_DB, 0x00003D);
@@ -5322,6 +5347,61 @@ fn fdemon_farm_driver(
         character_id: character.id,
         foreground_sprite: ready_template.map_or(0, FdemonCrystalTemplate::foreground_sprite),
         schedule_after_ticks: Some(TICKS_PER_SECOND * 2),
+    }
+}
+
+fn fdemon_blood_driver(
+    character: &mut Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 || context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item else {
+        return ItemDriverOutcome::FdemonBloodBlocked {
+            item_id: item.id,
+            character_id: character.id,
+            reason: FdemonBloodBlockReason::BareHands,
+        };
+    };
+
+    if context.cursor_driver == Some(IDR_FLASK) {
+        character.cursor_item = None;
+        character.flags.insert(CharacterFlags::ITEMS);
+        item.sprite = 14348;
+        return ItemDriverOutcome::FdemonBloodDestroyedFlask {
+            item_id: item.id,
+            character_id: character.id,
+            flask_item_id: cursor_item_id,
+        };
+    }
+
+    if context.cursor_template_id != Some(IID_AREA8_BLOOD) {
+        return ItemDriverOutcome::FdemonBloodBlocked {
+            item_id: item.id,
+            character_id: character.id,
+            reason: FdemonBloodBlockReason::WrongItem,
+        };
+    }
+
+    let amount = context.cursor_drdata0.unwrap_or_default();
+    if amount > 2 {
+        return ItemDriverOutcome::FdemonBloodBlocked {
+            item_id: item.id,
+            character_id: character.id,
+            reason: FdemonBloodBlockReason::ContainerFull,
+        };
+    }
+
+    let amount = amount.saturating_add(1);
+    character.flags.insert(CharacterFlags::ITEMS);
+    ItemDriverOutcome::FdemonBloodFilled {
+        item_id: item.id,
+        character_id: character.id,
+        container_item_id: cursor_item_id,
+        amount,
     }
 }
 
@@ -11851,6 +11931,126 @@ mod tests {
             ),
             ItemDriverOutcome::SkelRaiseTimer { item_id: ItemId(7) }
         );
+    }
+
+    #[test]
+    fn fdemon_blood_blocks_bare_wrong_and_full_cursor_items() {
+        let mut character = character(1);
+        let mut blood = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONBLOOD);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONBLOOD,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_FDEMONBLOOD, 50);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut blood, request, 8, false),
+            ItemDriverOutcome::FdemonBloodBlocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                reason: FdemonBloodBlockReason::BareHands,
+            }
+        );
+
+        character.cursor_item = Some(ItemId(9));
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut blood,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(0x0100_004A),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonBloodBlocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                reason: FdemonBloodBlockReason::WrongItem,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut blood,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(IID_AREA8_BLOOD),
+                    cursor_drdata0: Some(3),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonBloodBlocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                reason: FdemonBloodBlockReason::ContainerFull,
+            }
+        );
+    }
+
+    #[test]
+    fn fdemon_blood_destroys_flasks_or_fills_blood_container() {
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(9));
+        let mut blood = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONBLOOD);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONBLOOD,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut blood,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    cursor_driver: Some(IDR_FLASK),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonBloodDestroyedFlask {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                flask_item_id: ItemId(9),
+            }
+        );
+        assert_eq!(character.cursor_item, None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        assert_eq!(blood.sprite, 14348);
+
+        character.cursor_item = Some(ItemId(10));
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut blood,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(IID_AREA8_BLOOD),
+                    cursor_drdata0: Some(2),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonBloodFilled {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                container_item_id: ItemId(10),
+                amount: 3,
+            }
+        );
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
     }
 
     fn request(character_id: u32, item_id: u32, spec: i32) -> ItemUseRequest {

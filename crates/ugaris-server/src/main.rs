@@ -17142,6 +17142,35 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodBlocked {
+                                            character_id,
+                                            reason,
+                                            ..
+                                        } => {
+                                            let text = match reason {
+                                                ugaris_core::item_driver::FdemonBloodBlockReason::BareHands => "You do not want to touch the liquid with your bare hands.",
+                                                ugaris_core::item_driver::FdemonBloodBlockReason::WrongItem => "Hu?",
+                                                ugaris_core::item_driver::FdemonBloodBlockReason::ContainerFull => "The container is full already.",
+                                            };
+                                            feedback.push((character_id, text.to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodDestroyedFlask {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "The liquid burns through the flask and shatters it."
+                                                    .to_string(),
+                                            ));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodFilled {
+                                            ..
+                                        } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk {
                                             character_id,
                                             ..

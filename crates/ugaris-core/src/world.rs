@@ -6042,6 +6042,27 @@ impl World {
             ItemDriverOutcome::FdemonFarmCursorOccupied { .. }
             | ItemDriverOutcome::FdemonFarmNotReady { .. }
             | ItemDriverOutcome::FdemonFarmBug { .. } => outcome,
+            ItemDriverOutcome::FdemonBloodDestroyedFlask { flask_item_id, .. } => {
+                self.destroy_item(flask_item_id);
+                outcome
+            }
+            ItemDriverOutcome::FdemonBloodFilled {
+                item_id,
+                container_item_id,
+                amount,
+                ..
+            } => {
+                if let Some(container) = self.items.get_mut(&container_item_id) {
+                    container.driver_data.resize(1, 0);
+                    container.driver_data[0] = amount;
+                    container.sprite += 1;
+                    container.description =
+                        format!("A container holding {} parts golem blood.", amount);
+                }
+                self.destroy_item(item_id);
+                outcome
+            }
+            ItemDriverOutcome::FdemonBloodBlocked { .. } => outcome,
             ItemDriverOutcome::EdemonSwitchStuck { .. } => outcome,
             ItemDriverOutcome::OnOffLightChanged {
                 item_id,
@@ -11972,10 +11993,10 @@ mod tests {
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGAR,
             IDR_CALIGARFLAME, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT, IDR_ENCHANTITEM,
-            IDR_FIREBALL, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT,
-            IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION,
-            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
-            IID_AREA18_BONE,
+            IDR_FDEMONBLOOD, IDR_FIREBALL, IDR_FLAMETHROW, IDR_FLASK, IDR_LAB3_PLANT,
+            IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE,
+            IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
+            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -16513,6 +16534,80 @@ mod tests {
             (59040 << 16) | 123
         );
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_applies_fdemon_blood_fill_and_flask_destruction() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.cursor_item = Some(ItemId(9));
+        world.add_character(player);
+        let mut blood = item(7, ItemFlags::USED | ItemFlags::USE);
+        blood.driver = IDR_FDEMONBLOOD;
+        assert!(world.map.set_item_map(&mut blood, 10, 10));
+        world.add_item(blood);
+        let mut container = item(9, ItemFlags::USED);
+        container.template_id = 0x0100004B;
+        container.driver_data = vec![2];
+        container.sprite = 100;
+        container.carried_by = Some(CharacterId(1));
+        world.add_item(container);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONBLOOD,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            8,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonBloodFilled { amount: 3, .. }
+        ));
+        assert!(!world.items.contains_key(&ItemId(7)));
+        assert_eq!(world.map.tile(10, 10).unwrap().item, 0);
+        let container = &world.items[&ItemId(9)];
+        assert_eq!(container.driver_data[0], 3);
+        assert_eq!(container.sprite, 101);
+        assert_eq!(
+            container.description,
+            "A container holding 3 parts golem blood."
+        );
+
+        let mut blood = item(11, ItemFlags::USED | ItemFlags::USE);
+        blood.driver = IDR_FDEMONBLOOD;
+        world.add_item(blood);
+        let mut flask = item(12, ItemFlags::USED);
+        flask.driver = IDR_FLASK;
+        flask.carried_by = Some(CharacterId(1));
+        world.add_item(flask);
+        world
+            .characters
+            .get_mut(&CharacterId(1))
+            .unwrap()
+            .cursor_item = Some(ItemId(12));
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONBLOOD,
+                item_id: ItemId(11),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            8,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonBloodDestroyedFlask { .. }
+        ));
+        assert!(!world.items.contains_key(&ItemId(12)));
+        assert_eq!(world.characters[&CharacterId(1)].cursor_item, None);
+        assert_eq!(world.items[&ItemId(11)].sprite, 14348);
     }
 
     #[test]
