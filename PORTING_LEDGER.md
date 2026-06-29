@@ -456,3 +456,7 @@ Recommended next chest steps:
 ### Iteration 28 Additional Progress
 
 - Area 36 `IDR_CALIGAR` now dispatches the C `caligar_skelly_door` branch (`drdata[0] == 12`): non-character timer calls preserve retry-style no-op behavior, character use exposes the legacy `drdata[1]` door index, runtime checks the fixed-layout `DRD_CALIGAR_PPD` `door_flag[4]` bytes for all three lock bits, locked doors emit the C-shaped `three seperate locks` feedback, unlocked doors teleport the player to the exact opposite side of the door, busy targets leave the player in place with retry feedback, and successful use reverses cardinal facing and stops current action. Focused core tests cover dispatch, PPD door-flag gates, exact teleport/facing, and busy-target handling. Remaining Caligar item gaps are quest NPC PPD state, exact log_area/dlog side effects, live area-data smoke coverage, and broader Caligar NPC/dialogue drivers.
+
+### Iteration 32 Additional Progress
+
+- Normal `IDR_POTION` successful use now emits the C `log_area(..., "%s drinks a potion.")` client-visible nearby text through the existing runtime area-feedback fan-out at legacy distance 10, while preserving the resource mutation/consumption outcome path. Focused server coverage pins the C-shaped message text and fallback name behavior. Remaining potion parity gaps are empty-bottle template creation through loaded data, exact audit/log side effects, and broader live-data smoke coverage.

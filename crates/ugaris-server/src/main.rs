@@ -4659,6 +4659,15 @@ fn lollipop_area_message(world: &World, character_id: CharacterId) -> String {
     format!("{name} licks a lollipop.")
 }
 
+fn potion_area_message(world: &World, character_id: CharacterId) -> String {
+    let name = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.as_str())
+        .unwrap_or("Someone");
+    format!("{name} drinks a potion.")
+}
+
 fn christmas_pop_inspection_messages() -> [&'static str; 4] {
     [
         "You notice a tiny inscription on the magical lollipop. It reads:",
@@ -9144,6 +9153,22 @@ mod tests {
         assert_eq!(
             lollipop_area_message(&world, CharacterId(99)),
             "Someone licks a lollipop."
+        );
+    }
+
+    #[test]
+    fn potion_area_message_matches_legacy_text() {
+        let mut world = World::default();
+        let login = login_block("Ralph");
+        world.add_character(login_character(CharacterId(1), &login, 1, 10, 10));
+
+        assert_eq!(
+            potion_area_message(&world, CharacterId(1)),
+            "Ralph drinks a potion."
+        );
+        assert_eq!(
+            potion_area_message(&world, CharacterId(99)),
+            "Someone drinks a potion."
         );
     }
 
@@ -16399,8 +16424,18 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            area_feedback.push((
+                                                character_id,
+                                                potion_area_message(&world, character_id),
+                                                10,
+                                            ));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoubleDoorToggle { .. }
