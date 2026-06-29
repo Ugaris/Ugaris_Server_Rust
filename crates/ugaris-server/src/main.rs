@@ -1540,12 +1540,91 @@ fn apply_admin_character_command(
     None
 }
 
-fn apply_who_command(world: &World, command: &str) -> Option<KeyringCommandResult> {
+fn apply_nowho_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
     let (verb, _) = command
         .split_once(char::is_whitespace)
         .unwrap_or((command, ""));
     let verb = verb.trim_start_matches('/').trim_start_matches('#');
     let lower = verb.to_ascii_lowercase();
+    if lower != "nowho" {
+        return None;
+    }
+
+    let character = world.characters.get_mut(&character_id)?;
+    if !character
+        .flags
+        .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+    {
+        return None;
+    }
+
+    character.flags.toggle(CharacterFlags::NOWHO);
+    Some(KeyringCommandResult {
+        messages: vec![format!(
+            "NoWho {}.",
+            if character.flags.contains(CharacterFlags::NOWHO) {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        )],
+        ..Default::default()
+    })
+}
+
+fn apply_who_command(
+    world: &World,
+    caller_flags: CharacterFlags,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() >= 4
+        && "whostaff".starts_with(&lower)
+        && caller_flags.intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+    {
+        let mut characters = world.characters.values().collect::<Vec<_>>();
+        characters.sort_by_key(|character| character.id.0);
+
+        let mut messages = Vec::new();
+        for character in characters {
+            if character.flags.contains(CharacterFlags::INVISIBLE) {
+                continue;
+            }
+            if !character.flags.contains(CharacterFlags::PLAYER) {
+                continue;
+            }
+            if !character
+                .flags
+                .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+            {
+                continue;
+            }
+
+            messages.push(format!(
+                "{} []{}",
+                character.name,
+                if character.driver == 0 {
+                    ""
+                } else {
+                    " (lagging)"
+                }
+            ));
+        }
+
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
     if lower.is_empty() || !"who".starts_with(&lower) {
         return None;
     }
@@ -7224,7 +7303,8 @@ mod tests {
         npc.flags.remove(CharacterFlags::PLAYER);
         world.add_character(npc);
 
-        let result = apply_who_command(&world, "/who").expect("who command should be recognized");
+        let result = apply_who_command(&world, CharacterFlags::empty(), "/who")
+            .expect("who command should be recognized");
 
         assert_eq!(
             result.messages,
@@ -7243,13 +7323,73 @@ mod tests {
         character.level = 9;
         world.add_character(character);
 
-        let result = apply_who_command(&world, "/w").expect("legacy cmdcmp accepts short who");
+        let result = apply_who_command(&world, CharacterFlags::empty(), "/w")
+            .expect("legacy cmdcmp accepts short who");
 
         assert_eq!(
             result.messages,
             vec!["Currently online in this area:", "Tester (9)"]
         );
-        assert!(apply_who_command(&world, "/whostaff").is_none());
+        assert!(apply_who_command(&world, CharacterFlags::empty(), "/whostaff").is_none());
+    }
+
+    #[test]
+    fn staff_who_command_lists_visible_staff_with_legacy_prefix_gate() {
+        let mut world = World::default();
+        let caller_flags = CharacterFlags::STAFF;
+
+        let mut staff = login_character(CharacterId(7), &login_block("Staffer"), 1, 10, 10);
+        staff.flags.insert(CharacterFlags::STAFF);
+        world.add_character(staff);
+
+        let mut god = login_character(CharacterId(8), &login_block("LagGod"), 1, 11, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        god.driver = 42;
+        world.add_character(god);
+
+        let mut hidden_staff = login_character(CharacterId(9), &login_block("Hidden"), 1, 12, 10);
+        hidden_staff
+            .flags
+            .insert(CharacterFlags::STAFF | CharacterFlags::INVISIBLE);
+        world.add_character(hidden_staff);
+
+        let player = login_character(CharacterId(10), &login_block("Player"), 1, 13, 10);
+        world.add_character(player);
+
+        assert!(apply_who_command(&world, caller_flags, "/who").is_some());
+        assert!(apply_who_command(&world, caller_flags, "/whoo").is_none());
+
+        let result = apply_who_command(&world, caller_flags, "/whos")
+            .expect("legacy cmdcmp accepts whostaff prefix length four");
+
+        assert_eq!(result.messages, vec!["Staffer []", "LagGod [] (lagging)"]);
+    }
+
+    #[test]
+    fn nowho_command_toggles_staff_visibility_only_for_staff_or_gods() {
+        let mut world = World::default();
+        let mut staff = login_character(CharacterId(7), &login_block("Staffer"), 1, 10, 10);
+        staff.flags.insert(CharacterFlags::STAFF);
+        world.add_character(staff);
+
+        let result = apply_nowho_command(&mut world, CharacterId(7), "/nowho")
+            .expect("staff nowho should be recognized");
+        assert_eq!(result.messages, vec!["NoWho enabled."]);
+        assert!(world
+            .characters
+            .get(&CharacterId(7))
+            .expect("staff exists")
+            .flags
+            .contains(CharacterFlags::NOWHO));
+
+        let result = apply_nowho_command(&mut world, CharacterId(7), "/nowho")
+            .expect("staff nowho should toggle off");
+        assert_eq!(result.messages, vec!["NoWho disabled."]);
+
+        let player = login_character(CharacterId(8), &login_block("Player"), 1, 11, 10);
+        world.add_character(player);
+        assert!(apply_nowho_command(&mut world, CharacterId(8), "/nowho").is_none());
+        assert!(apply_nowho_command(&mut world, CharacterId(7), "/now").is_none());
     }
 
     #[test]
@@ -11565,7 +11705,20 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
-                            if let Some(result) = apply_who_command(&world, &command) {
+                            if let Some(result) =
+                                apply_nowho_command(&mut world, character_id, &command)
+                            {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            let character_flags = world
+                                .characters
+                                .get(&character_id)
+                                .map(|character| character.flags)
+                                .unwrap_or_else(CharacterFlags::empty);
+                            if let Some(result) = apply_who_command(&world, character_flags, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
