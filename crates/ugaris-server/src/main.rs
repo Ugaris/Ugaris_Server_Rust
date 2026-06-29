@@ -1404,7 +1404,10 @@ fn apply_pk_hate_command(
             {
                 player.pk_hate.clear();
             }
-            Some(KeyringCommandResult::default())
+            Some(KeyringCommandResult {
+                messages: vec!["Hate list has been erased.".to_string()],
+                inventory_changed: false,
+            })
         }
         "hate" => {
             let Some(target_id) = find_online_character_by_name(world, name) else {
@@ -7208,8 +7211,10 @@ mod tests {
         player.character_id = Some(CharacterId(7));
         assert!(player.add_pk_hate(8));
 
-        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate", 0)
-            .expect("clearhate command should be recognized");
+        let not_pk =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate", 0)
+                .expect("clearhate command should be recognized");
+        assert_eq!(not_pk.messages, vec!["Hate list has been erased."]);
         assert!(player.has_pk_hate_for(8));
 
         world
@@ -7218,8 +7223,10 @@ mod tests {
             .unwrap()
             .flags
             .insert(CharacterFlags::PK);
-        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate", 0)
-            .expect("clearhate command should be recognized");
+        let cleared =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate", 0)
+                .expect("clearhate command should be recognized");
+        assert_eq!(cleared.messages, vec!["Hate list has been erased."]);
         assert!(player.pk_hate.is_empty());
     }
 
