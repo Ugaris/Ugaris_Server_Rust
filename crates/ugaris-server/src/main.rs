@@ -43,6 +43,7 @@ use ugaris_core::{
         EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
         IDR_ARMOR, IDR_HP, IDR_MANA, IDR_WEAPON,
     },
+    tell::tell_not_listening_message,
     text::{COL_DARK_GRAY, COL_LIGHT_BLUE, COL_LIGHT_GREEN, COL_LIGHT_RED, COL_ORANGE, COL_RESET},
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
@@ -892,6 +893,12 @@ struct KeyringCommandResult {
     inventory_changed: bool,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct TellCommandResult {
+    sender_messages: Vec<String>,
+    delivered_messages: Vec<(CharacterId, String)>,
+}
+
 fn legacy_help_line_bytes(line: &str) -> Vec<u8> {
     let bytes = line.as_bytes();
     let mut out = Vec::with_capacity(bytes.len() + 16);
@@ -1267,7 +1274,7 @@ fn normalize_text_command(bytes: &[u8]) -> Option<String> {
     if text.is_empty() {
         return None;
     }
-    Some(text.to_ascii_lowercase())
+    Some(text.to_string())
 }
 
 fn find_online_character_by_name(world: &World, name: &str) -> Option<CharacterId> {
@@ -1731,6 +1738,147 @@ fn apply_shutup_command(
     }
 
     Some(KeyringCommandResult::default())
+}
+
+fn apply_notells_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 3 || !"notells".starts_with(&lower) {
+        return None;
+    }
+
+    let character = world.characters.get_mut(&character_id)?;
+    character.flags.toggle(CharacterFlags::NOTELL);
+    Some(KeyringCommandResult {
+        messages: vec![format!(
+            "Turned no-tell mode {}.",
+            if character.flags.contains(CharacterFlags::NOTELL) {
+                "on"
+            } else {
+                "off"
+            }
+        )],
+        ..Default::default()
+    })
+}
+
+fn apply_tell_command(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    sender_id: CharacterId,
+    command: &str,
+    current_tick: u64,
+) -> Option<TellCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("tell") {
+        return None;
+    }
+
+    let rest = rest.trim_start();
+    let (name, message) = take_legacy_alpha_name(rest);
+    let message = message.trim_start();
+    let Some(sender) = world.characters.get(&sender_id) else {
+        return Some(TellCommandResult::default());
+    };
+
+    let Some(target_id) = find_online_character_by_name(world, name) else {
+        return Some(TellCommandResult {
+            sender_messages: vec![format!("Sorry, no player by the name {name}.")],
+            delivered_messages: Vec::new(),
+        });
+    };
+    let Some(target) = world.characters.get(&target_id) else {
+        return Some(TellCommandResult::default());
+    };
+    if message.is_empty() {
+        return Some(TellCommandResult {
+            sender_messages: vec!["Tell, yes, tell it will be, but tell what?".to_string()],
+            delivered_messages: Vec::new(),
+        });
+    }
+
+    let staffmode = sender
+        .flags
+        .intersects(CharacterFlags::STAFF | CharacterFlags::GOD);
+    if let Some(sender_runtime) = runtime.player_for_character_mut(sender_id) {
+        sender_runtime
+            .tell_data
+            .register_sent_tell(target.id.0, current_tick);
+    }
+
+    let mut result = TellCommandResult {
+        sender_messages: vec![format!("Told {}: \"{}\"", target.name, message)],
+        delivered_messages: Vec::new(),
+    };
+    if target.flags.contains(CharacterFlags::NOTELL) && !staffmode {
+        return Some(result);
+    }
+
+    let sender_name = if sender.flags.contains(CharacterFlags::STAFF) {
+        sender.name.to_ascii_uppercase()
+    } else {
+        sender.name.clone()
+    };
+    let mirror = runtime
+        .player_for_character(sender_id)
+        .map(|player| player.current_mirror_id)
+        .unwrap_or_default();
+    let staff_code = if sender.flags.contains(CharacterFlags::STAFF) {
+        " []"
+    } else {
+        ""
+    };
+    result.delivered_messages.push((
+        target_id,
+        format!(
+            "{}{} ({}) tells you: \"{}\"",
+            sender_name, staff_code, mirror, message
+        ),
+    ));
+
+    if let Some(target_runtime) = runtime.player_for_character_mut(target_id) {
+        target_runtime.tell_data.register_received_tell(sender.id.0);
+    }
+    if target_id == sender_id {
+        result
+            .sender_messages
+            .push("Do you like talking to yourself?".to_string());
+    }
+
+    Some(result)
+}
+
+fn drain_expired_tell_feedback(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    current_tick: u64,
+) -> Vec<(CharacterId, Vec<u8>)> {
+    let mut feedback = Vec::new();
+    for player in runtime.players.values_mut() {
+        let Some(character_id) = player.character_id else {
+            continue;
+        };
+        for target_id in player.tell_data.check_tells(current_tick, TICKS_PER_SECOND) {
+            let name = world
+                .characters
+                .values()
+                .find(|character| character.id.0 == target_id)
+                .map(|character| character.name.as_str())
+                .unwrap_or("Someone");
+            feedback.push((character_id, tell_not_listening_message(name)));
+        }
+    }
+    feedback
 }
 
 fn apply_nowho_command(
@@ -2897,9 +3045,12 @@ fn apply_keyring_command(
     character_id: CharacterId,
     command: &str,
 ) -> Option<KeyringCommandResult> {
-    let rest = command
-        .strip_prefix("#keyring")
-        .or_else(|| command.strip_prefix("/keyring"))?;
+    let lower = command.to_ascii_lowercase();
+    let rest = if lower.starts_with("#keyring") || lower.starts_with("/keyring") {
+        &command[8..]
+    } else {
+        return None;
+    };
     let rest = rest.trim();
 
     let Some(character) = world.characters.get(&character_id) else {
@@ -2928,7 +3079,7 @@ fn apply_keyring_command(
     }
 
     let mut words = rest.split_whitespace();
-    match words.next().unwrap_or_default() {
+    match words.next().unwrap_or_default().to_ascii_lowercase().as_str() {
         "remove" => {
             let Some(number) = words.next().and_then(|word| word.parse::<usize>().ok()) else {
                 return Some(KeyringCommandResult {
@@ -7910,6 +8061,103 @@ mod tests {
     }
 
     #[test]
+    fn tell_command_delivers_local_private_message_and_acknowledges_receipt() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        world.add_character(login_character(sender_id, &login_block("Alice"), 1, 10, 10));
+        world.add_character(login_character(target_id, &login_block("Bob"), 1, 11, 10));
+
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.insert(2, PlayerRuntime::connected(2, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+        runtime.players.get_mut(&1).unwrap().current_mirror_id = 3;
+        runtime.players.get_mut(&2).unwrap().character_id = Some(target_id);
+
+        let result = apply_tell_command(
+            &world,
+            &mut runtime,
+            sender_id,
+            "/tell Bob Hello MixedCase",
+            100,
+        )
+        .expect("tell command should be recognized");
+
+        assert_eq!(
+            result.sender_messages,
+            vec!["Told Bob: \"Hello MixedCase\""]
+        );
+        assert_eq!(
+            result.delivered_messages,
+            vec![(
+                target_id,
+                "Alice (3) tells you: \"Hello MixedCase\"".to_string()
+            )]
+        );
+        assert!(drain_expired_tell_feedback(&world, &mut runtime, 112).is_empty());
+    }
+
+    #[test]
+    fn tell_command_preserves_legacy_errors_and_self_feedback() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        world.add_character(login_character(sender_id, &login_block("Alice"), 1, 10, 10));
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+
+        let missing = apply_tell_command(&world, &mut runtime, sender_id, "/tell Bob Hi", 100)
+            .expect("tell command should be recognized");
+        assert_eq!(
+            missing.sender_messages,
+            vec!["Sorry, no player by the name Bob."]
+        );
+
+        let empty = apply_tell_command(&world, &mut runtime, sender_id, "/tell Alice", 100)
+            .expect("tell command should be recognized");
+        assert_eq!(
+            empty.sender_messages,
+            vec!["Tell, yes, tell it will be, but tell what?"]
+        );
+
+        let self_tell = apply_tell_command(&world, &mut runtime, sender_id, "/tell Alice Hi", 100)
+            .expect("tell command should be recognized");
+        assert_eq!(
+            self_tell.sender_messages,
+            vec!["Told Alice: \"Hi\"", "Do you like talking to yourself?"]
+        );
+    }
+
+    #[test]
+    fn notells_blocks_non_staff_tells_until_timeout_feedback() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        world.add_character(login_character(sender_id, &login_block("Alice"), 1, 10, 10));
+        world.add_character(login_character(target_id, &login_block("Bob"), 1, 11, 10));
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.insert(2, PlayerRuntime::connected(2, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+        runtime.players.get_mut(&2).unwrap().character_id = Some(target_id);
+
+        let toggle = apply_notells_command(&mut world, target_id, "/not").unwrap();
+        assert_eq!(toggle.messages, vec!["Turned no-tell mode on."]);
+
+        let result = apply_tell_command(&world, &mut runtime, sender_id, "/tell Bob Hi", 100)
+            .expect("tell command should be recognized");
+        assert!(result.delivered_messages.is_empty());
+        assert!(
+            drain_expired_tell_feedback(&world, &mut runtime, 100 + TICKS_PER_SECOND).is_empty()
+        );
+        assert_eq!(
+            drain_expired_tell_feedback(&world, &mut runtime, 100 + TICKS_PER_SECOND + 1),
+            vec![(sender_id, b"Bob is not listening.".to_vec())]
+        );
+    }
+
+    #[test]
     fn who_command_lists_visible_players_like_legacy_command() {
         let mut world = World::default();
         let mut warrior = login_character(CharacterId(7), &login_block("Warrior"), 1, 10, 10);
@@ -12433,6 +12681,11 @@ async fn main() -> anyhow::Result<()> {
                 let mut command_feedback_bytes = Vec::new();
                 let mut command_inventory_refresh = Vec::new();
                 let mut command_container_refresh = Vec::new();
+                for (character_id, message) in
+                    drain_expired_tell_feedback(&world, &mut runtime, world.tick.0)
+                {
+                    command_feedback_bytes.push((character_id, message));
+                }
                 for (session_id, action) in queued {
                     let Some(player) = runtime.players.get(&session_id) else {
                         continue;
@@ -12509,6 +12762,27 @@ async fn main() -> anyhow::Result<()> {
                             {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_notells_command(&mut world, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_tell_command(
+                                &world,
+                                &mut runtime,
+                                character_id,
+                                &command,
+                                world.tick.0,
+                            ) {
+                                for message in result.sender_messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                for (target_id, message) in result.delivered_messages {
+                                    command_feedback.push((target_id, message));
                                 }
                                 continue;
                             }

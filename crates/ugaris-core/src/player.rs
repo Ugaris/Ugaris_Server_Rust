@@ -6,6 +6,7 @@ use crate::{
     entity::{Character, CharacterFlags, CharacterValue, Item},
     ids::CharacterId,
     legacy::DIST_OLD,
+    tell::TellData,
 };
 
 pub const MAX_PLAYERS: usize = 512;
@@ -310,6 +311,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub max_lag_seconds: u8,
     #[serde(default)]
+    pub tell_data: TellData,
+    #[serde(default)]
     pub rune_used_words: [u32; RUNE_USED_WORDS],
     #[serde(default)]
     pub rune_special_exec: [i32; RUNE_SPECIAL_EXEC_COUNT],
@@ -358,6 +361,7 @@ impl PlayerRuntime {
             transport_seen: 0,
             current_mirror_id: 0,
             max_lag_seconds: 0,
+            tell_data: TellData::default(),
             rune_used_words: [0; RUNE_USED_WORDS],
             rune_special_exec: [0; RUNE_SPECIAL_EXEC_COUNT],
         }
