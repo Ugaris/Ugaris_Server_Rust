@@ -3802,7 +3802,7 @@ impl World {
         area_id: u16,
         random: &mut impl FnMut(u32) -> u32,
     ) -> bool {
-        let mut tasks = self.simple_baddy_fight_tasks(character_id, target);
+        let mut tasks = self.simple_baddy_fight_tasks(character_id, target, area_id);
         let level = self
             .characters
             .get(&character_id)
@@ -3881,6 +3881,7 @@ impl World {
         &self,
         character_id: CharacterId,
         target: &Character,
+        area_id: u16,
     ) -> Vec<FightDriverTask> {
         let Some(attacker) = self.characters.get(&character_id) else {
             return Vec::new();
@@ -4019,7 +4020,7 @@ impl World {
             kind: FightDriverTaskKind::Attack,
             value: simple_baddy_attack_task_value(attacker),
         });
-        if self.simple_baddy_needs_regeneration(attacker) {
+        if area_id != 33 && self.simple_baddy_needs_regeneration(attacker) {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::Regenerate,
                 value: self.simple_baddy_regenerate_task_value(attacker),
@@ -11534,6 +11535,41 @@ mod tests {
         ];
 
         assert!(fight_driver_attackback_may_run(&tasks, 0));
+    }
+
+    #[test]
+    fn simple_baddy_fight_tasks_skip_regeneration_in_area_33_like_c() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.hp = POWERSCALE;
+        npc.mana = POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 10;
+        npc.values[0][CharacterValue::Mana as usize] = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        let area_one_tasks = world.simple_baddy_fight_tasks(
+            CharacterId(1),
+            world.characters.get(&CharacterId(2)).unwrap(),
+            1,
+        );
+        let area_thirty_three_tasks = world.simple_baddy_fight_tasks(
+            CharacterId(1),
+            world.characters.get(&CharacterId(2)).unwrap(),
+            33,
+        );
+
+        assert!(area_one_tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::Regenerate));
+        assert!(!area_thirty_three_tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::Regenerate));
     }
 
     #[test]
