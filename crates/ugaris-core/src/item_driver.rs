@@ -664,6 +664,8 @@ pub enum ItemDriverOutcome {
     EdemonDoorToggle {
         item_id: ItemId,
         character_id: CharacterId,
+        key_name: Option<[u8; OUTCOME_ITEM_NAME_BYTES]>,
+        locking: bool,
     },
     EdemonDoorLocked {
         item_id: ItemId,
@@ -6141,20 +6143,25 @@ fn edemon_door_driver(
         return ItemDriverOutcome::EdemonDoorToggle {
             item_id: item.id,
             character_id: character.id,
+            key_name: None,
+            locking: false,
         };
     }
 
     let required_key_id = door_required_key_id(item);
+    let mut key_name = None;
     if required_key_id != 0 {
-        let has_exact_carried_key = context.door_key.as_ref().is_some_and(|key| {
-            key.source == DoorKeySource::Carried && key.key_id == required_key_id
-        });
-        if !has_exact_carried_key {
+        let Some(key) = context
+            .door_key
+            .as_ref()
+            .filter(|key| key.source == DoorKeySource::Carried && key.key_id == required_key_id)
+        else {
             return ItemDriverOutcome::EdemonDoorLocked {
                 item_id: item.id,
                 character_id: character.id,
             };
-        }
+        };
+        key_name = Some(outcome_item_name(&key.name));
     }
 
     if context.edemon_section_power.unwrap_or_default() == 0 {
@@ -6167,6 +6174,8 @@ fn edemon_door_driver(
     ItemDriverOutcome::EdemonDoorToggle {
         item_id: item.id,
         character_id: character.id,
+        key_name,
+        locking: item.driver_data[0] != 0,
     }
 }
 
@@ -10976,6 +10985,8 @@ mod tests {
             ItemDriverOutcome::EdemonDoorToggle {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
+                key_name: Some(outcome_item_name("Copper Key")),
+                locking: false,
             }
         );
 
@@ -11028,6 +11039,8 @@ mod tests {
             ItemDriverOutcome::EdemonDoorToggle {
                 item_id: ItemId(7),
                 character_id: CharacterId(0),
+                key_name: None,
+                locking: false,
             }
         );
         assert_eq!(door.driver_data[39], 0);

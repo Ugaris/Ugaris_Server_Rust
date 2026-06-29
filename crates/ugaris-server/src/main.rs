@@ -18219,6 +18219,20 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorToggle {
+                                            character_id,
+                                            key_name: Some(key_name),
+                                            locking,
+                                            ..
+                                        } => {
+                                            let action = if locking { "lock" } else { "unlock" };
+                                            let key_name = outcome_item_name_text(&key_name);
+                                            feedback.push((
+                                                character_id,
+                                                format!("You use {key_name} to {action} the door."),
+                                            ));
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }

@@ -6246,6 +6246,7 @@ impl World {
             ItemDriverOutcome::EdemonDoorToggle {
                 item_id,
                 character_id,
+                ..
             } => {
                 if self.toggle_door(item_id, character_id) == DoorToggleResult::Toggled {
                     outcome
