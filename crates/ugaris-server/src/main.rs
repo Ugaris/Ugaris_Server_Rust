@@ -16861,6 +16861,27 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Please empty your 'hand' (mouse cursor) first.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::DungeonDoorMissingKeys { character_id, missing, both_required, .. } => {
+                                            if both_required {
+                                                feedback.push((
+                                                    character_id,
+                                                    format!("You need {missing} more key{}.", if missing > 1 { "s" } else { "" }),
+                                                ));
+                                            } else {
+                                                feedback.push((character_id, "You need a key.".to_string()));
+                                            }
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::DungeonDoorTooManyDefenders { character_id, alive, max_allowed, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                format!("Too many Defenders are still alive ({alive} vs {max_allowed})."),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::DungeonDoorSolved { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeFind { item_id, character_id, find } => {
                                             let random_seed = world.tick.0
                                                 ^ (u64::from(item_id.0) << 16)

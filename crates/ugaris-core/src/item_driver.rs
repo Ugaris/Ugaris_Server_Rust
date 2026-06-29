@@ -356,6 +356,9 @@ pub struct ItemDriverContext {
     pub bone_hint_pos: Option<u8>,
     pub has_area17_library_key: bool,
     pub has_area17_lockpick: bool,
+    pub has_dungeon_door_key1: bool,
+    pub has_dungeon_door_key2: bool,
+    pub dungeon_defender_count: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -551,6 +554,25 @@ pub enum ItemDriverOutcome {
     DungeonKeyCursorOccupied {
         item_id: ItemId,
         character_id: CharacterId,
+    },
+    DungeonDoorMissingKeys {
+        item_id: ItemId,
+        character_id: CharacterId,
+        missing: u8,
+        both_required: bool,
+    },
+    DungeonDoorTooManyDefenders {
+        item_id: ItemId,
+        character_id: CharacterId,
+        alive: u16,
+        max_allowed: u16,
+    },
+    DungeonDoorSolved {
+        item_id: ItemId,
+        character_id: CharacterId,
+        clan_number: u32,
+        catacomb: u8,
+        first_solve: bool,
     },
     DoorToggle {
         item_id: ItemId,
@@ -1602,6 +1624,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
                 IDR_DUNGEONTELE => dungeon_teleport_driver(character, item),
                 IDR_DUNGEONFAKE => dungeon_fake_driver(character, item),
+                IDR_DUNGEONDOOR => dungeon_door_driver(character, item, context),
                 IDR_DUNGEONKEY => dungeon_key_driver(character, item),
                 IDR_FLASK => flask_driver(character, item, context, area_id, in_arena),
                 IDR_DOUBLE_DOOR => double_door_driver(character, item),
@@ -4996,6 +5019,61 @@ fn dungeon_key_driver(character: &Character, item: &mut Item) -> ItemDriverOutco
     }
 }
 
+fn dungeon_door_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let key1 = drdata_u32(item, 0);
+    let key2 = drdata_u32(item, 4);
+    let mut missing = 0;
+    if key1 != 0 && !context.has_dungeon_door_key1 {
+        missing += 1;
+    }
+    if key2 != 0 && !context.has_dungeon_door_key2 {
+        missing += 1;
+    }
+    if missing != 0 {
+        return ItemDriverOutcome::DungeonDoorMissingKeys {
+            item_id: item.id,
+            character_id: character.id,
+            missing,
+            both_required: key1 != 0 && key2 != 0,
+        };
+    }
+
+    let alive = context.dungeon_defender_count.unwrap_or(0);
+    if alive > 20 {
+        return ItemDriverOutcome::DungeonDoorTooManyDefenders {
+            item_id: item.id,
+            character_id: character.id,
+            alive,
+            max_allowed: 20,
+        };
+    }
+
+    let catacomb = (((u32::from(item.x).saturating_sub(2)) / 81)
+        + ((u32::from(item.y).saturating_sub(2)) / 81) * 3) as u8;
+    let first_solve = drdata(item, 12) == 0;
+    if first_solve {
+        set_drdata_u32(item, 0, 0);
+        set_drdata_u32(item, 4, 0);
+        set_drdata(item, 12, 1);
+    }
+
+    ItemDriverOutcome::DungeonDoorSolved {
+        item_id: item.id,
+        character_id: character.id,
+        clan_number: drdata_u32(item, 8),
+        catacomb,
+        first_solve,
+    }
+}
+
 fn teleport_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     let target_x = drdata_u16(item, 0);
     let target_y = drdata_u16(item, 2);
@@ -6386,6 +6464,91 @@ mod tests {
                 character_id: CharacterId(1),
             }
         );
+    }
+
+    #[test]
+    fn dungeon_door_ports_key_and_defender_gates() {
+        let mut actor = character(1);
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_DUNGEONDOOR);
+        door.x = 164;
+        door.y = 83;
+        door.driver_data = vec![
+            0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55, 9, 0, 0, 0, 0,
+        ];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_DUNGEONDOOR,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let missing = execute_item_driver_with_context(
+            &mut actor,
+            &mut door,
+            request,
+            13,
+            false,
+            &ItemDriverContext::default(),
+        );
+        assert_eq!(
+            missing,
+            ItemDriverOutcome::DungeonDoorMissingKeys {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                missing: 2,
+                both_required: true,
+            }
+        );
+
+        let too_many = execute_item_driver_with_context(
+            &mut actor,
+            &mut door,
+            request,
+            13,
+            false,
+            &ItemDriverContext {
+                has_dungeon_door_key1: true,
+                has_dungeon_door_key2: true,
+                dungeon_defender_count: Some(21),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(
+            too_many,
+            ItemDriverOutcome::DungeonDoorTooManyDefenders {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                alive: 21,
+                max_allowed: 20,
+            }
+        );
+
+        let solved = execute_item_driver_with_context(
+            &mut actor,
+            &mut door,
+            request,
+            13,
+            false,
+            &ItemDriverContext {
+                has_dungeon_door_key1: true,
+                has_dungeon_door_key2: true,
+                dungeon_defender_count: Some(20),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(
+            solved,
+            ItemDriverOutcome::DungeonDoorSolved {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                clan_number: 9,
+                catacomb: 5,
+                first_solve: true,
+            }
+        );
+        assert_eq!(drdata_u32(&door, 0), 0);
+        assert_eq!(drdata_u32(&door, 4), 0);
+        assert_eq!(door.driver_data[12], 1);
     }
 
     #[test]

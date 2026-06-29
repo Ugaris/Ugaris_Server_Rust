@@ -28,9 +28,9 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item, ItemDriverContext,
         ItemDriverOutcome, ItemDriverRequest, UseItemError, UseItemOutcome, IDR_CALIGAR,
-        IDR_CALIGARFLAME, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_FDEMONFARM, IDR_FDEMONLIGHT,
-        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-        IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_FDEMONFARM,
+        IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT,
+        IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2495,6 +2495,60 @@ impl World {
         )
     }
 
+    fn dungeon_door_context(
+        &self,
+        character_id: CharacterId,
+        item_id: ItemId,
+    ) -> (bool, bool, u16) {
+        let Some(item) = self.items.get(&item_id) else {
+            return (false, false, 0);
+        };
+        let key1 = read_u32_le_at(&item.driver_data, 0);
+        let key2 = read_u32_le_at(&item.driver_data, 4);
+        let has_key1 = key1 == 0 || self.character_has_template_id(character_id, key1);
+        let has_key2 = key2 == 0 || self.character_has_template_id(character_id, key2);
+
+        let catacomb = ((usize::from(item.x).saturating_sub(2)) / 81)
+            + ((usize::from(item.y).saturating_sub(2)) / 81) * 3;
+        let xf = (catacomb % 3) * 81 + 2;
+        let yf = (catacomb / 3) * 81 + 2;
+        let mut defenders = 0u16;
+        for x in xf..xf + 80 {
+            for y in yf..yf + 80 {
+                let Some(tile) = self.map.tile(x, y) else {
+                    continue;
+                };
+                if tile.character == 0 {
+                    continue;
+                }
+                if let Some(character) =
+                    self.characters.get(&CharacterId(u32::from(tile.character)))
+                {
+                    if !character.flags.contains(CharacterFlags::PLAYER) {
+                        defenders = defenders.saturating_add(1);
+                    }
+                }
+            }
+        }
+
+        (has_key1, has_key2, defenders)
+    }
+
+    fn character_has_template_id(&self, character_id: CharacterId, template_id: u32) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        character
+            .cursor_item
+            .into_iter()
+            .chain(character.inventory.iter().flatten().copied())
+            .any(|item_id| {
+                self.items
+                    .get(&item_id)
+                    .is_some_and(|item| item.template_id == template_id)
+            })
+    }
+
     pub fn execute_item_driver_request_with_context(
         &mut self,
         request: ItemDriverRequest,
@@ -2544,6 +2598,8 @@ impl World {
             && context.edemon_section_power.is_none())
         .then(|| edemon_section_power_for_light(&self.items, item_id))
         .flatten();
+        let dungeon_door_context = (driver == Some(IDR_DUNGEONDOOR))
+            .then(|| self.dungeon_door_context(character_id, item_id));
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -2557,6 +2613,13 @@ impl World {
         }
         if effective_context.edemon_section_power.is_none() {
             effective_context.edemon_section_power = edemon_section_power;
+        }
+        if let Some((has_key1, has_key2, defender_count)) = dungeon_door_context {
+            effective_context.has_dungeon_door_key1 |= has_key1;
+            effective_context.has_dungeon_door_key2 |= has_key2;
+            effective_context.dungeon_defender_count = effective_context
+                .dungeon_defender_count
+                .or(Some(defender_count));
         }
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
@@ -5687,6 +5750,16 @@ impl World {
                 character_id, x, y, ..
             } => {
                 if self.teleport_character(character_id, x, y, false) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::DungeonDoorSolved { character_id, .. } => {
+                if [(245, 250), (240, 250), (235, 250), (230, 250)]
+                    .into_iter()
+                    .any(|(x, y)| self.teleport_character(character_id, x, y, false))
+                {
                     outcome
                 } else {
                     ItemDriverOutcome::Noop
