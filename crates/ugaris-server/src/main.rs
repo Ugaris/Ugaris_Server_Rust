@@ -4296,15 +4296,16 @@ fn special_potion_fun_message(
     character_id: CharacterId,
     kind: u8,
 ) -> Option<String> {
-    let name = world
-        .characters
-        .get(&character_id)
+    let character = world.characters.get(&character_id);
+    let name = character
         .map(|character| character.name.as_str())
         .unwrap_or("Someone");
+    let his = legacy_hisname(character);
+    let him = legacy_himname(character);
 
     match kind {
         8 => Some(format!(
-            "You see {name} hit himself on the head with a mug."
+            "You see {name} hit {him}self on the head with a mug."
         )),
         9 => Some(format!(
             "{name} suddenly starts singing in a slurred tongue... Dogs start howling..."
@@ -4315,9 +4316,25 @@ fn special_potion_fun_message(
         11 => Some(format!("{name} seems to be enjoying a fine ale.")),
         12 => Some(format!("{name} drinks a delicious apple juice.")),
         13 => Some(format!("{name} feels refreshed.")),
-        14 => Some(format!("{name} cracks his strong knuckles.")),
+        14 => Some(format!("{name} cracks {his} strong knuckles.")),
         15 => Some(format!("{name} starts frothing at the mouth.")),
         _ => None,
+    }
+}
+
+fn legacy_hisname(character: Option<&Character>) -> &'static str {
+    match character.map(|character| character.flags) {
+        Some(flags) if flags.contains(CharacterFlags::MALE) => "his",
+        Some(flags) if flags.contains(CharacterFlags::FEMALE) => "her",
+        _ => "its",
+    }
+}
+
+fn legacy_himname(character: Option<&Character>) -> &'static str {
+    match character.map(|character| character.flags) {
+        Some(flags) if flags.contains(CharacterFlags::MALE) => "him",
+        Some(flags) if flags.contains(CharacterFlags::FEMALE) => "her",
+        _ => "it",
     }
 }
 
@@ -8657,7 +8674,9 @@ mod tests {
     fn special_potion_fun_message_matches_legacy_text() {
         let mut world = World::default();
         let login = login_block("Ralph");
-        world.add_character(login_character(CharacterId(1), &login, 1, 10, 10));
+        let mut character = login_character(CharacterId(1), &login, 1, 10, 10);
+        character.flags |= CharacterFlags::MALE;
+        world.add_character(character);
 
         assert_eq!(
             special_potion_fun_message(&world, CharacterId(1), 8).as_deref(),
@@ -8692,6 +8711,34 @@ mod tests {
             Some("Ralph starts frothing at the mouth.")
         );
         assert_eq!(special_potion_fun_message(&world, CharacterId(1), 7), None);
+    }
+
+    #[test]
+    fn special_potion_fun_message_uses_legacy_gender_pronouns() {
+        let mut world = World::default();
+        let login = login_block("Maggie");
+        let mut female = login_character(CharacterId(1), &login, 1, 10, 10);
+        female.flags |= CharacterFlags::FEMALE;
+        world.add_character(female);
+        let login = login_block("Snowball");
+        world.add_character(login_character(CharacterId(2), &login, 1, 10, 11));
+
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 8).as_deref(),
+            Some("You see Maggie hit herself on the head with a mug.")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(1), 14).as_deref(),
+            Some("Maggie cracks her strong knuckles.")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(2), 8).as_deref(),
+            Some("You see Snowball hit itself on the head with a mug.")
+        );
+        assert_eq!(
+            special_potion_fun_message(&world, CharacterId(2), 14).as_deref(),
+            Some("Snowball cracks its strong knuckles.")
+        );
     }
 
     #[test]
