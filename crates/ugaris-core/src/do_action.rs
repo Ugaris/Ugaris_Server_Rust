@@ -79,6 +79,9 @@ pub struct ItemUseRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttackResolution {
     pub hit: bool,
+    pub attack_skill: i32,
+    pub parry_skill: i32,
+    pub hit_chance: i32,
     pub raw_damage: i32,
     pub armor_divisor: i32,
     pub armor_percent: i32,
@@ -1093,6 +1096,9 @@ pub fn act_attack(
     if !attack_roll_hits(d100_roll, chance.hit_chance) {
         return Some(AttackResolution {
             hit: false,
+            attack_skill: attack,
+            parry_skill: parry,
+            hit_chance: chance.hit_chance,
             raw_damage: 0,
             armor_divisor: ATTACK_DIV,
             armor_percent: chance.armor_percent,
@@ -1126,6 +1132,9 @@ pub fn act_attack(
 
     Some(AttackResolution {
         hit: true,
+        attack_skill: attack,
+        parry_skill: parry,
+        hit_chance: chance.hit_chance,
         raw_damage,
         armor_divisor: ATTACK_DIV,
         armor_percent: chance.armor_percent,
@@ -2219,6 +2228,9 @@ mod tests {
             act_attack(&mut attacker, &mut defender, &map, 50, 6),
             Some(AttackResolution {
                 hit: false,
+                attack_skill: 10,
+                parry_skill: 10,
+                hit_chance: 50,
                 raw_damage: 0,
                 armor_divisor: ATTACK_DIV,
                 armor_percent: 90,

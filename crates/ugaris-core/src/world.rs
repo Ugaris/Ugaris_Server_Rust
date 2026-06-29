@@ -2427,6 +2427,23 @@ impl World {
         let Some(resolution) = resolution else {
             return false;
         };
+        if self.show_attack_debug {
+            if let Some(defender) = self.characters.get(&defender_id) {
+                self.pending_system_texts.push(WorldSystemText {
+                    character_id: attacker_id,
+                    message: format!(
+                        "attack {}, diff={} ({} {}), chan={}, percent={}, dam={}",
+                        defender.name,
+                        resolution.attack_skill - resolution.parry_skill,
+                        resolution.attack_skill,
+                        resolution.parry_skill,
+                        resolution.hit_chance,
+                        resolution.armor_percent,
+                        resolution.raw_damage * resolution.armor_divisor / POWERSCALE,
+                    ),
+                });
+            }
+        }
         let sound_type = if resolution.hit {
             7
         } else if !attacker_rhand || !defender_rhand {
@@ -17723,6 +17740,36 @@ mod tests {
         assert_eq!(
             world.drain_pending_sound_specials()[0].special.special_type,
             35
+        );
+    }
+
+    #[test]
+    fn completed_attack_queues_legacy_showattack_pre_hurt_line() {
+        let mut world = World::default();
+        world.show_attack_debug = true;
+        let mut attacker = character(1);
+        attacker.x = 10;
+        attacker.y = 10;
+        attacker.dir = Direction::Right as u8;
+        attacker.act1 = 2;
+        attacker.values[0][CharacterValue::Attack as usize] = 10;
+        attacker.values[0][CharacterValue::Weapon as usize] = 10;
+        let mut defender = character(2);
+        defender.name = "Target".to_string();
+        defender.x = 11;
+        defender.y = 10;
+        defender.dir = Direction::Left as u8;
+        defender.values[0][CharacterValue::Parry as usize] = 10;
+        world.spawn_character(attacker, 10, 10);
+        world.spawn_character(defender, 11, 10);
+
+        assert!(world.complete_attack_with_rolls(CharacterId(1), CharacterId(2), 49, 6));
+
+        let texts = world.drain_pending_system_texts();
+        assert_eq!(texts[0].character_id, CharacterId(1));
+        assert_eq!(
+            texts[0].message,
+            "attack Target, diff=0 (10 10), chan=50, percent=90, dam=16"
         );
     }
 
