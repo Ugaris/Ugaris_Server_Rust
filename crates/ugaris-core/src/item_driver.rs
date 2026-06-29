@@ -76,6 +76,7 @@ pub const IDR_ANTIORBSPAWN: u16 = 162;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_LAB3_PLANT: u16 = 193;
 pub const IDR_KEY_RING: u16 = 200;
+pub const IID_ALCHEMY_INGREDIENT: u32 = (0x01 << 24) | 0x000043;
 pub const IID_AREA18_BONE: u32 = (0x01 << 24) | 0x000077;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
 pub const IID_AREA2_ZOMBIESKULL1: u32 = (0x01 << 24) | 0x000025;
@@ -739,6 +740,37 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    FlaskIngredientAdded {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        ingredient_kind: u8,
+    },
+    FlaskWrongCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    FlaskFull {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    FlaskFinishedNoMoreIngredients {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    FlaskEmptyShaken {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    FlaskIngredientBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    FlaskShakeUnported {
+        item_id: ItemId,
+        character_id: CharacterId,
+        shaken: bool,
+    },
     LizardFlowerMixed {
         item_id: ItemId,
         character_id: CharacterId,
@@ -941,6 +973,7 @@ pub fn execute_item_driver_with_context(
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
+                IDR_FLASK => flask_driver(character, item, context, in_arena),
                 IDR_DOUBLE_DOOR => double_door_driver(character, item),
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
                 IDR_TELEPORT => teleport_driver(character, item),
@@ -1175,6 +1208,76 @@ fn alchemy_flower_driver(character: &Character, item: &Item, area_id: u16) -> It
         character_id: character.id,
         kind: item.driver_data.first().copied().unwrap_or_default(),
         location_id: u32::from(item.x) + (u32::from(item.y) << 8) + (u32::from(area_id) << 16),
+    }
+}
+
+fn flask_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+    in_arena: bool,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+    if in_arena {
+        return ItemDriverOutcome::BlockedByArea {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let size = drdata(item, 0);
+    let used = drdata(item, 1);
+    let shaken = drdata(item, 2) != 0;
+
+    if shaken && character.cursor_item.is_some() {
+        return ItemDriverOutcome::FlaskFinishedNoMoreIngredients {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let Some(cursor_item_id) = character.cursor_item else {
+        if shaken || used != 0 {
+            return ItemDriverOutcome::FlaskShakeUnported {
+                item_id: item.id,
+                character_id: character.id,
+                shaken,
+            };
+        }
+        return ItemDriverOutcome::FlaskEmptyShaken {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    if context.cursor_template_id != Some(IID_ALCHEMY_INGREDIENT) {
+        return ItemDriverOutcome::FlaskWrongCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if used >= size.saturating_mul(3) {
+        return ItemDriverOutcome::FlaskFull {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let ingredient_kind = context.cursor_drdata0.unwrap_or_default();
+    if !(1..=29).contains(&ingredient_kind) {
+        return ItemDriverOutcome::FlaskIngredientBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::FlaskIngredientAdded {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        ingredient_kind,
     }
 }
 
@@ -3914,6 +4017,100 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut timer_character, &mut flower, request, 7, false),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn flask_driver_ports_ingredient_gates_and_add_outcome() {
+        let mut actor = character(1);
+        actor.cursor_item = Some(ItemId(9));
+        let mut flask = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLASK);
+        flask.carried_by = Some(CharacterId(1));
+        flask.driver_data = vec![2, 1, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FLASK,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IID_ALCHEMY_INGREDIENT, (1 << 24) | 0x43);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut flask,
+                request,
+                1,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::FlaskWrongCursor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let context = ItemDriverContext {
+            cursor_template_id: Some(IID_ALCHEMY_INGREDIENT),
+            cursor_drdata0: Some(7),
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut flask, request, 1, false, &context),
+            ItemDriverOutcome::FlaskIngredientAdded {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
+                ingredient_kind: 7,
+            }
+        );
+
+        flask.driver_data[1] = 6;
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut flask, request, 1, false, &context),
+            ItemDriverOutcome::FlaskFull {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn flask_driver_ports_empty_shake_arena_and_finished_blocks() {
+        let mut actor = character(1);
+        let mut flask = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLASK);
+        flask.carried_by = Some(CharacterId(1));
+        flask.driver_data = vec![1, 0, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FLASK,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut flask, request, 1, true),
+            ItemDriverOutcome::BlockedByArea {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut flask, request, 1, false),
+            ItemDriverOutcome::FlaskEmptyShaken {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.cursor_item = Some(ItemId(9));
+        flask.driver_data[2] = 1;
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut flask, request, 1, false),
+            ItemDriverOutcome::FlaskFinishedNoMoreIngredients {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
         );
     }
 

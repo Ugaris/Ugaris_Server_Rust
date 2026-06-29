@@ -3840,6 +3840,7 @@ fn item_driver_context_for_request(
     };
     if *driver == ugaris_core::item_driver::IDR_ASSEMBLE
         || *driver == ugaris_core::item_driver::IDR_PALACEKEY
+        || *driver == ugaris_core::item_driver::IDR_FLASK
     {
         let cursor_item = world
             .characters
@@ -3849,7 +3850,9 @@ fn item_driver_context_for_request(
         return ugaris_core::item_driver::ItemDriverContext {
             door_key: None,
             cursor_template_id: cursor_item.map(|item| item.template_id),
+            cursor_driver: cursor_item.map(|item| item.driver),
             cursor_sprite: cursor_item.map(|item| item.sprite),
+            cursor_drdata0: cursor_item.and_then(|item| item.driver_data.first().copied()),
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
@@ -4195,6 +4198,53 @@ fn apply_pick_alchemy_flower(
     };
     player.mark_flower_used(location_id, realtime_seconds);
     PickBerryApplyResult::Picked(item_name)
+}
+
+fn apply_flask_ingredient_added(
+    world: &mut World,
+    character_id: CharacterId,
+    flask_id: ItemId,
+    cursor_item_id: ItemId,
+    ingredient_kind: u8,
+) -> Option<String> {
+    let ingredient_name = world.items.get(&cursor_item_id)?.name.clone();
+    let flask = world.items.get_mut(&flask_id)?;
+    let size = flask.driver_data.first().copied().unwrap_or_default();
+    let used = flask.driver_data.get(1).copied().unwrap_or_default();
+
+    flask.name = "Unfinished Potion".to_string();
+    match size {
+        1 => {
+            flask.sprite = 50204 + i32::from(used);
+            flask.description = "A small flask containing some strange liquid.".to_string();
+        }
+        2 => {
+            flask.sprite = 50207 + i32::from(used);
+            flask.description = "A flask containing some strange liquid.".to_string();
+        }
+        3 => {
+            flask.sprite = 50243 + i32::from(used);
+            flask.description = "A big flask containing some strange liquid.".to_string();
+        }
+        _ => {}
+    }
+    if flask.driver_data.len() <= usize::from(ingredient_kind) + 10 {
+        flask
+            .driver_data
+            .resize(usize::from(ingredient_kind) + 11, 0);
+    }
+    flask.driver_data[1] = flask.driver_data[1].saturating_add(1);
+    let ingredient_slot = usize::from(ingredient_kind) + 10;
+    flask.driver_data[ingredient_slot] = flask.driver_data[ingredient_slot].saturating_add(1);
+
+    world.items.remove(&cursor_item_id);
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        if character.cursor_item == Some(cursor_item_id) {
+            character.cursor_item = None;
+        }
+        character.flags.insert(CharacterFlags::ITEMS);
+    }
+    Some(ingredient_name)
 }
 
 fn random_chest_location_id(x: u16, y: u16, area_id: u16) -> u32 {
@@ -14290,11 +14340,11 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::LabExitUse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BeyondPotion { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::OxygenPotion { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
                                             executed += 1;
@@ -14707,6 +14757,49 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PickAlchemyFlowerCursorOccupied { character_id, .. } => {
                                             feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskIngredientAdded {
+                                            item_id,
+                                            character_id,
+                                            cursor_item_id,
+                                            ingredient_kind,
+                                        } => {
+                                            if let Some(name) = apply_flask_ingredient_added(
+                                                &mut world,
+                                                character_id,
+                                                item_id,
+                                                cursor_item_id,
+                                                ingredient_kind,
+                                            ) {
+                                                feedback.push((character_id, format!("You put {name} into the flask.")));
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskWrongCursor { character_id, .. } => {
+                                            feedback.push((character_id, "That's not an ingredient you can use in a flask.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskFull { character_id, .. } => {
+                                            feedback.push((character_id, "The Flask is full.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskFinishedNoMoreIngredients { character_id, .. } => {
+                                            feedback.push((character_id, "This potion is finished. You cannot add more ingredients.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskEmptyShaken { character_id, .. } => {
+                                            feedback.push((character_id, "You shake the empty bottle, but nothing happens.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskIngredientBug { character_id, .. } => {
+                                            feedback.push((character_id, "BUG # 231...".to_string()));
+                                            failed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskShakeUnported { character_id, .. } => {
+                                            feedback.push((character_id, "The potion mixer is not fully ported yet.".to_string()));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerMixed {
