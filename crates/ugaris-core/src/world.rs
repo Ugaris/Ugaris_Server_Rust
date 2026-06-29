@@ -5801,6 +5801,31 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             },
+            ItemDriverOutcome::FreakDoorUse {
+                item_id,
+                character_id,
+                link_group,
+                one_way,
+                recursion_guard,
+                cached_partner_id,
+                no_target,
+            } => {
+                if recursion_guard {
+                    return ItemDriverOutcome::Noop;
+                }
+                if self.use_freak_door(
+                    item_id,
+                    character_id,
+                    link_group,
+                    one_way,
+                    cached_partner_id,
+                    no_target,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::TriggerMapItem {
                 x,
                 y,
@@ -8474,6 +8499,105 @@ impl World {
         }
 
         toggled
+    }
+
+    fn use_freak_door(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        link_group: u8,
+        one_way: bool,
+        cached_partner_id: Option<ItemId>,
+        no_target: bool,
+    ) -> bool {
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        let item_x = item.x;
+        let item_y = item.y;
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let character_x = character.x;
+        let character_y = character.y;
+
+        let effective_group = if one_way { 0 } else { link_group };
+        let partner_id = if effective_group == 0 {
+            item_id
+        } else if let Some(partner_id) = cached_partner_id.filter(|id| self.items.contains_key(id))
+        {
+            partner_id
+        } else {
+            let Some(found_id) = self.items.iter().find_map(|(candidate_id, candidate)| {
+                (candidate_id != &item_id
+                    && candidate.driver == crate::item_driver::IDR_FREAKDOOR
+                    && candidate.driver_data.get(15).copied().unwrap_or_default() == 0
+                    && candidate.driver_data.get(8).copied().unwrap_or_default() == effective_group)
+                    .then_some(*candidate_id)
+            }) else {
+                return false;
+            };
+            if let Some(item) = self.items.get_mut(&item_id) {
+                write_driver_data_u32(item, 10, found_id.0);
+            }
+            found_id
+        };
+
+        if item_x != character_x || item_y != character_y {
+            let toggled = self.toggle_door(item_id, character_id) == DoorToggleResult::Toggled;
+            let opened = self.items.get(&item_id).is_some_and(door_open_state);
+            let partner_closed = self
+                .items
+                .get(&partner_id)
+                .is_some_and(|partner| !door_open_state(partner));
+            if partner_id != item_id && opened && partner_closed {
+                self.toggle_door(partner_id, character_id);
+            }
+            return toggled;
+        }
+
+        if partner_id == item_id || no_target {
+            return false;
+        }
+        if self
+            .items
+            .get(&partner_id)
+            .is_some_and(|partner| !door_open_state(partner))
+        {
+            self.toggle_door(partner_id, character_id);
+        }
+
+        let Some(partner) = self.items.get(&partner_id) else {
+            return false;
+        };
+        let (target_x, target_y) = (partner.x, partner.y);
+        let (dx, dy) = self
+            .characters
+            .get(&character_id)
+            .map(|character| {
+                (
+                    i32::from(character.tox) - i32::from(character.x),
+                    i32::from(character.toy) - i32::from(character.y),
+                )
+            })
+            .unwrap_or((0, 0));
+
+        if let Some(partner) = self.items.get_mut(&partner_id) {
+            partner.driver_data.resize(10, 0);
+            partner.driver_data[9] = 1;
+        }
+        let teleported = self.teleport_character(character_id, target_x, target_y, false);
+        if let Some(partner) = self.items.get_mut(&partner_id) {
+            partner.driver_data.resize(10, 0);
+            partner.driver_data[9] = 0;
+        }
+        if teleported && (dx != 0 || dy != 0) {
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                character.tox = (i32::from(character.x) + dx).clamp(0, u16::MAX as i32) as u16;
+                character.toy = (i32::from(character.y) + dy).clamp(0, u16::MAX as i32) as u16;
+            }
+        }
+        teleported
     }
 
     fn teleport_character(
@@ -11928,6 +12052,11 @@ fn door_open_state(item: &Item) -> bool {
     item.driver_data.first().copied().unwrap_or_default() != 0
 }
 
+fn write_driver_data_u32(item: &mut Item, offset: usize, value: u32) {
+    item.driver_data.resize(offset + 4, 0);
+    item.driver_data[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
 fn current_modifier_value(item: &Item, modifier: i16) -> Option<i16> {
     item.modifier_index
         .iter()
@@ -11988,9 +12117,15 @@ fn apply_door_tile_flags(tile: &mut crate::map::MapTile, item_flags: ItemFlags) 
 }
 
 fn read_u32_le_prefix(bytes: &[u8]) -> u32 {
+    read_u32_le_at(bytes, 0)
+}
+
+fn read_u32_le_at(bytes: &[u8], offset: usize) -> u32 {
     let mut raw = [0; 4];
-    let len = bytes.len().min(raw.len());
-    raw[..len].copy_from_slice(&bytes[..len]);
+    if offset < bytes.len() {
+        let len = (bytes.len() - offset).min(raw.len());
+        raw[..len].copy_from_slice(&bytes[offset..offset + len]);
+    }
     u32::from_le_bytes(raw)
 }
 
@@ -18970,6 +19105,74 @@ mod tests {
         assert_eq!((character.x, character.y), (11, 10));
         assert_eq!(world.map.tile(9, 10).unwrap().character, 0);
         assert_eq!(world.map.tile(11, 10).unwrap().character, 1);
+    }
+
+    #[test]
+    fn world_executes_freakdoor_partner_teleport_and_caches_partner() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.x = 10;
+        character.y = 10;
+        character.tox = 11;
+        character.toy = 10;
+        world.map.tile_mut(10, 10).unwrap().character = 1;
+        world.add_character(character);
+
+        let door_flags = ItemFlags::USED
+            | ItemFlags::USE
+            | ItemFlags::DOOR
+            | ItemFlags::MOVEBLOCK
+            | ItemFlags::SIGHTBLOCK;
+        let mut first = item(7, door_flags);
+        first.driver = crate::item_driver::IDR_FREAKDOOR;
+        first.x = 10;
+        first.y = 10;
+        first.driver_data = vec![0; 16];
+        first.driver_data[8] = 3;
+        world.map.tile_mut(10, 10).unwrap().item = 7;
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK | MapFlags::DOOR);
+        world.add_item(first);
+
+        let mut second = item(8, door_flags);
+        second.driver = crate::item_driver::IDR_FREAKDOOR;
+        second.x = 20;
+        second.y = 20;
+        second.driver_data = vec![0; 16];
+        second.driver_data[8] = 3;
+        world.map.tile_mut(20, 20).unwrap().item = 8;
+        world
+            .map
+            .tile_mut(20, 20)
+            .unwrap()
+            .flags
+            .insert(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK | MapFlags::DOOR);
+        world.add_item(second);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_FREAKDOOR,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::FreakDoorUse { .. }));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((character.x, character.y), (20, 20));
+        assert_eq!((character.tox, character.toy), (21, 20));
+        assert_eq!(world.map.tile(10, 10).unwrap().character, 0);
+        assert_eq!(world.map.tile(20, 20).unwrap().character, 1);
+        let first = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(read_u32_le_at(&first.driver_data, 10), 8);
+        let second = world.items.get(&ItemId(8)).unwrap();
+        assert!(door_open_state(second));
     }
 
     #[test]

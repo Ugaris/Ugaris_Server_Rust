@@ -17510,6 +17510,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoubleDoorToggle { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FreakDoorUse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Teleport { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }

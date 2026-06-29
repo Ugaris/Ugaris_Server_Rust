@@ -580,6 +580,15 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         kind: u8,
     },
+    FreakDoorUse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        link_group: u8,
+        one_way: bool,
+        recursion_guard: bool,
+        cached_partner_id: Option<ItemId>,
+        no_target: bool,
+    },
     StafferSpecDoorLocked {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1632,6 +1641,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CALIGAR => caligar_driver(character, item, context),
                 IDR_ARKHATA => arkhata_driver(character, item, context),
                 IDR_CALIGARFLAME => flamethrow_driver(character, item, context),
+                IDR_FREAKDOOR => freakdoor_driver(character, item),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
                     driver,
@@ -2119,6 +2129,21 @@ fn staffer_spec_door_driver(character: &Character, item: &Item) -> ItemDriverOut
         item_id: item.id,
         character_id: character.id,
         kind: drdata(item, 0),
+    }
+}
+
+fn freakdoor_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    ItemDriverOutcome::FreakDoorUse {
+        item_id: item.id,
+        character_id: character.id,
+        link_group: drdata(item, 8),
+        one_way: drdata(item, 14) != 0,
+        recursion_guard: drdata(item, 9) != 0,
+        cached_partner_id: match drdata_u32(item, 10) {
+            0 => None,
+            id => Some(ItemId(id)),
+        },
+        no_target: drdata(item, 15) != 0,
     }
 }
 
@@ -10230,6 +10255,36 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
                 key_item_id: ItemId(99),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_freakdoor_driver_returns_link_metadata() {
+        let mut character = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FREAKDOOR);
+        door.driver_data = vec![0; 16];
+        door.driver_data[8] = 42;
+        door.driver_data[10..14].copy_from_slice(&99_u32.to_le_bytes());
+        door.driver_data[14] = 1;
+        door.driver_data[15] = 1;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FREAKDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut door, request, 10, false),
+            ItemDriverOutcome::FreakDoorUse {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                link_group: 42,
+                one_way: true,
+                recursion_guard: false,
+                cached_partner_id: Some(ItemId(99)),
+                no_target: true,
             }
         );
     }
