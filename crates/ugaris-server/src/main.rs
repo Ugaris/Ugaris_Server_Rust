@@ -1737,6 +1737,70 @@ fn legacy_truncate_c_string(input: &str, max_bytes: usize) -> String {
     out
 }
 
+fn legacy_lookup_skill(input: &str) -> Option<i16> {
+    let token = input
+        .chars()
+        .take(19)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let value = match token.as_str() {
+        "endurance" => CharacterValue::Endurance,
+        "hp" | "health" | "hitpoints" => CharacterValue::Hp,
+        "mana" => CharacterValue::Mana,
+        "wis" | "wisdom" => CharacterValue::Wisdom,
+        "int" | "intuition" => CharacterValue::Intelligence,
+        "agi" | "agility" => CharacterValue::Agility,
+        "str" | "strength" => CharacterValue::Strength,
+        "bart" | "bartering" => CharacterValue::Barter,
+        "perc" | "perception" => CharacterValue::Percept,
+        "stealth" => CharacterValue::Stealth,
+        "hand" | "handtohand" | "hand-to-hand" | "hand2hand" => CharacterValue::Hand,
+        "wc" | "warcry" => CharacterValue::Warcry,
+        "sh" | "surround" | "surroundhit" => CharacterValue::Surround,
+        "bc" | "bodycontrol" | "body-control" => CharacterValue::BodyControl,
+        "ss" | "speedskill" | "speed" => CharacterValue::SpeedSkill,
+        "heal" => CharacterValue::Heal,
+        "fire" | "fireball" => CharacterValue::Fireball,
+        "tactics" | "tac" | "tact" => CharacterValue::Tactics,
+        "duration" | "dur" => CharacterValue::Duration,
+        "rage" => CharacterValue::Rage,
+        "bless" => CharacterValue::Bless,
+        "freeze" | "frz" | "fre" => CharacterValue::Freeze,
+        "ms" | "magicshield" => CharacterValue::MagicShield,
+        "lf" | "lightning" | "flash" => CharacterValue::Flash,
+        "pulse" | "pul" => CharacterValue::Pulse,
+        "dagger" | "dag" => CharacterValue::Dagger,
+        "staff" | "sta" => CharacterValue::Staff,
+        "sword" | "sw" => CharacterValue::Sword,
+        "twohand" | "twohanded" | "two-handed" | "two-hand" | "2hand" | "2h" | "th" => {
+            CharacterValue::TwoHand
+        }
+        "attack" | "att" => CharacterValue::Attack,
+        "parry" | "par" => CharacterValue::Parry,
+        "immunity" | "imm" | "immy" => CharacterValue::Immunity,
+        _ => return None,
+    };
+    Some(value as i16)
+}
+
+fn parse_itemmod_args(rest: &str) -> (i64, i64, i64) {
+    let mut ptr = rest.trim_start();
+    let pos = legacy_atoi_prefix(ptr);
+    ptr = ptr.trim_start_matches(|ch: char| ch.is_ascii_digit());
+    ptr = ptr.trim_start();
+    let token = ptr
+        .split_once(char::is_whitespace)
+        .map(|(token, _)| token)
+        .unwrap_or(ptr);
+    let nr = legacy_lookup_skill(token)
+        .map(i64::from)
+        .unwrap_or_else(|| legacy_atoi_prefix(ptr));
+    ptr = ptr.trim_start_matches(|ch: char| ch.is_ascii_alphanumeric());
+    ptr = ptr.trim_start();
+    let val = legacy_atoi_prefix(ptr);
+    (pos, nr, val)
+}
+
 fn apply_description_command(
     world: &mut World,
     character_id: CharacterId,
@@ -2044,6 +2108,62 @@ fn apply_admin_character_command(
         || character.flags.contains(CharacterFlags::EVENTMASTER)
         || (area_id == 20 && character.flags.contains(CharacterFlags::LQMASTER));
     let lower = verb.to_ascii_lowercase();
+
+    if lower == "itemmod" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (pos, nr, val) = parse_itemmod_args(rest);
+        let Some(item_id) = character.cursor_item else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Need citem.".to_string()],
+                ..Default::default()
+            });
+        };
+        if pos < 0 || pos >= ugaris_core::entity::MAX_MODIFIERS as i64 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Pos out of bounds.".to_string()],
+                ..Default::default()
+            });
+        }
+        if nr < 0 || nr >= CHARACTER_VALUE_NAMES.len() as i64 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Nr out of bounds.".to_string()],
+                ..Default::default()
+            });
+        }
+        if !(0..22).contains(&val) {
+            return Some(KeyringCommandResult {
+                messages: vec!["Val out of bounds.".to_string()],
+                ..Default::default()
+            });
+        }
+        let character_snapshot = character.clone();
+        let Some(item) = world.items.get_mut(&item_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Need citem.".to_string()],
+                ..Default::default()
+            });
+        };
+        item.modifier_index[pos as usize] = nr as i16;
+        item.modifier_value[pos as usize] = val as i16;
+        let mut messages: Vec<String> = legacy_item_look_text(item, &character_snapshot)
+            .lines()
+            .map(str::to_string)
+            .collect();
+        messages.push(format!(
+            "Item modified: {} (skill {}) at pos {} with value {}",
+            value_name(nr as i16),
+            nr,
+            pos,
+            val
+        ));
+        return Some(KeyringCommandResult {
+            messages,
+            inventory_changed: true,
+            ..Default::default()
+        });
+    }
 
     if lower == "itemdesc" || lower == "itemname" {
         if !character.flags.contains(CharacterFlags::GOD) {
@@ -10274,6 +10394,149 @@ mod tests {
             1,
         )
         .is_none());
+    }
+
+    #[test]
+    fn god_itemmod_mutates_cursor_modifier_with_legacy_feedback() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::GOD);
+        character.cursor_item = Some(ItemId(99));
+        world.add_character(character);
+        world.add_item(Item {
+            id: ItemId(99),
+            name: "Modded Item".to_string(),
+            description: String::new(),
+            flags: ItemFlags::TAKE,
+            sprite: 123,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [0; 5],
+            modifier_value: [0; 5],
+            x: 0,
+            y: 0,
+            carried_by: Some(character_id),
+            contained_in: None,
+            content_id: 0,
+            driver: 0,
+            driver_data: vec![0; 40],
+            serial: 1,
+        });
+        let mut runtime = ServerRuntime::default();
+
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/itemmod 2 sword 7",
+            1,
+        )
+        .expect("god itemmod should be recognized");
+        assert!(result.inventory_changed);
+        assert_eq!(result.messages[0], "Modded Item:");
+        assert!(result.messages.iter().any(|line| line == "Sword +7"));
+        assert_eq!(
+            result.messages.last().unwrap(),
+            "Item modified: Sword (skill 15) at pos 2 with value 7"
+        );
+        let item = world.items.get(&ItemId(99)).unwrap();
+        assert_eq!(item.modifier_index[2], CharacterValue::Sword as i16);
+        assert_eq!(item.modifier_value[2], 7);
+
+        let numeric = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/itemmod 0 18 21",
+            1,
+        )
+        .expect("numeric itemmod should be recognized");
+        assert!(numeric.messages.iter().any(|line| line == "Attack +21"));
+        let item = world.items.get(&ItemId(99)).unwrap();
+        assert_eq!(item.modifier_index[0], CharacterValue::Attack as i16);
+        assert_eq!(item.modifier_value[0], 21);
+    }
+
+    #[test]
+    fn itemmod_is_god_only_requires_cursor_and_checks_bounds() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/itemmod 0 sword 1",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let missing = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/itemmod 0 sword 1",
+            1,
+        )
+        .expect("god itemmod should handle missing cursor");
+        assert_eq!(missing.messages, vec!["Need citem."]);
+
+        world.characters.get_mut(&character_id).unwrap().cursor_item = Some(ItemId(99));
+        assert_eq!(
+            apply_admin_character_command(
+                &mut world,
+                &mut runtime,
+                character_id,
+                "/itemmod 5 sword 1",
+                1,
+            )
+            .unwrap()
+            .messages,
+            vec!["Pos out of bounds."]
+        );
+        assert_eq!(
+            apply_admin_character_command(
+                &mut world,
+                &mut runtime,
+                character_id,
+                "/itemmod 0 43 1",
+                1,
+            )
+            .unwrap()
+            .messages,
+            vec!["Nr out of bounds."]
+        );
+        assert_eq!(
+            apply_admin_character_command(
+                &mut world,
+                &mut runtime,
+                character_id,
+                "/itemmod 0 sword 22",
+                1,
+            )
+            .unwrap()
+            .messages,
+            vec!["Val out of bounds."]
+        );
     }
 
     #[test]
