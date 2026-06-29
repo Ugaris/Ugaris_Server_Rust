@@ -734,6 +734,17 @@ pub enum ItemDriverOutcome {
         duration_ticks: u64,
         installed: bool,
     },
+    Lab3WhiteBerry {
+        item_id: ItemId,
+        character_id: CharacterId,
+        light_power: i16,
+        started_emit: bool,
+        installed: bool,
+    },
+    Lab3WhiteBerryLightTick {
+        item_id: ItemId,
+        destroyed: bool,
+    },
     Lab3BrownBerry {
         item_id: ItemId,
         character_id: CharacterId,
@@ -900,7 +911,7 @@ pub fn execute_item_driver_with_context(
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
                 IDR_PICKBERRY => pick_berry_driver(character, item, area_id),
                 IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
-                IDR_LAB3_PLANT => lab3_plant_driver(character, item),
+                IDR_LAB3_PLANT => lab3_plant_driver(character, item, context),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
@@ -1055,7 +1066,18 @@ fn lizard_flower_driver(
     }
 }
 
-fn lab3_plant_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+fn lab3_plant_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if context.timer_call && character.id.0 == 0 && drdata(item, 0) == 10 {
+        return ItemDriverOutcome::Lab3WhiteBerryLightTick {
+            item_id: item.id,
+            destroyed: false,
+        };
+    }
+
     if character.id.0 == 0 || item.carried_by != Some(character.id) {
         return ItemDriverOutcome::Noop;
     }
@@ -1072,11 +1094,18 @@ fn lab3_plant_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
                 installed: false,
             }
         }
-        6 => ItemDriverOutcome::Unsupported {
-            driver: IDR_LAB3_PLANT,
-            item_id: item.id,
-            character_id: character.id,
-        },
+        6 => {
+            const LIGHT_POWER: [i16; 5] = [10, 30, 40, 45, 50];
+            let freshness = usize::from(drdata(item, 2).min(4));
+            let count = i16::from(drdata(item, 1));
+            ItemDriverOutcome::Lab3WhiteBerry {
+                item_id: item.id,
+                character_id: character.id,
+                light_power: LIGHT_POWER[freshness].saturating_mul(count),
+                started_emit: false,
+                installed: false,
+            }
+        }
         11 => ItemDriverOutcome::Lab3BrownBerry {
             item_id: item.id,
             character_id: character.id,
@@ -3779,7 +3808,7 @@ mod tests {
     }
 
     #[test]
-    fn lab3_berry_driver_decodes_yellow_brown_and_unsupported_white() {
+    fn lab3_berry_driver_decodes_yellow_white_and_brown() {
         let mut character = character(1);
         character.inventory[30] = Some(ItemId(8));
         let request = ItemDriverRequest::Driver {
@@ -3818,10 +3847,40 @@ mod tests {
         white.driver_data = vec![6, 1, 2];
         assert_eq!(
             execute_item_driver(&mut character, &mut white, request, 22, false),
-            ItemDriverOutcome::Unsupported {
-                driver: IDR_LAB3_PLANT,
+            ItemDriverOutcome::Lab3WhiteBerry {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+                light_power: 40,
+                started_emit: false,
+                installed: false,
+            }
+        );
+
+        let mut light = white.clone();
+        light.driver_data = vec![10];
+        let mut timer_character = character.clone();
+        timer_character.id = CharacterId(0);
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_LAB3_PLANT,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut light,
+                timer_request,
+                22,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::Lab3WhiteBerryLightTick {
+                item_id: ItemId(8),
+                destroyed: false,
             }
         );
     }

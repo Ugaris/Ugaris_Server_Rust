@@ -12712,6 +12712,17 @@ async fn main() -> anyhow::Result<()> {
                                                 blocked += 1;
                                             }
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab3WhiteBerry { character_id, installed, .. } => {
+                                            if installed {
+                                                executed += 1;
+                                            } else {
+                                                feedback.push((character_id, "Due to some strange reasons thou canst not eat those berries now.".to_string()));
+                                                blocked += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab3WhiteBerryLightTick { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::Lab3BrownBerry { character_id, installed, .. } => {
                                             if installed {
                                                 executed += 1;

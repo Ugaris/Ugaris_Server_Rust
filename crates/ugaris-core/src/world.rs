@@ -27,8 +27,8 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
-        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_FLAMETHROW, IDR_NIGHTLIGHT,
-        IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_FLAMETHROW, IDR_LAB3_PLANT,
+        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -5946,6 +5946,29 @@ impl World {
                     installed,
                 }
             }
+            ItemDriverOutcome::Lab3WhiteBerry {
+                item_id,
+                character_id,
+                light_power,
+                ..
+            } => {
+                let (installed, started_emit) =
+                    self.apply_lab3_whiteberry(character_id, light_power);
+                if installed {
+                    self.destroy_item(item_id);
+                }
+                ItemDriverOutcome::Lab3WhiteBerry {
+                    item_id,
+                    character_id,
+                    light_power,
+                    started_emit,
+                    installed,
+                }
+            }
+            ItemDriverOutcome::Lab3WhiteBerryLightTick { item_id, .. } => {
+                let destroyed = self.decay_lab3_whiteberry_light(item_id);
+                ItemDriverOutcome::Lab3WhiteBerryLightTick { item_id, destroyed }
+            }
             ItemDriverOutcome::Lab3BrownBerry {
                 item_id,
                 character_id,
@@ -9006,6 +9029,186 @@ impl World {
             "Oxygen",
             "A Spell of Oxygen.",
         )
+    }
+
+    fn apply_lab3_whiteberry(&mut self, target_id: CharacterId, light_power: i16) -> (bool, bool) {
+        if light_power <= 0 {
+            return (false, false);
+        }
+
+        let existing_light_id = self.characters.get(&target_id).and_then(|character| {
+            character.inventory[SPELL_SLOT_START..SPELL_SLOT_END]
+                .iter()
+                .filter_map(|slot| *slot)
+                .find(|item_id| {
+                    self.items.get(item_id).is_some_and(|item| {
+                        item.driver == IDR_LAB3_PLANT && item.driver_data.first() == Some(&10)
+                    })
+                })
+        });
+
+        if let Some(item_id) = existing_light_id {
+            let Some(old_item_light) = self.items.get(&item_id).map(|item| item.modifier_value[0])
+            else {
+                return (false, false);
+            };
+            let new_item_light = old_item_light.saturating_add(light_power).min(255);
+            if let Some(item) = self.items.get_mut(&item_id) {
+                item.modifier_value[0] = new_item_light;
+            }
+            let old_character_light = self
+                .characters
+                .get(&target_id)
+                .map(character_light_value)
+                .unwrap_or_default();
+            if let Some(character) = self.characters.get_mut(&target_id) {
+                if let Some(light) = character
+                    .values
+                    .get_mut(0)
+                    .and_then(|values| values.get_mut(CharacterValue::Light as usize))
+                {
+                    *light = light.saturating_add(new_item_light - old_item_light);
+                }
+                character
+                    .flags
+                    .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            }
+            self.refresh_character_light_after_value_change(target_id, old_character_light);
+            return (true, false);
+        }
+
+        let Some(slot) = self.characters.get(&target_id).and_then(|character| {
+            character.inventory[SPELL_SLOT_START..SPELL_SLOT_END]
+                .iter()
+                .rposition(|slot| slot.is_none())
+                .map(|offset| SPELL_SLOT_START + offset)
+        }) else {
+            return (false, false);
+        };
+
+        let item_light = light_power.saturating_mul(4).saturating_div(3).min(255);
+        if item_light <= 0 {
+            return (false, false);
+        }
+
+        let item_id = self.next_runtime_item_id();
+        let item = Item {
+            id: item_id,
+            name: "Whiteberry Light".to_string(),
+            description: "A whiteberry light spell.".to_string(),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [CharacterValue::Light as i16, 0, 0, 0, 0],
+            modifier_value: [item_light, 0, 0, 0, 0],
+            x: 0,
+            y: 0,
+            carried_by: Some(target_id),
+            contained_in: None,
+            content_id: 0,
+            driver: IDR_LAB3_PLANT,
+            driver_data: vec![10, 0, 0, item_light as u8],
+            serial: item_id.0,
+        };
+
+        let old_character_light = self
+            .characters
+            .get(&target_id)
+            .map(character_light_value)
+            .unwrap_or_default();
+        self.items.insert(item_id, item);
+        if let Some(character) = self.characters.get_mut(&target_id) {
+            if character.inventory.len() <= slot {
+                self.items.remove(&item_id);
+                return (false, false);
+            }
+            character.inventory[slot] = Some(item_id);
+            if let Some(light) = character
+                .values
+                .get_mut(0)
+                .and_then(|values| values.get_mut(CharacterValue::Light as usize))
+            {
+                *light = light.saturating_add(item_light);
+            }
+            character
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+        } else {
+            self.items.remove(&item_id);
+            return (false, false);
+        }
+        self.refresh_character_light_after_value_change(target_id, old_character_light);
+        self.schedule_item_driver_timer_with_context(
+            item_id,
+            CharacterId(0),
+            20 * TICKS_PER_SECOND,
+            true,
+        );
+        (true, true)
+    }
+
+    fn decay_lab3_whiteberry_light(&mut self, item_id: ItemId) -> bool {
+        let Some((target_id, old_item_light)) = self.items.get(&item_id).and_then(|item| {
+            (item.driver == IDR_LAB3_PLANT && item.driver_data.first() == Some(&10))
+                .then_some((item.carried_by?, item.modifier_value[0]))
+        }) else {
+            return false;
+        };
+        let old_character_light = self
+            .characters
+            .get(&target_id)
+            .map(character_light_value)
+            .unwrap_or_default();
+        let new_item_light = 3 * old_item_light / 4;
+
+        if new_item_light < 8 {
+            if let Some(character) = self.characters.get_mut(&target_id) {
+                if let Some(light) = character
+                    .values
+                    .get_mut(0)
+                    .and_then(|values| values.get_mut(CharacterValue::Light as usize))
+                {
+                    *light = light.saturating_sub(old_item_light);
+                }
+                character
+                    .flags
+                    .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            }
+            self.destroy_item(item_id);
+            self.refresh_character_light_after_value_change(target_id, old_character_light);
+            return true;
+        }
+
+        if let Some(item) = self.items.get_mut(&item_id) {
+            item.modifier_value[0] = new_item_light;
+            if item.driver_data.len() < 4 {
+                item.driver_data.resize(4, 0);
+            }
+            item.driver_data[3] = new_item_light as u8;
+        }
+        if let Some(character) = self.characters.get_mut(&target_id) {
+            if let Some(light) = character
+                .values
+                .get_mut(0)
+                .and_then(|values| values.get_mut(CharacterValue::Light as usize))
+            {
+                *light = light.saturating_add(new_item_light - old_item_light);
+            }
+            character.flags.insert(CharacterFlags::UPDATE);
+        }
+        self.refresh_character_light_after_value_change(target_id, old_character_light);
+        self.schedule_item_driver_timer_with_context(
+            item_id,
+            CharacterId(0),
+            20 * TICKS_PER_SECOND,
+            true,
+        );
+        false
     }
 
     fn install_underwater_talk_spell(
@@ -18779,6 +18982,136 @@ mod tests {
         world.process_due_timers(22);
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(character.inventory[29], None);
+    }
+
+    #[test]
+    fn lab3_white_berry_creates_and_refreshes_decaying_light_item() {
+        let mut world = World::default();
+        world.tick = Tick(300);
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(10));
+        world.add_character(character);
+
+        let mut berry = item(10, ItemFlags::USED | ItemFlags::USE);
+        berry.carried_by = Some(CharacterId(1));
+        berry.driver = IDR_LAB3_PLANT;
+        berry.driver_data = vec![6, 2, 1];
+        world.items.insert(ItemId(10), berry);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_LAB3_PLANT,
+                item_id: ItemId(10),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            22,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::Lab3WhiteBerry {
+                light_power: 60,
+                started_emit: true,
+                installed: true,
+                ..
+            }
+        ));
+        assert!(!world.items.contains_key(&ItemId(10)));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let light_id = character.inventory[29].unwrap();
+        assert_eq!(character.values[0][CharacterValue::Light as usize], 80);
+        let light = world.items.get(&light_id).unwrap();
+        assert_eq!(light.driver, IDR_LAB3_PLANT);
+        assert_eq!(light.driver_data.first(), Some(&10));
+        assert_eq!(light.modifier_index[0], CharacterValue::Light as i16);
+        assert_eq!(light.modifier_value[0], 80);
+
+        let mut second = item(20, ItemFlags::USED | ItemFlags::USE);
+        second.carried_by = Some(CharacterId(1));
+        second.driver = IDR_LAB3_PLANT;
+        second.driver_data = vec![6, 1, 0];
+        world.items.insert(ItemId(20), second);
+        if let Some(character) = world.characters.get_mut(&CharacterId(1)) {
+            character.inventory[30] = Some(ItemId(20));
+        }
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_LAB3_PLANT,
+                item_id: ItemId(20),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            22,
+        );
+
+        match outcome {
+            ItemDriverOutcome::Lab3WhiteBerry {
+                light_power: 10,
+                started_emit: false,
+                installed: true,
+                ..
+            } => {}
+            other => panic!("unexpected whiteberry refresh outcome: {other:?}"),
+        }
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[29], Some(light_id));
+        assert_eq!(character.values[0][CharacterValue::Light as usize], 90);
+        assert_eq!(world.items.get(&light_id).unwrap().modifier_value[0], 90);
+    }
+
+    #[test]
+    fn lab3_whiteberry_light_timer_decays_and_destroys_low_light() {
+        let mut world = World::default();
+        world.tick = Tick(10);
+        let mut character = character(1);
+        character.inventory[12] = Some(ItemId(12));
+        character.values[0][CharacterValue::Light as usize] = 12;
+        world.add_character(character);
+        let mut light = item(12, ItemFlags::USED);
+        light.carried_by = Some(CharacterId(1));
+        light.driver = IDR_LAB3_PLANT;
+        light.driver_data = vec![10, 0, 0, 12];
+        light.modifier_index[0] = CharacterValue::Light as i16;
+        light.modifier_value[0] = 12;
+        world.items.insert(ItemId(12), light);
+
+        assert!(world.schedule_item_driver_timer_with_context(
+            ItemId(12),
+            CharacterId(0),
+            20 * TICKS_PER_SECOND,
+            true,
+        ));
+        world.tick = Tick(10 + 20 * TICKS_PER_SECOND);
+        let outcomes = world.process_due_timers(22);
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::Lab3WhiteBerryLightTick {
+                item_id: ItemId(12),
+                destroyed: false,
+            }]
+        );
+        assert_eq!(world.items.get(&ItemId(12)).unwrap().modifier_value[0], 9);
+        assert_eq!(
+            world.characters.get(&CharacterId(1)).unwrap().values[0]
+                [CharacterValue::Light as usize],
+            9
+        );
+
+        world.tick = Tick(10 + 40 * TICKS_PER_SECOND);
+        let outcomes = world.process_due_timers(22);
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::Lab3WhiteBerryLightTick {
+                item_id: ItemId(12),
+                destroyed: true,
+            }]
+        );
+        assert!(!world.items.contains_key(&ItemId(12)));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[12], None);
+        assert_eq!(character.values[0][CharacterValue::Light as usize], 0);
     }
 
     #[test]
