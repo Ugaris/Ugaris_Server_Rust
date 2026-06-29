@@ -1693,6 +1693,7 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         ItemDriverOutcome::EdemonBlockMove { .. }
         | ItemDriverOutcome::EdemonBlockBlocked { .. }
         | ItemDriverOutcome::EdemonTubePulse { .. } => 1,
+        ItemDriverOutcome::Noop if matches!(driver, Some(IDR_CLANVAULT)) => 1,
         ItemDriverOutcome::Noop
             if matches!(
                 driver,
@@ -1859,6 +1860,7 @@ pub fn execute_item_driver_with_context(
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
                 IDR_TRANSPORT => transport_driver(character, item, spec),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
+                IDR_CLANVAULT => ItemDriverOutcome::Noop,
                 IDR_CLANJEWEL => clanjewel_driver(character, item, context),
                 IDR_CLANSPAWNEXIT => clanspawn_exit_driver(character, item),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
@@ -9742,6 +9744,10 @@ mod tests {
             2
         );
         assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_CLANVAULT), &ItemDriverOutcome::Noop),
+            1
+        );
+        assert_eq!(
             legacy_item_driver_return_code(
                 Some(IDR_DOOR),
                 &ItemDriverOutcome::DoorToggle {
@@ -9782,6 +9788,26 @@ mod tests {
                     demon_value: 0,
                 },
             ),
+            1
+        );
+    }
+
+    #[test]
+    fn clan_vault_dispatch_is_legacy_handled_noop_in_area30() {
+        let mut character = character(1);
+        let mut vault = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_CLANVAULT);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_CLANVAULT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver(&mut character, &mut vault, request, 30, false);
+
+        assert_eq!(outcome, ItemDriverOutcome::Noop);
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_CLANVAULT), &outcome),
             1
         );
     }
