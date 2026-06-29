@@ -16551,6 +16551,53 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             failed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::DungeonTeleport { item_id, character_id, x, y, .. } => {
+                                            let teleported = world.teleport_character_same_area(character_id, x, y, false)
+                                                || world.teleport_character_same_area(character_id, 240, 250, false)
+                                                || world.teleport_character_same_area(character_id, 235, 250, false)
+                                                || world.teleport_character_same_area(character_id, 230, 250, false);
+                                            if teleported {
+                                                world.destroy_item(item_id);
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::DungeonFake { item_id, .. } => {
+                                            if world.destroy_item(item_id) {
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::DungeonKey { character_id, template, key_id, .. } => {
+                                            match grant_template_item_to_cursor(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                template,
+                                            ) {
+                                                Some(_) => {
+                                                    if let Some(cursor_item_id) = world
+                                                        .characters
+                                                        .get(&character_id)
+                                                        .and_then(|character| character.cursor_item)
+                                                    {
+                                                        if let Some(cursor_item) = world.items.get_mut(&cursor_item_id) {
+                                                            cursor_item.template_id = key_id;
+                                                        }
+                                                    }
+                                                    executed += 1;
+                                                }
+                                                None => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::DungeonKeyCursorOccupied { character_id, .. } => {
+                                            feedback.push((character_id, "Please empty your 'hand' (mouse cursor) first.".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeFind { item_id, character_id, find } => {
                                             let random_seed = world.tick.0
                                                 ^ (u64::from(item_id.0) << 16)

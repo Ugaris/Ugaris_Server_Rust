@@ -7226,7 +7226,7 @@ impl World {
         true
     }
 
-    fn destroy_item(&mut self, item_id: ItemId) -> bool {
+    pub fn destroy_item(&mut self, item_id: ItemId) -> bool {
         let Some(mut item) = self.items.remove(&item_id) else {
             return false;
         };

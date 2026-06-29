@@ -528,6 +528,30 @@ pub enum ItemDriverOutcome {
         y: u16,
         area_id: u16,
     },
+    DungeonTeleport {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+        clan_number: u16,
+    },
+    DungeonFake {
+        item_id: ItemId,
+        character_id: CharacterId,
+        clan_number: u16,
+    },
+    DungeonKey {
+        item_id: ItemId,
+        character_id: CharacterId,
+        template: &'static str,
+        key_id: u32,
+        clan_number: u8,
+        first_taken: bool,
+    },
+    DungeonKeyCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     DoorToggle {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1567,6 +1591,9 @@ pub fn execute_item_driver_with_context(
                 IDR_CLANJEWEL => clanjewel_driver(character, item, context),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
+                IDR_DUNGEONTELE => dungeon_teleport_driver(character, item),
+                IDR_DUNGEONFAKE => dungeon_fake_driver(character, item),
+                IDR_DUNGEONKEY => dungeon_key_driver(character, item),
                 IDR_FLASK => flask_driver(character, item, context, area_id, in_arena),
                 IDR_DOUBLE_DOOR => double_door_driver(character, item),
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
@@ -1632,6 +1659,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
+        IDR_DUNGEONTELE | IDR_DUNGEONFAKE | IDR_DUNGEONDOOR | IDR_DUNGEONKEY => Some(13),
         IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONFARM | IDR_FDEMONBLOOD => Some(8),
         _ => None,
     }
@@ -4894,6 +4922,55 @@ fn city_recall_destination(scroll_type: u8) -> Option<(u16, u16, u16)> {
     })
 }
 
+fn dungeon_teleport_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::DungeonTeleport {
+        item_id: item.id,
+        character_id: character.id,
+        x: drdata_u16(item, 0),
+        y: drdata_u16(item, 2),
+        clan_number: drdata_u16(item, 4),
+    }
+}
+
+fn dungeon_fake_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    ItemDriverOutcome::DungeonFake {
+        item_id: item.id,
+        character_id: character.id,
+        clan_number: drdata_u16(item, 0),
+    }
+}
+
+fn dungeon_key_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::DungeonKeyCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let first_taken = drdata(item, 2) == 0;
+    if first_taken {
+        set_drdata(item, 2, 1);
+    }
+
+    ItemDriverOutcome::DungeonKey {
+        item_id: item.id,
+        character_id: character.id,
+        template: if drdata(item, 0) == 1 {
+            "maze_key1"
+        } else {
+            "maze_key2"
+        },
+        key_id: drdata_u32(item, 4),
+        clan_number: drdata(item, 1),
+        first_taken,
+    }
+}
+
 fn teleport_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     let target_x = drdata_u16(item, 0);
     let target_y = drdata_u16(item, 2);
@@ -6161,6 +6238,159 @@ mod tests {
         assert_eq!(IDR_LAB5_ITEM, 190);
         assert_eq!(IDR_LABTORCH, 199);
         assert_eq!(IDR_SKELETON_KEY, 201);
+    }
+
+    #[test]
+    fn dungeon_teleport_decodes_legacy_target_and_requires_player() {
+        let mut actor = character(1);
+        actor.flags |= CharacterFlags::PLAYER;
+        let mut tele = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DUNGEONTELE);
+        tele.driver_data = vec![44, 1, 55, 1, 13, 0];
+
+        let outcome = execute_item_driver(
+            &mut actor,
+            &mut tele,
+            ItemDriverRequest::Driver {
+                driver: IDR_DUNGEONTELE,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            13,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::DungeonTeleport {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 300,
+                y: 311,
+                clan_number: 13,
+            }
+        );
+
+        actor.flags.remove(CharacterFlags::PLAYER);
+        let outcome = execute_item_driver(
+            &mut actor,
+            &mut tele,
+            ItemDriverRequest::Driver {
+                driver: IDR_DUNGEONTELE,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            13,
+            false,
+        );
+        assert_eq!(outcome, ItemDriverOutcome::Noop);
+    }
+
+    #[test]
+    fn dungeon_fake_and_key_port_area13_dispatch_boundary() {
+        let mut actor = character(1);
+        let mut fake = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DUNGEONFAKE);
+        fake.driver_data = vec![21, 0];
+
+        let outcome = execute_item_driver(
+            &mut actor,
+            &mut fake,
+            ItemDriverRequest::Driver {
+                driver: IDR_DUNGEONFAKE,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            13,
+            false,
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::DungeonFake {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                clan_number: 21,
+            }
+        );
+
+        let mut key = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_DUNGEONKEY);
+        key.driver_data = vec![1, 21, 0, 0, 0x44, 0x33, 0x22, 0x11];
+        let outcome = execute_item_driver(
+            &mut actor,
+            &mut key,
+            ItemDriverRequest::Driver {
+                driver: IDR_DUNGEONKEY,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            13,
+            false,
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::DungeonKey {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                template: "maze_key1",
+                key_id: 0x1122_3344,
+                clan_number: 21,
+                first_taken: true,
+            }
+        );
+        assert_eq!(key.driver_data[2], 1);
+
+        actor.cursor_item = Some(ItemId(99));
+        let blocked = execute_item_driver(
+            &mut actor,
+            &mut key,
+            ItemDriverRequest::Driver {
+                driver: IDR_DUNGEONKEY,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            13,
+            false,
+        );
+        assert_eq!(
+            blocked,
+            ItemDriverOutcome::DungeonKeyCursorOccupied {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn dungeon_driver_ids_are_area13_guarded_like_legacy_libload() {
+        let mut actor = character(1);
+        actor.flags |= CharacterFlags::PLAYER;
+        let mut tele = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DUNGEONTELE);
+
+        let outcome = execute_item_driver(
+            &mut actor,
+            &mut tele,
+            ItemDriverRequest::Driver {
+                driver: IDR_DUNGEONTELE,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_DUNGEONTELE,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                required_area: 13,
+            }
+        );
     }
 
     #[test]
