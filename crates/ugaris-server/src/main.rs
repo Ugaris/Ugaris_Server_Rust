@@ -27,9 +27,9 @@ use ugaris_core::{
     ids::{CharacterId, ItemId},
     item_driver::{
         legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
-        IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_SPECIAL_POTION,
-        IDR_TORCH, IID_AREA17_LIBRARYKEY, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2,
-        IID_AREA2_ZOMBIESKULL3,
+        IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_PICKCHEST,
+        IDR_SPECIAL_POTION, IDR_TORCH, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
+        IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
         consume_item, give_item_to_character, replace_item_in_character, GiveItemFlags,
@@ -4912,17 +4912,29 @@ fn item_driver_context_for_request(
         }
         return ugaris_core::item_driver::ItemDriverContext::default();
     }
-    if *driver == IDR_BOOKCASE {
-        let has_area17_library_key = world.characters.get(character_id).is_some_and(|character| {
-            character.inventory.iter().flatten().any(|item_id| {
-                world
-                    .items
-                    .get(item_id)
-                    .is_some_and(|item| item.template_id == IID_AREA17_LIBRARYKEY)
+    if *driver == IDR_BOOKCASE || *driver == IDR_PICKCHEST {
+        let (has_area17_library_key, has_area17_lockpick) = world
+            .characters
+            .get(character_id)
+            .map(|character| {
+                let has_library_key = character.inventory.iter().flatten().any(|item_id| {
+                    world
+                        .items
+                        .get(item_id)
+                        .is_some_and(|item| item.template_id == IID_AREA17_LIBRARYKEY)
+                });
+                let has_lockpick = character.inventory.iter().flatten().any(|item_id| {
+                    world
+                        .items
+                        .get(item_id)
+                        .is_some_and(|item| item.template_id == IID_AREA17_LOCKPICK)
+                });
+                (has_library_key, has_lockpick)
             })
-        });
+            .unwrap_or_default();
         return ugaris_core::item_driver::ItemDriverContext {
             has_area17_library_key,
+            has_area17_lockpick,
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
@@ -16400,6 +16412,41 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeCursorOccupied { character_id, .. } => {
                                             feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
                                             blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickChest { character_id, template, .. } => {
+                                            match grant_template_item_to_cursor(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                template.as_str(),
+                                            ) {
+                                                Some(item_name) => {
+                                                    feedback.push((character_id, "You pick the lock.".to_string()));
+                                                    feedback.push((character_id, format!("You found a {}.", item_name.to_ascii_lowercase())));
+                                                    executed += 1;
+                                                }
+                                                None => {
+                                                    feedback.push((character_id, "You've found bug #8331.".to_string()));
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickChestCursorOccupied { character_id, .. } => {
+                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickChestLocked { item_id, character_id } => {
+                                            let item_name = world
+                                                .items
+                                                .get(&item_id)
+                                                .map(|item| item.name.to_ascii_lowercase())
+                                                .unwrap_or_else(|| "chest".to_string());
+                                            feedback.push((character_id, format!("The {item_name} is locked and you don't have the right key.")));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickChestBug { character_id, .. } => {
+                                            feedback.push((character_id, "You've found bug #8331.".to_string()));
+                                            failed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::OrbSpawn { item_id, character_id, anti, special } => {
                                             let random_seed = world.tick.0

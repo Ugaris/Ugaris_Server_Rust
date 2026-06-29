@@ -189,6 +189,7 @@ pub const IID_AREA2_ZOMBIESKULL3: u32 = (0x01 << 24) | 0x000027;
 pub const IID_AREA11_PALACEKEY: u32 = (0x01 << 24) | 0x000050;
 pub const IID_AREA11_PALACEKEYPART: u32 = (0x01 << 24) | 0x000051;
 pub const IID_AREA17_LIBRARYKEY: u32 = (0x01 << 24) | 0x00006F;
+pub const IID_AREA17_LOCKPICK: u32 = (0x01 << 24) | 0x000062;
 pub const IID_CALIGAR_PALACE_KEY_PART: u32 = (0x01 << 24) | 0x0000B3;
 const V_LIGHT: i16 = 9;
 const LIGHT_TIMER_TICKS: u64 = TICKS_PER_SECOND * 30;
@@ -271,6 +272,35 @@ pub enum ForestSpadeFind {
     BranningtonTreasure { dig_index: u8 },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PickChestTemplate {
+    PalaceNote1,
+    PalaceNote2,
+    PalaceNote3,
+    MerchantNote1,
+}
+
+impl PickChestTemplate {
+    pub fn from_kind(kind: u8) -> Option<Self> {
+        match kind {
+            0 => Some(Self::PalaceNote1),
+            1 => Some(Self::PalaceNote2),
+            2 => Some(Self::PalaceNote3),
+            3 => Some(Self::MerchantNote1),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PalaceNote1 => "palace_note1",
+            Self::PalaceNote2 => "palace_note2",
+            Self::PalaceNote3 => "palace_note3",
+            Self::MerchantNote1 => "merchant_note1",
+        }
+    }
+}
+
 impl InfiniteChestTemplate {
     pub fn from_kind(kind: u8) -> Option<Self> {
         match kind {
@@ -323,6 +353,7 @@ pub struct ItemDriverContext {
     pub bone_hint_nr: Option<u8>,
     pub bone_hint_pos: Option<u8>,
     pub has_area17_library_key: bool,
+    pub has_area17_lockpick: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -564,6 +595,23 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
     },
     ForestSpadeCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    PickChest {
+        item_id: ItemId,
+        character_id: CharacterId,
+        template: PickChestTemplate,
+    },
+    PickChestCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    PickChestLocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    PickChestBug {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -1284,6 +1332,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
+                IDR_PICKCHEST => pick_chest_driver(character, item, context),
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
                 IDR_PARKSHRINE => parkshrine_driver(character, item),
                 IDR_BOOK => book_driver(character, item),
@@ -1356,6 +1405,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
     match driver {
         IDR_BONEBRIDGE | IDR_BONELADDER | IDR_BONEHINT => Some(18),
         IDR_NOMADDICE => Some(19),
+        IDR_PICKCHEST => Some(17),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
@@ -3679,6 +3729,40 @@ fn forest_spade_treasure(
         item_id,
         character_id,
         find: ForestSpadeFind::BranningtonTreasure { dig_index },
+    }
+}
+
+fn pick_chest_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::PickChestCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if !context.has_area17_lockpick {
+        return ItemDriverOutcome::PickChestLocked {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    let Some(template) = PickChestTemplate::from_kind(drdata(item, 0)) else {
+        return ItemDriverOutcome::PickChestBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::PickChest {
+        item_id: item.id,
+        character_id: character.id,
+        template,
     }
 }
 
@@ -8804,6 +8888,109 @@ mod tests {
         assert_eq!(
             outcome,
             ItemDriverOutcome::InfiniteChestKeyRequired {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn pick_chest_requires_lockpick_and_empty_cursor() {
+        let mut character = character(1);
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PICKCHEST);
+        chest.driver_data = vec![2];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PICKCHEST,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut chest,
+                request,
+                17,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PickChestLocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.cursor_item = Some(ItemId(9));
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut chest,
+                request,
+                17,
+                false,
+                &ItemDriverContext {
+                    has_area17_lockpick: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::PickChestCursorOccupied {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn pick_chest_maps_legacy_note_kinds() {
+        let mut character = character(1);
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PICKCHEST);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PICKCHEST,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            has_area17_lockpick: true,
+            ..ItemDriverContext::default()
+        };
+
+        for (kind, template) in [
+            (0, PickChestTemplate::PalaceNote1),
+            (1, PickChestTemplate::PalaceNote2),
+            (2, PickChestTemplate::PalaceNote3),
+            (3, PickChestTemplate::MerchantNote1),
+        ] {
+            chest.driver_data = vec![kind];
+            assert_eq!(
+                execute_item_driver_with_context(
+                    &mut character,
+                    &mut chest,
+                    request,
+                    17,
+                    false,
+                    &context,
+                ),
+                ItemDriverOutcome::PickChest {
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    template,
+                }
+            );
+        }
+
+        chest.driver_data = vec![4];
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut chest,
+                request,
+                17,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::PickChestBug {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }
