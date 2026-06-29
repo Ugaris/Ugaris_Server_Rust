@@ -15679,6 +15679,19 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::StafferBookText {
+                                            character_id,
+                                            page,
+                                            ..
+                                        } => {
+                                            if let Some(line) = ugaris_core::item_driver::staffer_book_text(page) {
+                                                feedback.push((character_id, line.to_string()));
+                                            }
+                                            if let Some(line) = ugaris_core::item_driver::staffer_book_continue_text(page) {
+                                                feedback.push((character_id, line.to_string()));
+                                            }
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::BoneHint {
                                             character_id,
                                             level,

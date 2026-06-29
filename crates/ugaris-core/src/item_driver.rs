@@ -850,6 +850,11 @@ pub enum ItemDriverOutcome {
         nr: u8,
         pos: u8,
     },
+    StafferBookText {
+        item_id: ItemId,
+        character_id: CharacterId,
+        page: u8,
+    },
     BoneBridgePlace {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1200,12 +1205,13 @@ fn boneladder_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     }
 }
 
-fn staffer2_driver(character: &mut Character, item: &Item) -> ItemDriverOutcome {
+fn staffer2_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
     if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
         return ItemDriverOutcome::Noop;
     }
 
     match drdata(item, 0) {
+        1 => staffer_book_driver(character, item),
         6 => {
             let exp_added =
                 (legacy_level_value(60) / 5).min(legacy_level_value(character.level) / 4);
@@ -1225,6 +1231,49 @@ fn staffer2_driver(character: &mut Character, item: &Item) -> ItemDriverOutcome 
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+fn staffer_book_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
+    if drdata_u32(item, 4) != character.id.0 {
+        set_drdata(item, 1, 0);
+        set_drdata_u32(item, 4, character.id.0);
+    }
+
+    let page = drdata(item, 1);
+    if page > 4 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if page == 4 {
+        set_drdata(item, 1, 0);
+    } else {
+        set_drdata(item, 1, page + 1);
+    }
+
+    ItemDriverOutcome::StafferBookText {
+        item_id: item.id,
+        character_id: character.id,
+        page,
+    }
+}
+
+pub fn staffer_book_text(page: u8) -> Option<&'static str> {
+    match page {
+        0 => Some("The training of these thieves into skilled mages has been succesful. They can now create Golems, and summon the old enemies of Aston, the Grolms. I will not teach them how to create and control Undead though, lest they use them against me... Also, to this end, I have enlisted the help of an assassin by the name of Brenneth. I hope he will not disappoint me..."),
+        1 => Some("My golems have dug their way into the Brannington Crypt. I have taken their Holy Relic, and turned it into my weapon to make undead of the Brannington Ancestors. They shall serve as my army and take over Brannington town. All serve as zombies and skeletons, however, there is one spirit who managed to escape my grasp. I will have to find ways to control it... Also, Brenneth was attacked by a grolm and is suffering from loss of memory... He is in one of the thief mage houses right now... Fortunately, they don't know who he is..."),
+        2 => Some("Brenneth got rescued by a group of traveling adventurers while the thief mage who had him captured was creating more golems... Luckily, Brenneth doesn't recall anything of what he is supposed to do, and it doesn't look like he'll get his memory back... ever..."),
+        3 => Some("The spirit seems uncontrollable... I will have to become stronger to control it, which means I have to train... And that takes time, time which I'd rather not waste... I have also seen the face of a new enemy... This enemy has killed my thief mages, and surely must be coming for me next... He ruined my plans to open the crypt doors with the jewelry the thief mages had managed to steal... They should have been faster in returning it to me... fools..."),
+        4 => Some("I can hear my enemy coming for me... I shall kill and make of my enemy a commander in my army of undead... Now, I will fight and show my power!"),
+        _ => None,
+    }
+}
+
+pub fn staffer_book_continue_text(page: u8) -> Option<&'static str> {
+    match page {
+        0..=3 => Some("USE again to continue."),
+        4 => Some("USE to start over."),
+        _ => None,
     }
 }
 
@@ -5516,9 +5565,9 @@ mod tests {
 
     #[test]
     fn staffer2_animation_book_grants_legacy_exp_and_teleports() {
-        let mut character = character(1);
-        character.flags.insert(CharacterFlags::PLAYER);
-        character.level = 60;
+        let mut reader = character(1);
+        reader.flags.insert(CharacterFlags::PLAYER);
+        reader.level = 60;
         let mut book = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
         set_drdata(&mut book, 0, 6);
         let request = ItemDriverRequest::Driver {
@@ -5531,7 +5580,7 @@ mod tests {
         assert_eq!(IDR_STAFFER2, 122);
         assert_eq!(legacy_level_value(60), 885_841);
         assert_eq!(
-            execute_item_driver(&mut character, &mut book, request, 29, false),
+            execute_item_driver(&mut reader, &mut book, request, 29, false),
             ItemDriverOutcome::Teleport {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
@@ -5542,7 +5591,7 @@ mod tests {
                 quiet: false,
             }
         );
-        assert_eq!(character.exp, 177_168);
+        assert_eq!(reader.exp, 177_168);
     }
 
     #[test]
@@ -5583,11 +5632,11 @@ mod tests {
     }
 
     #[test]
-    fn staffer2_unported_subtypes_stay_explicitly_unsupported() {
-        let mut character = character(1);
-        character.flags.insert(CharacterFlags::PLAYER);
-        let mut item = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
-        set_drdata(&mut item, 0, 1);
+    fn staffer2_book_cycles_pages_and_resets_per_reader() {
+        let mut reader = character(1);
+        reader.flags.insert(CharacterFlags::PLAYER);
+        let mut book = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
+        set_drdata(&mut book, 0, 1);
         let request = ItemDriverRequest::Driver {
             driver: IDR_STAFFER2,
             item_id: ItemId(8),
@@ -5596,13 +5645,84 @@ mod tests {
         };
 
         assert_eq!(
-            execute_item_driver(&mut character, &mut item, request, 29, false),
-            ItemDriverOutcome::Unsupported {
-                driver: IDR_STAFFER2,
+            execute_item_driver(&mut reader, &mut book, request, 29, false),
+            ItemDriverOutcome::StafferBookText {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+                page: 0,
             }
         );
+        assert_eq!(drdata(&book, 1), 1);
+        assert_eq!(drdata_u32(&book, 4), 1);
+
+        for expected_page in 1..=4 {
+            assert_eq!(
+                execute_item_driver(&mut reader, &mut book, request, 29, false),
+                ItemDriverOutcome::StafferBookText {
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                    page: expected_page,
+                }
+            );
+        }
+        assert_eq!(drdata(&book, 1), 0);
+
+        let mut other = character(2);
+        other.flags.insert(CharacterFlags::PLAYER);
+        let other_request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(2),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver(&mut other, &mut book, other_request, 29, false),
+            ItemDriverOutcome::StafferBookText {
+                item_id: ItemId(8),
+                character_id: CharacterId(2),
+                page: 0,
+            }
+        );
+        assert_eq!(drdata_u32(&book, 4), 2);
+    }
+
+    #[test]
+    fn staffer_book_text_preserves_legacy_prompts() {
+        assert_eq!(
+            staffer_book_text(0).unwrap(),
+            "The training of these thieves into skilled mages has been succesful. They can now create Golems, and summon the old enemies of Aston, the Grolms. I will not teach them how to create and control Undead though, lest they use them against me... Also, to this end, I have enlisted the help of an assassin by the name of Brenneth. I hope he will not disappoint me..."
+        );
+        assert_eq!(
+            staffer_book_continue_text(3),
+            Some("USE again to continue.")
+        );
+        assert_eq!(staffer_book_continue_text(4), Some("USE to start over."));
+        assert_eq!(staffer_book_text(5), None);
+    }
+
+    #[test]
+    fn staffer2_unported_subtypes_stay_explicitly_unsupported() {
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        for subtype in 2..=5 {
+            let mut item = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
+            set_drdata(&mut item, 0, subtype);
+            assert_eq!(
+                execute_item_driver(&mut character, &mut item, request, 29, false),
+                ItemDriverOutcome::Unsupported {
+                    driver: IDR_STAFFER2,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                }
+            );
+        }
     }
 
     #[test]
