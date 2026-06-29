@@ -1278,6 +1278,14 @@ fn find_online_character_by_name(world: &World, name: &str) -> Option<CharacterI
         .map(|character| character.id)
 }
 
+fn take_legacy_alpha_name(text: &str) -> (&str, &str) {
+    let end = text
+        .char_indices()
+        .find_map(|(index, ch)| (!ch.is_ascii_alphabetic()).then_some(index))
+        .unwrap_or(text.len());
+    text.split_at(end)
+}
+
 fn pk_hate_prerequisites(source: &Character, target: &Character) -> bool {
     source.id != target.id
         && source
@@ -1657,6 +1665,72 @@ fn apply_admin_character_command(
     }
 
     None
+}
+
+fn apply_shutup_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("shutup") {
+        return None;
+    }
+
+    let caller = world.characters.get(&character_id)?;
+    if !caller
+        .flags
+        .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+    {
+        return None;
+    }
+
+    let rest = rest.trim_start();
+    let (name, minute_text) = take_legacy_alpha_name(rest);
+    let minutes = if minute_text.trim_start().is_empty() {
+        10
+    } else {
+        legacy_atoi_prefix(minute_text.trim_start())
+    };
+
+    let Some(target_id) = find_online_character_by_name(world, name) else {
+        return Some(KeyringCommandResult {
+            messages: vec![format!("Sorry, no player by the name {name}.")],
+            ..Default::default()
+        });
+    };
+    if !world
+        .characters
+        .get(&target_id)
+        .is_some_and(|target| target.flags.contains(CharacterFlags::PLAYER))
+    {
+        return Some(KeyringCommandResult {
+            messages: vec![format!("Sorry, no player by the name {name}.")],
+            ..Default::default()
+        });
+    }
+
+    if !(0..=60).contains(&minutes) {
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Sorry, can only shutup for 0 to 60 minutes (use 0 to disable).".to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+
+    if let Some(target) = world.characters.get_mut(&target_id) {
+        if minutes == 0 {
+            target.flags.remove(CharacterFlags::SHUTUP);
+        } else {
+            target.flags.insert(CharacterFlags::SHUTUP);
+        }
+    }
+
+    Some(KeyringCommandResult::default())
 }
 
 fn apply_nowho_command(
@@ -7580,6 +7654,85 @@ mod tests {
     }
 
     #[test]
+    fn shutup_command_is_staff_only_and_toggles_target_flag() {
+        let mut world = World::default();
+        let staff_id = CharacterId(7);
+        let mut staff = login_character(staff_id, &login_block("Staffer"), 1, 10, 10);
+        staff.flags.insert(CharacterFlags::STAFF);
+        world.add_character(staff);
+
+        let player_id = CharacterId(8);
+        let player = login_character(player_id, &login_block("Target"), 1, 11, 10);
+        world.add_character(player);
+
+        let ordinary_id = CharacterId(9);
+        let ordinary = login_character(ordinary_id, &login_block("Ordinary"), 1, 12, 10);
+        world.add_character(ordinary);
+
+        assert!(apply_shutup_command(&mut world, ordinary_id, "/shutup Target 10").is_none());
+        assert!(!world
+            .characters
+            .get(&player_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::SHUTUP));
+
+        let result = apply_shutup_command(&mut world, staff_id, "/shutup Target")
+            .expect("staff shutup command should be recognized");
+        assert!(result.messages.is_empty());
+        assert!(world
+            .characters
+            .get(&player_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::SHUTUP));
+
+        apply_shutup_command(&mut world, staff_id, "/shutup Target 0")
+            .expect("zero minutes should disable shutup");
+        assert!(!world
+            .characters
+            .get(&player_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::SHUTUP));
+    }
+
+    #[test]
+    fn shutup_command_preserves_legacy_name_and_range_errors() {
+        let mut world = World::default();
+        let staff_id = CharacterId(7);
+        let mut staff = login_character(staff_id, &login_block("Staffer"), 1, 10, 10);
+        staff.flags.insert(CharacterFlags::GOD);
+        world.add_character(staff);
+
+        let result = apply_shutup_command(&mut world, staff_id, "/shutup Missing 10")
+            .expect("god shutup command should be recognized");
+        assert_eq!(
+            result.messages,
+            vec!["Sorry, no player by the name Missing."]
+        );
+
+        let target_id = CharacterId(8);
+        let target = login_character(target_id, &login_block("Alpha"), 1, 11, 10);
+        world.add_character(target);
+
+        let result = apply_shutup_command(&mut world, staff_id, "/shutup Alpha 61abc")
+            .expect("out-of-range shutup should still be handled");
+        assert_eq!(
+            result.messages,
+            vec!["Sorry, can only shutup for 0 to 60 minutes (use 0 to disable)."]
+        );
+        assert!(!world
+            .characters
+            .get(&target_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::SHUTUP));
+
+        assert!(apply_shutup_command(&mut world, staff_id, "/shut Alpha 10").is_none());
+    }
+
+    #[test]
     fn who_command_lists_visible_players_like_legacy_command() {
         let mut world = World::default();
         let mut warrior = login_character(CharacterId(7), &login_block("Warrior"), 1, 10, 10);
@@ -12052,6 +12205,14 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 if result.inventory_changed {
                                     command_inventory_refresh.push(character_id);
+                                }
+                                continue;
+                            }
+                            if let Some(result) =
+                                apply_shutup_command(&mut world, character_id, &command)
+                            {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
                                 }
                                 continue;
                             }
