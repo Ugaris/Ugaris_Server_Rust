@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     area_sound::AreaSoundSpecial,
-    attack::reduce_hurt_by_armor,
+    attack::{attack_skill, reduce_hurt_by_armor, spell_average},
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
@@ -4201,7 +4201,7 @@ impl World {
         if !nomove || character_distance == 2 {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::Attack,
-                value: simple_baddy_attack_task_value(attacker),
+                value: simple_baddy_attack_task_value(attacker, &self.items),
             });
         }
         if area_id != 33 && self.simple_baddy_needs_regeneration(attacker) {
@@ -12311,13 +12311,69 @@ fn simple_baddy_earth_task_value(good_fields: i32) -> i32 {
     }
 }
 
-fn simple_baddy_attack_task_value(character: &Character) -> i32 {
-    let attack = character_value(character, CharacterValue::Attack);
+fn simple_baddy_attack_task_value(character: &Character, items: &HashMap<ItemId, Item>) -> i32 {
+    let attack = simple_baddy_attack_skill(character, items);
     if character_value_present(character, CharacterValue::Attack) != 0 {
         FIGHT_DRIVER_MED_PRIO + attack * 2 / 7 + 10
     } else {
         FIGHT_DRIVER_LOW_PRIO + attack / 3
     }
+}
+
+fn simple_baddy_attack_skill(character: &Character, items: &HashMap<ItemId, Item>) -> i32 {
+    let spell_average = spell_average(
+        character_value(character, CharacterValue::Bless),
+        character_value(character, CharacterValue::Heal),
+        character_value(character, CharacterValue::Freeze),
+        character_value(character, CharacterValue::MagicShield),
+        character_value(character, CharacterValue::Flash),
+        character_value(character, CharacterValue::Fireball),
+        character_value(character, CharacterValue::Pulse),
+    );
+    attack_skill(
+        character_value_present(character, CharacterValue::Attack) != 0,
+        simple_baddy_fight_skill(character, items),
+        character_value(character, CharacterValue::Attack),
+        character_value(character, CharacterValue::Tactics),
+        0,
+        character.flags.contains(CharacterFlags::EDEMON),
+        character.level as i32,
+        spell_average,
+    )
+}
+
+fn simple_baddy_fight_skill(character: &Character, items: &HashMap<ItemId, Item>) -> i32 {
+    let Some(item_id) = character
+        .inventory
+        .get(worn_slot::RIGHT_HAND)
+        .and_then(|slot| *slot)
+    else {
+        return character_value(character, CharacterValue::Hand);
+    };
+    let Some(item) = items.get(&item_id) else {
+        return character_value(character, CharacterValue::Hand);
+    };
+    if !item.flags.intersects(ItemFlags::WEAPON) {
+        return character_value(character, CharacterValue::Hand);
+    }
+
+    let mut value = 0;
+    if item.flags.contains(ItemFlags::HAND) {
+        value = value.max(character_value(character, CharacterValue::Hand));
+    }
+    if item.flags.contains(ItemFlags::DAGGER) {
+        value = value.max(character_value(character, CharacterValue::Dagger));
+    }
+    if item.flags.contains(ItemFlags::STAFF) {
+        value = value.max(character_value(character, CharacterValue::Staff));
+    }
+    if item.flags.contains(ItemFlags::SWORD) {
+        value = value.max(character_value(character, CharacterValue::Sword));
+    }
+    if item.flags.contains(ItemFlags::TWOHAND) {
+        value = value.max(character_value(character, CharacterValue::TwoHand));
+    }
+    value
 }
 
 fn spell_duration_ticks(character: &Character, base_duration: i32) -> i32 {
@@ -14561,6 +14617,42 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::ATTACK1);
         assert_eq!(npc.mana, FLASH_COST);
+    }
+
+    #[test]
+    fn simple_baddy_attack_task_uses_c_attack_skill_with_weapon_skill() {
+        let mut character = character(1);
+        character.level = 20;
+        character.values[0][CharacterValue::Attack as usize] = 30;
+        character.values[1][CharacterValue::Attack as usize] = 30;
+        character.values[0][CharacterValue::Tactics as usize] = 12;
+        character.values[0][CharacterValue::Hand as usize] = 5;
+        character.values[0][CharacterValue::Sword as usize] = 40;
+        character.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(7));
+        let weapon = item(7, ItemFlags::SWORD);
+        let items = HashMap::from([(weapon.id, weapon)]);
+
+        assert_eq!(simple_baddy_attack_skill(&character, &items), 104);
+        assert_eq!(simple_baddy_attack_task_value(&character, &items), 539);
+    }
+
+    #[test]
+    fn simple_baddy_attack_task_falls_back_to_hand_without_weapon() {
+        let mut character = character(1);
+        character.level = 20;
+        character.values[0][CharacterValue::Hand as usize] = 9;
+        character.values[0][CharacterValue::Bless as usize] = 8;
+        character.values[0][CharacterValue::Heal as usize] = 8;
+        character.values[0][CharacterValue::Freeze as usize] = 8;
+        character.values[0][CharacterValue::MagicShield as usize] = 8;
+        character.values[0][CharacterValue::Flash as usize] = 8;
+        character.values[0][CharacterValue::Fireball as usize] = 8;
+        character.values[0][CharacterValue::Pulse as usize] = 8;
+
+        let items = HashMap::new();
+
+        assert_eq!(simple_baddy_attack_skill(&character, &items), 3);
+        assert_eq!(simple_baddy_attack_task_value(&character, &items), 2);
     }
 
     #[test]
