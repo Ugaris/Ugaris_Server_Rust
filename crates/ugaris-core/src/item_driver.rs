@@ -1065,6 +1065,100 @@ pub fn book_text_lines(kind: u8) -> &'static [&'static str] {
             "Take heed, and go no further! This way leads to the Vampire Lord!",
             "It is said that one strike with the right dagger will kill the Lord. But alas, many have tried, but no one found the right dagger.",
         ],
+        20 => &[
+            "Day 91, year 97, evening by outside time. Personal diary of Avaisor of the Isara.",
+            "The struggle seems hopeless now. We're trapped in these caverns by our own defense systems. We can no longer control them as the key was lost when Daoslan was slain by demons in the southern part of the natural caverns.",
+            "Our desperate attempts to raise demons for our defense have failed so far. Some of the research labs had to be closed since the demons in them could no longer be controlled.",
+        ],
+        21 => &[
+            "Day 58, year 97, memo on the state of War by Seraios of the Isara",
+            "Only one adversary remains after the glorious defeat of Keriaos. But it is a dangerous one. Islena has persuaded four of our enemies to join forces with her, and she will gather all her allies in the north to form an army capable of destroying us.",
+            "We must make our move first and attack before she is ready. I advise that we attack Islena's headquarter with...",
+            "(The remaining pages are burned.)",
+        ],
+        22 => &[
+            "Day 84, year 97, evening by outside time. Personal diary of Delasar of the Isara.",
+            "I have established two outposts beyond our defense line to the north. They will allow me to study the demons as they are attacking our defense systems. I might be able to find other means to protect us this way.",
+            "Going there is dangerous, and I might not make it back with my knowledge. I will keep other diaries there, so that my clan will be able to use my findings even after my death.",
+            "I have asked Avaisor to turn off the defense systems in an hour so that I can reach my outpost. Fate, let me survive!",
+        ],
+        23 => &[
+            "Day 55, year 97, evening by outside time. Personal diary of Isranor of the Cerasa.",
+            "Our glorious leader, Carisar, has joined forces with Islena of the Ilasner. Our talks with our direct enemy the Isara have failed. Too much blood was shed already and neither they nor we could overcome the hatred. But still, I was impressed by Ishtar, their leader.",
+            "In spite of our alliance with the Ilasner, our position here is quite hopeless. The Isara will soon be forced to attack with all their might. Our defenses cannot withstand them for long. We will abandon this position within the next few days.",
+            "Fortunately, we made good progress with our demonic research project. We will not suffer much from the demons that escaped during the early stages of our research. And we can hope that they will delay the Isara's pursuit.",
+            "We will open the demon-gate before we leave. The steady flood of demons coming from it will give us the time we need and hinder the Isara.",
+        ],
+        24 => &[
+            "Day 155, year 103. Personal diary of Kamaleon of the Isara.",
+            "In our pursuit of Islena's forces we have finally reached one of her former settlements. The long march north, first through that fiery maze full of lava and unmanned yet dangerous defense stations and now through these icy caverns has tired us beyond measure.",
+            "So many friends lost, so many deaths. And yet we must press on after only a few days rest, lest we give Islena time to counter-attack and crush us while we are defenseless. I wonder how far this pursuit will take us. We have come so far north in these caverns, we must be below the sea already.",
+            "But we will not stop, it would mean death. Mind, be tranquil, this will end.",
+        ],
+        25 => &[
+            "Day 158, year 103. Personal diary of Ileanor, Lieutenant of the Isara.",
+            "The three days rest we have given our men are all the time we can spare. Not all wounds are healed, and the men are still tired, but delaying further would leave us open to a counter-attack. I wonder what the Ilasner are up to. It is not like them to give up this much ground without any resistance.",
+            "Tomorrow at dawn, well, tomorrow when we wake up, we will move on. We still have some wood to build fires to break the ice demon's spell, and the morale is as well as can be expected under these circumstances. I am greatly worried, though. We haven't seen the surface for years, and all the explosions we heard a few weeks ago mean the war is raging there as savage as it is here.",
+        ],
+        26 => &[
+            "Day 145, year 103. Personal diary of Cari-Maar of the Ilasner.",
+            "Today we were ordered to retreat. The defense stations and the fire demons have delayed our pursuers long enough. Rumor has it that Islena and the main force have established a defensive position further to the north.",
+            "But our scouts report that those cursed Isara have managed to bring half their forces through alive. We are vastly outnumbered. We can only hope that the fortified positions will give us enough advantage to make up for our lack in numbers.",
+        ],
+        27 => &[
+            "Contrary to my original belief, the swamp beasts possess no intelligence. The buildings they inhabitate must have been built by a now extinct people. I assume that the three stone circles have been built by the same people.",
+            "Some pages later: I have discovered old drawings, showing humans fighting against swamp beasts. In the first pictures the humans flee from a huge beast. A bit further down, one of the drawings shows a human warrior standing in the center of a stone circle, holding a weapon in his hand. Strangely, it shows the sun being exactly below the warrior and the ground. The warrior seems to be waiting, and looking at the sun. In the next drawing, he is still standing in the stone circle, but now he is killing a small swamp beast. His weapon seems to be glowing.",
+        ],
+        28 => &[
+            "Day 172, year 103. Personal diary of Cari-Maar of the Ilasner.",
+            "Today we finished raising the demon lord for the trap we've built for the Isara. Let them come now, they are doomed.",
+        ],
+        29 => &[
+            "Day 175, year 103. Personal diary of Ileanor, Lieutenant of the Isara.",
+            "Dead. All dead. Only Ishtar and I survived the storm of demon lords the Ilasner raised. We could flee, but we are locked into these rooms. The demon lords cannot enter, but they have begun to invoke the icy cold. We will freeze to death.",
+            "Day 177, year 103. Personal diary of Ileanor, Lieutenant of the Isara.",
+            "The cold is creeping into my bones. Ishtar has kept us alive so far, but now he is exhausted and cannot sustain the heating spell. I think the whole palace is frozen.",
+            "Why, oh why did we have to fight this war? The world was so beautiful, and so were we. But now, all that remains is blood and tears. If anyone survives this folly, let our fate teach you not to repeat our mistakes!",
+        ],
+        30 => &[
+            "Day 175, year 103. Personal diary of Islena.",
+            "The cursed Isara are caught in our trap. Now they will die, all of them will die.",
+            "Day 176, year 103. Personal diary of Islena.",
+            "It seems some of them got away. The demon lords are out of control and trying to freeze them to death. I can feel the cold even here, in my rooms.",
+            "Day 177, year 103. Personal diary of Islena.",
+            "The cold is slowly killing all of us. All attempts to control the demon lords have failed. Now all of us must die. But I shall die happily if I can take Ishtar with me into the cold.",
+        ],
+        32 => &["Once leads on, twice is rewarding, three times is dangerous."],
+        33 => &["Two Berkano flanking an Ansuz will give thee Endurance."],
+        34 => &["Berkano, Dagaz, Ansuz is healthy."],
+        35 => &["Ansuz and Dagaz twice - good for Mages."],
+        36 => &["Ansuz, Ehwaz, Dagaz - better defense for the Warrior."],
+        37 => &["Ehwaz twice followed by Berkano - better defense for the Mage."],
+        38 => &["Berkano, Ehwaz, Ansuz will decrease magic damage."],
+        40 => &[
+            "Day 213, year 61. Personal diary of Sluiran of the Caremar.",
+            "We have been attacked by demons again, and we are running out of dead bodies to raise in our defense. We can no longer reach those in the outer halls. It will not take long before they take our last defenses. But they shall not gain any profit by this. I shall cast a spell that will raise all dead in these halls over and over again. So we will continue the fight, even after we are dead.",
+        ],
+        41 => &[
+            "My dear Sarkilar,",
+            "thine shall be the land from rotten Exkordon to the icy shores Valkyries. It is ripe, ready for thee to take it. The magic of the Kir should give thee sufficient strength. Take as many of the young monks as thou canst, and cloud their mind, as I taught thee. Once thy force is strong enough, take the land which is promised thee.",
+            "Islena",
+        ],
+        42 => &["My wounds are too much to bear and I fear that I will not survive. I have found none of the parts of the Talisman of the Moon, nor the location of the Moon Pool in which to enchant it. I have failed to find a way to lift the curse off my old friend, and I am sorry."],
+        45 => &[
+            "Sacred potions",
+            "There are rumors saying a potion can be created, which holds the insignia of the very Ishtar himself. Bestowing his blessing upon the user. Imagine! The potency of such a liquid! Some of the ingredients are obvious.",
+            "Sulphur for preserving power in bottled form. Some kind of transformative agent must be added, how else can mere mortals consume the insignia without being entirely overcome by it? Madness it is to directly consume such an element. And madness will be the curse upon those who attempt it.",
+            "Here art no choice but to explore by testing the potions out. To balance the splendor of Ishtar's insignia it must contain a liquid harmful to humans. A poison or venom most likely. Possibly from a mushroom.",
+            "My first attempt ready now. The coloration looks promising, and the volunteers are ready. This will either be a splendid achievement worthy a record in the great library of Exkordon, or a good reason for me to go under ground.",
+        ],
+        46 => &["This is an arena. Death on the sand incurs none of the usual penalties of death. Thou shall not loose saves, experience, equipment or gold"],
+        100 => &[
+            "The pages are badly burned. You can only read: All those heros who tried to kill my brother died through his hands. To keep these young hotheads away, I summoned a demon to guard the entrance and ordered him to let no one pass but me. He is a bit short-sighted, but...",
+            "My brother must be killed, or the horror will never stop. He is my brother, but he must die for his misdeeds...",
+            "The last fight with the undeads was hard. But even though I am bleeding from many wounds, today is the day I will kill my brother. I will take the amulet and go into the family vault and face him now!",
+        ],
+        101 => &["Most of the page is burned, but you can read: To prevent holy water from hurting him, and his minions, my brother created a anti-magic zone which dispells all holy effects and all magic. But I have found a way to break this spell. I created an amulet to hold the counter-spell..."],
         _ => &[],
     }
 }
@@ -3381,6 +3475,26 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut character, &mut book, request, 2, false),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn book_text_lines_include_static_later_legacy_books() {
+        assert_eq!(
+            book_text_lines(24)[0],
+            "Day 155, year 103. Personal diary of Kamaleon of the Isara."
+        );
+        assert_eq!(
+            book_text_lines(30)[5],
+            "The cold is slowly killing all of us. All attempts to control the demon lords have failed. Now all of us must die. But I shall die happily if I can take Ishtar with me into the cold."
+        );
+        assert_eq!(
+            book_text_lines(38),
+            &["Berkano, Ehwaz, Ansuz will decrease magic damage."][..]
+        );
+        assert_eq!(
+            book_text_lines(100)[2],
+            "The last fight with the undeads was hard. But even though I am bleeding from many wounds, today is the day I will kill my brother. I will take the amulet and go into the family vault and face him now!"
         );
     }
 
