@@ -1285,6 +1285,7 @@ fn caligar_driver(
         3 => caligar_weight_door_driver(character, item),
         5..=9 => caligar_gun_driver(character, item),
         10 => caligar_key_assembly_driver(character, item, context),
+        11 => extinguish_driver(character, item),
         _ => ItemDriverOutcome::Unsupported {
             driver: IDR_CALIGAR,
             item_id: item.id,
@@ -5254,7 +5255,22 @@ mod tests {
             }
         );
 
+        training.driver_data = vec![11, 0];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut training, request, 36, false),
+            ItemDriverOutcome::Extinguish {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                extinguished: false,
+            }
+        );
+
         let mut timer_character = character(0);
+        assert_eq!(
+            execute_item_driver(&mut timer_character, &mut training, request, 36, false),
+            ItemDriverOutcome::Noop
+        );
+
         training.driver_data = vec![2, 1];
         let timer_request = ItemDriverRequest::Driver {
             driver: IDR_CALIGAR,
