@@ -195,6 +195,7 @@ pub const IID_AREA17_LIBRARYKEY: u32 = (0x01 << 24) | 0x00006F;
 pub const IID_AREA17_BLOODBOWL: u32 = (0x01 << 24) | 0x000071;
 pub const IID_AREA17_LOCKPICK: u32 = (0x01 << 24) | 0x000062;
 pub const IID_CALIGAR_PALACE_KEY_PART: u32 = (0x01 << 24) | 0x0000B3;
+pub const IID_AREA14_STEELBAR: u32 = (0x01 << 24) | 0x00005A;
 const V_LIGHT: i16 = 9;
 const LIGHT_TIMER_TICKS: u64 = TICKS_PER_SECOND * 30;
 pub const OUTCOME_ITEM_NAME_BYTES: usize = 32;
@@ -698,6 +699,29 @@ pub enum ItemDriverOutcome {
     },
     StepTrapDiscoverTarget {
         item_id: ItemId,
+    },
+    TrapdoorOpen {
+        item_id: ItemId,
+        character_id: CharacterId,
+        target_x: u16,
+        target_y: u16,
+        schedule_after_ticks: u64,
+    },
+    TrapdoorBlocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+    },
+    TrapdoorClose {
+        item_id: ItemId,
+    },
+    TrapdoorBusy {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TrapdoorNeedsStick {
+        item_id: ItemId,
+        character_id: CharacterId,
     },
     ChestTreasure {
         item_id: ItemId,
@@ -1557,6 +1581,11 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::KeyedDoorToggle { .. }
         | ItemDriverOutcome::DoubleDoorToggle { .. }
         | ItemDriverOutcome::PickDoorToggle { .. }
+        | ItemDriverOutcome::TrapdoorOpen { .. }
+        | ItemDriverOutcome::TrapdoorBlocked { .. }
+        | ItemDriverOutcome::TrapdoorClose { .. }
+        | ItemDriverOutcome::TrapdoorBusy { .. }
+        | ItemDriverOutcome::TrapdoorNeedsStick { .. }
         | ItemDriverOutcome::StafferSpecDoorToggle { .. } => 1,
         ItemDriverOutcome::StafferSpecDoorLocked { .. }
         | ItemDriverOutcome::PickDoorLocked { .. }
@@ -1706,6 +1735,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EXTINGUISH => extinguish_driver(character, item),
                 IDR_CHEST => chest_driver(character, item),
                 IDR_RANDCHEST => randchest_driver(character, item),
+                IDR_TRAPDOOR => trapdoor_driver(character, item, context),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
@@ -1794,6 +1824,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_EDEMONGATE | IDR_EDEMONDOOR | IDR_EDEMONBLOCK | IDR_EDEMONTUBE => Some(6),
         IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
+        IDR_RANDOMSHRINE | IDR_TRAPDOOR | IDR_JUNKPILE | IDR_GASTRAP => Some(14),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
@@ -3894,6 +3925,62 @@ fn steptrap_driver(
         y: u16::from(drdata(item, 1)),
         target_character_id: CharacterId(0),
         delay_ticks: 1,
+    }
+}
+
+fn trapdoor_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if context.timer_call || character.id.0 == 0 {
+        if drdata(item, 0) == 1 {
+            return ItemDriverOutcome::TrapdoorClose { item_id: item.id };
+        }
+        return ItemDriverOutcome::Noop;
+    }
+
+    if character.x == item.x && character.y == item.y {
+        if drdata(item, 0) != 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+            return ItemDriverOutcome::Noop;
+        }
+        let Ok(direction) = crate::direction::Direction::try_from(character.dir) else {
+            return ItemDriverOutcome::Noop;
+        };
+        let (dx, dy) = direction.delta();
+        let target_x = i32::from(character.x) - i32::from(dx);
+        let target_y = i32::from(character.y) - i32::from(dy);
+        let (Ok(target_x), Ok(target_y)) = (u16::try_from(target_x), u16::try_from(target_y))
+        else {
+            return ItemDriverOutcome::Noop;
+        };
+        return ItemDriverOutcome::TrapdoorOpen {
+            item_id: item.id,
+            character_id: character.id,
+            target_x,
+            target_y,
+            schedule_after_ticks: TICKS_PER_SECOND * 6,
+        };
+    }
+
+    if drdata(item, 0) != 0 {
+        return ItemDriverOutcome::TrapdoorBusy {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    if character.cursor_item.is_some() && context.cursor_template_id == Some(IID_AREA14_STEELBAR) {
+        return ItemDriverOutcome::TrapdoorBlocked {
+            item_id: item.id,
+            character_id: character.id,
+            cursor_item_id: character.cursor_item.expect("checked cursor above"),
+        };
+    }
+
+    ItemDriverOutcome::TrapdoorNeedsStick {
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -13774,6 +13861,109 @@ mod tests {
             }
         );
         assert_eq!(lava.sprite, 14364);
+    }
+
+    #[test]
+    fn trapdoor_step_opens_for_players_and_schedules_close() {
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        actor.x = 10;
+        actor.y = 10;
+        actor.dir = crate::direction::Direction::Right as u8;
+        let mut trapdoor = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TRAPDOOR);
+        trapdoor.x = 10;
+        trapdoor.y = 10;
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut trapdoor,
+            ItemDriverRequest::Driver {
+                driver: IDR_TRAPDOOR,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext::default(),
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TrapdoorOpen {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                target_x: 9,
+                target_y: 10,
+                schedule_after_ticks: TICKS_PER_SECOND * 6,
+            }
+        );
+    }
+
+    #[test]
+    fn trapdoor_uses_cursor_steelbar_to_block() {
+        let mut actor = character(1);
+        actor.x = 9;
+        actor.y = 10;
+        actor.cursor_item = Some(ItemId(99));
+        let mut trapdoor = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TRAPDOOR);
+        trapdoor.x = 10;
+        trapdoor.y = 10;
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut trapdoor,
+            ItemDriverRequest::Driver {
+                driver: IDR_TRAPDOOR,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext {
+                cursor_template_id: Some(IID_AREA14_STEELBAR),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TrapdoorBlocked {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(99),
+            }
+        );
+    }
+
+    #[test]
+    fn trapdoor_timer_closes_only_open_state() {
+        let mut timer = character(0);
+        let mut trapdoor = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TRAPDOOR);
+        trapdoor.driver_data = vec![1];
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer,
+            &mut trapdoor,
+            ItemDriverRequest::Driver {
+                driver: IDR_TRAPDOOR,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TrapdoorClose { item_id: ItemId(8) }
+        );
     }
 
     fn request(character_id: u32, item_id: u32, spec: i32) -> ItemUseRequest {

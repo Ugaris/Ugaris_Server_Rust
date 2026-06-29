@@ -5963,6 +5963,45 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::TrapdoorOpen {
+                item_id,
+                character_id,
+                target_x,
+                target_y,
+                schedule_after_ticks,
+            } => {
+                if self.open_trapdoor(
+                    item_id,
+                    character_id,
+                    target_x,
+                    target_y,
+                    schedule_after_ticks,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::TrapdoorBlocked {
+                item_id,
+                cursor_item_id,
+                ..
+            } => {
+                if self.block_trapdoor(item_id, cursor_item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::TrapdoorClose { item_id } => {
+                if self.close_trapdoor(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::TrapdoorBusy { .. }
+            | ItemDriverOutcome::TrapdoorNeedsStick { .. } => outcome,
             ItemDriverOutcome::BoneBridgePlace {
                 item_id,
                 character_id,
@@ -7426,6 +7465,80 @@ impl World {
         item.driver_data.resize(2, 0);
         item.driver_data[0] = x as u8;
         item.driver_data[1] = y as u8;
+        true
+    }
+
+    fn open_trapdoor(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        target_x: u16,
+        target_y: u16,
+        schedule_after_ticks: u64,
+    ) -> bool {
+        let Some((x, y)) = self
+            .items
+            .get(&item_id)
+            .map(|item| (usize::from(item.x), usize::from(item.y)))
+        else {
+            return false;
+        };
+        if !self.teleport_character_exact(
+            character_id,
+            usize::from(target_x),
+            usize::from(target_y),
+        ) {
+            return false;
+        }
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        item.driver_data.resize(1, 0);
+        item.driver_data[0] = 1;
+        item.sprite += 1;
+        if let Some(tile) = self.map.tile_mut(x, y) {
+            tile.flags.insert(MapFlags::TMOVEBLOCK);
+        }
+        self.mark_dirty_sector(x, y);
+        self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+        self.pending_system_texts.push(WorldSystemText {
+            character_id,
+            message: "A trapdoor opens under your feet, but you manage to jump back in time."
+                .to_string(),
+        });
+        true
+    }
+
+    fn block_trapdoor(&mut self, item_id: ItemId, cursor_item_id: ItemId) -> bool {
+        let Some((x, y)) = self.items.get(&item_id).map(|item| (item.x, item.y)) else {
+            return false;
+        };
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        item.driver_data.resize(1, 0);
+        item.driver_data[0] = 2;
+        item.sprite += 2;
+        self.mark_dirty_sector(usize::from(x), usize::from(y));
+        self.destroy_item(cursor_item_id)
+    }
+
+    fn close_trapdoor(&mut self, item_id: ItemId) -> bool {
+        let Some((x, y)) = self.items.get(&item_id).map(|item| (item.x, item.y)) else {
+            return false;
+        };
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.driver_data.first().copied().unwrap_or_default() != 1 {
+            return false;
+        }
+        item.driver_data[0] = 0;
+        item.sprite -= 1;
+        if let Some(tile) = self.map.tile_mut(usize::from(x), usize::from(y)) {
+            tile.flags.remove(MapFlags::TMOVEBLOCK);
+        }
+        self.mark_dirty_sector(usize::from(x), usize::from(y));
         true
     }
 
@@ -23988,6 +24101,107 @@ mod tests {
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(character.inventory[30], None);
         assert!(character.flags.contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
+    fn world_applies_area14_trapdoor_stepback_open_and_timer_close() {
+        let mut world = World::default();
+        world.map = MapGrid::new(20, 20);
+        let mut trapdoor = item(8, ItemFlags::USED | ItemFlags::USE);
+        trapdoor.driver = crate::item_driver::IDR_TRAPDOOR;
+        assert!(world.map.set_item_map(&mut trapdoor, 10, 10));
+        world.add_item(trapdoor);
+
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.dir = Direction::Right as u8;
+        assert!(world.spawn_character(player, 10, 10));
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_TRAPDOOR,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::TrapdoorOpen { .. }));
+        let player = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((player.x, player.y), (9, 10));
+        let trapdoor = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(trapdoor.driver_data[0], 1);
+        assert_eq!(trapdoor.sprite, 1);
+        assert!(world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK));
+        assert_eq!(world.timers.used_timers(), 1);
+        assert_eq!(
+            world.drain_pending_system_texts(),
+            vec![WorldSystemText {
+                character_id: CharacterId(1),
+                message: "A trapdoor opens under your feet, but you manage to jump back in time."
+                    .to_string(),
+            }]
+        );
+
+        world.tick.0 = TICKS_PER_SECOND * 6;
+        let outcomes = world.process_due_timers(14);
+        assert!(matches!(
+            outcomes.as_slice(),
+            [ItemDriverOutcome::TrapdoorClose { item_id: ItemId(8) }]
+        ));
+        let trapdoor = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(trapdoor.driver_data[0], 0);
+        assert_eq!(trapdoor.sprite, 0);
+        assert!(!world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK));
+    }
+
+    #[test]
+    fn world_applies_area14_trapdoor_steelbar_block() {
+        let mut world = World::default();
+        world.map = MapGrid::new(20, 20);
+        let mut trapdoor = item(8, ItemFlags::USED | ItemFlags::USE);
+        trapdoor.driver = crate::item_driver::IDR_TRAPDOOR;
+        assert!(world.map.set_item_map(&mut trapdoor, 10, 10));
+        world.add_item(trapdoor);
+
+        let mut player = character(1);
+        player.cursor_item = Some(ItemId(9));
+        assert!(world.spawn_character(player, 9, 10));
+        let mut steelbar = item(9, ItemFlags::USED);
+        steelbar.template_id = crate::item_driver::IID_AREA14_STEELBAR;
+        steelbar.carried_by = Some(CharacterId(1));
+        world.add_item(steelbar);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_TRAPDOOR,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::TrapdoorBlocked { .. }));
+        let trapdoor = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(trapdoor.driver_data[0], 2);
+        assert_eq!(trapdoor.sprite, 2);
+        assert!(!world.items.contains_key(&ItemId(9)));
+        assert_eq!(
+            world.characters.get(&CharacterId(1)).unwrap().cursor_item,
+            None
+        );
     }
 
     fn character(id: u32) -> Character {

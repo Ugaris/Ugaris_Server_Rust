@@ -18535,6 +18535,25 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TrapdoorOpen { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TrapdoorBlocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TrapdoorClose { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TrapdoorBusy { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You cannot do anything with it now.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TrapdoorNeedsStick { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You'd need something like a hard stick to lock the door.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::BoneBridgePlace { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeTimerTick { .. } => {
                                             executed += 1;
