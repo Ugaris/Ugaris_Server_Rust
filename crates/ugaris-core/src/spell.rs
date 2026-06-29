@@ -5,6 +5,7 @@ use crate::{
     combat::FIREBALL_DAMAGE,
     entity::{Character, CharacterFlags, Item, POWERSCALE},
     ids::ItemId,
+    item_driver::{IDR_BACKTOFIRE, IDR_CLANJEWEL, IDR_MELTINGKEY, IDR_PALACEBOMB, IDR_PALACECAP},
     tick::TICKS_PER_SECOND,
 };
 
@@ -237,6 +238,21 @@ pub fn is_timed_spell_driver(driver: u16) -> bool {
     )
 }
 
+pub fn is_spell_identity_driver(driver: u16) -> bool {
+    (1000..2000).contains(&driver)
+}
+
+pub fn is_dont_save_driver(driver: u16) -> bool {
+    matches!(
+        driver,
+        IDR_CURSE | IDR_MELTINGKEY | IDR_BACKTOFIRE | IDR_PALACEBOMB | IDR_PALACECAP
+    )
+}
+
+pub fn is_one_carry_driver(driver: u16) -> bool {
+    matches!(driver, IDR_CLANJEWEL | IDR_PALACEBOMB | IDR_PALACECAP)
+}
+
 pub fn effective_immunity(immunity: i32, tactics: i32, has_tactics_skill: bool) -> i32 {
     if has_tactics_skill {
         immunity + tactics_to_immunity(tactics + 14)
@@ -407,6 +423,33 @@ mod tests {
             assert!(is_timed_spell_driver(driver));
         }
         assert!(!is_timed_spell_driver(IDR_FIREBALL));
+    }
+
+    #[test]
+    fn drvlib_spell_identity_and_save_predicates_match_legacy_macros() {
+        assert!(!is_spell_identity_driver(999));
+        assert!(is_spell_identity_driver(IDR_BLESS));
+        assert!(is_spell_identity_driver(IDR_UWTALK));
+        assert!(is_spell_identity_driver(1999));
+        assert!(!is_spell_identity_driver(2000));
+
+        for driver in [
+            IDR_CURSE,
+            IDR_MELTINGKEY,
+            IDR_BACKTOFIRE,
+            IDR_PALACEBOMB,
+            IDR_PALACECAP,
+        ] {
+            assert!(is_dont_save_driver(driver));
+        }
+        assert!(!is_dont_save_driver(IDR_BLESS));
+        assert!(!is_dont_save_driver(IDR_FIREBALL));
+
+        for driver in [IDR_CLANJEWEL, IDR_PALACEBOMB, IDR_PALACECAP] {
+            assert!(is_one_carry_driver(driver));
+        }
+        assert!(!is_one_carry_driver(IDR_CURSE));
+        assert!(!is_one_carry_driver(IDR_BLESS));
     }
 
     #[test]
