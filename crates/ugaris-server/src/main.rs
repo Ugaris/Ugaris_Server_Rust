@@ -26,9 +26,9 @@ use ugaris_core::{
     },
     ids::{CharacterId, ItemId},
     item_driver::{
-        ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE,
-        IDR_FOOD, IDR_KEY_RING, IDR_SPECIAL_POTION, IDR_TORCH, IID_AREA2_ZOMBIESKULL1,
-        IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
+        legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_DECAYITEM,
+        IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_SPECIAL_POTION, IDR_TORCH,
+        IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
@@ -5271,6 +5271,22 @@ fn legacy_random(seed: u64, max: u32) -> u32 {
     value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
     ((value ^ (value >> 31)) % u64::from(max)) as u32
+}
+
+fn legacy_nomad_dice_roll(seed: u64, luck: u8) -> ([u8; 3], u8) {
+    let mut next_roll = 0_u64;
+    let mut roll_die = || {
+        let rolls = (0..=luck).map(|_| {
+            let roll = legacy_random(seed.wrapping_add(next_roll), 6) as u8 + 1;
+            next_roll = next_roll.wrapping_add(1);
+            roll
+        });
+        legacy_lucky_die_from_rolls(6, luck, rolls)
+    };
+
+    let dice = [roll_die(), roll_die(), roll_die()];
+    let total = dice.iter().copied().sum();
+    (dice, total)
 }
 
 fn random_chest_money_amount(level: u8, seed: u64) -> u32 {
@@ -11262,6 +11278,35 @@ mod tests {
     }
 
     #[test]
+    fn nomad_dice_roll_uses_three_lucky_six_sided_dice() {
+        let seed = 42;
+        let luck = 2;
+        let expected = [
+            legacy_lucky_die_from_rolls(
+                6,
+                luck,
+                (0..=luck).map(|offset| legacy_random(seed + u64::from(offset), 6) as u8 + 1),
+            ),
+            legacy_lucky_die_from_rolls(
+                6,
+                luck,
+                (3..=5).map(|offset| legacy_random(seed + offset, 6) as u8 + 1),
+            ),
+            legacy_lucky_die_from_rolls(
+                6,
+                luck,
+                (6..=8).map(|offset| legacy_random(seed + offset, 6) as u8 + 1),
+            ),
+        ];
+
+        let (dice, total) = legacy_nomad_dice_roll(seed, luck);
+
+        assert_eq!(dice, expected);
+        assert_eq!(total, expected.iter().copied().sum::<u8>());
+        assert!(dice.iter().all(|die| (1..=6).contains(die)));
+    }
+
+    #[test]
     fn nomad_stack_split_creates_cursor_stack_with_legacy_counts() {
         let character_id = CharacterId(7);
         let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -16469,9 +16514,32 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyAssemble { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble { final_key: false, .. }
                                             | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::NomadDice { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::NomadDice {
+                                            item_id,
+                                            character_id,
+                                            luck,
+                                        } => {
+                                            if let Some(character) = world.characters.get(&character_id) {
+                                                let seed = world
+                                                    .tick
+                                                    .0
+                                                    .wrapping_mul(1_048_573)
+                                                    .wrapping_add(u64::from(character_id.0))
+                                                    .wrapping_add(u64::from(item_id.0) << 16);
+                                                let ([d1, d2, d3], total) = legacy_nomad_dice_roll(seed, luck);
+                                                area_feedback.push((
+                                                    character_id,
+                                                    format!(
+                                                        "{} rolled {}, {} and {} for a total of {}.",
+                                                        character.name, d1, d2, d3, total
+                                                    ),
+                                                    8,
+                                                ));
+                                            }
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::LollipopLicked {
