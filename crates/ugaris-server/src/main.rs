@@ -1424,25 +1424,120 @@ fn apply_admin_character_command(
     world: &mut World,
     character_id: CharacterId,
     command: &str,
+    area_id: u32,
 ) -> Option<KeyringCommandResult> {
     let (verb, rest) = command
         .split_once(char::is_whitespace)
         .unwrap_or((command, ""));
     let verb = verb.trim_start_matches('/').trim_start_matches('#');
-    if verb.len() < 4 || !"saves".starts_with(&verb.to_ascii_lowercase()) {
-        return None;
-    }
-
     let Some(character) = world.characters.get_mut(&character_id) else {
         return Some(KeyringCommandResult::default());
     };
-    if !character.flags.contains(CharacterFlags::GOD) {
-        return None;
+
+    let is_lqmaster = character.flags.contains(CharacterFlags::GOD)
+        || character.flags.contains(CharacterFlags::EVENTMASTER)
+        || (area_id == 20 && character.flags.contains(CharacterFlags::LQMASTER));
+    let lower = verb.to_ascii_lowercase();
+
+    if lower.len() >= 4 && "saves".starts_with(&lower) {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let saves = legacy_atoi_prefix(rest).clamp(0, i64::from(u8::MAX)) as u8;
+        character.saves = saves;
+        return Some(KeyringCommandResult::default());
     }
 
-    let saves = legacy_atoi_prefix(rest).clamp(0, i64::from(u8::MAX)) as u8;
-    character.saves = saves;
-    Some(KeyringCommandResult::default())
+    if lower.len() >= 2 && "immortal".starts_with(&lower) {
+        if !is_lqmaster {
+            return None;
+        }
+        character.flags.toggle(CharacterFlags::IMMORTAL);
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Immortal is {}.",
+                if character.flags.contains(CharacterFlags::IMMORTAL) {
+                    "on"
+                } else {
+                    "off"
+                }
+            )],
+            ..Default::default()
+        });
+    }
+
+    if lower.len() >= 3 && "infrared".starts_with(&lower) {
+        if !is_lqmaster {
+            return None;
+        }
+        character.flags.toggle(CharacterFlags::INFRARED);
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Infrared is {}.",
+                if character.flags.contains(CharacterFlags::INFRARED) {
+                    "on"
+                } else {
+                    "off"
+                }
+            )],
+            ..Default::default()
+        });
+    }
+
+    if lower.len() >= 3 && "invisible".starts_with(&lower) {
+        if !is_lqmaster {
+            return None;
+        }
+        character.flags.toggle(CharacterFlags::INVISIBLE);
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Invisible is {}.",
+                if character.flags.contains(CharacterFlags::INVISIBLE) {
+                    "on"
+                } else {
+                    "off"
+                }
+            )],
+            ..Default::default()
+        });
+    }
+
+    if lower == "xray" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        character.flags.toggle(CharacterFlags::XRAY);
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Turned x-ray mode {}.",
+                if character.flags.contains(CharacterFlags::XRAY) {
+                    "on"
+                } else {
+                    "off"
+                }
+            )],
+            inventory_changed: true,
+            ..Default::default()
+        });
+    }
+
+    if lower.len() >= 3 && "spy".starts_with(&lower) {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        character.flags.toggle(CharacterFlags::SPY);
+        let enabled = character.flags.contains(CharacterFlags::SPY);
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Turned spy mode {}. You will {} see all tells, clan, alliance, club, area, and mirror chat.",
+                if enabled { "on" } else { "off" },
+                if enabled { "now" } else { "no longer" }
+            )],
+            ..Default::default()
+        });
+    }
+
+    None
 }
 
 fn apply_help_command(
@@ -6773,7 +6868,7 @@ mod tests {
         character.saves = 3;
         world.add_character(character);
 
-        assert!(apply_admin_character_command(&mut world, character_id, "/saves 12").is_none());
+        assert!(apply_admin_character_command(&mut world, character_id, "/saves 12", 1).is_none());
         assert_eq!(world.characters.get(&character_id).unwrap().saves, 3);
 
         world
@@ -6782,16 +6877,97 @@ mod tests {
             .unwrap()
             .flags
             .insert(CharacterFlags::GOD);
-        let result = apply_admin_character_command(&mut world, character_id, "/save 12abc")
+        let result = apply_admin_character_command(&mut world, character_id, "/save 12abc", 1)
             .expect("god saves command should be recognized by minlen 4 abbreviation");
 
         assert!(result.messages.is_empty());
         assert!(!result.inventory_changed);
         assert_eq!(world.characters.get(&character_id).unwrap().saves, 12);
 
-        apply_admin_character_command(&mut world, character_id, "/saves nope")
+        apply_admin_character_command(&mut world, character_id, "/saves nope", 1)
             .expect("god saves command should be recognized");
         assert_eq!(world.characters.get(&character_id).unwrap().saves, 0);
+    }
+
+    #[test]
+    fn live_quest_toggle_commands_preserve_legacy_gates_and_feedback() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::LQMASTER);
+        world.add_character(character);
+
+        assert!(apply_admin_character_command(&mut world, character_id, "/im", 1).is_none());
+
+        let immortal = apply_admin_character_command(&mut world, character_id, "/im", 20)
+            .expect("area-20 lqmaster immortal command should be recognized");
+        assert_eq!(immortal.messages, vec!["Immortal is on."]);
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::IMMORTAL));
+
+        let infrared = apply_admin_character_command(&mut world, character_id, "/inf", 20)
+            .expect("area-20 lqmaster infrared command should be recognized");
+        assert_eq!(infrared.messages, vec!["Infrared is on."]);
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::INFRARED));
+
+        let invisible = apply_admin_character_command(&mut world, character_id, "/inv", 20)
+            .expect("area-20 lqmaster invisible command should be recognized");
+        assert_eq!(invisible.messages, vec!["Invisible is on."]);
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::INVISIBLE));
+    }
+
+    #[test]
+    fn god_visibility_toggle_commands_preserve_legacy_feedback() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::GOD);
+        world.add_character(character);
+
+        let xray = apply_admin_character_command(&mut world, character_id, "/xray", 1)
+            .expect("god xray command should be recognized");
+        assert_eq!(xray.messages, vec!["Turned x-ray mode on."]);
+        assert!(xray.inventory_changed);
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::XRAY));
+
+        let spy = apply_admin_character_command(&mut world, character_id, "/spy", 1)
+            .expect("god spy command should be recognized");
+        assert_eq!(
+            spy.messages,
+            vec!["Turned spy mode on. You will now see all tells, clan, alliance, club, area, and mirror chat."]
+        );
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::SPY));
+
+        let spy_off = apply_admin_character_command(&mut world, character_id, "/spy", 1)
+            .expect("god spy command should toggle off");
+        assert_eq!(
+            spy_off.messages,
+            vec!["Turned spy mode off. You will no longer see all tells, clan, alliance, club, area, and mirror chat."]
+        );
     }
 
     #[test]
@@ -11093,7 +11269,12 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
-                            if let Some(result) = apply_admin_character_command(&mut world, character_id, &command) {
+                            if let Some(result) = apply_admin_character_command(
+                                &mut world,
+                                character_id,
+                                &command,
+                                u32::from(config.area_id),
+                            ) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
