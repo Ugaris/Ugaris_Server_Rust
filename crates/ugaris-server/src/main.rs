@@ -39,7 +39,7 @@ use ugaris_core::{
         EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
         IDR_ARMOR, IDR_HP, IDR_MANA, IDR_WEAPON,
     },
-    text::COL_DARK_GRAY,
+    text::{COL_DARK_GRAY, COL_LIGHT_BLUE, COL_LIGHT_GREEN, COL_LIGHT_RED, COL_ORANGE, COL_RESET},
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
     zone::ZoneLoader,
@@ -884,7 +884,68 @@ enum KeyringAutoAddPickupResult {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct KeyringCommandResult {
     messages: Vec<String>,
+    message_bytes: Vec<Vec<u8>>,
     inventory_changed: bool,
+}
+
+fn legacy_help_line_bytes(line: &str) -> Vec<u8> {
+    let bytes = line.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() + 16);
+    if line.starts_with("===") || line.starts_with("==") || line.starts_with("---") {
+        out.extend_from_slice(COL_LIGHT_RED);
+        out.extend_from_slice(bytes);
+        out.extend_from_slice(COL_RESET);
+        return out;
+    }
+    if line.starts_with("Note:") {
+        out.extend_from_slice(COL_ORANGE);
+        out.extend_from_slice(bytes);
+        out.extend_from_slice(COL_RESET);
+        return out;
+    }
+    if line.starts_with('/') || line.starts_with('#') {
+        let split_at = bytes
+            .iter()
+            .position(|byte| byte.is_ascii_whitespace())
+            .unwrap_or(bytes.len());
+        out.extend_from_slice(COL_LIGHT_BLUE);
+        out.extend_from_slice(&bytes[..split_at]);
+        out.extend_from_slice(COL_RESET);
+        color_help_parameters(&bytes[split_at..], &mut out);
+        return out;
+    }
+    color_help_parameters(bytes, &mut out);
+    out
+}
+
+fn color_help_parameters(bytes: &[u8], out: &mut Vec<u8>) {
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'<' {
+            if let Some(end) = bytes[index..].iter().position(|byte| *byte == b'>') {
+                let end = index + end + 1;
+                out.extend_from_slice(COL_LIGHT_GREEN);
+                out.extend_from_slice(&bytes[index..end]);
+                out.extend_from_slice(COL_RESET);
+                index = end;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+}
+
+fn legacy_help_result(messages: Vec<String>) -> KeyringCommandResult {
+    let message_bytes = messages
+        .iter()
+        .map(|message| legacy_help_line_bytes(message))
+        .collect();
+    KeyringCommandResult {
+        messages,
+        message_bytes,
+        inventory_changed: false,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1260,28 +1321,19 @@ fn apply_help_command(
         if !flags.intersects(CharacterFlags::STAFF | CharacterFlags::GOD) {
             return None;
         }
-        return Some(KeyringCommandResult {
-            messages: anti_cheat_help_lines(),
-            inventory_changed: false,
-        });
+        return Some(legacy_help_result(anti_cheat_help_lines()));
     }
     if verb.eq_ignore_ascii_case("macrohelp") {
         if !flags.intersects(CharacterFlags::STAFF | CharacterFlags::GOD) {
             return None;
         }
-        return Some(KeyringCommandResult {
-            messages: macro_help_lines(),
-            inventory_changed: false,
-        });
+        return Some(legacy_help_result(macro_help_lines()));
     }
     if verb.eq_ignore_ascii_case("penthelp") {
         if !flags.contains(CharacterFlags::GOD) {
             return None;
         }
-        return Some(KeyringCommandResult {
-            messages: pentagram_help_lines(),
-            inventory_changed: false,
-        });
+        return Some(legacy_help_result(pentagram_help_lines()));
     }
     if !verb.eq_ignore_ascii_case("help") {
         return None;
@@ -1607,10 +1659,7 @@ fn apply_help_command(
         "Type a command without parameters to get more information in some cases.".to_string(),
     );
 
-    Some(KeyringCommandResult {
-        messages,
-        inventory_changed: false,
-    })
+    Some(legacy_help_result(messages))
 }
 
 fn anti_cheat_help_lines() -> Vec<String> {
@@ -1759,6 +1808,7 @@ fn apply_pk_hate_command(
             Some(KeyringCommandResult {
                 messages,
                 inventory_changed: false,
+                ..Default::default()
             })
         }
         "iwilldie" => {
@@ -1824,6 +1874,7 @@ fn apply_pk_hate_command(
             Some(KeyringCommandResult {
                 messages,
                 inventory_changed: false,
+                ..Default::default()
             })
         }
         "listhate" => {
@@ -1857,6 +1908,7 @@ fn apply_pk_hate_command(
             Some(KeyringCommandResult {
                 messages,
                 inventory_changed: false,
+                ..Default::default()
             })
         }
         "clearhate" => {
@@ -1870,6 +1922,7 @@ fn apply_pk_hate_command(
             Some(KeyringCommandResult {
                 messages: vec!["Hate list has been erased.".to_string()],
                 inventory_changed: false,
+                ..Default::default()
             })
         }
         "hate" => {
@@ -1877,6 +1930,7 @@ fn apply_pk_hate_command(
                 return Some(KeyringCommandResult {
                     messages: vec![format!("Sorry, no one by the name {name} around.")],
                     inventory_changed: false,
+                    ..Default::default()
                 });
             };
             let can_add = match (
@@ -1899,6 +1953,7 @@ fn apply_pk_hate_command(
                 return Some(KeyringCommandResult {
                     messages: vec![format!("Sorry, no player by the name {name}.")],
                     inventory_changed: false,
+                    ..Default::default()
                 });
             };
             let Some(source) = world.characters.get(&character_id) else {
@@ -1921,6 +1976,7 @@ fn apply_pk_hate_command(
             Some(KeyringCommandResult {
                 messages,
                 inventory_changed: false,
+                ..Default::default()
             })
         }
         _ => None,
@@ -2023,6 +2079,7 @@ fn apply_keyring_command(
                 "You need to hold a keyring on your cursor to use this command.".to_string(),
             ],
             inventory_changed: false,
+            ..Default::default()
         });
     }
 
@@ -2034,6 +2091,7 @@ fn apply_keyring_command(
         return Some(KeyringCommandResult {
             messages,
             inventory_changed: false,
+            ..Default::default()
         });
     }
 
@@ -2044,30 +2102,35 @@ fn apply_keyring_command(
                 return Some(KeyringCommandResult {
                     messages: vec!["Usage: #keyring remove <number>".to_string()],
                     inventory_changed: false,
+                    ..Default::default()
                 });
             };
             let Some(index) = number.checked_sub(1) else {
                 return Some(KeyringCommandResult {
                     messages: vec!["Invalid key number. Use #keyring to see the list.".to_string()],
                     inventory_changed: false,
+                    ..Default::default()
                 });
             };
             let Some(entry) = player.keyring.get(index).cloned() else {
                 return Some(KeyringCommandResult {
                     messages: vec!["Invalid key number. Use #keyring to see the list.".to_string()],
                     inventory_changed: false,
+                    ..Default::default()
                 });
             };
             if let Err(message) = give_removed_keyring_entry(world, loader, character_id, &entry) {
                 return Some(KeyringCommandResult {
                     messages: vec![message.to_string()],
                     inventory_changed: false,
+                    ..Default::default()
                 });
             }
             player.remove_keyring_key_at(index);
             Some(KeyringCommandResult {
                 messages: vec![format!("Removed {} from your keyring.", entry.name)],
                 inventory_changed: true,
+                ..Default::default()
             })
         }
         "addall" => {
@@ -2100,6 +2163,7 @@ fn apply_keyring_command(
             Some(KeyringCommandResult {
                 messages,
                 inventory_changed: added_count > 0,
+                ..Default::default()
             })
         }
         "addallkeys" => {
@@ -2113,6 +2177,7 @@ fn apply_keyring_command(
                 return Some(KeyringCommandResult {
                     messages: vec!["This command requires staff privileges.".to_string()],
                     inventory_changed: false,
+                    ..Default::default()
                 });
             }
 
@@ -2140,6 +2205,7 @@ fn apply_keyring_command(
                     ),
                 ],
                 inventory_changed: false,
+                ..Default::default()
             })
         }
         "auto" => {
@@ -2153,11 +2219,13 @@ fn apply_keyring_command(
             Some(KeyringCommandResult {
                 messages: vec![message.to_string()],
                 inventory_changed: false,
+                ..Default::default()
             })
         }
         _ => Some(KeyringCommandResult {
             messages: vec!["Unknown keyring subcommand. Use: #keyring, #keyring remove <n>, #keyring addall, #keyring auto".to_string()],
             inventory_changed: false,
+            ..Default::default()
         }),
     }
 }
@@ -8012,6 +8080,10 @@ mod tests {
             .expect("help command should be recognized");
 
         assert_eq!(result.messages[0], "=== PLAYER COMMANDS ===");
+        assert_eq!(
+            result.message_bytes[0],
+            b"\xb0c3=== PLAYER COMMANDS ===\xb0c0".to_vec()
+        );
         assert!(result
             .messages
             .contains(&"== Communication Commands ==".to_string()));
@@ -8034,6 +8106,15 @@ mod tests {
         assert!(result
             .messages
             .contains(&"/help - Display this help text".to_string()));
+        let help_line_index = result
+            .messages
+            .iter()
+            .position(|message| message == "/help - Display this help text")
+            .expect("help line should be present");
+        assert_eq!(
+            result.message_bytes[help_line_index],
+            b"\xb0c4/help\xb0c0 - Display this help text".to_vec()
+        );
         assert!(result.messages.contains(
             &"Type a command without parameters to get more information in some cases.".to_string()
         ));
@@ -8102,9 +8183,22 @@ mod tests {
         let ac = apply_help_command("#achelp", CharacterFlags::STAFF, 1)
             .expect("staff anti-cheat help should be recognized");
         assert_eq!(ac.messages[0], "--- Anti-Cheat Commands ---");
+        assert_eq!(
+            ac.message_bytes[0],
+            b"\xb0c3--- Anti-Cheat Commands ---\xb0c0".to_vec()
+        );
         assert!(ac
             .messages
             .contains(&"#acwarn <name> [reason] - Issue AC warning".to_string()));
+        let acwarn_index = ac
+            .messages
+            .iter()
+            .position(|message| message == "#acwarn <name> [reason] - Issue AC warning")
+            .expect("acwarn line should be present");
+        assert_eq!(
+            ac.message_bytes[acwarn_index],
+            b"\xb0c4#acwarn\xb0c0 \xb0c2<name>\xb0c0 [reason] - Issue AC warning".to_vec()
+        );
         assert!(ac
             .messages
             .contains(&"#accleanup <days> - Cleanup old records (God)".to_string()));
@@ -10705,6 +10799,7 @@ async fn main() -> anyhow::Result<()> {
                     info!(count = queued.len(), tick = world.tick.0, "drained queued client actions");
                 }
                 let mut command_feedback = Vec::new();
+                let mut command_feedback_bytes = Vec::new();
                 let mut command_inventory_refresh = Vec::new();
                 let mut command_container_refresh = Vec::new();
                 for (session_id, action) in queued {
@@ -10735,8 +10830,14 @@ async fn main() -> anyhow::Result<()> {
                                 .map(|character| character.flags)
                                 .unwrap_or_else(CharacterFlags::empty);
                             if let Some(result) = apply_help_command(&command, character_flags, u32::from(config.area_id)) {
-                                for message in result.messages {
-                                    command_feedback.push((character_id, message));
+                                if result.message_bytes.is_empty() {
+                                    for message in result.messages {
+                                        command_feedback.push((character_id, message));
+                                    }
+                                } else {
+                                    for message in result.message_bytes {
+                                        command_feedback_bytes.push((character_id, message));
+                                    }
                                 }
                                 continue;
                             }
@@ -10790,10 +10891,18 @@ async fn main() -> anyhow::Result<()> {
                         _ => {}
                     }
                 }
-                if !command_feedback.is_empty() || !command_inventory_refresh.is_empty() || !command_container_refresh.is_empty() {
+                if !command_feedback.is_empty() || !command_feedback_bytes.is_empty() || !command_inventory_refresh.is_empty() || !command_container_refresh.is_empty() {
                     let mut feedback_sessions = 0;
                     for (character_id, message) in command_feedback {
                         let payload = ugaris_protocol::packet::system_text(&message);
+                        for (session_id, _) in runtime.sessions_for_character(character_id) {
+                            if runtime.send_to_session(session_id, payload.clone()) {
+                                feedback_sessions += 1;
+                            }
+                        }
+                    }
+                    for (character_id, message) in command_feedback_bytes {
+                        let payload = ugaris_protocol::packet::system_text_bytes(&message);
                         for (session_id, _) in runtime.sessions_for_character(character_id) {
                             if runtime.send_to_session(session_id, payload.clone()) {
                                 feedback_sessions += 1;

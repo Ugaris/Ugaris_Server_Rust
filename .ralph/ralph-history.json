@@ -3986,15 +3986,42 @@
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
         "test result: ok. 516 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s"
       ]
+    },
+    {
+      "iteration": 145,
+      "startedAt": "2026-06-29T01:02:37.876Z",
+      "endedAt": "2026-06-29T01:09:03.581Z",
+      "durationMs": 385520,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/crates",
+        "error: unexpected argument 'help_command_includes_legacy_pk_security_lines' found",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 19 previous errors",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 131 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 65414174,
+  "totalDurationMs": 65799694,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 138,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 136,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 127,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 139,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 137,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 128,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 52,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 53,
@@ -4033,7 +4060,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 334 filtered out; finished in 0.00s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 331 filtered out; finished in 0.00s": 1,
       "test result: ok. 335 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/crates": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/crates": 2,
       "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 323 filtered out; finished in 0.00s": 1,
       "test result: ok. 339 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 339 filtered out; finished in 0.00s": 1,
@@ -4167,7 +4194,7 @@
       "test result: ok. 403 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out     Running unittests src": 1,
       "The port slice is implemented. I’m running formatting and targeted tests first, then I’ll expand if ": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.00s": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 403 filtered out; finished in 0.00s": 1,
       "`ugaris-core` tests pass with the new compatibility coverage. I’m updating the ledger now, then I’ll": 1,
       "error: unexpected argument 'freeze_spell_timer_restores_speed_and_rescales_current_action' found": 1,
@@ -4296,7 +4323,7 @@
       "test result: ok. 454 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
       "The walk-or-use behavior was already partially present, but the path selection can miss a C-like imm": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 51,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 52,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 454 filtered out; finished in 0.02s": 1,
       "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.05s": 1,
       "test result: ok. 455 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -4320,7 +4347,7 @@
       "error: unexpected argument 'secure_move_driver_skips_move_after_blocked_use_and_teleports' found": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 464 filtered out; finished in 0.00s": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_noncombat_threads_failed_use_into_secure_move": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 41,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 42,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 466 filtered out; finished in 0.00s": 1,
       "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 43,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s": 1,
@@ -4439,7 +4466,10 @@
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 483 filtered out; finished in 0.01s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 129 filtered out; finished in 0.00s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 128 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 134 filtered out; finished in 0.00s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 134 filtered out; finished in 0.00s": 1,
+      "error: unexpected argument 'help_command_includes_legacy_pk_security_lines' found": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 19 previous errors": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 131 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
