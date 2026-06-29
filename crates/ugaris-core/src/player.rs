@@ -39,6 +39,10 @@ pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
 pub const LEGACY_RUNE_PPD_SIZE: usize = RUNE_USED_WORDS * 4 + RUNE_SPECIAL_EXEC_COUNT * 4;
 pub const PK_HATE_MAX_ENTRIES: usize = 50;
 pub const LEGACY_PK_PPD_SIZE: usize = 4 * 4 + PK_HATE_MAX_ENTRIES * 4;
+pub const ALIAS_MAX_ENTRIES: usize = 32;
+pub const ALIAS_FROM_LEN: usize = 8;
+pub const ALIAS_TO_LEN: usize = 56;
+pub const LEGACY_ALIAS_PPD_SIZE: usize = ALIAS_MAX_ENTRIES * (ALIAS_FROM_LEN + ALIAS_TO_LEN);
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
@@ -56,6 +60,7 @@ pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DA
 pub const DRD_LOSTCON_PPD: u32 = make_drd(DEV_ID_DB, 91 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FLOWER_PPD: u32 = make_drd(DEV_ID_DB, 62 | PERSISTENT_PLAYER_DATA);
 pub const DRD_MISC_PPD: u32 = make_drd(DEV_ID_DB, 113 | PERSISTENT_PLAYER_DATA);
+pub const DRD_ALIAS_PPD: u32 = make_drd(DEV_ID_DB, 80 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_DIG_PPD: u32 = make_drd(DEV_ID_ED, 5 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RUNE_PPD: u32 = make_drd(DEV_ID_DB, 108 | PERSISTENT_PLAYER_DATA);
@@ -316,6 +321,14 @@ pub struct PlayerRuntime {
     pub rune_used_words: [u32; RUNE_USED_WORDS],
     #[serde(default)]
     pub rune_special_exec: [i32; RUNE_SPECIAL_EXEC_COUNT],
+    #[serde(default)]
+    pub aliases: Vec<CommandAlias>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandAlias {
+    pub from: String,
+    pub to: String,
 }
 
 impl PlayerRuntime {
@@ -364,7 +377,84 @@ impl PlayerRuntime {
             tell_data: TellData::default(),
             rune_used_words: [0; RUNE_USED_WORDS],
             rune_special_exec: [0; RUNE_SPECIAL_EXEC_COUNT],
+            aliases: Vec::new(),
         }
+    }
+
+    pub fn encode_legacy_alias_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_ALIAS_PPD_SIZE];
+        for (index, alias) in self.aliases.iter().take(ALIAS_MAX_ENTRIES).enumerate() {
+            let offset = index * (ALIAS_FROM_LEN + ALIAS_TO_LEN);
+            write_c_string(&mut bytes, offset, ALIAS_FROM_LEN, &alias.from);
+            write_c_string(&mut bytes, offset + ALIAS_FROM_LEN, ALIAS_TO_LEN, &alias.to);
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_alias_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_ALIAS_PPD_SIZE {
+            return false;
+        }
+        self.aliases.clear();
+        for index in 0..ALIAS_MAX_ENTRIES {
+            let offset = index * (ALIAS_FROM_LEN + ALIAS_TO_LEN);
+            let from = read_c_string(bytes, offset, ALIAS_FROM_LEN);
+            if from.is_empty() {
+                continue;
+            }
+            let to = read_c_string(bytes, offset + ALIAS_FROM_LEN, ALIAS_TO_LEN);
+            self.aliases.push(CommandAlias { from, to });
+        }
+        true
+    }
+
+    pub fn expand_aliases(&self, source: &str) -> String {
+        fn alias_stop(ch: char) -> bool {
+            ch.is_whitespace() || (ch.is_ascii_punctuation() && ch != '\'')
+        }
+
+        let mut out = String::new();
+        let mut token = String::new();
+        for ch in source.chars() {
+            if alias_stop(ch) {
+                if token.is_empty() {
+                    out.push(ch);
+                    continue;
+                }
+                if let Some(alias) = self
+                    .aliases
+                    .iter()
+                    .find(|alias| alias.from.eq_ignore_ascii_case(&token))
+                {
+                    out.push_str(&alias.to);
+                } else {
+                    out.push_str(&token);
+                }
+                token.clear();
+                out.push(ch);
+            } else {
+                token.push(ch);
+            }
+            if out.len() > 198 {
+                out.truncate(199);
+                return out;
+            }
+        }
+        if !token.is_empty() {
+            if let Some(alias) = self
+                .aliases
+                .iter()
+                .find(|alias| alias.from.eq_ignore_ascii_case(&token))
+            {
+                out.push_str(&alias.to);
+            } else {
+                out.push_str(&token);
+            }
+        }
+        if out.len() > 199 {
+            out.truncate(199);
+        }
+        out
     }
 
     pub fn ensure_rune_special_execs<F>(&mut self, mut random_below: F)
@@ -1124,6 +1214,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_ALIAS_PPD => {
+                    if !self.decode_legacy_alias_ppd(block.data) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -1144,6 +1239,7 @@ impl PlayerRuntime {
         let mut had_treasure_dig = false;
         let mut had_misc = false;
         let mut had_rune = false;
+        let mut had_alias = false;
         let mut existing_was_valid = true;
 
         for block in LegacyPpdBlocks::parse(existing) {
@@ -1226,6 +1322,11 @@ impl PlayerRuntime {
             } else if block.id == DRD_RUNE_PPD {
                 had_rune = true;
                 write_ppd_block(&mut encoded, DRD_RUNE_PPD, &self.encode_legacy_rune_ppd());
+            } else if block.id == DRD_ALIAS_PPD {
+                had_alias = true;
+                if !self.aliases.is_empty() {
+                    write_ppd_block(&mut encoded, DRD_ALIAS_PPD, &self.encode_legacy_alias_ppd());
+                }
             } else {
                 write_ppd_block(&mut encoded, block.id, block.data);
             }
@@ -1331,6 +1432,9 @@ impl PlayerRuntime {
             {
                 write_ppd_block(&mut encoded, DRD_RUNE_PPD, &self.encode_legacy_rune_ppd());
             }
+        }
+        if !had_alias && (existing_was_valid || existing.is_empty()) && !self.aliases.is_empty() {
+            write_ppd_block(&mut encoded, DRD_ALIAS_PPD, &self.encode_legacy_alias_ppd());
         }
 
         encoded
@@ -1854,11 +1958,72 @@ mod tests {
         assert_eq!(DRD_RANDCHEST_PPD, 0x8100_003f);
         assert_eq!(DRD_DEMONSHRINE_PPD, 0x8100_0044);
         assert_eq!(DRD_MISC_PPD, 0x8100_0071);
+        assert_eq!(DRD_ALIAS_PPD, 0x8100_0050);
         assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_DEMONSHRINE_PPD_SIZE, 400);
         assert_eq!(LEGACY_MISC_PPD_SIZE, 36);
+    }
+
+    #[test]
+    fn alias_ppd_codec_matches_legacy_fixed_arrays() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.aliases.push(CommandAlias {
+            from: "tyvm123".to_string(),
+            to: "Thank you very much for everything".to_string(),
+        });
+
+        let bytes = player.encode_legacy_alias_ppd();
+        assert_eq!(bytes.len(), LEGACY_ALIAS_PPD_SIZE);
+        assert_eq!(&bytes[..8], b"tyvm123\0");
+        assert_eq!(&bytes[8..42], b"Thank you very much for everything");
+        assert_eq!(bytes[42], 0);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_alias_ppd(&bytes));
+        assert_eq!(decoded.aliases, player.aliases);
+    }
+
+    #[test]
+    fn alias_ppd_outer_blob_replaces_and_removes_empty_aliases() {
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, DRD_ALIAS_PPD, &[1; LEGACY_ALIAS_PPD_SIZE]);
+        write_ppd_block(&mut existing, 0x1234_5678, &[9]);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.aliases.push(CommandAlias {
+            from: "ty".to_string(),
+            to: "Thank you!".to_string(),
+        });
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), DRD_ALIAS_PPD);
+        assert_eq!(&encoded[8..11], b"ty\0");
+        assert_eq!(read_u32(&encoded, 8 + LEGACY_ALIAS_PPD_SIZE), 0x1234_5678);
+
+        player.aliases.clear();
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), 0x1234_5678);
+        assert!(!encoded
+            .windows(4)
+            .any(|window| window == DRD_ALIAS_PPD.to_le_bytes()));
+    }
+
+    #[test]
+    fn alias_expansion_matches_legacy_word_boundaries() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.aliases.push(CommandAlias {
+            from: "ty".to_string(),
+            to: "Thank you".to_string(),
+        });
+        player.aliases.push(CommandAlias {
+            from: "don't".to_string(),
+            to: "do not".to_string(),
+        });
+
+        assert_eq!(player.expand_aliases("ty!"), "Thank you!");
+        assert_eq!(player.expand_aliases("pretty ty"), "pretty Thank you");
+        assert_eq!(player.expand_aliases("don't stop"), "do not stop");
     }
 
     #[test]

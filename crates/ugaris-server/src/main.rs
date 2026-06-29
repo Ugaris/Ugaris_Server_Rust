@@ -34,7 +34,7 @@ use ugaris_core::{
     legacy::{action, profession, INVENTORY_START_INVENTORY},
     map::{MapFlags, MapTile},
     player::{
-        DemonShrineResult, KeyringAddResult, PlayerActionCode, PlayerConnectionState,
+        CommandAlias, DemonShrineResult, KeyringAddResult, PlayerActionCode, PlayerConnectionState,
         PlayerRuntime, QueuedAction, XmasTreeResult,
     },
     spell::{
@@ -1275,6 +1275,106 @@ fn normalize_text_command(bytes: &[u8]) -> Option<String> {
         return None;
     }
     Some(text.to_string())
+}
+
+fn legacy_alias_command_verb(verb: &str) -> Option<&'static str> {
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() >= 2 && "alias".starts_with(&lower) {
+        return Some("alias");
+    }
+    if lower == "clearaliases" {
+        return Some("clearaliases");
+    }
+    None
+}
+
+fn apply_alias_command(player: &mut PlayerRuntime, command: &str) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = legacy_alias_command_verb(verb)?;
+    if verb == "clearaliases" {
+        player.aliases.clear();
+        return Some(KeyringCommandResult {
+            messages: vec!["Done. All gone now.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    let rest = rest.trim_start();
+    let mut from_end = rest.len();
+    for (index, ch) in rest.char_indices() {
+        if ch.is_whitespace() {
+            from_end = index;
+            break;
+        }
+    }
+    let from = rest[..from_end].chars().take(7).collect::<String>();
+    if from.is_empty() {
+        let messages = if player.aliases.is_empty() {
+            vec!["None defined.".to_string()]
+        } else {
+            player
+                .aliases
+                .iter()
+                .map(|alias| format!("{} -> {}", alias.from, alias.to))
+                .collect()
+        };
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
+    let to = rest[from_end..]
+        .trim_start()
+        .chars()
+        .take(55)
+        .collect::<String>();
+    if let Some(alias) = player
+        .aliases
+        .iter_mut()
+        .find(|alias| alias.from.eq_ignore_ascii_case(&from))
+    {
+        if to.is_empty() {
+            let old_from = alias.from.clone();
+            let old_to = alias.to.clone();
+            player
+                .aliases
+                .retain(|alias| !alias.from.eq_ignore_ascii_case(&from));
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Erased {old_from} -> {old_to}.")],
+                ..Default::default()
+            });
+        }
+        alias.to = to.clone();
+        return Some(KeyringCommandResult {
+            messages: vec![format!("Replaced {from} -> {to}.")],
+            ..Default::default()
+        });
+    }
+
+    if to.is_empty() {
+        return Some(KeyringCommandResult {
+            messages: vec![format!("Alias {from} not found, could not delete.")],
+            ..Default::default()
+        });
+    }
+    if player.aliases.len() >= ugaris_core::player::ALIAS_MAX_ENTRIES {
+        return Some(KeyringCommandResult {
+            messages: vec!["Alias memory is full, cannot add.".to_string()],
+            ..Default::default()
+        });
+    }
+    player.aliases.push(CommandAlias {
+        from: from.clone(),
+        to: to.clone(),
+    });
+    Some(KeyringCommandResult {
+        messages: vec![format!("Created {from} -> {to}.")],
+        ..Default::default()
+    })
 }
 
 fn find_online_character_by_name(world: &World, name: &str) -> Option<CharacterId> {
@@ -9863,6 +9963,53 @@ mod tests {
     }
 
     #[test]
+    fn alias_command_create_list_replace_delete_and_clear_match_legacy_feedback() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let created = apply_alias_command(&mut player, "/alias thanks Thank you!")
+            .expect("alias command should be recognized");
+        let listed =
+            apply_alias_command(&mut player, "/alias").expect("alias list should be recognized");
+        let replaced = apply_alias_command(&mut player, "/alias thanks Thanks!")
+            .expect("alias replacement should be recognized");
+        let erased = apply_alias_command(&mut player, "/alias thanks")
+            .expect("alias deletion should be recognized");
+        let missing = apply_alias_command(&mut player, "/alias thanks")
+            .expect("missing alias deletion should be recognized");
+        let cleared = apply_alias_command(&mut player, "/clearaliases")
+            .expect("clearaliases should be recognized");
+
+        assert_eq!(created.messages, vec!["Created thanks -> Thank you!."]);
+        assert_eq!(listed.messages, vec!["thanks -> Thank you!"]);
+        assert_eq!(replaced.messages, vec!["Replaced thanks -> Thanks!."]);
+        assert_eq!(erased.messages, vec!["Erased thanks -> Thanks!."]);
+        assert_eq!(
+            missing.messages,
+            vec!["Alias thanks not found, could not delete."]
+        );
+        assert_eq!(cleared.messages, vec!["Done. All gone now."]);
+    }
+
+    #[test]
+    fn alias_command_truncates_legacy_from_and_to_lengths() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let result = apply_alias_command(
+            &mut player,
+            "/alias abcdefghijklmnopqrstuvwxyz 123456789012345678901234567890123456789012345678901234567890",
+        )
+        .expect("alias command should be recognized");
+
+        assert_eq!(player.aliases[0].from, "abcdefg");
+        assert_eq!(player.aliases[0].to.len(), 55);
+        assert_eq!(
+            result.messages[0],
+            format!("Created abcdefg -> {}.", player.aliases[0].to)
+        );
+        assert!(apply_alias_command(&mut player, "/al abc").is_some());
+        assert!(apply_alias_command(&mut player, "/a abc").is_none());
+    }
+
+    #[test]
     fn pk_hate_command_adds_online_player_and_clears_lag() {
         let mut attacker = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
         attacker
@@ -12695,9 +12842,21 @@ async fn main() -> anyhow::Result<()> {
                     };
                     match action {
                         ClientAction::Text(bytes) => {
-                            let Some(command) = normalize_text_command(&bytes) else {
+                            let Some(mut command) = normalize_text_command(&bytes) else {
                                 continue;
                             };
+                            {
+                                let Some(player) = runtime.players.get_mut(&session_id) else {
+                                    continue;
+                                };
+                                if let Some(result) = apply_alias_command(player, &command) {
+                                    for message in result.messages {
+                                        command_feedback.push((character_id, message));
+                                    }
+                                    continue;
+                                }
+                                command = player.expand_aliases(&command);
+                            }
                             if command.eq_ignore_ascii_case("accountdepotsort") {
                                 if let Some(depot) = runtime.account_depots.get_mut(&character_id) {
                                     account_depot_sort(depot);
