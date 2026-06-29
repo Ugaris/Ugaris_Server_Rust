@@ -15691,8 +15691,9 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "The potion seems finished.".to_string()));
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskShakeUnported { .. } => {
-                                            blocked += 1;
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskRuined { character_id, .. } => {
+                                            feedback.push((character_id, "You shake the bottle and create a stinking liquid which you throw away.".to_string()));
+                                            executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerMixed {
                                             character_id,

@@ -401,3 +401,7 @@ Recommended next chest steps:
 6. Port `src/system/drvlib.c`, `src/system/libload.c`, all `src/module/**` drivers using the static Rust registry plan.
 7. Port area modules under `src/area/**`.
 8. Port chat, auction, anti-cheat, weather, event, command/admin systems.
+
+### Iteration 193 Additional Progress
+
+- `IDR_FLASK` shake item-state parity now mirrors C `flask_driver`: successful unfinished-flask mixes set the carried item to `Magical Potion` with size-specific magical sprites/descriptions, and failed mixes reset the item to an `Empty Potion` with size-specific empty bottle sprites/descriptions, cleared modifiers/drdata except size, value `10`, class requirements cleared, and the legacy stinking-liquid feedback. Focused core tests cover both final and ruined bottle states.

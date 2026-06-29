@@ -781,10 +781,9 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
-    FlaskShakeUnported {
+    FlaskRuined {
         item_id: ItemId,
         character_id: CharacterId,
-        shaken: bool,
     },
     LizardFlowerMixed {
         item_id: ItemId,
@@ -1676,7 +1675,53 @@ fn finish_flask_mix(
     set_drdata(item, 3, duration);
     item.value = value.max(0) as u32;
     item.needs_class = needs_class;
+    set_flask_magical_state(item);
     Some(())
+}
+
+fn reset_flask_empty_state(item: &mut Item) {
+    let size = drdata(item, 0);
+    item.name = "Empty Potion".to_string();
+    match size {
+        1 => {
+            item.sprite = 10290;
+            item.description = "A small flask made of glass.".to_string();
+        }
+        2 => {
+            item.sprite = 10294;
+            item.description = "A flask made of glass.".to_string();
+        }
+        3 => {
+            item.sprite = 10302;
+            item.description = "A big flask made of glass.".to_string();
+        }
+        _ => {}
+    }
+    item.driver_data.clear();
+    item.driver_data.push(size);
+    item.modifier_index = [0; MAX_MODIFIERS];
+    item.modifier_value = [0; MAX_MODIFIERS];
+    item.value = 10;
+    item.needs_class = 0;
+}
+
+fn set_flask_magical_state(item: &mut Item) {
+    item.name = "Magical Potion".to_string();
+    match drdata(item, 0) {
+        1 => {
+            item.sprite = 50213;
+            item.description = "A small flask containing a magical liquid.".to_string();
+        }
+        2 => {
+            item.sprite = 50214;
+            item.description = "A flask containing a magical liquid.".to_string();
+        }
+        3 => {
+            item.sprite = 50253;
+            item.description = "A big flask containing a magical liquid.".to_string();
+        }
+        _ => {}
+    }
 }
 
 fn flask_driver(
@@ -1730,10 +1775,10 @@ fn flask_driver(
                     character_id: character.id,
                 };
             }
-            return ItemDriverOutcome::FlaskShakeUnported {
+            reset_flask_empty_state(item);
+            return ItemDriverOutcome::FlaskRuined {
                 item_id: item.id,
                 character_id: character.id,
-                shaken,
             };
         }
         return ItemDriverOutcome::FlaskEmptyShaken {
@@ -4713,6 +4758,49 @@ mod tests {
         assert_eq!(flask.modifier_index[0], CharacterValue::Attack as i16);
         assert_eq!(flask.modifier_value[0], 3);
         assert_eq!(flask.value, 3 * 7 * 13 + 50);
+        assert_eq!(flask.needs_class, 0);
+        assert_eq!(flask.name, "Magical Potion");
+        assert_eq!(flask.sprite, 50214);
+        assert_eq!(flask.description, "A flask containing a magical liquid.");
+    }
+
+    #[test]
+    fn flask_driver_ports_failed_shake_reset_to_empty_bottle() {
+        let mut actor = character(1);
+        let mut flask = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLASK);
+        flask.carried_by = Some(CharacterId(1));
+        flask.name = "Unfinished Potion".to_string();
+        flask.description = "A flask containing some strange liquid.".to_string();
+        flask.sprite = 50209;
+        flask.value = 123;
+        flask.needs_class = 8;
+        flask.driver_data.resize(35, 0);
+        flask.driver_data[0] = 2;
+        flask.driver_data[1] = 1;
+        flask.driver_data[11] = 1;
+        flask.modifier_index[0] = CharacterValue::Wisdom as i16;
+        flask.modifier_value[0] = 1;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FLASK,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut flask, request, 1, false),
+            ItemDriverOutcome::FlaskRuined {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(flask.name, "Empty Potion");
+        assert_eq!(flask.sprite, 10294);
+        assert_eq!(flask.description, "A flask made of glass.");
+        assert_eq!(flask.driver_data, vec![2]);
+        assert_eq!(flask.modifier_index, [0; MAX_MODIFIERS]);
+        assert_eq!(flask.modifier_value, [0; MAX_MODIFIERS]);
+        assert_eq!(flask.value, 10);
         assert_eq!(flask.needs_class, 0);
     }
 
