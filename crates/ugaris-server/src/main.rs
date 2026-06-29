@@ -1246,6 +1246,29 @@ fn legacy_pk_command_verb(verb: &str) -> Option<&'static str> {
     None
 }
 
+fn apply_help_command(command: &str) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("help") {
+        return None;
+    }
+
+    Some(KeyringCommandResult {
+        messages: vec![
+            "== PvP & Security Commands ==".to_string(),
+            "/playerkiller - Toggle player killing mode on/off".to_string(),
+            "/iwilldie <id> - Confirm enabling player killer mode".to_string(),
+            "/hate <name> - Add player to your PK list (only works in PK mode)".to_string(),
+            "/nohate <name> - Remove player from your PK list".to_string(),
+            "/listhate - Show all players on your PK list".to_string(),
+            "/clearhate - Clear your entire PK list at once".to_string(),
+        ],
+        inventory_changed: false,
+    })
+}
+
 fn apply_pk_hate_command(
     world: &mut World,
     player: &mut PlayerRuntime,
@@ -7261,6 +7284,24 @@ mod tests {
     }
 
     #[test]
+    fn help_command_includes_legacy_pk_security_lines() {
+        let result = apply_help_command("/help").expect("help command should be recognized");
+
+        assert_eq!(result.messages[0], "== PvP & Security Commands ==");
+        assert!(result
+            .messages
+            .contains(&"/playerkiller - Toggle player killing mode on/off".to_string()));
+        assert!(result
+            .messages
+            .contains(&"/iwilldie <id> - Confirm enabling player killer mode".to_string()));
+        assert!(result
+            .messages
+            .contains(&"/clearhate - Clear your entire PK list at once".to_string()));
+        assert!(apply_help_command("/hel").is_none());
+        assert!(!result.inventory_changed);
+    }
+
+    #[test]
     fn pk_hate_command_clear_requires_pk_and_clears_runtime_list() {
         let mut character = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
         character.flags.remove(CharacterFlags::PK);
@@ -9857,6 +9898,12 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             };
                             let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
+                            if let Some(result) = apply_help_command(&command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
                             if let Some(result) = apply_pk_hate_command(&mut world, player, character_id, &command, realtime_seconds) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
