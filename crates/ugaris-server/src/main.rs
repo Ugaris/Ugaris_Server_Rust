@@ -1452,6 +1452,93 @@ fn apply_maxlag_command(player: &mut PlayerRuntime, command: &str) -> Option<Key
     })
 }
 
+fn apply_status_command(
+    character: &Character,
+    player: &PlayerRuntime,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.is_empty() || !"status".starts_with(&lower) {
+        return None;
+    }
+
+    let mut messages = vec![
+        "Lag Control Settings:".to_string(),
+        format!("Max. Lag [/MAXLAG]: {} sec.", player.max_lag_seconds),
+    ];
+
+    let has_spell = |value: CharacterValue| character.values[1][value as usize] > 0;
+    if has_spell(CharacterValue::Flash) {
+        messages.push("Don't use Ball Lightning [/NOBALL]: Off.".to_string());
+    }
+    if has_spell(CharacterValue::Bless) {
+        messages.push("Don't use Bless [/NOBLESS]: Off.".to_string());
+    }
+    if has_spell(CharacterValue::Fireball) {
+        messages.push("Don't use Fireball [/NOFIREBALL]: Off.".to_string());
+    }
+    if has_spell(CharacterValue::Flash) {
+        messages.push("Don't use Lightning Flash [/NOFLASH]: Off.".to_string());
+    }
+    if has_spell(CharacterValue::Freeze) {
+        messages.push("Don't use Freeze [/NOFREEZE]: Off.".to_string());
+    }
+    if has_spell(CharacterValue::Heal) {
+        messages.push("Don't use Heal [/NOHEAL]: Off.".to_string());
+    }
+    if has_spell(CharacterValue::MagicShield) {
+        messages.push("Don't use Magic Shield [/NOSHIELD]: Off.".to_string());
+    }
+    if has_spell(CharacterValue::Pulse) {
+        messages.push("Don't use Pulse [/NOPULSE]: Off.".to_string());
+    }
+    if has_spell(CharacterValue::Warcry) {
+        messages.push("Don't use Warcry [/NOWARCRY]: Off.".to_string());
+    }
+
+    messages.extend([
+        "Don't use Healing Potions [/NOLIFE]: Off.".to_string(),
+        "Don't use Mana Potions [/NOMANA]: Off.".to_string(),
+        "Don't use Combo Potions [/NOCOMBO]: Off.".to_string(),
+        "Don't use Recall Scroll [/NORECALL]: Off.".to_string(),
+        "Don't Move [/NOMOVE]: Off.".to_string(),
+        "Automation Settings:".to_string(),
+    ]);
+    if has_spell(CharacterValue::Bless) {
+        messages.push("Automatic Re-Bless [/AUTOBLESS]: Off.".to_string());
+    }
+    if has_spell(CharacterValue::Pulse) {
+        messages.push("Automatic Pulse [/AUTOPULSE]: Off.".to_string());
+    }
+    messages.extend([
+        "Automatic Turning [/AUTOTURN]: Off.".to_string(),
+        "Protection Settings:".to_string(),
+        format!(
+            "Allow others to bless me [/ALLOWBLESS]: {}.",
+            if character.flags.contains(CharacterFlags::NOBLESS) {
+                "No"
+            } else {
+                "Yes"
+            }
+        ),
+        "Account Status:".to_string(),
+        if character.flags.contains(CharacterFlags::PAID) {
+            "Paid Account".to_string()
+        } else {
+            "Trial Account".to_string()
+        },
+    ]);
+
+    Some(KeyringCommandResult {
+        messages,
+        ..Default::default()
+    })
+}
+
 fn apply_admin_character_command(
     world: &mut World,
     character_id: CharacterId,
@@ -7323,6 +7410,51 @@ mod tests {
     }
 
     #[test]
+    fn status_command_shows_represented_lostcon_and_account_state() {
+        let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        character
+            .flags
+            .insert(CharacterFlags::PAID | CharacterFlags::NOBLESS);
+        character.values[1][CharacterValue::Bless as usize] = 10;
+        character.values[1][CharacterValue::Pulse as usize] = 8;
+        character.values[1][CharacterValue::Fireball as usize] = 5;
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_max_lag_seconds(12);
+
+        let result = apply_status_command(&character, &player, "/status")
+            .expect("status command should be recognized");
+
+        assert_eq!(result.messages[0], "Lag Control Settings:");
+        assert!(result
+            .messages
+            .contains(&"Max. Lag [/MAXLAG]: 12 sec.".to_string()));
+        assert!(result
+            .messages
+            .contains(&"Don't use Bless [/NOBLESS]: Off.".to_string()));
+        assert!(result
+            .messages
+            .contains(&"Don't use Fireball [/NOFIREBALL]: Off.".to_string()));
+        assert!(result
+            .messages
+            .contains(&"Automatic Pulse [/AUTOPULSE]: Off.".to_string()));
+        assert!(result
+            .messages
+            .contains(&"Allow others to bless me [/ALLOWBLESS]: No.".to_string()));
+        assert!(result.messages.contains(&"Account Status:".to_string()));
+        assert!(result.messages.contains(&"Paid Account".to_string()));
+    }
+
+    #[test]
+    fn status_command_preserves_cmdcmp_prefix_shape() {
+        let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        let player = PlayerRuntime::connected(1, 0);
+
+        assert!(apply_status_command(&character, &player, "/s").is_some());
+        assert!(apply_status_command(&character, &player, "/stat").is_some());
+        assert!(apply_status_command(&character, &player, "/statusx").is_none());
+    }
+
+    #[test]
     fn saves_command_is_god_only_and_uses_legacy_prefix_parsing() {
         let mut world = World::default();
         let character_id = CharacterId(7);
@@ -11942,6 +12074,14 @@ async fn main() -> anyhow::Result<()> {
                                     command_feedback.push((character_id, message));
                                 }
                                 continue;
+                            }
+                            if let Some(character) = world.characters.get(&character_id) {
+                                if let Some(result) = apply_status_command(character, player, &command) {
+                                    for message in result.messages {
+                                        command_feedback.push((character_id, message));
+                                    }
+                                    continue;
+                                }
                             }
                             if let Some(result) = apply_gold_command(&mut world, &mut zone_loader, character_id, &command) {
                                 for message in result.messages {
