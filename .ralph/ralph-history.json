@@ -1255,9 +1255,36 @@
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
         "test result: ok. 648 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
       ]
+    },
+    {
+      "iteration": 47,
+      "startedAt": "2026-06-29T16:16:20.301Z",
+      "endedAt": "2026-06-29T16:27:20.085Z",
+      "durationMs": 659586,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/do_action.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The C fight driver has an emergency fallback after every weighted task fails: if the target is close, try a plain melee attack. The Rust weighted loop currently returns false without that fallback, so",
+        "test do_action::tests::can_attack_in_area_blocks_legacy_area_one_player_vs_player ... FAILED",
+        "test do_action::tests::can_attack_player_vs_player_uses_policy_hate_list_after_pk_checks ... FAILED",
+        "test do_action::tests::can_attack_in_area_requires_pk_and_level_range_for_player_vs_player ... FAILED",
+        "assertion failed: can_attack(&attacker, &defender, &map)",
+        "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,",
+        "assertion failed: can_attack_in_area(&attacker, &defender, &map, 2)",
+        "test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 23729380,
+  "totalDurationMs": 24388966,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 6,
@@ -1291,7 +1318,7 @@
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 11,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 12,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test player::tests::pk_hate_helpers_preserve_legacy_front_priority_and_eviction ... FAILED": 1,
       "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.00s": 1,
@@ -1424,7 +1451,16 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 643 filtered out; finished in 0.00s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 643 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 647 filtered out; finished in 0.00s": 1,
-      "test result: ok. 648 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 648 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "The C fight driver has an emergency fallback after every weighted task fails: if the target is close": 1,
+      "test do_action::tests::can_attack_in_area_blocks_legacy_area_one_player_vs_player ... FAILED": 1,
+      "test do_action::tests::can_attack_player_vs_player_uses_policy_hate_list_after_pk_checks ... FAILED": 1,
+      "test do_action::tests::can_attack_in_area_requires_pk_and_level_range_for_player_vs_player ... FAILE": 1,
+      "assertion failed: can_attack(&attacker, &defender, &map)": 1,
+      "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,": 1,
+      "assertion failed: can_attack_in_area(&attacker, &defender, &map, 2)": 1,
+      "test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.00s": 1,
+      "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

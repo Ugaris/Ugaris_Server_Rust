@@ -484,3 +484,7 @@ Recommended next chest steps:
 ### Iteration 45 Additional Progress
 
 - Area 8 `IDR_FDEMONFARM = 49` now dispatches from the item-driver registry for the C `fdemon_farm` core path: the area-8 libload guard is enforced, timer callbacks grow `drdata[2]` by `drdata[0]` until `drdata[1]`, expose the size-based crystal foreground sprites `59020`/`59040`/`59041`/`59042`/`59043`, reschedule every two seconds, and startup timer registration includes existing Fire Demon farms. Player harvests require an empty cursor, report the legacy not-ready text with current/required growth, create the matching `fdemon_crystal1..5` template on the cursor, reset farm strength to zero, and clear the foreground crystal overlay. Focused core/world tests cover timer growth, overlay mutation, startup scheduling, harvest outcomes, cursor blocking, and not-ready feedback typing. Remaining Fire Demon gaps are cannon/gate/waypoint/blood/lava item branches, farm dlog/audit parity, module-global defense-station quest state, exact notify fan-out, and live area-data smoke coverage.
+
+### Iteration 47 Additional Progress
+
+- C `can_attack` player-vs-player guard ordering now returns immediately after area/PK/level/hate policy admits combat, before the later NPC/group/clan suppression checks. Focused core tests cover same-group players remaining attackable after the PvP branch admits them.

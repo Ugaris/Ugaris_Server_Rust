@@ -1269,10 +1269,10 @@ fn can_attack_internal(
         return false;
     }
 
-    if let Some(area_id) = area_id {
-        if attacker.flags.contains(CharacterFlags::PLAYER)
-            && defender.flags.contains(CharacterFlags::PLAYER)
-        {
+    if attacker.flags.contains(CharacterFlags::PLAYER)
+        && defender.flags.contains(CharacterFlags::PLAYER)
+    {
+        if let Some(area_id) = area_id {
             if area_id == 1 {
                 return false;
             }
@@ -1288,6 +1288,7 @@ fn can_attack_internal(
                 return false;
             }
         }
+        return true;
     }
 
     if attacker.group != 0 && attacker.group == defender.group {
@@ -2034,6 +2035,26 @@ mod tests {
         defender.group = 7;
 
         assert!(!can_attack(&attacker, &defender, &map));
+    }
+
+    #[test]
+    fn can_attack_admitted_player_vs_player_returns_before_same_group_check() {
+        let map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        attacker
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        defender
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        attacker.group = 7;
+        defender.group = 7;
+
+        assert!(can_attack_in_area(&attacker, &defender, &map, 2));
     }
 
     #[test]
