@@ -21,7 +21,7 @@ use ugaris_core::{
     },
     game_time::{
         GameDate, DAYS_PER_MOON_CYCLE, DAYS_PER_YEAR, FALL_EQUINOX_DAY, HALF_MOON_CYCLE, HOUR_LEN,
-        MIN_LEN, SPRING_EQUINOX_DAY, SUMMER_SOLSTICE_DAY,
+        MIN_LEN, SPRING_EQUINOX_DAY, START_TIME, SUMMER_SOLSTICE_DAY,
     },
     ids::{CharacterId, ItemId},
     item_driver::{
@@ -2036,6 +2036,12 @@ fn apply_admin_character_command(
             return None;
         }
         runtime.dlight_override = legacy_atoi_prefix(rest) as i32;
+        let override_value = (runtime.dlight_override != 0).then_some(runtime.dlight_override);
+        world.date = GameDate::calculate(
+            START_TIME + world.date.realtime,
+            area_id as i32,
+            override_value,
+        );
         return Some(KeyringCommandResult::default());
     }
 
@@ -9435,6 +9441,7 @@ mod tests {
     #[test]
     fn god_dlight_and_showattack_commands_mutate_runtime_without_feedback() {
         let mut world = World::default();
+        world.date = GameDate::calculate(START_TIME + HOUR_LEN * 12, 23, None);
         let character_id = CharacterId(7);
         let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
         character.flags.insert(CharacterFlags::GOD);
@@ -9451,6 +9458,15 @@ mod tests {
         .expect("god dlight command should be recognized");
         assert!(dlight.messages.is_empty());
         assert_eq!(runtime.dlight_override, 123);
+        assert_eq!(world.date.daylight, 123);
+
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/dlight 0", 23)
+            .expect("god dlight zero command should clear the override");
+        assert_eq!(runtime.dlight_override, 0);
+        assert_eq!(
+            world.date.daylight,
+            GameDate::calculate(START_TIME + HOUR_LEN * 12, 23, None).daylight
+        );
 
         let showattack =
             apply_admin_character_command(&mut world, &mut runtime, character_id, "/showat", 1)
