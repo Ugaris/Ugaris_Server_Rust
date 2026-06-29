@@ -8,7 +8,7 @@ use crate::{
     },
     ids::{CharacterId, ItemId},
     item_ops::consume_item,
-    legacy::action,
+    legacy::{action, MAX_MAP},
     text::{COL_DARK_GRAY, COL_LIGHT_GREEN, COL_RESET},
     tick::TICKS_PER_SECOND,
 };
@@ -359,6 +359,8 @@ pub struct ItemDriverContext {
     pub has_dungeon_door_key1: bool,
     pub has_dungeon_door_key2: bool,
     pub dungeon_defender_count: Option<u16>,
+    pub pent_last_solve_tick: Option<u32>,
+    pub pent_demon_lord_access_seconds: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -747,6 +749,20 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
     },
     PickChestBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    PentBossDoor {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+    },
+    PentBossDoorLocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    PentBossDoorBusy {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -1465,7 +1481,9 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         ItemDriverOutcome::StafferSpecDoorLocked { .. }
         | ItemDriverOutcome::PickDoorLocked { .. }
         | ItemDriverOutcome::CaligarWeightDoorLocked { .. }
-        | ItemDriverOutcome::CaligarSkellyDoorLocked { .. } => 2,
+        | ItemDriverOutcome::CaligarSkellyDoorLocked { .. }
+        | ItemDriverOutcome::PentBossDoorLocked { .. }
+        | ItemDriverOutcome::PentBossDoorBusy { .. } => 2,
         ItemDriverOutcome::Noop
             if matches!(
                 driver,
@@ -1606,6 +1624,7 @@ pub fn execute_item_driver_with_context(
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
+                IDR_PENTBOSSDOOR => pent_boss_door_driver(character, item, context),
                 IDR_BURNDOWN => burndown_driver(character, item, context),
                 IDR_COLORTILE => colortile_driver(character, item),
                 IDR_SKELRAISE => skelraise_driver(character, item, context),
@@ -1687,6 +1706,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
     match driver {
         IDR_BONEBRIDGE | IDR_BONELADDER | IDR_BONEHINT => Some(18),
         IDR_NOMADDICE => Some(19),
+        IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
@@ -4160,6 +4180,54 @@ fn pick_door_driver(
     ItemDriverOutcome::PickDoorToggle {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn pent_boss_door_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let offset_x = i32::from(character.x) - i32::from(item.x);
+    let offset_y = i32::from(character.y) - i32::from(item.y);
+
+    let access_ticks = context
+        .pent_demon_lord_access_seconds
+        .unwrap_or(120)
+        .saturating_mul(TICKS_PER_SECOND as u32);
+    let recently_solved = context
+        .pent_last_solve_tick
+        .is_some_and(|last| context.current_tick.saturating_sub(last) <= access_ticks);
+    if !recently_solved && (offset_x > 0 || offset_y > 0) {
+        return ItemDriverOutcome::PentBossDoorLocked {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    if offset_x != 0 && offset_y != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let target_x = i32::from(item.x) - offset_x;
+    let target_y = i32::from(item.y) - offset_y;
+    if target_x < 1
+        || target_x > MAX_MAP as i32 - 2
+        || target_y < 1
+        || target_y > MAX_MAP as i32 - 2
+    {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::PentBossDoor {
+        item_id: item.id,
+        character_id: character.id,
+        x: target_x as u16,
+        y: target_y as u16,
     }
 }
 
@@ -10244,6 +10312,105 @@ mod tests {
             ItemDriverOutcome::PickDoorToggle {
                 item_id: ItemId(7),
                 character_id: CharacterId(0),
+            }
+        );
+    }
+
+    #[test]
+    fn pent_boss_door_preserves_legacy_access_and_position_checks() {
+        let mut character = character(1);
+        character.x = 11;
+        character.y = 10;
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PENTBOSSDOOR);
+        door.x = 10;
+        door.y = 10;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PENTBOSSDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut door,
+                request,
+                4,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PentBossDoorLocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut door,
+                request,
+                4,
+                false,
+                &ItemDriverContext {
+                    current_tick: 1_000,
+                    pent_last_solve_tick: Some(900),
+                    pent_demon_lord_access_seconds: Some(120),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::PentBossDoor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 9,
+                y: 10,
+            }
+        );
+
+        character.y = 11;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut door,
+                request,
+                4,
+                false,
+                &ItemDriverContext {
+                    current_tick: 1_000,
+                    pent_last_solve_tick: Some(900),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn pent_drivers_keep_area4_libload_guard() {
+        let mut character = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PENTBOSSDOOR);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PENTBOSSDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut door,
+                request,
+                1,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_PENTBOSSDOOR,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                required_area: 4,
             }
         );
     }

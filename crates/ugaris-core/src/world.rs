@@ -5755,6 +5755,30 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::PentBossDoor {
+                item_id,
+                character_id,
+                x,
+                y,
+            } => {
+                if self.teleport_character(character_id, x, y, false) {
+                    if let Some(character) = self.characters.get_mut(&character_id) {
+                        character.dir = match character.dir {
+                            1 => 5,
+                            5 => 1,
+                            7 => 3,
+                            3 => 7,
+                            other => other,
+                        };
+                    }
+                    outcome
+                } else {
+                    ItemDriverOutcome::PentBossDoorBusy {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             ItemDriverOutcome::DungeonDoorSolved { character_id, .. } => {
                 if [(245, 250), (240, 250), (235, 250), (230, 250)]
                     .into_iter()
@@ -19392,6 +19416,40 @@ mod tests {
         assert_eq!((character.x, character.y), (11, 10));
         assert_eq!(world.map.tile(9, 10).unwrap().character, 0);
         assert_eq!(world.map.tile(11, 10).unwrap().character, 1);
+    }
+
+    #[test]
+    fn world_applies_pent_boss_door_teleport_and_reverses_cardinal_facing() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.x = 11;
+        character.y = 10;
+        character.dir = Direction::Right as u8;
+        world.map.tile_mut(11, 10).unwrap().character = 1;
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::TMOVEBLOCK);
+        world.add_character(character);
+
+        let outcome = world.apply_item_driver_outcome(
+            ItemDriverOutcome::PentBossDoor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 9,
+                y: 10,
+            },
+            4,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::PentBossDoor { .. }));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((character.x, character.y), (9, 10));
+        assert_eq!(character.dir, Direction::Left as u8);
+        assert_eq!(world.map.tile(11, 10).unwrap().character, 0);
+        assert_eq!(world.map.tile(9, 10).unwrap().character, 1);
     }
 
     #[test]

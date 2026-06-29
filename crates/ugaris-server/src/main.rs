@@ -18477,6 +18477,23 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { .. } => {
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PentBossDoor { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PentBossDoorLocked { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "The door won't open. It seems it is only accessible directly after a solve.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PentBossDoorBusy { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Please try again soon. Target is busy.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::BoneBridgePlace { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeTimerTick { .. } => {
                                             executed += 1;
