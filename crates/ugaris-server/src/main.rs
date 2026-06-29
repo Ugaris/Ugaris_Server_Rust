@@ -1256,6 +1256,33 @@ fn apply_help_command(
         .split_once(char::is_whitespace)
         .unwrap_or((command, ""));
     let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if verb.eq_ignore_ascii_case("achelp") {
+        if !flags.intersects(CharacterFlags::STAFF | CharacterFlags::GOD) {
+            return None;
+        }
+        return Some(KeyringCommandResult {
+            messages: anti_cheat_help_lines(),
+            inventory_changed: false,
+        });
+    }
+    if verb.eq_ignore_ascii_case("macrohelp") {
+        if !flags.intersects(CharacterFlags::STAFF | CharacterFlags::GOD) {
+            return None;
+        }
+        return Some(KeyringCommandResult {
+            messages: macro_help_lines(),
+            inventory_changed: false,
+        });
+    }
+    if verb.eq_ignore_ascii_case("penthelp") {
+        if !flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        return Some(KeyringCommandResult {
+            messages: pentagram_help_lines(),
+            inventory_changed: false,
+        });
+    }
     if !verb.eq_ignore_ascii_case("help") {
         return None;
     }
@@ -1584,6 +1611,77 @@ fn apply_help_command(
         messages,
         inventory_changed: false,
     })
+}
+
+fn anti_cheat_help_lines() -> Vec<String> {
+    [
+        "--- Anti-Cheat Commands ---",
+        "#achelp - Show this help",
+        "#acstats - Global AC statistics",
+        "#aclist - List online players with AC status",
+        "#acsuspicious - List suspicious/flagged players",
+        "--- Player Commands ---",
+        "#acstatus <name> - Show player's AC status",
+        "#achistory <name> - Show player's violation history",
+        "#acsessions <name> - Show player's recent sessions",
+        "#acviolations <name> - Show player's violations",
+        "#acflag <name> - Flag player for review",
+        "#acunflag <name> - Remove flagged status",
+        "#actrust <name> - Mark player as trusted",
+        "#acuntrust <name> - Remove trusted status",
+        "#acreset <name> - Reset player's AC data (God)",
+        "#acwarn <name> [reason] - Issue AC warning",
+        "#acwatch <name> - Toggle detailed logging",
+        "--- Multi-Account Detection ---",
+        "#acsharedip <name> - Show accounts sharing IP",
+        "#acsharedhw <name> - Show accounts sharing hardware",
+        "--- Database Queries ---",
+        "#achighrisk - Show high-risk players",
+        "#aclookup <id> - Lookup by subscriber ID",
+        "--- Signature Management ---",
+        "#acsiglist - List known bad signatures",
+        "#acsigadd <type> <value> <name> - Add signature (God)",
+        "#acsigdel <id> - Delete signature (God)",
+        "--- Maintenance ---",
+        "#accleanup <days> - Cleanup old records (God)",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+fn macro_help_lines() -> Vec<String> {
+    [
+        "=== Macro Daemon Admin Commands ===",
+        "/macrostats <player> - Show player's macro stats",
+        "/macrohistory <player> - Show challenge history",
+        "/macrolist - List all players with macro status",
+        "/summonmacro <player> - Force summon (GOD only)",
+        "/macroimmune <player> <mins> - Grant immunity (GOD only)",
+        "/macrosuspicion <player> <amt> - Adjust suspicion (GOD)",
+        "/macrokarma <player> <val> - Set karma 0-100 (GOD)",
+        "/macrofailures <player> <n> - Set failure count (GOD)",
+        "/macroreset <player> - Reset all macro stats (GOD)",
+        "/macrohelp - Show this help",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+fn pentagram_help_lines() -> Vec<String> {
+    [
+        "=== Pentagram Debug Commands (GOD) ===",
+        "/pentinfo <player> - Show pentagram data",
+        "/setpentcount <player> <n> - Set pent_cnt (run count)",
+        "/setpentstatus <player> <0|1> - Set status",
+        "/setpentbonus <player> <n> - Set bonus exp",
+        "/resetpent <player> - Reset all pent data",
+        "/penthelp - Show this help",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
 }
 
 fn apply_pk_hate_command(
@@ -7996,6 +8094,46 @@ mod tests {
         assert!(lq.messages.contains(
             &"Note: Additional LQ commands are available in the Live Quest area".to_string()
         ));
+    }
+
+    #[test]
+    fn admin_subhelp_commands_match_legacy_privilege_gates_and_text() {
+        assert!(apply_help_command("#achelp", CharacterFlags::empty(), 1).is_none());
+        let ac = apply_help_command("#achelp", CharacterFlags::STAFF, 1)
+            .expect("staff anti-cheat help should be recognized");
+        assert_eq!(ac.messages[0], "--- Anti-Cheat Commands ---");
+        assert!(ac
+            .messages
+            .contains(&"#acwarn <name> [reason] - Issue AC warning".to_string()));
+        assert!(ac
+            .messages
+            .contains(&"#accleanup <days> - Cleanup old records (God)".to_string()));
+        assert!(!ac.inventory_changed);
+
+        assert!(apply_help_command("/macrohelp", CharacterFlags::empty(), 1).is_none());
+        let macro_help = apply_help_command("/macrohelp", CharacterFlags::STAFF, 1)
+            .expect("staff macro help should be recognized");
+        assert_eq!(
+            macro_help.messages[0],
+            "=== Macro Daemon Admin Commands ==="
+        );
+        assert!(macro_help
+            .messages
+            .contains(&"/macroimmune <player> <mins> - Grant immunity (GOD only)".to_string()));
+        assert!(macro_help
+            .messages
+            .contains(&"/macrohelp - Show this help".to_string()));
+
+        assert!(apply_help_command("/penthelp", CharacterFlags::STAFF, 1).is_none());
+        let pent = apply_help_command("/penthelp", CharacterFlags::GOD, 1)
+            .expect("god pentagram help should be recognized");
+        assert_eq!(pent.messages[0], "=== Pentagram Debug Commands (GOD) ===");
+        assert!(pent
+            .messages
+            .contains(&"/setpentcount <player> <n> - Set pent_cnt (run count)".to_string()));
+        assert!(pent
+            .messages
+            .contains(&"/penthelp - Show this help".to_string()));
     }
 
     #[test]
