@@ -627,6 +627,17 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    EdemonBlockMove {
+        item_id: ItemId,
+        character_id: CharacterId,
+        target_x: u16,
+        target_y: u16,
+        schedule_after_ticks: Option<u64>,
+    },
+    EdemonBlockBlocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     FreakDoorUse {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1608,6 +1619,8 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::CaligarSkellyDoorLocked { .. }
         | ItemDriverOutcome::PentBossDoorLocked { .. }
         | ItemDriverOutcome::PentBossDoorBusy { .. } => 2,
+        ItemDriverOutcome::EdemonBlockMove { .. }
+        | ItemDriverOutcome::EdemonBlockBlocked { .. } => 1,
         ItemDriverOutcome::Noop
             if matches!(
                 driver,
@@ -1736,6 +1749,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EDEMONLOADER => edemon_loader_driver(character, item, context),
                 IDR_EDEMONLIGHT => edemon_light_driver(character, item, context),
                 IDR_EDEMONDOOR => edemon_door_driver(character, item, context),
+                IDR_EDEMONBLOCK => edemon_block_driver(character, item, context),
                 IDR_EDEMONTUBE => edemon_tube_driver(character, item, context),
                 IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
                 IDR_FDEMONLOADER => fdemon_loader_driver(character, item, context),
@@ -5786,6 +5800,67 @@ fn edemon_door_driver(
     ItemDriverOutcome::EdemonDoorToggle {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn edemon_block_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(8, 0);
+
+    if context.timer_call || character.id.0 == 0 {
+        if drdata_u16(item, 4) == 0 {
+            set_drdata_u16(item, 4, item.x);
+            set_drdata_u16(item, 6, item.y);
+        }
+
+        let last_touch = drdata_u32(item, 0);
+        let origin_x = drdata_u16(item, 4);
+        let origin_y = drdata_u16(item, 6);
+        if context.current_tick.wrapping_sub(last_touch) > (TICKS_PER_SECOND * 60 * 15) as u32
+            && (origin_x != item.x || origin_y != item.y)
+        {
+            return ItemDriverOutcome::EdemonBlockMove {
+                item_id: item.id,
+                character_id: CharacterId(0),
+                target_x: origin_x,
+                target_y: origin_y,
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 5),
+            };
+        }
+
+        return ItemDriverOutcome::LightChanged {
+            item_id: item.id,
+            character_id: CharacterId(0),
+            schedule_after_ticks: Some(TICKS_PER_SECOND * 5),
+        };
+    }
+
+    let Ok(direction) = crate::direction::Direction::try_from(character.dir) else {
+        return ItemDriverOutcome::EdemonBlockBlocked {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    let (dx, dy) = direction.delta();
+    let target_x = i32::from(item.x) + i32::from(dx);
+    let target_y = i32::from(item.y) + i32::from(dy);
+    let (Ok(target_x), Ok(target_y)) = (u16::try_from(target_x), u16::try_from(target_y)) else {
+        return ItemDriverOutcome::EdemonBlockBlocked {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    set_drdata_u32(item, 0, context.current_tick);
+    ItemDriverOutcome::EdemonBlockMove {
+        item_id: item.id,
+        character_id: character.id,
+        target_x,
+        target_y,
+        schedule_after_ticks: None,
     }
 }
 
@@ -11864,6 +11939,113 @@ mod tests {
             }
         );
         assert_eq!(lever.sprite, 100);
+    }
+
+    #[test]
+    fn edemon_block_character_use_targets_facing_tile_and_stores_touch_tick() {
+        let mut character = character(1);
+        character.dir = crate::direction::Direction::Right as u8;
+        let mut block = item(
+            7,
+            ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK,
+            0,
+            IDR_EDEMONBLOCK,
+        );
+        block.x = 10;
+        block.y = 11;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONBLOCK,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut block,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    current_tick: 77,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::EdemonBlockMove {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                target_x: 11,
+                target_y: 11,
+                schedule_after_ticks: None,
+            }
+        );
+        assert_eq!(drdata_u32(&block, 0), 77);
+    }
+
+    #[test]
+    fn edemon_block_timer_remembers_origin_and_returns_after_idle_timeout() {
+        let mut timer_character = character(0);
+        let mut block = item(
+            7,
+            ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK,
+            0,
+            IDR_EDEMONBLOCK,
+        );
+        block.x = 10;
+        block.y = 11;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONBLOCK,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut block,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    current_tick: 1,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 5),
+            }
+        );
+        assert_eq!(drdata_u16(&block, 4), 10);
+        assert_eq!(drdata_u16(&block, 6), 11);
+
+        block.x = 12;
+        block.y = 11;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut block,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    current_tick: (TICKS_PER_SECOND * 60 * 15 + 2) as u32,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::EdemonBlockMove {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                target_x: 10,
+                target_y: 11,
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 5),
+            }
+        );
     }
 
     #[test]

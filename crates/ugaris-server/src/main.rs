@@ -17476,6 +17476,18 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonBlockBlocked {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "It won't move.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonBlockMove {
+                                            ..
+                                        } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderBlocked {
                                             character_id,
                                             reason,

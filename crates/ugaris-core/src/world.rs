@@ -28,10 +28,10 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item, ItemDriverContext,
         ItemDriverOutcome, ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL,
-        IDR_CALIGAR, IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONDOOR, IDR_EDEMONLIGHT,
-        IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER,
-        IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP,
-        IDR_TORCH,
+        IDR_CALIGAR, IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONBLOCK, IDR_EDEMONDOOR,
+        IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONFARM, IDR_FDEMONLIGHT,
+        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
+        IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -601,6 +601,45 @@ impl World {
         add_item_light(&mut self.map, &item);
         self.mark_item_light_area(&item);
         self.items.insert(item.id, item);
+    }
+
+    fn move_edemon_block(&mut self, item_id: ItemId, target_x: u16, target_y: u16) -> bool {
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        let from_x = usize::from(item.x);
+        let from_y = usize::from(item.y);
+        let to_x = usize::from(target_x);
+        let to_y = usize::from(target_y);
+        let Some(target) = self.map.tile(to_x, to_y) else {
+            return false;
+        };
+        if target
+            .flags
+            .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+            || target.item != 0
+            || !(12150..=12158).contains(&(target.ground_sprite & 0xffff))
+        {
+            return false;
+        }
+
+        if let Some(source) = self.map.tile_mut(from_x, from_y) {
+            if source.item == item_id.0 {
+                source.item = 0;
+                source.flags.remove(MapFlags::TMOVEBLOCK);
+                self.mark_dirty_sector(from_x, from_y);
+            }
+        }
+        if let Some(target) = self.map.tile_mut(to_x, to_y) {
+            target.item = item_id.0;
+            target.flags.insert(MapFlags::TMOVEBLOCK);
+            self.mark_dirty_sector(to_x, to_y);
+        }
+        if let Some(item) = self.items.get_mut(&item_id) {
+            item.x = target_x;
+            item.y = target_y;
+        }
+        true
     }
 
     pub fn skip_x_sector(&self, x: isize, y: isize, ticker: u64) -> usize {
@@ -2153,9 +2192,8 @@ impl World {
                 }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
                 IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_EDEMONLOADER
-                | IDR_EDEMONTUBE | IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONFARM => {
-                    Some(item_id)
-                }
+                | IDR_EDEMONBLOCK | IDR_EDEMONTUBE | IDR_FDEMONLIGHT | IDR_FDEMONLOADER
+                | IDR_FDEMONFARM => Some(item_id),
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
@@ -5926,6 +5964,24 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::EdemonBlockMove {
+                item_id,
+                target_x,
+                target_y,
+                schedule_after_ticks,
+                ..
+            } => {
+                let moved = self.move_edemon_block(item_id, target_x, target_y);
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
+                }
+                if moved {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::EdemonBlockBlocked { .. } => outcome,
             ItemDriverOutcome::FreakDoorUse {
                 item_id,
                 character_id,
@@ -17645,6 +17701,101 @@ mod tests {
             .any(|outcome| matches!(outcome, ItemDriverOutcome::LightChanged { .. })));
         assert_eq!(world.items[&ItemId(10)].sprite, 14191);
         assert_eq!(world.items[&ItemId(10)].modifier_value[0], 200);
+    }
+
+    #[test]
+    fn world_moves_edemon_block_on_character_use_and_blocks_bad_target() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.dir = Direction::Right as u8;
+        assert!(world.spawn_character(player, 9, 10));
+        let mut block = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK);
+        block.driver = IDR_EDEMONBLOCK;
+        assert!(world.map.set_item_map(&mut block, 10, 10));
+        world.map.tile_mut(11, 10).unwrap().ground_sprite = 12150;
+        world.add_item(block);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_EDEMONBLOCK,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            6,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::EdemonBlockMove { .. }));
+        assert_eq!(world.map.tile(10, 10).unwrap().item, 0);
+        assert!(!world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK));
+        assert_eq!(world.map.tile(11, 10).unwrap().item, 7);
+        assert!(world
+            .map
+            .tile(11, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TMOVEBLOCK));
+        assert_eq!(
+            (world.items[&ItemId(7)].x, world.items[&ItemId(7)].y),
+            (11, 10)
+        );
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_EDEMONBLOCK,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            6,
+        );
+        assert!(matches!(outcome, ItemDriverOutcome::Noop));
+        assert_eq!(
+            (world.items[&ItemId(7)].x, world.items[&ItemId(7)].y),
+            (11, 10)
+        );
+    }
+
+    #[test]
+    fn world_edemon_block_timer_returns_to_origin_and_is_scheduled_on_startup() {
+        let mut world = World::default();
+        world.add_character(character(0));
+        let mut block = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK);
+        block.driver = IDR_EDEMONBLOCK;
+        block.driver_data = vec![0, 0, 0, 0, 10, 0, 10, 0];
+        assert!(world.map.set_item_map(&mut block, 12, 10));
+        world.map.tile_mut(10, 10).unwrap().ground_sprite = 12158;
+        world.add_item(block);
+
+        assert_eq!(world.schedule_existing_light_timers(), 1);
+        world.tick.0 = TICKS_PER_SECOND * 60 * 15 + 3;
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: IDR_EDEMONBLOCK,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            6,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::EdemonBlockMove { .. }));
+        assert_eq!(world.map.tile(12, 10).unwrap().item, 0);
+        assert_eq!(world.map.tile(10, 10).unwrap().item, 7);
+        assert_eq!(
+            (world.items[&ItemId(7)].x, world.items[&ItemId(7)].y),
+            (10, 10)
+        );
+        assert_eq!(world.timers.used_timers(), 2);
     }
 
     #[test]
