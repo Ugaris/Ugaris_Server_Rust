@@ -47,7 +47,7 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::LookMapRequest,
     zone::ZoneLoader,
-    ServerConfig, Tick, TickRate, World,
+    ServerConfig, TickRate, World,
 };
 
 struct RuntimePlayerAttackPolicy<'a> {
@@ -8105,7 +8105,7 @@ mod tests {
     #[test]
     fn weather_command_reports_god_debug_info() {
         let mut world = World::default();
-        world.tick = Tick(24);
+        world.tick = ugaris_core::Tick(24);
         let character_id = CharacterId(7);
         let mut god = login_character(character_id, &login_block("WeatherGod"), 1, 10, 10);
         god.x = 10;

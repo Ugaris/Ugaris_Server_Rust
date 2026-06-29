@@ -4382,6 +4382,18 @@ mod tests {
             ),
             1
         );
+        assert_eq!(
+            legacy_item_driver_return_code(
+                Some(IDR_BOOK),
+                &ItemDriverOutcome::BookText {
+                    item_id: ItemId(10),
+                    character_id: CharacterId(1),
+                    kind: 8,
+                    demon_value: 0,
+                },
+            ),
+            1
+        );
     }
 
     #[test]
