@@ -68,6 +68,7 @@ pub const IDR_DEMONCHIP: u16 = 136;
 pub const IDR_XMASTREE: u16 = 142;
 pub const IDR_XMASMAKER: u16 = 143;
 pub const IDR_CALIGAR: u16 = 144;
+pub const IDR_CALIGARFLAME: u16 = 145;
 pub const IDR_ARKHATA: u16 = 146;
 pub const IDR_SPECIAL_SHRINE: u16 = 147;
 pub const IDR_ACCOUNT_DEPOT: u16 = 148;
@@ -1081,6 +1082,7 @@ pub fn execute_item_driver_with_context(
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
                 IDR_XMASMAKER => xmasmaker_driver(character, item),
+                IDR_CALIGARFLAME => flamethrow_driver(character, item, context),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
                     driver,
@@ -5368,6 +5370,7 @@ mod tests {
         assert_eq!(IDR_NOMADDICE, 95);
         assert_eq!(IDR_STAFFER2, 122);
         assert_eq!(IDR_CALIGAR, 144);
+        assert_eq!(IDR_CALIGARFLAME, 145);
         assert_eq!(IDR_ARKHATA, 146);
         assert_eq!(
             execute_item_driver(&mut character, &mut bridge, request, 1, false),
@@ -8174,6 +8177,63 @@ mod tests {
                 character_id: CharacterId(0),
                 schedule_after_ticks: Some(TICKS_PER_SECOND * 5),
             }
+        );
+    }
+
+    #[test]
+    fn caligar_flame_uses_legacy_flamethrower_timer_path() {
+        let mut timer_character = character(0);
+        let mut flame = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_CALIGARFLAME);
+        flame.driver_data = vec![2, 5, 0, 4];
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut flame,
+            ItemDriverRequest::Driver {
+                driver: IDR_CALIGARFLAME,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            36,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(flame.driver_data[0], 1);
+        assert_eq!(flame.driver_data[2], 1);
+        assert_eq!(flame.sprite, 1);
+        assert_eq!(flame.modifier_index[4], V_LIGHT);
+        assert_eq!(flame.modifier_value[4], 250);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::FlameThrowerPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                direction: 5,
+                schedule_after_ticks: 1,
+            }
+        );
+
+        let mut player = character(1);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut player,
+                &mut flame,
+                ItemDriverRequest::Driver {
+                    driver: IDR_CALIGARFLAME,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                36,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::Noop
         );
     }
 

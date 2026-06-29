@@ -27,8 +27,8 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
-        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_FLAMETHROW, IDR_LAB3_PLANT,
-        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_CALIGARFLAME, IDR_FLAMETHROW,
+        IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2071,7 +2071,7 @@ impl World {
                     Some(item_id)
                 }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
-                IDR_FLAMETHROW => Some(item_id),
+                IDR_FLAMETHROW | IDR_CALIGARFLAME => Some(item_id),
                 _ => None,
             })
             .collect();
@@ -10929,11 +10929,11 @@ mod tests {
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
-            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_DOOR,
-            IDR_EDEMONBALL, IDR_ENCHANTITEM, IDR_FIREBALL, IDR_FLAMETHROW, IDR_LAB3_PLANT,
-            IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE,
-            IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
-            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGARFLAME,
+            IDR_DOOR, IDR_EDEMONBALL, IDR_ENCHANTITEM, IDR_FIREBALL, IDR_FLAMETHROW,
+            IDR_LAB3_PLANT, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION,
+            IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP,
+            IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -15760,6 +15760,30 @@ mod tests {
             effect.effect_type == EF_BURN && effect.target_character == Some(CharacterId(2))
         }));
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn schedule_existing_light_timers_includes_caligar_flames() {
+        let mut world = World::default();
+        let mut flame = item(7, ItemFlags::USED | ItemFlags::USE);
+        flame.driver = IDR_CALIGARFLAME;
+        flame.driver_data = vec![1, 3, 0, 0];
+        world.add_item(flame);
+
+        assert_eq!(world.schedule_existing_light_timers(), 1);
+
+        world.advance();
+        let outcomes = world.process_due_timers(36);
+
+        assert_eq!(outcomes.len(), 1);
+        assert!(matches!(
+            outcomes[0],
+            ItemDriverOutcome::FlameThrowerPulse {
+                item_id: ItemId(7),
+                direction: 3,
+                ..
+            }
+        ));
     }
 
     #[test]
