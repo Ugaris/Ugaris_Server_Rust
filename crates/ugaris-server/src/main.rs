@@ -905,8 +905,17 @@ enum KeyringAutoAddPickupResult {
 struct KeyringCommandResult {
     messages: Vec<String>,
     message_bytes: Vec<Vec<u8>>,
+    target_message_bytes: Vec<(CharacterId, Vec<u8>)>,
     inventory_changed: bool,
     name_changed: bool,
+}
+
+fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(COL_LIGHT_RED.len() + message.len() + COL_RESET.len());
+    bytes.extend_from_slice(COL_LIGHT_RED);
+    bytes.extend_from_slice(message.as_bytes());
+    bytes.extend_from_slice(COL_RESET);
+    bytes
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1853,8 +1862,10 @@ fn apply_admin_character_command(
 
 fn apply_shutup_command(
     world: &mut World,
+    runtime: &mut ServerRuntime,
     character_id: CharacterId,
     command: &str,
+    realtime_seconds: u64,
 ) -> Option<KeyringCommandResult> {
     let (verb, rest) = command
         .split_once(char::is_whitespace)
@@ -1913,8 +1924,55 @@ fn apply_shutup_command(
             target.flags.insert(CharacterFlags::SHUTUP);
         }
     }
+    if let Some(target_player) = runtime.player_for_character_mut(target_id) {
+        target_player.shutup_until_seconds = if minutes == 0 {
+            0
+        } else {
+            realtime_seconds.saturating_add(minutes as u64 * 60)
+        };
+    }
 
-    Some(KeyringCommandResult::default())
+    let message = if minutes == 0 {
+        "Your ability to talk has been enabled."
+    } else {
+        "Your ability to talk has been disabled."
+    };
+    Some(KeyringCommandResult {
+        target_message_bytes: vec![(target_id, legacy_light_red_text_bytes(message))],
+        ..Default::default()
+    })
+}
+
+fn drain_expired_shutup_feedback(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    realtime_seconds: u64,
+) -> Vec<(CharacterId, Vec<u8>)> {
+    let mut feedback = Vec::new();
+    let expired: Vec<CharacterId> = runtime
+        .players
+        .values_mut()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            (player.shutup_until_seconds != 0 && player.shutup_until_seconds <= realtime_seconds)
+                .then(|| {
+                    player.shutup_until_seconds = 0;
+                    character_id
+                })
+        })
+        .collect();
+
+    for character_id in expired {
+        if let Some(character) = world.characters.get_mut(&character_id) {
+            character.flags.remove(CharacterFlags::SHUTUP);
+        }
+        feedback.push((
+            character_id,
+            legacy_light_red_text_bytes("Your ability to talk has been enabled."),
+        ));
+    }
+
+    feedback
 }
 
 fn apply_notells_command(
@@ -8476,8 +8534,20 @@ mod tests {
         let ordinary_id = CharacterId(9);
         let ordinary = login_character(ordinary_id, &login_block("Ordinary"), 1, 12, 10);
         world.add_character(ordinary);
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.insert(2, PlayerRuntime::connected(2, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(player_id);
+        runtime.players.get_mut(&2).unwrap().character_id = Some(staff_id);
 
-        assert!(apply_shutup_command(&mut world, ordinary_id, "/shutup Target 10").is_none());
+        assert!(apply_shutup_command(
+            &mut world,
+            &mut runtime,
+            ordinary_id,
+            "/shutup Target 10",
+            100
+        )
+        .is_none());
         assert!(!world
             .characters
             .get(&player_id)
@@ -8485,9 +8555,18 @@ mod tests {
             .flags
             .contains(CharacterFlags::SHUTUP));
 
-        let result = apply_shutup_command(&mut world, staff_id, "/shutup Target")
-            .expect("staff shutup command should be recognized");
+        let result =
+            apply_shutup_command(&mut world, &mut runtime, staff_id, "/shutup Target", 100)
+                .expect("staff shutup command should be recognized");
         assert!(result.messages.is_empty());
+        assert_eq!(
+            runtime
+                .player_for_character(player_id)
+                .unwrap()
+                .shutup_until_seconds,
+            700
+        );
+        assert_eq!(result.target_message_bytes.len(), 1);
         assert!(world
             .characters
             .get(&player_id)
@@ -8495,8 +8574,15 @@ mod tests {
             .flags
             .contains(CharacterFlags::SHUTUP));
 
-        apply_shutup_command(&mut world, staff_id, "/shutup Target 0")
+        apply_shutup_command(&mut world, &mut runtime, staff_id, "/shutup Target 0", 101)
             .expect("zero minutes should disable shutup");
+        assert_eq!(
+            runtime
+                .player_for_character(player_id)
+                .unwrap()
+                .shutup_until_seconds,
+            0
+        );
         assert!(!world
             .characters
             .get(&player_id)
@@ -8512,9 +8598,16 @@ mod tests {
         let mut staff = login_character(staff_id, &login_block("Staffer"), 1, 10, 10);
         staff.flags.insert(CharacterFlags::GOD);
         world.add_character(staff);
+        let mut runtime = ServerRuntime::default();
 
-        let result = apply_shutup_command(&mut world, staff_id, "/shutup Missing 10")
-            .expect("god shutup command should be recognized");
+        let result = apply_shutup_command(
+            &mut world,
+            &mut runtime,
+            staff_id,
+            "/shutup Missing 10",
+            100,
+        )
+        .expect("god shutup command should be recognized");
         assert_eq!(
             result.messages,
             vec!["Sorry, no player by the name Missing."]
@@ -8524,8 +8617,14 @@ mod tests {
         let target = login_character(target_id, &login_block("Alpha"), 1, 11, 10);
         world.add_character(target);
 
-        let result = apply_shutup_command(&mut world, staff_id, "/shutup Alpha 61abc")
-            .expect("out-of-range shutup should still be handled");
+        let result = apply_shutup_command(
+            &mut world,
+            &mut runtime,
+            staff_id,
+            "/shutup Alpha 61abc",
+            100,
+        )
+        .expect("out-of-range shutup should still be handled");
         assert_eq!(
             result.messages,
             vec!["Sorry, can only shutup for 0 to 60 minutes (use 0 to disable)."]
@@ -8537,7 +8636,51 @@ mod tests {
             .flags
             .contains(CharacterFlags::SHUTUP));
 
-        assert!(apply_shutup_command(&mut world, staff_id, "/shut Alpha 10").is_none());
+        assert!(
+            apply_shutup_command(&mut world, &mut runtime, staff_id, "/shut Alpha 10", 100)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn shutup_expiry_clears_flag_and_notifies_target() {
+        let mut world = World::default();
+        let target_id = CharacterId(8);
+        let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
+        target.flags.insert(CharacterFlags::SHUTUP);
+        world.add_character(target);
+
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(target_id);
+        runtime.players.get_mut(&1).unwrap().shutup_until_seconds = 700;
+
+        assert!(drain_expired_shutup_feedback(&mut world, &mut runtime, 699).is_empty());
+        assert!(world
+            .characters
+            .get(&target_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::SHUTUP));
+
+        let feedback = drain_expired_shutup_feedback(&mut world, &mut runtime, 700);
+        assert_eq!(feedback.len(), 1);
+        assert_eq!(feedback[0].0, target_id);
+        assert!(feedback[0].1.starts_with(COL_LIGHT_RED));
+        assert!(feedback[0].1.ends_with(COL_RESET));
+        assert_eq!(
+            runtime
+                .player_for_character(target_id)
+                .unwrap()
+                .shutup_until_seconds,
+            0
+        );
+        assert!(!world
+            .characters
+            .get(&target_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::SHUTUP));
     }
 
     #[test]
@@ -13384,6 +13527,12 @@ async fn main() -> anyhow::Result<()> {
                 {
                     command_feedback_bytes.push((character_id, message));
                 }
+                let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
+                for (character_id, message) in
+                    drain_expired_shutup_feedback(&mut world, &mut runtime, realtime_seconds)
+                {
+                    command_feedback_bytes.push((character_id, message));
+                }
                 for (session_id, action) in queued {
                     let Some(player) = runtime.players.get(&session_id) else {
                         continue;
@@ -13477,10 +13626,19 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             }
                             if let Some(result) =
-                                apply_shutup_command(&mut world, character_id, &command)
+                                apply_shutup_command(
+                                    &mut world,
+                                    &mut runtime,
+                                    character_id,
+                                    &command,
+                                    realtime_seconds,
+                                )
                             {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
+                                }
+                                for (target_id, message) in result.target_message_bytes {
+                                    command_feedback_bytes.push((target_id, message));
                                 }
                                 continue;
                             }

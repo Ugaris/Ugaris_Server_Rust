@@ -319,6 +319,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub max_lag_seconds: u8,
     #[serde(default)]
+    pub shutup_until_seconds: u64,
+    #[serde(default)]
     pub tell_data: TellData,
     #[serde(default)]
     pub ignored_characters: Vec<u32>,
@@ -386,6 +388,7 @@ impl PlayerRuntime {
             transport_seen: 0,
             current_mirror_id: 0,
             max_lag_seconds: 0,
+            shutup_until_seconds: 0,
             tell_data: TellData::default(),
             ignored_characters: Vec::new(),
             rune_used_words: [0; RUNE_USED_WORDS],
