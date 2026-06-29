@@ -5340,9 +5340,37 @@
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
         "test result: ok. 576 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s"
       ]
+    },
+    {
+      "iteration": 194,
+      "startedAt": "2026-06-29T07:41:30.625Z",
+      "endedAt": "2026-06-29T07:58:37.354Z",
+      "durationMs": 1026556,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The first test command used two Cargo filters, which Cargo rejects. Formatting completed before that failure; I’m rerunning the focused tests as separate commands.",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "\u001b[0m$ \u001b[0mcargo fmt --all && cargo test -p ugaris-core flask_driver_ports_successful_shake_recipe_mix flask_driver_ports_failed_shake_reset_to_empty_bottle && cargo test -p ugaris-server flask_ingredi",
+        "error: unexpected argument 'flask_driver_ports_failed_shake_reset_to_empty_bottle' found",
+        "\u001b[0m$ \u001b[0mcargo test -p ugaris-core flask_driver_ports_successful_shake_recipe_mix && cargo test -p ugaris-core flask_driver_ports_failed_shake_reset_to_empty_bottle && cargo test -p ugaris-server fla",
+        "test item_driver::tests::flask_driver_ports_successful_shake_recipe_mix ... FAILED",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 575 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "\u001b[0m$ \u001b[0mcargo fmt --all && cargo test -p ugaris-core flask_driver_ports_successful_shake_recipe_mix && cargo test -p ugaris-core flask_driver_ports_failed_shake_reset_to_empty_bottle && cargo test -",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 575 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 89206456,
+  "totalDurationMs": 90233012,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -5359,11 +5387,11 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
       "test result: ok. 323 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 13 previous errors": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 47,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 48,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 36,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 37,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 2,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 12,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -5931,13 +5959,19 @@
       "The unported user-facing message is removed from the failed shake path; invalid mixes now just fail ": 1,
       "The failing assertions exposed the C midnight penalty from default test context (`hour == 0`), which": 1,
       "test item_driver::tests::flask_driver_ports_fallback_attribute_mix_and_stone_class ... FAILED": 1,
-      "test item_driver::tests::flask_driver_ports_successful_shake_recipe_mix ... FAILED": 1,
+      "test item_driver::tests::flask_driver_ports_successful_shake_recipe_mix ... FAILED": 2,
       "test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 569 filtered out; finished in 0.00s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 569 filtered out; finished in 0.00s": 1,
       "The Rust core already models most C `mixer_*` internals, but the runtime application still doesn’t r": 1,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 570 filtered out; finished in 0.00s": 1,
-      "test result: ok. 576 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 576 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "The first test command used two Cargo filters, which Cargo rejects. Formatting completed before that": 1,
+      "\u001b[0m$ \u001b[0mcargo fmt --all && cargo test -p ugaris-core flask_driver_ports_successful_shake_recipe_mi": 2,
+      "error: unexpected argument 'flask_driver_ports_failed_shake_reset_to_empty_bottle' found": 1,
+      "\u001b[0m$ \u001b[0mcargo test -p ugaris-core flask_driver_ports_successful_shake_recipe_mix && cargo test -p ": 1,
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 575 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 575 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

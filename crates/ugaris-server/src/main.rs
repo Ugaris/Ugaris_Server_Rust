@@ -4798,6 +4798,53 @@ fn apply_flask_ingredient_added(
     Some(ingredient_name)
 }
 
+const ALCHEMY_INGREDIENT_NAMES: [&str; 29] = [
+    "Adygalah",
+    "Bhalkissa",
+    "Chrysado",
+    "Domari",
+    "Elithah",
+    "Firuba",
+    "Ghethiye",
+    "Akond",
+    "Barun",
+    "Chylmoth",
+    "Dizul",
+    "Edyak",
+    "Forud",
+    "Ghestroz",
+    "Hangot",
+    "Ivnan",
+    "Azmey",
+    "Beelough",
+    "Ciuba",
+    "Dyelshi",
+    "Fiery Stone",
+    "Icy Stone",
+    "Earth Stone",
+    "Hell Stone",
+    "",
+    "",
+    "",
+    "",
+    "",
+];
+
+fn flask_ingredient_feedback(ingredient_counts: [u8; 29]) -> Vec<String> {
+    ALCHEMY_INGREDIENT_NAMES
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, name)| {
+            let count = ingredient_counts[idx];
+            if count == 0 || name.is_empty() {
+                None
+            } else {
+                Some(format!("Contains {count} parts {name}."))
+            }
+        })
+        .collect()
+}
+
 fn random_chest_location_id(x: u16, y: u16, area_id: u16) -> u32 {
     u32::from(x) + (u32::from(y) << 8) + (u32::from(area_id) << 16)
 }
@@ -8263,6 +8310,22 @@ mod tests {
         let character = world.characters.get(&CharacterId(1)).unwrap();
         let cursor_item = character.cursor_item.unwrap();
         assert_eq!(world.items.get(&cursor_item).unwrap().name, "Flower H");
+    }
+
+    #[test]
+    fn flask_ingredient_feedback_matches_legacy_order_and_names() {
+        let mut counts = [0; 29];
+        counts[0] = 2;
+        counts[20] = 1;
+        counts[24] = 7;
+
+        assert_eq!(
+            flask_ingredient_feedback(counts),
+            vec![
+                "Contains 2 parts Adygalah.".to_string(),
+                "Contains 1 parts Fiery Stone.".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -15687,11 +15750,17 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "BUG # 231...".to_string()));
                                             failed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskMixed { character_id, .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskMixed { character_id, ingredient_counts, .. } => {
+                                            for message in flask_ingredient_feedback(ingredient_counts) {
+                                                feedback.push((character_id, message));
+                                            }
                                             feedback.push((character_id, "The potion seems finished.".to_string()));
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskRuined { character_id, .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::FlaskRuined { character_id, ingredient_counts, .. } => {
+                                            for message in flask_ingredient_feedback(ingredient_counts) {
+                                                feedback.push((character_id, message));
+                                            }
                                             feedback.push((character_id, "You shake the bottle and create a stinking liquid which you throw away.".to_string()));
                                             executed += 1;
                                         }

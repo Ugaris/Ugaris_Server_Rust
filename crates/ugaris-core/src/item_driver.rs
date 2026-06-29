@@ -780,10 +780,12 @@ pub enum ItemDriverOutcome {
     FlaskMixed {
         item_id: ItemId,
         character_id: CharacterId,
+        ingredient_counts: [u8; 29],
     },
     FlaskRuined {
         item_id: ItemId,
         character_id: CharacterId,
+        ingredient_counts: [u8; 29],
     },
     LizardFlowerMixed {
         item_id: ItemId,
@@ -1400,6 +1402,14 @@ fn flask_duration(item: &Item) -> Option<(u8, f64)> {
     }
 }
 
+fn flask_ingredient_counts(item: &Item) -> [u8; 29] {
+    let mut counts = [0; 29];
+    for (idx, count) in counts.iter_mut().enumerate() {
+        *count = drdata(item, idx + 11);
+    }
+    counts
+}
+
 fn c_div(power: i32, divi: f64, divisor: f64) -> i16 {
     (f64::from(power) / divi / divisor) as i16
 }
@@ -1769,16 +1779,19 @@ fn flask_driver(
             };
         }
         if used != 0 {
+            let ingredient_counts = flask_ingredient_counts(item);
             if finish_flask_mix(item, character, context).is_some() {
                 return ItemDriverOutcome::FlaskMixed {
                     item_id: item.id,
                     character_id: character.id,
+                    ingredient_counts,
                 };
             }
             reset_flask_empty_state(item);
             return ItemDriverOutcome::FlaskRuined {
                 item_id: item.id,
                 character_id: character.id,
+                ingredient_counts,
             };
         }
         return ItemDriverOutcome::FlaskEmptyShaken {
@@ -4751,6 +4764,16 @@ mod tests {
             ItemDriverOutcome::FlaskMixed {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+                ingredient_counts: {
+                    let mut counts = [0; 29];
+                    counts[1] = 1;
+                    counts[2] = 1;
+                    counts[3] = 1;
+                    counts[7] = 1;
+                    counts[8] = 1;
+                    counts[17] = 1;
+                    counts
+                },
             }
         );
         assert_eq!(flask.driver_data[2], 1);
@@ -4792,6 +4815,11 @@ mod tests {
             ItemDriverOutcome::FlaskRuined {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+                ingredient_counts: {
+                    let mut counts = [0; 29];
+                    counts[0] = 1;
+                    counts
+                },
             }
         );
         assert_eq!(flask.name, "Empty Potion");
