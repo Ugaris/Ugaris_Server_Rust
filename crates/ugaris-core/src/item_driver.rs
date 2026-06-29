@@ -9,7 +9,7 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_ops::consume_item,
     legacy::action,
-    text::{COL_DARK_GRAY, COL_RESET},
+    text::{COL_DARK_GRAY, COL_LIGHT_GREEN, COL_RESET},
     tick::TICKS_PER_SECOND,
 };
 
@@ -188,6 +188,7 @@ pub const IID_AREA2_ZOMBIESKULL2: u32 = (0x01 << 24) | 0x000026;
 pub const IID_AREA2_ZOMBIESKULL3: u32 = (0x01 << 24) | 0x000027;
 pub const IID_AREA11_PALACEKEY: u32 = (0x01 << 24) | 0x000050;
 pub const IID_AREA11_PALACEKEYPART: u32 = (0x01 << 24) | 0x000051;
+pub const IID_AREA17_LIBRARYKEY: u32 = (0x01 << 24) | 0x00006F;
 pub const IID_CALIGAR_PALACE_KEY_PART: u32 = (0x01 << 24) | 0x0000B3;
 const V_LIGHT: i16 = 9;
 const LIGHT_TIMER_TICKS: u64 = TICKS_PER_SECOND * 30;
@@ -321,6 +322,7 @@ pub struct ItemDriverContext {
     pub fdemon_loader_power: Option<u16>,
     pub bone_hint_nr: Option<u8>,
     pub bone_hint_pos: Option<u8>,
+    pub has_area17_library_key: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1083,6 +1085,15 @@ pub enum ItemDriverOutcome {
         kind: u8,
         demon_value: i32,
     },
+    BookcaseText {
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+    },
+    BookcaseLocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BoneHint {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1276,6 +1287,7 @@ pub fn execute_item_driver_with_context(
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
                 IDR_PARKSHRINE => parkshrine_driver(character, item),
                 IDR_BOOK => book_driver(character, item),
+                IDR_BOOKCASE => bookcase_driver(character, item, context),
                 IDR_DEMONSHRINE => demonshrine_driver(character, item, area_id),
                 IDR_PALACEKEY => palace_key_driver(character, item, context),
                 IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
@@ -3017,6 +3029,133 @@ fn book_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         character_id: character.id,
         kind: drdata(item, 0),
         demon_value: i32::from(character.values[1][CharacterValue::Demon as usize]),
+    }
+}
+
+const TWOCITY_COLORS: [&str; 7] = ["null", "Red", "Green", "Blue", "Yellow", "Black", "White"];
+
+const BOOKCASE_RANDOM_TITLES: [&str; 26] = [
+    "Tales of Two Towns by Karl Dicker",
+    "The Art of Warfare by Hun Yu",
+    "Chris Maas visits Carol by Karl Dicker",
+    "Secrets of Adygalah Alchemy by Leonarda",
+    "The rise and fall of the Seyan Empire by Takitus",
+    "History of Ancient Astonia by Chiasmaphora",
+    "Treatise on the Mastery of Mana by Mage Niuma",
+    "The Song of the Warrior by Sir Regis Le Voleir",
+    "The Book of Ishtar, Anonymous",
+    "Concessions to Fear by Kentindher",
+    "Poems of War and Homecoming by Melthold of Anten",
+    "Memoires of a Lady-in-Waiting by Dame Sakanor",
+    "Comprehension and Expression by Master Getsades",
+    "Great Astonian Thinkers by Master Riotan",
+    "A Portrait of the Seyan'Du as A Young Mage by Esjamocey",
+    "Critique of Pure Courage by Imanel Dique",
+    "Collected Essays by Lindmar the Elder",
+    "The Reforming of Curves by Master Elyosod",
+    "Advanced Agility in Forty-two Steps by Seyan'Du Bartoshi",
+    "The Oath by Sheney",
+    "The Strife for Light by Father Ignato",
+    "The Aston Years by Lord Ironborn",
+    "Luctim - Superstition or Reality? by Mintu the Enlightened",
+    "I Have, Alas by Goytila",
+    "A Midwinter Day's Wake by Pearshaks",
+    "Fama Fraternitatis by Valentin Andreae",
+];
+
+pub fn bookcase_text_line_bytes(
+    kind: u8,
+    random_index: u8,
+    color: u8,
+    solved_library: bool,
+) -> Vec<u8> {
+    let standard = "After reading the title you put the book back.";
+    let color = TWOCITY_COLORS
+        .get(usize::from(color))
+        .copied()
+        .unwrap_or(TWOCITY_COLORS[0]);
+    let (name, text) = match kind {
+        0 => {
+            let idx = usize::from(random_index % BOOKCASE_RANDOM_TITLES.len() as u8);
+            let text = if idx == 3 {
+                "One recipe most mages will find useful uses Adygalah, Bhalkissa and Firuba, plus one berry and one or two mushrooms."
+            } else {
+                standard
+            };
+            (BOOKCASE_RANDOM_TITLES[idx].to_string(), text)
+        }
+        1 => {
+            let text = if solved_library {
+                standard
+            } else {
+                "You read the book and absorb the knowledge contained therein."
+            };
+            ("The Knowledge of Ages by Ishtar".to_string(), text)
+        }
+        2 => (format!("How to Raise {color} Orchids by Klark"), standard),
+        3 => (
+            format!("A {color} Day in the Life of a Warrior by C. O. Nan"),
+            standard,
+        ),
+        4 => (
+            format!("Dancing in Ten Easy Lessons by James {color}"),
+            standard,
+        ),
+        5 => (
+            format!("Help! I Have Been Visited by Little {color} Man! by Meier"),
+            standard,
+        ),
+        6 => (
+            format!("The Day the World turned {color} by Casaldra"),
+            standard,
+        ),
+        _ => (
+            "Lady Manners' Guide to Decent Behaviour".to_string(),
+            standard,
+        ),
+    };
+
+    let mut out = Vec::new();
+    out.extend_from_slice(COL_LIGHT_GREEN);
+    out.extend_from_slice(name.as_bytes());
+    out.extend_from_slice(b".");
+    out.extend_from_slice(COL_RESET);
+    out.extend_from_slice(b" ");
+    out.extend_from_slice(text.as_bytes());
+    out
+}
+
+pub fn bookcase_locked_text_lines() -> [&'static str; 2] {
+    [
+        "The bookcase is locked and you do not have the right key.",
+        "There is a note attached to the lock: A statue stole the key and vanished with it in the northern part of the library.",
+    ]
+}
+
+fn bookcase_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let kind = drdata(item, 0);
+    if kind == 1 && !context.has_area17_library_key {
+        return ItemDriverOutcome::BookcaseLocked {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::BookcaseText {
+        item_id: item.id,
+        character_id: character.id,
+        kind,
     }
 }
 
@@ -7135,6 +7274,84 @@ mod tests {
             .windows(3)
             .any(|bytes| bytes == crate::text::COL_RESET));
         assert!(mad_mages[2].ends_with(b"Bretl, Anna-Sofia, Leaner, Crem, Guiwynn."));
+    }
+
+    #[test]
+    fn bookcase_driver_ports_locked_and_text_boundaries() {
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BOOKCASE,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let mut bookcase = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BOOKCASE);
+        bookcase.driver_data = vec![1];
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bookcase,
+                request,
+                17,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::BookcaseLocked {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let context = ItemDriverContext {
+            has_area17_library_key: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bookcase,
+                request,
+                17,
+                false,
+                &context
+            ),
+            ItemDriverOutcome::BookcaseText {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                kind: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn bookcase_text_matches_legacy_title_format() {
+        let locked = bookcase_locked_text_lines();
+        assert_eq!(
+            locked[0],
+            "The bookcase is locked and you do not have the right key."
+        );
+        assert_eq!(
+            bookcase_text_line_bytes(3, 0, 2, false),
+            [
+                crate::text::COL_LIGHT_GREEN,
+                b"A Green Day in the Life of a Warrior by C. O. Nan.",
+                crate::text::COL_RESET,
+                b" After reading the title you put the book back.",
+            ]
+            .concat()
+        );
+        assert_eq!(
+            bookcase_text_line_bytes(0, 3, 1, false),
+            [
+                crate::text::COL_LIGHT_GREEN,
+                b"Secrets of Adygalah Alchemy by Leonarda.",
+                crate::text::COL_RESET,
+                b" One recipe most mages will find useful uses Adygalah, Bhalkissa and Firuba, plus one berry and one or two mushrooms.",
+            ]
+            .concat()
+        );
     }
 
     #[test]

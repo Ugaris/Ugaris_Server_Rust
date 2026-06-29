@@ -26,9 +26,10 @@ use ugaris_core::{
     },
     ids::{CharacterId, ItemId},
     item_driver::{
-        legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_DECAYITEM,
-        IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_SPECIAL_POTION, IDR_TORCH,
-        IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
+        legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
+        IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_SPECIAL_POTION,
+        IDR_TORCH, IID_AREA17_LIBRARYKEY, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2,
+        IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
         consume_item, give_item_to_character, replace_item_in_character, GiveItemFlags,
@@ -4910,6 +4911,20 @@ fn item_driver_context_for_request(
             };
         }
         return ugaris_core::item_driver::ItemDriverContext::default();
+    }
+    if *driver == IDR_BOOKCASE {
+        let has_area17_library_key = world.characters.get(character_id).is_some_and(|character| {
+            character.inventory.iter().flatten().any(|item_id| {
+                world
+                    .items
+                    .get(item_id)
+                    .is_some_and(|item| item.template_id == IID_AREA17_LIBRARYKEY)
+            })
+        });
+        return ugaris_core::item_driver::ItemDriverContext {
+            has_area17_library_key,
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
     }
     if *driver != ugaris_core::item_driver::IDR_DOOR
         && *driver != ugaris_core::item_driver::IDR_INFINITE_CHEST
@@ -16957,6 +16972,50 @@ async fn main() -> anyhow::Result<()> {
                                                 ));
                                             }
                                             executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BookcaseText {
+                                            character_id,
+                                            kind,
+                                            ..
+                                        } => {
+                                            let mut random_index = runtime_random_below(26) as u8;
+                                            let mut color = 1;
+                                            let mut solved_library = false;
+                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                let colors = player.ensure_twocity_goodtile_with(|| {
+                                                    runtime_random_below(6) as u8 + 1
+                                                });
+                                                color = match kind {
+                                                    2..=6 => colors[usize::from(kind - 2)],
+                                                    _ => 1,
+                                                };
+                                                solved_library = player.twocity_solved_library;
+                                                if kind == 1 && !player.twocity_solved_library {
+                                                    player.twocity_solved_library = true;
+                                                }
+                                            }
+                                            if kind != 0 {
+                                                random_index = 0;
+                                            }
+                                            feedback_bytes.push((
+                                                character_id,
+                                                ugaris_core::item_driver::bookcase_text_line_bytes(
+                                                    kind,
+                                                    random_index,
+                                                    color,
+                                                    solved_library,
+                                                ),
+                                            ));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BookcaseLocked {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            for line in ugaris_core::item_driver::bookcase_locked_text_lines() {
+                                                feedback.push((character_id, line.to_string()));
+                                            }
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::StafferBookText {
                                             character_id,

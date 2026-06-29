@@ -357,6 +357,10 @@ pub struct PlayerRuntime {
     pub aliases: Vec<CommandAlias>,
     #[serde(default)]
     pub quest_log: QuestLog,
+    #[serde(default)]
+    pub twocity_goodtile: [u8; 5],
+    #[serde(default)]
+    pub twocity_solved_library: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -426,7 +430,21 @@ impl PlayerRuntime {
             rune_special_exec: [0; RUNE_SPECIAL_EXEC_COUNT],
             aliases: Vec::new(),
             quest_log: QuestLog::default(),
+            twocity_goodtile: [0; 5],
+            twocity_solved_library: false,
         }
+    }
+
+    pub fn ensure_twocity_goodtile_with<F>(&mut self, mut roll_color: F) -> [u8; 5]
+    where
+        F: FnMut() -> u8,
+    {
+        if self.twocity_goodtile[0] == 0 {
+            for color in &mut self.twocity_goodtile {
+                *color = roll_color().clamp(1, 6);
+            }
+        }
+        self.twocity_goodtile
     }
 
     pub fn encode_legacy_alias_ppd(&self) -> Vec<u8> {
