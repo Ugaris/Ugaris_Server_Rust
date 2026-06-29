@@ -396,6 +396,61 @@ pub enum FdemonLoaderBlockReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FdemonCrystalTemplate {
+    Small,
+    Medium,
+    Large,
+    Huge,
+    Giant,
+}
+
+impl FdemonCrystalTemplate {
+    pub fn from_farm_size(size: u8) -> Self {
+        if size >= 48 {
+            Self::Giant
+        } else if size >= 40 {
+            Self::Huge
+        } else if size >= 32 {
+            Self::Large
+        } else if size >= 24 {
+            Self::Medium
+        } else {
+            Self::Small
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Small => "fdemon_crystal1",
+            Self::Medium => "fdemon_crystal2",
+            Self::Large => "fdemon_crystal3",
+            Self::Huge => "fdemon_crystal4",
+            Self::Giant => "fdemon_crystal5",
+        }
+    }
+
+    pub fn legacy_number(self) -> u8 {
+        match self {
+            Self::Small => 1,
+            Self::Medium => 2,
+            Self::Large => 3,
+            Self::Huge => 4,
+            Self::Giant => 5,
+        }
+    }
+
+    pub fn foreground_sprite(self) -> u32 {
+        match self {
+            Self::Small => 59020,
+            Self::Medium => 59040,
+            Self::Large => 59041,
+            Self::Huge => 59042,
+            Self::Giant => 59043,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemDriverOutcome {
     LookItem {
         item_id: ItemId,
@@ -641,6 +696,33 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         reason: FdemonLoaderBlockReason,
+    },
+    FdemonFarmChanged {
+        item_id: ItemId,
+        character_id: CharacterId,
+        foreground_sprite: u32,
+        schedule_after_ticks: Option<u64>,
+    },
+    FdemonFarmHarvest {
+        item_id: ItemId,
+        character_id: CharacterId,
+        template: FdemonCrystalTemplate,
+        foreground_sprite: u32,
+    },
+    FdemonFarmCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    FdemonFarmNotReady {
+        item_id: ItemId,
+        character_id: CharacterId,
+        current: u8,
+        required: u8,
+    },
+    FdemonFarmBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+        crystal_number: u8,
     },
     EdemonSwitchStuck {
         item_id: ItemId,
@@ -1323,6 +1405,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EDEMONLIGHT => edemon_light_driver(character, item, context),
                 IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
                 IDR_FDEMONLOADER => fdemon_loader_driver(character, item, context),
+                IDR_FDEMONFARM => fdemon_farm_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -1410,7 +1493,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
-        IDR_FDEMONLIGHT | IDR_FDEMONLOADER => Some(8),
+        IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONFARM => Some(8),
         _ => None,
     }
 }
@@ -4895,6 +4978,60 @@ fn fdemon_loader_driver(
         sound_type,
         schedule_after_ticks: (context.timer_call || character.id.0 == 0)
             .then_some(TICKS_PER_SECOND),
+    }
+}
+
+fn fdemon_farm_driver(
+    character: &mut Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(3, 0);
+
+    let step = item.driver_data[0];
+    let size = item.driver_data[1];
+    let mut strength = item.driver_data[2];
+
+    let ready_template = if strength < size {
+        strength = strength.wrapping_add(step);
+        None
+    } else {
+        Some(FdemonCrystalTemplate::from_farm_size(size))
+    };
+
+    if !context.timer_call && character.id.0 != 0 {
+        if character.cursor_item.is_some() {
+            return ItemDriverOutcome::FdemonFarmCursorOccupied {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+        let Some(template) = ready_template else {
+            item.driver_data[2] = strength;
+            return ItemDriverOutcome::FdemonFarmNotReady {
+                item_id: item.id,
+                character_id: character.id,
+                current: strength,
+                required: size,
+            };
+        };
+
+        strength = 0;
+        item.driver_data[2] = strength;
+        return ItemDriverOutcome::FdemonFarmHarvest {
+            item_id: item.id,
+            character_id: character.id,
+            template,
+            foreground_sprite: 0,
+        };
+    }
+
+    item.driver_data[2] = strength;
+    ItemDriverOutcome::FdemonFarmChanged {
+        item_id: item.id,
+        character_id: character.id,
+        foreground_sprite: ready_template.map_or(0, FdemonCrystalTemplate::foreground_sprite),
+        schedule_after_ticks: Some(TICKS_PER_SECOND * 2),
     }
 }
 
@@ -9633,6 +9770,104 @@ mod tests {
                 &ItemDriverContext::default(),
             ),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn fdemon_farm_timer_grows_and_exposes_crystal_overlay() {
+        let mut timer_character = character(0);
+        let mut farm = item(7, ItemFlags::USED, 0, IDR_FDEMONFARM);
+        farm.driver_data = vec![5, 24, 20];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONFARM,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut farm,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonFarmChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                foreground_sprite: 0,
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 2),
+            }
+        );
+        assert_eq!(farm.driver_data[2], 25);
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut farm,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonFarmChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                foreground_sprite: 59040,
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 2),
+            }
+        );
+        assert_eq!(farm.driver_data[2], 25);
+    }
+
+    #[test]
+    fn fdemon_farm_player_harvest_and_block_messages_are_typed() {
+        let mut user = character(1);
+        let mut farm = item(7, ItemFlags::USED, 0, IDR_FDEMONFARM);
+        farm.driver_data = vec![5, 48, 48];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONFARM,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut user, &mut farm, request, 8, false),
+            ItemDriverOutcome::FdemonFarmHarvest {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                template: FdemonCrystalTemplate::Giant,
+                foreground_sprite: 0,
+            }
+        );
+        assert_eq!(farm.driver_data[2], 0);
+
+        assert_eq!(
+            execute_item_driver(&mut user, &mut farm, request, 8, false),
+            ItemDriverOutcome::FdemonFarmNotReady {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                current: 5,
+                required: 48,
+            }
+        );
+
+        user.cursor_item = Some(ItemId(99));
+        assert_eq!(
+            execute_item_driver(&mut user, &mut farm, request, 8, false),
+            ItemDriverOutcome::FdemonFarmCursorOccupied {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
         );
     }
 

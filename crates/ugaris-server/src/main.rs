@@ -16808,6 +16808,68 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, text.to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmHarvest {
+                                            character_id,
+                                            template,
+                                            ..
+                                        } => {
+                                            if grant_template_item_to_cursor(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                template.as_str(),
+                                            )
+                                            .is_some()
+                                            {
+                                                executed += 1;
+                                            } else {
+                                                feedback.push((
+                                                    character_id,
+                                                    format!(
+                                                        "BUG # 31992 mark {}",
+                                                        template.legacy_number()
+                                                    ),
+                                                ));
+                                                blocked += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmCursorOccupied {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Please empty your hand (mouse cursor) first."
+                                                    .to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmNotReady {
+                                            character_id,
+                                            current,
+                                            required,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                format!(
+                                                    "There's nothing to take yet ({} of {}).",
+                                                    current, required
+                                                ),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmBug {
+                                            character_id,
+                                            crystal_number,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                format!("BUG # 31992 mark {}", crystal_number),
+                                            ));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk {
                                             character_id,
                                             ..
@@ -16829,9 +16891,10 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::FireballMachineProjectile { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerPulse { .. }
+                                          | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
+                                          | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
+                                          | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmChanged { .. }
+                                          | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerPulse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerExtinguished { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapTriggered { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapReset { .. }

@@ -28,8 +28,8 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_CALIGAR, IDR_CALIGARFLAME,
-        IDR_EDEMONLIGHT, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT,
-        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        IDR_EDEMONLIGHT, IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW,
+        IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2151,7 +2151,7 @@ impl World {
                 }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
                 IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_FDEMONLIGHT
-                | IDR_FDEMONLOADER => Some(item_id),
+                | IDR_FDEMONLOADER | IDR_FDEMONFARM => Some(item_id),
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
@@ -5980,6 +5980,29 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::FdemonLoaderBlocked { .. } => outcome,
+            ItemDriverOutcome::FdemonFarmChanged {
+                item_id,
+                foreground_sprite,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.apply_fdemon_farm_foreground(item_id, foreground_sprite);
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
+                }
+                outcome
+            }
+            ItemDriverOutcome::FdemonFarmHarvest {
+                item_id,
+                foreground_sprite,
+                ..
+            } => {
+                self.apply_fdemon_farm_foreground(item_id, foreground_sprite);
+                outcome
+            }
+            ItemDriverOutcome::FdemonFarmCursorOccupied { .. }
+            | ItemDriverOutcome::FdemonFarmNotReady { .. }
+            | ItemDriverOutcome::FdemonFarmBug { .. } => outcome,
             ItemDriverOutcome::EdemonSwitchStuck { .. } => outcome,
             ItemDriverOutcome::OnOffLightChanged {
                 item_id,
@@ -6483,6 +6506,23 @@ impl World {
                 }
             }
             _ => outcome,
+        }
+    }
+
+    fn apply_fdemon_farm_foreground(&mut self, item_id: ItemId, foreground_sprite: u32) {
+        let item_pos = self
+            .items
+            .get(&item_id)
+            .map(|item| (usize::from(item.x), usize::from(item.y)));
+        if let Some((x, y)) = item_pos {
+            if let Some(tile) = self.map.tile_mut(x, y) {
+                let new_foreground_sprite =
+                    (tile.foreground_sprite & 0xffff) | (foreground_sprite << 16);
+                if tile.foreground_sprite != new_foreground_sprite {
+                    tile.foreground_sprite = new_foreground_sprite;
+                    self.mark_dirty_sector(x, y);
+                }
+            }
         }
     }
 
@@ -15956,14 +15996,17 @@ mod tests {
         edemon_light.driver = IDR_EDEMONLIGHT;
         let mut fdemon_loader = item(11, ItemFlags::USED);
         fdemon_loader.driver = IDR_FDEMONLOADER;
+        let mut fdemon_farm = item(12, ItemFlags::USED);
+        fdemon_farm.driver = IDR_FDEMONFARM;
         world.add_item(nightlight);
         world.add_item(burning_torch);
         world.add_item(unlit_torch);
         world.add_item(edemon_light);
         world.add_item(fdemon_loader);
+        world.add_item(fdemon_farm);
 
-        assert_eq!(world.schedule_existing_light_timers(), 4);
-        assert_eq!(world.timers.used_timers(), 4);
+        assert_eq!(world.schedule_existing_light_timers(), 5);
+        assert_eq!(world.timers.used_timers(), 5);
     }
 
     #[test]
@@ -16020,6 +16063,42 @@ mod tests {
             outcomes[0],
             ItemDriverOutcome::FdemonLoaderChanged { .. }
         ));
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_applies_fdemon_farm_foreground_and_timer() {
+        let mut world = World::default();
+        world.add_character(character(0));
+        let mut farm = item(7, ItemFlags::USED | ItemFlags::USE);
+        farm.driver = IDR_FDEMONFARM;
+        farm.driver_data = vec![5, 24, 24];
+        assert!(world.map.set_item_map(&mut farm, 10, 10));
+        world.map.tile_mut(10, 10).unwrap().foreground_sprite = 123;
+        world.add_item(farm);
+
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONFARM,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            8,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonFarmChanged { .. }
+        ));
+        assert_eq!(
+            world.map.tile(10, 10).unwrap().foreground_sprite,
+            (59040 << 16) | 123
+        );
         assert_eq!(world.timers.used_timers(), 1);
     }
 
