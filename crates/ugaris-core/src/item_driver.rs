@@ -6157,8 +6157,7 @@ fn edemon_door_driver(
         }
     }
 
-    let section = item.driver_data.get(6).copied().unwrap_or_default();
-    if section != 0 && context.edemon_section_power.unwrap_or_default() == 0 {
+    if context.edemon_section_power.unwrap_or_default() == 0 {
         return ItemDriverOutcome::EdemonDoorLifeless {
             item_id: item.id,
             character_id: character.id,
@@ -10975,6 +10974,31 @@ mod tests {
                 &powered_context,
             ),
             ItemDriverOutcome::EdemonDoorToggle {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        door.driver_data[6] = 0;
+        let section_zero_unpowered = ItemDriverContext {
+            door_key: Some(DoorKeyAccess {
+                key_id: 0x1122_3344,
+                name: "Copper Key".to_string(),
+                source: DoorKeySource::Carried,
+            }),
+            edemon_section_power: Some(0),
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut ch,
+                &mut door,
+                request,
+                6,
+                false,
+                &section_zero_unpowered,
+            ),
+            ItemDriverOutcome::EdemonDoorLifeless {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }
