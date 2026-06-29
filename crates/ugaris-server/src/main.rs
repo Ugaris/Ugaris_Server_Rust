@@ -925,6 +925,7 @@ fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {
 struct TellCommandResult {
     sender_messages: Vec<String>,
     delivered_messages: Vec<(CharacterId, String)>,
+    delivered_message_bytes: Vec<(CharacterId, Vec<u8>)>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -2208,6 +2209,17 @@ fn legacy_chat_line(
     out
 }
 
+fn legacy_spy_line(kind: &str, payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(COL_DARK_GRAY.len() + kind.len() + payload.len() + 8);
+    out.extend_from_slice(COL_DARK_GRAY);
+    out.extend_from_slice(b"[SPY/");
+    out.extend_from_slice(kind.as_bytes());
+    out.extend_from_slice(b"] ");
+    out.extend_from_slice(payload);
+    out.extend_from_slice(COL_RESET);
+    out
+}
+
 fn apply_chat_command(
     world: &World,
     runtime: &mut ServerRuntime,
@@ -2364,6 +2376,48 @@ fn apply_chat_command(
             continue;
         }
         delivered_message_bytes.push((target_id, line.clone()));
+    }
+
+    let spy_kind = match channel_nr {
+        7 => Some("CLAN"),
+        8 => Some("AREA"),
+        9 => Some("MIRROR"),
+        12 => Some("ALLIANCE"),
+        13 => Some("CLUB"),
+        _ => None,
+    };
+    if let Some(spy_kind) = spy_kind {
+        let bit = 1_u32 << (channel_nr - 1);
+        let spy_line = legacy_spy_line(spy_kind, &line);
+        for player in runtime.players.values() {
+            let Some(target_id) = player.character_id else {
+                continue;
+            };
+            let Some(target) = world.characters.get(&target_id) else {
+                continue;
+            };
+            if !target
+                .flags
+                .contains(CharacterFlags::GOD | CharacterFlags::SPY)
+            {
+                continue;
+            }
+            let would_see_normally = match channel_nr {
+                7 | 12 => player.chat_channels & bit != 0 && target.clan == sender_clan,
+                8 => player.chat_channels & bit != 0 && area_id != 0,
+                9 => {
+                    player.chat_channels & bit != 0
+                        && area_id != 0
+                        && player.current_mirror_id == sender_mirror
+                }
+                13 => false,
+                _ => false,
+            };
+            if would_see_normally {
+                continue;
+            }
+            delivered_message_bytes.push((target_id, spy_line.clone()));
+        }
     }
 
     Some(ChatCommandResult {
@@ -2602,6 +2656,7 @@ fn apply_tell_command(
         return Some(TellCommandResult {
             sender_messages: vec![format!("Sorry, no player by the name {name}.")],
             delivered_messages: Vec::new(),
+            delivered_message_bytes: Vec::new(),
         });
     };
     let Some(target) = world.characters.get(&target_id) else {
@@ -2611,6 +2666,7 @@ fn apply_tell_command(
         return Some(TellCommandResult {
             sender_messages: vec!["Tell, yes, tell it will be, but tell what?".to_string()],
             delivered_messages: Vec::new(),
+            delivered_message_bytes: Vec::new(),
         });
     }
 
@@ -2626,18 +2682,8 @@ fn apply_tell_command(
     let mut result = TellCommandResult {
         sender_messages: vec![format!("Told {}: \"{}\"", target.name, message)],
         delivered_messages: Vec::new(),
+        delivered_message_bytes: Vec::new(),
     };
-    if target.flags.contains(CharacterFlags::NOTELL) && !staffmode {
-        return Some(result);
-    }
-    if !staffmode
-        && runtime
-            .player_for_character(target_id)
-            .is_some_and(|player| player.ignores_character(sender.id.0))
-    {
-        return Some(result);
-    }
-
     let sender_name = if sender.flags.contains(CharacterFlags::STAFF) {
         sender.name.to_ascii_uppercase()
     } else {
@@ -2652,13 +2698,43 @@ fn apply_tell_command(
     } else {
         ""
     };
-    result.delivered_messages.push((
-        target_id,
-        format!(
-            "{}{} ({}) tells you: \"{}\"",
-            sender_name, staff_code, mirror, message
-        ),
-    ));
+    let tell_text = format!(
+        "{}{} ({}) tells you: \"{}\"",
+        sender_name, staff_code, mirror, message
+    );
+    let tell_payload = tell_text.as_bytes().to_vec();
+    let spy_line = legacy_spy_line("TELL", &tell_payload);
+    for player in runtime.players.values() {
+        let Some(spy_character_id) = player.character_id else {
+            continue;
+        };
+        if spy_character_id == sender_id || spy_character_id == target_id {
+            continue;
+        }
+        let Some(spy_character) = world.characters.get(&spy_character_id) else {
+            continue;
+        };
+        if spy_character
+            .flags
+            .contains(CharacterFlags::GOD | CharacterFlags::SPY)
+        {
+            result
+                .delivered_message_bytes
+                .push((spy_character_id, spy_line.clone()));
+        }
+    }
+
+    if target.flags.contains(CharacterFlags::NOTELL) && !staffmode {
+        return Some(result);
+    }
+    if !staffmode
+        && runtime
+            .player_for_character(target_id)
+            .is_some_and(|player| player.ignores_character(sender.id.0))
+    {
+        return Some(result);
+    }
+    result.delivered_messages.push((target_id, tell_text));
 
     if let Some(target_runtime) = runtime.player_for_character_mut(target_id) {
         target_runtime.tell_data.register_received_tell(sender.id.0);
@@ -9527,6 +9603,53 @@ mod tests {
     }
 
     #[test]
+    fn chat_command_forwards_private_channel_to_spying_god() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let same_clan_id = CharacterId(8);
+        let spy_id = CharacterId(9);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.clan = 4;
+        world.add_character(sender);
+        let mut same_clan = login_character(same_clan_id, &login_block("Bob"), 1, 11, 10);
+        same_clan.clan = 4;
+        world.add_character(same_clan);
+        let mut spy = login_character(spy_id, &login_block("God"), 1, 12, 10);
+        spy.flags.insert(CharacterFlags::GOD | CharacterFlags::SPY);
+        world.add_character(spy);
+
+        let mut runtime = ServerRuntime::default();
+        for (session, id) in [(1, sender_id), (2, same_clan_id), (3, spy_id)] {
+            runtime
+                .players
+                .insert(session, PlayerRuntime::connected(session, 0));
+            let player = runtime.players.get_mut(&session).unwrap();
+            player.character_id = Some(id);
+            player.chat_channels = 1_u32 << 6;
+        }
+
+        let result = apply_chat_command(&world, &mut runtime, sender_id, "/clan2 Secret", 1)
+            .expect("clan chat command should be recognized");
+
+        let deliveries = result
+            .delivered_message_bytes
+            .iter()
+            .map(|(id, bytes)| (*id, String::from_utf8_lossy(bytes).into_owned()))
+            .collect::<Vec<_>>();
+        assert_eq!(deliveries.len(), 3);
+        assert!(deliveries
+            .iter()
+            .any(|(id, text)| *id == spy_id && text.contains("[SPY/CLAN]")));
+        assert!(result
+            .delivered_message_bytes
+            .iter()
+            .find(|(id, _)| *id == spy_id)
+            .unwrap()
+            .1
+            .starts_with(COL_DARK_GRAY));
+    }
+
+    #[test]
     fn who_command_lists_visible_players_like_legacy_command() {
         let mut world = World::default();
         let mut warrior = login_character(CharacterId(7), &login_block("Warrior"), 1, 10, 10);
@@ -11372,6 +11495,49 @@ mod tests {
         assert!(blocked.delivered_messages.is_empty());
         assert_eq!(staff.delivered_messages.len(), 1);
         assert!(staff.delivered_messages[0].1.contains("SENDER"));
+    }
+
+    #[test]
+    fn tell_command_forwards_to_spying_god_even_when_recipient_blocks() {
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let spy_id = CharacterId(9);
+        let mut world = World::default();
+        world.add_character(login_character(
+            sender_id,
+            &login_block("Sender"),
+            1,
+            10,
+            10,
+        ));
+        let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
+        target.flags.insert(CharacterFlags::NOTELL);
+        world.add_character(target);
+        let mut spy = login_character(spy_id, &login_block("God"), 1, 12, 10);
+        spy.flags.insert(CharacterFlags::GOD | CharacterFlags::SPY);
+        world.add_character(spy);
+
+        let mut runtime = ServerRuntime::default();
+        for (session, id) in [(1, sender_id), (2, target_id), (3, spy_id)] {
+            runtime
+                .players
+                .insert(session, PlayerRuntime::connected(session, 0));
+            runtime.players.get_mut(&session).unwrap().character_id = Some(id);
+        }
+
+        let result = apply_tell_command(&world, &mut runtime, sender_id, "/tell target secret", 10)
+            .expect("tell should be recognized");
+
+        assert!(result.delivered_messages.is_empty());
+        assert_eq!(result.delivered_message_bytes.len(), 1);
+        assert_eq!(result.delivered_message_bytes[0].0, spy_id);
+        assert!(result.delivered_message_bytes[0]
+            .1
+            .starts_with(COL_DARK_GRAY));
+        assert!(
+            String::from_utf8_lossy(&result.delivered_message_bytes[0].1)
+                .contains("[SPY/TELL] Sender (0) tells you: \"secret\"")
+        );
     }
 
     #[test]
@@ -14439,6 +14605,9 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 for (target_id, message) in result.delivered_messages {
                                     command_feedback.push((target_id, message));
+                                }
+                                for (target_id, message) in result.delivered_message_bytes {
+                                    command_feedback_bytes.push((target_id, message));
                                 }
                                 continue;
                             }

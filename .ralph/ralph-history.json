@@ -5368,9 +5368,30 @@
         "\u001b[0m$ \u001b[0mcargo fmt --all && cargo test -p ugaris-core flask_driver_ports_successful_shake_recipe_mix && cargo test -p ugaris-core flask_driver_ports_failed_shake_reset_to_empty_bottle && cargo test -",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 575 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 195,
+      "startedAt": "2026-06-29T07:58:40.281Z",
+      "endedAt": "2026-06-29T08:08:11.906Z",
+      "durationMs": 571367,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'tell_command_forwards_to_spying_god_even_when_recipient_blocks' found",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 178 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 180 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+      ]
     }
   ],
-  "totalDurationMs": 90233012,
+  "totalDurationMs": 90804379,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -5798,7 +5819,7 @@
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 511 filtered out; finished in 0.00s": 1,
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 481 filtered out; finished in 0.01s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 16,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 17,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.00s": 1,
       "test result: ok. 122 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: ": 1,
@@ -5971,7 +5992,10 @@
       "error: unexpected argument 'flask_driver_ports_failed_shake_reset_to_empty_bottle' found": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core flask_driver_ports_successful_shake_recipe_mix && cargo test -p ": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 575 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 575 filtered out; finished in 0.00s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 575 filtered out; finished in 0.00s": 1,
+      "error: unexpected argument 'tell_command_forwards_to_spying_god_even_when_recipient_blocks' found": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 178 filtered out; finished in 0.00s": 1,
+      "test result: ok. 180 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
