@@ -851,6 +851,20 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    ArkhataPool {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+    },
+    ArkhataPoolNeedsCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ArkhataPoolWrongCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+    },
     BlockedByRequirements {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1520,12 +1534,45 @@ fn arkhata_driver(
     context: &ItemDriverContext,
 ) -> ItemDriverOutcome {
     match drdata(item, 0) {
+        0 => arkhata_pool_driver(character, item, context),
         2 => arkhata_key_assemble_driver(character, item, context),
         _ => ItemDriverOutcome::Unsupported {
             driver: IDR_ARKHATA,
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+const IID_ARKHATA_SCROLL1: u32 = make_item_id(DEV_ID_DB, 0x0000C2);
+
+fn arkhata_pool_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::ArkhataPoolNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    if context.cursor_template_id != Some(IID_ARKHATA_SCROLL1) {
+        return ItemDriverOutcome::ArkhataPoolWrongCursor {
+            item_id: item.id,
+            character_id: character.id,
+            cursor_item_id,
+        };
+    }
+
+    ItemDriverOutcome::ArkhataPool {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
     }
 }
 
@@ -6283,6 +6330,69 @@ mod tests {
                 result_template_id: IID_ARKHATA_AKEY12,
                 result_sprite: 13421,
                 final_key: false,
+            }
+        );
+    }
+
+    #[test]
+    fn arkhata_pool_dispatch_ports_cursor_gates() {
+        let mut character = character(1);
+        let mut pool = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_ARKHATA);
+        set_drdata(&mut pool, 0, 0);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ARKHATA,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IID_ARKHATA_SCROLL1, 0x0100_00C2);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut pool, request, 37, false),
+            ItemDriverOutcome::ArkhataPoolNeedsCursor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.cursor_item = Some(ItemId(9));
+        let wrong_context = ItemDriverContext {
+            cursor_template_id: Some(0x0100_00C3),
+            ..Default::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut pool,
+                request,
+                37,
+                false,
+                &wrong_context
+            ),
+            ItemDriverOutcome::ArkhataPoolWrongCursor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
+            }
+        );
+
+        let scroll_context = ItemDriverContext {
+            cursor_template_id: Some(IID_ARKHATA_SCROLL1),
+            ..Default::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut pool,
+                request,
+                37,
+                false,
+                &scroll_context
+            ),
+            ItemDriverOutcome::ArkhataPool {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
             }
         );
     }

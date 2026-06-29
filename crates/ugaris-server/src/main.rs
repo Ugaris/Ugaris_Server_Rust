@@ -4875,6 +4875,7 @@ fn item_driver_context_for_request(
     if *driver == ugaris_core::item_driver::IDR_ASSEMBLE
         || *driver == ugaris_core::item_driver::IDR_PALACEKEY
         || *driver == ugaris_core::item_driver::IDR_FLASK
+        || *driver == ugaris_core::item_driver::IDR_ARKHATA
     {
         let cursor_item = world
             .characters
@@ -5528,6 +5529,15 @@ enum ZombieShrineApplyResult {
     MissingPlayer,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ArkhataPoolApplyResult {
+    Gift(String),
+    Vanished,
+    MissingGift,
+    MissingPlayer,
+    MissingCursor,
+}
+
 fn zombie_shrine_required_skull(shrine_type: u8) -> u32 {
     match shrine_type {
         0 => IID_AREA2_ZOMBIESKULL1,
@@ -5744,6 +5754,37 @@ fn apply_zombie_shrine(
     }
 
     ZombieShrineApplyResult::MissingGift
+}
+
+fn apply_arkhata_pool(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    cursor_item_id: ItemId,
+    random_seed: u64,
+) -> ArkhataPoolApplyResult {
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return ArkhataPoolApplyResult::MissingPlayer;
+    };
+    if character.cursor_item != Some(cursor_item_id) {
+        return ArkhataPoolApplyResult::MissingCursor;
+    }
+    character.cursor_item = None;
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.items.remove(&cursor_item_id);
+
+    let template = match legacy_random(random_seed, 70) {
+        22 | 33 => Some("Red_Scroll"),
+        42 => Some("Buddah_Statue"),
+        _ => None,
+    };
+    let Some(template) = template else {
+        return ArkhataPoolApplyResult::Vanished;
+    };
+    match grant_template_item_smart(world, loader, character_id, template) {
+        Some(item_name) => ArkhataPoolApplyResult::Gift(item_name),
+        None => ArkhataPoolApplyResult::MissingGift,
+    }
 }
 
 const XMAS_TREE_GIFT_TEMPLATES: [&str; 17] = [
@@ -7038,11 +7079,14 @@ fn runtime_random_below(max: i32) -> i32 {
         return 0;
     }
 
-    let nanos = SystemTime::now()
+    legacy_random(runtime_random_seed(), max as u32) as i32
+}
+
+fn runtime_random_seed() -> u64 {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or_default();
-    legacy_random(nanos, max as u32) as i32
+        .unwrap_or_default()
 }
 
 fn legacy_questlog_payload(player: &PlayerRuntime) -> bytes::BytesMut {
@@ -11212,6 +11256,71 @@ mod tests {
         let gift = world.items.get(&cursor_item_id).unwrap();
         assert_eq!(gift.name, "Silver Skull");
         assert_eq!(gift.carried_by, Some(character_id));
+    }
+
+    #[test]
+    fn apply_arkhata_pool_consumes_scroll_without_reward() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(ItemId(20));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut scroll = test_item(ItemId(20), 1, ItemFlags::USED | ItemFlags::TAKE);
+        scroll.template_id = 0x0100_00C2;
+        scroll.carried_by = Some(character_id);
+        world.add_item(scroll);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_arkhata_pool(
+                &mut world,
+                &mut loader,
+                character_id,
+                ItemId(20),
+                seed_for_legacy_random(70, 0)
+            ),
+            ArkhataPoolApplyResult::Vanished
+        );
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert!(!world.items.contains_key(&ItemId(20)));
+    }
+
+    #[test]
+    fn apply_arkhata_pool_consumes_scroll_and_grants_reward() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(ItemId(20));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut scroll = test_item(ItemId(20), 1, ItemFlags::USED | ItemFlags::TAKE);
+        scroll.template_id = 0x0100_00C2;
+        scroll.carried_by = Some(character_id);
+        world.add_item(scroll);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"Red_Scroll: name="Red Scroll" ID=010000C3 flag=IF_TAKE ;"#)
+            .unwrap();
+
+        assert_eq!(
+            apply_arkhata_pool(
+                &mut world,
+                &mut loader,
+                character_id,
+                ItemId(20),
+                seed_for_legacy_random(70, 22)
+            ),
+            ArkhataPoolApplyResult::Gift("Red Scroll".to_string())
+        );
+        assert!(!world.items.contains_key(&ItemId(20)));
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert!(character.inventory.iter().flatten().any(|item_id| {
+            world
+                .items
+                .get(item_id)
+                .is_some_and(|item| item.name == "Red Scroll")
+        }));
     }
 
     #[test]
@@ -17098,8 +17207,46 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You can only use this item with another item.".to_string()));
                                             blocked += 1;
                                         }
-                                         ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyDoesNotFit { character_id, .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyDoesNotFit { character_id, .. } => {
                                             feedback.push((character_id, "This doesn't seem to fit.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ArkhataPool {
+                                            character_id,
+                                            cursor_item_id,
+                                            ..
+                                        } => {
+                                            match apply_arkhata_pool(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                cursor_item_id,
+                                                runtime_random_seed(),
+                                            ) {
+                                                ArkhataPoolApplyResult::Gift(item_name) => {
+                                                    feedback.push((character_id, format!("You got a {}.", item_name)));
+                                                    executed += 1;
+                                                }
+                                                ArkhataPoolApplyResult::Vanished => {
+                                                    feedback.push((character_id, "It vanished in the pool. You sense that the idea was right, but more of the same is needed for a result.".to_string()));
+                                                    executed += 1;
+                                                }
+                                                ArkhataPoolApplyResult::MissingGift => {
+                                                    failed += 1;
+                                                }
+                                                ArkhataPoolApplyResult::MissingPlayer
+                                                | ArkhataPoolApplyResult::MissingCursor => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ArkhataPoolNeedsCursor { character_id, .. } => {
+                                            feedback.push((character_id, "You sense that you have to use the pool with another item (put it on your mouse cursor).".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ArkhataPoolWrongCursor { character_id, cursor_item_id, .. } => {
+                                            let cursor_name = world.items.get(&cursor_item_id).map(|item| item.name.as_str()).unwrap_or("item");
+                                            feedback.push((character_id, format!("Strangely, the {} floats on the surface of the pool. Since nothing happens to it, you take it back.", cursor_name)));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble {
