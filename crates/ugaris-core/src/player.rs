@@ -38,6 +38,7 @@ pub const LEGACY_AREA3_PPD_SIZE: usize = 17 * 4;
 pub const LEGACY_CALIGAR_PPD_SIZE: usize = 14 * 4 + 4;
 pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_STAFFER_PPD_SIZE: usize = 25 * 4;
+pub const LEGACY_TWOCITY_PPD_SIZE: usize = 29 * 4;
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
 pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
@@ -81,6 +82,7 @@ pub const DRD_RUNE_PPD: u32 = make_drd(DEV_ID_DB, 108 | PERSISTENT_PLAYER_DATA);
 pub const DRD_CALIGAR_PPD: u32 = make_drd(DEV_ID_DB, 159 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DATA);
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
+pub const DRD_TWOCITY_PPD: u32 = make_drd(DEV_ID_DB, 97 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
 
@@ -117,6 +119,8 @@ const CALIGAR_PPD_DOOR_FLAG_COUNT: usize = 4;
 pub const ARKHATA_PPD_CLERK_STATE_OFFSET: usize = 16 * 4;
 pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 const STAFFER_PPD_SHANRA_STATE_OFFSET: usize = 16 * 4;
+const TWOCITY_PPD_GOODTILE_OFFSET: usize = 19 * 4;
+const TWOCITY_PPD_SOLVED_LIBRARY_OFFSET: usize = 24 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const LOSTCON_PPD_MAXLAG_OFFSET: usize = 17 * 4;
@@ -328,6 +332,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub staffer_ppd: Vec<u8>,
     #[serde(default)]
+    pub twocity_ppd: Vec<u8>,
+    #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
     pub pk_deaths: u32,
@@ -422,6 +428,7 @@ impl PlayerRuntime {
             caligar_ppd: Vec::new(),
             arkhata_ppd: Vec::new(),
             staffer_ppd: Vec::new(),
+            twocity_ppd: Vec::new(),
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,
@@ -458,6 +465,41 @@ impl PlayerRuntime {
             }
         }
         self.twocity_goodtile
+    }
+
+    pub fn encode_legacy_twocity_ppd(&self) -> Vec<u8> {
+        let mut bytes = self.twocity_ppd.clone();
+        bytes.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        for (index, color) in self.twocity_goodtile.iter().copied().enumerate() {
+            write_i32(
+                &mut bytes,
+                TWOCITY_PPD_GOODTILE_OFFSET + index * 4,
+                color as i32,
+            );
+        }
+        write_i32(
+            &mut bytes,
+            TWOCITY_PPD_SOLVED_LIBRARY_OFFSET,
+            i32::from(self.twocity_solved_library),
+        );
+        bytes
+    }
+
+    pub fn decode_legacy_twocity_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return false;
+        }
+        self.twocity_ppd = bytes[..LEGACY_TWOCITY_PPD_SIZE].to_vec();
+        for index in 0..self.twocity_goodtile.len() {
+            let color = read_i32(bytes, TWOCITY_PPD_GOODTILE_OFFSET + index * 4);
+            self.twocity_goodtile[index] = if (0..=u8::MAX as i32).contains(&color) {
+                color as u8
+            } else {
+                0
+            };
+        }
+        self.twocity_solved_library = read_i32(bytes, TWOCITY_PPD_SOLVED_LIBRARY_OFFSET) != 0;
+        true
     }
 
     pub fn encode_legacy_alias_ppd(&self) -> Vec<u8> {
@@ -1498,6 +1540,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_TWOCITY_PPD => {
+                    if !self.decode_legacy_twocity_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TREASURE_DIG_PPD => {
                     if !self.decode_legacy_treasure_dig_ppd(block.data) {
                         return false;
@@ -1549,6 +1596,7 @@ impl PlayerRuntime {
         let mut had_caligar = false;
         let mut had_arkhata = false;
         let mut had_staffer = false;
+        let mut had_twocity = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
         let mut had_rune = false;
@@ -1647,6 +1695,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_STAFFER_PPD,
                     &self.encode_legacy_staffer_ppd(),
+                );
+            } else if block.id == DRD_TWOCITY_PPD {
+                had_twocity = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TWOCITY_PPD,
+                    &self.encode_legacy_twocity_ppd(),
                 );
             } else if block.id == DRD_TREASURE_DIG_PPD {
                 had_treasure_dig = true;
@@ -1795,6 +1850,18 @@ impl PlayerRuntime {
                 DRD_STAFFER_PPD,
                 &self.encode_legacy_staffer_ppd(),
             );
+        }
+        if !had_twocity && (existing_was_valid || existing.is_empty()) {
+            if !self.twocity_ppd.is_empty()
+                || self.twocity_goodtile.iter().any(|color| *color != 0)
+                || self.twocity_solved_library
+            {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TWOCITY_PPD,
+                    &self.encode_legacy_twocity_ppd(),
+                );
+            }
         }
         if !had_treasure_dig && (existing_was_valid || existing.is_empty()) {
             if self
@@ -3657,6 +3724,73 @@ mod tests {
 
         let appended = player.encode_legacy_ppd_blob(&[]);
         assert_eq!(read_u32(&appended, 0), DRD_AREA3_PPD);
+    }
+
+    #[test]
+    fn twocity_ppd_codec_matches_legacy_c_layout() {
+        assert_eq!(DRD_TWOCITY_PPD, 0x8100_0061);
+        assert_eq!(LEGACY_TWOCITY_PPD_SIZE, 116);
+        assert_eq!(TWOCITY_PPD_GOODTILE_OFFSET, 76);
+        assert_eq!(TWOCITY_PPD_SOLVED_LIBRARY_OFFSET, 96);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.twocity_ppd = vec![0; LEGACY_TWOCITY_PPD_SIZE];
+        write_i32(&mut player.twocity_ppd, 0, 1234);
+        player.twocity_goodtile = [1, 2, 3, 4, 5];
+        player.twocity_solved_library = true;
+
+        let encoded = player.encode_legacy_twocity_ppd();
+        assert_eq!(read_i32(&encoded, 0), 1234);
+        for (index, color) in [1, 2, 3, 4, 5].into_iter().enumerate() {
+            assert_eq!(
+                read_i32(&encoded, TWOCITY_PPD_GOODTILE_OFFSET + index * 4),
+                color
+            );
+        }
+        assert_eq!(read_i32(&encoded, TWOCITY_PPD_SOLVED_LIBRARY_OFFSET), 1);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_twocity_ppd(&encoded));
+        assert_eq!(decoded.twocity_goodtile, [1, 2, 3, 4, 5]);
+        assert!(decoded.twocity_solved_library);
+        assert_eq!(read_i32(&decoded.twocity_ppd, 0), 1234);
+        assert!(!decoded.decode_legacy_twocity_ppd(&encoded[..LEGACY_TWOCITY_PPD_SIZE - 1]));
+    }
+
+    #[test]
+    fn twocity_ppd_blob_replaces_and_appends_legacy_block() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_twocity = vec![0; LEGACY_TWOCITY_PPD_SIZE];
+        write_i32(&mut existing_twocity, 0, 777);
+        write_i32(&mut existing_twocity, TWOCITY_PPD_GOODTILE_OFFSET, 6);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_TWOCITY_PPD, &existing_twocity);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.decode_legacy_ppd_blob(&existing));
+        assert_eq!(player.twocity_goodtile[0], 6);
+        player.twocity_goodtile = [2, 3, 4, 5, 6];
+        player.twocity_solved_library = true;
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_TWOCITY_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_TWOCITY_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20), 777);
+        assert_eq!(read_i32(&encoded, 20 + TWOCITY_PPD_GOODTILE_OFFSET), 2);
+        assert_eq!(
+            read_i32(&encoded, 20 + TWOCITY_PPD_SOLVED_LIBRARY_OFFSET),
+            1
+        );
+
+        let mut appended_player = PlayerRuntime::connected(2, 0);
+        appended_player.twocity_goodtile = [1, 1, 2, 2, 3];
+        let appended = appended_player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended, 0), DRD_TWOCITY_PPD);
+        assert_eq!(read_u32(&appended, 4), LEGACY_TWOCITY_PPD_SIZE as u32);
+        assert_eq!(read_i32(&appended, 8 + TWOCITY_PPD_GOODTILE_OFFSET), 1);
     }
 
     #[test]
