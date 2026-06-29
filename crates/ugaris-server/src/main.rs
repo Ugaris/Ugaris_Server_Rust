@@ -13282,6 +13282,10 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { .. } => {
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BoneBridgePlace { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeTimerTick { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::Unsupported { .. } => {
                                             unsupported += 1;
                                         }

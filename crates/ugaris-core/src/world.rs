@@ -2400,6 +2400,7 @@ impl World {
             .and_then(|cursor_item_id| self.items.get(&cursor_item_id))
             .map(|item| {
                 (
+                    item.template_id,
                     item.driver,
                     item.sprite,
                     item.driver_data.first().copied().unwrap_or(0),
@@ -2413,7 +2414,12 @@ impl World {
         };
         let mut effective_context = context.clone();
         effective_context.current_tick = self.tick.0 as u32;
-        if let Some((cursor_driver, cursor_sprite, cursor_drdata0)) = cursor_context {
+        if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
+            cursor_context
+        {
+            effective_context.cursor_template_id = effective_context
+                .cursor_template_id
+                .or(Some(cursor_template_id));
             effective_context.cursor_driver =
                 effective_context.cursor_driver.or(Some(cursor_driver));
             effective_context.cursor_sprite =
@@ -5635,6 +5641,24 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::BoneBridgePlace {
+                item_id,
+                character_id,
+                cursor_item_id,
+            } => {
+                if self.place_bone_bridge(item_id, character_id, cursor_item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::BoneBridgeTimerTick { item_id } => {
+                if self.tick_bone_bridge(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::BallTrapProjectile {
                 start_x,
                 start_y,
@@ -6639,6 +6663,113 @@ impl World {
             self.items.get_mut(&item_id),
         ) {
             consume_item(character, item);
+        }
+    }
+
+    fn place_bone_bridge(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        if character.cursor_item != Some(cursor_item_id) {
+            return false;
+        }
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        let dx = i32::from(item.x)
+            .saturating_sub(i32::from(character.x))
+            .signum();
+        let dy = i32::from(item.y)
+            .saturating_sub(i32::from(character.y))
+            .signum();
+        let target_x = i32::from(item.x) + dx;
+        let target_y = i32::from(item.y) + dy;
+        if target_x < 2
+            || target_y < 2
+            || target_x >= MAX_MAP as i32 - 2
+            || target_y >= MAX_MAP as i32 - 2
+        {
+            return false;
+        }
+        let target_x = target_x as usize;
+        let target_y = target_y as usize;
+        let Some(tile) = self.map.tile(target_x, target_y) else {
+            return false;
+        };
+        if tile.item != 0 || !tile.flags.contains(MapFlags::MOVEBLOCK) {
+            return false;
+        }
+        let Some(cursor) = self.items.get(&cursor_item_id) else {
+            return false;
+        };
+        if cursor.carried_by != Some(character_id) {
+            return false;
+        }
+
+        if let Some(tile) = self.map.tile_mut(target_x, target_y) {
+            tile.item = cursor_item_id.0;
+            tile.flags.remove(MapFlags::MOVEBLOCK);
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.cursor_item = None;
+            character.flags.insert(CharacterFlags::ITEMS);
+        }
+        if let Some(cursor) = self.items.get_mut(&cursor_item_id) {
+            cursor.carried_by = None;
+            cursor.contained_in = None;
+            cursor.x = target_x as u16;
+            cursor.y = target_y as u16;
+            cursor.flags.remove(ItemFlags::TAKE);
+            cursor.driver_data.resize(2, 0);
+            cursor.driver_data[1] = 1;
+            cursor.sprite = if dx == 0 { 13045 } else { 13035 };
+        }
+        self.mark_dirty_sector(target_x, target_y);
+        self.schedule_item_driver_timer(cursor_item_id, CharacterId(0), TICKS_PER_SECOND * 60);
+        true
+    }
+
+    fn tick_bone_bridge(&mut self, item_id: ItemId) -> bool {
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        if item.driver_data.get(1).copied().unwrap_or_default() == 0 || item.carried_by.is_some() {
+            return false;
+        }
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        let Some(tile) = self.map.tile(x, y) else {
+            return false;
+        };
+        if tile.item != item_id.0 {
+            return false;
+        }
+        if tile.flags.contains(MapFlags::TMOVEBLOCK) {
+            self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND);
+            return true;
+        }
+
+        if let Some(tile) = self.map.tile_mut(x, y) {
+            tile.flags.insert(MapFlags::MOVEBLOCK);
+        }
+        let remove = if let Some(item) = self.items.get_mut(&item_id) {
+            item.driver_data.resize(2, 0);
+            item.driver_data[1] = item.driver_data[1].saturating_add(1);
+            item.sprite += 1;
+            item.driver_data[1] > 9
+        } else {
+            return false;
+        };
+        self.mark_dirty_sector(x, y);
+        if remove {
+            self.destroy_item(item_id)
+        } else {
+            self.schedule_item_driver_timer(item_id, CharacterId(0), 3)
         }
     }
 
@@ -10369,10 +10500,11 @@ mod tests {
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
-            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_DOOR, IDR_EDEMONBALL,
-            IDR_ENCHANTITEM, IDR_FIREBALL, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_LIZARDFLOWER,
-            IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY,
-            IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_DOOR,
+            IDR_EDEMONBALL, IDR_ENCHANTITEM, IDR_FIREBALL, IDR_FLAMETHROW, IDR_LAB3_PLANT,
+            IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE,
+            IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH,
+            IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::MapFlags,
@@ -15485,6 +15617,134 @@ mod tests {
             world.items.get(&ItemId(8)).unwrap().carried_by,
             Some(CharacterId(1))
         );
+    }
+
+    #[test]
+    fn world_places_and_ages_area18_bone_bridge_segments() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(8));
+        assert!(world.spawn_character(character, 10, 10));
+
+        let mut bridge_base = item(7, ItemFlags::USED | ItemFlags::USE);
+        bridge_base.driver = IDR_BONEBRIDGE;
+        bridge_base.x = 11;
+        bridge_base.y = 10;
+        world.map.tile_mut(11, 10).unwrap().item = 7;
+        world.map.set_flags(12, 10, MapFlags::MOVEBLOCK);
+
+        let mut bone = item(8, ItemFlags::USED | ItemFlags::TAKE | ItemFlags::USE);
+        bone.driver = IDR_BONEBRIDGE;
+        bone.template_id = IID_AREA18_BONE;
+        bone.carried_by = Some(CharacterId(1));
+        bone.driver_data = vec![5];
+        world.add_item(bridge_base);
+        world.add_item(bone);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_BONEBRIDGE,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            18,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::BoneBridgePlace {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(8),
+            }
+        );
+        let tile = world.map.tile(12, 10).unwrap();
+        assert_eq!(tile.item, 8);
+        assert!(!tile.flags.contains(MapFlags::MOVEBLOCK));
+        let bone = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!((bone.x, bone.y), (12, 10));
+        assert_eq!(bone.carried_by, None);
+        assert!(!bone.flags.contains(ItemFlags::TAKE));
+        assert_eq!(bone.driver_data[1], 1);
+        assert_eq!(bone.sprite, 13035);
+        assert_eq!(
+            world.characters.get(&CharacterId(1)).unwrap().cursor_item,
+            None
+        );
+        assert_eq!(world.timers.used_timers(), 1);
+
+        world.add_character(timer_callback_character());
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: IDR_BONEBRIDGE,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            18,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::BoneBridgeTimerTick { item_id: ItemId(8) }
+        );
+        assert!(world
+            .map
+            .tile(12, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::MOVEBLOCK));
+        let bone = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(bone.driver_data[1], 2);
+        assert_eq!(bone.sprite, 13036);
+        assert_eq!(world.timers.used_timers(), 2);
+    }
+
+    #[test]
+    fn world_retries_or_removes_area18_bone_bridge_timer_cleanup_like_c() {
+        let mut world = World::default();
+        world.add_character(timer_callback_character());
+        let mut bone = item(8, ItemFlags::USED | ItemFlags::USE);
+        bone.driver = IDR_BONEBRIDGE;
+        bone.driver_data = vec![5, 1];
+        bone.x = 12;
+        bone.y = 10;
+        world.map.tile_mut(12, 10).unwrap().item = 8;
+        world.map.tile_mut(12, 10).unwrap().flags = MapFlags::TMOVEBLOCK;
+        world.add_item(bone);
+
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEBRIDGE,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            world.execute_item_driver_request_with_context(request, 18, &context),
+            ItemDriverOutcome::BoneBridgeTimerTick { item_id: ItemId(8) }
+        );
+        assert_eq!(world.items.get(&ItemId(8)).unwrap().driver_data[1], 1);
+        assert_eq!(world.timers.used_timers(), 1);
+
+        world.map.tile_mut(12, 10).unwrap().flags = MapFlags::empty();
+        world.items.get_mut(&ItemId(8)).unwrap().driver_data[1] = 9;
+        assert_eq!(
+            world.execute_item_driver_request_with_context(request, 18, &context),
+            ItemDriverOutcome::BoneBridgeTimerTick { item_id: ItemId(8) }
+        );
+        assert!(!world.items.contains_key(&ItemId(8)));
+        let tile = world.map.tile(12, 10).unwrap();
+        assert_eq!(tile.item, 0);
+        assert!(tile.flags.contains(MapFlags::MOVEBLOCK));
     }
 
     #[test]

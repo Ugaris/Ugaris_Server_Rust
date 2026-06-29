@@ -74,6 +74,7 @@ pub const IDR_ANTIORBSPAWN: u16 = 162;
 pub const IDR_DOUBLE_DOOR: u16 = 187;
 pub const IDR_LAB3_PLANT: u16 = 193;
 pub const IDR_KEY_RING: u16 = 200;
+pub const IID_AREA18_BONE: u32 = (0x01 << 24) | 0x000077;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
 pub const IID_AREA2_ZOMBIESKULL1: u32 = (0x01 << 24) | 0x000025;
 pub const IID_AREA2_ZOMBIESKULL2: u32 = (0x01 << 24) | 0x000026;
@@ -769,6 +770,14 @@ pub enum ItemDriverOutcome {
         kind: u8,
         demon_value: i32,
     },
+    BoneBridgePlace {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+    },
+    BoneBridgeTimerTick {
+        item_id: ItemId,
+    },
     AccountDepotOpened {
         item_id: ItemId,
         character_id: CharacterId,
@@ -888,6 +897,7 @@ pub fn execute_item_driver_with_context(
                 IDR_POTION => potion_driver(character, item, area_id, in_arena),
                 IDR_DOOR => door_driver(character, item, context),
                 IDR_BALLTRAP => balltrap_driver(character, item),
+                IDR_BONEBRIDGE => bonebridge_driver(character, item, context),
                 IDR_FIREBALL => fireball_machine_driver(character, item, context),
                 IDR_EDEMONBALL => edemonball_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
@@ -989,6 +999,42 @@ fn balltrap_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         target_x: clamp_legacy_coordinate(item_x + i32::from(dx)),
         target_y: clamp_legacy_coordinate(item_y + i32::from(dy)),
         power: drdata(item, 2),
+    }
+}
+
+fn bonebridge_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if context.timer_call {
+        if drdata(item, 1) == 0 {
+            return ItemDriverOutcome::Noop;
+        }
+        return ItemDriverOutcome::BoneBridgeTimerTick { item_id: item.id };
+    }
+
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if drdata(item, 0) != 0 && drdata(item, 1) == 0 {
+        // Adding/removing bones from a partial carried bridge depends on creating
+        // the generic "bone" template and is applied as a later area-18 slice.
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item else {
+        return ItemDriverOutcome::Noop;
+    };
+    if context.cursor_template_id != Some(IID_AREA18_BONE) || context.cursor_drdata0 != Some(5) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::BoneBridgePlace {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
     }
 }
 
@@ -3759,8 +3805,8 @@ mod tests {
 
     #[test]
     fn lizard_flower_mixer_requires_cursor_flower_and_combines_bits() {
-        let mut character = character(1);
-        character.cursor_item = Some(ItemId(9));
+        let mut actor = character(1);
+        actor.cursor_item = Some(ItemId(9));
         let mut flower = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LIZARDFLOWER);
         flower.carried_by = Some(CharacterId(1));
         flower.driver_data = vec![1];
@@ -3774,7 +3820,7 @@ mod tests {
 
         assert_eq!(
             execute_item_driver_with_context(
-                &mut character,
+                &mut actor,
                 &mut flower,
                 request,
                 30,
@@ -3791,7 +3837,7 @@ mod tests {
 
         assert_eq!(
             execute_item_driver_with_context(
-                &mut character,
+                &mut actor,
                 &mut flower,
                 request,
                 31,
@@ -3811,14 +3857,7 @@ mod tests {
             ..ItemDriverContext::default()
         };
         assert_eq!(
-            execute_item_driver_with_context(
-                &mut character,
-                &mut flower,
-                request,
-                31,
-                false,
-                &context,
-            ),
+            execute_item_driver_with_context(&mut actor, &mut flower, request, 31, false, &context,),
             ItemDriverOutcome::LizardFlowerMixed {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
@@ -3829,16 +3868,9 @@ mod tests {
             }
         );
 
-        character.cursor_item = None;
+        actor.cursor_item = None;
         assert_eq!(
-            execute_item_driver_with_context(
-                &mut character,
-                &mut flower,
-                request,
-                31,
-                false,
-                &context,
-            ),
+            execute_item_driver_with_context(&mut actor, &mut flower, request, 31, false, &context,),
             ItemDriverOutcome::LizardFlowerNeedsCursor {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
@@ -3993,11 +4025,79 @@ mod tests {
 
         assert_eq!(
             execute_item_driver(&mut character, &mut bridge, request, 18, false),
-            ItemDriverOutcome::Unsupported {
-                driver: IDR_BONEBRIDGE,
+            ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn bonebridge_driver_requires_full_area18_bone_cursor_and_ports_timer_boundary() {
+        let mut actor = character(1);
+        actor.cursor_item = Some(ItemId(9));
+        let mut bridge = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEBRIDGE);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEBRIDGE,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bridge,
+                request,
+                18,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(IID_AREA18_BONE),
+                    cursor_drdata0: Some(4),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::Noop
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bridge,
+                request,
+                18,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(IID_AREA18_BONE),
+                    cursor_drdata0: Some(5),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::BoneBridgePlace {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
             }
+        );
+
+        bridge.driver_data = vec![0, 1];
+        let mut timer_character = character(0);
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_BONEBRIDGE,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut bridge,
+                timer_request,
+                18,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::BoneBridgeTimerTick { item_id: ItemId(8) }
         );
     }
 
