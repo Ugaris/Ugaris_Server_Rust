@@ -3624,6 +3624,24 @@ fn special_potion_fun_message(
     }
 }
 
+fn lollipop_area_message(world: &World, character_id: CharacterId) -> String {
+    let name = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.as_str())
+        .unwrap_or("Someone");
+    format!("{name} licks a lollipop.")
+}
+
+fn christmas_pop_inspection_messages() -> [&'static str; 4] {
+    [
+        "You notice a tiny inscription on the magical lollipop. It reads:",
+        "\"Place me under a Christmas tree to receive a special gift from the gods.\"",
+        "In shimmering letters below, you see:",
+        "\"Each tree grants but one wish per adventurer.\"",
+    ]
+}
+
 fn is_torch_item(world: &World, item_id: ItemId) -> bool {
     world
         .items
@@ -7744,6 +7762,35 @@ mod tests {
             Some("Ralph starts frothing at the mouth.")
         );
         assert_eq!(special_potion_fun_message(&world, CharacterId(1), 7), None);
+    }
+
+    #[test]
+    fn lollipop_area_message_matches_legacy_text() {
+        let mut world = World::default();
+        let login = login_block("Ralph");
+        world.add_character(login_character(CharacterId(1), &login, 1, 10, 10));
+
+        assert_eq!(
+            lollipop_area_message(&world, CharacterId(1)),
+            "Ralph licks a lollipop."
+        );
+        assert_eq!(
+            lollipop_area_message(&world, CharacterId(99)),
+            "Someone licks a lollipop."
+        );
+    }
+
+    #[test]
+    fn christmas_pop_inspection_messages_match_legacy_text() {
+        assert_eq!(
+            christmas_pop_inspection_messages(),
+            [
+                "You notice a tiny inscription on the magical lollipop. It reads:",
+                "\"Place me under a Christmas tree to receive a special gift from the gods.\"",
+                "In shimmering letters below, you see:",
+                "\"Each tree grants but one wish per adventurer.\"",
+            ]
+        );
     }
 
     #[test]
@@ -13929,9 +13976,6 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::LollipopLicked { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::LollipopMemories { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::ChristmasPopInspected { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoubleDoorToggle { .. }
@@ -13965,6 +14009,36 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LollipopLicked {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            area_feedback.push((
+                                                character_id,
+                                                lollipop_area_message(&world, character_id),
+                                                10,
+                                            ));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LollipopMemories {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Ahh memories, sweet memories.".to_string(),
+                                            ));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ChristmasPopInspected {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            for message in christmas_pop_inspection_messages() {
+                                                feedback.push((character_id, message.to_string()));
+                                            }
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionDrunk {

@@ -4964,9 +4964,36 @@
         "test result: ok. 560 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 181,
+      "startedAt": "2026-06-29T05:42:50.861Z",
+      "endedAt": "2026-06-29T05:48:07.083Z",
+      "durationMs": 316066,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "error: unexpected argument 'christmas_pop_inspection_messages_match_legacy_text' found",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 560 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 82124568,
+  "totalDurationMs": 82440634,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -4983,7 +5010,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
       "test result: ok. 323 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 13 previous errors": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 43,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 44,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -5083,7 +5110,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 122,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 123,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -5261,7 +5288,7 @@
       "assertion failed: world.process_simple_baddy_noncombat_action(CharacterId(1), 1)": 1,
       "test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 375 filtered out; finished in 0.01s": 1,
       "After comparing the selector, a safe bounded improvement is the C `fight_driver_attack_enemy` emerge": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 22,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
       "test result: ok. 450 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
       "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/crates/none": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 450 filtered out; finished in 0.02s": 1,
@@ -5274,7 +5301,7 @@
       "test result: ok. 454 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
       "The walk-or-use behavior was already partially present, but the path selection can miss a C-like imm": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 80,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 81,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 454 filtered out; finished in 0.02s": 1,
       "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.05s": 1,
       "test result: ok. 455 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -5298,9 +5325,9 @@
       "error: unexpected argument 'secure_move_driver_skips_move_after_blocked_use_and_teleports' found": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 464 filtered out; finished in 0.00s": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_noncombat_threads_failed_use_into_secure_move": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 66,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 67,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 466 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 72,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 73,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s": 1,
       "error: no library targets found in package `ugaris-server`": 1,
       "test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -5390,7 +5417,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 119 filtered out; finished in 0.00s": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core world_removes_stale_pk_hate_when_pvp_level_check_fails world_kee": 1,
       "error: unexpected argument 'world_keeps_pk_hate_when_area_one_blocks_pvp' found": 1,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 25,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 26,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 511 filtered out; finished in 0.00s": 1,
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 481 filtered out; finished in 0.01s": 1,
@@ -5517,7 +5544,9 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 558 filtered out; finished in 0.00s": 1,
       "error: unexpected argument 'tell_command_respects_ignore' found": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 162 filtered out; finished in 0.00s": 1,
-      "test result: ok. 560 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1
+      "test result: ok. 560 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 2,
+      "error: unexpected argument 'christmas_pop_inspection_messages_match_legacy_text' found": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
