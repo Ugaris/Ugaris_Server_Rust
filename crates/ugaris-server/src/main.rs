@@ -17989,6 +17989,9 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeTimerTick { .. } => {
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::IdentityTag { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::Unsupported { .. } => {
                                             unsupported += 1;
                                         }

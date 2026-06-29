@@ -1294,6 +1294,11 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    IdentityTag {
+        driver: u16,
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     Noop,
     Unsupported {
         driver: u16,
@@ -1321,6 +1326,7 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         {
             2
         }
+        ItemDriverOutcome::IdentityTag { .. } => 1,
         ItemDriverOutcome::Noop | ItemDriverOutcome::Unsupported { .. } => 0,
         _ => 1,
     }
@@ -1412,6 +1418,13 @@ pub fn execute_item_driver_with_context(
                         required_area,
                     };
                 }
+            }
+            if driver >= 1000 {
+                return ItemDriverOutcome::IdentityTag {
+                    driver,
+                    item_id,
+                    character_id,
+                };
             }
 
             match driver {
@@ -5884,6 +5897,30 @@ mod tests {
                 character_id: CharacterId(1),
             }
         );
+    }
+
+    #[test]
+    fn identity_tag_item_drivers_are_handled_noops_like_legacy_libload() {
+        let mut character = character(1);
+        let mut tagged = item(8, ItemFlags::USED | ItemFlags::USE, 0, 1000);
+        let request = ItemDriverRequest::Driver {
+            driver: 1000,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver(&mut character, &mut tagged, request, 1, false);
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::IdentityTag {
+                driver: 1000,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(legacy_item_driver_return_code(Some(1000), &outcome), 1);
     }
 
     #[test]
