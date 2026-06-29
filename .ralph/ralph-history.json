@@ -602,21 +602,48 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 23,
+      "startedAt": "2026-06-29T12:42:26.073Z",
+      "endedAt": "2026-06-29T12:48:30.951Z",
+      "durationMs": 364723,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 619 filtered out; finished in 0.01s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 10965757,
+  "totalDurationMs": 11330480,
   "struggleIndicators": {
     "repeatedErrors": {
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 3,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 3,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 2,
-      "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 2,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 4,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 4,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 3,
+      "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 3,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 17,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 18,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 16,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 15,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 11,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 18,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 19,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 17,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 16,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 12,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
@@ -698,7 +725,8 @@
       "test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 603 filtered out; finished in 0.00s": 1,
       "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 603 filtered out; finished in 0.00s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 615 filtered out; finished in 0.00s": 1,
-      "test result: ok. 619 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 619 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 619 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -201,6 +201,10 @@ fn fight_driver_attackback_may_run(tasks: &[FightDriverTask], index: usize) -> b
         .is_some_and(|task| task.kind == FightDriverTaskKind::Attack)
 }
 
+fn simple_baddy_enemy_hurtme(enemy: &SimpleBaddyEnemy) -> bool {
+    enemy.priority == 1
+}
+
 fn item_light_may_have_changed(outcome: &ItemDriverOutcome) -> bool {
     matches!(
         outcome,
@@ -2788,6 +2792,9 @@ impl World {
             return i32::MIN;
         };
         let mut score = (999 - char_dist(attacker, target)) * 10;
+        if simple_baddy_enemy_hurtme(enemy) {
+            score += 100_000;
+        }
         if character_is_facing(attacker, target) {
             score += 5;
         }
@@ -4887,7 +4894,9 @@ impl World {
             right
                 .visible
                 .cmp(&left.visible)
-                .then_with(|| (right.priority > 0).cmp(&(left.priority > 0)))
+                .then_with(|| {
+                    simple_baddy_enemy_hurtme(right).cmp(&simple_baddy_enemy_hurtme(left))
+                })
                 .then_with(|| left_distance.cmp(&right_distance))
                 .then_with(|| right_facing.cmp(&left_facing))
         });
@@ -13655,6 +13664,54 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::ATTACK1);
         assert_eq!(npc.act1, 3);
+        assert_eq!(npc.dir, Direction::Right as u8);
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_prefers_hurt_visible_enemy_before_distance_like_c() {
+        let mut world = World::default();
+        world.tick = Tick(459);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Attack as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![
+                SimpleBaddyEnemy {
+                    target_id: CharacterId(2),
+                    priority: 1,
+                    last_seen_tick: 999,
+                    visible: true,
+                    last_x: 14,
+                    last_y: 10,
+                },
+                SimpleBaddyEnemy {
+                    target_id: CharacterId(3),
+                    priority: 0,
+                    last_seen_tick: 1,
+                    visible: true,
+                    last_x: 10,
+                    last_y: 11,
+                },
+            ],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let mut hurt_target = character(2);
+        hurt_target.values[0][CharacterValue::Attack as usize] = 1;
+        let mut seen_target = character(3);
+        seen_target.values[0][CharacterValue::Attack as usize] = 1;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(hurt_target, 14, 10);
+        world.spawn_character(seen_target, 10, 11);
+        world.map.tile_mut(14, 10).unwrap().light = 255;
+        world.map.tile_mut(10, 11).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!(npc.tox, 11);
+        assert_eq!(npc.toy, 10);
         assert_eq!(npc.dir, Direction::Right as u8);
     }
 
