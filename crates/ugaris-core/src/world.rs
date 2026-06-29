@@ -32,7 +32,8 @@ use crate::{
         IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE,
         IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONFARM, IDR_FDEMONGATE,
         IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT,
-        IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        IDR_ONOFFLIGHT, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH,
+        IID_AREA14_SHRINEKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2807,6 +2808,33 @@ impl World {
             })
     }
 
+    fn has_matching_random_shrine_key(
+        &self,
+        character_id: CharacterId,
+        shrine_item_id: ItemId,
+    ) -> bool {
+        let Some(shrine) = self.items.get(&shrine_item_id) else {
+            return false;
+        };
+        let required_level = shrine.driver_data.get(1).copied().unwrap_or(0);
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+
+        character
+            .inventory
+            .iter()
+            .flatten()
+            .copied()
+            .chain(character.cursor_item)
+            .any(|item_id| {
+                self.items.get(&item_id).is_some_and(|item| {
+                    item.template_id == IID_AREA14_SHRINEKEY
+                        && item.driver_data.first().copied().unwrap_or(0) == required_level
+                })
+            })
+    }
+
     pub fn execute_item_driver_request_with_context(
         &mut self,
         request: ItemDriverRequest,
@@ -2872,6 +2900,10 @@ impl World {
         .flatten();
         let dungeon_door_context = (driver == Some(IDR_DUNGEONDOOR))
             .then(|| self.dungeon_door_context(character_id, item_id));
+        let random_shrine_key_context = (driver == Some(IDR_RANDOMSHRINE)
+            && !context.has_matching_random_shrine_key)
+            .then(|| self.has_matching_random_shrine_key(character_id, item_id))
+            .unwrap_or(false);
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -2902,6 +2934,7 @@ impl World {
                 .dungeon_defender_count
                 .or(Some(defender_count));
         }
+        effective_context.has_matching_random_shrine_key |= random_shrine_key_context;
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
         {
@@ -25016,6 +25049,63 @@ mod tests {
         assert_eq!(world.items.get(&ItemId(8)).unwrap().driver_data[1], 0);
         assert_eq!(world.map.tile(10, 9).unwrap().foreground_sprite, 15318);
         assert_eq!(world.timers.used_timers(), 0);
+    }
+
+    #[test]
+    fn world_randomshrine_key_context_scans_inventory_and_cursor() {
+        let mut world = World::default();
+        world.map = MapGrid::new(20, 20);
+        let mut shrine = item(8, ItemFlags::USED | ItemFlags::USE);
+        shrine.driver = crate::item_driver::IDR_RANDOMSHRINE;
+        shrine.driver_data = vec![53, 17];
+        assert!(world.map.set_item_map(&mut shrine, 10, 10));
+        world.add_item(shrine);
+
+        let mut player = character(1);
+        player.inventory[30] = Some(ItemId(9));
+        assert!(world.spawn_character(player, 9, 10));
+        let mut key = item(9, ItemFlags::USED);
+        key.template_id = crate::item_driver::IID_AREA14_SHRINEKEY;
+        key.driver_data = vec![17];
+        key.carried_by = Some(CharacterId(1));
+        world.add_item(key);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_RANDOMSHRINE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::RandomShrineUse {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                shrine_type: 53,
+                level: 17,
+                kind: crate::item_driver::RandomShrineKind::Security,
+            }
+        );
+
+        world.items.get_mut(&ItemId(9)).unwrap().driver_data[0] = 18;
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_RANDOMSHRINE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::RandomShrineNeedsKey { .. }
+        ));
     }
 
     fn character(id: u32) -> Character {

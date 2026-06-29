@@ -5172,6 +5172,18 @@ fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
+    if *driver == ugaris_core::item_driver::IDR_RANDOMSHRINE {
+        let shrine_type = world
+            .items
+            .get(item_id)
+            .and_then(|item| item.driver_data.first().copied())
+            .unwrap_or(0);
+        return ugaris_core::item_driver::ItemDriverContext {
+            random_shrine_already_used: shrine_type != 255
+                && player.is_some_and(|player| player.has_used_random_shrine(shrine_type)),
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
     if *driver != ugaris_core::item_driver::IDR_DOOR
         && *driver != ugaris_core::item_driver::IDR_EDEMONDOOR
         && *driver != ugaris_core::item_driver::IDR_INFINITE_CHEST
@@ -17826,6 +17838,29 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::ZombieShrineNeedsOffering { character_id, shrine_type, .. } => {
                                             feedback.push((character_id, zombie_shrine_offering_message(shrine_type).to_string()));
                                             blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::RandomShrineNeedsKey { character_id, .. } => {
+                                            feedback.push((character_id, "Nothing happens. You seem to need some kind of magical item to invoke the powers of the shrine.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::RandomShrineAlreadyUsed { character_id, .. } => {
+                                            feedback.push((character_id, "The magic of this place will only work once.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::RandomShrineBug { character_id, .. } => {
+                                            feedback.push((character_id, "You have found bug #2116a.".to_string()));
+                                            failed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::RandomShrineUse { character_id, kind, .. } => {
+                                            match kind {
+                                                ugaris_core::item_driver::RandomShrineKind::Dormant => {
+                                                    executed += 1;
+                                                }
+                                                _ => {
+                                                    feedback.push((character_id, "Nothing happens.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::SpecialShrine { character_id, kind, .. } => {
                                             let result = match (

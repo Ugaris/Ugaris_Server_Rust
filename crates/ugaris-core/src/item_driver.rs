@@ -83,6 +83,7 @@ pub const IDR_RANDOMSHRINE: u16 = 69;
 pub const IDR_TRAPDOOR: u16 = 70;
 pub const IDR_JUNKPILE: u16 = 71;
 pub const IDR_GASTRAP: u16 = 72;
+pub const IID_AREA14_SHRINEKEY: u32 = 0x0100_005B;
 pub const IDR_SWAMPARM: u16 = 73;
 pub const IDR_SWAMPWHISP: u16 = 74;
 pub const IDR_SWAMPSPAWN: u16 = 75;
@@ -367,6 +368,24 @@ pub struct ItemDriverContext {
     pub dungeon_defender_count: Option<u16>,
     pub pent_last_solve_tick: Option<u32>,
     pub pent_demon_lord_access_seconds: Option<u32>,
+    pub has_matching_random_shrine_key: bool,
+    pub random_shrine_already_used: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RandomShrineKind {
+    Indecisiveness,
+    Bribes,
+    Welding,
+    Edge,
+    Kindness,
+    Vitality,
+    Death,
+    Braveness,
+    Security,
+    Jobless,
+    Continuity,
+    Dormant,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1256,6 +1275,30 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         shrine_type: u8,
     },
+    RandomShrineNeedsKey {
+        item_id: ItemId,
+        character_id: CharacterId,
+        shrine_type: u8,
+        level: u8,
+    },
+    RandomShrineAlreadyUsed {
+        item_id: ItemId,
+        character_id: CharacterId,
+        shrine_type: u8,
+        level: u8,
+    },
+    RandomShrineUse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        shrine_type: u8,
+        level: u8,
+        kind: RandomShrineKind,
+    },
+    RandomShrineBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+        shrine_type: u8,
+    },
     XmasMaker {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1864,6 +1907,7 @@ pub fn execute_item_driver_with_context(
                 IDR_BURNDOWN => burndown_driver(character, item, context),
                 IDR_COLORTILE => colortile_driver(character, item),
                 IDR_SKELRAISE => skelraise_driver(character, item, context),
+                IDR_RANDOMSHRINE => randomshrine_driver(character, item, context),
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
                 IDR_CHESTSPAWN => chestspawn_driver(character, item),
                 IDR_PARKSHRINE => parkshrine_driver(character, item),
@@ -4099,6 +4143,84 @@ fn steptrap_driver(
         y: u16::from(drdata(item, 1)),
         target_character_id: CharacterId(0),
         delay_ticks: 1,
+    }
+}
+
+fn randomshrine_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let shrine_type = drdata(item, 0);
+    let level = drdata(item, 1);
+    if shrine_type >= 255 {
+        if shrine_type == 255 {
+            if !context.has_matching_random_shrine_key {
+                return ItemDriverOutcome::RandomShrineNeedsKey {
+                    item_id: item.id,
+                    character_id: character.id,
+                    shrine_type,
+                    level,
+                };
+            }
+            return ItemDriverOutcome::RandomShrineUse {
+                item_id: item.id,
+                character_id: character.id,
+                shrine_type,
+                level,
+                kind: RandomShrineKind::Continuity,
+            };
+        }
+        return ItemDriverOutcome::RandomShrineBug {
+            item_id: item.id,
+            character_id: character.id,
+            shrine_type,
+        };
+    }
+
+    if !context.has_matching_random_shrine_key {
+        return ItemDriverOutcome::RandomShrineNeedsKey {
+            item_id: item.id,
+            character_id: character.id,
+            shrine_type,
+            level,
+        };
+    }
+
+    let kind = match shrine_type {
+        0..=9 => RandomShrineKind::Indecisiveness,
+        10..=19 => RandomShrineKind::Bribes,
+        20..=29 => RandomShrineKind::Welding,
+        30..=39 => RandomShrineKind::Edge,
+        40..=49 => RandomShrineKind::Kindness,
+        50 => RandomShrineKind::Vitality,
+        51 => RandomShrineKind::Death,
+        52 => RandomShrineKind::Braveness,
+        53..=62 => RandomShrineKind::Security,
+        63..=72 => RandomShrineKind::Jobless,
+        73..=254 => RandomShrineKind::Dormant,
+        255 => RandomShrineKind::Continuity,
+    };
+
+    if context.random_shrine_already_used && !matches!(kind, RandomShrineKind::Dormant) {
+        return ItemDriverOutcome::RandomShrineAlreadyUsed {
+            item_id: item.id,
+            character_id: character.id,
+            shrine_type,
+            level,
+        };
+    }
+
+    ItemDriverOutcome::RandomShrineUse {
+        item_id: item.id,
+        character_id: character.id,
+        shrine_type,
+        level,
+        kind,
     }
 }
 
@@ -15056,6 +15178,136 @@ mod tests {
             }
         );
         assert_eq!(trap.driver_data[1], 0);
+    }
+
+    #[test]
+    fn randomshrine_requires_matching_key_before_effects() {
+        let mut actor = character(1);
+        let mut shrine = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_RANDOMSHRINE);
+        shrine.driver_data = vec![54, 23];
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut shrine,
+            ItemDriverRequest::Driver {
+                driver: IDR_RANDOMSHRINE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext::default(),
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::RandomShrineNeedsKey {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                shrine_type: 54,
+                level: 23,
+            }
+        );
+    }
+
+    #[test]
+    fn randomshrine_classifies_legacy_type_ranges_and_repeats() {
+        let mut actor = character(1);
+        let mut shrine = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_RANDOMSHRINE);
+        shrine.driver_data = vec![54, 23];
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut shrine,
+            ItemDriverRequest::Driver {
+                driver: IDR_RANDOMSHRINE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext {
+                has_matching_random_shrine_key: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::RandomShrineUse {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                shrine_type: 54,
+                level: 23,
+                kind: RandomShrineKind::Security,
+            }
+        );
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut shrine,
+            ItemDriverRequest::Driver {
+                driver: IDR_RANDOMSHRINE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext {
+                has_matching_random_shrine_key: true,
+                random_shrine_already_used: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::RandomShrineAlreadyUsed {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                shrine_type: 54,
+                level: 23,
+            }
+        );
+    }
+
+    #[test]
+    fn randomshrine_continuity_uses_its_distinct_path() {
+        let mut actor = character(1);
+        let mut shrine = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_RANDOMSHRINE);
+        shrine.driver_data = vec![255, 99];
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut shrine,
+            ItemDriverRequest::Driver {
+                driver: IDR_RANDOMSHRINE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext {
+                has_matching_random_shrine_key: true,
+                random_shrine_already_used: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::RandomShrineUse {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                shrine_type: 255,
+                level: 99,
+                kind: RandomShrineKind::Continuity,
+            }
+        );
     }
 
     fn request(character_id: u32, item_id: u32, spec: i32) -> ItemUseRequest {
