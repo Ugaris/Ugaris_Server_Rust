@@ -26,6 +26,7 @@ pub mod scheduler;
 pub mod sector;
 pub mod see;
 pub mod spell;
+pub mod tell;
 pub mod text;
 pub mod tick;
 pub mod world;
