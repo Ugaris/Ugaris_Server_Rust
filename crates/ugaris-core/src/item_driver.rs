@@ -1002,7 +1002,7 @@ pub fn execute_item_driver_with_context(
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
-                IDR_FLASK => flask_driver(character, item, context, in_arena),
+                IDR_FLASK => flask_driver(character, item, context, area_id, in_arena),
                 IDR_DOUBLE_DOOR => double_door_driver(character, item),
                 IDR_TELE_DOOR => teleport_door_driver(character, item),
                 IDR_TELEPORT => teleport_driver(character, item),
@@ -1800,12 +1800,13 @@ fn flask_driver(
     character: &Character,
     item: &mut Item,
     context: &ItemDriverContext,
+    area_id: u16,
     in_arena: bool,
 ) -> ItemDriverOutcome {
     if character.id.0 == 0 || item.carried_by != Some(character.id) {
         return ItemDriverOutcome::Noop;
     }
-    if in_arena {
+    if area_id == 34 && in_arena {
         return ItemDriverOutcome::BlockedByArea {
             item_id: item.id,
             character_id: character.id,
@@ -4725,7 +4726,7 @@ mod tests {
     }
 
     #[test]
-    fn flask_driver_ports_empty_shake_arena_and_finished_blocks() {
+    fn flask_driver_ports_empty_shake_teufelheim_arena_and_finished_blocks() {
         let mut actor = character(1);
         let mut flask = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLASK);
         flask.carried_by = Some(CharacterId(1));
@@ -4739,6 +4740,13 @@ mod tests {
 
         assert_eq!(
             execute_item_driver(&mut actor, &mut flask, request, 1, true),
+            ItemDriverOutcome::FlaskEmptyShaken {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut flask, request, 34, true),
             ItemDriverOutcome::BlockedByArea {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
