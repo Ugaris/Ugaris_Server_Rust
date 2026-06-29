@@ -42,6 +42,10 @@ pub const PK_HATE_MAX_ENTRIES: usize = 50;
 pub const LEGACY_PK_PPD_SIZE: usize = 4 * 4 + PK_HATE_MAX_ENTRIES * 4;
 pub const IGNORE_MAX_ENTRIES: usize = 100;
 pub const LEGACY_IGNORE_PPD_SIZE: usize = IGNORE_MAX_ENTRIES * 4;
+pub const SWEAR_SENTENCE_COUNT: usize = 10;
+pub const SWEAR_SENTENCE_LEN: usize = 80;
+pub const LEGACY_SWEAR_PPD_SIZE: usize =
+    10 * 4 + 4 + SWEAR_SENTENCE_COUNT * SWEAR_SENTENCE_LEN + 10 * 4 + 10 * 4 + 4 + 4;
 pub const ALIAS_MAX_ENTRIES: usize = 32;
 pub const ALIAS_FROM_LEN: usize = 8;
 pub const ALIAS_TO_LEN: usize = 56;
@@ -66,6 +70,7 @@ pub const DRD_FLOWER_PPD: u32 = make_drd(DEV_ID_DB, 62 | PERSISTENT_PLAYER_DATA)
 pub const DRD_MISC_PPD: u32 = make_drd(DEV_ID_DB, 113 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ALIAS_PPD: u32 = make_drd(DEV_ID_DB, 80 | PERSISTENT_PLAYER_DATA);
 pub const DRD_IGNORE_PPD: u32 = make_drd(DEV_ID_DB, 100 | PERSISTENT_PLAYER_DATA);
+pub const DRD_SWEAR_PPD: u32 = make_drd(DEV_ID_DB, 109 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_DIG_PPD: u32 = make_drd(DEV_ID_ED, 5 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RUNE_PPD: u32 = make_drd(DEV_ID_DB, 108 | PERSISTENT_PLAYER_DATA);
@@ -108,6 +113,7 @@ const PK_PPD_LAST_KILL_OFFSET: usize = 8;
 const PK_PPD_LAST_DEATH_OFFSET: usize = 12;
 const PK_PPD_HATE_OFFSET: usize = 16;
 const RUNE_PPD_SPECIAL_EXEC_OFFSET: usize = RUNE_USED_WORDS * 4;
+const SWEAR_PPD_BANNED_TILL_OFFSET: usize = LEGACY_SWEAR_PPD_SIZE - 4;
 
 pub const DEFERRED_ACHIEVEMENTS: u32 = 1 << 0;
 pub const DEFERRED_MOTD: u32 = 1 << 1;
@@ -328,6 +334,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub shutup_until_seconds: u64,
     #[serde(default)]
+    pub swear_ppd: Vec<u8>,
+    #[serde(default)]
     pub tell_data: TellData,
     #[serde(default)]
     pub ignored_characters: Vec<u32>,
@@ -399,6 +407,7 @@ impl PlayerRuntime {
             current_mirror_id: 0,
             max_lag_seconds: 0,
             shutup_until_seconds: 0,
+            swear_ppd: Vec::new(),
             tell_data: TellData::default(),
             ignored_characters: Vec::new(),
             chat_channels: 0,
@@ -1249,6 +1258,27 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_swear_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_SWEAR_PPD_SIZE];
+        let copy_len = self.swear_ppd.len().min(LEGACY_SWEAR_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.swear_ppd[..copy_len]);
+        write_i32(
+            &mut bytes,
+            SWEAR_PPD_BANNED_TILL_OFFSET,
+            self.shutup_until_seconds.min(i32::MAX as u64) as i32,
+        );
+        bytes
+    }
+
+    pub fn decode_legacy_swear_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_SWEAR_PPD_SIZE {
+            return false;
+        }
+        self.swear_ppd = bytes[..LEGACY_SWEAR_PPD_SIZE].to_vec();
+        self.shutup_until_seconds = read_i32(bytes, SWEAR_PPD_BANNED_TILL_OFFSET).max(0) as u64;
+        true
+    }
+
     pub fn decode_legacy_ppd_blob(&mut self, bytes: &[u8]) -> bool {
         for block in LegacyPpdBlocks::parse(bytes) {
             let Some(block) = block else {
@@ -1330,6 +1360,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_SWEAR_PPD => {
+                    if !self.decode_legacy_swear_ppd(block.data) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -1353,6 +1388,7 @@ impl PlayerRuntime {
         let mut had_rune = false;
         let mut had_alias = false;
         let mut had_ignore = false;
+        let mut had_swear = false;
         let mut existing_was_valid = true;
 
         for block in LegacyPpdBlocks::parse(existing) {
@@ -1451,6 +1487,11 @@ impl PlayerRuntime {
                         DRD_IGNORE_PPD,
                         &self.encode_legacy_ignore_ppd(),
                     );
+                }
+            } else if block.id == DRD_SWEAR_PPD {
+                had_swear = true;
+                if !self.swear_ppd.is_empty() || self.shutup_until_seconds != 0 {
+                    write_ppd_block(&mut encoded, DRD_SWEAR_PPD, &self.encode_legacy_swear_ppd());
                 }
             } else {
                 write_ppd_block(&mut encoded, block.id, block.data);
@@ -1573,6 +1614,12 @@ impl PlayerRuntime {
                 DRD_IGNORE_PPD,
                 &self.encode_legacy_ignore_ppd(),
             );
+        }
+        if !had_swear
+            && (existing_was_valid || existing.is_empty())
+            && self.shutup_until_seconds != 0
+        {
+            write_ppd_block(&mut encoded, DRD_SWEAR_PPD, &self.encode_legacy_swear_ppd());
         }
 
         encoded
@@ -2113,12 +2160,66 @@ mod tests {
         assert_eq!(DRD_MISC_PPD, 0x8100_0071);
         assert_eq!(DRD_ALIAS_PPD, 0x8100_0050);
         assert_eq!(DRD_IGNORE_PPD, 0x8100_0064);
+        assert_eq!(DRD_SWEAR_PPD, 0x8100_006d);
         assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_DEMONSHRINE_PPD_SIZE, 400);
         assert_eq!(LEGACY_MISC_PPD_SIZE, 36);
         assert_eq!(LEGACY_IGNORE_PPD_SIZE, 400);
+        assert_eq!(LEGACY_SWEAR_PPD_SIZE, 932);
+    }
+
+    #[test]
+    fn swear_ppd_codec_preserves_counters_and_maps_banned_till() {
+        let mut bytes = vec![0; LEGACY_SWEAR_PPD_SIZE];
+        write_i32(&mut bytes, 0, 11);
+        write_i32(&mut bytes, 40, 22);
+        bytes[44..49].copy_from_slice(b"hello");
+        write_i32(&mut bytes, SWEAR_PPD_BANNED_TILL_OFFSET, 1234);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.decode_legacy_swear_ppd(&bytes));
+        assert_eq!(player.shutup_until_seconds, 1234);
+
+        player.shutup_until_seconds = 5678;
+        let encoded = player.encode_legacy_swear_ppd();
+        assert_eq!(encoded.len(), LEGACY_SWEAR_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, 0), 11);
+        assert_eq!(read_i32(&encoded, 40), 22);
+        assert_eq!(&encoded[44..49], b"hello");
+        assert_eq!(read_i32(&encoded, SWEAR_PPD_BANNED_TILL_OFFSET), 5678);
+    }
+
+    #[test]
+    fn swear_ppd_outer_blob_replaces_appends_and_removes_empty_state() {
+        let mut existing = Vec::new();
+        let mut old_swear = vec![0; LEGACY_SWEAR_PPD_SIZE];
+        write_i32(&mut old_swear, 0, 77);
+        write_ppd_block(&mut existing, DRD_SWEAR_PPD, &old_swear);
+        write_ppd_block(&mut existing, 0x5566_7788, &[3]);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.swear_ppd = old_swear;
+        player.shutup_until_seconds = 600;
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), DRD_SWEAR_PPD);
+        assert_eq!(read_i32(&encoded, 8), 77);
+        assert_eq!(read_i32(&encoded, 8 + SWEAR_PPD_BANNED_TILL_OFFSET), 600);
+        assert_eq!(read_u32(&encoded, 8 + LEGACY_SWEAR_PPD_SIZE), 0x5566_7788);
+
+        let mut appended = PlayerRuntime::connected(2, 0);
+        appended.shutup_until_seconds = 700;
+        let encoded = appended.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_SWEAR_PPD);
+        assert_eq!(read_i32(&encoded, 8 + SWEAR_PPD_BANNED_TILL_OFFSET), 700);
+
+        let empty = PlayerRuntime::connected(3, 0);
+        let encoded = empty.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), 0x5566_7788);
+        assert!(!encoded
+            .windows(4)
+            .any(|window| window == DRD_SWEAR_PPD.to_le_bytes()));
     }
 
     #[test]

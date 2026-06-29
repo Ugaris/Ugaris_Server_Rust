@@ -769,6 +769,7 @@ fn apply_character_snapshot(
     snapshot: CharacterSnapshot,
     fallback_x: usize,
     fallback_y: usize,
+    realtime_seconds: u64,
 ) -> CharacterSnapshotApplyResult {
     let CharacterSnapshot {
         mut character,
@@ -787,6 +788,12 @@ fn apply_character_snapshot(
             character_id = character.id.0,
             "failed to decode legacy PPD blob for DB character"
         );
+    }
+    if player.shutup_until_seconds > realtime_seconds {
+        character.flags.insert(CharacterFlags::SHUTUP);
+    } else {
+        player.shutup_until_seconds = 0;
+        character.flags.remove(CharacterFlags::SHUTUP);
     }
 
     let spawn_x = usize::from(character.x).max(1);
@@ -9363,6 +9370,39 @@ mod tests {
     }
 
     #[test]
+    fn character_snapshot_restores_active_legacy_shutup_ppd() {
+        let target_id = CharacterId(8);
+        let character = login_character(target_id, &login_block("Target"), 1, 11, 10);
+
+        let mut persisted = PlayerRuntime::connected(99, 0);
+        persisted.shutup_until_seconds = 700;
+        let ppd_blob = persisted.encode_legacy_ppd_blob(&[]);
+
+        let snapshot = CharacterSnapshot {
+            character,
+            items: Vec::new(),
+            ppd_blob,
+            subscriber_blob: Vec::new(),
+            current_area: 1,
+            current_mirror: 1,
+            allowed_area: 1,
+            mirror: 1,
+        };
+        let mut world = World::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let result = apply_character_snapshot(&mut world, &mut player, snapshot, 11, 10, 100);
+        assert!(result.loaded);
+        assert_eq!(player.shutup_until_seconds, 700);
+        assert!(world
+            .characters
+            .get(&target_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::SHUTUP));
+    }
+
+    #[test]
     fn tell_command_delivers_local_private_message_and_acknowledges_receipt() {
         let mut world = World::default();
         let sender_id = CharacterId(7);
@@ -16357,12 +16397,15 @@ async fn main() -> anyhow::Result<()> {
                                     match repository.load_character_snapshot(db_character_id).await {
                                         Ok(Some(snapshot)) => {
                                             if let Some(player) = runtime.players.get_mut(&id.0) {
+                                                let login_realtime_seconds =
+                                                    world.tick.0 / TICKS_PER_SECOND;
                                                 let snapshot_result = apply_character_snapshot(
                                                     &mut world,
                                                     player,
                                                     snapshot,
                                                     spawn_tile.0,
                                                     spawn_tile.1,
+                                                    login_realtime_seconds,
                                                 );
                                                 loaded_from_database = snapshot_result.loaded;
                                                 if let Some(account_depot) = snapshot_result.account_depot {
