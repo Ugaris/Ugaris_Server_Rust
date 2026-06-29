@@ -8591,7 +8591,6 @@ impl World {
             }
         }
 
-        self.queue_sound_area(caster_x, caster_y, 29);
         true
     }
 
@@ -18625,10 +18624,7 @@ mod tests {
         assert_eq!(effect.start_tick, 400);
         assert_eq!(effect.stop_tick, 496);
         assert_eq!(world.timers.used_timers(), 1);
-        assert_eq!(
-            world.drain_pending_sound_specials()[0].special.special_type,
-            29
-        );
+        assert!(world.drain_pending_sound_specials().is_empty());
     }
 
     #[test]
@@ -18660,10 +18656,7 @@ mod tests {
 
         let target = world.characters.get(&CharacterId(2)).unwrap();
         assert!(target.inventory[12..30].iter().all(Option::is_none));
-        assert_eq!(
-            world.drain_pending_sound_specials()[0].special.special_type,
-            29
-        );
+        assert!(world.drain_pending_sound_specials().is_empty());
     }
 
     #[test]
