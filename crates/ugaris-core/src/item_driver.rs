@@ -27,6 +27,7 @@ pub const IDR_SHRINE: u16 = 14;
 pub const IDR_FIREBALL: u16 = 15;
 pub const IDR_BOOK: u16 = 16;
 pub const IDR_BONEBRIDGE: u16 = 89;
+pub const IDR_BONELADDER: u16 = 90;
 pub const IDR_BONEHINT: u16 = 94;
 pub const IDR_NOMADDICE: u16 = 95;
 pub const BOOK_NOOK_JOKES: u8 = 48;
@@ -977,6 +978,7 @@ pub fn execute_item_driver_with_context(
                 IDR_DOOR => door_driver(character, item, context),
                 IDR_BALLTRAP => balltrap_driver(character, item),
                 IDR_BONEBRIDGE => bonebridge_driver(character, item, context),
+                IDR_BONELADDER => boneladder_driver(character, item),
                 IDR_BONEHINT => bonehint_driver(character, item, context),
                 IDR_FIREBALL => fireball_machine_driver(character, item, context),
                 IDR_EDEMONBALL => edemonball_driver(character, item, context),
@@ -1053,7 +1055,7 @@ pub fn execute_item_driver_with_context(
 
 fn legacy_libload_required_area(driver: u16) -> Option<u16> {
     match driver {
-        IDR_BONEBRIDGE | IDR_BONEHINT => Some(18),
+        IDR_BONEBRIDGE | IDR_BONELADDER | IDR_BONEHINT => Some(18),
         IDR_NOMADDICE => Some(19),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
@@ -1170,6 +1172,30 @@ fn bonehint_driver(
         level: drdata(item, 0),
         nr: drdata(item, 2),
         pos: drdata(item, 3),
+    }
+}
+
+fn boneladder_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let (dx, dy) = if drdata(item, 0) != 0 {
+        (-4, -3)
+    } else {
+        (4, 3)
+    };
+    let x = (i32::from(item.x) + dx).max(0) as u16;
+    let y = (i32::from(item.y) + dy).max(0) as u16;
+
+    ItemDriverOutcome::Teleport {
+        item_id: item.id,
+        character_id: character.id,
+        x,
+        y,
+        area_id: 0,
+        stop_driver: false,
+        quiet: false,
     }
 }
 
@@ -5384,6 +5410,70 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut character, &mut diary, request, 18, false),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn boneladder_driver_ports_paired_ladder_offsets() {
+        let mut character = character(1);
+        let mut ladder = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONELADDER);
+        ladder.x = 100;
+        ladder.y = 80;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONELADDER,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_BONELADDER, 90);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut ladder, request, 18, false),
+            ItemDriverOutcome::Teleport {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 104,
+                y: 83,
+                area_id: 0,
+                stop_driver: false,
+                quiet: false,
+            }
+        );
+
+        set_drdata(&mut ladder, 0, 1);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut ladder, request, 18, false),
+            ItemDriverOutcome::Teleport {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 96,
+                y: 77,
+                area_id: 0,
+                stop_driver: false,
+                quiet: false,
+            }
+        );
+    }
+
+    #[test]
+    fn boneladder_driver_preserves_area18_libload_guard() {
+        let mut character = character(1);
+        let mut ladder = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONELADDER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONELADDER,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut ladder, request, 1, false),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_BONELADDER,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                required_area: 18,
+            }
         );
     }
 
