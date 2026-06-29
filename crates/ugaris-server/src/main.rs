@@ -11659,6 +11659,7 @@ async fn main() -> anyhow::Result<()> {
                         let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
                         let mut feedback = Vec::new();
                         let mut feedback_bytes = Vec::new();
+                        let mut special_feedback = Vec::new();
                         let mut area_feedback = Vec::new();
                         let mut container_refresh = Vec::new();
                         for (completion_index, request) in item_use_requests {
@@ -12326,6 +12327,20 @@ async fn main() -> anyhow::Result<()> {
                                             for line in lines {
                                                 feedback_bytes.push((character_id, line));
                                             }
+                                            if let Some(special_type) =
+                                                ugaris_core::item_driver::book_special_effect(kind)
+                                            {
+                                                special_feedback.push((
+                                                    character_id,
+                                                    bytes::BytesMut::from(
+                                                        &ugaris_protocol::packet::special(
+                                                            special_type,
+                                                            0,
+                                                            0,
+                                                        )[..],
+                                                    ),
+                                                ));
+                                            }
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { character_id, .. } => {
@@ -12660,6 +12675,13 @@ async fn main() -> anyhow::Result<()> {
                         }
                         for (character_id, message) in feedback_bytes {
                             let payload = ugaris_protocol::packet::system_text_bytes(&message);
+                            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                                if runtime.send_to_session(session_id, payload.clone()) {
+                                    feedback_sessions += 1;
+                                }
+                            }
+                        }
+                        for (character_id, payload) in special_feedback {
                             for (session_id, _) in runtime.sessions_for_character(character_id) {
                                 if runtime.send_to_session(session_id, payload.clone()) {
                                     feedback_sessions += 1;

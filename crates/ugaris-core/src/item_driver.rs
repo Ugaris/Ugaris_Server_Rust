@@ -1345,6 +1345,14 @@ pub fn book_nook_joke_line_bytes(roll: u32) -> Vec<Vec<u8>> {
         .collect()
 }
 
+pub fn book_special_effect(kind: u8) -> Option<u32> {
+    match kind {
+        22 => Some(50287),
+        23 => Some(50305),
+        _ => None,
+    }
+}
+
 fn plain_book_line_bytes(line: &str) -> Vec<u8> {
     line.as_bytes().to_vec()
 }
@@ -3838,6 +3846,14 @@ mod tests {
             ]
         );
         assert_eq!(book_nook_joke_line_bytes(9), book_nook_joke_line_bytes(4));
+    }
+
+    #[test]
+    fn book_special_effects_match_legacy_earth_demon_diaries() {
+        assert_eq!(book_special_effect(22), Some(50287));
+        assert_eq!(book_special_effect(23), Some(50305));
+        assert_eq!(book_special_effect(20), None);
+        assert_eq!(book_special_effect(24), None);
     }
 
     #[test]
