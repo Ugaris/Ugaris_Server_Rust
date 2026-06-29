@@ -182,6 +182,8 @@ pub const CLANJEWEL_CHECK_INTERVAL_TICKS: u64 = TICKS_PER_SECOND * 30;
 pub const CLANJEWEL_LIFETIME_SECONDS: u32 = 60 * 60;
 pub const IID_ALCHEMY_INGREDIENT: u32 = (0x01 << 24) | 0x000043;
 pub const IID_AREA18_BONE: u32 = (0x01 << 24) | 0x000077;
+pub const IID_AREA18_RUNE1: u32 = (0x01 << 24) | 0x000078;
+pub const IID_AREA18_RUNE9: u32 = (0x01 << 24) | 0x000080;
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
 pub const IID_AREA2_ZOMBIESKULL1: u32 = (0x01 << 24) | 0x000025;
 pub const IID_AREA2_ZOMBIESKULL2: u32 = (0x01 << 24) | 0x000026;
@@ -1489,6 +1491,44 @@ pub enum ItemDriverOutcome {
     BoneBridgeTimerTick {
         item_id: ItemId,
     },
+    BoneHolderInsertRune {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        rune: u8,
+        owner_character_id: u32,
+        placed_tick: u32,
+        schedule_after_ticks: u32,
+    },
+    BoneHolderRemoveRune {
+        item_id: ItemId,
+        character_id: CharacterId,
+        rune: u8,
+    },
+    BoneHolderActivate {
+        item_id: ItemId,
+        character_id: CharacterId,
+        last_holder: bool,
+    },
+    BoneHolderBadCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    BoneHolderOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    BoneHolderEmptyTouch {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    BoneHolderWrongOwner {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    BoneHolderExpired {
+        item_id: ItemId,
+    },
     BoneWallTick {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1642,6 +1682,7 @@ pub fn execute_item_driver_with_context(
                 IDR_BALLTRAP => balltrap_driver(character, item),
                 IDR_BONEBRIDGE => bonebridge_driver(character, item, context),
                 IDR_BONELADDER => boneladder_driver(character, item),
+                IDR_BONEHOLDER => boneholder_driver(character, item, context),
                 IDR_BONEWALL => bonewall_driver(character, item, context),
                 IDR_BONEHINT => bonehint_driver(character, item, context),
                 IDR_FIREBALL => fireball_machine_driver(character, item, context),
@@ -2173,6 +2214,93 @@ fn boneladder_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         area_id: 0,
         stop_driver: false,
         quiet: false,
+    }
+}
+
+fn boneholder_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    let holder_kind = drdata(item, 1);
+    if holder_kind == 2 || holder_kind == 3 {
+        if character.id.0 == 0 {
+            return ItemDriverOutcome::Noop;
+        }
+        return ItemDriverOutcome::BoneHolderActivate {
+            item_id: item.id,
+            character_id: character.id,
+            last_holder: holder_kind == 3,
+        };
+    }
+
+    if context.timer_call || character.id.0 == 0 {
+        let placed_tick = drdata_u32(item, 12);
+        let expiry_ticks = (TICKS_PER_SECOND as u32) * 120;
+        if context.current_tick.saturating_sub(placed_tick) < expiry_ticks {
+            return ItemDriverOutcome::Noop;
+        }
+        if drdata(item, 0) == 0 {
+            return ItemDriverOutcome::Noop;
+        }
+        set_drdata(item, 0, 0);
+        return ItemDriverOutcome::BoneHolderExpired { item_id: item.id };
+    }
+
+    if let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) {
+        let Some(cursor_template_id) = context.cursor_template_id else {
+            return ItemDriverOutcome::BoneHolderBadCursor {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        };
+        if !(IID_AREA18_RUNE1..=IID_AREA18_RUNE9).contains(&cursor_template_id) {
+            return ItemDriverOutcome::BoneHolderBadCursor {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+        if drdata(item, 0) != 0 {
+            return ItemDriverOutcome::BoneHolderOccupied {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+
+        let rune = (cursor_template_id - IID_AREA18_RUNE1 + 1) as u8;
+        set_drdata(item, 0, rune);
+        set_drdata_u32(item, 8, character.id.0);
+        set_drdata_u32(item, 12, context.current_tick);
+        return ItemDriverOutcome::BoneHolderInsertRune {
+            item_id: item.id,
+            character_id: character.id,
+            cursor_item_id,
+            rune,
+            owner_character_id: character.id.0,
+            placed_tick: context.current_tick,
+            schedule_after_ticks: (TICKS_PER_SECOND as u32) * 120 + 1,
+        };
+    }
+
+    let rune = drdata(item, 0);
+    if rune == 0 {
+        return ItemDriverOutcome::BoneHolderEmptyTouch {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if drdata_u32(item, 8) != character.id.0 {
+        return ItemDriverOutcome::BoneHolderWrongOwner {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    set_drdata(item, 0, 0);
+    ItemDriverOutcome::BoneHolderRemoveRune {
+        item_id: item.id,
+        character_id: character.id,
+        rune,
     }
 }
 
@@ -8229,6 +8357,144 @@ mod tests {
                 },
             ),
             ItemDriverOutcome::BoneBridgeTimerTick { item_id: ItemId(8) }
+        );
+    }
+
+    #[test]
+    fn boneholder_driver_inserts_and_expires_owned_runes() {
+        let mut actor = character(1);
+        actor.cursor_item = Some(ItemId(9));
+        let mut holder = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEHOLDER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEHOLDER,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_BONEHOLDER, 91);
+        assert_eq!(IID_AREA18_RUNE1, 0x0100_0078);
+        assert_eq!(IID_AREA18_RUNE9, 0x0100_0080);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut holder,
+                request,
+                18,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(IID_AREA18_RUNE1 + 3),
+                    current_tick: 100,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::BoneHolderInsertRune {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
+                rune: 4,
+                owner_character_id: 1,
+                placed_tick: 100,
+                schedule_after_ticks: 2881,
+            }
+        );
+        assert_eq!(drdata(&holder, 0), 4);
+        assert_eq!(drdata_u32(&holder, 8), 1);
+        assert_eq!(drdata_u32(&holder, 12), 100);
+
+        let mut timer_character = character(0);
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_BONEHOLDER,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut holder,
+                timer_request,
+                18,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    current_tick: 100 + 2880,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::BoneHolderExpired { item_id: ItemId(8) }
+        );
+        assert_eq!(drdata(&holder, 0), 0);
+    }
+
+    #[test]
+    fn boneholder_driver_ports_rejection_remove_and_activation_boundaries() {
+        let mut actor = character(1);
+        let mut holder = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEHOLDER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEHOLDER,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        actor.cursor_item = Some(ItemId(9));
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut holder,
+                request,
+                18,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(IID_AREA18_BONE),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::BoneHolderBadCursor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.cursor_item = None;
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut holder, request, 18, false),
+            ItemDriverOutcome::BoneHolderEmptyTouch {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        set_drdata(&mut holder, 0, 7);
+        set_drdata_u32(&mut holder, 8, 2);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut holder, request, 18, false),
+            ItemDriverOutcome::BoneHolderWrongOwner {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        set_drdata_u32(&mut holder, 8, 1);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut holder, request, 18, false),
+            ItemDriverOutcome::BoneHolderRemoveRune {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                rune: 7,
+            }
+        );
+        assert_eq!(drdata(&holder, 0), 0);
+
+        set_drdata(&mut holder, 1, 3);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut holder, request, 18, false),
+            ItemDriverOutcome::BoneHolderActivate {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                last_holder: true,
+            }
         );
     }
 

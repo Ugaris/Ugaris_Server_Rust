@@ -17568,6 +17568,10 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapReset { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TriggerMapItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StepTrapDiscoverTarget { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderInsertRune { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderRemoveRune { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderActivate { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderExpired { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BoneWallTick { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::OnOffLightChanged { .. }
@@ -18138,6 +18142,22 @@ async fn main() -> anyhow::Result<()> {
                                                     executed += 1;
                                                 }
                                             }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BoneHolderBadCursor { character_id, .. } => {
+                                            feedback.push((character_id, "That does not fit.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BoneHolderOccupied { character_id, .. } => {
+                                            feedback.push((character_id, "There is a rune already.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BoneHolderEmptyTouch { character_id, .. } => {
+                                            feedback.push((character_id, "You touch the stand.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BoneHolderWrongOwner { character_id, .. } => {
+                                            feedback.push((character_id, "This rune does not belong to you. You cannot take it.".to_string()));
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble {
                                             item_id,
