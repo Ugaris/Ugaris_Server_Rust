@@ -1659,6 +1659,60 @@ fn apply_color_command(
     })
 }
 
+fn legacy_description_text(input: &str) -> String {
+    let sanitized = input
+        .chars()
+        .map(|ch| match ch {
+            '"' => '\'',
+            '%' => ' ',
+            _ => ch,
+        })
+        .collect::<String>();
+
+    let mut out = String::new();
+    for ch in sanitized.chars() {
+        if out.len() + ch.len_utf8() >= 160 {
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn apply_description_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 3 || !"description".starts_with(&lower) {
+        return None;
+    }
+
+    let text = rest.trim_start();
+    if text.is_empty() {
+        return Some(KeyringCommandResult {
+            messages: vec!["Sorry, you need to enter some text.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    let description = legacy_description_text(text);
+    let character = world.characters.get_mut(&character_id)?;
+    character.description = description;
+    Some(KeyringCommandResult {
+        messages: vec![format!(
+            "Your description reads now: {}",
+            character.description
+        )],
+        ..Default::default()
+    })
+}
+
 fn apply_gold_command(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -9317,6 +9371,77 @@ mod tests {
     }
 
     #[test]
+    fn description_command_sanitizes_and_reports_legacy_text() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+
+        let result = apply_description_command(
+            &mut world,
+            character_id,
+            "/desc I am \"great\" and 100% ready",
+        )
+        .expect("description minlen prefix should be recognized");
+
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.description, "I am 'great' and 100  ready");
+        assert_eq!(
+            result.messages,
+            vec!["Your description reads now: I am 'great' and 100  ready"]
+        );
+    }
+
+    #[test]
+    fn description_command_preserves_empty_and_truncation_guards() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+
+        let empty = apply_description_command(&mut world, character_id, "/description   ")
+            .expect("description command should be recognized");
+        assert_eq!(empty.messages, vec!["Sorry, you need to enter some text."]);
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .description
+            .is_empty());
+
+        let long_text = "x".repeat(200);
+        apply_description_command(
+            &mut world,
+            character_id,
+            &format!("/description {long_text}"),
+        )
+        .expect("description command should be recognized");
+        assert_eq!(
+            world
+                .characters
+                .get(&character_id)
+                .unwrap()
+                .description
+                .len(),
+            159
+        );
+        assert!(apply_description_command(&mut world, character_id, "/de Text").is_none());
+        assert!(
+            apply_description_command(&mut world, character_id, "/descriptionx Text").is_none()
+        );
+    }
+
+    #[test]
     fn status_command_shows_represented_lostcon_and_account_state() {
         let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
         character
@@ -15039,6 +15164,12 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 if result.name_changed {
                                     command_name_refresh.push(character_id);
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_description_command(&mut world, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
                                 }
                                 continue;
                             }
