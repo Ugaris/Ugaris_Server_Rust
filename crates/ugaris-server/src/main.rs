@@ -17548,6 +17548,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapReset { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TriggerMapItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StepTrapDiscoverTarget { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BoneWallTick { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::OnOffLightChanged { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::PalaceGateTick { .. }

@@ -1454,6 +1454,10 @@ pub enum ItemDriverOutcome {
     BoneBridgeTimerTick {
         item_id: ItemId,
     },
+    BoneWallTick {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     AccountDepotOpened {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1603,6 +1607,7 @@ pub fn execute_item_driver_with_context(
                 IDR_BALLTRAP => balltrap_driver(character, item),
                 IDR_BONEBRIDGE => bonebridge_driver(character, item, context),
                 IDR_BONELADDER => boneladder_driver(character, item),
+                IDR_BONEWALL => bonewall_driver(character, item, context),
                 IDR_BONEHINT => bonehint_driver(character, item, context),
                 IDR_FIREBALL => fireball_machine_driver(character, item, context),
                 IDR_EDEMONBALL => edemonball_driver(character, item, context),
@@ -1704,7 +1709,7 @@ pub fn execute_item_driver_with_context(
 
 fn legacy_libload_required_area(driver: u16) -> Option<u16> {
     match driver {
-        IDR_BONEBRIDGE | IDR_BONELADDER | IDR_BONEHINT => Some(18),
+        IDR_BONEBRIDGE | IDR_BONELADDER | IDR_BONEHOLDER | IDR_BONEWALL | IDR_BONEHINT => Some(18),
         IDR_NOMADDICE => Some(19),
         IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
@@ -2130,6 +2135,25 @@ fn boneladder_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         area_id: 0,
         stop_driver: false,
         quiet: false,
+    }
+}
+
+fn bonewall_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    let state = drdata(item, 0);
+    if context.timer_call && character.id.0 == 0 && state == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if !context.timer_call && character.id.0 != 0 && state != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::BoneWallTick {
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -8078,6 +8102,76 @@ mod tests {
             ),
             ItemDriverOutcome::BoneBridgeTimerTick { item_id: ItemId(8) }
         );
+    }
+
+    #[test]
+    fn bonewall_driver_ports_area18_timer_and_active_guards() {
+        let mut actor = character(1);
+        let mut wall = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEWALL);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEWALL,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut wall, request, 18, false),
+            ItemDriverOutcome::BoneWallTick {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        wall.driver_data = vec![1];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut wall, request, 18, false),
+            ItemDriverOutcome::Noop
+        );
+
+        let mut timer_character = character(0);
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_BONEWALL,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut wall,
+                timer_request,
+                18,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::BoneWallTick {
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+            }
+        );
+
+        wall.driver_data = vec![0];
+        assert!(matches!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut wall,
+                timer_request,
+                17,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                required_area: 18,
+                ..
+            }
+        ));
     }
 
     #[test]

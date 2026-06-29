@@ -27,10 +27,10 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_driver::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item, ItemDriverContext,
-        ItemDriverOutcome, ItemDriverRequest, UseItemError, UseItemOutcome, IDR_CALIGAR,
-        IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_FDEMONFARM,
-        IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT,
-        IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        ItemDriverOutcome, ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL,
+        IDR_CALIGAR, IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
+        IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT,
+        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -5966,6 +5966,13 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::BoneWallTick { item_id, .. } => {
+                if self.tick_bone_wall(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::BallTrapProjectile {
                 start_x,
                 start_y,
@@ -7582,6 +7589,117 @@ impl World {
         } else {
             self.schedule_item_driver_timer(item_id, CharacterId(0), 3)
         }
+    }
+
+    fn tick_bone_wall(&mut self, item_id: ItemId) -> bool {
+        let (x, y, state) = {
+            let Some(item) = self.items.get(&item_id) else {
+                return false;
+            };
+            (
+                usize::from(item.x),
+                usize::from(item.y),
+                item.driver_data.first().copied().unwrap_or_default(),
+            )
+        };
+        if !self.map.legacy_inner_bounds(x, y) {
+            return false;
+        }
+
+        if state == 0 {
+            for (nx, ny) in [
+                (x.saturating_add(1), y),
+                (x.saturating_sub(1), y),
+                (x, y.saturating_add(1)),
+                (x, y.saturating_sub(1)),
+            ] {
+                let Some(tile) = self.map.tile(nx, ny) else {
+                    continue;
+                };
+                let neighbor_id = ItemId(tile.item);
+                if neighbor_id.0 == 0 {
+                    continue;
+                }
+                let Some(neighbor) = self.items.get(&neighbor_id) else {
+                    continue;
+                };
+                if neighbor.driver == IDR_BONEWALL
+                    && neighbor.driver_data.first().copied().unwrap_or_default() == 0
+                {
+                    self.schedule_item_driver_timer_with_context(
+                        neighbor_id,
+                        CharacterId(0),
+                        4,
+                        false,
+                    );
+                }
+            }
+        }
+
+        if state < 5 {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            item.driver_data.resize(1, 0);
+            item.driver_data[0] = state.saturating_add(1);
+            item.sprite = item.sprite.saturating_add(1);
+            self.mark_dirty_sector(x, y);
+            self.schedule_item_driver_timer(item_id, CharacterId(0), 2);
+            return true;
+        }
+
+        if state == 5 {
+            if let Some(tile) = self.map.tile_mut(x, y) {
+                if tile.item == item_id.0 {
+                    tile.item = 0;
+                }
+                tile.flags
+                    .remove(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK);
+            }
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            item.flags.remove(ItemFlags::USE);
+            item.flags.insert(ItemFlags::VOID);
+            item.driver_data.resize(1, 0);
+            item.driver_data[0] = 6;
+            self.mark_dirty_sector(x, y);
+            self.schedule_item_driver_timer(
+                item_id,
+                CharacterId(0),
+                TICKS_PER_SECOND.saturating_mul(60),
+            );
+            return true;
+        }
+
+        if state == 6 {
+            let blocked = self
+                .map
+                .tile(x, y)
+                .is_some_and(|tile| tile.item != 0 || tile.flags.contains(MapFlags::TMOVEBLOCK));
+            if blocked {
+                self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND);
+                return true;
+            }
+
+            if let Some(tile) = self.map.tile_mut(x, y) {
+                tile.item = item_id.0;
+                tile.flags
+                    .insert(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK);
+            }
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            item.sprite = item.sprite.saturating_sub(5);
+            item.driver_data.resize(1, 0);
+            item.driver_data[0] = 0;
+            item.flags.insert(ItemFlags::USE);
+            item.flags.remove(ItemFlags::VOID);
+            self.mark_dirty_sector(x, y);
+            return true;
+        }
+
+        false
     }
 
     fn apply_staffer_mine_dig(&mut self, item_id: ItemId) -> bool {
@@ -18374,6 +18492,104 @@ mod tests {
         let tile = world.map.tile(12, 10).unwrap();
         assert_eq!(tile.item, 0);
         assert!(tile.flags.contains(MapFlags::MOVEBLOCK));
+    }
+
+    #[test]
+    fn world_opens_and_restores_area18_bone_walls_like_c() {
+        let mut world = World::default();
+        assert!(world.spawn_character(character(1), 10, 10));
+        world.add_character(timer_callback_character());
+
+        for (id, x) in [(7_u32, 11_usize), (8, 12)] {
+            let mut wall = item(
+                id,
+                ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK | ItemFlags::SIGHTBLOCK,
+            );
+            wall.driver = IDR_BONEWALL;
+            wall.x = x as u16;
+            wall.y = 10;
+            wall.sprite = 14000;
+            world.map.tile_mut(x, 10).unwrap().item = id;
+            world
+                .map
+                .tile_mut(x, 10)
+                .unwrap()
+                .flags
+                .insert(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK);
+            world.add_item(wall);
+        }
+
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BONEWALL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        assert_eq!(
+            world.execute_item_driver_request(request, 18),
+            ItemDriverOutcome::BoneWallTick {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(world.items.get(&ItemId(7)).unwrap().driver_data[0], 1);
+        assert_eq!(world.items.get(&ItemId(7)).unwrap().sprite, 14001);
+        assert_eq!(world.timers.used_timers(), 2);
+
+        world.items.get_mut(&ItemId(7)).unwrap().driver_data[0] = 5;
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_BONEWALL,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            world.execute_item_driver_request_with_context(timer_request, 18, &context),
+            ItemDriverOutcome::BoneWallTick {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+            }
+        );
+        let tile = world.map.tile(11, 10).unwrap();
+        assert_eq!(tile.item, 0);
+        assert!(!tile.flags.contains(MapFlags::TMOVEBLOCK));
+        assert!(!tile.flags.contains(MapFlags::TSIGHTBLOCK));
+        let wall = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(wall.driver_data[0], 6);
+        assert!(wall.flags.contains(ItemFlags::VOID));
+        assert!(!wall.flags.contains(ItemFlags::USE));
+
+        world.map.tile_mut(11, 10).unwrap().item = 99;
+        assert_eq!(
+            world.execute_item_driver_request_with_context(timer_request, 18, &context),
+            ItemDriverOutcome::BoneWallTick {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+            }
+        );
+        assert_eq!(world.items.get(&ItemId(7)).unwrap().driver_data[0], 6);
+
+        world.map.tile_mut(11, 10).unwrap().item = 0;
+        assert_eq!(
+            world.execute_item_driver_request_with_context(timer_request, 18, &context),
+            ItemDriverOutcome::BoneWallTick {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+            }
+        );
+        let tile = world.map.tile(11, 10).unwrap();
+        assert_eq!(tile.item, 7);
+        assert!(tile.flags.contains(MapFlags::TMOVEBLOCK));
+        assert!(tile.flags.contains(MapFlags::TSIGHTBLOCK));
+        let wall = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(wall.driver_data[0], 0);
+        assert_eq!(wall.sprite, 13996);
+        assert!(wall.flags.contains(ItemFlags::USE));
+        assert!(!wall.flags.contains(ItemFlags::VOID));
     }
 
     #[test]
