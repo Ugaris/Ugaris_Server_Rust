@@ -12871,6 +12871,45 @@ mod tests {
     }
 
     #[test]
+    fn simple_baddy_fight_tasks_keep_c_commented_earthrain_disabled() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.flags.insert(CharacterFlags::EDEMON);
+        npc.hp = 100 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 100;
+        npc.values[1][CharacterValue::Demon as usize] = 30;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 15,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 15, 10);
+        world.map.tile_mut(15, 10).unwrap().light = 255;
+
+        let tasks = world.simple_baddy_fight_tasks(
+            CharacterId(1),
+            world.characters.get(&CharacterId(2)).unwrap(),
+            1,
+        );
+
+        assert!(!tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::EarthRain));
+        assert!(tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::EarthMud));
+    }
+
+    #[test]
     fn simple_baddy_attack_action_uses_firering_against_adjacent_recorded_enemy() {
         let mut world = World::default();
         world.tick = Tick(455);
