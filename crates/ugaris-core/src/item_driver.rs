@@ -809,6 +809,13 @@ pub enum ItemDriverOutcome {
         modifier_value: [i16; MAX_MODIFIERS],
         beyond_max_mod: bool,
     },
+    AlchemyFlaskPotion {
+        item_id: ItemId,
+        character_id: CharacterId,
+        duration_minutes: u8,
+        modifier_index: [i16; MAX_MODIFIERS],
+        modifier_value: [i16; MAX_MODIFIERS],
+    },
     TorchExtractOrb {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2585,7 +2592,7 @@ fn finish_flask_mix(
     Some(())
 }
 
-fn reset_flask_empty_state(item: &mut Item) {
+pub fn reset_flask_empty_state(item: &mut Item) {
     let size = drdata(item, 0);
     item.name = "Empty Potion".to_string();
     match size {
@@ -2666,13 +2673,12 @@ fn flask_driver(
                     character_id: character.id,
                 };
             }
-            return ItemDriverOutcome::BeyondPotion {
+            return ItemDriverOutcome::AlchemyFlaskPotion {
                 item_id: item.id,
                 character_id: character.id,
                 duration_minutes: drdata(item, 3),
                 modifier_index: item.modifier_index,
                 modifier_value: item.modifier_value,
-                beyond_max_mod: false,
             };
         }
         if used != 0 {
@@ -6459,13 +6465,12 @@ mod tests {
 
         assert_eq!(
             execute_item_driver(&mut actor, &mut flask, request, 1, false),
-            ItemDriverOutcome::BeyondPotion {
+            ItemDriverOutcome::AlchemyFlaskPotion {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
                 duration_minutes: 20,
                 modifier_index: [CharacterValue::Strength as i16, 0, 0, 0, 0],
                 modifier_value: [7, 0, 0, 0, 0],
-                beyond_max_mod: false,
             }
         );
 

@@ -17081,6 +17081,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::LabExitExpired { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LabExitUse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BeyondPotion { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::AlchemyFlaskPotion { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::OxygenPotion { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }

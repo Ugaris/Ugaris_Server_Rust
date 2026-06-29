@@ -26,10 +26,11 @@ use crate::{
     game_time::GameDate,
     ids::{CharacterId, ItemId},
     item_driver::{
-        execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
-        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_CALIGAR, IDR_CALIGARFLAME,
-        IDR_EDEMONLIGHT, IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW,
-        IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        execute_item_driver_with_context, reset_flask_empty_state, use_item, ItemDriverContext,
+        ItemDriverOutcome, ItemDriverRequest, UseItemError, UseItemOutcome, IDR_CALIGAR,
+        IDR_CALIGARFLAME, IDR_EDEMONLIGHT, IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER,
+        IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP,
+        IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -6243,7 +6244,35 @@ impl World {
                     modifier_index,
                     modifier_value,
                     beyond_max_mod,
+                    true,
                 ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::BlockedByRequirements {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
+            ItemDriverOutcome::AlchemyFlaskPotion {
+                item_id,
+                character_id,
+                duration_minutes,
+                modifier_index,
+                modifier_value,
+            } => {
+                if self.install_beyond_potion_spell(
+                    character_id,
+                    item_id,
+                    duration_minutes,
+                    modifier_index,
+                    modifier_value,
+                    false,
+                    false,
+                ) {
+                    if let Some(item) = self.items.get_mut(&item_id) {
+                        reset_flask_empty_state(item);
+                    }
                     outcome
                 } else {
                     ItemDriverOutcome::BlockedByRequirements {
@@ -9988,6 +10017,7 @@ impl World {
         modifier_index: [i16; MAX_MODIFIERS],
         modifier_value: [i16; MAX_MODIFIERS],
         beyond_max_mod: bool,
+        consume_source_item: bool,
     ) -> bool {
         let Some(character) = self.characters.get(&character_id).cloned() else {
             return false;
@@ -10040,7 +10070,7 @@ impl World {
             serial: item_id.0,
         };
 
-        if !self.destroy_item(potion_item_id) {
+        if consume_source_item && !self.destroy_item(potion_item_id) {
             return false;
         }
         self.items.insert(item_id, item);
@@ -20649,17 +20679,24 @@ mod tests {
     }
 
     #[test]
-    fn finished_alchemy_flask_installs_timed_potion_spell_and_consumes_flask() {
+    fn finished_alchemy_flask_installs_timed_potion_spell_and_resets_flask() {
         let mut world = World::default();
         world.tick = Tick(2_000);
         let mut character = character(1);
-        character.flags.insert(CharacterFlags::PLAYER);
+        character
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::ARCH);
         character.inventory[30] = Some(ItemId(7));
         world.add_character(character);
 
         let mut flask = item(7, ItemFlags::USED | ItemFlags::USE);
         flask.driver = crate::item_driver::IDR_FLASK;
         flask.carried_by = Some(CharacterId(1));
+        flask.name = "Magical Potion".to_string();
+        flask.description = "A flask containing a magical liquid.".to_string();
+        flask.sprite = 50214;
+        flask.value = 999;
+        flask.needs_class = 8;
         flask.driver_data = vec![2, 3, 1, 10];
         flask.modifier_index = [CharacterValue::Agility as i16, 0, 0, 0, 0];
         flask.modifier_value = [4, 0, 0, 0, 0];
@@ -20675,10 +20712,21 @@ mod tests {
             1,
         );
 
-        assert!(matches!(outcome, ItemDriverOutcome::BeyondPotion { .. }));
-        assert!(!world.items.contains_key(&ItemId(7)));
+        assert!(
+            matches!(outcome, ItemDriverOutcome::AlchemyFlaskPotion { .. }),
+            "unexpected outcome: {outcome:?}"
+        );
+        let reset_flask = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(reset_flask.name, "Empty Potion");
+        assert_eq!(reset_flask.description, "A flask made of glass.");
+        assert_eq!(reset_flask.sprite, 10294);
+        assert_eq!(reset_flask.driver_data, vec![2]);
+        assert_eq!(reset_flask.modifier_index, [0; MAX_MODIFIERS]);
+        assert_eq!(reset_flask.modifier_value, [0; MAX_MODIFIERS]);
+        assert_eq!(reset_flask.value, 10);
+        assert_eq!(reset_flask.needs_class, 0);
         let character = world.characters.get(&CharacterId(1)).unwrap();
-        assert_eq!(character.inventory[30], None);
+        assert_eq!(character.inventory[30], Some(ItemId(7)));
         let spell_id = character.inventory[29].unwrap();
         let spell = world.items.get(&spell_id).unwrap();
         assert_eq!(spell.driver, IDR_POTION_SP);
