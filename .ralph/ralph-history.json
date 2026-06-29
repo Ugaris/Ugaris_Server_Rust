@@ -951,9 +951,30 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
       ]
+    },
+    {
+      "iteration": 36,
+      "startedAt": "2026-06-29T14:20:24.675Z",
+      "endedAt": "2026-06-29T14:26:15.406Z",
+      "durationMs": 350542,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 197 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 198 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "- Completed player area-spell actions now use the same runtime attack-policy seam as projectile/effect ticks: `tick_basic_actions_with_attack_policy` lets the server apply `DRD_PK_PPD` hate-list and a"
+      ]
     }
   ],
-  "totalDurationMs": 16805426,
+  "totalDurationMs": 17155968,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 5,
@@ -978,7 +999,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 2,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 8,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 9,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 3,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -1084,7 +1105,10 @@
       "test item_driver::tests::edemon_switch_timer_reenables_after_cooldown ... FAILED": 1,
       "test item_driver::tests::edemon_switch_reports_stuck_while_fire_is_disabled ... FAILED": 1,
       "test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 627 filtered out; finished in 0.00s": 1,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 627 filtered out; finished in 0.00s": 1
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 627 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 197 filtered out; finished in 0.00s": 1,
+      "test result: ok. 198 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "- Completed player area-spell actions now use the same runtime attack-policy seam as projectile/effe": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

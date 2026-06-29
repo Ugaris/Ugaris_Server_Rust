@@ -8523,12 +8523,17 @@ fn character_name_packet(character: &Character) -> bytes::BytesMut {
     } else {
         character.name.clone()
     };
+    let colors = if character.sprite == 27 {
+        [0, 0, 0]
+    } else {
+        [character.c1, character.c2, character.c3]
+    };
 
     ugaris_protocol::packet::character_name(
         client_character_id(character),
         character.level.min(u32::from(u8::MAX)) as u8,
-        [character.c1, character.c2, character.c3],
-        0,
+        colors,
+        character.clan.min(u16::from(u8::MAX)) as u8,
         0,
         &name,
     )
@@ -12717,6 +12722,24 @@ mod tests {
         assert_eq!(&packet[4..6], &0x0443_u16.to_le_bytes());
         assert_eq!(&packet[6..8], &0x0884_u16.to_le_bytes());
         assert_eq!(&packet[8..10], &0x0cc5_u16.to_le_bytes());
+    }
+
+    #[test]
+    fn character_name_packet_uses_legacy_clan_and_demon_color_rules() {
+        let mut character = login_character(CharacterId(0x1234), &login_block("Tester"), 1, 10, 10);
+        character.c1 = 0x0443;
+        character.c2 = 0x0884;
+        character.c3 = 0x0cc5;
+        character.clan = 42;
+
+        let packet = character_name_packet(&character);
+        assert_eq!(packet[10], 42);
+        assert_eq!(&packet[4..10], &[0x43, 0x04, 0x84, 0x08, 0xc5, 0x0c]);
+
+        character.sprite = 27;
+        let demon_packet = character_name_packet(&character);
+        assert_eq!(&demon_packet[4..10], &[0, 0, 0, 0, 0, 0]);
+        assert_eq!(demon_packet[10], 42);
     }
 
     #[test]
