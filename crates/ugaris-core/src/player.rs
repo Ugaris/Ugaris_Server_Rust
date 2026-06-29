@@ -36,6 +36,7 @@ pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
 pub const LEGACY_AREA3_PPD_SIZE: usize = 17 * 4;
 pub const LEGACY_CALIGAR_PPD_SIZE: usize = 14 * 4 + 4;
+pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
 pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
@@ -77,6 +78,7 @@ pub const DRD_TREASURE_DIG_PPD: u32 = make_drd(DEV_ID_ED, 5 | PERSISTENT_PLAYER_
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RUNE_PPD: u32 = make_drd(DEV_ID_DB, 108 | PERSISTENT_PLAYER_DATA);
 pub const DRD_CALIGAR_PPD: u32 = make_drd(DEV_ID_DB, 159 | PERSISTENT_PLAYER_DATA);
+pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
 
@@ -110,6 +112,8 @@ const AREA3_PPD_KELLY_FOUND3_OFFSET: usize = 5 * 4;
 const CALIGAR_PPD_WATCH_FLAG_OFFSET: usize = 4 * 4;
 const CALIGAR_PPD_DOOR_FLAG_OFFSET: usize = 14 * 4;
 const CALIGAR_PPD_DOOR_FLAG_COUNT: usize = 4;
+pub const ARKHATA_PPD_CLERK_STATE_OFFSET: usize = 16 * 4;
+pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const LOSTCON_PPD_MAXLAG_OFFSET: usize = 17 * 4;
@@ -317,6 +321,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub caligar_ppd: Vec<u8>,
     #[serde(default)]
+    pub arkhata_ppd: Vec<u8>,
+    #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
     pub pk_deaths: u32,
@@ -409,6 +415,7 @@ impl PlayerRuntime {
             misc_ppd: Vec::new(),
             area3_ppd: Vec::new(),
             caligar_ppd: Vec::new(),
+            arkhata_ppd: Vec::new(),
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,
@@ -1325,6 +1332,47 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_arkhata_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_ARKHATA_PPD_SIZE];
+        let copy_len = self.arkhata_ppd.len().min(LEGACY_ARKHATA_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.arkhata_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_arkhata_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return false;
+        }
+        self.arkhata_ppd = bytes[..LEGACY_ARKHATA_PPD_SIZE].to_vec();
+        true
+    }
+
+    pub fn arkhata_clerk_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_CLERK_STATE_OFFSET)
+    }
+
+    pub fn arkhata_clerk_time_seconds(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_CLERK_TIME_OFFSET)
+    }
+
+    pub fn set_arkhata_clerk_timer(&mut self, state: i32, realtime_seconds: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_CLERK_STATE_OFFSET, state);
+        write_i32(
+            &mut self.arkhata_ppd,
+            ARKHATA_PPD_CLERK_TIME_OFFSET,
+            realtime_seconds,
+        );
+    }
+
     pub fn encode_legacy_swear_ppd(&self) -> Vec<u8> {
         let mut bytes = vec![0; LEGACY_SWEAR_PPD_SIZE];
         let copy_len = self.swear_ppd.len().min(LEGACY_SWEAR_PPD_SIZE);
@@ -1407,6 +1455,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_ARKHATA_PPD => {
+                    if !self.decode_legacy_arkhata_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TREASURE_DIG_PPD => {
                     if !self.decode_legacy_treasure_dig_ppd(block.data) {
                         return false;
@@ -1456,6 +1509,7 @@ impl PlayerRuntime {
         let mut had_flower = false;
         let mut had_area3 = false;
         let mut had_caligar = false;
+        let mut had_arkhata = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
         let mut had_rune = false;
@@ -1540,6 +1594,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_CALIGAR_PPD,
                     &self.encode_legacy_caligar_ppd(),
+                );
+            } else if block.id == DRD_ARKHATA_PPD {
+                had_arkhata = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_ARKHATA_PPD,
+                    &self.encode_legacy_arkhata_ppd(),
                 );
             } else if block.id == DRD_TREASURE_DIG_PPD {
                 had_treasure_dig = true;
@@ -1667,6 +1728,16 @@ impl PlayerRuntime {
                 &mut encoded,
                 DRD_CALIGAR_PPD,
                 &self.encode_legacy_caligar_ppd(),
+            );
+        }
+        if !had_arkhata
+            && (existing_was_valid || existing.is_empty())
+            && !self.arkhata_ppd.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_ARKHATA_PPD,
+                &self.encode_legacy_arkhata_ppd(),
             );
         }
         if !had_treasure_dig && (existing_was_valid || existing.is_empty()) {
@@ -3405,6 +3476,29 @@ mod tests {
         assert!(decoded.decode_legacy_caligar_ppd(&encoded));
         assert_eq!(decoded.observe_caligar_training(1), Some(true));
         assert_eq!(decoded.observe_caligar_training(3), Some(false));
+    }
+
+    #[test]
+    fn arkhata_ppd_round_trips_clerk_timer_fields() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(
+            DRD_ARKHATA_PPD,
+            make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DATA)
+        );
+
+        player.set_arkhata_clerk_timer(5, 12_345);
+        let encoded = player.encode_legacy_arkhata_ppd();
+        assert_eq!(encoded.len(), LEGACY_ARKHATA_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, ARKHATA_PPD_CLERK_STATE_OFFSET), 5);
+        assert_eq!(read_i32(&encoded, ARKHATA_PPD_CLERK_TIME_OFFSET), 12_345);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, 0x1122_3344, &[1, 2, 3]);
+        let blob = player.encode_legacy_ppd_blob(&existing);
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&blob));
+        assert_eq!(decoded.arkhata_clerk_state(), 5);
+        assert_eq!(decoded.arkhata_clerk_time_seconds(), 12_345);
     }
 
     #[test]

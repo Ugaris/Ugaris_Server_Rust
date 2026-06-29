@@ -1019,6 +1019,11 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         cursor_item_id: ItemId,
     },
+    ArkhataStopwatch {
+        item_id: ItemId,
+        character_id: CharacterId,
+        schedule_after_ticks: u32,
+    },
     BlockedByRequirements {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1705,12 +1710,25 @@ fn arkhata_driver(
 ) -> ItemDriverOutcome {
     match drdata(item, 0) {
         0 => arkhata_pool_driver(character, item, context),
+        1 => arkhata_stopwatch_driver(character, item),
         2 => arkhata_key_assemble_driver(character, item, context),
         _ => ItemDriverOutcome::Unsupported {
             driver: IDR_ARKHATA,
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+fn arkhata_stopwatch_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::ArkhataStopwatch {
+        item_id: item.id,
+        character_id: item.carried_by.unwrap_or(CharacterId(0)),
+        schedule_after_ticks: 10,
     }
 }
 
@@ -6908,6 +6926,35 @@ mod tests {
                 character_id: CharacterId(1),
                 cursor_item_id: ItemId(9),
             }
+        );
+    }
+
+    #[test]
+    fn arkhata_stopwatch_dispatch_is_timer_only_and_reschedules() {
+        let mut character = character(0);
+        let mut stopwatch = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_ARKHATA);
+        stopwatch.carried_by = Some(CharacterId(7));
+        set_drdata(&mut stopwatch, 0, 1);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ARKHATA,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut stopwatch, request, 37, false),
+            ItemDriverOutcome::ArkhataStopwatch {
+                item_id: ItemId(8),
+                character_id: CharacterId(7),
+                schedule_after_ticks: 10,
+            }
+        );
+
+        character.id = CharacterId(7);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut stopwatch, request, 37, false),
+            ItemDriverOutcome::Noop
         );
     }
 

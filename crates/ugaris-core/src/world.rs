@@ -5877,7 +5877,11 @@ impl World {
                     strength,
                     base_sprite,
                 );
-                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                self.schedule_item_driver_timer(
+                    item_id,
+                    CharacterId(0),
+                    u64::from(schedule_after_ticks),
+                );
                 applied
             }
             ItemDriverOutcome::CaligarGunProjectile {
@@ -5923,7 +5927,11 @@ impl World {
                 ..
             } => {
                 self.mark_flamethrower_targets_for_burn(item_id, direction);
-                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                self.schedule_item_driver_timer(
+                    item_id,
+                    CharacterId(0),
+                    u64::from(schedule_after_ticks),
+                );
                 outcome
             }
             ItemDriverOutcome::FlameThrowerExtinguished {
@@ -6065,7 +6073,11 @@ impl World {
                 item_id,
                 schedule_after_ticks,
             } => {
-                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                self.schedule_item_driver_timer(
+                    item_id,
+                    CharacterId(0),
+                    u64::from(schedule_after_ticks),
+                );
                 outcome
             }
             ItemDriverOutcome::ClanJewelExpired { item_id, .. } => {
@@ -6074,6 +6086,18 @@ impl World {
                 } else {
                     ItemDriverOutcome::Noop
                 }
+            }
+            ItemDriverOutcome::ArkhataStopwatch {
+                item_id,
+                character_id: _,
+                schedule_after_ticks,
+            } => {
+                self.schedule_item_driver_timer(
+                    item_id,
+                    CharacterId(0),
+                    u64::from(schedule_after_ticks),
+                );
+                outcome
             }
             ItemDriverOutcome::DecayItemToggled {
                 item_id,

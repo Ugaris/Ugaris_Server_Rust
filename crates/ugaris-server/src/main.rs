@@ -64,6 +64,8 @@ struct RuntimePlayerAttackPolicy<'a> {
     attacker_runtime: &'a PlayerRuntime,
 }
 
+const ARKHATA_CLERK_TIME_SECONDS: i32 = 60 * 15;
+
 impl ClanAttackPolicy for RuntimePlayerAttackPolicy<'_> {
     fn has_pk_hate(&self, _attacker: &Character, defender: &Character) -> bool {
         self.attacker_runtime.has_pk_hate_for(defender.id.0)
@@ -17432,6 +17434,26 @@ async fn main() -> anyhow::Result<()> {
                                             let cursor_name = world.items.get(&cursor_item_id).map(|item| item.name.as_str()).unwrap_or("item");
                                             feedback.push((character_id, format!("Strangely, the {} floats on the surface of the pool. Since nothing happens to it, you take it back.", cursor_name)));
                                             blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ArkhataStopwatch { character_id, .. } => {
+                                            if character_id.0 != 0 {
+                                                if let Some(player) = runtime.player_for_character(character_id) {
+                                                    let text = if player.arkhata_clerk_state() == 5 {
+                                                        let diff = ARKHATA_CLERK_TIME_SECONDS
+                                                            - realtime_seconds.min(i32::MAX as u64) as i32
+                                                            + player.arkhata_clerk_time_seconds();
+                                                        if diff > 0 {
+                                                            format!("#91 Time: {} Astonian Minutes", diff / 5)
+                                                        } else {
+                                                            "#92 YOU FAILED!".to_string()
+                                                        }
+                                                    } else {
+                                                        "#92 ".to_string()
+                                                    };
+                                                    feedback.push((character_id, text));
+                                                    executed += 1;
+                                                }
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble {
                                             item_id,
