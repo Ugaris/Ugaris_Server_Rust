@@ -6211,6 +6211,30 @@ impl World {
                     }
                 }
             }
+            ItemDriverOutcome::ArkhataKeyAssemble {
+                item_id,
+                character_id,
+                cursor_item_id,
+                result_template_id,
+                result_sprite,
+                final_key,
+            } => {
+                if self.apply_arkhata_key_assemble(
+                    item_id,
+                    character_id,
+                    cursor_item_id,
+                    result_template_id,
+                    result_sprite,
+                    final_key,
+                ) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::ArkhataKeyDoesNotFit {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             ItemDriverOutcome::PalaceKeyCombine {
                 item_id,
                 character_id,
@@ -6441,6 +6465,38 @@ impl World {
             }
             _ => item.sprite,
         };
+        self.destroy_item(cursor_item_id)
+    }
+
+    fn apply_arkhata_key_assemble(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        result_template_id: u32,
+        result_sprite: i32,
+        final_key: bool,
+    ) -> bool {
+        if !self.character_holds_cursor_item(character_id, cursor_item_id) {
+            return false;
+        }
+        if !self.items.contains_key(&cursor_item_id) {
+            return false;
+        }
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.carried_by != Some(character_id) {
+            return false;
+        }
+
+        item.sprite = result_sprite;
+        item.template_id = result_template_id;
+        if final_key {
+            item.name = "Knoger Key 1".to_string();
+            item.description =
+                "A finished key. Should open something now. A door, perhaps.".to_string();
+        }
         self.destroy_item(cursor_item_id)
     }
 
@@ -17993,6 +18049,55 @@ mod tests {
         assert_eq!(base.name, "Mine gateway key");
         assert_eq!(base.description, "A fully assembled key.");
         assert!(!base.flags.contains(ItemFlags::USE));
+        assert!(!world.items.contains_key(&ItemId(8)));
+        assert_eq!(world.characters[&CharacterId(1)].cursor_item, None);
+    }
+
+    #[test]
+    fn world_applies_arkhata_key_final_assembly() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.inventory[30] = Some(ItemId(7));
+        character.cursor_item = Some(ItemId(8));
+        world.add_character(character);
+
+        let mut base = item(7, ItemFlags::USED | ItemFlags::USE);
+        base.driver = crate::item_driver::IDR_ARKHATA;
+        base.carried_by = Some(CharacterId(1));
+        base.template_id = 0x0100_00CD;
+        base.driver_data = vec![2];
+        world.add_item(base);
+        let mut cursor = item(8, ItemFlags::USED | ItemFlags::USE);
+        cursor.driver = crate::item_driver::IDR_ARKHATA;
+        cursor.carried_by = Some(CharacterId(1));
+        cursor.template_id = 0x0100_00CC;
+        world.add_item(cursor);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_ARKHATA,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            37,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::ArkhataKeyAssemble {
+                final_key: true,
+                ..
+            }
+        ));
+        let base = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(base.sprite, 13413);
+        assert_eq!(base.template_id, 0x3B00_0089);
+        assert_eq!(base.name, "Knoger Key 1");
+        assert_eq!(
+            base.description,
+            "A finished key. Should open something now. A door, perhaps."
+        );
         assert!(!world.items.contains_key(&ItemId(8)));
         assert_eq!(world.characters[&CharacterId(1)].cursor_item, None);
     }

@@ -15880,7 +15880,8 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
-                                          | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyAssemble { .. }
+                                           | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::NomadDice { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
@@ -16266,6 +16267,14 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyDoesNotFit { character_id, .. } => {
                                             feedback.push((character_id, "Interesting idea. Really. Doesn't work, though.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyNeedsCursor { character_id, .. } => {
+                                            feedback.push((character_id, "You can only use this item with another item.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyDoesNotFit { character_id, .. } => {
+                                            feedback.push((character_id, "This doesn't seem to fit.".to_string()));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ParkShrine { character_id, shrine, .. } => {

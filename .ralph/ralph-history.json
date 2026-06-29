@@ -383,9 +383,38 @@
         "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
         "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok"
       ]
+    },
+    {
+      "iteration": 15,
+      "startedAt": "2026-06-29T11:36:52.513Z",
+      "endedAt": "2026-06-29T11:47:25.722Z",
+      "durationMs": 633038,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The edit will add typed `ArkhataKeyAssemble`/failure outcomes, route subtype `drdata[0] == 2`, mutate the carried key part in `World`, and add focused tests for dispatch and final assembly.",
+        "The ledger now records the completed slice. I’m running the workspace tests next; if that is too slow or exposes unrelated failures, I’ll report exactly what happened.",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 606 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 7056666,
+  "totalDurationMs": 7689704,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 2,
@@ -393,11 +422,11 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 1,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 1,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 11,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 11,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 9,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 9,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 6,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 12,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 12,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 10,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 10,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 7,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
@@ -415,7 +444,7 @@
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 2,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 2,
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
@@ -444,7 +473,7 @@
       "The focused server test exposed a type mismatch: this runtime send path expects `BytesMut`, unlike s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 597 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 187 filtered out; finished in 0.00s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 181 filtered out; finished in 0.00s": 1,
       "test result: ok. 598 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -460,7 +489,10 @@
       "test item_driver::tests::caligar_training_driver_ports_watch_lesson_boundary ... FAILED": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 605 filtered out; finished in 0.00s": 1,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 598 filtered out; finished in 0.00s": 1,
-      "test result: ok. 188 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
+      "test result: ok. 188 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "The edit will add typed `ArkhataKeyAssemble`/failure outcomes, route subtype `drdata[0] == 2`, mutat": 1,
+      "The ledger now records the completed slice. I’m running the workspace tests next; if that is too slo": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 606 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

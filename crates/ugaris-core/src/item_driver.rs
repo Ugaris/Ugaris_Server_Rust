@@ -713,6 +713,22 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    ArkhataKeyAssemble {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        result_template_id: u32,
+        result_sprite: i32,
+        final_key: bool,
+    },
+    ArkhataKeyNeedsCursor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ArkhataKeyDoesNotFit {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BlockedByRequirements {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1099,6 +1115,7 @@ pub fn execute_item_driver_with_context(
                 IDR_XMASTREE => xmastree_driver(character, item),
                 IDR_XMASMAKER => xmasmaker_driver(character, item),
                 IDR_CALIGAR => caligar_driver(character, item),
+                IDR_ARKHATA => arkhata_driver(character, item, context),
                 IDR_CALIGARFLAME => flamethrow_driver(character, item, context),
                 IDR_KEY_RING => keyring_driver(character, item),
                 _ => ItemDriverOutcome::Unsupported {
@@ -1209,6 +1226,81 @@ fn caligar_weight_driver(character: &Character, item: &Item) -> ItemDriverOutcom
     ItemDriverOutcome::CaligarWeightMove {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn arkhata_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    match drdata(item, 0) {
+        2 => arkhata_key_assemble_driver(character, item, context),
+        _ => ItemDriverOutcome::Unsupported {
+            driver: IDR_ARKHATA,
+            item_id: item.id,
+            character_id: character.id,
+        },
+    }
+}
+
+const IID_ARKHATA_AKEY1: u32 = make_item_id(DEV_ID_DB, 0x0000CA);
+const IID_ARKHATA_AKEY2: u32 = make_item_id(DEV_ID_DB, 0x0000CB);
+const IID_ARKHATA_AKEY3: u32 = make_item_id(DEV_ID_DB, 0x0000CC);
+const IID_ARKHATA_AKEY12: u32 = make_item_id(DEV_ID_DB, 0x0000CD);
+const IID_ARKHATA_AKEY23: u32 = make_item_id(DEV_ID_DB, 0x0000CE);
+const IID_ARKHATA_AKEY: u32 = make_item_id(0x3B, 0x000089);
+
+fn arkhata_key_assemble_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 || item.carried_by != Some(character.id) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::ArkhataKeyNeedsCursor {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    let Some(cursor_template_id) = context.cursor_template_id else {
+        return ItemDriverOutcome::ArkhataKeyDoesNotFit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    let result = match (item.template_id, cursor_template_id) {
+        (IID_ARKHATA_AKEY1, IID_ARKHATA_AKEY2) | (IID_ARKHATA_AKEY2, IID_ARKHATA_AKEY1) => {
+            Some((IID_ARKHATA_AKEY12, 13421, false))
+        }
+        (IID_ARKHATA_AKEY2, IID_ARKHATA_AKEY3) | (IID_ARKHATA_AKEY3, IID_ARKHATA_AKEY2) => {
+            Some((IID_ARKHATA_AKEY23, 13420, false))
+        }
+        (IID_ARKHATA_AKEY1, IID_ARKHATA_AKEY23)
+        | (IID_ARKHATA_AKEY23, IID_ARKHATA_AKEY1)
+        | (IID_ARKHATA_AKEY12, IID_ARKHATA_AKEY3)
+        | (IID_ARKHATA_AKEY3, IID_ARKHATA_AKEY12) => Some((IID_ARKHATA_AKEY, 13413, true)),
+        _ => None,
+    };
+
+    let Some((result_template_id, result_sprite, final_key)) = result else {
+        return ItemDriverOutcome::ArkhataKeyDoesNotFit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::ArkhataKeyAssemble {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        result_template_id,
+        result_sprite,
+        final_key,
     }
 }
 
@@ -5491,6 +5583,76 @@ mod tests {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
                 required_area: 18,
+            }
+        );
+    }
+
+    #[test]
+    fn arkhata_key_assemble_ports_legacy_combinations() {
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(9));
+        let mut key = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_ARKHATA);
+        key.template_id = IID_ARKHATA_AKEY12;
+        key.carried_by = Some(CharacterId(1));
+        set_drdata(&mut key, 0, 2);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ARKHATA,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IID_ARKHATA_AKEY1, 0x0100_00CA);
+        assert_eq!(IID_ARKHATA_AKEY, 0x3B00_0089);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut key, request, 37, false),
+            ItemDriverOutcome::ArkhataKeyDoesNotFit {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let mut context = ItemDriverContext {
+            cursor_template_id: Some(IID_ARKHATA_AKEY3),
+            ..Default::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut key,
+                request,
+                37,
+                false,
+                &context
+            ),
+            ItemDriverOutcome::ArkhataKeyAssemble {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
+                result_template_id: IID_ARKHATA_AKEY,
+                result_sprite: 13413,
+                final_key: true,
+            }
+        );
+
+        key.template_id = IID_ARKHATA_AKEY1;
+        context.cursor_template_id = Some(IID_ARKHATA_AKEY2);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut key,
+                request,
+                37,
+                false,
+                &context
+            ),
+            ItemDriverOutcome::ArkhataKeyAssemble {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
+                result_template_id: IID_ARKHATA_AKEY12,
+                result_sprite: 13421,
+                final_key: false,
             }
         );
     }
