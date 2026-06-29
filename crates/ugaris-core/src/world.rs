@@ -51,10 +51,10 @@ use crate::{
         EF_BLESS, EF_BUBBLE, EF_BURN, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN, EF_EDEMONBALL,
         EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_MAGICSHIELD,
         EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY, FIREBALL_COST,
-        FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION, IDR_BLESS, IDR_CURSE,
-        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_INFRARED, IDR_OXYGEN, IDR_POISON0, IDR_POISON3,
-        IDR_POTION_SP, IDR_WARCRY, POISON_DURATION, SPELL_SLOT_END, SPELL_SLOT_START,
-        WARCRY_DURATION,
+        FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION, IDR_ARMOR, IDR_BLESS, IDR_CURSE,
+        IDR_FIRERING, IDR_FLASH, IDR_FREEZE, IDR_HP, IDR_INFRARED, IDR_MANA, IDR_OXYGEN,
+        IDR_POISON0, IDR_POISON3, IDR_POTION_SP, IDR_WARCRY, IDR_WEAPON, POISON_DURATION,
+        SPELL_SLOT_END, SPELL_SLOT_START, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
     Tick,
@@ -8480,6 +8480,81 @@ impl World {
         }
     }
 
+    pub fn install_bonus_spell(
+        &mut self,
+        target_id: CharacterId,
+        driver: u16,
+        strength: i32,
+        duration: i32,
+    ) -> bool {
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        let Some(slot) = may_add_spell(&target, &self.items, driver, self.tick.0 as u32) else {
+            return false;
+        };
+        let Some((name, modifier_index)) = bonus_spell_shape(driver) else {
+            return false;
+        };
+
+        let item_id = self.next_runtime_item_id();
+        let start_tick = self.tick.0 as u32;
+        let expire_tick = start_tick.wrapping_add(duration.max(0) as u32);
+        let mut driver_data = Vec::with_capacity(4);
+        driver_data.extend_from_slice(&expire_tick.to_le_bytes());
+
+        let item = Item {
+            id: item_id,
+            name: name.to_string(),
+            description: format!("A Spell of {name}."),
+            flags: ItemFlags::USED,
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [modifier_index as i16, 0, 0, 0, 0],
+            modifier_value: [
+                strength.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                0,
+                0,
+                0,
+                0,
+            ],
+            x: 0,
+            y: 0,
+            carried_by: Some(target_id),
+            contained_in: None,
+            content_id: 0,
+            driver,
+            driver_data,
+            serial: item_id.0,
+        };
+
+        self.items.insert(item_id, item);
+        if let Some(target) = self.characters.get_mut(&target_id) {
+            if target.inventory.len() <= slot {
+                self.items.remove(&item_id);
+                return false;
+            }
+            target.inventory[slot] = Some(item_id);
+            let character_serial = target.id.0;
+            target
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+            if let Some(item) = self.items.get(&item_id) {
+                apply_item_modifier_deltas(target, item, 1);
+            }
+            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+            true
+        } else {
+            self.items.remove(&item_id);
+            false
+        }
+    }
+
     fn install_beyond_potion_spell(
         &mut self,
         character_id: CharacterId,
@@ -9504,6 +9579,16 @@ fn character_value(character: &Character, value: CharacterValue) -> i32 {
         .and_then(|values| values.get(value as usize))
         .copied()
         .unwrap_or_default() as i32
+}
+
+fn bonus_spell_shape(driver: u16) -> Option<(&'static str, CharacterValue)> {
+    Some(match driver {
+        IDR_ARMOR => ("Armor", CharacterValue::Armor),
+        IDR_WEAPON => ("Weapon", CharacterValue::Weapon),
+        IDR_MANA => ("Mana", CharacterValue::Mana),
+        IDR_HP => ("HP", CharacterValue::Hp),
+        _ => return None,
+    })
 }
 
 fn add_character_value_delta(character: &mut Character, value: CharacterValue, delta: i32) {

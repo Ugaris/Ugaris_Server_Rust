@@ -37,6 +37,7 @@ use ugaris_core::{
         EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN,
         EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_LAG,
         EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
+        IDR_ARMOR, IDR_HP, IDR_MANA, IDR_WEAPON,
     },
     text::COL_DARK_GRAY,
     tick::TICKS_PER_SECOND,
@@ -2783,7 +2784,12 @@ enum ZombieShrineApplyResult {
     NeedsOffering(u8),
     Gift(String),
     Experience(u32),
-    Bonus(&'static str),
+    Bonus {
+        message: &'static str,
+        driver: u16,
+        strength: i32,
+        duration_ticks: i32,
+    },
     MissingGift,
     MissingPlayer,
 }
@@ -2864,18 +2870,80 @@ fn zombie_shrine_experience(shrine_type: u8, roll: u32) -> Option<u32> {
     }
 }
 
-fn zombie_shrine_bonus_message(shrine_type: u8, roll: u32) -> Option<&'static str> {
+fn zombie_shrine_bonus(
+    shrine_type: u8,
+    roll: u32,
+    flags: CharacterFlags,
+) -> Option<(&'static str, u16, i32, i32)> {
     match shrine_type {
         0 => match roll {
-            16 => Some("You have been protected for a short while."),
-            17 => Some("You are more dangerous for a short while."),
-            18 | 19 => Some("Your capacity was increased for a short while."),
+            16 => Some((
+                "You have been protected for a short while.",
+                IDR_ARMOR,
+                5 * 20,
+                TICKS_PER_SECOND as i32 * 60 * 5,
+            )),
+            17 => Some((
+                "You are more dangerous for a short while.",
+                IDR_WEAPON,
+                5,
+                TICKS_PER_SECOND as i32 * 60 * 5,
+            )),
+            18 => Some((
+                "Your capacity was increased for a short while.",
+                if flags.contains(CharacterFlags::WARRIOR) {
+                    IDR_HP
+                } else {
+                    IDR_MANA
+                },
+                5,
+                TICKS_PER_SECOND as i32 * 60 * 5,
+            )),
+            19 => Some((
+                "Your capacity was increased for a short while.",
+                if flags.contains(CharacterFlags::MAGE) {
+                    IDR_MANA
+                } else {
+                    IDR_HP
+                },
+                5,
+                TICKS_PER_SECOND as i32 * 60 * 5,
+            )),
             _ => None,
         },
         1 => match roll {
-            7 => Some("You have been protected for a while."),
-            8 => Some("You are more dangerous for a while."),
-            9 | 10 => Some("Your capacity was increased for a while."),
+            7 => Some((
+                "You have been protected for a while.",
+                IDR_ARMOR,
+                10 * 20,
+                TICKS_PER_SECOND as i32 * 60 * 15,
+            )),
+            8 => Some((
+                "You are more dangerous for a while.",
+                IDR_WEAPON,
+                10,
+                TICKS_PER_SECOND as i32 * 60 * 15,
+            )),
+            9 => Some((
+                "Your capacity was increased for a while.",
+                if flags.contains(CharacterFlags::WARRIOR) {
+                    IDR_HP
+                } else {
+                    IDR_MANA
+                },
+                10,
+                TICKS_PER_SECOND as i32 * 60 * 15,
+            )),
+            10 => Some((
+                "Your capacity was increased for a while.",
+                if flags.contains(CharacterFlags::MAGE) {
+                    IDR_MANA
+                } else {
+                    IDR_HP
+                },
+                10,
+                TICKS_PER_SECOND as i32 * 60 * 15,
+            )),
             _ => None,
         },
         _ => None,
@@ -2929,8 +2997,16 @@ fn apply_zombie_shrine(
         }
         return ZombieShrineApplyResult::Experience(exp_added);
     }
-    if let Some(message) = zombie_shrine_bonus_message(shrine_type, roll) {
-        return ZombieShrineApplyResult::Bonus(message);
+    if let Some((message, driver, strength, duration_ticks)) =
+        zombie_shrine_bonus(shrine_type, roll, character_flags)
+    {
+        world.install_bonus_spell(character_id, driver, strength, duration_ticks);
+        return ZombieShrineApplyResult::Bonus {
+            message,
+            driver,
+            strength,
+            duration_ticks,
+        };
     }
 
     ZombieShrineApplyResult::MissingGift
@@ -6427,6 +6503,50 @@ mod tests {
         let character = world.characters.get(&character_id).unwrap();
         assert_eq!(character.cursor_item, None);
         assert_eq!(character.exp, 2350);
+        assert!(!world.items.contains_key(&ItemId(20)));
+    }
+
+    #[test]
+    fn apply_zombie_shrine_installs_timed_bonus_spell() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(ItemId(20));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut skull = test_item(ItemId(20), 1, ItemFlags::USED | ItemFlags::TAKE);
+        skull.template_id = IID_AREA2_ZOMBIESKULL1;
+        skull.carried_by = Some(character_id);
+        world.add_item(skull);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_zombie_shrine(
+                &mut world,
+                &mut loader,
+                character_id,
+                0,
+                seed_for_legacy_random(22, 16)
+            ),
+            ZombieShrineApplyResult::Bonus {
+                message: "You have been protected for a short while.",
+                driver: IDR_ARMOR,
+                strength: 100,
+                duration_ticks: TICKS_PER_SECOND as i32 * 60 * 5,
+            }
+        );
+
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, None);
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_ARMOR);
+        assert_eq!(spell.modifier_index[0], CharacterValue::Armor as i16);
+        assert_eq!(spell.modifier_value[0], 100);
+        assert_eq!(
+            spell.driver_data,
+            (TICKS_PER_SECOND as u32 * 60 * 5).to_le_bytes().to_vec()
+        );
+        assert_eq!(character.values[0][CharacterValue::Armor as usize], 100);
         assert!(!world.items.contains_key(&ItemId(20)));
     }
 
@@ -10856,7 +10976,7 @@ async fn main() -> anyhow::Result<()> {
                                                     feedback.push((character_id, "You have been blessed with experience.".to_string()));
                                                     executed += 1;
                                                 }
-                                                ZombieShrineApplyResult::Bonus(message) => {
+                                                ZombieShrineApplyResult::Bonus { message, .. } => {
                                                     feedback.push((character_id, message.to_string()));
                                                     executed += 1;
                                                 }
