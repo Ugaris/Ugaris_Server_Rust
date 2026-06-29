@@ -17652,6 +17652,18 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                             }
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExit { character_id, area_id, .. } => {
+                                            if area_id != config.area_id {
+                                                feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
+                                                blocked += 1;
+                                            } else {
+                                                executed += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExitBusy { character_id, .. } => {
+                                            feedback.push((character_id, "Please try again soon. Target is busy".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { .. } => {
                                             // Legacy C returns without output when arena rankings are not loaded.
                                             executed += 1;

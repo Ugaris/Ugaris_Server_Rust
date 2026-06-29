@@ -559,6 +559,17 @@ pub enum ItemDriverOutcome {
         y: u16,
         clan_number: u16,
     },
+    ClanSpawnExit {
+        item_id: ItemId,
+        character_id: CharacterId,
+        area_id: u16,
+        x: u16,
+        y: u16,
+    },
+    ClanSpawnExitBusy {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     DungeonFake {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1823,6 +1834,7 @@ pub fn execute_item_driver_with_context(
                 IDR_TRANSPORT => transport_driver(character, item, spec),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
                 IDR_CLANJEWEL => clanjewel_driver(character, item, context),
+                IDR_CLANSPAWNEXIT => clanspawn_exit_driver(character, item),
                 IDR_ASSEMBLE => assemble_driver(character, item, context),
                 IDR_CITY_RECALL => city_recall_driver(character, item, area_id, in_arena),
                 IDR_DUNGEONTELE => dungeon_teleport_driver(character, item),
@@ -1890,6 +1902,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
     match driver {
         IDR_BONEBRIDGE | IDR_BONELADDER | IDR_BONEHOLDER | IDR_BONEWALL | IDR_BONEHINT => Some(18),
         IDR_NOMADDICE => Some(19),
+        IDR_CLANSPAWN | IDR_CLANVAULT | IDR_CLANSPAWNEXIT => Some(30),
         IDR_EDEMONGATE | IDR_EDEMONDOOR | IDR_EDEMONBLOCK | IDR_EDEMONTUBE => Some(6),
         IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
@@ -1902,6 +1915,20 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONWAYPOINT | IDR_FDEMONFARM
         | IDR_FDEMONBLOOD | IDR_FDEMONLAVA => Some(8),
         _ => None,
+    }
+}
+
+fn clanspawn_exit_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::ClanSpawnExit {
+        item_id: item.id,
+        character_id: character.id,
+        area_id: character.rest_area,
+        x: character.rest_x,
+        y: character.rest_y,
     }
 }
 
@@ -7428,6 +7455,68 @@ mod tests {
             }
         );
         assert_eq!(legacy_item_driver_return_code(Some(1000), &outcome), 1);
+    }
+
+    #[test]
+    fn clanspawn_exit_returns_rest_location() {
+        let mut character = character(1);
+        character.rest_area = 2;
+        character.rest_x = 33;
+        character.rest_y = 44;
+        let mut exit = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_CLANSPAWNEXIT);
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut exit,
+            ItemDriverRequest::Driver {
+                driver: IDR_CLANSPAWNEXIT,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            30,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::ClanSpawnExit {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                area_id: 2,
+                x: 33,
+                y: 44,
+            }
+        );
+    }
+
+    #[test]
+    fn clanspawn_exit_is_area30_guarded_like_legacy_libload() {
+        let mut character = character(1);
+        let mut exit = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_CLANSPAWNEXIT);
+
+        let outcome = execute_item_driver(
+            &mut character,
+            &mut exit,
+            ItemDriverRequest::Driver {
+                driver: IDR_CLANSPAWNEXIT,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_CLANSPAWNEXIT,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                required_area: 30,
+            }
+        );
     }
 
     #[test]

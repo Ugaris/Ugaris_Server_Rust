@@ -5938,6 +5938,25 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::ClanSpawnExit {
+                item_id,
+                character_id,
+                area_id,
+                x,
+                y,
+            } => {
+                if area_id != current_area_id {
+                    return outcome;
+                }
+                if self.teleport_character(character_id, x, y, false) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::ClanSpawnExitBusy {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             ItemDriverOutcome::StafferAnimationBook { character_id, .. } => {
                 if self.teleport_character(character_id, 25, 114, true) {
                     outcome
@@ -24473,6 +24492,88 @@ mod tests {
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(character.inventory[30], None);
         assert!(character.flags.contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
+    fn world_applies_clanspawn_exit_same_area_rest_teleport() {
+        let mut world = World::default();
+        let mut exit = item(8, ItemFlags::USED | ItemFlags::USE);
+        exit.driver = crate::item_driver::IDR_CLANSPAWNEXIT;
+        assert!(world.map.set_item_map(&mut exit, 10, 10));
+        world.add_item(exit);
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.rest_area = 30;
+        player.rest_x = 12;
+        player.rest_y = 13;
+        assert!(world.spawn_character(player, 10, 10));
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_CLANSPAWNEXIT,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            30,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::ClanSpawnExit {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                area_id: 30,
+                x: 12,
+                y: 13,
+            }
+        );
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((character.x, character.y), (12, 13));
+        assert_eq!(world.map.tile(10, 10).unwrap().character, 0);
+        assert_eq!(world.map.tile(12, 13).unwrap().character, 1);
+    }
+
+    #[test]
+    fn world_applies_clanspawn_exit_busy_target_feedback_outcome() {
+        let mut world = World::default();
+        let mut exit = item(8, ItemFlags::USED | ItemFlags::USE);
+        exit.driver = crate::item_driver::IDR_CLANSPAWNEXIT;
+        assert!(world.map.set_item_map(&mut exit, 10, 10));
+        world.add_item(exit);
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.rest_area = 30;
+        player.rest_x = 12;
+        player.rest_y = 13;
+        assert!(world.spawn_character(player, 10, 10));
+        let mut blocker_id = 2;
+        for y in 12..=14 {
+            for x in 11..=13 {
+                assert!(world.spawn_character(character(blocker_id), x, y));
+                blocker_id += 1;
+            }
+        }
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_CLANSPAWNEXIT,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            30,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::ClanSpawnExitBusy {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((character.x, character.y), (10, 10));
     }
 
     #[test]
