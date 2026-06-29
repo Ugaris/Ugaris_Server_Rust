@@ -325,6 +325,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub ignored_characters: Vec<u32>,
     #[serde(default)]
+    pub chat_channels: u32,
+    #[serde(default)]
     pub rune_used_words: [u32; RUNE_USED_WORDS],
     #[serde(default)]
     pub rune_special_exec: [i32; RUNE_SPECIAL_EXEC_COUNT],
@@ -391,6 +393,7 @@ impl PlayerRuntime {
             shutup_until_seconds: 0,
             tell_data: TellData::default(),
             ignored_characters: Vec::new(),
+            chat_channels: 0,
             rune_used_words: [0; RUNE_USED_WORDS],
             rune_special_exec: [0; RUNE_SPECIAL_EXEC_COUNT],
             aliases: Vec::new(),

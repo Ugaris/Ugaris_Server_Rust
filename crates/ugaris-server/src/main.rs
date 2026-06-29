@@ -924,6 +924,101 @@ struct TellCommandResult {
     delivered_messages: Vec<(CharacterId, String)>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ChatChannelInfo {
+    number: u8,
+    name: &'static str,
+    description: &'static str,
+}
+
+const LEGACY_CHAT_CHANNELS: &[ChatChannelInfo] = &[
+    ChatChannelInfo {
+        number: 0,
+        name: "Announce",
+        description: "Announcements from management - NOLEAVE",
+    },
+    ChatChannelInfo {
+        number: 1,
+        name: "Info",
+        description: "Requesting staff help, technical and gameplay questions",
+    },
+    ChatChannelInfo {
+        number: 2,
+        name: "Gossip",
+        description: "Talk about Life, the Universe and Everything",
+    },
+    ChatChannelInfo {
+        number: 3,
+        name: "Auction",
+        description: "Buy and sell stuff",
+    },
+    ChatChannelInfo {
+        number: 4,
+        name: "Astonia",
+        description: "Other Astonia versions (2.0, 3.5)",
+    },
+    ChatChannelInfo {
+        number: 5,
+        name: "Clan",
+        description: "Public channel for clan related matters",
+    },
+    ChatChannelInfo {
+        number: 6,
+        name: "Grats",
+        description: "Grats on leveling!",
+    },
+    ChatChannelInfo {
+        number: 7,
+        name: "Clan2",
+        description: "Channel only visible to members of your clan",
+    },
+    ChatChannelInfo {
+        number: 8,
+        name: "Area",
+        description: "Channel only visible to those in your area",
+    },
+    ChatChannelInfo {
+        number: 9,
+        name: "Mirror",
+        description: "Only visible to those in your area and mirror",
+    },
+    ChatChannelInfo {
+        number: 10,
+        name: "Games",
+        description: "Discussions of computer games",
+    },
+    ChatChannelInfo {
+        number: 11,
+        name: "Kill",
+        description: "Playerkiller related topics",
+    },
+    ChatChannelInfo {
+        number: 12,
+        name: "ClanA",
+        description: "Channel only visible to clan members and allies",
+    },
+    ChatChannelInfo {
+        number: 13,
+        name: "Club",
+        description: "Channel only visible to your club members",
+    },
+    ChatChannelInfo {
+        number: 14,
+        name: "Development",
+        description: "Channel only visible to developers",
+    },
+    ChatChannelInfo {
+        number: 31,
+        name: "Staff",
+        description: "Staff member's private channel",
+    },
+    ChatChannelInfo {
+        number: 32,
+        name: "God",
+        description: "Ye God's private channel",
+    },
+];
+
 fn legacy_help_line_bytes(line: &str) -> Vec<u8> {
     let bytes = line.as_bytes();
     let mut out = Vec::with_capacity(bytes.len() + 16);
@@ -2002,6 +2097,138 @@ fn apply_notells_command(
         )],
         ..Default::default()
     })
+}
+
+fn chat_command_verb(command: &str) -> (&str, &str) {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    (verb.trim_start_matches('/').trim_start_matches('#'), rest)
+}
+
+fn legacy_chat_channel(number: u8) -> Option<ChatChannelInfo> {
+    LEGACY_CHAT_CHANNELS
+        .iter()
+        .copied()
+        .find(|channel| channel.number == number)
+}
+
+fn apply_channels_command(command: &str) -> Option<KeyringCommandResult> {
+    let (verb, _) = chat_command_verb(command);
+    let lower = verb.to_ascii_lowercase();
+    if lower.is_empty() || !"channels".starts_with(&lower) {
+        return None;
+    }
+
+    Some(KeyringCommandResult {
+        messages: LEGACY_CHAT_CHANNELS
+            .iter()
+            .map(|channel| {
+                format!(
+                    "{:>2}: {:<10.10} - {}",
+                    channel.number, channel.name, channel.description
+                )
+            })
+            .collect(),
+        ..Default::default()
+    })
+}
+
+fn apply_join_leave_chat_command(
+    player: &mut PlayerRuntime,
+    character_flags: CharacterFlags,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = chat_command_verb(command);
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() > "join".len() && "joinall".starts_with(&lower) {
+        for nr in 1..=13 {
+            player.chat_channels |= 1_u32 << (nr - 1);
+        }
+        return Some(KeyringCommandResult {
+            messages: vec!["You have joined all channels.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    let is_join = !lower.is_empty() && "join".starts_with(&lower);
+    let is_leave = !lower.is_empty() && "leave".starts_with(&lower);
+    if !is_join && !is_leave {
+        return None;
+    }
+
+    let nr = legacy_atoi_prefix(rest.trim_start());
+    if !(1..=32).contains(&nr) {
+        return Some(KeyringCommandResult {
+            messages: vec!["Channel number must be between 1 and 32.".to_string()],
+            ..Default::default()
+        });
+    }
+    let nr = nr as u8;
+    let Some(channel) = legacy_chat_channel(nr) else {
+        return Some(KeyringCommandResult {
+            messages: vec![format!("Channel number must be between 1 and 32.")],
+            ..Default::default()
+        });
+    };
+    let bit = 1_u32 << (nr - 1);
+
+    if is_join {
+        if player.chat_channels & bit != 0 {
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "You have already joined channel {} ({}).",
+                    nr, channel.name
+                )],
+                ..Default::default()
+            });
+        }
+        if nr == 31
+            && !character_flags.intersects(
+                CharacterFlags::STAFF | CharacterFlags::GOD | CharacterFlags::EVENTMASTER,
+            )
+        {
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Permission denied to join channel {} ({}).",
+                    nr, channel.name
+                )],
+                ..Default::default()
+            });
+        }
+        if nr == 32 && !character_flags.contains(CharacterFlags::GOD) {
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Permission denied to join channel {} ({}).",
+                    nr, channel.name
+                )],
+                ..Default::default()
+            });
+        }
+        player.chat_channels |= bit;
+        Some(KeyringCommandResult {
+            messages: vec![format!(
+                "You have joined channel {} ({}).",
+                nr, channel.name
+            )],
+            ..Default::default()
+        })
+    } else {
+        if player.chat_channels & bit == 0 {
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "You have already left channel {} ({}).",
+                    nr, channel.name
+                )],
+                ..Default::default()
+            });
+        }
+        player.chat_channels &= !bit;
+        Some(KeyringCommandResult {
+            messages: vec![format!("You have left channel {} ({}).", nr, channel.name)],
+            ..Default::default()
+        })
+    }
 }
 
 fn apply_clearignore_command(
@@ -8783,6 +9010,92 @@ mod tests {
     }
 
     #[test]
+    fn channels_command_lists_legacy_channel_table() {
+        let result = apply_channels_command("/chan").expect("channels prefix should be recognized");
+
+        assert_eq!(
+            result.messages[0],
+            " 0: Announce   - Announcements from management - NOLEAVE"
+        );
+        assert!(result.messages.contains(
+            &" 7: Clan2      - Channel only visible to members of your clan".to_string()
+        ));
+        assert_eq!(
+            result.messages.last().unwrap(),
+            "32: God        - Ye God's private channel"
+        );
+        assert!(apply_channels_command("/clearhate").is_none());
+    }
+
+    #[test]
+    fn join_leave_chat_commands_preserve_legacy_feedback_and_bits() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let joined =
+            apply_join_leave_chat_command(&mut player, CharacterFlags::PLAYER, "/join 2extra")
+                .expect("join should be recognized");
+        assert_eq!(joined.messages, vec!["You have joined channel 2 (Gossip)."]);
+        assert_eq!(player.chat_channels, 1_u32 << 1);
+
+        let duplicate =
+            apply_join_leave_chat_command(&mut player, CharacterFlags::PLAYER, "/join 2").unwrap();
+        assert_eq!(
+            duplicate.messages,
+            vec!["You have already joined channel 2 (Gossip)."]
+        );
+
+        let left =
+            apply_join_leave_chat_command(&mut player, CharacterFlags::PLAYER, "/leave 2").unwrap();
+        assert_eq!(left.messages, vec!["You have left channel 2 (Gossip)."]);
+        assert_eq!(player.chat_channels, 0);
+
+        let left_again =
+            apply_join_leave_chat_command(&mut player, CharacterFlags::PLAYER, "/leave 2").unwrap();
+        assert_eq!(
+            left_again.messages,
+            vec!["You have already left channel 2 (Gossip)."]
+        );
+    }
+
+    #[test]
+    fn join_chat_command_gates_staff_and_god_channels() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let staff_denied =
+            apply_join_leave_chat_command(&mut player, CharacterFlags::PLAYER, "/join 31").unwrap();
+        assert_eq!(
+            staff_denied.messages,
+            vec!["Permission denied to join channel 31 (Staff)."]
+        );
+        assert_eq!(player.chat_channels, 0);
+
+        let staff_joined = apply_join_leave_chat_command(
+            &mut player,
+            CharacterFlags::PLAYER | CharacterFlags::EVENTMASTER,
+            "/join 31",
+        )
+        .unwrap();
+        assert_eq!(
+            staff_joined.messages,
+            vec!["You have joined channel 31 (Staff)."]
+        );
+
+        let god_denied =
+            apply_join_leave_chat_command(&mut player, CharacterFlags::STAFF, "/join 32").unwrap();
+        assert_eq!(
+            god_denied.messages,
+            vec!["Permission denied to join channel 32 (God)."]
+        );
+
+        let joined_all =
+            apply_join_leave_chat_command(&mut player, CharacterFlags::PLAYER, "/joinall").unwrap();
+        assert_eq!(joined_all.messages, vec!["You have joined all channels."]);
+        for nr in 1..=13 {
+            assert_ne!(player.chat_channels & (1_u32 << (nr - 1)), 0);
+        }
+    }
+
+    #[test]
     fn who_command_lists_visible_players_like_legacy_command() {
         let mut world = World::default();
         let mut warrior = login_character(CharacterId(7), &login_block("Warrior"), 1, 10, 10);
@@ -13650,6 +13963,27 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
+                            if let Some(result) = apply_channels_command(&command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            let character_flags = world
+                                .characters
+                                .get(&character_id)
+                                .map(|character| character.flags)
+                                .unwrap_or_else(CharacterFlags::empty);
+                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                if let Some(result) =
+                                    apply_join_leave_chat_command(player, character_flags, &command)
+                                {
+                                    for message in result.messages {
+                                        command_feedback.push((character_id, message));
+                                    }
+                                    continue;
+                                }
+                            }
                             if let Some(result) = apply_clearignore_command(&mut runtime, character_id, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
@@ -13685,11 +14019,6 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
-                            let character_flags = world
-                                .characters
-                                .get(&character_id)
-                                .map(|character| character.flags)
-                                .unwrap_or_else(CharacterFlags::empty);
                             if let Some(result) = apply_who_command(&world, character_flags, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
