@@ -1027,9 +1027,36 @@
         "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
       ]
+    },
+    {
+      "iteration": 39,
+      "startedAt": "2026-06-29T14:38:39.982Z",
+      "endedAt": "2026-06-29T14:48:13.770Z",
+      "durationMs": 573617,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'no_potion_area_feedback_applies_to_all_potion_items' found",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 194 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 199 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 632 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s"
+      ]
     }
   ],
-  "totalDurationMs": 17892604,
+  "totalDurationMs": 18466221,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 6,
@@ -1037,11 +1064,11 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 5,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 5,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 30,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 31,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 28,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 27,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 21,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 31,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 32,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 29,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 28,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 22,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
@@ -1054,7 +1081,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 2,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 9,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 10,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 3,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -1166,7 +1193,11 @@
       "- Completed player area-spell actions now use the same runtime attack-policy seam as projectile/effe": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 630 filtered out; finished in 0.00s": 1,
       "test result: ok. 631 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 631 filtered out; finished in 0.00s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 631 filtered out; finished in 0.00s": 1,
+      "error: unexpected argument 'no_potion_area_feedback_applies_to_all_potion_items' found": 1,
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 194 filtered out; finished in 0.00s": 1,
+      "test result: ok. 199 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "test result: ok. 632 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

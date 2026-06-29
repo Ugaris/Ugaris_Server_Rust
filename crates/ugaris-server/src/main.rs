@@ -30,7 +30,10 @@ use ugaris_core::{
         IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_SPECIAL_POTION, IDR_TORCH,
         IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
-    item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
+    item_ops::{
+        consume_item, give_item_to_character, replace_item_in_character, GiveItemFlags,
+        GiveItemResult,
+    },
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
     legacy::{action, profession, INVENTORY_START_INVENTORY},
     log_text::{holler_message, sanitize_log_bytes, say_message, shout_message, whisper_message},
@@ -4668,6 +4671,74 @@ fn potion_area_message(world: &World, character_id: CharacterId) -> String {
     format!("{name} drinks a potion.")
 }
 
+fn apply_empty_potion_drink(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    item_id: ItemId,
+    character_id: CharacterId,
+    empty_kind: u8,
+) -> bool {
+    let template = format!("empty_potion{empty_kind}");
+    let Ok(mut empty_item) = loader.instantiate_item_template(&template, Some(character_id)) else {
+        return false;
+    };
+
+    let Some(mut potion) = world.items.remove(&item_id) else {
+        return false;
+    };
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        world.items.insert(item_id, potion);
+        return false;
+    };
+    if potion.carried_by != Some(character_id) {
+        world.items.insert(item_id, potion);
+        return false;
+    }
+
+    let old_hp = character.hp;
+    let old_mana = character.mana;
+    let old_endurance = character.endurance;
+
+    character.hp = capped_resource(
+        character.hp,
+        potion.driver_data.get(1).copied().unwrap_or_default(),
+        max_character_value(character, CharacterValue::Hp),
+    );
+    character.mana = capped_resource(
+        character.mana,
+        potion.driver_data.get(2).copied().unwrap_or_default(),
+        max_character_value(character, CharacterValue::Mana),
+    );
+    character.endurance = capped_resource(
+        character.endurance,
+        potion.driver_data.get(3).copied().unwrap_or_default(),
+        max_character_value(character, CharacterValue::Endurance),
+    );
+
+    if !replace_item_in_character(character, &mut potion, &mut empty_item) {
+        character.hp = old_hp;
+        character.mana = old_mana;
+        character.endurance = old_endurance;
+        world.items.insert(item_id, potion);
+        return false;
+    }
+    world.add_item(empty_item);
+    true
+}
+
+fn capped_resource(current: i32, added_units: u8, max_units: i32) -> i32 {
+    (current + i32::from(added_units) * POWERSCALE).min(max_units * POWERSCALE)
+}
+
+fn max_character_value(character: &Character, value: CharacterValue) -> i32 {
+    character
+        .values
+        .first()
+        .and_then(|values| values.get(value as usize))
+        .copied()
+        .unwrap_or_default() as i32
+}
+
 fn christmas_pop_inspection_messages() -> [&'static str; 4] {
     [
         "You notice a tiny inscription on the magical lollipop. It reads:",
@@ -4695,7 +4766,10 @@ fn is_no_potion_area_blocked_item(world: &World, item_id: ItemId) -> bool {
     world.items.get(&item_id).is_some_and(|item| {
         matches!(
             item.driver,
-            IDR_BEYONDPOTION | IDR_SPECIAL_POTION | IDR_FLASK
+            ugaris_core::item_driver::IDR_POTION
+                | IDR_BEYONDPOTION
+                | IDR_SPECIAL_POTION
+                | IDR_FLASK
         )
     })
 }
@@ -9194,6 +9268,48 @@ mod tests {
     }
 
     #[test]
+    fn apply_empty_potion_drink_replaces_carried_potion_with_template() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.hp = 20 * POWERSCALE;
+        character.mana = 45 * POWERSCALE;
+        character.endurance = 49 * POWERSCALE;
+        character.inventory[INVENTORY_START_INVENTORY] = Some(ItemId(100));
+        let mut world = World::default();
+        world.add_character(character);
+
+        let mut potion = test_item(ItemId(100), 1234, ItemFlags::USED | ItemFlags::USE);
+        potion.driver = ugaris_core::item_driver::IDR_POTION;
+        potion.carried_by = Some(character_id);
+        potion.driver_data = vec![2, 10, 10, 10];
+        world.add_item(potion);
+
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"empty_potion2: name="Empty Potion" sprite=5678 ;"#)
+            .unwrap();
+
+        assert!(apply_empty_potion_drink(
+            &mut world,
+            &mut loader,
+            ItemId(100),
+            character_id,
+            2,
+        ));
+
+        assert!(!world.items.contains_key(&ItemId(100)));
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.hp, 30 * POWERSCALE);
+        assert_eq!(character.mana, 50 * POWERSCALE);
+        assert_eq!(character.endurance, 50 * POWERSCALE);
+        let empty_id = character.inventory[INVENTORY_START_INVENTORY].unwrap();
+        let empty = world.items.get(&empty_id).unwrap();
+        assert_eq!(empty.name, "Empty Potion");
+        assert_eq!(empty.sprite, 5678);
+        assert_eq!(empty.carried_by, Some(character_id));
+    }
+
+    #[test]
     fn christmas_pop_inspection_messages_match_legacy_text() {
         assert_eq!(
             christmas_pop_inspection_messages(),
@@ -9207,15 +9323,20 @@ mod tests {
     }
 
     #[test]
-    fn no_potion_area_feedback_applies_to_special_and_beyond_potions() {
+    fn no_potion_area_feedback_applies_to_all_potion_items() {
         let mut world = World::default();
         world.add_item(test_item_with_driver(ItemId(1), IDR_SPECIAL_POTION));
         world.add_item(test_item_with_driver(ItemId(2), IDR_BEYONDPOTION));
-        world.add_item(test_item_with_driver(ItemId(3), IDR_TORCH));
+        world.add_item(test_item_with_driver(
+            ItemId(3),
+            ugaris_core::item_driver::IDR_POTION,
+        ));
+        world.add_item(test_item_with_driver(ItemId(4), IDR_TORCH));
 
         assert!(is_no_potion_area_blocked_item(&world, ItemId(1)));
         assert!(is_no_potion_area_blocked_item(&world, ItemId(2)));
-        assert!(!is_no_potion_area_blocked_item(&world, ItemId(3)));
+        assert!(is_no_potion_area_blocked_item(&world, ItemId(3)));
+        assert!(!is_no_potion_area_blocked_item(&world, ItemId(4)));
         assert!(!is_no_potion_area_blocked_item(&world, ItemId(99)));
     }
 
@@ -17276,8 +17397,27 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "This gate has not been created for you. You cannot use it.".to_string()));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::EmptyPotionTemplateNeeded { .. } => {
-                                            deferred_templates += 1;
+                                        ugaris_core::item_driver::ItemDriverOutcome::EmptyPotionTemplateNeeded {
+                                            item_id,
+                                            character_id,
+                                            empty_kind,
+                                        } => {
+                                            if apply_empty_potion_drink(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                item_id,
+                                                character_id,
+                                                empty_kind,
+                                            ) {
+                                                area_feedback.push((
+                                                    character_id,
+                                                    potion_area_message(&world, character_id),
+                                                    10,
+                                                ));
+                                                executed += 1;
+                                            } else {
+                                                deferred_templates += 1;
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByArea { item_id, character_id }
                                             if is_no_potion_area_blocked_item(&world, item_id) =>

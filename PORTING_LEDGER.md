@@ -464,3 +464,7 @@ Recommended next chest steps:
 ### Iteration 32 Additional Progress
 
 - Normal `IDR_POTION` successful use now emits the C `log_area(..., "%s drinks a potion.")` client-visible nearby text through the existing runtime area-feedback fan-out at legacy distance 10, while preserving the resource mutation/consumption outcome path. Focused server coverage pins the C-shaped message text and fallback name behavior. Remaining potion parity gaps are empty-bottle template creation through loaded data, exact audit/log side effects, and broader live-data smoke coverage.
+
+### Iteration 39 Additional Progress
+
+- Normal `IDR_POTION` empty-bottle replacement now follows the C `potion_driver` path when `drdata[0]` is set: the server instantiates `empty_potionN` from loaded templates, applies HP/mana/endurance restoration with legacy `POWERSCALE` caps, replaces the carried potion in the same cursor/inventory slot, frees the consumed live item, emits the existing nearby drink text, and keeps missing-template cases deferred. Focused server tests cover template replacement, resource capping, carried ownership, and normal-potion no-potion-area feedback. Remaining potion parity gaps are exact audit/log side effects and broader live-data smoke coverage.
