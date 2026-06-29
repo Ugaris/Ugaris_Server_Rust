@@ -28,8 +28,8 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, use_item, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_CALIGAR, IDR_CALIGARFLAME,
-        IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP,
-        IDR_TORCH,
+        IDR_EDEMONLIGHT, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
+        IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2150,7 +2150,7 @@ impl World {
                     Some(item_id)
                 }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
-                IDR_FLAMETHROW | IDR_CALIGARFLAME => Some(item_id),
+                IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT => Some(item_id),
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
@@ -11503,10 +11503,11 @@ mod tests {
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGAR,
-            IDR_CALIGARFLAME, IDR_DOOR, IDR_EDEMONBALL, IDR_ENCHANTITEM, IDR_FIREBALL,
-            IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-            IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION,
-            IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_CALIGARFLAME, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT, IDR_ENCHANTITEM,
+            IDR_FIREBALL, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT,
+            IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION,
+            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -15837,12 +15838,15 @@ mod tests {
         let mut unlit_torch = item(9, ItemFlags::USED);
         unlit_torch.driver = IDR_TORCH;
         unlit_torch.driver_data = vec![0, 0, 10, 20];
+        let mut edemon_light = item(10, ItemFlags::USED);
+        edemon_light.driver = IDR_EDEMONLIGHT;
         world.add_item(nightlight);
         world.add_item(burning_torch);
         world.add_item(unlit_torch);
+        world.add_item(edemon_light);
 
-        assert_eq!(world.schedule_existing_light_timers(), 2);
-        assert_eq!(world.timers.used_timers(), 2);
+        assert_eq!(world.schedule_existing_light_timers(), 3);
+        assert_eq!(world.timers.used_timers(), 3);
     }
 
     #[test]

@@ -317,6 +317,7 @@ pub struct ItemDriverContext {
     pub equinox: bool,
     pub character_underwater: bool,
     pub current_tick: u32,
+    pub edemon_section_power: Option<u8>,
     pub bone_hint_nr: Option<u8>,
     pub bone_hint_pos: Option<u8>,
 }
@@ -1224,6 +1225,7 @@ pub fn execute_item_driver_with_context(
                 IDR_FIREBALL => fireball_machine_driver(character, item, context),
                 IDR_EDEMONBALL => edemonball_driver(character, item, context),
                 IDR_EDEMONSWITCH => edemon_switch_driver(character, item, context),
+                IDR_EDEMONLIGHT => edemon_light_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -4442,6 +4444,33 @@ fn edemon_switch_driver(
         item_id: item.id,
         character_id: character.id,
         schedule_after_ticks: Some(EDEMON_SWITCH_COOLDOWN_TICKS + 1),
+    }
+}
+
+fn edemon_light_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 || !context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let power = context.edemon_section_power.unwrap_or_default();
+    let (light, sprite) = if power != 0 && power < 249 {
+        (200, 14191)
+    } else {
+        (0, 14189)
+    };
+
+    item.modifier_index[0] = V_LIGHT;
+    item.modifier_value[0] = light;
+    item.sprite = sprite;
+
+    ItemDriverOutcome::LightChanged {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: Some(TICKS_PER_SECOND),
     }
 }
 
@@ -8765,6 +8794,76 @@ mod tests {
             }
         );
         assert_eq!(lever.sprite, 100);
+    }
+
+    #[test]
+    fn edemon_light_timer_follows_section_power_and_reschedules() {
+        let mut timer_character = character(0);
+        let mut light = item(7, ItemFlags::USED, 0, IDR_EDEMONLIGHT);
+        light.sprite = 14189;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONLIGHT,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_EDEMONLIGHT, 40);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut light,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    edemon_section_power: Some(42),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: Some(TICKS_PER_SECOND),
+            }
+        );
+        assert_eq!(light.sprite, 14191);
+        assert_eq!(light.modifier_index[0], V_LIGHT);
+        assert_eq!(light.modifier_value[0], 200);
+
+        execute_item_driver_with_context(
+            &mut timer_character,
+            &mut light,
+            request,
+            6,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                edemon_section_power: Some(249),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(light.sprite, 14189);
+        assert_eq!(light.modifier_value[0], 0);
+
+        let mut user = character(1);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut user,
+                &mut light,
+                ItemDriverRequest::Driver {
+                    driver: IDR_EDEMONLIGHT,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                6,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::Noop
+        );
     }
 
     #[test]
