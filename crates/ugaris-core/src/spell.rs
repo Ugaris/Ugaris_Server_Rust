@@ -30,6 +30,7 @@ pub const IDR_ARMOR: u16 = 1004;
 pub const IDR_WEAPON: u16 = 1005;
 pub const IDR_MANA: u16 = 1006;
 pub const IDR_HP: u16 = 1007;
+pub const IDR_BURN: u16 = 1008;
 pub const IDR_POTION_SP: u16 = 1009;
 pub const IDR_CURSE: u16 = 1010;
 pub const IDR_POISON0: u16 = 1011;
@@ -382,6 +383,7 @@ mod tests {
         assert_eq!(IDR_WEAPON, 1005);
         assert_eq!(IDR_MANA, 1006);
         assert_eq!(IDR_HP, 1007);
+        assert_eq!(IDR_BURN, 1008);
         assert_eq!(IDR_POTION_SP, 1009);
         assert_eq!(IDR_CURSE, 1010);
         assert_eq!(IDR_POISON0, 1011);
