@@ -32,6 +32,7 @@ pub const LEGACY_DEMONSHRINE_PPD_SIZE: usize = DEMONSHRINE_MAX_ENTRIES * 4;
 pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
+pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const PK_HATE_MAX_ENTRIES: usize = 50;
 pub const LEGACY_PK_PPD_SIZE: usize = 4 * 4 + PK_HATE_MAX_ENTRIES * 4;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
@@ -48,6 +49,7 @@ pub const TRANSPORT_EARTH_UNDERGROUND_MASK: u64 = 0x01F8;
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEMONSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 68 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
+pub const DRD_LOSTCON_PPD: u32 = make_drd(DEV_ID_DB, 91 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FLOWER_PPD: u32 = make_drd(DEV_ID_DB, 62 | PERSISTENT_PLAYER_DATA);
 pub const DRD_MISC_PPD: u32 = make_drd(DEV_ID_DB, 113 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_DIG_PPD: u32 = make_drd(DEV_ID_ED, 5 | PERSISTENT_PLAYER_DATA);
@@ -81,6 +83,7 @@ const FLOWER_PPD_IDS_OFFSET: usize = 0;
 const FLOWER_PPD_LAST_USED_OFFSET: usize = FLOWER_PPD_IDS_OFFSET + FLOWER_MAX_ENTRIES * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
+const LOSTCON_PPD_MAXLAG_OFFSET: usize = 17 * 4;
 const PK_PPD_KILLS_OFFSET: usize = 0;
 const PK_PPD_DEATHS_OFFSET: usize = 4;
 const PK_PPD_LAST_KILL_OFFSET: usize = 8;
@@ -336,6 +339,25 @@ impl PlayerRuntime {
 
     pub fn set_max_lag_seconds(&mut self, seconds: u8) {
         self.max_lag_seconds = seconds;
+    }
+
+    pub fn encode_legacy_lostcon_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_LOSTCON_PPD_SIZE];
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_MAXLAG_OFFSET,
+            i32::from(self.max_lag_seconds),
+        );
+        bytes
+    }
+
+    pub fn decode_legacy_lostcon_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_LOSTCON_PPD_SIZE {
+            return false;
+        }
+        self.max_lag_seconds =
+            read_i32(bytes, LOSTCON_PPD_MAXLAG_OFFSET).clamp(0, i32::from(u8::MAX)) as u8;
+        true
     }
 
     pub fn set_current_mirror(&mut self, mirror_id: u32) {
@@ -941,6 +963,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_LOSTCON_PPD => {
+                    if !self.decode_legacy_lostcon_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_FLOWER_PPD => {
                     if !self.decode_legacy_flower_ppd(block.data) {
                         return false;
@@ -971,6 +998,7 @@ impl PlayerRuntime {
         let mut had_randchest = false;
         let mut had_demonshrine = false;
         let mut had_orbspawn = false;
+        let mut had_lostcon = false;
         let mut had_flower = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
@@ -1028,6 +1056,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_ORBSPAWN_PPD,
                     &self.encode_legacy_orbspawn_ppd(),
+                );
+            } else if block.id == DRD_LOSTCON_PPD {
+                had_lostcon = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_LOSTCON_PPD,
+                    &self.encode_legacy_lostcon_ppd(),
                 );
             } else if block.id == DRD_FLOWER_PPD {
                 had_flower = true;
@@ -1113,6 +1148,14 @@ impl PlayerRuntime {
                     &self.encode_legacy_orbspawn_ppd(),
                 );
             }
+        }
+        if !had_lostcon && (existing_was_valid || existing.is_empty()) && self.max_lag_seconds != 0
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_LOSTCON_PPD,
+                &self.encode_legacy_lostcon_ppd(),
+            );
         }
         if !had_flower && (existing_was_valid || existing.is_empty()) && !self.flowers.is_empty() {
             write_ppd_block(
@@ -2065,6 +2108,25 @@ mod tests {
     }
 
     #[test]
+    fn lostcon_ppd_codec_matches_legacy_c_layout() {
+        assert_eq!(LOSTCON_PPD_MAXLAG_OFFSET + 8, LEGACY_LOSTCON_PPD_SIZE);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_max_lag_seconds(17);
+
+        let encoded = player.encode_legacy_lostcon_ppd();
+        assert_eq!(encoded.len(), LEGACY_LOSTCON_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, 0), 0);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_MAXLAG_OFFSET), 17);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_MAXLAG_OFFSET + 4), 0);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_lostcon_ppd(&encoded));
+        assert_eq!(decoded.max_lag_seconds, 17);
+        assert!(!decoded.decode_legacy_lostcon_ppd(&encoded[..LEGACY_LOSTCON_PPD_SIZE - 1]));
+    }
+
+    #[test]
     fn pk_ppd_codec_matches_legacy_c_layout() {
         assert_eq!(
             PK_PPD_HATE_OFFSET + PK_HATE_MAX_ENTRIES * 4,
@@ -2219,6 +2281,41 @@ mod tests {
         assert_eq!(read_u32(&encoded, 0), DRD_TRANSPORT_PPD);
         assert_eq!(read_u32(&encoded, 4), LEGACY_TRANSPORT_PPD_SIZE as u32);
         assert_eq!(read_u64(&encoded, 8), 1_u64 << 5);
+    }
+
+    #[test]
+    fn lostcon_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_lostcon = vec![0; LEGACY_LOSTCON_PPD_SIZE];
+        write_i32(&mut existing_lostcon, LOSTCON_PPD_MAXLAG_OFFSET, 9);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_LOSTCON_PPD, &existing_lostcon);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_max_lag_seconds(19);
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_LOSTCON_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_LOSTCON_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20 + LOSTCON_PPD_MAXLAG_OFFSET), 19);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.max_lag_seconds, 19);
+    }
+
+    #[test]
+    fn ppd_blob_appends_lostcon_without_existing_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_max_lag_seconds(20);
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_LOSTCON_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_LOSTCON_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 8 + LOSTCON_PPD_MAXLAG_OFFSET), 20);
     }
 
     #[test]
