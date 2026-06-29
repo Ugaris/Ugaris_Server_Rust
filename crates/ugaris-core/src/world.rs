@@ -305,11 +305,13 @@ impl World {
         });
         let mut create_magicshield_effect = false;
 
-        let (target_x, target_y) = {
+        let (target_x, target_y, target_was_player, target_was_male) = {
             let target = self.characters.get_mut(&target_id)?;
             if target.flags.contains(CharacterFlags::DEAD) {
                 return None;
             }
+            let target_was_player = target.flags.contains(CharacterFlags::PLAYER);
+            let target_was_male = target.flags.contains(CharacterFlags::MALE);
 
             let damage = damage.max(0);
             let armor_value = character_value(target, CharacterValue::Armor);
@@ -368,8 +370,23 @@ impl World {
                 outcome.hp_damage,
                 0,
             );
-            (target.x, target.y)
+            (target.x, target.y, target_was_player, target_was_male)
         };
+
+        if target_was_player && outcome.hp_damage >= POWERSCALE {
+            self.queue_sound_area(
+                usize::from(target_x),
+                usize::from(target_y),
+                if target_was_male { 9 } else { 32 },
+            );
+        }
+        if target_was_player && (outcome.killed || outcome.nodeath_saved) {
+            self.queue_sound_area(
+                usize::from(target_x),
+                usize::from(target_y),
+                if target_was_male { 4 } else { 33 },
+            );
+        }
 
         if create_magicshield_effect {
             self.create_show_effect(
@@ -10224,6 +10241,60 @@ mod tests {
             world.characters[&CharacterId(3)].driver_messages[0].message_type,
             NT_SEEHIT
         );
+    }
+
+    #[test]
+    fn legacy_hurt_queues_player_ouch_and_death_sounds() {
+        let mut world = World::default();
+        let mut male = character(1);
+        male.flags |= CharacterFlags::PLAYER | CharacterFlags::MALE;
+        male.hp = 5 * POWERSCALE;
+        assert!(world.spawn_character(male, 10, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 0)
+            .unwrap();
+
+        assert_eq!(outcome.hp_damage, POWERSCALE);
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].character_id, CharacterId(1));
+        assert_eq!(sounds[0].special.special_type, 9);
+
+        let mut female = character(2);
+        female.flags |= CharacterFlags::PLAYER | CharacterFlags::FEMALE;
+        female.hp = POWERSCALE;
+        assert!(world.spawn_character(female, 11, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(CharacterId(2), None, POWERSCALE, 1, 0, 0)
+            .unwrap();
+
+        assert!(outcome.killed);
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 4);
+        assert_eq!(sounds[0].special.special_type, 32);
+        assert_eq!(sounds[1].special.special_type, 32);
+        assert_eq!(sounds[2].special.special_type, 33);
+        assert_eq!(sounds[3].special.special_type, 33);
+    }
+
+    #[test]
+    fn legacy_hurt_nodeath_player_still_queues_death_sound() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.flags |= CharacterFlags::PLAYER | CharacterFlags::MALE | CharacterFlags::NODEATH;
+        target.hp = 700;
+        assert!(world.spawn_character(target, 10, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(CharacterId(1), None, 800, 1, 0, 0)
+            .unwrap();
+
+        assert!(outcome.nodeath_saved);
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].special.special_type, 4);
     }
 
     #[test]
