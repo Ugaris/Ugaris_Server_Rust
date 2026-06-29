@@ -39,6 +39,8 @@ pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
 pub const LEGACY_RUNE_PPD_SIZE: usize = RUNE_USED_WORDS * 4 + RUNE_SPECIAL_EXEC_COUNT * 4;
 pub const PK_HATE_MAX_ENTRIES: usize = 50;
 pub const LEGACY_PK_PPD_SIZE: usize = 4 * 4 + PK_HATE_MAX_ENTRIES * 4;
+pub const IGNORE_MAX_ENTRIES: usize = 100;
+pub const LEGACY_IGNORE_PPD_SIZE: usize = IGNORE_MAX_ENTRIES * 4;
 pub const ALIAS_MAX_ENTRIES: usize = 32;
 pub const ALIAS_FROM_LEN: usize = 8;
 pub const ALIAS_TO_LEN: usize = 56;
@@ -61,6 +63,7 @@ pub const DRD_LOSTCON_PPD: u32 = make_drd(DEV_ID_DB, 91 | PERSISTENT_PLAYER_DATA
 pub const DRD_FLOWER_PPD: u32 = make_drd(DEV_ID_DB, 62 | PERSISTENT_PLAYER_DATA);
 pub const DRD_MISC_PPD: u32 = make_drd(DEV_ID_DB, 113 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ALIAS_PPD: u32 = make_drd(DEV_ID_DB, 80 | PERSISTENT_PLAYER_DATA);
+pub const DRD_IGNORE_PPD: u32 = make_drd(DEV_ID_DB, 100 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_DIG_PPD: u32 = make_drd(DEV_ID_ED, 5 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RUNE_PPD: u32 = make_drd(DEV_ID_DB, 108 | PERSISTENT_PLAYER_DATA);
@@ -318,6 +321,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub tell_data: TellData,
     #[serde(default)]
+    pub ignored_characters: Vec<u32>,
+    #[serde(default)]
     pub rune_used_words: [u32; RUNE_USED_WORDS],
     #[serde(default)]
     pub rune_special_exec: [i32; RUNE_SPECIAL_EXEC_COUNT],
@@ -329,6 +334,13 @@ pub struct PlayerRuntime {
 pub struct CommandAlias {
     pub from: String,
     pub to: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IgnoreToggleResult {
+    Added,
+    Removed,
+    Full,
 }
 
 impl PlayerRuntime {
@@ -375,6 +387,7 @@ impl PlayerRuntime {
             current_mirror_id: 0,
             max_lag_seconds: 0,
             tell_data: TellData::default(),
+            ignored_characters: Vec::new(),
             rune_used_words: [0; RUNE_USED_WORDS],
             rune_special_exec: [0; RUNE_SPECIAL_EXEC_COUNT],
             aliases: Vec::new(),
@@ -455,6 +468,65 @@ impl PlayerRuntime {
             out.truncate(199);
         }
         out
+    }
+
+    pub fn ignores_character(&self, character_id: u32) -> bool {
+        character_id != 0 && self.ignored_characters.contains(&character_id)
+    }
+
+    pub fn toggle_ignored_character(&mut self, character_id: u32) -> IgnoreToggleResult {
+        if character_id == 0 {
+            return IgnoreToggleResult::Full;
+        }
+        if let Some(index) = self
+            .ignored_characters
+            .iter()
+            .position(|ignored| *ignored == character_id)
+        {
+            self.ignored_characters.remove(index);
+            return IgnoreToggleResult::Removed;
+        }
+        if self.ignored_characters.len() >= IGNORE_MAX_ENTRIES {
+            return IgnoreToggleResult::Full;
+        }
+        self.ignored_characters.push(character_id);
+        IgnoreToggleResult::Added
+    }
+
+    pub fn clear_ignored_characters(&mut self) {
+        self.ignored_characters.clear();
+    }
+
+    pub fn encode_legacy_ignore_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_IGNORE_PPD_SIZE];
+        for (index, character_id) in self
+            .ignored_characters
+            .iter()
+            .copied()
+            .take(IGNORE_MAX_ENTRIES)
+            .enumerate()
+        {
+            write_i32(
+                &mut bytes,
+                index * 4,
+                character_id.min(i32::MAX as u32) as i32,
+            );
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_ignore_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_IGNORE_PPD_SIZE {
+            return false;
+        }
+        self.ignored_characters.clear();
+        for index in 0..IGNORE_MAX_ENTRIES {
+            let character_id = read_i32(bytes, index * 4);
+            if character_id > 0 {
+                self.ignored_characters.push(character_id as u32);
+            }
+        }
+        true
     }
 
     pub fn ensure_rune_special_execs<F>(&mut self, mut random_below: F)
@@ -1219,6 +1291,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_IGNORE_PPD => {
+                    if !self.decode_legacy_ignore_ppd(block.data) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -1240,6 +1317,7 @@ impl PlayerRuntime {
         let mut had_misc = false;
         let mut had_rune = false;
         let mut had_alias = false;
+        let mut had_ignore = false;
         let mut existing_was_valid = true;
 
         for block in LegacyPpdBlocks::parse(existing) {
@@ -1326,6 +1404,15 @@ impl PlayerRuntime {
                 had_alias = true;
                 if !self.aliases.is_empty() {
                     write_ppd_block(&mut encoded, DRD_ALIAS_PPD, &self.encode_legacy_alias_ppd());
+                }
+            } else if block.id == DRD_IGNORE_PPD {
+                had_ignore = true;
+                if !self.ignored_characters.is_empty() {
+                    write_ppd_block(
+                        &mut encoded,
+                        DRD_IGNORE_PPD,
+                        &self.encode_legacy_ignore_ppd(),
+                    );
                 }
             } else {
                 write_ppd_block(&mut encoded, block.id, block.data);
@@ -1435,6 +1522,16 @@ impl PlayerRuntime {
         }
         if !had_alias && (existing_was_valid || existing.is_empty()) && !self.aliases.is_empty() {
             write_ppd_block(&mut encoded, DRD_ALIAS_PPD, &self.encode_legacy_alias_ppd());
+        }
+        if !had_ignore
+            && (existing_was_valid || existing.is_empty())
+            && !self.ignored_characters.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_IGNORE_PPD,
+                &self.encode_legacy_ignore_ppd(),
+            );
         }
 
         encoded
@@ -1959,11 +2056,63 @@ mod tests {
         assert_eq!(DRD_DEMONSHRINE_PPD, 0x8100_0044);
         assert_eq!(DRD_MISC_PPD, 0x8100_0071);
         assert_eq!(DRD_ALIAS_PPD, 0x8100_0050);
+        assert_eq!(DRD_IGNORE_PPD, 0x8100_0064);
         assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_DEMONSHRINE_PPD_SIZE, 400);
         assert_eq!(LEGACY_MISC_PPD_SIZE, 36);
+        assert_eq!(LEGACY_IGNORE_PPD_SIZE, 400);
+    }
+
+    #[test]
+    fn ignore_ppd_codec_matches_legacy_fixed_array() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(
+            player.toggle_ignored_character(42),
+            IgnoreToggleResult::Added
+        );
+        assert_eq!(
+            player.toggle_ignored_character(99),
+            IgnoreToggleResult::Added
+        );
+        assert!(player.ignores_character(42));
+
+        let bytes = player.encode_legacy_ignore_ppd();
+        assert_eq!(bytes.len(), LEGACY_IGNORE_PPD_SIZE);
+        assert_eq!(read_i32(&bytes, 0), 42);
+        assert_eq!(read_i32(&bytes, 4), 99);
+        assert_eq!(read_i32(&bytes, 8), 0);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ignore_ppd(&bytes));
+        assert_eq!(decoded.ignored_characters, vec![42, 99]);
+        assert_eq!(
+            decoded.toggle_ignored_character(42),
+            IgnoreToggleResult::Removed
+        );
+        assert!(!decoded.ignores_character(42));
+    }
+
+    #[test]
+    fn ignore_ppd_outer_blob_replaces_and_removes_empty_lists() {
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, DRD_IGNORE_PPD, &[1; LEGACY_IGNORE_PPD_SIZE]);
+        write_ppd_block(&mut existing, 0x8765_4321, &[7]);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.ignored_characters.push(123);
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), DRD_IGNORE_PPD);
+        assert_eq!(read_i32(&encoded, 8), 123);
+        assert_eq!(read_u32(&encoded, 8 + LEGACY_IGNORE_PPD_SIZE), 0x8765_4321);
+
+        player.clear_ignored_characters();
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), 0x8765_4321);
+        assert!(!encoded
+            .windows(4)
+            .any(|window| window == DRD_IGNORE_PPD.to_le_bytes()));
     }
 
     #[test]

@@ -34,8 +34,8 @@ use ugaris_core::{
     legacy::{action, profession, INVENTORY_START_INVENTORY},
     map::{MapFlags, MapTile},
     player::{
-        CommandAlias, DemonShrineResult, KeyringAddResult, PlayerActionCode, PlayerConnectionState,
-        PlayerRuntime, QueuedAction, XmasTreeResult,
+        CommandAlias, DemonShrineResult, IgnoreToggleResult, KeyringAddResult, PlayerActionCode,
+        PlayerConnectionState, PlayerRuntime, QueuedAction, XmasTreeResult,
     },
     spell::{
         EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN,
@@ -1869,6 +1869,92 @@ fn apply_notells_command(
     })
 }
 
+fn apply_clearignore_command(
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("clearignore") {
+        return None;
+    }
+
+    let player = runtime.player_for_character_mut(character_id)?;
+    player.clear_ignored_characters();
+    Some(KeyringCommandResult {
+        messages: vec!["Ignore list is now empty.".to_string()],
+        ..Default::default()
+    })
+}
+
+fn apply_ignore_command(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 3 || !"ignore".starts_with(&lower) {
+        return None;
+    }
+
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        let Some(player) = runtime.player_for_character_mut(character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        let mut messages = Vec::new();
+        player.ignored_characters.retain(|ignored_id| {
+            if let Some(character) = world
+                .characters
+                .values()
+                .find(|character| character.id.0 == *ignored_id)
+            {
+                messages.push(format!("Ignoring: {}", character.name));
+                true
+            } else {
+                messages.push("Removed deleted char from list.".to_string());
+                false
+            }
+        });
+        if messages.is_empty() {
+            messages.push("Ignore list is empty.".to_string());
+        }
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
+    let (name, _) = take_legacy_alpha_name(rest);
+    let Some(target_id) = find_online_character_by_name(world, name) else {
+        return Some(KeyringCommandResult {
+            messages: vec!["No player by that name.".to_string()],
+            ..Default::default()
+        });
+    };
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return Some(KeyringCommandResult::default());
+    };
+    let result = player.toggle_ignored_character(target_id.0);
+    let message = match result {
+        IgnoreToggleResult::Added => "Added to ignore list.",
+        IgnoreToggleResult::Removed => "Deleted from ignore list.",
+        IgnoreToggleResult::Full => "Ignore list is full, cannot add.",
+    };
+    Some(KeyringCommandResult {
+        messages: vec![message.to_string()],
+        ..Default::default()
+    })
+}
+
 fn apply_tell_command(
     world: &World,
     runtime: &mut ServerRuntime,
@@ -1921,6 +2007,13 @@ fn apply_tell_command(
         delivered_messages: Vec::new(),
     };
     if target.flags.contains(CharacterFlags::NOTELL) && !staffmode {
+        return Some(result);
+    }
+    if !staffmode
+        && runtime
+            .player_for_character(target_id)
+            .is_some_and(|player| player.ignores_character(sender.id.0))
+    {
         return Some(result);
     }
 
@@ -10010,6 +10103,102 @@ mod tests {
     }
 
     #[test]
+    fn ignore_command_toggles_lists_and_clears_legacy_feedback() {
+        let source_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut world = World::default();
+        world.add_character(login_character(
+            source_id,
+            &login_block("Source"),
+            1,
+            10,
+            10,
+        ));
+        world.add_character(login_character(
+            target_id,
+            &login_block("Target"),
+            1,
+            11,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(source_id);
+        runtime.players.insert(1, player);
+
+        let added = apply_ignore_command(&world, &mut runtime, source_id, "/ign target")
+            .expect("ignore abbreviation should be recognized");
+        let listed = apply_ignore_command(&world, &mut runtime, source_id, "/ignore")
+            .expect("ignore list should be recognized");
+        let removed = apply_ignore_command(&world, &mut runtime, source_id, "/ignore target")
+            .expect("ignore toggle should be recognized");
+        let missing = apply_ignore_command(&world, &mut runtime, source_id, "/ignore unknown")
+            .expect("ignore missing target should be recognized");
+        runtime
+            .player_for_character_mut(source_id)
+            .unwrap()
+            .toggle_ignored_character(target_id.0);
+        let cleared = apply_clearignore_command(&mut runtime, source_id, "/clearignore")
+            .expect("clearignore should be recognized");
+
+        assert_eq!(added.messages, vec!["Added to ignore list."]);
+        assert_eq!(listed.messages, vec!["Ignoring: Target"]);
+        assert_eq!(removed.messages, vec!["Deleted from ignore list."]);
+        assert_eq!(missing.messages, vec!["No player by that name."]);
+        assert_eq!(cleared.messages, vec!["Ignore list is now empty."]);
+        assert!(runtime
+            .player_for_character(source_id)
+            .unwrap()
+            .ignored_characters
+            .is_empty());
+    }
+
+    #[test]
+    fn tell_command_respects_ignore_except_staff_mode() {
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut world = World::default();
+        world.add_character(login_character(
+            sender_id,
+            &login_block("Sender"),
+            1,
+            10,
+            10,
+        ));
+        world.add_character(login_character(
+            target_id,
+            &login_block("Target"),
+            1,
+            11,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+        let mut sender = PlayerRuntime::connected(1, 0);
+        sender.character_id = Some(sender_id);
+        let mut target = PlayerRuntime::connected(2, 0);
+        target.character_id = Some(target_id);
+        target.toggle_ignored_character(sender_id.0);
+        runtime.players.insert(1, sender);
+        runtime.players.insert(2, target);
+
+        let blocked = apply_tell_command(&world, &mut runtime, sender_id, "/tell target hello", 10)
+            .expect("tell should be recognized");
+        world
+            .characters
+            .get_mut(&sender_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::STAFF);
+        let staff = apply_tell_command(&world, &mut runtime, sender_id, "/tell target hello", 11)
+            .expect("staff tell should be recognized");
+
+        assert_eq!(blocked.sender_messages, vec!["Told Target: \"hello\""]);
+        assert!(blocked.delivered_messages.is_empty());
+        assert_eq!(staff.delivered_messages.len(), 1);
+        assert!(staff.delivered_messages[0].1.contains("SENDER"));
+    }
+
+    #[test]
     fn pk_hate_command_adds_online_player_and_clears_lag() {
         let mut attacker = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
         attacker
@@ -12925,6 +13114,18 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             }
                             if let Some(result) = apply_notells_command(&mut world, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_clearignore_command(&mut runtime, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_ignore_command(&world, &mut runtime, character_id, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
