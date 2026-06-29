@@ -874,6 +874,14 @@ pub enum ItemDriverOutcome {
         container_item_id: ItemId,
         amount: u8,
     },
+    FdemonWaypoint {
+        item_id: ItemId,
+        character_id: CharacterId,
+        spotted_enemy: bool,
+        target_character_id: Option<CharacterId>,
+        target_serial: Option<u32>,
+        schedule_after_ticks: u64,
+    },
     EdemonSwitchStuck {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1616,6 +1624,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EDEMONLIGHT => edemon_light_driver(character, item, context),
                 IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
                 IDR_FDEMONLOADER => fdemon_loader_driver(character, item, context),
+                IDR_FDEMONWAYPOINT => fdemon_waypoint_driver(character, item, context),
                 IDR_FDEMONFARM => fdemon_farm_driver(character, item, context),
                 IDR_FDEMONBLOOD => fdemon_blood_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
@@ -1718,7 +1727,8 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
         IDR_DUNGEONTELE | IDR_DUNGEONFAKE | IDR_DUNGEONDOOR | IDR_DUNGEONKEY => Some(13),
-        IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONFARM | IDR_FDEMONBLOOD => Some(8),
+        IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONWAYPOINT | IDR_FDEMONFARM
+        | IDR_FDEMONBLOOD => Some(8),
         _ => None,
     }
 }
@@ -5674,6 +5684,24 @@ fn fdemon_loader_driver(
         sound_type,
         schedule_after_ticks: (context.timer_call || character.id.0 == 0)
             .then_some(TICKS_PER_SECOND),
+    }
+}
+
+fn fdemon_waypoint_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    let character_id = character.id;
+    let character_call = character_id.0 != 0 && !context.timer_call;
+    let spotted_enemy = character_call && !character.flags.contains(CharacterFlags::FDEMON);
+    ItemDriverOutcome::FdemonWaypoint {
+        item_id: item.id,
+        character_id,
+        spotted_enemy,
+        target_character_id: spotted_enemy.then_some(character_id),
+        target_serial: spotted_enemy.then_some(character_id.0),
+        schedule_after_ticks: TICKS_PER_SECOND * 3,
     }
 }
 
@@ -11319,6 +11347,113 @@ mod tests {
                 &ItemDriverContext::default(),
             ),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn fdemon_waypoint_marks_player_or_fdemon_state_and_reschedules() {
+        let mut user = character(1);
+        let mut waypoint = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONWAYPOINT);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONWAYPOINT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut user,
+                &mut waypoint,
+                request,
+                8,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::FdemonWaypoint {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spotted_enemy: true,
+                target_character_id: Some(CharacterId(1)),
+                target_serial: Some(1),
+                schedule_after_ticks: TICKS_PER_SECOND * 3,
+            }
+        );
+
+        user.flags.insert(CharacterFlags::FDEMON);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut user,
+                &mut waypoint,
+                request,
+                8,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::FdemonWaypoint {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spotted_enemy: false,
+                target_character_id: None,
+                target_serial: None,
+                schedule_after_ticks: TICKS_PER_SECOND * 3,
+            }
+        );
+
+        let mut timer_character = character(0);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut waypoint,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FDEMONWAYPOINT,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(0),
+                    spec: 0,
+                },
+                8,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonWaypoint {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spotted_enemy: false,
+                target_character_id: None,
+                target_serial: None,
+                schedule_after_ticks: TICKS_PER_SECOND * 3,
+            }
+        );
+    }
+
+    #[test]
+    fn fdemon_waypoint_preserves_area8_libload_guard() {
+        let mut user = character(1);
+        let mut waypoint = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONWAYPOINT);
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut user,
+                &mut waypoint,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FDEMONWAYPOINT,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                7,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_FDEMONWAYPOINT,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                required_area: 8,
+            }
         );
     }
 

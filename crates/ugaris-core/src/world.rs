@@ -6250,6 +6250,23 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::FdemonBloodBlocked { .. } => outcome,
+            ItemDriverOutcome::FdemonWaypoint {
+                item_id,
+                spotted_enemy,
+                target_character_id,
+                target_serial,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.apply_fdemon_waypoint(
+                    item_id,
+                    spotted_enemy,
+                    target_character_id,
+                    target_serial,
+                );
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
             ItemDriverOutcome::EdemonSwitchStuck { .. } => outcome,
             ItemDriverOutcome::OnOffLightChanged {
                 item_id,
@@ -6823,6 +6840,27 @@ impl World {
                 }
             }
         }
+    }
+
+    fn apply_fdemon_waypoint(
+        &mut self,
+        item_id: ItemId,
+        spotted_enemy: bool,
+        target_character_id: Option<CharacterId>,
+        target_serial: Option<u32>,
+    ) {
+        let Some((x, y)) = self.items.get_mut(&item_id).map(|item| {
+            item.driver_data.resize(12, 0);
+            item.driver_data[0] = u8::from(spotted_enemy);
+            item.sprite = if spotted_enemy { 14200 } else { 14202 };
+            let target_id = target_character_id.map_or(0, |id| id.0);
+            item.driver_data[4..8].copy_from_slice(&target_id.to_le_bytes());
+            item.driver_data[8..12].copy_from_slice(&target_serial.unwrap_or(0).to_le_bytes());
+            (usize::from(item.x), usize::from(item.y))
+        }) else {
+            return;
+        };
+        self.mark_dirty_sector(x, y);
     }
 
     fn apply_enchant_cursor_item(
@@ -17204,6 +17242,82 @@ mod tests {
             .any(|outcome| matches!(outcome, ItemDriverOutcome::LightChanged { .. })));
         assert_eq!(world.items[&ItemId(10)].sprite, 14191);
         assert_eq!(world.items[&ItemId(10)].modifier_value[0], 200);
+    }
+
+    #[test]
+    fn world_applies_fdemon_waypoint_marker_and_timer() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        world.add_character(player);
+        let mut waypoint = item(7, ItemFlags::USED | ItemFlags::USE);
+        waypoint.driver = crate::item_driver::IDR_FDEMONWAYPOINT;
+        assert!(world.map.set_item_map(&mut waypoint, 10, 10));
+        world.add_item(waypoint);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_FDEMONWAYPOINT,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            8,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonWaypoint {
+                spotted_enemy: true,
+                target_character_id: Some(CharacterId(1)),
+                target_serial: Some(1),
+                ..
+            }
+        ));
+        let waypoint = &world.items[&ItemId(7)];
+        assert_eq!(waypoint.driver_data[0], 1);
+        assert_eq!(
+            u32::from_le_bytes(waypoint.driver_data[4..8].try_into().unwrap()),
+            1
+        );
+        assert_eq!(
+            u32::from_le_bytes(waypoint.driver_data[8..12].try_into().unwrap()),
+            1
+        );
+        assert_eq!(waypoint.sprite, 14200);
+        assert_eq!(world.timers.used_timers(), 1);
+
+        let mut demon = character(2);
+        demon.flags.insert(CharacterFlags::FDEMON);
+        world.add_character(demon);
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_FDEMONWAYPOINT,
+                item_id: ItemId(7),
+                character_id: CharacterId(2),
+                spec: 0,
+            },
+            8,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonWaypoint {
+                spotted_enemy: false,
+                ..
+            }
+        ));
+        let waypoint = &world.items[&ItemId(7)];
+        assert_eq!(waypoint.driver_data[0], 0);
+        assert_eq!(
+            u32::from_le_bytes(waypoint.driver_data[4..8].try_into().unwrap()),
+            0
+        );
+        assert_eq!(
+            u32::from_le_bytes(waypoint.driver_data[8..12].try_into().unwrap()),
+            0
+        );
+        assert_eq!(waypoint.sprite, 14202);
     }
 
     #[test]
