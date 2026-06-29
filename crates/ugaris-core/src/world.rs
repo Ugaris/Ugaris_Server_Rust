@@ -28,9 +28,10 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item, ItemDriverContext,
         ItemDriverOutcome, ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL,
-        IDR_CALIGAR, IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
-        IDR_EDEMONTUBE, IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW,
-        IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        IDR_CALIGAR, IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONDOOR, IDR_EDEMONLIGHT,
+        IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER,
+        IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP,
+        IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2596,8 +2597,10 @@ impl World {
             && context.fdemon_loader_power.is_none())
         .then(|| fdemon_loader_power_for_light(&self.items, item_id))
         .flatten();
-        let edemon_section_power = (matches!(driver, Some(IDR_EDEMONLIGHT | IDR_EDEMONTUBE))
-            && context.edemon_section_power.is_none())
+        let edemon_section_power = (matches!(
+            driver,
+            Some(IDR_EDEMONLIGHT | IDR_EDEMONDOOR | IDR_EDEMONTUBE)
+        ) && context.edemon_section_power.is_none())
         .then(|| edemon_section_power_for_light(&self.items, item_id))
         .flatten();
         let edemon_tube_target = (driver == Some(IDR_EDEMONTUBE)
@@ -5690,7 +5693,7 @@ impl World {
         }
 
         let mut effective_context = context.clone();
-        if matches!(driver, IDR_EDEMONLIGHT | IDR_EDEMONTUBE)
+        if matches!(driver, IDR_EDEMONLIGHT | IDR_EDEMONDOOR | IDR_EDEMONTUBE)
             && effective_context.edemon_section_power.is_none()
         {
             effective_context.edemon_section_power =
@@ -5913,6 +5916,16 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             },
+            ItemDriverOutcome::EdemonDoorToggle {
+                item_id,
+                character_id,
+            } => {
+                if self.toggle_door(item_id, character_id) == DoorToggleResult::Toggled {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::FreakDoorUse {
                 item_id,
                 character_id,

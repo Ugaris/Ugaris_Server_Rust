@@ -5106,6 +5106,7 @@ fn item_driver_context_for_request(
         };
     }
     if *driver != ugaris_core::item_driver::IDR_DOOR
+        && *driver != ugaris_core::item_driver::IDR_EDEMONDOOR
         && *driver != ugaris_core::item_driver::IDR_INFINITE_CHEST
     {
         return ugaris_core::item_driver::ItemDriverContext::default();
@@ -5121,6 +5122,8 @@ fn item_driver_context_for_request(
 
     let door_key = if *driver == ugaris_core::item_driver::IDR_INFINITE_CHEST {
         infinite_chest_key_access(world, *character_id, required_key_id)
+    } else if *driver == ugaris_core::item_driver::IDR_EDEMONDOOR {
+        exact_carried_door_key_access(world, *character_id, required_key_id)
     } else {
         door_key_access(world, player, *character_id, required_key_id)
     };
@@ -5145,6 +5148,22 @@ fn infinite_chest_key_access(
         }
     }
     None
+}
+
+fn exact_carried_door_key_access(
+    world: &World,
+    character_id: CharacterId,
+    required_key_id: u32,
+) -> Option<ugaris_core::item_driver::DoorKeyAccess> {
+    let character = world.characters.get(&character_id)?;
+    for item_id in character.inventory.iter().skip(30).flatten().copied() {
+        if let Some(access) = carried_door_key_access(world, item_id, required_key_id) {
+            return Some(access);
+        }
+    }
+    character
+        .cursor_item
+        .and_then(|item_id| carried_door_key_access(world, item_id, required_key_id))
 }
 
 fn door_key_access(
@@ -14977,6 +14996,46 @@ mod tests {
     }
 
     #[test]
+    fn edemon_door_context_uses_exact_carried_key_only() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(30));
+        character.inventory[31] = Some(ItemId(31));
+
+        let mut skeleton = test_item(ItemId(30), 1, ItemFlags::TAKE);
+        skeleton.template_id = IID_SKELETON_KEY;
+        skeleton.name = "Skeleton Key".to_string();
+        let mut exact = test_item(ItemId(31), 1, ItemFlags::TAKE);
+        exact.template_id = 0x1122_3344;
+        exact.name = "Earth Key".to_string();
+        let mut door = test_item(ItemId(70), 1, ItemFlags::USE);
+        door.driver = ugaris_core::item_driver::IDR_EDEMONDOOR;
+        door.driver_data = vec![0, 0x44, 0x33, 0x22, 0x11];
+
+        let mut world = World::default();
+        world.add_character(character);
+        world.add_item(skeleton);
+        world.add_item(exact);
+        world.add_item(door);
+        let mut player = PlayerRuntime::connected(5, 0);
+        player.add_keyring_key(0x1122_3344, "Keyring Earth Key");
+
+        let request = ugaris_core::item_driver::ItemDriverRequest::Driver {
+            driver: ugaris_core::item_driver::IDR_EDEMONDOOR,
+            item_id: ItemId(70),
+            character_id,
+            spec: 0,
+        };
+        let context = item_driver_context_for_request(&world, Some(&player), &request);
+
+        assert_eq!(context.door_key.unwrap().name, "Earth Key");
+
+        world.characters.get_mut(&character_id).unwrap().inventory[31] = None;
+        let context = item_driver_context_for_request(&world, Some(&player), &request);
+        assert_eq!(context.door_key, None);
+    }
+
+    #[test]
     fn apply_assemble_item_replaces_used_item_and_consumes_cursor() {
         let character_id = CharacterId(7);
         let used_id = ItemId(70);
@@ -17397,6 +17456,26 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorLocked {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You need a key to use this door.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorLifeless {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "The door won't move. It seems somehow lifeless.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderBlocked {
                                             character_id,
                                             reason,
@@ -17548,6 +17627,7 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoubleDoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FreakDoorUse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Teleport { .. }

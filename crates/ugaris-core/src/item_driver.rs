@@ -615,6 +615,18 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         kind: u8,
     },
+    EdemonDoorToggle {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    EdemonDoorLocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    EdemonDoorLifeless {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     FreakDoorUse {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1586,8 +1598,11 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::TrapdoorClose { .. }
         | ItemDriverOutcome::TrapdoorBusy { .. }
         | ItemDriverOutcome::TrapdoorNeedsStick { .. }
-        | ItemDriverOutcome::StafferSpecDoorToggle { .. } => 1,
+        | ItemDriverOutcome::StafferSpecDoorToggle { .. }
+        | ItemDriverOutcome::EdemonDoorToggle { .. } => 1,
         ItemDriverOutcome::StafferSpecDoorLocked { .. }
+        | ItemDriverOutcome::EdemonDoorLocked { .. }
+        | ItemDriverOutcome::EdemonDoorLifeless { .. }
         | ItemDriverOutcome::PickDoorLocked { .. }
         | ItemDriverOutcome::CaligarWeightDoorLocked { .. }
         | ItemDriverOutcome::CaligarSkellyDoorLocked { .. }
@@ -1720,6 +1735,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EDEMONSWITCH => edemon_switch_driver(character, item, context),
                 IDR_EDEMONLOADER => edemon_loader_driver(character, item, context),
                 IDR_EDEMONLIGHT => edemon_light_driver(character, item, context),
+                IDR_EDEMONDOOR => edemon_door_driver(character, item, context),
                 IDR_EDEMONTUBE => edemon_tube_driver(character, item, context),
                 IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
                 IDR_FDEMONLOADER => fdemon_loader_driver(character, item, context),
@@ -5720,6 +5736,56 @@ fn edemon_light_driver(
         item_id: item.id,
         character_id: character.id,
         schedule_after_ticks: Some(TICKS_PER_SECOND),
+    }
+}
+
+fn edemon_door_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if item.x == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    item.driver_data.resize(40, 0);
+    if context.timer_call || character.id.0 == 0 {
+        if item.driver_data[39] != 0 {
+            item.driver_data[39] -= 1;
+        }
+        if item.driver_data[0] == 0 || item.driver_data[39] != 0 || item.driver_data[5] != 0 {
+            return ItemDriverOutcome::Noop;
+        }
+        return ItemDriverOutcome::EdemonDoorToggle {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let required_key_id = door_required_key_id(item);
+    if required_key_id != 0 {
+        let has_exact_carried_key = context.door_key.as_ref().is_some_and(|key| {
+            key.source == DoorKeySource::Carried && key.key_id == required_key_id
+        });
+        if !has_exact_carried_key {
+            return ItemDriverOutcome::EdemonDoorLocked {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+    }
+
+    let section = item.driver_data.get(6).copied().unwrap_or_default();
+    if section != 0 && context.edemon_section_power.unwrap_or_default() == 0 {
+        return ItemDriverOutcome::EdemonDoorLifeless {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::EdemonDoorToggle {
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -10191,6 +10257,131 @@ mod tests {
                 locking: true,
             }
         );
+    }
+
+    #[test]
+    fn execute_edemon_door_driver_ports_key_power_and_timer_gates() {
+        let mut ch = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_EDEMONDOOR);
+        door.x = 10;
+        door.y = 11;
+        door.driver_data = vec![0, 0x44, 0x33, 0x22, 0x11, 0, 4];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut ch,
+                &mut door,
+                request,
+                6,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::EdemonDoorLocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let keyring_context = ItemDriverContext {
+            door_key: Some(DoorKeyAccess {
+                key_id: 0x1122_3344,
+                name: "Copper Key".to_string(),
+                source: DoorKeySource::Keyring,
+            }),
+            edemon_section_power: Some(10),
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut ch,
+                &mut door,
+                request,
+                6,
+                false,
+                &keyring_context,
+            ),
+            ItemDriverOutcome::EdemonDoorLocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let carried_key_context = ItemDriverContext {
+            door_key: Some(DoorKeyAccess {
+                key_id: 0x1122_3344,
+                name: "Copper Key".to_string(),
+                source: DoorKeySource::Carried,
+            }),
+            edemon_section_power: Some(0),
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut ch,
+                &mut door,
+                request,
+                6,
+                false,
+                &carried_key_context,
+            ),
+            ItemDriverOutcome::EdemonDoorLifeless {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let powered_context = ItemDriverContext {
+            edemon_section_power: Some(10),
+            ..carried_key_context
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut ch,
+                &mut door,
+                request,
+                6,
+                false,
+                &powered_context,
+            ),
+            ItemDriverOutcome::EdemonDoorToggle {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        door.driver_data[0] = 1;
+        door.driver_data[39] = 1;
+        let mut timer_character = character(0);
+        let timer_context = ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut door,
+                ItemDriverRequest::Driver {
+                    driver: IDR_EDEMONDOOR,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(0),
+                    spec: 0,
+                },
+                6,
+                false,
+                &timer_context,
+            ),
+            ItemDriverOutcome::EdemonDoorToggle {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+            }
+        );
+        assert_eq!(door.driver_data[39], 0);
     }
 
     #[test]
