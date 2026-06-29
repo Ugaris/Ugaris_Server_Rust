@@ -5070,17 +5070,22 @@ impl World {
         } else {
             0
         };
+        let (walk_x, walk_y) = if data.notsecure != 0 && character.rest_x != 0 {
+            (character.rest_x, character.rest_y)
+        } else {
+            (target_x, target_y)
+        };
         if self.setup_walk_toward(
             character_id,
-            usize::from(target_x),
-            usize::from(target_y),
+            usize::from(walk_x),
+            usize::from(walk_y),
             min_dist,
             area_id,
             false,
         ) || self.setup_walk_toward(
             character_id,
-            usize::from(target_x),
-            usize::from(target_y),
+            usize::from(walk_x),
+            usize::from(walk_y),
             min_dist,
             area_id,
             true,
@@ -12886,6 +12891,34 @@ mod tests {
         npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
             SimpleBaddyDriverData::default(),
         ));
+        world.spawn_character(npc, 10, 10);
+
+        assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!((npc.tox, npc.toy), (11, 10));
+        assert_eq!(npc.dir, Direction::Right as u8);
+    }
+
+    #[test]
+    fn simple_baddy_notsecure_day_post_walks_to_rest_home_like_c() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        world.date.hour = 12;
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 15;
+        npc.rest_y = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            dayx: 30,
+            dayy: 10,
+            nightx: 35,
+            nighty: 10,
+            notsecure: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
         world.spawn_character(npc, 10, 10);
 
         assert!(world.process_simple_baddy_noncombat_action(CharacterId(1), 1));
