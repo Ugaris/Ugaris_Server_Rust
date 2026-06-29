@@ -4471,9 +4471,30 @@
         "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
         "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
       ]
+    },
+    {
+      "iteration": 163,
+      "startedAt": "2026-06-29T03:06:18.448Z",
+      "endedAt": "2026-06-29T03:13:08.240Z",
+      "durationMs": 409636,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 145 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+      ]
     }
   ],
-  "totalDurationMs": 72783669,
+  "totalDurationMs": 73193305,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
@@ -4490,7 +4511,7 @@
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
       "test result: ok. 323 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 13 previous errors": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 37,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 38,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test entity::tests::legacy_character_snapshots_default_driver_runtime_fields ... FAILED": 1,
       "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s": 1,
@@ -4901,7 +4922,7 @@
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 511 filtered out; finished in 0.00s": 1,
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 481 filtered out; finished in 0.01s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 11,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 12,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.00s": 1,
       "test result: ok. 122 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: ": 1,
@@ -4971,7 +4992,9 @@
       "test item_driver::tests::demon_books_generate_legacy_character_specific_ritual_words ... FAILED": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 533 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 533 filtered out; finished in 0.00s": 1,
-      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 526 filtered out; finished in 0.00s": 1
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 526 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out; finished in 0.00s": 1,
+      "test result: ok. 145 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

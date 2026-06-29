@@ -1540,6 +1540,62 @@ fn apply_admin_character_command(
     None
 }
 
+fn apply_who_command(world: &World, command: &str) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.is_empty() || !"who".starts_with(&lower) {
+        return None;
+    }
+
+    let mut characters = world.characters.values().collect::<Vec<_>>();
+    characters.sort_by_key(|character| character.id.0);
+
+    let mut messages = vec!["Currently online in this area:".to_string()];
+    for character in characters {
+        if character.flags.contains(CharacterFlags::INVISIBLE) {
+            continue;
+        }
+        if !character.flags.contains(CharacterFlags::PLAYER) {
+            continue;
+        }
+        if character
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+            && character.flags.contains(CharacterFlags::NOWHO)
+        {
+            continue;
+        }
+
+        let arch = if character.flags.contains(CharacterFlags::ARCH) {
+            "A"
+        } else {
+            ""
+        };
+        let warrior = if character.flags.contains(CharacterFlags::WARRIOR) {
+            "W"
+        } else {
+            ""
+        };
+        let mage = if character.flags.contains(CharacterFlags::MAGE) {
+            "M"
+        } else {
+            ""
+        };
+        messages.push(format!(
+            "{} ({}{}{}{})",
+            character.name, arch, warrior, mage, character.level
+        ));
+    }
+
+    Some(KeyringCommandResult {
+        messages,
+        ..Default::default()
+    })
+}
+
 fn apply_help_command(
     command: &str,
     flags: CharacterFlags,
@@ -7140,6 +7196,63 @@ mod tests {
     }
 
     #[test]
+    fn who_command_lists_visible_players_like_legacy_command() {
+        let mut world = World::default();
+        let mut warrior = login_character(CharacterId(7), &login_block("Warrior"), 1, 10, 10);
+        warrior.level = 12;
+        warrior.flags.insert(CharacterFlags::WARRIOR);
+        world.add_character(warrior);
+
+        let mut archmage = login_character(CharacterId(8), &login_block("Archmage"), 1, 11, 10);
+        archmage.level = 33;
+        archmage
+            .flags
+            .insert(CharacterFlags::ARCH | CharacterFlags::MAGE);
+        world.add_character(archmage);
+
+        let mut hidden = login_character(CharacterId(9), &login_block("Hidden"), 1, 12, 10);
+        hidden.flags.insert(CharacterFlags::INVISIBLE);
+        world.add_character(hidden);
+
+        let mut staff_hidden = login_character(CharacterId(10), &login_block("Staff"), 1, 13, 10);
+        staff_hidden
+            .flags
+            .insert(CharacterFlags::STAFF | CharacterFlags::NOWHO);
+        world.add_character(staff_hidden);
+
+        let mut npc = login_character(CharacterId(11), &login_block("Npc"), 1, 14, 10);
+        npc.flags.remove(CharacterFlags::PLAYER);
+        world.add_character(npc);
+
+        let result = apply_who_command(&world, "/who").expect("who command should be recognized");
+
+        assert_eq!(
+            result.messages,
+            vec![
+                "Currently online in this area:",
+                "Warrior (W12)",
+                "Archmage (AM33)",
+            ]
+        );
+    }
+
+    #[test]
+    fn who_command_preserves_legacy_short_prefix_match() {
+        let mut world = World::default();
+        let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        character.level = 9;
+        world.add_character(character);
+
+        let result = apply_who_command(&world, "/w").expect("legacy cmdcmp accepts short who");
+
+        assert_eq!(
+            result.messages,
+            vec!["Currently online in this area:", "Tester (9)"]
+        );
+        assert!(apply_who_command(&world, "/whostaff").is_none());
+    }
+
+    #[test]
     fn legacy_item_look_text_includes_c_shaped_modifiers_requirements_and_flags() {
         let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
         character.values[1][CharacterValue::Strength as usize] = 12;
@@ -11449,6 +11562,12 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 if result.inventory_changed {
                                     command_inventory_refresh.push(character_id);
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_who_command(&world, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
                                 }
                                 continue;
                             }
