@@ -12141,6 +12141,16 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BookText {
+                                            character_id,
+                                            kind,
+                                            ..
+                                        } => {
+                                            for line in ugaris_core::item_driver::book_text_lines(kind) {
+                                                feedback.push((character_id, (*line).to_string()));
+                                            }
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { character_id, .. } => {
                                             for message in keyring_show_messages(runtime.player_for_character(character_id)) {
                                                 feedback.push((character_id, message));

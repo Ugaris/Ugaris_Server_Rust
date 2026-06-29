@@ -24,6 +24,7 @@ pub const IDR_TORCH: u16 = 12;
 pub const IDR_RECALL: u16 = 13;
 pub const IDR_SHRINE: u16 = 14;
 pub const IDR_FIREBALL: u16 = 15;
+pub const IDR_BOOK: u16 = 16;
 pub const IDR_ONOFFLIGHT: u16 = 17;
 pub const IDR_TRANSPORT: u16 = 18;
 pub const IDR_STATSCROLL: u16 = 19;
@@ -713,6 +714,11 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    BookText {
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+    },
     AccountDepotOpened {
         item_id: ItemId,
         character_id: CharacterId,
@@ -833,6 +839,7 @@ pub fn execute_item_driver_with_context(
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
+                IDR_BOOK => book_driver(character, item),
                 IDR_DEMONSHRINE => demonshrine_driver(character, item, area_id),
                 IDR_PALACEKEY => palace_key_driver(character, item, context),
                 IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
@@ -991,6 +998,86 @@ fn lizard_flower_driver(
         combined_bits,
         complete: combined_bits == 7,
         bottle_message: item.sprite != 11189 && context.cursor_sprite != Some(11189),
+    }
+}
+
+pub fn book_text_lines(kind: u8) -> &'static [&'static str] {
+    match kind {
+        0 => &[
+            "The magical properties of these skulls are astonishing. They are the artifacts the various shrines of the ancients accept, they can also be used to animate skeletons.",
+            "After I told Moakin about them he used some magical stones to enhance the skulls and he created a small army of skeletons. Too bad his hunger for power made him go away without sharing his secrets with me.",
+            "I wonder what became of him, and his puppet, Dorugin. But I digress. Now that Moakin has left, I will have to find out how to control the undead created with these skulls.",
+            "My experiments have been successful in raising skeletons and zombies. A single plain skull can be used to create about a dozen of them. I wonder what one of the rare silver skulls would do.",
+            "But I still have to control my creations. How Moakin managed to do that escapes me. I have tried various potions on those fools in Cameron to understand how to control a mind, but to no avail.",
+            "It seems alchemy is worthless when it comes to control. I will have to resort to magical jewels. But those are hard to find. Maybe one of the shrines will produce some?",
+        ],
+        1 => &[
+            "Healing Potions. Mana Potions. Torches. Small magical effects. Plain skulls are worthless. Must try the silver ones.",
+            "Ahh. These zombies are dangerous. But they shall not stop me, Loisan. No luck with silver skulls either.",
+            "Must try to get golden ones. But the danger...",
+            "I am dying. So close. Oh, how cruel.",
+        ],
+        2 => &[
+            "Day 122, year 48, morning by outside time. Personal diary of Ioslan of the Cerasa.",
+            "We had to retreat further into the tunnels. The enemy is sending a new type of monster. Our creatures fight valiantly, but they cannot withstand them for long. We will have to flee, or we will perish.",
+            "Armenicon has created more powerful creatures, but they fail to recognize us. Therefore, Armenicon added keywords to them, which will stun them for a short time, allowing us to flee from them.",
+            "Once they are released, we will leave this part of the tunnel system and hope our enemy will invade and die. Today it is my turn to sneak through the tunnels and collect the skulls of our creatures.",
+            "The enemy still has not learned the value of them. I just hope I will survive to flee with my kin.",
+        ],
+        3 => &[
+            "Specimen 33. Prototype 4. Keyword: Nazimah.",
+            "I will send this creature to guard the huge cavern. We cannot prevent the enemy from taking our storage room, but we can make him pay dearly for it.",
+        ],
+        4 => &[
+            "Specimen 35. Prototype 4. Keyword: Argatoth.",
+            "Another guard for our storage room.",
+        ],
+        5 => &[
+            "Day 122, year 48, evening by outside time. Personal diary of Armenicon of the Cerasa.",
+            "Ioslan has not returned. We cannot tell if he managed to recharge the spawners or not. We must flee immediately. The enemy will attack very soon.",
+        ],
+        6 => &[
+            "Specimen 34. Prototype 4. Keyword: Lorganoth.",
+            "Good. Prototype 4 is very difficult to create, but extremely powerful. This creature is to guard the storage room.",
+        ],
+        7 => &[
+            "Specimen 36. Prototype 4. Keyword: Markanoth.",
+            "The last prototype 4 for the storage room. These creatures are deadly.",
+        ],
+        8 => &[
+            "There are two kinds of vampires. One is known under varying names, such as 'Vampire', 'Lesser Vampire', 'Dracul' or 'Necrifah'.",
+            "Of the other kind, only a few sources report. They are called 'Vampire Lords' or 'Methusalah'.",
+            "Killing a Lesser Vampire is as simple as penetrating it with a sword, or frying it with magic. They possess the abilities of the human they were once, but not much more.",
+            "But killing a Vampire Lord on the other hand is very difficult, since each of them only has one weakness. Discovering that weakness is of utmost importance.",
+            "Even if the weakness is known, it will still be a hard battle, as Vampire Lords are extremely old and powerful.",
+        ],
+        9 => &[
+            "In a vision, I saw a sun shine in the darkness, and I saw fear in the eyes of the Lord.",
+            "But then the sun was shattered, and parts of it fell into the dark. The Lord took them, and hid them in His lair.",
+            "Then I saw Him leave His crypt, and come for me.",
+        ],
+        10 => &["One among many, one pointing sideways, part you shall find there. Cross I shall be with thee, shouldst thou fail."],
+        11 => &[
+            "'And,' said the wise, 'If ye are burning, my pupil, what shall ye do?'",
+            "'Extinguish the flames, master?'",
+        ],
+        12 => &[
+            "Take heed, and go no further! This way leads to the Vampire Lord!",
+            "It is said that one strike with the right dagger will kill the Lord. But alas, many have tried, but no one found the right dagger.",
+        ],
+        _ => &[],
+    }
+}
+
+fn book_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::BookText {
+        item_id: item.id,
+        character_id: character.id,
+        kind: drdata(item, 0),
     }
 }
 
@@ -3250,6 +3337,50 @@ mod tests {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
             }
+        );
+    }
+
+    #[test]
+    fn book_driver_returns_legacy_text_kind() {
+        let mut character = character(1);
+        let mut book = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BOOK);
+        set_drdata(&mut book, 0, 8);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BOOK,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_BOOK, 16);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut book, request, 2, false),
+            ItemDriverOutcome::BookText {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                kind: 8,
+            }
+        );
+        assert_eq!(
+            book_text_lines(8)[0],
+            "There are two kinds of vampires. One is known under varying names, such as 'Vampire', 'Lesser Vampire', 'Dracul' or 'Necrifah'."
+        );
+    }
+
+    #[test]
+    fn book_driver_ignores_timer_style_zero_character_calls() {
+        let mut character = character(0);
+        let mut book = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BOOK);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BOOK,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut book, request, 2, false),
+            ItemDriverOutcome::Noop
         );
     }
 
