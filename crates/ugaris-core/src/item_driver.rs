@@ -1022,6 +1022,7 @@ pub fn execute_item_driver_with_context(
                 IDR_NOMADDICE => nomad_dice_driver(character, item),
                 IDR_NOMADSTACK => nomad_stack_driver(character, item),
                 IDR_DEMONCHIP => nomad_stack_driver(character, item),
+                IDR_STAFFER2 => staffer2_driver(character, item),
                 IDR_SHRIKEAMULET => shrike_amulet_driver(character, item, context),
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
@@ -1196,6 +1197,34 @@ fn boneladder_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         area_id: 0,
         stop_driver: false,
         quiet: false,
+    }
+}
+
+fn staffer2_driver(character: &mut Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    match drdata(item, 0) {
+        6 => {
+            let exp_added =
+                (legacy_level_value(60) / 5).min(legacy_level_value(character.level) / 4);
+            character.exp = character.exp.saturating_add(exp_added);
+            ItemDriverOutcome::Teleport {
+                item_id: item.id,
+                character_id: character.id,
+                x: 25,
+                y: 114,
+                area_id: 0,
+                stop_driver: true,
+                quiet: false,
+            }
+        }
+        _ => ItemDriverOutcome::Unsupported {
+            driver: IDR_STAFFER2,
+            item_id: item.id,
+            character_id: character.id,
+        },
     }
 }
 
@@ -5473,6 +5502,97 @@ mod tests {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
                 required_area: 18,
+            }
+        );
+    }
+
+    #[test]
+    fn staffer2_animation_book_grants_legacy_exp_and_teleports() {
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.level = 60;
+        let mut book = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
+        set_drdata(&mut book, 0, 6);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_STAFFER2, 122);
+        assert_eq!(legacy_level_value(60), 885_841);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut book, request, 29, false),
+            ItemDriverOutcome::Teleport {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 25,
+                y: 114,
+                area_id: 0,
+                stop_driver: true,
+                quiet: false,
+            }
+        );
+        assert_eq!(character.exp, 177_168);
+    }
+
+    #[test]
+    fn staffer2_animation_book_requires_area29_and_player_character() {
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        let mut book = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
+        set_drdata(&mut book, 0, 6);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut player, &mut book, request, 1, false),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_STAFFER2,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                required_area: 29,
+            }
+        );
+
+        let mut npc = character(2);
+        let npc_request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(2),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver(&mut npc, &mut book, npc_request, 29, false),
+            ItemDriverOutcome::Noop
+        );
+        assert_eq!(npc.exp, 0);
+    }
+
+    #[test]
+    fn staffer2_unported_subtypes_stay_explicitly_unsupported() {
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        let mut item = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
+        set_drdata(&mut item, 0, 1);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut character, &mut item, request, 29, false),
+            ItemDriverOutcome::Unsupported {
+                driver: IDR_STAFFER2,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
             }
         );
     }
