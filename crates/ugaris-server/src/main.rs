@@ -27,7 +27,7 @@ use ugaris_core::{
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
-    legacy::{action, INVENTORY_START_INVENTORY},
+    legacy::{action, profession, INVENTORY_START_INVENTORY},
     map::{MapFlags, MapTile},
     player::{
         DemonShrineResult, KeyringAddResult, PlayerActionCode, PlayerConnectionState,
@@ -3011,6 +3011,72 @@ fn apply_forest_spade_find(
             ForestSpadeApplyResult::FoundMoney { amount }
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PickBerryApplyResult {
+    Picked(String),
+    NotRipe,
+    CursorOccupied,
+    MissingPlayer,
+    Bug,
+}
+
+fn pick_berry_template(kind: u8) -> Option<&'static str> {
+    match kind {
+        1 => Some("lizard_brown_berry"),
+        2 => Some("picked_flower_h"),
+        3 => Some("picked_flower_i"),
+        4 => Some("picked_flower_j"),
+        _ => None,
+    }
+}
+
+fn pick_berry_ripe_seconds(character: &Character) -> u64 {
+    match character.professions[profession::HERBALIST] {
+        value if value >= 30 => 60 * 60 * 4,
+        value if value >= 20 => 60 * 60 * 8,
+        value if value >= 10 => 60 * 60 * 12,
+        _ => 60 * 60 * 24,
+    }
+}
+
+fn apply_pick_berry(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    player: Option<&mut PlayerRuntime>,
+    character_id: CharacterId,
+    kind: u8,
+    location_id: u32,
+    realtime_seconds: u64,
+) -> PickBerryApplyResult {
+    let Some(character) = world.characters.get(&character_id) else {
+        return PickBerryApplyResult::MissingPlayer;
+    };
+    if character.cursor_item.is_some() {
+        return PickBerryApplyResult::CursorOccupied;
+    }
+
+    let Some(template) = pick_berry_template(kind) else {
+        return PickBerryApplyResult::Bug;
+    };
+
+    let ripe_seconds = pick_berry_ripe_seconds(character);
+    let Some(player) = player else {
+        return PickBerryApplyResult::MissingPlayer;
+    };
+    if let Some(last_used) = player.flower_last_used_seconds(location_id) {
+        if realtime_seconds.saturating_sub(last_used) < ripe_seconds {
+            return PickBerryApplyResult::NotRipe;
+        }
+    }
+
+    let Some(item_name) = grant_template_item_to_cursor(world, loader, character_id, template)
+    else {
+        return PickBerryApplyResult::CursorOccupied;
+    };
+    player.mark_flower_used(location_id, realtime_seconds);
+    PickBerryApplyResult::Picked(item_name)
 }
 
 fn random_chest_location_id(x: u16, y: u16, area_id: u16) -> u32 {
@@ -6429,6 +6495,109 @@ mod tests {
                 "You've never been to Cameron before. You cannot go there.".to_string()
             )
         );
+    }
+
+    #[test]
+    fn pick_berry_runtime_grants_template_and_marks_flower_ppd() {
+        let mut world = World::default();
+        world.add_character(login_character(
+            CharacterId(1),
+            &login_block("Ralph"),
+            31,
+            10,
+            10,
+        ));
+        let mut loader = ZoneLoader::new();
+        loader.item_templates.insert(
+            "picked_flower_h".to_string(),
+            ugaris_core::zone::ItemTemplate {
+                key: "picked_flower_h".to_string(),
+                name: "Flower H".to_string(),
+                description: String::new(),
+                flags: ItemFlags::USED,
+                sprite: 11190,
+                value: 0,
+                min_level: 0,
+                max_level: 0,
+                needs_class: 0,
+                template_id: 0x1f02,
+                modifier_index: [0; ugaris_core::entity::MAX_MODIFIERS],
+                modifier_value: [0; ugaris_core::entity::MAX_MODIFIERS],
+                driver: ugaris_core::item_driver::IDR_LIZARDFLOWER,
+                driver_data: vec![2],
+            },
+        );
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let result = apply_pick_berry(
+            &mut world,
+            &mut loader,
+            Some(&mut player),
+            CharacterId(1),
+            2,
+            0x001f_2030,
+            50_000,
+        );
+
+        assert_eq!(result, PickBerryApplyResult::Picked("Flower H".to_string()));
+        assert_eq!(player.flower_last_used_seconds(0x001f_2030), Some(50_000));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        let cursor_item = character.cursor_item.unwrap();
+        assert_eq!(world.items.get(&cursor_item).unwrap().name, "Flower H");
+    }
+
+    #[test]
+    fn pick_berry_runtime_enforces_herbalist_ripe_time() {
+        let mut world = World::default();
+        let mut character = login_character(CharacterId(1), &login_block("Ralph"), 31, 10, 10);
+        character.professions[profession::HERBALIST] = 20;
+        world.add_character(character);
+        let mut loader = ZoneLoader::new();
+        loader.item_templates.insert(
+            "picked_flower_h".to_string(),
+            ugaris_core::zone::ItemTemplate {
+                key: "picked_flower_h".to_string(),
+                name: "Flower H".to_string(),
+                description: String::new(),
+                flags: ItemFlags::USED,
+                sprite: 11190,
+                value: 0,
+                min_level: 0,
+                max_level: 0,
+                needs_class: 0,
+                template_id: 0x1f02,
+                modifier_index: [0; ugaris_core::entity::MAX_MODIFIERS],
+                modifier_value: [0; ugaris_core::entity::MAX_MODIFIERS],
+                driver: ugaris_core::item_driver::IDR_LIZARDFLOWER,
+                driver_data: vec![2],
+            },
+        );
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_flower_used(7, 100);
+
+        let blocked = apply_pick_berry(
+            &mut world,
+            &mut loader,
+            Some(&mut player),
+            CharacterId(1),
+            2,
+            7,
+            100 + 8 * 60 * 60 - 1,
+        );
+
+        assert_eq!(blocked, PickBerryApplyResult::NotRipe);
+
+        let picked = apply_pick_berry(
+            &mut world,
+            &mut loader,
+            Some(&mut player),
+            CharacterId(1),
+            2,
+            7,
+            100 + 8 * 60 * 60,
+        );
+
+        assert_eq!(picked, PickBerryApplyResult::Picked("Flower H".to_string()));
     }
 
     #[test]
@@ -12331,8 +12500,40 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Interesting idea. Really. Doesn't work, though.".to_string()));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::PickBerry { .. } => {
-                                            failed += 1;
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickBerry {
+                                            character_id,
+                                            kind,
+                                            location_id,
+                                            ..
+                                        } => {
+                                            match apply_pick_berry(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                runtime.player_for_character_mut(character_id),
+                                                character_id,
+                                                kind,
+                                                location_id,
+                                                realtime_seconds,
+                                            ) {
+                                                PickBerryApplyResult::Picked(_) => {
+                                                    executed += 1;
+                                                }
+                                                PickBerryApplyResult::NotRipe => {
+                                                    feedback.push((character_id, "It's not ripe yet.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                PickBerryApplyResult::CursorOccupied => {
+                                                    feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                PickBerryApplyResult::Bug => {
+                                                    feedback.push((character_id, "Bug # 4111c".to_string()));
+                                                    failed += 1;
+                                                }
+                                                PickBerryApplyResult::MissingPlayer => {
+                                                    failed += 1;
+                                                }
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PickBerryCursorOccupied { character_id, .. } => {
                                             feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));

@@ -25,6 +25,8 @@ pub const RANDCHEST_MAX_ENTRIES: usize = 100;
 pub const LEGACY_RANDCHEST_PPD_SIZE: usize = RANDCHEST_MAX_ENTRIES * 4 * 2;
 pub const ORBSPAWN_MAX_ENTRIES: usize = 100;
 pub const LEGACY_ORBSPAWN_PPD_SIZE: usize = ORBSPAWN_MAX_ENTRIES * 4 * 2;
+pub const FLOWER_MAX_ENTRIES: usize = 100;
+pub const LEGACY_FLOWER_PPD_SIZE: usize = FLOWER_MAX_ENTRIES * 4 * 2;
 pub const DEMONSHRINE_MAX_ENTRIES: usize = 100;
 pub const LEGACY_DEMONSHRINE_PPD_SIZE: usize = DEMONSHRINE_MAX_ENTRIES * 4;
 pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
@@ -46,6 +48,7 @@ pub const TRANSPORT_EARTH_UNDERGROUND_MASK: u64 = 0x01F8;
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEMONSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 68 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
+pub const DRD_FLOWER_PPD: u32 = make_drd(DEV_ID_DB, 62 | PERSISTENT_PLAYER_DATA);
 pub const DRD_MISC_PPD: u32 = make_drd(DEV_ID_DB, 113 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_DIG_PPD: u32 = make_drd(DEV_ID_ED, 5 | PERSISTENT_PLAYER_DATA);
 pub const DRD_KEYRING_PPD: u32 = make_drd(DEV_ID_ED, 7 | PERSISTENT_PLAYER_DATA);
@@ -74,6 +77,8 @@ const RANDCHEST_PPD_IDS_OFFSET: usize = 0;
 const RANDCHEST_PPD_LAST_USED_OFFSET: usize = RANDCHEST_PPD_IDS_OFFSET + RANDCHEST_MAX_ENTRIES * 4;
 const ORBSPAWN_PPD_IDS_OFFSET: usize = 0;
 const ORBSPAWN_PPD_LAST_USED_OFFSET: usize = ORBSPAWN_PPD_IDS_OFFSET + ORBSPAWN_MAX_ENTRIES * 4;
+const FLOWER_PPD_IDS_OFFSET: usize = 0;
+const FLOWER_PPD_LAST_USED_OFFSET: usize = FLOWER_PPD_IDS_OFFSET + FLOWER_MAX_ENTRIES * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const PK_PPD_KILLS_OFFSET: usize = 0;
@@ -155,6 +160,12 @@ pub struct RandomChestAccess {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrbSpawnAccess {
+    pub location_id: u32,
+    pub last_used_seconds: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlowerAccess {
     pub location_id: u32,
     pub last_used_seconds: u64,
 }
@@ -245,6 +256,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub orb_spawns: Vec<OrbSpawnAccess>,
     #[serde(default)]
+    pub flowers: Vec<FlowerAccess>,
+    #[serde(default)]
     pub demonshrines: Vec<u32>,
     #[serde(default)]
     pub treasure_dig_last_seconds: [u64; TREASURE_DIG_PPD_ENTRIES],
@@ -300,6 +313,7 @@ impl PlayerRuntime {
             keyring: Vec::new(),
             random_chests: Vec::new(),
             orb_spawns: Vec::new(),
+            flowers: Vec::new(),
             demonshrines: Vec::new(),
             treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
@@ -807,6 +821,78 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn flower_last_used_seconds(&self, location_id: u32) -> Option<u64> {
+        self.flowers
+            .iter()
+            .find(|entry| entry.location_id == location_id)
+            .map(|entry| entry.last_used_seconds)
+    }
+
+    pub fn mark_flower_used(&mut self, location_id: u32, realtime_seconds: u64) {
+        if let Some(entry) = self
+            .flowers
+            .iter_mut()
+            .find(|entry| entry.location_id == location_id)
+        {
+            entry.last_used_seconds = realtime_seconds;
+            return;
+        }
+
+        if self.flowers.len() < FLOWER_MAX_ENTRIES {
+            self.flowers.push(FlowerAccess {
+                location_id,
+                last_used_seconds: realtime_seconds,
+            });
+            return;
+        }
+
+        if let Some(oldest) = self
+            .flowers
+            .iter_mut()
+            .min_by_key(|entry| entry.last_used_seconds)
+        {
+            *oldest = FlowerAccess {
+                location_id,
+                last_used_seconds: realtime_seconds,
+            };
+        }
+    }
+
+    pub fn encode_legacy_flower_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_FLOWER_PPD_SIZE];
+        for (index, entry) in self.flowers.iter().take(FLOWER_MAX_ENTRIES).enumerate() {
+            write_i32(
+                &mut bytes,
+                FLOWER_PPD_IDS_OFFSET + index * 4,
+                entry.location_id.min(i32::MAX as u32) as i32,
+            );
+            write_i32(
+                &mut bytes,
+                FLOWER_PPD_LAST_USED_OFFSET + index * 4,
+                entry.last_used_seconds.min(i32::MAX as u64) as i32,
+            );
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_flower_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_FLOWER_PPD_SIZE {
+            return false;
+        }
+        self.flowers.clear();
+        for index in 0..FLOWER_MAX_ENTRIES {
+            let location_id = read_i32(bytes, FLOWER_PPD_IDS_OFFSET + index * 4);
+            let last_used = read_i32(bytes, FLOWER_PPD_LAST_USED_OFFSET + index * 4);
+            if location_id > 0 || last_used > 0 {
+                self.flowers.push(FlowerAccess {
+                    location_id: location_id.max(0) as u32,
+                    last_used_seconds: last_used.max(0) as u64,
+                });
+            }
+        }
+        true
+    }
+
     pub fn decode_legacy_ppd_blob(&mut self, bytes: &[u8]) -> bool {
         for block in LegacyPpdBlocks::parse(bytes) {
             let Some(block) = block else {
@@ -848,6 +934,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_FLOWER_PPD => {
+                    if !self.decode_legacy_flower_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TREASURE_DIG_PPD => {
                     if !self.decode_legacy_treasure_dig_ppd(block.data) {
                         return false;
@@ -873,6 +964,7 @@ impl PlayerRuntime {
         let mut had_randchest = false;
         let mut had_demonshrine = false;
         let mut had_orbspawn = false;
+        let mut had_flower = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
         let mut existing_was_valid = true;
@@ -929,6 +1021,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_ORBSPAWN_PPD,
                     &self.encode_legacy_orbspawn_ppd(),
+                );
+            } else if block.id == DRD_FLOWER_PPD {
+                had_flower = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_FLOWER_PPD,
+                    &self.encode_legacy_flower_ppd(),
                 );
             } else if block.id == DRD_TREASURE_DIG_PPD {
                 had_treasure_dig = true;
@@ -1007,6 +1106,13 @@ impl PlayerRuntime {
                     &self.encode_legacy_orbspawn_ppd(),
                 );
             }
+        }
+        if !had_flower && (existing_was_valid || existing.is_empty()) && !self.flowers.is_empty() {
+            write_ppd_block(
+                &mut encoded,
+                DRD_FLOWER_PPD,
+                &self.encode_legacy_flower_ppd(),
+            );
         }
         if !had_treasure_dig && (existing_was_valid || existing.is_empty()) {
             if self
@@ -2272,6 +2378,46 @@ mod tests {
         assert_eq!(read_i32(&encoded, 28), 456);
         assert_eq!(encoded[8 + MISC_PPD_TREEDONE_OFFSET], 0b0000_0100);
         assert_eq!(read_i32(&encoded, 8 + MISC_PPD_GIFT_YEAR_OFFSET), 2025);
+    }
+
+    #[test]
+    fn flower_ppd_codec_matches_legacy_fixed_arrays() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_flower_used(0x001f_2030, 1234);
+        player.mark_flower_used(0x001f_2031, 5678);
+
+        let encoded = player.encode_legacy_flower_ppd();
+
+        assert_eq!(encoded.len(), LEGACY_FLOWER_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, FLOWER_PPD_IDS_OFFSET), 0x001f_2030);
+        assert_eq!(read_i32(&encoded, FLOWER_PPD_IDS_OFFSET + 4), 0x001f_2031);
+        assert_eq!(read_i32(&encoded, FLOWER_PPD_LAST_USED_OFFSET), 1234);
+        assert_eq!(read_i32(&encoded, FLOWER_PPD_LAST_USED_OFFSET + 4), 5678);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_flower_ppd(&encoded));
+        assert_eq!(decoded.flower_last_used_seconds(0x001f_2030), Some(1234));
+        assert_eq!(decoded.flower_last_used_seconds(0x001f_2031), Some(5678));
+    }
+
+    #[test]
+    fn flower_ppd_blob_replaces_and_appends_legacy_block() {
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, 0x1122_3344, &[1, 2, 3]);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_flower_used(7, 99);
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+
+        assert_eq!(read_u32(&encoded, 0), 0x1122_3344);
+        assert_eq!(read_u32(&encoded, 11), DRD_FLOWER_PPD);
+        assert_eq!(read_u32(&encoded, 15), LEGACY_FLOWER_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 19), 7);
+        assert_eq!(read_i32(&encoded, 19 + FLOWER_PPD_LAST_USED_OFFSET), 99);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.flower_last_used_seconds(7), Some(99));
     }
 
     #[test]
