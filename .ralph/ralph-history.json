@@ -3932,15 +3932,42 @@
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
       ]
+    },
+    {
+      "iteration": 143,
+      "startedAt": "2026-06-29T00:51:30.837Z",
+      "endedAt": "2026-06-29T00:57:54.823Z",
+      "durationMs": 383690,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 128 filtered out; finished in 0.00s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 516 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s"
+      ]
     }
   ],
-  "totalDurationMs": 64752401,
+  "totalDurationMs": 65136091,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 136,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 134,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 125,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 137,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 135,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 126,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 52,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 53,
@@ -4051,7 +4078,7 @@
       "test result: ok. 373 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 373 filtered out; finished in 0.00s": 1,
       "test result: ok. 376 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 98,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 99,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s": 1,
       "test result: ok. 379 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -4242,7 +4269,7 @@
       "test result: ok. 454 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
       "The walk-or-use behavior was already partially present, but the path selection can miss a C-like imm": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 49,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 50,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 454 filtered out; finished in 0.02s": 1,
       "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.05s": 1,
       "test result: ok. 455 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -4266,9 +4293,9 @@
       "error: unexpected argument 'secure_move_driver_skips_move_after_blocked_use_and_teleports' found": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 464 filtered out; finished in 0.00s": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_noncombat_threads_failed_use_into_secure_move": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 39,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 40,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 466 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 41,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 42,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s": 1,
       "error: no library targets found in package `ugaris-server`": 1,
       "test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -4358,7 +4385,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 119 filtered out; finished in 0.00s": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core world_removes_stale_pk_hate_when_pvp_level_check_fails world_kee": 1,
       "error: unexpected argument 'world_keeps_pk_hate_when_area_one_blocks_pvp' found": 1,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 8,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 9,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 511 filtered out; finished in 0.00s": 1,
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 481 filtered out; finished in 0.01s": 1,
@@ -4371,7 +4398,7 @@
       "test result: ok. 514 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 2,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 122 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 514 filtered out; finished in 0.00s": 1,
-      "test result: ok. 516 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 2,
+      "test result: ok. 516 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 3,
       "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 118 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 127 filtered out; finished in 0.00s": 1,
       "test result: ok. 128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -4383,7 +4410,8 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 129 filtered out; finished in 0.00s": 1,
       "test result: ok. 132 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 483 filtered out; finished in 0.01s": 1,
-      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 129 filtered out; finished in 0.00s": 1
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 129 filtered out; finished in 0.00s": 1,
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 128 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

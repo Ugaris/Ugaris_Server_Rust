@@ -3032,6 +3032,167 @@ const XMAS_TREE_GIFT_TEMPLATES: [&str; 17] = [
     "ad_belt2",
 ];
 
+const XMAS_TREE_GIFT_GODS: [&str; 3] = ["Eddow", "Freya", "Sauron"];
+const XMAS_MAX_SKILLS: usize = 3;
+const XMAS_MAX_SKILL_VALUE: i16 = 20;
+const XMAS_SPECIAL_MAX_VALUE: i16 = 20;
+const XMAS_ENHANCE_SKILLS: [CharacterValue; 35] = [
+    CharacterValue::Hp,
+    CharacterValue::Endurance,
+    CharacterValue::Mana,
+    CharacterValue::Wisdom,
+    CharacterValue::Intelligence,
+    CharacterValue::Agility,
+    CharacterValue::Strength,
+    CharacterValue::Light,
+    CharacterValue::Speed,
+    CharacterValue::Pulse,
+    CharacterValue::Dagger,
+    CharacterValue::Hand,
+    CharacterValue::Staff,
+    CharacterValue::Sword,
+    CharacterValue::TwoHand,
+    CharacterValue::Attack,
+    CharacterValue::Parry,
+    CharacterValue::Warcry,
+    CharacterValue::Tactics,
+    CharacterValue::Surround,
+    CharacterValue::BodyControl,
+    CharacterValue::SpeedSkill,
+    CharacterValue::Barter,
+    CharacterValue::Percept,
+    CharacterValue::Stealth,
+    CharacterValue::Bless,
+    CharacterValue::Heal,
+    CharacterValue::Freeze,
+    CharacterValue::MagicShield,
+    CharacterValue::Flash,
+    CharacterValue::Fireball,
+    CharacterValue::Regenerate,
+    CharacterValue::Meditate,
+    CharacterValue::Immunity,
+    CharacterValue::Duration,
+];
+
+#[derive(Debug, Clone)]
+struct XmasTreeRng {
+    state: u64,
+}
+
+impl XmasTreeRng {
+    fn new(seed: u64) -> Self {
+        Self {
+            state: seed ^ 0x9e37_79b9_7f4a_7c15,
+        }
+    }
+
+    fn random(&mut self, limit: usize) -> usize {
+        if limit == 0 {
+            return 0;
+        }
+        self.state = self
+            .state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((self.state >> 32) as usize) % limit
+    }
+}
+
+fn random_xmas_skill_value(rng: &mut XmasTreeRng) -> i16 {
+    let mut value = rng.random((XMAS_MAX_SKILL_VALUE / 2 + 1) as usize) as i16;
+    if rng.random(100) < 30 {
+        value += rng.random((XMAS_MAX_SKILL_VALUE / 4) as usize) as i16;
+    }
+    if rng.random(100) < 10 {
+        value += rng.random((XMAS_MAX_SKILL_VALUE / 4) as usize) as i16;
+    }
+    value.min(XMAS_MAX_SKILL_VALUE)
+}
+
+fn random_xmas_special_value(rng: &mut XmasTreeRng) -> i16 {
+    let mut value = rng.random((XMAS_SPECIAL_MAX_VALUE / 2 + 1) as usize) as i16;
+    if rng.random(100) < 20 {
+        value += rng.random((XMAS_SPECIAL_MAX_VALUE / 4) as usize) as i16;
+    }
+    if rng.random(100) < 10 {
+        value += rng.random((XMAS_SPECIAL_MAX_VALUE / 4) as usize) as i16;
+    }
+    if rng.random(100) < 5 {
+        value = XMAS_SPECIAL_MAX_VALUE;
+    }
+    value.min(XMAS_SPECIAL_MAX_VALUE)
+}
+
+fn enhance_xmas_item(item: &mut Item, rng: &mut XmasTreeRng) {
+    item.modifier_index.fill(0);
+    item.modifier_value.fill(0);
+
+    let mut available = XMAS_ENHANCE_SKILLS.to_vec();
+    let num_skills = (rng.random(XMAS_MAX_SKILLS) + 1).min(item.modifier_index.len());
+    let mut immunity_selected = false;
+
+    for slot in 0..num_skills.min(XMAS_MAX_SKILLS) {
+        if available.is_empty() {
+            break;
+        }
+        let selected = rng.random(available.len());
+        let skill = available.swap_remove(selected);
+        if skill == CharacterValue::Immunity {
+            immunity_selected = true;
+        }
+        let value = random_xmas_skill_value(rng);
+        if value > 0 {
+            item.modifier_index[slot] = skill as i16;
+            item.modifier_value[slot] = value;
+        }
+    }
+
+    if !immunity_selected && num_skills < item.modifier_index.len() && num_skills < XMAS_MAX_SKILLS
+    {
+        let special = random_xmas_special_value(rng);
+        if special > 0 {
+            item.modifier_index[num_skills] = CharacterValue::Immunity as i16;
+            item.modifier_value[num_skills] = special;
+        }
+    }
+}
+
+fn grant_xmas_tree_gift(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    seed: u64,
+) -> Option<String> {
+    let mut rng = XmasTreeRng::new(seed);
+    let template = XMAS_TREE_GIFT_TEMPLATES[(seed as usize) % XMAS_TREE_GIFT_TEMPLATES.len()];
+    let recipient_name = world.characters.get(&character_id)?.name.clone();
+    let mut item = loader
+        .instantiate_item_template(template, Some(character_id))
+        .ok()?;
+    enhance_xmas_item(&mut item, &mut rng);
+    let god = XMAS_TREE_GIFT_GODS[rng.random(XMAS_TREE_GIFT_GODS.len())];
+    item.description =
+        format!("To {recipient_name}, with holiday blessings from {god}.\nMerry Christmas!");
+    let item_name = item.name.clone();
+    let (give_result, drop_x, drop_y) = {
+        let character = world.characters.get_mut(&character_id)?;
+        let result = give_item_to_character(character, &mut item, GiveItemFlags::ALLOW_DROP);
+        (result, usize::from(character.x), usize::from(character.y))
+    };
+    match give_result {
+        GiveItemResult::Ok => {}
+        GiveItemResult::Dropped => {
+            if !world.map.drop_item_extended(&mut item, drop_x, drop_y, 1) {
+                return None;
+            }
+        }
+        GiveItemResult::Money => {}
+        GiveItemResult::Full | GiveItemResult::Failed => return None,
+    }
+    world.add_item(item);
+    Some(item_name)
+}
+
 fn xmas_event_from_ymd(year: i32, month: u32, day: u32) -> (bool, i32) {
     if month == 12 && day >= 20 {
         (true, year)
@@ -3098,9 +3259,7 @@ fn apply_xmastree(
         XmasTreeResult::AlreadyGranted => XmasTreeApplyResult::AlreadyGranted,
         XmasTreeResult::NeedsHolidayTreat => XmasTreeApplyResult::NeedsHolidayTreat,
         XmasTreeResult::GiftGranted => {
-            let template =
-                XMAS_TREE_GIFT_TEMPLATES[(gift_seed as usize) % XMAS_TREE_GIFT_TEMPLATES.len()];
-            let Some(item_name) = grant_template_item_smart(world, loader, character_id, template)
+            let Some(item_name) = grant_xmas_tree_gift(world, loader, character_id, gift_seed)
             else {
                 player.unmark_xmas_tree(area_id);
                 return XmasTreeApplyResult::NoSpace;
@@ -6587,10 +6746,40 @@ mod tests {
         assert!(!world.items.contains_key(&ItemId(20)));
         let gift_id = character.inventory[INVENTORY_START_INVENTORY].unwrap();
         assert_eq!(world.items.get(&gift_id).unwrap().name, "Holiday Bracelet");
+        let gift = world.items.get(&gift_id).unwrap();
+        assert!(gift
+            .description
+            .starts_with("To Tester, with holiday blessings from "));
+        assert!(gift.description.ends_with(".\nMerry Christmas!"));
         assert_eq!(
             player.touch_xmas_tree(1, 2025, true, true),
             XmasTreeResult::AlreadyGranted
         );
+    }
+
+    #[test]
+    fn enhance_xmas_item_uses_unique_legacy_skill_pool_and_caps_values() {
+        let mut gift = test_item(ItemId(30), 1, ItemFlags::USED | ItemFlags::TAKE);
+        gift.modifier_index = [CharacterValue::Armor as i16; ugaris_core::entity::MAX_MODIFIERS];
+        gift.modifier_value = [99; ugaris_core::entity::MAX_MODIFIERS];
+        let mut rng = XmasTreeRng::new(42);
+
+        enhance_xmas_item(&mut gift, &mut rng);
+
+        let mut seen = Vec::new();
+        for (&index, &value) in gift.modifier_index.iter().zip(gift.modifier_value.iter()) {
+            if value == 0 {
+                assert_eq!(value, 0);
+                continue;
+            }
+            assert!(value > 0 && value <= XMAS_MAX_SKILL_VALUE);
+            assert!(XMAS_ENHANCE_SKILLS
+                .iter()
+                .any(|skill| *skill as i16 == index));
+            assert!(!seen.contains(&index));
+            seen.push(index);
+        }
+        assert!(seen.len() <= XMAS_MAX_SKILLS);
     }
 
     #[test]
