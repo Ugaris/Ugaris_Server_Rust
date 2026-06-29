@@ -1726,6 +1726,17 @@ fn legacy_description_text(input: &str) -> String {
     out
 }
 
+fn legacy_truncate_c_string(input: &str, max_bytes: usize) -> String {
+    let mut out = String::new();
+    for ch in input.chars() {
+        if out.len() + ch.len_utf8() > max_bytes {
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
 fn apply_description_command(
     world: &mut World,
     character_id: CharacterId,
@@ -2033,6 +2044,40 @@ fn apply_admin_character_command(
         || character.flags.contains(CharacterFlags::EVENTMASTER)
         || (area_id == 20 && character.flags.contains(CharacterFlags::LQMASTER));
     let lower = verb.to_ascii_lowercase();
+
+    if lower == "itemdesc" || lower == "itemname" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let Some(item_id) = character.cursor_item else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Need citem.".to_string()],
+                ..Default::default()
+            });
+        };
+        let trimmed = rest.trim_start();
+        let text = legacy_truncate_c_string(trimmed, 79);
+        let character_snapshot = character.clone();
+        let Some(item) = world.items.get_mut(&item_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Need citem.".to_string()],
+                ..Default::default()
+            });
+        };
+        if lower == "itemdesc" {
+            item.description = text;
+        } else {
+            item.name = text;
+        }
+        return Some(KeyringCommandResult {
+            messages: legacy_item_look_text(item, &character_snapshot)
+                .lines()
+                .map(str::to_string)
+                .collect(),
+            inventory_changed: true,
+            ..Default::default()
+        });
+    }
 
     if lower.len() >= 4 && "saves".starts_with(&lower) {
         if !character.flags.contains(CharacterFlags::GOD) {
@@ -10088,6 +10133,117 @@ mod tests {
                 .is_none()
         );
         assert!(!runtime.show_attack);
+    }
+
+    #[test]
+    fn god_itemname_and_itemdesc_mutate_cursor_item_with_look_feedback() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::GOD);
+        character.cursor_item = Some(ItemId(99));
+        world.add_character(character);
+        world.add_item(Item {
+            id: ItemId(99),
+            name: "Old Name".to_string(),
+            description: "Old description".to_string(),
+            flags: ItemFlags::TAKE,
+            sprite: 123,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [0; 5],
+            modifier_value: [0; 5],
+            x: 0,
+            y: 0,
+            carried_by: Some(character_id),
+            contained_in: None,
+            content_id: 0,
+            driver: 0,
+            driver_data: vec![0; 40],
+            serial: 1,
+        });
+        let mut runtime = ServerRuntime::default();
+
+        let name = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/itemname Renamed Cursor Item",
+            1,
+        )
+        .expect("god itemname should be recognized");
+        assert!(name.inventory_changed);
+        assert_eq!(name.messages[0], "Renamed Cursor Item:");
+        assert_eq!(name.messages[1], "Old description");
+        assert_eq!(
+            world.items.get(&ItemId(99)).unwrap().name,
+            "Renamed Cursor Item"
+        );
+
+        let long_desc = format!("{}tail", "x".repeat(79));
+        let desc = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            &format!("/itemdesc {long_desc}"),
+            1,
+        )
+        .expect("god itemdesc should be recognized");
+        assert!(desc.inventory_changed);
+        assert_eq!(desc.messages[0], "Renamed Cursor Item:");
+        assert_eq!(desc.messages[1], "x".repeat(79));
+        assert_eq!(world.items.get(&ItemId(99)).unwrap().description.len(), 79);
+    }
+
+    #[test]
+    fn itemname_and_itemdesc_are_god_only_and_require_cursor_item() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/itemname Nope",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let missing = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/itemdesc Missing",
+            1,
+        )
+        .expect("god itemdesc should be handled even without cursor item");
+        assert_eq!(missing.messages, vec!["Need citem."]);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/itemnam Nope",
+            1,
+        )
+        .is_none());
     }
 
     #[test]
