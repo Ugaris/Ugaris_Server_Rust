@@ -31,6 +31,8 @@ pub const FLOWER_MAX_ENTRIES: usize = 100;
 pub const LEGACY_FLOWER_PPD_SIZE: usize = FLOWER_MAX_ENTRIES * 4 * 2;
 pub const DEMONSHRINE_MAX_ENTRIES: usize = 100;
 pub const LEGACY_DEMONSHRINE_PPD_SIZE: usize = DEMONSHRINE_MAX_ENTRIES * 4;
+pub const RANDOMSHRINE_USED_WORDS: usize = 256 / 32;
+pub const LEGACY_RANDOMSHRINE_PPD_SIZE: usize = RANDOMSHRINE_USED_WORDS * 4;
 pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
@@ -69,6 +71,7 @@ pub const TRANSPORT_ALL_TELEPORTS_MASK: u64 = 0x03F3_F7FF;
 pub const TRANSPORT_EARTH_UNDERGROUND_MASK: u64 = 0x01F8;
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEMONSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 68 | PERSISTENT_PLAYER_DATA);
+pub const DRD_RANDOMSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 86 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
 pub const DRD_LOSTCON_PPD: u32 = make_drd(DEV_ID_DB, 91 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FLOWER_PPD: u32 = make_drd(DEV_ID_DB, 62 | PERSISTENT_PLAYER_DATA);
@@ -320,6 +323,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub demonshrines: Vec<u32>,
     #[serde(default)]
+    pub random_shrine_used_words: [u32; RANDOMSHRINE_USED_WORDS],
+    #[serde(default)]
     pub treasure_dig_last_seconds: [u64; TREASURE_DIG_PPD_ENTRIES],
     #[serde(default)]
     pub misc_ppd: Vec<u8>,
@@ -422,6 +427,7 @@ impl PlayerRuntime {
             orb_spawns: Vec::new(),
             flowers: Vec::new(),
             demonshrines: Vec::new(),
+            random_shrine_used_words: [0; RANDOMSHRINE_USED_WORDS],
             treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
             area3_ppd: Vec::new(),
@@ -1237,6 +1243,36 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_randomshrine_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_RANDOMSHRINE_PPD_SIZE];
+        for (index, word) in self.random_shrine_used_words.iter().copied().enumerate() {
+            write_u32(&mut bytes, index * 4, word);
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_randomshrine_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_RANDOMSHRINE_PPD_SIZE {
+            return false;
+        }
+        for index in 0..RANDOMSHRINE_USED_WORDS {
+            self.random_shrine_used_words[index] = read_u32(bytes, index * 4);
+        }
+        true
+    }
+
+    pub fn has_used_random_shrine(&self, shrine: u8) -> bool {
+        let word = usize::from(shrine / 32);
+        let bit = 1u32 << (shrine & 31);
+        self.random_shrine_used_words[word] & bit != 0
+    }
+
+    pub fn mark_random_shrine_used(&mut self, shrine: u8) {
+        let word = usize::from(shrine / 32);
+        let bit = 1u32 << (shrine & 31);
+        self.random_shrine_used_words[word] |= bit;
+    }
+
     pub fn treasure_dig_last_seconds(&self, dig_index: u8) -> u64 {
         self.treasure_dig_last_seconds
             .get(usize::from(dig_index))
@@ -1505,6 +1541,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_RANDOMSHRINE_PPD => {
+                    if !self.decode_legacy_randomshrine_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_ORBSPAWN_PPD => {
                     if !self.decode_legacy_orbspawn_ppd(block.data) {
                         return false;
@@ -1589,6 +1630,7 @@ impl PlayerRuntime {
         let mut had_pk = false;
         let mut had_randchest = false;
         let mut had_demonshrine = false;
+        let mut had_randomshrine = false;
         let mut had_orbspawn = false;
         let mut had_lostcon = false;
         let mut had_flower = false;
@@ -1650,6 +1692,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_DEMONSHRINE_PPD,
                     &self.encode_legacy_demonshrine_ppd(),
+                );
+            } else if block.id == DRD_RANDOMSHRINE_PPD {
+                had_randomshrine = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_RANDOMSHRINE_PPD,
+                    &self.encode_legacy_randomshrine_ppd(),
                 );
             } else if block.id == DRD_ORBSPAWN_PPD {
                 had_orbspawn = true;
@@ -1791,6 +1840,15 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_DEMONSHRINE_PPD,
                     &self.encode_legacy_demonshrine_ppd(),
+                );
+            }
+        }
+        if !had_randomshrine && (existing_was_valid || existing.is_empty()) {
+            if self.random_shrine_used_words.iter().any(|word| *word != 0) {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_RANDOMSHRINE_PPD,
+                    &self.encode_legacy_randomshrine_ppd(),
                 );
             }
         }
@@ -2468,6 +2526,7 @@ mod tests {
         assert_eq!(DRD_TREASURE_CHEST_PPD, 0x8100_0011);
         assert_eq!(DRD_RANDCHEST_PPD, 0x8100_003f);
         assert_eq!(DRD_DEMONSHRINE_PPD, 0x8100_0044);
+        assert_eq!(DRD_RANDOMSHRINE_PPD, 0x8100_0056);
         assert_eq!(DRD_MISC_PPD, 0x8100_0071);
         assert_eq!(DRD_ALIAS_PPD, 0x8100_0050);
         assert_eq!(DRD_IGNORE_PPD, 0x8100_0064);
@@ -2477,6 +2536,7 @@ mod tests {
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_DEMONSHRINE_PPD_SIZE, 400);
+        assert_eq!(LEGACY_RANDOMSHRINE_PPD_SIZE, 32);
         assert_eq!(LEGACY_MISC_PPD_SIZE, 36);
         assert_eq!(LEGACY_IGNORE_PPD_SIZE, 400);
         assert_eq!(LEGACY_SWEAR_PPD_SIZE, 932);
@@ -3431,6 +3491,30 @@ mod tests {
         let mut decoded = PlayerRuntime::connected(2, 0);
         assert!(decoded.decode_legacy_ppd_blob(&encoded));
         assert_eq!(decoded.demonshrines, vec![0x0001_0506]);
+    }
+
+    #[test]
+    fn randomshrine_ppd_blob_round_trips_c_used_bitset() {
+        let mut existing_randomshrine = vec![0; LEGACY_RANDOMSHRINE_PPD_SIZE];
+        write_u32(&mut existing_randomshrine, 0, 1 << 3);
+        write_u32(&mut existing_randomshrine, 28, 1 << 31);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, DRD_RANDOMSHRINE_PPD, &existing_randomshrine);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.decode_legacy_ppd_blob(&existing));
+        assert!(player.has_used_random_shrine(3));
+        assert!(player.has_used_random_shrine(255));
+        assert!(!player.has_used_random_shrine(4));
+
+        player.mark_random_shrine_used(64);
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), DRD_RANDOMSHRINE_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_RANDOMSHRINE_PPD_SIZE as u32);
+        assert_eq!(read_u32(&encoded, 8), 1 << 3);
+        assert_eq!(read_u32(&encoded, 16), 1);
+        assert_eq!(read_u32(&encoded, 36), 1 << 31);
     }
 
     #[test]

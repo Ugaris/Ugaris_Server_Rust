@@ -7507,7 +7507,7 @@ fn legacy_questlog_payload(player: &PlayerRuntime) -> bytes::BytesMut {
         quest_bytes.push((entry.done & 0x3f) | ((entry.flags & 0x03) << 6));
     }
 
-    ugaris_protocol::packet::questlog(&quest_bytes, &[])
+    ugaris_protocol::packet::questlog(&quest_bytes, &player.encode_legacy_randomshrine_ppd())
 }
 
 fn resolve_transport_travel_with_random(
@@ -9251,6 +9251,8 @@ mod tests {
         let mut player = PlayerRuntime::connected(1, 0);
         player.quest_log.open(0);
         player.quest_log.mark_done(1);
+        player.mark_random_shrine_used(3);
+        player.mark_random_shrine_used(64);
 
         let payload = legacy_questlog_payload(&player);
 
@@ -9259,7 +9261,10 @@ mod tests {
         assert_eq!(payload[1], 0x40);
         assert_eq!(payload[2], 0x81);
         assert!(payload[3..101].iter().all(|byte| *byte == 0));
-        assert!(payload[101..].iter().all(|byte| *byte == 0));
+        assert_eq!(&payload[101..105], &(1u32 << 3).to_le_bytes());
+        assert_eq!(&payload[109..113], &1u32.to_le_bytes());
+        assert!(payload[105..109].iter().all(|byte| *byte == 0));
+        assert!(payload[113..].iter().all(|byte| *byte == 0));
     }
 
     #[test]
