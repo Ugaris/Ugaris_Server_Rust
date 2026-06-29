@@ -5749,6 +5749,16 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::PickDoorToggle {
+                item_id,
+                character_id,
+            } => {
+                if self.toggle_pick_door(item_id, character_id) == DoorToggleResult::Toggled {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::StafferSpecDoorToggle {
                 item_id,
                 character_id,
@@ -7824,6 +7834,104 @@ impl World {
         self.queue_sound_area(x, y, if character_id.0 == 0 { 2 } else { 3 });
 
         DoorToggleResult::Toggled
+    }
+
+    fn toggle_pick_door(&mut self, item_id: ItemId, character_id: CharacterId) -> DoorToggleResult {
+        let Some(item) = self.items.get(&item_id) else {
+            return DoorToggleResult::Failed;
+        };
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        let is_open = item.driver_data.first().copied().unwrap_or_default() != 0;
+
+        if x == 0 || y == 0 {
+            return DoorToggleResult::Failed;
+        }
+        let Some(tile) = self.map.tile(x, y) else {
+            return DoorToggleResult::Failed;
+        };
+        if tile.item != item_id.0 {
+            return DoorToggleResult::Failed;
+        }
+
+        if character_id.0 == 0 && !is_open {
+            return DoorToggleResult::Blocked;
+        }
+
+        if is_open && self.pick_door_close_blocked(x, y) {
+            if character_id.0 == 0 {
+                self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND);
+            }
+            return DoorToggleResult::Blocked;
+        }
+
+        {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return DoorToggleResult::Failed;
+            };
+            item.driver_data.resize(40, 0);
+            let Some(tile) = self.map.tile_mut(x, y) else {
+                return DoorToggleResult::Failed;
+            };
+
+            if is_open {
+                let restored = door_stored_flags(item);
+                item.flags.insert(restored);
+                apply_door_tile_flags(tile, item.flags);
+                item.driver_data[0] = 0;
+                item.sprite -= 1;
+            } else {
+                let stored = item.flags
+                    & (ItemFlags::MOVEBLOCK
+                        | ItemFlags::SIGHTBLOCK
+                        | ItemFlags::DOOR
+                        | ItemFlags::SOUNDBLOCK);
+                store_door_flags(item, stored);
+                item.flags.remove(
+                    ItemFlags::MOVEBLOCK
+                        | ItemFlags::SIGHTBLOCK
+                        | ItemFlags::DOOR
+                        | ItemFlags::SOUNDBLOCK,
+                );
+                tile.flags.remove(
+                    MapFlags::TMOVEBLOCK
+                        | MapFlags::TSIGHTBLOCK
+                        | MapFlags::DOOR
+                        | MapFlags::TSOUNDBLOCK,
+                );
+                item.driver_data[0] = 1;
+                item.sprite += 1;
+            }
+        }
+
+        if !is_open {
+            self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 20);
+        }
+
+        DoorToggleResult::Toggled
+    }
+
+    fn pick_door_close_blocked(&self, x: usize, y: usize) -> bool {
+        if self.map.tile(x, y).is_some_and(|tile| {
+            tile.flags
+                .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+        }) {
+            return true;
+        }
+
+        [(1isize, 0isize), (-1, 0), (0, 1), (0, -1)]
+            .into_iter()
+            .any(|(dx, dy)| {
+                let Some(nx) = x.checked_add_signed(dx) else {
+                    return false;
+                };
+                let Some(ny) = y.checked_add_signed(dy) else {
+                    return false;
+                };
+                self.map
+                    .tile(nx, ny)
+                    .is_some_and(|tile| tile.character != 0)
+            })
     }
 
     fn toggle_staffer_spec_door(
@@ -18554,6 +18662,84 @@ mod tests {
         let sounds = world.drain_pending_sound_specials();
         assert_eq!(sounds.len(), 1);
         assert_eq!(sounds[0].special.special_type, 3);
+    }
+
+    #[test]
+    fn world_executes_area17_pick_door_with_legacy_timer() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        actor.x = 8;
+        actor.y = 8;
+        world.add_character(actor);
+        let mut door = item(
+            7,
+            ItemFlags::USED
+                | ItemFlags::USE
+                | ItemFlags::MOVEBLOCK
+                | ItemFlags::SIGHTBLOCK
+                | ItemFlags::SOUNDBLOCK
+                | ItemFlags::DOOR,
+        );
+        door.driver = crate::item_driver::IDR_PICKDOOR;
+        door.sprite = 100;
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        let request = ItemDriverRequest::Driver {
+            driver: crate::item_driver::IDR_PICKDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            world.execute_item_driver_request(request, 17),
+            ItemDriverOutcome::PickDoorLocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            world.execute_item_driver_request_with_context(
+                request,
+                17,
+                &ItemDriverContext {
+                    has_area17_lockpick: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::PickDoorToggle {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        let door = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(door.driver_data[0], 1);
+        assert_eq!(door.sprite, 101);
+        assert!(!door.flags.intersects(
+            ItemFlags::MOVEBLOCK | ItemFlags::SIGHTBLOCK | ItemFlags::SOUNDBLOCK | ItemFlags::DOOR
+        ));
+        assert_eq!(world.timers.used_timers(), 1);
+
+        world.tick = Tick(TICKS_PER_SECOND * 20);
+        let outcomes = world.process_due_timers(17);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(
+            outcomes[0],
+            ItemDriverOutcome::PickDoorToggle {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+            }
+        );
+        let door = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(door.driver_data[0], 0);
+        assert_eq!(door.sprite, 100);
+        assert!(door.flags.contains(ItemFlags::MOVEBLOCK));
+        assert!(door.flags.contains(ItemFlags::SIGHTBLOCK));
+        assert!(door.flags.contains(ItemFlags::SOUNDBLOCK));
+        assert!(door.flags.contains(ItemFlags::DOOR));
     }
 
     #[test]

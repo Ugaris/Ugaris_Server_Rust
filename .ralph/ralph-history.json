@@ -1336,9 +1336,38 @@
         "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok",
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok"
       ]
+    },
+    {
+      "iteration": 50,
+      "startedAt": "2026-06-29T16:38:12.559Z",
+      "endedAt": "2026-06-29T16:52:03.355Z",
+      "durationMs": 830611,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.00s",
+        "test world::tests::attack_driver_direct_attacks_adjacent_target ... FAILED",
+        "test world::tests::attack_driver_direct_walks_one_step_on_complete_path ... FAILED",
+        "test world::tests::attack_driver_direct_attacks_moving_target_tile ... FAILED",
+        "test world::tests::ball_effect_moves_slowly_and_strikes_nearby_targets ... FAILED",
+        "test world::tests::character_fireball_predicts_moving_target_like_c_fireball_driver ... FAILED",
+        "test world::tests::character_fireball_targets_stationary_character_position ... FAILED",
+        "test world::tests::completed_attack_queues_legacy_showattack_pre_hurt_line ... FAILED",
+        "test world::tests::completed_attack_weapon_clash_sound_uses_independent_legacy_roll ... FAILED",
+        "test world::tests::completed_attack_queues_legacy_weapon_clash_miss_sound ... FAILED"
+      ]
     }
   ],
-  "totalDurationMs": 25032538,
+  "totalDurationMs": 25863149,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 7,
@@ -1434,7 +1463,7 @@
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 615 filtered out; finished in 0.00s": 1,
       "test result: ok. 619 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 619 filtered out; finished in 0.01s": 1,
-      "test world::tests::completed_attack_queues_legacy_showattack_pre_hurt_line ... FAILED": 1,
+      "test world::tests::completed_attack_queues_legacy_showattack_pre_hurt_line ... FAILED": 2,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 619 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 619 filtered out; finished in 0.00s": 1,
       "test result: ok. 621 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -1522,7 +1551,16 @@
       "test do_action::tests::can_attack_allows_legacy_zero_attacker_after_basic_defender_guards ... FAILED": 1,
       "assertion failed: can_attack_in_area(&attacker, &defender, &map, 1)": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 649 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 649 filtered out; finished in 0.00s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 649 filtered out; finished in 0.00s": 1,
+      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.00s": 1,
+      "test world::tests::attack_driver_direct_attacks_adjacent_target ... FAILED": 1,
+      "test world::tests::attack_driver_direct_walks_one_step_on_complete_path ... FAILED": 1,
+      "test world::tests::attack_driver_direct_attacks_moving_target_tile ... FAILED": 1,
+      "test world::tests::ball_effect_moves_slowly_and_strikes_nearby_targets ... FAILED": 1,
+      "test world::tests::character_fireball_predicts_moving_target_like_c_fireball_driver ... FAILED": 1,
+      "test world::tests::character_fireball_targets_stationary_character_position ... FAILED": 1,
+      "test world::tests::completed_attack_weapon_clash_sound_uses_independent_legacy_roll ... FAILED": 1,
+      "test world::tests::completed_attack_queues_legacy_weapon_clash_miss_sound ... FAILED": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -28,7 +28,7 @@ use ugaris_core::{
     item_driver::{
         legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
         IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_PICKCHEST,
-        IDR_SPECIAL_POTION, IDR_TORCH, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
+        IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
         IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
@@ -4959,7 +4959,7 @@ fn item_driver_context_for_request(
         }
         return ugaris_core::item_driver::ItemDriverContext::default();
     }
-    if *driver == IDR_BOOKCASE || *driver == IDR_PICKCHEST {
+    if *driver == IDR_BOOKCASE || *driver == IDR_PICKCHEST || *driver == IDR_PICKDOOR {
         let (has_area17_library_key, has_area17_lockpick) = world
             .characters
             .get(character_id)
@@ -16605,6 +16605,16 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::PickChestBug { character_id, .. } => {
                                             feedback.push((character_id, "You've found bug #8331.".to_string()));
                                             failed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickDoorToggle { character_id, .. } => {
+                                            if character_id.0 != 0 {
+                                                feedback.push((character_id, "You pick the lock.".to_string()));
+                                            }
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickDoorLocked { character_id, .. } => {
+                                            feedback.push((character_id, "The door is locked and you don't have the right key.".to_string()));
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::OrbSpawn { item_id, character_id, anti, special } => {
                                             let random_seed = world.tick.0

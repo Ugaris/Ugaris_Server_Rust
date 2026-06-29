@@ -490,3 +490,7 @@ Recommended next chest steps:
 ### Iteration 47 Additional Progress
 
 - C `can_attack` player-vs-player guard ordering now returns immediately after area/PK/level/hate policy admits combat, before the later NPC/group/clan suppression checks. Focused core tests cover same-group players remaining attackable after the PvP branch admits them.
+
+### Iteration 50 Additional Progress
+
+- Area 17 `IDR_PICKDOOR = 79` now dispatches from the item-driver registry for the C `pick_door` path: the area-17 libload guard is enforced, player use requires the exact carried lockpick context while non-player use may open, already-open player use no-ops, zero-character timer callbacks only close open doors, opening stores and clears movement/sight/sound/door blockers, closing restores the stored blockers, the legacy 20-second auto-close timer and one-second blocked-doorway retry are represented, and runtime feedback emits the C locked/picked text. Focused core/world tests cover lockpick gating, timer dispatch, open/close mutation, and auto-close behavior. Remaining Area 17 gaps include `IDR_BURNDOWN`, `IDR_COLORTILE`, `IDR_SKELRAISE`, notification fan-out for lock picking, exact dlog/audit parity, and live area-data smoke coverage.
