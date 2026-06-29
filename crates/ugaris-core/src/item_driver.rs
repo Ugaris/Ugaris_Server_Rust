@@ -852,6 +852,17 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         lesson: u8,
     },
+    CaligarWeightMove {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    CaligarWeightTimer {
+        item_id: ItemId,
+    },
+    CaligarWeightBlocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BookText {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1166,6 +1177,7 @@ fn parkshrine_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
 fn caligar_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     match drdata(item, 0) {
         1 => caligar_training_driver(character, item),
+        2 | 4 => caligar_weight_driver(character, item),
         _ => ItemDriverOutcome::Unsupported {
             driver: IDR_CALIGAR,
             item_id: item.id,
@@ -1186,6 +1198,17 @@ fn caligar_training_driver(character: &Character, item: &Item) -> ItemDriverOutc
             lesson: drdata(item, 1),
         },
         _ => ItemDriverOutcome::Noop,
+    }
+}
+
+fn caligar_weight_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::CaligarWeightTimer { item_id: item.id };
+    }
+
+    ItemDriverOutcome::CaligarWeightMove {
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -4843,11 +4866,28 @@ mod tests {
         training.driver_data = vec![2, 1];
         assert_eq!(
             execute_item_driver(&mut actor, &mut training, request, 36, false),
-            ItemDriverOutcome::Unsupported {
-                driver: IDR_CALIGAR,
+            ItemDriverOutcome::CaligarWeightMove {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
             }
+        );
+
+        let mut timer_character = character(0);
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_CALIGAR,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver(
+                &mut timer_character,
+                &mut training,
+                timer_request,
+                36,
+                false
+            ),
+            ItemDriverOutcome::CaligarWeightTimer { item_id: ItemId(8) }
         );
     }
 

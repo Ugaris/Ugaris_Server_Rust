@@ -16051,6 +16051,13 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "It won't move.".to_string()));
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightBlocked {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "It won't move.".to_string()));
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorLocked {
                                             character_id,
                                             ..
@@ -16062,6 +16069,8 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferMineTimer { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockMove { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockTimer { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightMove { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightTimer { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorToggle { .. } => {
                                             executed += 1;
                                         }
