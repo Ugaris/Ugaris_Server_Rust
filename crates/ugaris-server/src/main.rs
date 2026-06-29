@@ -11489,6 +11489,7 @@ async fn main() -> anyhow::Result<()> {
                         let mut failed = 0;
                         let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
                         let mut feedback = Vec::new();
+                        let mut feedback_bytes = Vec::new();
                         let mut area_feedback = Vec::new();
                         let mut container_refresh = Vec::new();
                         for (completion_index, request) in item_use_requests {
@@ -12146,8 +12147,8 @@ async fn main() -> anyhow::Result<()> {
                                             kind,
                                             ..
                                         } => {
-                                            for line in ugaris_core::item_driver::book_text_lines(kind) {
-                                                feedback.push((character_id, (*line).to_string()));
+                                            for line in ugaris_core::item_driver::book_text_line_bytes(kind) {
+                                                feedback_bytes.push((character_id, line));
                                             }
                                             executed += 1;
                                         }
@@ -12420,6 +12421,14 @@ async fn main() -> anyhow::Result<()> {
                         let mut feedback_sessions = 0;
                         for (character_id, message) in feedback {
                             let payload = ugaris_protocol::packet::system_text(&message);
+                            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                                if runtime.send_to_session(session_id, payload.clone()) {
+                                    feedback_sessions += 1;
+                                }
+                            }
+                        }
+                        for (character_id, message) in feedback_bytes {
+                            let payload = ugaris_protocol::packet::system_text_bytes(&message);
                             for (session_id, _) in runtime.sessions_for_character(character_id) {
                                 if runtime.send_to_session(session_id, payload.clone()) {
                                     feedback_sessions += 1;

@@ -9,6 +9,7 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_ops::consume_item,
     legacy::action,
+    text::{COL_DARK_GRAY, COL_RESET},
     tick::TICKS_PER_SECOND,
 };
 
@@ -1128,6 +1129,23 @@ pub fn book_text_lines(kind: u8) -> &'static [&'static str] {
             "Day 177, year 103. Personal diary of Islena.",
             "The cold is slowly killing all of us. All attempts to control the demon lords have failed. Now all of us must die. But I shall die happily if I can take Ishtar with me into the cold.",
         ],
+        31 => &[
+            "Personal Diary of Korzam, Magical Advisor of Scarcewind.",
+            "The line above has been nearly scratched out, and replaced by:",
+            "Personal Diary of Korzam, Governor of Exkordon.",
+            "Scarcewind, the fool, is still loyal to Aston. He does not understand that the only way for our city to prosper is to cut our ties to that rotten empire. What good is an advisor, if no one listens to him?",
+            "To get my mind on other things, I have gone north, into the barren lands below the mountains, hunting rumors. It is said that huge towers are build on those plains, and in those mountains. Towers built by powerful wizards of the old age. Whoever started these rumors has his history wrong, that is for sure. There was no old age. Before us were the ancients. They destroyed each other, and the world, in their foolish war. After them came we, and Ishtar and his notions of godhood and the empire.",
+            "But if these towers are really there, and if they are as magical as the rumors say, who built them? Who else but the ancients! There was no one else who could have built them. And if the ancients are the makers, those towers are old and must have survived the destructions of the war. I want to see what kind of magic can make buildings survive what has shattered the earth.",
+            "You skip several pages containing a description of the voyage to the towers.",
+            "I have forced my way into one of the towers. Magical they are, for sure, and guarded by the living dead. Fighting my way inside nearly exhausted me, and all I could do was grab some parchments and a small bag and flee, before those undead came back in greater numbers.",
+            "The book is written in the language of the ancients. Unfortunately, I can barely understand some words. The bag contained polished pieces of bone, each bearing a rune. I will return to Exkordon now, and study them at my leisure.",
+            "I found some pictures in the book, showing how to arrange the runes. I wonder what will happen...",
+            "You notice a change in the writing. It is the same hand, but the letters are bigger, and more forcefully written.",
+            "That does it. Scarewind is a weak fool. I shall kill him, and take Exkordons fate into my own hands.",
+            "Easy, almost too easy it was. I am now Governor of Exkordon. Scarcewind died like the fool he was in life. 'How can you do that? Why? I trusted you!' What a fool. I invited him into my house, told him about an important discovery I made. He came, and left his guards outside. And so he died. When his guards came looking for him, I lured them into my cellars, and disposed of them. They are no match for the ancient's magic.",
+            "Here, the writing changes back to the style used in the beginning.",
+            "What have I done? What came over me? And why are the dead rising, and walking my halls? They are dead! Dead! I killed them!",
+        ],
         32 => &["Once leads on, twice is rewarding, three times is dangerous."],
         33 => &["Two Berkano flanking an Ansuz will give thee Endurance."],
         34 => &["Berkano, Dagaz, Ansuz is healthy."],
@@ -1135,6 +1153,13 @@ pub fn book_text_lines(kind: u8) -> &'static [&'static str] {
         36 => &["Ansuz, Ehwaz, Dagaz - better defense for the Warrior."],
         37 => &["Ehwaz twice followed by Berkano - better defense for the Mage."],
         38 => &["Berkano, Ehwaz, Ansuz will decrease magic damage."],
+        39 => &[
+            "Day 12, year 45. Personal diary of Sluiran of the Caremar.",
+            "The battles raging outside are closer to our hiding place. We must find some means to defend ourselves. I have started to study the forbidden art of necromancy, based on the rune magic. The undead shall fight where the living cannot.",
+            "You skip some pages.",
+            "Day 37, year 47. Personal diary of Sluiran of the Caremar.",
+            "The towers have fallen, but the undead have held our halls against the first wave of attackers. I have many, many bodies for my work now. More and more undead shall defend us. We might survive, after all.",
+        ],
         40 => &[
             "Day 213, year 61. Personal diary of Sluiran of the Caremar.",
             "We have been attacked by demons again, and we are running out of dead bodies to raise in our defense. We can no longer reach those in the outer halls. It will not take long before they take our last defenses. But they shall not gain any profit by this. I shall cast a spell that will raise all dead in these halls over and over again. So we will continue the fight, even after we are dead.",
@@ -1145,6 +1170,13 @@ pub fn book_text_lines(kind: u8) -> &'static [&'static str] {
             "Islena",
         ],
         42 => &["My wounds are too much to bear and I fear that I will not survive. I have found none of the parts of the Talisman of the Moon, nor the location of the Moon Pool in which to enchant it. I have failed to find a way to lift the curse off my old friend, and I am sorry."],
+        43 => &["Thou canst comprehend the intricate handwriting fully, something about an incantation of transportation. It sounds like folly and you choose not to decipher more of the scribbles."],
+        44 => &[
+            "It is a long list of names, the masters and teachers of the mages order. With deep respect, the great past masters of the mages order, are here honoured.",
+            "Wijn, the old one. Gree-Dli, master of summoning spells, Leerea, the empat, Djurna bridgecaller, Friize the recluse, Loisan creator. ",
+            "At the bottom of the following page you find a list of the current teachers of the mages order: Bretl, Anna-Sofia, Leaner, Crem, Guiwynn.",
+            "It appears that someone has attempted to scratch away the final name from the parchment.",
+        ],
         45 => &[
             "Sacred potions",
             "There are rumors saying a potion can be created, which holds the insignia of the very Ishtar himself. Bestowing his blessing upon the user. Imagine! The potency of such a liquid! Some of the ingredients are obvious.",
@@ -1161,6 +1193,61 @@ pub fn book_text_lines(kind: u8) -> &'static [&'static str] {
         101 => &["Most of the page is burned, but you can read: To prevent holy water from hurting him, and his minions, my brother created a anti-magic zone which dispells all holy effects and all magic. But I have found a way to break this spell. I created an amulet to hold the counter-spell..."],
         _ => &[],
     }
+}
+
+pub fn book_text_line_bytes(kind: u8) -> Vec<Vec<u8>> {
+    match kind {
+        31 => vec![
+            plain_book_line_bytes("Personal Diary of Korzam, Magical Advisor of Scarcewind."),
+            dark_gray_book_line_bytes("The line above has been nearly scratched out, and replaced by:", false),
+            plain_book_line_bytes("Personal Diary of Korzam, Governor of Exkordon."),
+            plain_book_line_bytes("Scarcewind, the fool, is still loyal to Aston. He does not understand that the only way for our city to prosper is to cut our ties to that rotten empire. What good is an advisor, if no one listens to him?"),
+            plain_book_line_bytes("To get my mind on other things, I have gone north, into the barren lands below the mountains, hunting rumors. It is said that huge towers are build on those plains, and in those mountains. Towers built by powerful wizards of the old age. Whoever started these rumors has his history wrong, that is for sure. There was no old age. Before us were the ancients. They destroyed each other, and the world, in their foolish war. After them came we, and Ishtar and his notions of godhood and the empire."),
+            plain_book_line_bytes("But if these towers are really there, and if they are as magical as the rumors say, who built them? Who else but the ancients! There was no one else who could have built them. And if the ancients are the makers, those towers are old and must have survived the destructions of the war. I want to see what kind of magic can make buildings survive what has shattered the earth."),
+            dark_gray_book_line_bytes("You skip several pages containing a description of the voyage to the towers.", false),
+            plain_book_line_bytes("I have forced my way into one of the towers. Magical they are, for sure, and guarded by the living dead. Fighting my way inside nearly exhausted me, and all I could do was grab some parchments and a small bag and flee, before those undead came back in greater numbers."),
+            plain_book_line_bytes("The book is written in the language of the ancients. Unfortunately, I can barely understand some words. The bag contained polished pieces of bone, each bearing a rune. I will return to Exkordon now, and study them at my leisure."),
+            plain_book_line_bytes("I found some pictures in the book, showing how to arrange the runes. I wonder what will happen..."),
+            dark_gray_book_line_bytes("You notice a change in the writing. It is the same hand, but the letters are bigger, and more forcefully written.", false),
+            plain_book_line_bytes("That does it. Scarewind is a weak fool. I shall kill him, and take Exkordons fate into my own hands."),
+            plain_book_line_bytes("Easy, almost too easy it was. I am now Governor of Exkordon. Scarcewind died like the fool he was in life. 'How can you do that? Why? I trusted you!' What a fool. I invited him into my house, told him about an important discovery I made. He came, and left his guards outside. And so he died. When his guards came looking for him, I lured them into my cellars, and disposed of them. They are no match for the ancient's magic."),
+            dark_gray_book_line_bytes("Here, the writing changes back to the style used in the beginning.", false),
+            plain_book_line_bytes("What have I done? What came over me? And why are the dead rising, and walking my halls? They are dead! Dead! I killed them!"),
+        ],
+        39 => vec![
+            plain_book_line_bytes("Day 12, year 45. Personal diary of Sluiran of the Caremar."),
+            plain_book_line_bytes("The battles raging outside are closer to our hiding place. We must find some means to defend ourselves. I have started to study the forbidden art of necromancy, based on the rune magic. The undead shall fight where the living cannot."),
+            dark_gray_book_line_bytes("You skip some pages.", false),
+            plain_book_line_bytes("Day 37, year 47. Personal diary of Sluiran of the Caremar."),
+            plain_book_line_bytes("The towers have fallen, but the undead have held our halls against the first wave of attackers. I have many, many bodies for my work now. More and more undead shall defend us. We might survive, after all."),
+        ],
+        43 => vec![dark_gray_book_line_bytes("Thou canst comprehend the intricate handwriting fully, something about an incantation of transportation. It sounds like folly and you choose not to decipher more of the scribbles.", false)],
+        44 => vec![
+            plain_book_line_bytes("It is a long list of names, the masters and teachers of the mages order. With deep respect, the great past masters of the mages order, are here honoured."),
+            plain_book_line_bytes("Wijn, the old one. Gree-Dli, master of summoning spells, Leerea, the empat, Djurna bridgecaller, Friize the recluse, Loisan creator. "),
+            dark_gray_book_line_bytes("At the bottom of the following page you find a list of the current teachers of the mages order: ", true),
+            dark_gray_book_line_bytes("It appears that someone has attempted to scratch away the final name from the parchment.", false),
+        ],
+        _ => book_text_lines(kind)
+            .iter()
+            .map(|line| plain_book_line_bytes(line))
+            .collect(),
+    }
+}
+
+fn plain_book_line_bytes(line: &str) -> Vec<u8> {
+    line.as_bytes().to_vec()
+}
+
+fn dark_gray_book_line_bytes(line: &str, reset_before_current_teachers: bool) -> Vec<u8> {
+    let mut out = Vec::with_capacity(line.len() + 32);
+    out.extend_from_slice(COL_DARK_GRAY);
+    out.extend_from_slice(line.as_bytes());
+    if reset_before_current_teachers {
+        out.extend_from_slice(COL_RESET);
+        out.extend_from_slice(b"Bretl, Anna-Sofia, Leaner, Crem, Guiwynn.");
+    }
+    out
 }
 
 fn book_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
@@ -3496,6 +3583,34 @@ mod tests {
             book_text_lines(100)[2],
             "The last fight with the undeads was hard. But even though I am bleeding from many wounds, today is the day I will kill my brother. I will take the amulet and go into the family vault and face him now!"
         );
+    }
+
+    #[test]
+    fn book_text_lines_include_raw_color_marker_book_cases() {
+        assert_eq!(
+            book_text_lines(31)[0],
+            "Personal Diary of Korzam, Magical Advisor of Scarcewind."
+        );
+        assert_eq!(book_text_lines(39)[2], "You skip some pages.");
+        assert_eq!(
+            book_text_lines(43),
+            &["Thou canst comprehend the intricate handwriting fully, something about an incantation of transportation. It sounds like folly and you choose not to decipher more of the scribbles."][..]
+        );
+        assert_eq!(
+            book_text_lines(44)[2],
+            "At the bottom of the following page you find a list of the current teachers of the mages order: Bretl, Anna-Sofia, Leaner, Crem, Guiwynn."
+        );
+
+        let runes = book_text_line_bytes(31);
+        assert_eq!(&runes[1][..3], crate::text::COL_DARK_GRAY);
+        assert!(runes[1].ends_with(b"replaced by:"));
+
+        let mad_mages = book_text_line_bytes(44);
+        assert_eq!(&mad_mages[2][..3], crate::text::COL_DARK_GRAY);
+        assert!(mad_mages[2]
+            .windows(3)
+            .any(|bytes| bytes == crate::text::COL_RESET));
+        assert!(mad_mages[2].ends_with(b"Bretl, Anna-Sofia, Leaner, Crem, Guiwynn."));
     }
 
     #[test]
