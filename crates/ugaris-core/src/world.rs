@@ -5900,6 +5900,45 @@ impl World {
             ItemDriverOutcome::LabExitUse { .. } | ItemDriverOutcome::LabExitWrongOwner { .. } => {
                 outcome
             }
+            ItemDriverOutcome::StafferMineDig {
+                item_id,
+                character_id: _,
+            } => {
+                if self.apply_staffer_mine_dig(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::StafferMineTimer { item_id } => {
+                if self.apply_staffer_mine_timer(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::StafferBlockMove {
+                item_id,
+                character_id,
+            } => {
+                if self.apply_staffer_block_move(item_id, character_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::StafferBlockBlocked {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
+            ItemDriverOutcome::StafferBlockTimer { item_id } => {
+                if self.apply_staffer_block_timer(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::StafferMineExhausted { .. }
+            | ItemDriverOutcome::StafferBlockBlocked { .. } => outcome,
             ItemDriverOutcome::BeyondPotion {
                 item_id,
                 character_id,
@@ -6792,6 +6831,234 @@ impl World {
         } else {
             self.schedule_item_driver_timer(item_id, CharacterId(0), 3)
         }
+    }
+
+    fn apply_staffer_mine_dig(&mut self, item_id: ItemId) -> bool {
+        let (x, y, stage) = {
+            let Some(item) = self.items.get(&item_id) else {
+                return false;
+            };
+            (
+                usize::from(item.x),
+                usize::from(item.y),
+                item.driver_data.get(3).copied().unwrap_or_default(),
+            )
+        };
+
+        if stage == 3 {
+            let before = self.items.get(&item_id).cloned();
+            if let Some(tile) = self.map.tile_mut(x, y) {
+                tile.flags.remove(MapFlags::TSIGHTBLOCK);
+            }
+            if let Some(item) = self.items.get_mut(&item_id) {
+                item.flags.remove(ItemFlags::SIGHTBLOCK);
+            }
+            if let Some(before) = before.as_ref() {
+                self.refresh_item_light_after_mutation(before, item_id);
+            }
+        }
+
+        if stage == 8 {
+            if let Some(tile) = self.map.tile_mut(x, y) {
+                if tile.item == item_id.0 {
+                    tile.item = 0;
+                }
+                tile.flags.remove(MapFlags::TMOVEBLOCK);
+            }
+            if let Some(item) = self.items.get_mut(&item_id) {
+                item.flags.remove(ItemFlags::USE);
+                item.flags.insert(ItemFlags::VOID);
+            }
+            self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 60 * 5);
+        }
+
+        self.mark_dirty_sector(x, y);
+        true
+    }
+
+    fn apply_staffer_mine_timer(&mut self, item_id: ItemId) -> bool {
+        let (x, y, stage, initialized) = {
+            let Some(item) = self.items.get(&item_id) else {
+                return false;
+            };
+            (
+                usize::from(item.x),
+                usize::from(item.y),
+                item.driver_data.get(3).copied().unwrap_or_default(),
+                item.driver_data.get(4).copied().unwrap_or_default() != 0,
+            )
+        };
+
+        if !initialized {
+            if let Some(item) = self.items.get_mut(&item_id) {
+                item.driver_data.resize(5, 0);
+                item.driver_data[4] = 1;
+                item.sprite = match (u32::from(item.x) + u32::from(item.y)) % 3 {
+                    0 => 15070,
+                    1 => 15078,
+                    _ => 15086,
+                };
+            }
+        }
+
+        if stage != 8 {
+            return true;
+        }
+
+        let blocked = self
+            .map
+            .tile(x, y)
+            .is_none_or(|tile| tile.flags.contains(MapFlags::TMOVEBLOCK) || tile.item != 0);
+        if blocked {
+            self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND);
+            return true;
+        }
+
+        let before = self.items.get(&item_id).cloned();
+        if let Some(item) = self.items.get_mut(&item_id) {
+            item.sprite -= 8;
+            item.driver_data.resize(4, 0);
+            item.driver_data[3] = 0;
+            item.flags.insert(ItemFlags::USE | ItemFlags::SIGHTBLOCK);
+            item.flags.remove(ItemFlags::VOID);
+        }
+        if let Some(tile) = self.map.tile_mut(x, y) {
+            tile.item = item_id.0;
+            tile.flags
+                .insert(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK);
+        }
+        if let Some(before) = before.as_ref() {
+            self.refresh_item_light_after_mutation(before, item_id);
+        }
+        self.mark_dirty_sector(x, y);
+        true
+    }
+
+    fn apply_staffer_block_move(&mut self, item_id: ItemId, character_id: CharacterId) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Ok(direction) = Direction::try_from(character.dir) else {
+            return false;
+        };
+        let (dx, dy) = direction.delta();
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        let target_x_i = i32::from(item.x) + i32::from(dx);
+        let target_y_i = i32::from(item.y) + i32::from(dy);
+        if target_x_i < 0 || target_y_i < 0 {
+            return false;
+        }
+        let target_x = target_x_i as usize;
+        let target_y = target_y_i as usize;
+        let Some(target) = self.map.tile(target_x, target_y) else {
+            return false;
+        };
+        let gsprite = target.ground_sprite;
+        let wrong_sprite =
+            (gsprite < 20291 || gsprite > 20299) && gsprite != 13154 && gsprite > 13156;
+        if target
+            .flags
+            .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+            || target.item != 0
+            || wrong_sprite
+        {
+            return false;
+        }
+
+        if let Some(tile) = self.map.tile_mut(x, y) {
+            tile.flags.remove(MapFlags::TMOVEBLOCK);
+            if tile.item == item_id.0 {
+                tile.item = 0;
+            }
+        }
+        if let Some(tile) = self.map.tile_mut(target_x, target_y) {
+            tile.flags.insert(MapFlags::TMOVEBLOCK);
+            tile.item = item_id.0;
+        }
+        if let Some(item) = self.items.get_mut(&item_id) {
+            item.driver_data.resize(12, 0);
+            if u16::from_le_bytes([item.driver_data[8], item.driver_data[9]]) == 0 {
+                item.driver_data[8..10].copy_from_slice(&item.x.to_le_bytes());
+                item.driver_data[10..12].copy_from_slice(&item.y.to_le_bytes());
+            }
+            item.x = target_x as u16;
+            item.y = target_y as u16;
+            item.driver_data[4..8].copy_from_slice(&(self.tick.0 as u32).to_le_bytes());
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.action = 0;
+            character.step = 0;
+            character.duration = 0;
+        }
+        self.mark_dirty_sector(x, y);
+        self.mark_dirty_sector(target_x, target_y);
+        true
+    }
+
+    fn apply_staffer_block_timer(&mut self, item_id: ItemId) -> bool {
+        let (x, y, home_x, home_y, last_touch) = {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            item.driver_data.resize(12, 0);
+            if u16::from_le_bytes([item.driver_data[8], item.driver_data[9]]) == 0 {
+                item.driver_data[8..10].copy_from_slice(&item.x.to_le_bytes());
+                item.driver_data[10..12].copy_from_slice(&item.y.to_le_bytes());
+            }
+            (
+                usize::from(item.x),
+                usize::from(item.y),
+                usize::from(u16::from_le_bytes([
+                    item.driver_data[8],
+                    item.driver_data[9],
+                ])),
+                usize::from(u16::from_le_bytes([
+                    item.driver_data[10],
+                    item.driver_data[11],
+                ])),
+                u32::from_le_bytes([
+                    item.driver_data[4],
+                    item.driver_data[5],
+                    item.driver_data[6],
+                    item.driver_data[7],
+                ]) as u64,
+            )
+        };
+
+        if self.tick.0.saturating_sub(last_touch) > TICKS_PER_SECOND * 60 * 2
+            && (home_x != x || home_y != y)
+        {
+            let home_free = self.map.tile(home_x, home_y).is_some_and(|tile| {
+                !tile
+                    .flags
+                    .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+                    && tile.item == 0
+            });
+            if home_free {
+                if let Some(tile) = self.map.tile_mut(x, y) {
+                    tile.flags.remove(MapFlags::TMOVEBLOCK);
+                    if tile.item == item_id.0 {
+                        tile.item = 0;
+                    }
+                }
+                if let Some(tile) = self.map.tile_mut(home_x, home_y) {
+                    tile.flags.insert(MapFlags::TMOVEBLOCK);
+                    tile.item = item_id.0;
+                }
+                if let Some(item) = self.items.get_mut(&item_id) {
+                    item.x = home_x as u16;
+                    item.y = home_y as u16;
+                }
+                self.mark_dirty_sector(x, y);
+                self.mark_dirty_sector(home_x, home_y);
+            }
+        }
+        self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 5);
+        true
     }
 
     fn toggle_door(&mut self, item_id: ItemId, character_id: CharacterId) -> DoorToggleResult {
@@ -10526,8 +10793,8 @@ mod tests {
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_DOOR,
             IDR_EDEMONBALL, IDR_ENCHANTITEM, IDR_FIREBALL, IDR_FLAMETHROW, IDR_LAB3_PLANT,
             IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE,
-            IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STEPTRAP, IDR_TORCH,
-            IDR_USETRAP, IID_AREA18_BONE,
+            IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
+            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::MapFlags,
@@ -19750,6 +20017,176 @@ mod tests {
 
         let player = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(player.hp, 950);
+    }
+
+    #[test]
+    fn staffer2_mine_dig_clears_sightblock_then_opens_and_schedules_restore() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.endurance = 10 * POWERSCALE;
+        world.add_character(player);
+        let mut mine = item(8, ItemFlags::USED | ItemFlags::USE | ItemFlags::SIGHTBLOCK);
+        mine.driver = IDR_STAFFER2;
+        mine.driver_data = vec![2, 0, 0, 2];
+        mine.sprite = 15072;
+        assert!(world.map.set_item_map(&mut mine, 10, 10));
+        world.add_item(mine);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER2,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            29,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::StafferMineDig { .. }));
+        assert!(!world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TSIGHTBLOCK));
+        assert!(!world
+            .items
+            .get(&ItemId(8))
+            .unwrap()
+            .flags
+            .contains(ItemFlags::SIGHTBLOCK));
+
+        for _ in 0..5 {
+            world.execute_item_driver_request(
+                ItemDriverRequest::Driver {
+                    driver: IDR_STAFFER2,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                29,
+            );
+        }
+        let tile = world.map.tile(10, 10).unwrap();
+        assert_eq!(tile.item, 0);
+        assert!(!tile.flags.contains(MapFlags::TMOVEBLOCK));
+        let item = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(item.driver_data[3], 8);
+        assert!(item.flags.contains(ItemFlags::VOID));
+        assert!(!item.flags.contains(ItemFlags::USE));
+    }
+
+    #[test]
+    fn staffer2_mine_timer_restores_opened_mine_wall() {
+        let mut world = World::default();
+        let mut mine = item(8, ItemFlags::USED | ItemFlags::VOID);
+        mine.driver = IDR_STAFFER2;
+        mine.driver_data = vec![2, 0, 0, 8, 1];
+        mine.sprite = 15078;
+        mine.x = 10;
+        mine.y = 10;
+        world.add_item(mine);
+
+        assert!(world.schedule_item_driver_timer(ItemId(8), CharacterId(0), 1));
+        world.tick = Tick(1);
+        let outcomes = world.process_due_timers(29);
+
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::StafferMineTimer { item_id: ItemId(8) }]
+        );
+        let tile = world.map.tile(10, 10).unwrap();
+        assert_eq!(tile.item, 8);
+        assert!(tile
+            .flags
+            .contains(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK));
+        let item = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(item.driver_data[3], 0);
+        assert!(item.flags.contains(ItemFlags::USE | ItemFlags::SIGHTBLOCK));
+        assert!(!item.flags.contains(ItemFlags::VOID));
+        assert_eq!(item.sprite, 15070);
+    }
+
+    #[test]
+    fn staffer2_block_move_pushes_block_and_timer_returns_home() {
+        let mut world = World::default();
+        world.tick = Tick(10);
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.dir = Direction::Right as u8;
+        world.add_character(player);
+        let mut block = item(8, ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK);
+        block.driver = IDR_STAFFER2;
+        block.driver_data = vec![3];
+        assert!(world.map.set_item_map(&mut block, 10, 10));
+        world.add_item(block);
+        world.map.tile_mut(11, 10).unwrap().ground_sprite = 20291;
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER2,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            29,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::StafferBlockMove { .. }
+        ));
+        assert_eq!(world.map.tile(10, 10).unwrap().item, 0);
+        assert_eq!(world.map.tile(11, 10).unwrap().item, 8);
+        assert_eq!(world.items.get(&ItemId(8)).unwrap().x, 11);
+
+        world.tick = Tick(10 + TICKS_PER_SECOND * 60 * 3);
+        assert!(world.schedule_item_driver_timer(ItemId(8), CharacterId(0), 1));
+        world.advance();
+        let outcomes = world.process_due_timers(29);
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::StafferBlockTimer { item_id: ItemId(8) }]
+        );
+        assert_eq!(world.map.tile(11, 10).unwrap().item, 0);
+        assert_eq!(world.map.tile(10, 10).unwrap().item, 8);
+        assert_eq!(world.items.get(&ItemId(8)).unwrap().x, 10);
+    }
+
+    #[test]
+    fn staffer2_block_move_reports_blocked_target() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.dir = Direction::Right as u8;
+        world.add_character(player);
+        let mut block = item(8, ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK);
+        block.driver = IDR_STAFFER2;
+        block.driver_data = vec![3];
+        assert!(world.map.set_item_map(&mut block, 10, 10));
+        world.add_item(block);
+        world.map.tile_mut(11, 10).unwrap().ground_sprite = 30000;
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER2,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            29,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::StafferBlockBlocked {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(world.map.tile(10, 10).unwrap().item, 8);
+        assert_eq!(world.map.tile(11, 10).unwrap().item, 0);
     }
 
     fn character(id: u32) -> Character {

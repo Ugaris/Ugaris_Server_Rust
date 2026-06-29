@@ -103,9 +103,38 @@
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok"
       ]
+    },
+    {
+      "iteration": 5,
+      "startedAt": "2026-06-29T10:06:58.518Z",
+      "endedAt": "2026-06-29T10:23:36.742Z",
+      "durationMs": 998042,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s home coordinates before the first push, Rust remembered the moved position instead of the original pos",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "error: could not compile `ugaris-core` (lib test) due to 6 previous errors",
+        "error: could not compile `ugaris-core` (lib test) due to 4 previous errors",
+        "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED",
+        "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 1692761,
+  "totalDurationMs": 2690803,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 1,
@@ -113,8 +142,8 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 1,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 1,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 3,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 3,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 4,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 4,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 3,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 3,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 2,
@@ -125,7 +154,7 @@
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1,
       "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 2,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
@@ -133,7 +162,14 @@
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 1,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 1,
-      "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
+      "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
+      "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
+      "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 1,
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

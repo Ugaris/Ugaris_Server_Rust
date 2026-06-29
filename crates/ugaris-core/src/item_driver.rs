@@ -855,6 +855,28 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         page: u8,
     },
+    StafferMineDig {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    StafferMineTimer {
+        item_id: ItemId,
+    },
+    StafferMineExhausted {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    StafferBlockMove {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    StafferBlockTimer {
+        item_id: ItemId,
+    },
+    StafferBlockBlocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BoneBridgePlace {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1206,13 +1228,19 @@ fn boneladder_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
 }
 
 fn staffer2_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
-    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
-        return ItemDriverOutcome::Noop;
-    }
-
     match drdata(item, 0) {
-        1 => staffer_book_driver(character, item),
+        1 => {
+            if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+                return ItemDriverOutcome::Noop;
+            }
+            staffer_book_driver(character, item)
+        }
+        2 => staffer_mine_driver(character, item),
+        3 => staffer_block_driver(character, item),
         6 => {
+            if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+                return ItemDriverOutcome::Noop;
+            }
             let exp_added =
                 (legacy_level_value(60) / 5).min(legacy_level_value(character.level) / 4);
             character.exp = character.exp.saturating_add(exp_added);
@@ -1231,6 +1259,48 @@ fn staffer2_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutc
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+fn staffer_mine_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::StafferMineTimer { item_id: item.id };
+    }
+    if !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if drdata(item, 3) < 9 {
+        if character.endurance < POWERSCALE {
+            return ItemDriverOutcome::StafferMineExhausted {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+        let miner = character.professions.get(2).copied().unwrap_or_default();
+        let cost = POWERSCALE / 4 - (i32::from(miner) * POWERSCALE / (4 * 25));
+        character.endurance = character.endurance.saturating_sub(cost.max(0));
+        set_drdata(item, 3, drdata(item, 3).saturating_add(1));
+        set_drdata(item, 5, 0);
+        item.sprite += 1;
+    }
+
+    ItemDriverOutcome::StafferMineDig {
+        item_id: item.id,
+        character_id: character.id,
+    }
+}
+
+fn staffer_block_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::StafferBlockTimer { item_id: item.id };
+    }
+    if !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+    ItemDriverOutcome::StafferBlockMove {
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -5701,6 +5771,97 @@ mod tests {
     }
 
     #[test]
+    fn staffer2_mine_dig_ports_endurance_and_stage_progression() {
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.endurance = POWERSCALE * 2;
+        player.professions[2] = 25;
+        let mut mine = item(
+            8,
+            ItemFlags::USED | ItemFlags::USE | ItemFlags::SIGHTBLOCK,
+            0,
+            IDR_STAFFER2,
+        );
+        mine.sprite = 15070;
+        set_drdata(&mut mine, 0, 2);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut player, &mut mine, request, 29, false),
+            ItemDriverOutcome::StafferMineDig {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(player.endurance, POWERSCALE * 2);
+        assert_eq!(drdata(&mine, 3), 1);
+        assert_eq!(mine.sprite, 15071);
+    }
+
+    #[test]
+    fn staffer2_mine_dig_blocks_exhausted_players() {
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.endurance = POWERSCALE - 1;
+        let mut mine = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
+        set_drdata(&mut mine, 0, 2);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut player, &mut mine, request, 29, false),
+            ItemDriverOutcome::StafferMineExhausted {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(drdata(&mine, 3), 0);
+    }
+
+    #[test]
+    fn staffer2_block_dispatches_player_and_timer_paths() {
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        let mut block = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
+        set_drdata(&mut block, 0, 3);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut player, &mut block, request, 29, false),
+            ItemDriverOutcome::StafferBlockMove {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let mut timer = character(0);
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER2,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver(&mut timer, &mut block, timer_request, 29, false),
+            ItemDriverOutcome::StafferBlockTimer { item_id: ItemId(8) }
+        );
+    }
+
+    #[test]
     fn staffer2_unported_subtypes_stay_explicitly_unsupported() {
         let mut character = character(1);
         character.flags.insert(CharacterFlags::PLAYER);
@@ -5711,7 +5872,7 @@ mod tests {
             spec: 0,
         };
 
-        for subtype in 2..=5 {
+        for subtype in 4..=5 {
             let mut item = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER2);
             set_drdata(&mut item, 0, subtype);
             assert_eq!(

@@ -15831,6 +15831,26 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::StafferMineExhausted {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "You're too exhausted to continue digging.".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::StafferBlockBlocked {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "It won't move.".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::StafferMineDig { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::StafferMineTimer { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockMove { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockTimer { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::BoneHint {
                                             character_id,
                                             level,
