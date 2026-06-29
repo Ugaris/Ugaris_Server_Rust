@@ -3859,6 +3859,10 @@ pub fn bookcase_locked_text_lines() -> [&'static str; 2] {
     ]
 }
 
+pub fn bookcase_library_exp(level: u32) -> u32 {
+    legacy_level_value(level).saturating_div(5).min(80_000)
+}
+
 fn bookcase_driver(
     character: &Character,
     item: &Item,
@@ -9653,6 +9657,8 @@ mod tests {
             ]
             .concat()
         );
+        assert_eq!(bookcase_library_exp(1), 3);
+        assert_eq!(bookcase_library_exp(60), 80_000);
     }
 
     #[test]

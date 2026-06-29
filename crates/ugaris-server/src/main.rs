@@ -18331,6 +18331,7 @@ async fn main() -> anyhow::Result<()> {
                                             let mut random_index = runtime_random_below(26) as u8;
                                             let mut color = 1;
                                             let mut solved_library = false;
+                                            let mut grant_library_exp = false;
                                             if let Some(player) = runtime.player_for_character_mut(character_id) {
                                                 let colors = player.ensure_twocity_goodtile_with(|| {
                                                     runtime_random_below(6) as u8 + 1
@@ -18342,6 +18343,13 @@ async fn main() -> anyhow::Result<()> {
                                                 solved_library = player.twocity_solved_library;
                                                 if kind == 1 && !player.twocity_solved_library {
                                                     player.twocity_solved_library = true;
+                                                    grant_library_exp = true;
+                                                }
+                                            }
+                                            if grant_library_exp {
+                                                if let Some(character) = world.characters.get_mut(&character_id) {
+                                                    let exp_added = ugaris_core::item_driver::bookcase_library_exp(character.level);
+                                                    character.exp = character.exp.saturating_add(exp_added);
                                                 }
                                             }
                                             if kind != 0 {
