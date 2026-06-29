@@ -9519,6 +9519,147 @@ impl World {
         do_use(character, &self.map, item, direction as u8, 0).is_ok()
     }
 
+    pub fn walk_swap_or_use_driver(
+        &mut self,
+        character_id: CharacterId,
+        direction: Direction,
+        area_id: u16,
+    ) -> bool {
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        if do_walk(character, &mut self.map, direction as u8, area_id).is_ok() {
+            return true;
+        }
+        let _ = turn(character, direction as u8);
+
+        if self.char_swap(character_id) {
+            return true;
+        }
+
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        let (dx, dy) = direction.delta();
+        let Some(x) = offset_coordinate(usize::from(character.x), dx) else {
+            return false;
+        };
+        let Some(y) = offset_coordinate(usize::from(character.y), dy) else {
+            return false;
+        };
+        let item_id = self
+            .map
+            .tile(x, y)
+            .map(|tile| tile.item)
+            .unwrap_or_default();
+        let Some(item) = (item_id != 0)
+            .then_some(ItemId(item_id))
+            .and_then(|item_id| self.items.get(&item_id))
+        else {
+            return false;
+        };
+        do_use(character, &self.map, item, direction as u8, 0).is_ok()
+    }
+
+    pub fn char_swap(&mut self, character_id: CharacterId) -> bool {
+        let Some(actor) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let Ok(direction) = Direction::try_from(actor.dir) else {
+            return false;
+        };
+        let (dx, dy) = direction.delta();
+        let Some(target_x) = offset_coordinate(usize::from(actor.x), dx) else {
+            return false;
+        };
+        let Some(target_y) = offset_coordinate(usize::from(actor.y), dy) else {
+            return false;
+        };
+        if !self.map.legacy_inner_bounds(target_x, target_y) {
+            return false;
+        }
+
+        let Some(actor_tile) = self
+            .map
+            .tile(usize::from(actor.x), usize::from(actor.y))
+            .copied()
+        else {
+            return false;
+        };
+        let Some(target_tile) = self.map.tile(target_x, target_y).copied() else {
+            return false;
+        };
+        let target_id = CharacterId(u32::from(target_tile.character));
+        if target_id.0 == 0 {
+            return false;
+        }
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+
+        if !target.flags.intersects(
+            CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE | CharacterFlags::ALLOWSWAP,
+        ) || target.flags.contains(CharacterFlags::INVISIBLE)
+            || actor.action != action::IDLE
+            || target.action != action::IDLE
+            || actor_tile.flags.contains(MapFlags::PEACE)
+                != target_tile.flags.contains(MapFlags::PEACE)
+            || actor_tile.flags.contains(MapFlags::UNDERWATER)
+                != target_tile.flags.contains(MapFlags::UNDERWATER)
+        {
+            return false;
+        }
+
+        remove_character_light(&mut self.map, &actor);
+        remove_character_light(&mut self.map, &target);
+        self.mark_character_light_area(&actor);
+        self.mark_character_light_area(&target);
+
+        let actor_x = usize::from(actor.x);
+        let actor_y = usize::from(actor.y);
+        if let Some(tile) = self.map.tile_mut(actor_x, actor_y) {
+            tile.character = target_id.0 as u16;
+            tile.flags.insert(MapFlags::TMOVEBLOCK);
+        }
+        if let Some(tile) = self.map.tile_mut(target_x, target_y) {
+            tile.character = character_id.0 as u16;
+            tile.flags.insert(MapFlags::TMOVEBLOCK);
+        }
+
+        if let Some(actor_mut) = self.characters.get_mut(&character_id) {
+            actor_mut.x = target_x as u16;
+            actor_mut.y = target_y as u16;
+            if target_tile.flags.contains(MapFlags::NOMAGIC) {
+                actor_mut.flags.insert(CharacterFlags::NOMAGIC);
+            } else {
+                actor_mut.flags.remove(CharacterFlags::NOMAGIC);
+            }
+        }
+        if let Some(target_mut) = self.characters.get_mut(&target_id) {
+            target_mut.x = actor_x as u16;
+            target_mut.y = actor_y as u16;
+            if actor_tile.flags.contains(MapFlags::NOMAGIC) {
+                target_mut.flags.insert(CharacterFlags::NOMAGIC);
+            } else {
+                target_mut.flags.remove(CharacterFlags::NOMAGIC);
+            }
+        }
+
+        let actor_after = self.characters.get(&character_id).cloned();
+        let target_after = self.characters.get(&target_id).cloned();
+        if let Some(actor_after) = actor_after.as_ref() {
+            add_character_light(&mut self.map, actor_after);
+            self.mark_character_light_area(actor_after);
+        }
+        if let Some(target_after) = target_after.as_ref() {
+            add_character_light(&mut self.map, target_after);
+            self.mark_character_light_area(target_after);
+        }
+        self.mark_dirty_sector(actor_x, actor_y);
+        self.mark_dirty_sector(target_x, target_y);
+        true
+    }
+
     pub fn secure_move_driver(
         &mut self,
         character_id: CharacterId,
@@ -12237,6 +12378,79 @@ mod tests {
         assert_eq!(character.action, 0);
         assert_eq!(character.duration, 0);
         assert_eq!(character.step, 0);
+    }
+
+    #[test]
+    fn char_swap_exchanges_idle_character_with_visible_playerlike_target() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.dir = Direction::Right as u8;
+        let mut target = character(2);
+        target.flags |= CharacterFlags::PLAYERLIKE;
+        assert!(world.spawn_character(actor, 10, 10));
+        assert!(world.spawn_character(target, 11, 10));
+
+        assert!(world.char_swap(CharacterId(1)));
+
+        assert_eq!(
+            (
+                world.characters[&CharacterId(1)].x,
+                world.characters[&CharacterId(1)].y
+            ),
+            (11, 10)
+        );
+        assert_eq!(
+            (
+                world.characters[&CharacterId(2)].x,
+                world.characters[&CharacterId(2)].y
+            ),
+            (10, 10)
+        );
+        assert_eq!(world.map.tile(11, 10).unwrap().character, 1);
+        assert_eq!(world.map.tile(10, 10).unwrap().character, 2);
+    }
+
+    #[test]
+    fn char_swap_rejects_invisible_targets() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.dir = Direction::Right as u8;
+        let mut target = character(2);
+        target.flags |= CharacterFlags::PLAYER | CharacterFlags::INVISIBLE;
+        assert!(world.spawn_character(actor, 10, 10));
+        assert!(world.spawn_character(target, 11, 10));
+
+        assert!(!world.char_swap(CharacterId(1)));
+
+        assert_eq!(
+            (
+                world.characters[&CharacterId(1)].x,
+                world.characters[&CharacterId(1)].y
+            ),
+            (10, 10)
+        );
+        assert_eq!(
+            (
+                world.characters[&CharacterId(2)].x,
+                world.characters[&CharacterId(2)].y
+            ),
+            (11, 10)
+        );
+    }
+
+    #[test]
+    fn walk_swap_or_use_falls_back_to_use_after_blocked_walk_and_no_swap() {
+        let mut world = World::default();
+        assert!(world.spawn_character(character(1), 10, 10));
+        let mut lever = item(1, ItemFlags::USE | ItemFlags::MOVEBLOCK);
+        assert!(world.map.set_item_map(&mut lever, 11, 10));
+        world.add_item(lever);
+
+        assert!(world.walk_swap_or_use_driver(CharacterId(1), Direction::Right, 1));
+
+        let actor = &world.characters[&CharacterId(1)];
+        assert_eq!(actor.action, action::USE);
+        assert_eq!(actor.act1, 1);
     }
 
     #[test]
