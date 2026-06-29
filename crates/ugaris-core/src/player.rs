@@ -6,6 +6,7 @@ use crate::{
     entity::{Character, CharacterFlags, CharacterValue, Item},
     ids::CharacterId,
     legacy::DIST_OLD,
+    quest::QuestLog,
     tell::TellData,
 };
 
@@ -347,6 +348,8 @@ pub struct PlayerRuntime {
     pub rune_special_exec: [i32; RUNE_SPECIAL_EXEC_COUNT],
     #[serde(default)]
     pub aliases: Vec<CommandAlias>,
+    #[serde(default)]
+    pub quest_log: QuestLog,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -414,6 +417,7 @@ impl PlayerRuntime {
             rune_used_words: [0; RUNE_USED_WORDS],
             rune_special_exec: [0; RUNE_SPECIAL_EXEC_COUNT],
             aliases: Vec::new(),
+            quest_log: QuestLog::default(),
         }
     }
 

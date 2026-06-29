@@ -100,6 +100,8 @@ pub const MAP_TILE_FLAGS: u8 = 8;
 pub const MAP_ITEM_PLAYER_BODY_FLAG: u32 = 0x8000_0000;
 pub const LOOKINV_WORN_SLOTS: usize = 12;
 pub const SERVER_PROTOCOL_VERSION: u8 = 3;
+pub const QUESTLOG_QUEST_COUNT: usize = 100;
+pub const QUESTLOG_SHRINE_PPD_SIZE: usize = 36;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum PacketBuildError {
@@ -182,6 +184,10 @@ impl PacketBuilder {
 
     pub fn transport(&mut self, seen: u64, clan_access: [u8; 4]) -> &mut Self {
         self.raw(&transport(seen, clan_access))
+    }
+
+    pub fn questlog(&mut self, quest_bytes: &[u8], shrine_ppd: &[u8]) -> &mut Self {
+        self.raw(&questlog(quest_bytes, shrine_ppd))
     }
 
     pub fn exit(&mut self, reason: &str) -> &mut Self {
@@ -412,6 +418,20 @@ pub fn realtime(seconds: u32) -> [u8; 5] {
 
 pub fn protocol(version: u8) -> [u8; 2] {
     [SV_PROTOCOL, version.min(SERVER_PROTOCOL_VERSION)]
+}
+
+pub fn questlog(quest_bytes: &[u8], shrine_ppd: &[u8]) -> BytesMut {
+    let mut out = BytesMut::with_capacity(1 + QUESTLOG_QUEST_COUNT + QUESTLOG_SHRINE_PPD_SIZE);
+    out.put_u8(SV_QUESTLOG);
+    out.extend_from_slice(&quest_bytes[..quest_bytes.len().min(QUESTLOG_QUEST_COUNT)]);
+    if quest_bytes.len() < QUESTLOG_QUEST_COUNT {
+        out.resize(1 + QUESTLOG_QUEST_COUNT, 0);
+    }
+    out.extend_from_slice(&shrine_ppd[..shrine_ppd.len().min(QUESTLOG_SHRINE_PPD_SIZE)]);
+    if shrine_ppd.len() < QUESTLOG_SHRINE_PPD_SIZE {
+        out.resize(1 + QUESTLOG_QUEST_COUNT + QUESTLOG_SHRINE_PPD_SIZE, 0);
+    }
+    out
 }
 
 pub fn origin(x: u16, y: u16) -> [u8; 5] {
@@ -1137,6 +1157,28 @@ mod tests {
             &container_name("Depot")[..],
             &[SV_CONNAME, 5, b'D', b'e', b'p', b'o', b't']
         );
+    }
+
+    #[test]
+    fn questlog_packet_matches_legacy_fixed_layout() {
+        let packet = questlog(&[0x41, 0x82], &[1, 2, 3]);
+
+        assert_eq!(
+            packet.len(),
+            1 + QUESTLOG_QUEST_COUNT + QUESTLOG_SHRINE_PPD_SIZE
+        );
+        assert_eq!(packet[0], SV_QUESTLOG);
+        assert_eq!(&packet[1..3], &[0x41, 0x82]);
+        assert!(packet[3..1 + QUESTLOG_QUEST_COUNT]
+            .iter()
+            .all(|byte| *byte == 0));
+        assert_eq!(
+            &packet[1 + QUESTLOG_QUEST_COUNT..1 + QUESTLOG_QUEST_COUNT + 3],
+            &[1, 2, 3]
+        );
+        assert!(packet[1 + QUESTLOG_QUEST_COUNT + 3..]
+            .iter()
+            .all(|byte| *byte == 0));
     }
 
     #[test]

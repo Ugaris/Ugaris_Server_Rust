@@ -37,6 +37,10 @@ impl Default for QuestLog {
 }
 
 impl QuestLog {
+    pub fn entries(&self) -> &[QuestEntry] {
+        &self.quests
+    }
+
     pub fn open(&mut self, quest: usize) {
         if let Some(entry) = self.quests.get_mut(quest) {
             entry.flags |= QF_OPEN;
@@ -94,5 +98,12 @@ mod tests {
         }
         assert_eq!(log.count(QLOG_LYDIA), 0x3f);
         assert!(log.is_done(QLOG_LYDIA));
+    }
+
+    #[test]
+    fn entries_expose_fixed_legacy_quest_count() {
+        let log = QuestLog::default();
+
+        assert_eq!(log.entries().len(), MAX_QUESTS);
     }
 }

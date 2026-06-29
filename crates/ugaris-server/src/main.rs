@@ -6685,6 +6685,20 @@ fn runtime_random_below(max: i32) -> i32 {
     legacy_random(nanos, max as u32) as i32
 }
 
+fn legacy_questlog_payload(player: &PlayerRuntime) -> bytes::BytesMut {
+    let mut quest_bytes = Vec::with_capacity(ugaris_protocol::packet::QUESTLOG_QUEST_COUNT);
+    for entry in player
+        .quest_log
+        .entries()
+        .iter()
+        .take(ugaris_protocol::packet::QUESTLOG_QUEST_COUNT)
+    {
+        quest_bytes.push((entry.done & 0x3f) | ((entry.flags & 0x03) << 6));
+    }
+
+    ugaris_protocol::packet::questlog(&quest_bytes, &[])
+}
+
 fn resolve_transport_travel_with_random(
     world: &World,
     player: &PlayerRuntime,
@@ -8398,8 +8412,8 @@ mod tests {
         MAP_EFFECT_1, MAP_EFFECT_2, MAP_EFFECT_3, MAP_TILE_FLAGS, MAP_TILE_FSPRITE,
         MAP_TILE_GSPRITE, MAP_TILE_ISPRITE, SV_CONCNT, SV_CONNAME, SV_CONTAINER, SV_CONTYPE,
         SV_GOLD, SV_LOGINDONE, SV_MAP01, SV_MAP10, SV_MAP11, SV_MAPPOS, SV_MIRROR, SV_ORIGIN,
-        SV_PROTOCOL, SV_SETCITEM, SV_SETHP, SV_SETITEM, SV_SETVAL0, SV_SETVAL1, SV_SPECIAL,
-        SV_TEXT, SV_TICKER,
+        SV_PROTOCOL, SV_QUESTLOG, SV_SETCITEM, SV_SETHP, SV_SETITEM, SV_SETVAL0, SV_SETVAL1,
+        SV_SPECIAL, SV_TEXT, SV_TICKER,
     };
 
     use super::*;
@@ -8414,6 +8428,22 @@ mod tests {
 
         assert_eq!(queued.action, PlayerActionCode::FireballCharacter);
         assert_eq!((queued.arg1, queued.arg2), (42, 0));
+    }
+
+    #[test]
+    fn legacy_questlog_payload_packs_c_bitfield_shape() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.quest_log.open(0);
+        player.quest_log.mark_done(1);
+
+        let payload = legacy_questlog_payload(&player);
+
+        assert_eq!(payload.len(), 1 + 100 + 36);
+        assert_eq!(payload[0], SV_QUESTLOG);
+        assert_eq!(payload[1], 0x40);
+        assert_eq!(payload[2], 0x81);
+        assert!(payload[3..101].iter().all(|byte| *byte == 0));
+        assert!(payload[101..].iter().all(|byte| *byte == 0));
     }
 
     #[test]
@@ -15091,6 +15121,12 @@ async fn main() -> anyhow::Result<()> {
                                     command_feedback.push((character_id, message));
                                 }
                                 AccountDepotCommandResult::Ignored => {}
+                            }
+                        }
+                        ClientAction::GetQuestLog => {
+                            if let Some(player) = runtime.players.get(&session_id) {
+                                let payload = legacy_questlog_payload(player);
+                                runtime.send_to_session(session_id, payload);
                             }
                         }
                         _ => {}
