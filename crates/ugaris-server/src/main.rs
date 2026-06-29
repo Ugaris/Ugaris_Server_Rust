@@ -17516,6 +17516,24 @@ async fn main() -> anyhow::Result<()> {
                                         } => {
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaBlocked {
+                                            character_id,
+                                            reason,
+                                            ..
+                                        } => {
+                                            let text = match reason {
+                                                ugaris_core::item_driver::FdemonLavaBlockReason::BareHands => "You do not want to touch burning lava with your bare hands, do you?",
+                                                ugaris_core::item_driver::FdemonLavaBlockReason::WrongItem => "Hu?",
+                                                ugaris_core::item_driver::FdemonLavaBlockReason::EmptyContainer => "The container is empty, and it cannot hold lava.",
+                                            };
+                                            feedback.push((character_id, text.to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaActivated {
+                                            ..
+                                        } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk {
                                             character_id,
                                             ..
@@ -17539,11 +17557,12 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::FireballMachineProjectile { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
                                           | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
-                                          | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
-                                          | ugaris_core::item_driver::ItemDriverOutcome::FdemonWaypoint { .. }
-                                           | ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderChanged { .. }
-                                           | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmChanged { .. }
-                                          | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerPulse { .. }
+                                           | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
+                                           | ugaris_core::item_driver::ItemDriverOutcome::FdemonWaypoint { .. }
+                                            | ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderChanged { .. }
+                                            | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmChanged { .. }
+                                            | ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaPulse { .. }
+                                           | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerPulse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerExtinguished { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapTriggered { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapReset { .. }

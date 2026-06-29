@@ -418,6 +418,13 @@ pub enum FdemonBloodBlockReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FdemonLavaBlockReason {
+    BareHands,
+    WrongItem,
+    EmptyContainer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FdemonCrystalTemplate {
     Small,
     Medium,
@@ -873,6 +880,26 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         container_item_id: ItemId,
         amount: u8,
+    },
+    FdemonLavaBlocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+        reason: FdemonLavaBlockReason,
+    },
+    FdemonLavaActivated {
+        item_id: ItemId,
+        character_id: CharacterId,
+        container_item_id: ItemId,
+        amount: u8,
+        schedule_after_ticks: u64,
+    },
+    FdemonLavaPulse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        stage: u8,
+        damage: i32,
+        armor_percent: i32,
+        schedule_after_ticks: Option<u64>,
     },
     FdemonWaypoint {
         item_id: ItemId,
@@ -1627,6 +1654,7 @@ pub fn execute_item_driver_with_context(
                 IDR_FDEMONWAYPOINT => fdemon_waypoint_driver(character, item, context),
                 IDR_FDEMONFARM => fdemon_farm_driver(character, item, context),
                 IDR_FDEMONBLOOD => fdemon_blood_driver(character, item, context),
+                IDR_FDEMONLAVA => fdemon_lava_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -1728,7 +1756,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_ARKHATA => Some(37),
         IDR_DUNGEONTELE | IDR_DUNGEONFAKE | IDR_DUNGEONDOOR | IDR_DUNGEONKEY => Some(13),
         IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONWAYPOINT | IDR_FDEMONFARM
-        | IDR_FDEMONBLOOD => Some(8),
+        | IDR_FDEMONBLOOD | IDR_FDEMONLAVA => Some(8),
         _ => None,
     }
 }
@@ -5811,6 +5839,78 @@ fn fdemon_blood_driver(
         character_id: character.id,
         container_item_id: cursor_item_id,
         amount,
+    }
+}
+
+fn fdemon_lava_driver(
+    character: &mut Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(1, 0);
+
+    if context.timer_call || character.id.0 == 0 {
+        if item.driver_data[0] > 0 {
+            item.driver_data[0] -= 1;
+        }
+        let stage = item.driver_data[0];
+        let (damage, armor_percent, schedule_after_ticks) = if stage == 0 {
+            item.sprite = 14363;
+            (1000 * POWERSCALE, 0, None)
+        } else if stage < 20 {
+            item.sprite = 14364;
+            (10 * POWERSCALE, 50, Some(TICKS_PER_SECOND))
+        } else if stage < 60 {
+            item.sprite = 14365;
+            (POWERSCALE, 50, Some(TICKS_PER_SECOND))
+        } else {
+            (0, 0, Some(TICKS_PER_SECOND))
+        };
+        return ItemDriverOutcome::FdemonLavaPulse {
+            item_id: item.id,
+            character_id: character.id,
+            stage,
+            damage,
+            armor_percent,
+            schedule_after_ticks,
+        };
+    }
+
+    let Some(cursor_item_id) = character.cursor_item else {
+        return ItemDriverOutcome::FdemonLavaBlocked {
+            item_id: item.id,
+            character_id: character.id,
+            reason: FdemonLavaBlockReason::BareHands,
+        };
+    };
+
+    if context.cursor_template_id != Some(IID_AREA8_BLOOD) {
+        return ItemDriverOutcome::FdemonLavaBlocked {
+            item_id: item.id,
+            character_id: character.id,
+            reason: FdemonLavaBlockReason::WrongItem,
+        };
+    }
+
+    let amount = context.cursor_drdata0.unwrap_or_default();
+    if amount < 1 {
+        return ItemDriverOutcome::FdemonLavaBlocked {
+            item_id: item.id,
+            character_id: character.id,
+            reason: FdemonLavaBlockReason::EmptyContainer,
+        };
+    }
+
+    let amount = amount.saturating_sub(1);
+    item.driver_data[0] = 120;
+    item.sprite = 14366;
+    character.flags.insert(CharacterFlags::ITEMS);
+    ItemDriverOutcome::FdemonLavaActivated {
+        item_id: item.id,
+        character_id: character.id,
+        container_item_id: cursor_item_id,
+        amount,
+        schedule_after_ticks: TICKS_PER_SECOND,
     }
 }
 
@@ -13149,6 +13249,135 @@ mod tests {
             }
         );
         assert!(character.flags.contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
+    fn fdemon_lava_blocks_wrong_or_empty_cursor_items() {
+        let mut character = character(1);
+        let mut lava = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONLAVA);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONLAVA,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_FDEMONLAVA, 51);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut lava, request, 8, false),
+            ItemDriverOutcome::FdemonLavaBlocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                reason: FdemonLavaBlockReason::BareHands,
+            }
+        );
+
+        character.cursor_item = Some(ItemId(9));
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut lava,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(0x0100_004A),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonLavaBlocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                reason: FdemonLavaBlockReason::WrongItem,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut lava,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(IID_AREA8_BLOOD),
+                    cursor_drdata0: Some(0),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonLavaBlocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                reason: FdemonLavaBlockReason::EmptyContainer,
+            }
+        );
+    }
+
+    #[test]
+    fn fdemon_lava_activation_and_timer_stages_match_c_core() {
+        let mut actor = character(1);
+        actor.cursor_item = Some(ItemId(9));
+        let mut lava = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONLAVA);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONLAVA,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut lava,
+                request,
+                8,
+                false,
+                &ItemDriverContext {
+                    cursor_template_id: Some(IID_AREA8_BLOOD),
+                    cursor_drdata0: Some(2),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonLavaActivated {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                container_item_id: ItemId(9),
+                amount: 1,
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }
+        );
+        assert_eq!(lava.driver_data[0], 120);
+        assert_eq!(lava.sprite, 14366);
+
+        let mut timer = character(0);
+        lava.driver_data[0] = 20;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer,
+                &mut lava,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FDEMONLAVA,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(0),
+                    spec: 0,
+                },
+                8,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonLavaPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                stage: 19,
+                damage: 10 * POWERSCALE,
+                armor_percent: 50,
+                schedule_after_ticks: Some(TICKS_PER_SECOND),
+            }
+        );
+        assert_eq!(lava.sprite, 14364);
     }
 
     fn request(character_id: u32, item_id: u32, spec: i32) -> ItemUseRequest {

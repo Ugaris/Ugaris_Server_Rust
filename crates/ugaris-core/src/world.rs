@@ -6250,6 +6250,43 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::FdemonBloodBlocked { .. } => outcome,
+            ItemDriverOutcome::FdemonLavaActivated {
+                item_id,
+                container_item_id,
+                amount,
+                schedule_after_ticks,
+                ..
+            } => {
+                if let Some(container) = self.items.get_mut(&container_item_id) {
+                    container.driver_data.resize(1, 0);
+                    container.driver_data[0] = amount;
+                    container.sprite -= 1;
+                    container.description =
+                        format!("A container holding {} parts golem blood.", amount);
+                }
+                self.apply_fdemon_lava_tile(item_id, 120);
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::FdemonLavaPulse {
+                item_id,
+                stage,
+                damage,
+                armor_percent,
+                schedule_after_ticks,
+                ..
+            } => {
+                if let Some(target_id) = self.apply_fdemon_lava_tile(item_id, stage) {
+                    if damage > 0 {
+                        self.apply_legacy_hurt(target_id, None, damage, 1, 0, armor_percent);
+                    }
+                }
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
+                }
+                outcome
+            }
+            ItemDriverOutcome::FdemonLavaBlocked { .. } => outcome,
             ItemDriverOutcome::FdemonWaypoint {
                 item_id,
                 spotted_enemy,
@@ -6840,6 +6877,59 @@ impl World {
                 }
             }
         }
+    }
+
+    fn apply_fdemon_lava_tile(&mut self, item_id: ItemId, stage: u8) -> Option<CharacterId> {
+        let item_pos = self
+            .items
+            .get(&item_id)
+            .map(|item| (usize::from(item.x), usize::from(item.y)))?;
+        let (x, y) = item_pos;
+        let mut target_id = None;
+        let mut changed = false;
+        if let Some(tile) = self.map.tile_mut(x, y) {
+            if tile.character != 0 {
+                target_id = Some(CharacterId(u32::from(tile.character)));
+            }
+            if stage == 0 {
+                let flags = tile.flags | MapFlags::MOVEBLOCK | MapFlags::FIRETHRU;
+                if tile.flags != flags {
+                    tile.flags = flags;
+                    changed = true;
+                }
+                let foreground = tile.foreground_sprite & 0xffff;
+                if tile.foreground_sprite != foreground {
+                    tile.foreground_sprite = foreground;
+                    changed = true;
+                }
+            } else if stage < 20 {
+                let foreground = (tile.foreground_sprite & 0xffff) | (1024 << 16);
+                if tile.foreground_sprite != foreground {
+                    tile.foreground_sprite = foreground;
+                    changed = true;
+                }
+            } else if stage < 115 {
+                let foreground = tile.foreground_sprite & 0xffff;
+                if tile.foreground_sprite != foreground {
+                    tile.foreground_sprite = foreground;
+                    changed = true;
+                }
+            } else {
+                if tile.flags.contains(MapFlags::MOVEBLOCK) {
+                    tile.flags.remove(MapFlags::MOVEBLOCK);
+                    changed = true;
+                }
+                let foreground = (tile.foreground_sprite & 0xffff) | (1034 << 16);
+                if tile.foreground_sprite != foreground {
+                    tile.foreground_sprite = foreground;
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.mark_dirty_sector(x, y);
+        }
+        target_id
     }
 
     fn apply_fdemon_waypoint(
@@ -12599,10 +12689,10 @@ mod tests {
         item_driver::{
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGAR,
             IDR_CALIGARFLAME, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT, IDR_ENCHANTITEM,
-            IDR_FDEMONBLOOD, IDR_FIREBALL, IDR_FLAMETHROW, IDR_FLASK, IDR_LAB3_PLANT,
-            IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE,
-            IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
-            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW, IDR_FLASK,
+            IDR_LAB3_PLANT, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION,
+            IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION, IDR_SPIKETRAP,
+            IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -17428,6 +17518,93 @@ mod tests {
         assert!(!world.items.contains_key(&ItemId(12)));
         assert_eq!(world.characters[&CharacterId(1)].cursor_item, None);
         assert_eq!(world.items[&ItemId(11)].sprite, 14348);
+    }
+
+    #[test]
+    fn world_applies_fdemon_lava_activation_and_timer_damage() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.cursor_item = Some(ItemId(9));
+        world.add_character(player);
+        let mut lava = item(7, ItemFlags::USED | ItemFlags::USE);
+        lava.driver = IDR_FDEMONLAVA;
+        assert!(world.map.set_item_map(&mut lava, 10, 10));
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+        world.add_item(lava);
+        let mut container = item(9, ItemFlags::USED);
+        container.template_id = (0x01 << 24) | 0x00004B;
+        container.driver_data = vec![2];
+        container.sprite = 100;
+        container.carried_by = Some(CharacterId(1));
+        world.add_item(container);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONLAVA,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            8,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonLavaActivated { amount: 1, .. }
+        ));
+        let lava_tile = world.map.tile(10, 10).unwrap();
+        assert!(!lava_tile.flags.contains(MapFlags::MOVEBLOCK));
+        assert_eq!(lava_tile.foreground_sprite, 1034 << 16);
+        assert_eq!(world.items[&ItemId(7)].driver_data[0], 120);
+        assert_eq!(world.items[&ItemId(7)].sprite, 14366);
+        assert_eq!(world.items[&ItemId(9)].driver_data[0], 1);
+        assert_eq!(world.items[&ItemId(9)].sprite, 99);
+        assert_eq!(world.timers.used_timers(), 1);
+
+        world.add_character(character(0));
+        world.items.get_mut(&ItemId(7)).unwrap().driver_data[0] = 20;
+        let mut target = character(2);
+        target.x = 10;
+        target.y = 10;
+        target.hp = 20 * POWERSCALE;
+        world.add_character(target);
+        world.map.tile_mut(10, 10).unwrap().character = 2;
+
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONLAVA,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            8,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonLavaPulse {
+                stage: 19,
+                damage,
+                armor_percent: 50,
+                ..
+            } if damage == 10 * POWERSCALE
+        ));
+        assert_eq!(world.items[&ItemId(7)].sprite, 14364);
+        assert_eq!(
+            world.map.tile(10, 10).unwrap().foreground_sprite,
+            1024 << 16
+        );
+        assert_eq!(world.characters[&CharacterId(2)].hp, 10 * POWERSCALE);
     }
 
     #[test]
