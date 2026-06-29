@@ -353,6 +353,7 @@ pub struct ItemDriverContext {
     pub character_underwater: bool,
     pub current_tick: u32,
     pub edemon_section_power: Option<u8>,
+    pub edemon_tube_target: Option<(u16, u16)>,
     pub fdemon_loader_power: Option<u16>,
     pub bone_hint_nr: Option<u8>,
     pub bone_hint_pos: Option<u8>,
@@ -1690,6 +1691,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EDEMONSWITCH => edemon_switch_driver(character, item, context),
                 IDR_EDEMONLOADER => edemon_loader_driver(character, item, context),
                 IDR_EDEMONLIGHT => edemon_light_driver(character, item, context),
+                IDR_EDEMONTUBE => edemon_tube_driver(character, item, context),
                 IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
                 IDR_FDEMONLOADER => fdemon_loader_driver(character, item, context),
                 IDR_FDEMONWAYPOINT => fdemon_waypoint_driver(character, item, context),
@@ -1789,6 +1791,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
     match driver {
         IDR_BONEBRIDGE | IDR_BONELADDER | IDR_BONEHOLDER | IDR_BONEWALL | IDR_BONEHINT => Some(18),
         IDR_NOMADDICE => Some(19),
+        IDR_EDEMONGATE | IDR_EDEMONDOOR | IDR_EDEMONBLOCK | IDR_EDEMONTUBE => Some(6),
         IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
         IDR_STAFFER2 => Some(29),
@@ -5625,6 +5628,47 @@ fn edemon_light_driver(
     item.modifier_index[0] = V_LIGHT;
     item.modifier_value[0] = light;
     item.sprite = sprite;
+
+    ItemDriverOutcome::LightChanged {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: Some(TICKS_PER_SECOND),
+    }
+}
+
+fn edemon_tube_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(6, 0);
+
+    if character.id.0 != 0 && !context.timer_call {
+        return ItemDriverOutcome::TeleportDoor {
+            item_id: item.id,
+            character_id: character.id,
+            x: drdata_u16(item, 2),
+            y: drdata_u16(item, 4),
+        };
+    }
+
+    let power = context.edemon_section_power.unwrap_or_default();
+    let (light, sprite) = if power != 0 && power < 249 {
+        (200, 14138)
+    } else {
+        (0, 14137)
+    };
+
+    item.modifier_index[0] = V_LIGHT;
+    item.modifier_value[0] = light;
+    item.sprite = sprite;
+
+    if drdata_u16(item, 2) == 0 {
+        if let Some((x, y)) = context.edemon_tube_target {
+            set_drdata_u16(item, 2, x);
+            set_drdata_u16(item, 4, y);
+        }
+    }
 
     ItemDriverOutcome::LightChanged {
         item_id: item.id,
@@ -11611,6 +11655,92 @@ mod tests {
                 &ItemDriverContext::default(),
             ),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn edemon_tube_timer_follows_section_power_and_remembers_target() {
+        let mut timer_character = character(0);
+        let mut tube = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_EDEMONTUBE);
+        tube.sprite = 14137;
+        tube.driver_data = vec![4, 0, 0, 0, 0, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONTUBE,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_EDEMONTUBE, 43);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut tube,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    edemon_section_power: Some(42),
+                    edemon_tube_target: Some((50, 61)),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LightChanged {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: Some(TICKS_PER_SECOND),
+            }
+        );
+        assert_eq!(tube.sprite, 14138);
+        assert_eq!(tube.modifier_index[0], V_LIGHT);
+        assert_eq!(tube.modifier_value[0], 200);
+        assert_eq!(drdata_u16(&tube, 2), 50);
+        assert_eq!(drdata_u16(&tube, 4), 61);
+
+        execute_item_driver_with_context(
+            &mut timer_character,
+            &mut tube,
+            request,
+            6,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                edemon_section_power: Some(249),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(tube.sprite, 14137);
+        assert_eq!(tube.modifier_value[0], 0);
+    }
+
+    #[test]
+    fn edemon_tube_character_use_teleports_to_remembered_target() {
+        let mut user = character(1);
+        let mut tube = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_EDEMONTUBE);
+        tube.driver_data = vec![4, 0, 50, 0, 61, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONTUBE,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut user,
+                &mut tube,
+                request,
+                6,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::TeleportDoor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 50,
+                y: 61,
+            }
         );
     }
 

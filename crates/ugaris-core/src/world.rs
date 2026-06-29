@@ -29,8 +29,8 @@ use crate::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item, ItemDriverContext,
         ItemDriverOutcome, ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL,
         IDR_CALIGAR, IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
-        IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT,
-        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
+        IDR_EDEMONTUBE, IDR_FDEMONFARM, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW,
+        IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_STEPTRAP, IDR_TORCH,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2152,7 +2152,9 @@ impl World {
                 }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
                 IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_EDEMONLOADER
-                | IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONFARM => Some(item_id),
+                | IDR_EDEMONTUBE | IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONFARM => {
+                    Some(item_id)
+                }
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
@@ -2594,9 +2596,13 @@ impl World {
             && context.fdemon_loader_power.is_none())
         .then(|| fdemon_loader_power_for_light(&self.items, item_id))
         .flatten();
-        let edemon_section_power = (driver == Some(IDR_EDEMONLIGHT)
+        let edemon_section_power = (matches!(driver, Some(IDR_EDEMONLIGHT | IDR_EDEMONTUBE))
             && context.edemon_section_power.is_none())
         .then(|| edemon_section_power_for_light(&self.items, item_id))
+        .flatten();
+        let edemon_tube_target = (driver == Some(IDR_EDEMONTUBE)
+            && context.edemon_tube_target.is_none())
+        .then(|| edemon_tube_target(&self.items, &self.map, item_id))
         .flatten();
         let dungeon_door_context = (driver == Some(IDR_DUNGEONDOOR))
             .then(|| self.dungeon_door_context(character_id, item_id));
@@ -2613,6 +2619,9 @@ impl World {
         }
         if effective_context.edemon_section_power.is_none() {
             effective_context.edemon_section_power = edemon_section_power;
+        }
+        if effective_context.edemon_tube_target.is_none() {
+            effective_context.edemon_tube_target = edemon_tube_target;
         }
         if let Some((has_key1, has_key2, defender_count)) = dungeon_door_context {
             effective_context.has_dungeon_door_key1 |= has_key1;
@@ -5681,9 +5690,15 @@ impl World {
         }
 
         let mut effective_context = context.clone();
-        if driver == IDR_EDEMONLIGHT && effective_context.edemon_section_power.is_none() {
+        if matches!(driver, IDR_EDEMONLIGHT | IDR_EDEMONTUBE)
+            && effective_context.edemon_section_power.is_none()
+        {
             effective_context.edemon_section_power =
                 edemon_section_power_for_light(&self.items, item_id);
+        }
+        if driver == IDR_EDEMONTUBE && effective_context.edemon_tube_target.is_none() {
+            effective_context.edemon_tube_target =
+                edemon_tube_target(&self.items, &self.map, item_id);
         }
         if driver == IDR_FDEMONLIGHT && effective_context.fdemon_loader_power.is_none() {
             effective_context.fdemon_loader_power =
@@ -12127,6 +12142,44 @@ fn edemon_section_power_for_light(
     found.then_some(max_power)
 }
 
+fn edemon_tube_target(
+    items: &HashMap<ItemId, Item>,
+    map: &MapGrid,
+    tube_item_id: ItemId,
+) -> Option<(u16, u16)> {
+    let tube = items.get(&tube_item_id)?;
+    let section = tube.driver_data.first().copied().unwrap_or_default();
+
+    for loader in items.values().filter(|item| {
+        item.driver == IDR_EDEMONLOADER && item.driver_data.first() == Some(&section)
+    }) {
+        let x = usize::from(loader.x);
+        let y = usize::from(loader.y);
+        if y < usize::from(u16::MAX) {
+            if let Some(tile) = map.tile(x, y + 1) {
+                if !tile
+                    .flags
+                    .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+                {
+                    return Some((loader.x, loader.y.saturating_add(1)));
+                }
+            }
+        }
+        if y > 0 {
+            if let Some(tile) = map.tile(x, y - 1) {
+                if !tile
+                    .flags
+                    .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+                {
+                    return Some((loader.x, loader.y.saturating_sub(1)));
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn read_spell_start_tick(driver_data: &[u8]) -> Option<u32> {
     let bytes = driver_data.get(4..8)?;
     Some(u32::from_le_bytes(bytes.try_into().ok()?))
@@ -17289,6 +17342,8 @@ mod tests {
         unlit_torch.driver_data = vec![0, 0, 10, 20];
         let mut edemon_light = item(10, ItemFlags::USED);
         edemon_light.driver = IDR_EDEMONLIGHT;
+        let mut edemon_tube = item(14, ItemFlags::USED);
+        edemon_tube.driver = IDR_EDEMONTUBE;
         let mut edemon_loader = item(13, ItemFlags::USED);
         edemon_loader.driver = IDR_EDEMONLOADER;
         let mut fdemon_loader = item(11, ItemFlags::USED);
@@ -17299,12 +17354,52 @@ mod tests {
         world.add_item(burning_torch);
         world.add_item(unlit_torch);
         world.add_item(edemon_light);
+        world.add_item(edemon_tube);
         world.add_item(edemon_loader);
         world.add_item(fdemon_loader);
         world.add_item(fdemon_farm);
 
-        assert_eq!(world.schedule_existing_light_timers(), 6);
-        assert_eq!(world.timers.used_timers(), 6);
+        assert_eq!(world.schedule_existing_light_timers(), 7);
+        assert_eq!(world.timers.used_timers(), 7);
+    }
+
+    #[test]
+    fn world_edemon_tube_discovers_loader_target_on_timer() {
+        let mut world = World::default();
+        world.add_character(character(0));
+        let mut tube = item(7, ItemFlags::USED | ItemFlags::USE);
+        tube.driver = IDR_EDEMONTUBE;
+        tube.driver_data = vec![4, 0, 0, 0, 0, 0];
+        world.add_item(tube);
+        let mut loader = item(8, ItemFlags::USED | ItemFlags::USE);
+        loader.driver = IDR_EDEMONLOADER;
+        loader.driver_data = vec![4, 42, 0];
+        loader.x = 20;
+        loader.y = 20;
+        world.add_item(loader);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_EDEMONTUBE,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            6,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::LightChanged { .. }));
+        let tube = &world.items[&ItemId(7)];
+        assert_eq!(tube.sprite, 14138);
+        assert_eq!(tube.modifier_value[0], 200);
+        assert_eq!(
+            u16::from_le_bytes([tube.driver_data[2], tube.driver_data[3]]),
+            20
+        );
+        assert_eq!(
+            u16::from_le_bytes([tube.driver_data[4], tube.driver_data[5]]),
+            21
+        );
     }
 
     #[test]
