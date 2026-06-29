@@ -18796,7 +18796,8 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::TrapdoorOpen { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TrapdoorBlocked { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::TrapdoorClose { .. } => {
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TrapdoorClose { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::GasTrapPulse { .. } => {
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::TrapdoorBusy { character_id, .. } => {

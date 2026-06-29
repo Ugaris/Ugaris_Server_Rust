@@ -755,6 +755,13 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    GasTrapPulse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        power: u8,
+        schedule_initial_trigger: bool,
+        schedule_animation: bool,
+    },
     ChestTreasure {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1620,6 +1627,7 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::TrapdoorNeedsStick { .. }
         | ItemDriverOutcome::JunkpileSearch { .. }
         | ItemDriverOutcome::JunkpileCursorOccupied { .. }
+        | ItemDriverOutcome::GasTrapPulse { .. }
         | ItemDriverOutcome::StafferSpecDoorToggle { .. }
         | ItemDriverOutcome::EdemonDoorToggle { .. } => 1,
         ItemDriverOutcome::StafferSpecDoorLocked { .. }
@@ -1778,6 +1786,7 @@ pub fn execute_item_driver_with_context(
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_TRAPDOOR => trapdoor_driver(character, item, context),
                 IDR_JUNKPILE => junkpile_driver(character, item, context),
+                IDR_GASTRAP => gastrap_driver(character, item, context),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
@@ -4046,6 +4055,40 @@ fn junkpile_driver(
         item_id: item.id,
         character_id: character.id,
         level: drdata(item, 0),
+    }
+}
+
+fn gastrap_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    let active = drdata(item, 1) != 0;
+    let mut schedule_initial_trigger = false;
+    if character.id.0 != 0 {
+        if active {
+            return ItemDriverOutcome::Noop;
+        }
+        schedule_initial_trigger = true;
+    } else if !context.timer_call || !active {
+        return ItemDriverOutcome::Noop;
+    }
+
+    item.driver_data.resize(2, 0);
+    item.driver_data[1] = item.driver_data[1].saturating_add(1);
+    let schedule_animation = if item.driver_data[1] == 9 {
+        item.driver_data[1] = 0;
+        false
+    } else {
+        true
+    };
+
+    ItemDriverOutcome::GasTrapPulse {
+        item_id: item.id,
+        character_id: character.id,
+        power: drdata(item, 0),
+        schedule_initial_trigger,
+        schedule_animation,
     }
 }
 
@@ -14425,6 +14468,84 @@ mod tests {
                 character_id: CharacterId(1),
             }
         );
+    }
+
+    #[test]
+    fn gastrap_trigger_and_timer_advance_animation_state() {
+        let mut actor = character(1);
+        let mut trap = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_GASTRAP);
+        trap.driver_data = vec![4, 0];
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_GASTRAP,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext::default(),
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::GasTrapPulse {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                power: 4,
+                schedule_initial_trigger: true,
+                schedule_animation: true,
+            }
+        );
+        assert_eq!(trap.driver_data[1], 1);
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_GASTRAP,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext::default(),
+        );
+        assert_eq!(outcome, ItemDriverOutcome::Noop);
+
+        let mut timer = character(0);
+        trap.driver_data[1] = 8;
+        let outcome = execute_item_driver_with_context(
+            &mut timer,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_GASTRAP,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::GasTrapPulse {
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                power: 4,
+                schedule_initial_trigger: false,
+                schedule_animation: false,
+            }
+        );
+        assert_eq!(trap.driver_data[1], 0);
     }
 
     fn request(character_id: u32, item_id: u32, spec: i32) -> ItemUseRequest {

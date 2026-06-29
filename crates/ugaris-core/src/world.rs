@@ -6071,6 +6071,43 @@ impl World {
             }
             ItemDriverOutcome::TrapdoorBusy { .. }
             | ItemDriverOutcome::TrapdoorNeedsStick { .. } => outcome,
+            ItemDriverOutcome::GasTrapPulse {
+                item_id,
+                character_id,
+                power,
+                schedule_initial_trigger,
+                schedule_animation,
+            } => {
+                if schedule_initial_trigger {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), 1);
+                }
+                if schedule_animation {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), 3);
+                }
+                if let Some(animation) = self
+                    .items
+                    .get(&item_id)
+                    .and_then(|item| item.driver_data.get(1).copied())
+                {
+                    self.apply_gastrap_foreground(item_id, animation);
+                }
+                if character_id.0 != 0
+                    && self
+                        .characters
+                        .get(&character_id)
+                        .is_some_and(|character| character.flags.contains(CharacterFlags::PLAYER))
+                {
+                    self.apply_legacy_hurt(
+                        character_id,
+                        None,
+                        i32::from(power) * POWERSCALE,
+                        1,
+                        50,
+                        33,
+                    );
+                }
+                outcome
+            }
             ItemDriverOutcome::BoneBridgePlace {
                 item_id,
                 character_id,
@@ -7609,6 +7646,40 @@ impl World {
         }
         self.mark_dirty_sector(usize::from(x), usize::from(y));
         true
+    }
+
+    fn apply_gastrap_foreground(&mut self, item_id: ItemId, animation: u8) -> bool {
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        let origin_x = usize::from(item.x);
+        let origin_y = usize::from(item.y);
+        let Some((x, y, base_sprite)) = [(0_i16, 0_i16), (1, 0), (-1, 0), (0, 1), (0, -1)]
+            .into_iter()
+            .filter_map(|(dx, dy)| {
+                let x = offset_coordinate(origin_x, dx)?;
+                let y = offset_coordinate(origin_y, dy)?;
+                let sprite = self.map.tile(x, y)?.foreground_sprite;
+                let base = match sprite {
+                    15291..=15299 => 15291,
+                    15300..=15308 => 15300,
+                    15309..=15317 => 15309,
+                    15318..=15326 => 15318,
+                    _ => return None,
+                };
+                Some((x, y, base))
+            })
+            .next()
+        else {
+            return false;
+        };
+        if let Some(tile) = self.map.tile_mut(x, y) {
+            tile.foreground_sprite = base_sprite + u32::from(animation);
+            self.mark_dirty_sector(x, y);
+            true
+        } else {
+            false
+        }
     }
 
     fn mark_flamethrower_targets_for_burn(&mut self, item_id: ItemId, direction: u8) {
@@ -24366,6 +24437,79 @@ mod tests {
             world.characters.get(&CharacterId(1)).unwrap().cursor_item,
             None
         );
+    }
+
+    #[test]
+    fn world_applies_area14_gastrap_damage_foreground_and_timers() {
+        let mut world = World::default();
+        world.map = MapGrid::new(20, 20);
+        let mut trap = item(8, ItemFlags::USED | ItemFlags::USE);
+        trap.driver = crate::item_driver::IDR_GASTRAP;
+        trap.driver_data = vec![2, 0];
+        assert!(world.map.set_item_map(&mut trap, 10, 10));
+        world.add_item(trap);
+        world.map.tile_mut(11, 10).unwrap().foreground_sprite = 15300;
+
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.hp = 10 * POWERSCALE;
+        assert!(world.spawn_character(player, 10, 10));
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_GASTRAP,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::GasTrapPulse {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                power: 2,
+                schedule_initial_trigger: true,
+                schedule_animation: true,
+            }
+        );
+        assert_eq!(world.items.get(&ItemId(8)).unwrap().driver_data[1], 1);
+        assert_eq!(world.map.tile(11, 10).unwrap().foreground_sprite, 15301);
+        assert!(world.characters.get(&CharacterId(1)).unwrap().hp < 10 * POWERSCALE);
+        assert_eq!(world.timers.used_timers(), 2);
+    }
+
+    #[test]
+    fn world_applies_area14_gastrap_timer_animation_reset() {
+        let mut world = World::default();
+        world.map = MapGrid::new(20, 20);
+        world.add_character(character(0));
+        let mut trap = item(8, ItemFlags::USED | ItemFlags::USE);
+        trap.driver = crate::item_driver::IDR_GASTRAP;
+        trap.driver_data = vec![2, 8];
+        assert!(world.map.set_item_map(&mut trap, 10, 10));
+        world.add_item(trap);
+        world.map.tile_mut(10, 9).unwrap().foreground_sprite = 15318;
+        assert!(world.schedule_item_driver_timer(ItemId(8), CharacterId(0), 1));
+
+        world.tick = Tick(1);
+        let outcomes = world.process_due_timers(14);
+
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::GasTrapPulse {
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                power: 2,
+                schedule_initial_trigger: false,
+                schedule_animation: false,
+            }]
+        );
+        assert_eq!(world.items.get(&ItemId(8)).unwrap().driver_data[1], 0);
+        assert_eq!(world.map.tile(10, 9).unwrap().foreground_sprite, 15318);
+        assert_eq!(world.timers.used_timers(), 0);
     }
 
     fn character(id: u32) -> Character {
