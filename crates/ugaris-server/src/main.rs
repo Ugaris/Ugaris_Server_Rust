@@ -15171,6 +15171,22 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Interesting idea. Really. Doesn't work, though.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ParkShrine { character_id, shrine, .. } => {
+                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                if player.memorize_park_shrine(shrine).unwrap_or(false) {
+                                                    feedback.push((character_id, "You memorize the location of the shrine.".to_string()));
+                                                } else {
+                                                    feedback.push((character_id, "This shrine seems familar.".to_string()));
+                                                }
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ParkShrineBug { character_id, .. } => {
+                                            feedback.push((character_id, "BUG #55343, please report".to_string()));
+                                            failed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::PickBerry {
                                             character_id,
                                             kind,

@@ -33,6 +33,7 @@ pub const BOOK_NOOK_JOKES: u8 = 48;
 pub const IDR_ONOFFLIGHT: u16 = 17;
 pub const IDR_TRANSPORT: u16 = 18;
 pub const IDR_STATSCROLL: u16 = 19;
+pub const IDR_PARKSHRINE: u16 = 23;
 pub const IDR_FLAMETHROW: u16 = 24;
 pub const IDR_STEPTRAP: u16 = 25;
 pub const IDR_SPIKETRAP: u16 = 26;
@@ -815,6 +816,16 @@ pub enum ItemDriverOutcome {
         duration_ticks: u64,
         installed: bool,
     },
+    ParkShrine {
+        item_id: ItemId,
+        character_id: CharacterId,
+        shrine: u8,
+    },
+    ParkShrineBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+        shrine: u8,
+    },
     BookText {
         item_id: ItemId,
         character_id: CharacterId,
@@ -969,6 +980,7 @@ pub fn execute_item_driver_with_context(
                 IDR_RANDCHEST => randchest_driver(character, item),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
+                IDR_PARKSHRINE => parkshrine_driver(character, item),
                 IDR_BOOK => book_driver(character, item),
                 IDR_DEMONSHRINE => demonshrine_driver(character, item, area_id),
                 IDR_PALACEKEY => palace_key_driver(character, item, context),
@@ -1061,6 +1073,27 @@ fn balltrap_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         target_x: clamp_legacy_coordinate(item_x + i32::from(dx)),
         target_y: clamp_legacy_coordinate(item_y + i32::from(dy)),
         power: drdata(item, 2),
+    }
+}
+
+fn parkshrine_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let shrine = drdata(item, 0);
+    if !(1..=3).contains(&shrine) {
+        return ItemDriverOutcome::ParkShrineBug {
+            item_id: item.id,
+            character_id: character.id,
+            shrine,
+        };
+    }
+
+    ItemDriverOutcome::ParkShrine {
+        item_id: item.id,
+        character_id: character.id,
+        shrine,
     }
 }
 
@@ -4028,6 +4061,45 @@ mod tests {
         let mut timer_character = character(0);
         assert_eq!(
             execute_item_driver(&mut timer_character, &mut berry, request, 31, false),
+            ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn parkshrine_driver_ports_area2_memorize_boundary() {
+        let mut actor = character(1);
+        let mut shrine = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_PARKSHRINE);
+        shrine.driver_data = vec![2];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PARKSHRINE,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_PARKSHRINE, 23);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut shrine, request, 2, false),
+            ItemDriverOutcome::ParkShrine {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                shrine: 2,
+            }
+        );
+
+        shrine.driver_data = vec![4];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut shrine, request, 2, false),
+            ItemDriverOutcome::ParkShrineBug {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                shrine: 4,
+            }
+        );
+
+        let mut timer_character = character(0);
+        assert_eq!(
+            execute_item_driver(&mut timer_character, &mut shrine, request, 2, false),
             ItemDriverOutcome::Noop
         );
     }

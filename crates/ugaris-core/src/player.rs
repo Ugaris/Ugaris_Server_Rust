@@ -33,6 +33,7 @@ pub const LEGACY_DEMONSHRINE_PPD_SIZE: usize = DEMONSHRINE_MAX_ENTRIES * 4;
 pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
+pub const LEGACY_AREA3_PPD_SIZE: usize = 17 * 4;
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
 pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
@@ -50,6 +51,7 @@ pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
 pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
+pub const DRD_AREA3_PPD: u32 = make_drd(DEV_ID_DB, 40 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TRANSPORT_PPD: u32 = make_drd(DEV_ID_DB, 44 | PERSISTENT_PLAYER_DATA);
 pub const DRD_PK_PPD: u32 = make_drd(DEV_ID_DB, 47 | PERSISTENT_PLAYER_DATA);
@@ -94,6 +96,9 @@ const ORBSPAWN_PPD_IDS_OFFSET: usize = 0;
 const ORBSPAWN_PPD_LAST_USED_OFFSET: usize = ORBSPAWN_PPD_IDS_OFFSET + ORBSPAWN_MAX_ENTRIES * 4;
 const FLOWER_PPD_IDS_OFFSET: usize = 0;
 const FLOWER_PPD_LAST_USED_OFFSET: usize = FLOWER_PPD_IDS_OFFSET + FLOWER_MAX_ENTRIES * 4;
+const AREA3_PPD_KELLY_FOUND1_OFFSET: usize = 3 * 4;
+const AREA3_PPD_KELLY_FOUND2_OFFSET: usize = 4 * 4;
+const AREA3_PPD_KELLY_FOUND3_OFFSET: usize = 5 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const LOSTCON_PPD_MAXLAG_OFFSET: usize = 17 * 4;
@@ -296,6 +301,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub misc_ppd: Vec<u8>,
     #[serde(default)]
+    pub area3_ppd: Vec<u8>,
+    #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
     pub pk_deaths: u32,
@@ -378,6 +385,7 @@ impl PlayerRuntime {
             demonshrines: Vec::new(),
             treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
+            area3_ppd: Vec::new(),
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,
@@ -1226,6 +1234,21 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_area3_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_AREA3_PPD_SIZE];
+        let copy_len = self.area3_ppd.len().min(LEGACY_AREA3_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.area3_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_area3_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_AREA3_PPD_SIZE {
+            return false;
+        }
+        self.area3_ppd = bytes[..LEGACY_AREA3_PPD_SIZE].to_vec();
+        true
+    }
+
     pub fn decode_legacy_ppd_blob(&mut self, bytes: &[u8]) -> bool {
         for block in LegacyPpdBlocks::parse(bytes) {
             let Some(block) = block else {
@@ -1277,6 +1300,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_AREA3_PPD => {
+                    if !self.decode_legacy_area3_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TREASURE_DIG_PPD => {
                     if !self.decode_legacy_treasure_dig_ppd(block.data) {
                         return false;
@@ -1319,6 +1347,7 @@ impl PlayerRuntime {
         let mut had_orbspawn = false;
         let mut had_lostcon = false;
         let mut had_flower = false;
+        let mut had_area3 = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
         let mut had_rune = false;
@@ -1393,6 +1422,9 @@ impl PlayerRuntime {
                     DRD_FLOWER_PPD,
                     &self.encode_legacy_flower_ppd(),
                 );
+            } else if block.id == DRD_AREA3_PPD {
+                had_area3 = true;
+                write_ppd_block(&mut encoded, DRD_AREA3_PPD, &self.encode_legacy_area3_ppd());
             } else if block.id == DRD_TREASURE_DIG_PPD {
                 had_treasure_dig = true;
                 write_ppd_block(
@@ -1503,6 +1535,9 @@ impl PlayerRuntime {
                 &self.encode_legacy_flower_ppd(),
             );
         }
+        if !had_area3 && (existing_was_valid || existing.is_empty()) && !self.area3_ppd.is_empty() {
+            write_ppd_block(&mut encoded, DRD_AREA3_PPD, &self.encode_legacy_area3_ppd());
+        }
         if !had_treasure_dig && (existing_was_valid || existing.is_empty()) {
             if self
                 .treasure_dig_last_seconds
@@ -1574,6 +1609,21 @@ impl PlayerRuntime {
 
         self.misc_ppd[MISC_PPD_TREEDONE_OFFSET + idx] |= bit;
         XmasTreeResult::GiftGranted
+    }
+
+    pub fn memorize_park_shrine(&mut self, shrine: u8) -> Option<bool> {
+        let offset = match shrine {
+            1 => AREA3_PPD_KELLY_FOUND1_OFFSET,
+            2 => AREA3_PPD_KELLY_FOUND2_OFFSET,
+            3 => AREA3_PPD_KELLY_FOUND3_OFFSET,
+            _ => return None,
+        };
+        if self.area3_ppd.len() < LEGACY_AREA3_PPD_SIZE {
+            self.area3_ppd.resize(LEGACY_AREA3_PPD_SIZE, 0);
+        }
+        let was_new = read_i32(&self.area3_ppd, offset) == 0;
+        write_i32(&mut self.area3_ppd, offset, 1);
+        Some(was_new)
     }
 
     pub fn unmark_xmas_tree(&mut self, area_id: u16) {
@@ -3067,6 +3117,57 @@ mod tests {
         assert!(decoded.decode_legacy_ppd_blob(&encoded));
         assert_eq!(decoded.rune_used_words[0], 0x8000_0002);
         assert_eq!(decoded.rune_special_exec[0], 654);
+    }
+
+    #[test]
+    fn area3_ppd_tracks_park_shrine_memorization() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(
+            DRD_AREA3_PPD,
+            make_drd(DEV_ID_DB, 40 | PERSISTENT_PLAYER_DATA)
+        );
+        assert_eq!(player.memorize_park_shrine(2), Some(true));
+        assert_eq!(player.memorize_park_shrine(2), Some(false));
+        assert_eq!(player.memorize_park_shrine(4), None);
+
+        let encoded = player.encode_legacy_area3_ppd();
+        assert_eq!(encoded.len(), LEGACY_AREA3_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, AREA3_PPD_KELLY_FOUND1_OFFSET), 0);
+        assert_eq!(read_i32(&encoded, AREA3_PPD_KELLY_FOUND2_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, AREA3_PPD_KELLY_FOUND3_OFFSET), 0);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_area3_ppd(&encoded));
+        assert_eq!(decoded.memorize_park_shrine(2), Some(false));
+        assert_eq!(decoded.memorize_park_shrine(3), Some(true));
+    }
+
+    #[test]
+    fn area3_ppd_blob_replaces_and_appends_legacy_block() {
+        let mut existing_area3 = vec![0; LEGACY_AREA3_PPD_SIZE];
+        write_i32(&mut existing_area3, AREA3_PPD_KELLY_FOUND1_OFFSET, 1);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, 0x1122_3344, &[1, 2, 3]);
+        write_ppd_block(&mut existing, DRD_AREA3_PPD, &existing_area3);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.memorize_park_shrine(3), Some(true));
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+
+        assert_eq!(read_u32(&encoded, 0), 0x1122_3344);
+        assert_eq!(read_u32(&encoded, 11), DRD_AREA3_PPD);
+        assert_eq!(read_u32(&encoded, 15), LEGACY_AREA3_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 19 + AREA3_PPD_KELLY_FOUND1_OFFSET), 0);
+        assert_eq!(read_i32(&encoded, 19 + AREA3_PPD_KELLY_FOUND3_OFFSET), 1);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.memorize_park_shrine(3), Some(false));
+
+        let appended = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended, 0), DRD_AREA3_PPD);
     }
 
     #[test]
