@@ -17442,6 +17442,22 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::StafferAnimationBook {
+                                            character_id,
+                                            exp_added,
+                                            ..
+                                        } => {
+                                            let grant_exp = runtime
+                                                .player_for_character_mut(character_id)
+                                                .map(|player| player.mark_staffer_animation_book_seen())
+                                                .unwrap_or(false);
+                                            if grant_exp {
+                                                if let Some(character) = world.characters.get_mut(&character_id) {
+                                                    character.exp = character.exp.saturating_add(exp_added);
+                                                }
+                                            }
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::StafferMineExhausted {
                                             character_id,
                                             ..

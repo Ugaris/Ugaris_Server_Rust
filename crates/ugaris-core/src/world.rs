@@ -5675,6 +5675,13 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::StafferAnimationBook { character_id, .. } => {
+                if self.teleport_character(character_id, 25, 114, true) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::ForestSpadeCollapse {
                 character_id, x, y, ..
             } => {
@@ -21983,6 +21990,41 @@ mod tests {
 
         let player = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(player.hp, 950);
+    }
+
+    #[test]
+    fn staffer2_animation_book_teleports_without_granting_core_exp() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.level = 60;
+        assert!(world.spawn_character(player, 10, 10));
+        let mut book = item(8, ItemFlags::USED | ItemFlags::USE);
+        book.driver = IDR_STAFFER2;
+        book.driver_data = vec![6];
+        world.add_item(book);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER2,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            29,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::StafferAnimationBook {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                exp_added: 177_168,
+            }
+        );
+        let player = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((player.x, player.y), (25, 114));
+        assert_eq!(player.exp, 0);
     }
 
     #[test]

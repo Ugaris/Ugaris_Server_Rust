@@ -1591,9 +1591,39 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 59,
+      "startedAt": "2026-06-29T18:06:52.971Z",
+      "endedAt": "2026-06-29T18:16:53.829Z",
+      "durationMs": 600655,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/player.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 653 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 203 filtered out; finished in 0.00s",
+        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 653 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 670 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 30324312,
+  "totalDurationMs": 30924967,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 9,
@@ -1601,14 +1631,14 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 8,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 8,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 46,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 45,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 40,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 41,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 31,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 47,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 46,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 41,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 42,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 32,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 2,
@@ -1807,7 +1837,7 @@
       "test item_driver::tests::colortile_reports_legacy_row_and_color_for_players_only ... FAILED": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 659 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 659 filtered out; finished in 0.00s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 203 filtered out; finished in 0.00s": 2,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 203 filtered out; finished in 0.00s": 3,
       "The focused tests are in place. I’m running formatting and targeted tests now; if those pass I’ll ru": 1,
       "error: could not compile `ugaris-core` (lib test) due to 8 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 660 filtered out; finished in 0.00s": 1,
@@ -1815,7 +1845,10 @@
       "test result: ok. 664 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 5 previous errors": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 664 filtered out; finished in 0.00s": 1,
-      "test result: ok. 667 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 667 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 653 filtered out; finished in 0.00s": 1,
+      "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 653 filtered out; finished in 0.00s": 1,
+      "test result: ok. 670 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

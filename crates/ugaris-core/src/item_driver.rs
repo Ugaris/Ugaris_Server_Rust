@@ -1326,6 +1326,11 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         page: u8,
     },
+    StafferAnimationBook {
+        item_id: ItemId,
+        character_id: CharacterId,
+        exp_added: u32,
+    },
     StafferMineDig {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2037,15 +2042,10 @@ fn staffer2_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutc
             }
             let exp_added =
                 (legacy_level_value(60) / 5).min(legacy_level_value(character.level) / 4);
-            character.exp = character.exp.saturating_add(exp_added);
-            ItemDriverOutcome::Teleport {
+            ItemDriverOutcome::StafferAnimationBook {
                 item_id: item.id,
                 character_id: character.id,
-                x: 25,
-                y: 114,
-                area_id: 0,
-                stop_driver: true,
-                quiet: false,
+                exp_added,
             }
         }
         _ => ItemDriverOutcome::Unsupported {
@@ -7617,7 +7617,7 @@ mod tests {
     }
 
     #[test]
-    fn staffer2_animation_book_grants_legacy_exp_and_teleports() {
+    fn staffer2_animation_book_reports_legacy_exp_for_runtime_ppd_gate() {
         let mut reader = character(1);
         reader.flags.insert(CharacterFlags::PLAYER);
         reader.level = 60;
@@ -7634,17 +7634,13 @@ mod tests {
         assert_eq!(legacy_level_value(60), 885_841);
         assert_eq!(
             execute_item_driver(&mut reader, &mut book, request, 29, false),
-            ItemDriverOutcome::Teleport {
+            ItemDriverOutcome::StafferAnimationBook {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
-                x: 25,
-                y: 114,
-                area_id: 0,
-                stop_driver: true,
-                quiet: false,
+                exp_added: 177_168,
             }
         );
-        assert_eq!(reader.exp, 177_168);
+        assert_eq!(reader.exp, 0);
     }
 
     #[test]
