@@ -1449,15 +1449,22 @@ fn flask_skill_mix(
         }
     }
 
-    let single = |skill: CharacterValue, divisor: f64, value: i32| {
+    let c_empty_modifier_index = || {
         let mut idx = [0; MAX_MODIFIERS];
+        idx[0] = -1;
+        idx[1] = -1;
+        idx[2] = -1;
+        idx
+    };
+    let single = |skill: CharacterValue, divisor: f64, value: i32| {
+        let mut idx = c_empty_modifier_index();
         let mut val = [0; MAX_MODIFIERS];
         idx[0] = skill as i16;
         val[0] = c_div(power, divi, divisor);
         (idx, val, value)
     };
     let double = |a: CharacterValue, b: CharacterValue, divisor: f64, value: i32| {
-        let mut idx = [0; MAX_MODIFIERS];
+        let mut idx = c_empty_modifier_index();
         let mut val = [0; MAX_MODIFIERS];
         idx[0] = a as i16;
         idx[1] = b as i16;
@@ -1467,7 +1474,7 @@ fn flask_skill_mix(
     };
     let triple =
         |a: CharacterValue, b: CharacterValue, c: CharacterValue, divisor: f64, value: i32| {
-            let mut idx = [0; MAX_MODIFIERS];
+            let mut idx = c_empty_modifier_index();
             let mut val = [0; MAX_MODIFIERS];
             idx[0] = a as i16;
             idx[1] = b as i16;
@@ -1621,7 +1628,7 @@ fn flask_skill_mix(
         } else if count == 3 && strn == 2 && lfe == 1 {
             single(CharacterValue::Rage, 2.0, 3)
         } else if count != 0 {
-            let mut idx = [0; MAX_MODIFIERS];
+            let mut idx = c_empty_modifier_index();
             let mut val = [0; MAX_MODIFIERS];
             for slot in 0..3 {
                 if wis != 0 {
@@ -4785,6 +4792,63 @@ mod tests {
         assert_eq!(flask.name, "Magical Potion");
         assert_eq!(flask.sprite, 50214);
         assert_eq!(flask.description, "A flask containing a magical liquid.");
+    }
+
+    #[test]
+    fn flask_driver_ports_c_empty_modifier_slots_for_smaller_recipes() {
+        let mut actor = character(1);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FLASK,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let mut double_recipe = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLASK);
+        double_recipe.carried_by = Some(CharacterId(1));
+        double_recipe.driver_data.resize(31, 0);
+        double_recipe.driver_data[0] = 2;
+        double_recipe.driver_data[1] = 4;
+        double_recipe.driver_data[11] = 1;
+        double_recipe.driver_data[12] = 1;
+        double_recipe.driver_data[13] = 1;
+        double_recipe.driver_data[14] = 1;
+        double_recipe.driver_data[18] = 1;
+        double_recipe.driver_data[28] = 1;
+
+        assert!(matches!(
+            execute_item_driver(&mut actor, &mut double_recipe, request, 1, false),
+            ItemDriverOutcome::FlaskMixed { .. }
+        ));
+        assert_eq!(
+            double_recipe.modifier_index[0..3],
+            [
+                CharacterValue::Attack as i16,
+                CharacterValue::Parry as i16,
+                -1,
+            ]
+        );
+        assert_eq!(double_recipe.modifier_value[0..3], [1, 1, 0]);
+
+        let mut single_recipe = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_FLASK);
+        single_recipe.carried_by = Some(CharacterId(1));
+        single_recipe.driver_data.resize(29, 0);
+        single_recipe.driver_data[0] = 1;
+        single_recipe.driver_data[1] = 3;
+        single_recipe.driver_data[14] = 2;
+        single_recipe.driver_data[17] = 1;
+        single_recipe.driver_data[18] = 1;
+        single_recipe.driver_data[28] = 1;
+
+        assert!(matches!(
+            execute_item_driver(&mut actor, &mut single_recipe, request, 1, false),
+            ItemDriverOutcome::FlaskMixed { .. }
+        ));
+        assert_eq!(
+            single_recipe.modifier_index[0..3],
+            [CharacterValue::Pulse as i16, -1, -1]
+        );
+        assert_eq!(single_recipe.modifier_value[0..3], [2, 0, 0]);
     }
 
     #[test]
