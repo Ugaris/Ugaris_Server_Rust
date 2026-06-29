@@ -121,6 +121,14 @@ enum StafferSpecDoorResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CaligarWeightDoorResult {
+    Moved,
+    Locked,
+    Busy,
+    Noop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(test), allow(dead_code))]
 enum FightDriverTaskKind {
     Freeze,
@@ -5974,9 +5982,26 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::CaligarWeightDoor {
+                item_id,
+                character_id,
+            } => match self.apply_caligar_weight_door(item_id, character_id) {
+                CaligarWeightDoorResult::Moved => outcome,
+                CaligarWeightDoorResult::Locked => ItemDriverOutcome::CaligarWeightDoorLocked {
+                    item_id,
+                    character_id,
+                },
+                CaligarWeightDoorResult::Busy => ItemDriverOutcome::CaligarWeightDoorBusy {
+                    item_id,
+                    character_id,
+                },
+                CaligarWeightDoorResult::Noop => ItemDriverOutcome::Noop,
+            },
             ItemDriverOutcome::StafferMineExhausted { .. }
             | ItemDriverOutcome::StafferBlockBlocked { .. }
-            | ItemDriverOutcome::CaligarWeightBlocked { .. } => outcome,
+            | ItemDriverOutcome::CaligarWeightBlocked { .. }
+            | ItemDriverOutcome::CaligarWeightDoorLocked { .. }
+            | ItemDriverOutcome::CaligarWeightDoorBusy { .. } => outcome,
             ItemDriverOutcome::BeyondPotion {
                 item_id,
                 character_id,
@@ -7280,6 +7305,97 @@ impl World {
             }
         }
         self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 5);
+        true
+    }
+
+    fn apply_caligar_weight_door(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+    ) -> CaligarWeightDoorResult {
+        let Some(item) = self.items.get(&item_id) else {
+            return CaligarWeightDoorResult::Noop;
+        };
+        let Some(character) = self.characters.get(&character_id) else {
+            return CaligarWeightDoorResult::Noop;
+        };
+        let dx = i32::from(character.x) - i32::from(item.x);
+        let dy = i32::from(character.y) - i32::from(item.y);
+        if dx != 0 && dy != 0 {
+            return CaligarWeightDoorResult::Noop;
+        }
+
+        if dy > 0 {
+            let has_lock_weight = |world: &World, x: usize, y: usize| {
+                let item_id = world.map.tile(x, y).map(|tile| tile.item).unwrap_or(0);
+                item_id != 0
+                    && world
+                        .items
+                        .get(&ItemId(item_id))
+                        .is_some_and(|item| item.driver == IDR_CALIGAR)
+            };
+            if !has_lock_weight(self, 210, 184) || !has_lock_weight(self, 213, 176) {
+                if let Some(character) = self.characters.get_mut(&character_id) {
+                    character.action = 0;
+                    character.step = 0;
+                    character.duration = 0;
+                }
+                return CaligarWeightDoorResult::Locked;
+            }
+        }
+
+        let target_x = i32::from(item.x) - dx;
+        let target_y = i32::from(item.y) - dy;
+        if target_x < 1
+            || target_y < 1
+            || target_x as usize > self.map.width().saturating_sub(2)
+            || target_y as usize > self.map.height().saturating_sub(2)
+        {
+            return CaligarWeightDoorResult::Noop;
+        }
+
+        if !self.teleport_character_exact(character_id, target_x as usize, target_y as usize) {
+            return CaligarWeightDoorResult::Busy;
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.dir = match character.dir {
+                value if value == Direction::Right as u8 => Direction::Left as u8,
+                value if value == Direction::Left as u8 => Direction::Right as u8,
+                value if value == Direction::Up as u8 => Direction::Down as u8,
+                value if value == Direction::Down as u8 => Direction::Up as u8,
+                value => value,
+            };
+            character.action = 0;
+            character.step = 0;
+            character.duration = 0;
+        }
+        CaligarWeightDoorResult::Moved
+    }
+
+    fn teleport_character_exact(&mut self, character_id: CharacterId, x: usize, y: usize) -> bool {
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        let old_x = usize::from(character.x);
+        let old_y = usize::from(character.y);
+        let before = character.clone();
+        remove_character_light(&mut self.map, character);
+        self.map.remove_char(character);
+        character.action = 0;
+        character.step = 0;
+        character.duration = 0;
+        if !self.map.set_char(character, x, y) {
+            let _ = self.map.set_char(character, old_x, old_y);
+            add_character_light(&mut self.map, character);
+            let after = character.clone();
+            self.mark_character_light_area(&before);
+            self.mark_character_light_area(&after);
+            return false;
+        }
+        add_character_light(&mut self.map, character);
+        let after = character.clone();
+        self.mark_character_light_area(&before);
+        self.mark_character_light_area(&after);
         true
     }
 
@@ -20729,6 +20845,109 @@ mod tests {
         );
         assert_eq!(world.map.tile(10, 10).unwrap().item, 8);
         assert_eq!(world.map.tile(11, 10).unwrap().item, 0);
+    }
+
+    #[test]
+    fn caligar_weight_door_requires_lock_weights_from_south() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(player, 10, 11));
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_CALIGAR;
+        door.driver_data = vec![3];
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_CALIGAR,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            36,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::CaligarWeightDoorLocked {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(world.characters.get(&CharacterId(1)).unwrap().x, 10);
+        assert_eq!(world.characters.get(&CharacterId(1)).unwrap().y, 11);
+    }
+
+    #[test]
+    fn caligar_weight_door_teleports_to_opposite_side_and_reverses_facing() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        player.dir = Direction::Down as u8;
+        assert!(world.spawn_character(player, 10, 9));
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_CALIGAR;
+        door.driver_data = vec![3];
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_CALIGAR,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            36,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::CaligarWeightDoor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        let player = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((player.x, player.y), (10, 11));
+        assert_eq!(player.dir, Direction::Up as u8);
+        assert_eq!(world.map.tile(10, 9).unwrap().character, 0);
+        assert_eq!(world.map.tile(10, 11).unwrap().character, 1);
+    }
+
+    #[test]
+    fn caligar_weight_door_reports_busy_target() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(player, 10, 9));
+        assert!(world.spawn_character(character(2), 10, 11));
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_CALIGAR;
+        door.driver_data = vec![3];
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_CALIGAR,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            36,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::CaligarWeightDoorBusy {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(world.characters.get(&CharacterId(1)).unwrap().y, 9);
     }
 
     #[test]

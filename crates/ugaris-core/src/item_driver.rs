@@ -884,6 +884,18 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    CaligarWeightDoor {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    CaligarWeightDoorLocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    CaligarWeightDoorBusy {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BookText {
         item_id: ItemId,
         character_id: CharacterId,
@@ -950,11 +962,12 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::KeyedDoorToggle { .. }
         | ItemDriverOutcome::DoubleDoorToggle { .. }
         | ItemDriverOutcome::StafferSpecDoorToggle { .. } => 1,
-        ItemDriverOutcome::StafferSpecDoorLocked { .. } => 2,
+        ItemDriverOutcome::StafferSpecDoorLocked { .. }
+        | ItemDriverOutcome::CaligarWeightDoorLocked { .. } => 2,
         ItemDriverOutcome::Noop
             if matches!(
                 driver,
-                Some(IDR_DOOR) | Some(IDR_DOUBLE_DOOR) | Some(IDR_STAFFER2)
+                Some(IDR_DOOR) | Some(IDR_DOUBLE_DOOR) | Some(IDR_STAFFER2) | Some(IDR_CALIGAR)
             ) =>
         {
             2
@@ -1200,6 +1213,7 @@ fn caligar_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     match drdata(item, 0) {
         1 => caligar_training_driver(character, item),
         2 | 4 => caligar_weight_driver(character, item),
+        3 => caligar_weight_door_driver(character, item),
         _ => ItemDriverOutcome::Unsupported {
             driver: IDR_CALIGAR,
             item_id: item.id,
@@ -1229,6 +1243,17 @@ fn caligar_weight_driver(character: &Character, item: &Item) -> ItemDriverOutcom
     }
 
     ItemDriverOutcome::CaligarWeightMove {
+        item_id: item.id,
+        character_id: character.id,
+    }
+}
+
+fn caligar_weight_door_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::CaligarWeightDoor {
         item_id: item.id,
         character_id: character.id,
     }
@@ -4969,7 +4994,27 @@ mod tests {
             }
         );
 
+        training.driver_data = vec![3, 0];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut training, request, 36, false),
+            ItemDriverOutcome::CaligarWeightDoor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(
+                Some(IDR_CALIGAR),
+                &ItemDriverOutcome::CaligarWeightDoorLocked {
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                },
+            ),
+            2
+        );
+
         let mut timer_character = character(0);
+        training.driver_data = vec![2, 1];
         let timer_request = ItemDriverRequest::Driver {
             driver: IDR_CALIGAR,
             item_id: ItemId(8),

@@ -16059,6 +16059,20 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "It won't move.".to_string()));
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoorLocked {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "The door is locked.".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoorBusy {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorLocked {
                                             character_id,
                                             ..
@@ -16071,6 +16085,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockMove { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockTimer { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightMove { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoor { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightTimer { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorToggle { .. } => {
                                             executed += 1;

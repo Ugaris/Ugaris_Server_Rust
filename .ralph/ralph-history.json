@@ -467,9 +467,38 @@
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
       ]
+    },
+    {
+      "iteration": 18,
+      "startedAt": "2026-06-29T11:58:34.689Z",
+      "endedAt": "2026-06-29T12:10:56.830Z",
+      "durationMs": 741928,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test world::tests::caligar_weight_door_reports_busy_target ... FAILED",
+        "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 610 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 610 filtered out; finished in 0.00s",
+        "test item_driver::tests::caligar_training_driver_ports_watch_lesson_boundary ... FAILED",
+        "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 602 filtered out; finished in 0.00s",
+        "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 602 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 188 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 8350023,
+  "totalDurationMs": 9091951,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 3,
@@ -478,8 +507,8 @@
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 2,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
       "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 14,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 14,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 12,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 15,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 13,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 12,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 9,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
@@ -503,7 +532,7 @@
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 4,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 5,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test player::tests::pk_hate_helpers_preserve_legacy_front_priority_and_eviction ... FAILED": 1,
       "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.00s": 1,
@@ -538,10 +567,10 @@
       "test result: ok. 600 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 602 filtered out; finished in 0.00s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 598 filtered out; finished in 0.00s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 188 filtered out; finished in 0.00s": 1,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 188 filtered out; finished in 0.00s": 2,
       "test result: ok. 603 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 603 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::caligar_training_driver_ports_watch_lesson_boundary ... FAILED": 1,
+      "test item_driver::tests::caligar_training_driver_ports_watch_lesson_boundary ... FAILED": 2,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 605 filtered out; finished in 0.00s": 1,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 598 filtered out; finished in 0.00s": 1,
       "test result: ok. 188 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -550,7 +579,12 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 606 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 608 filtered out; finished in 0.00s": 1,
       "test result: ok. 609 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 609 filtered out; finished in 0.01s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 609 filtered out; finished in 0.01s": 1,
+      "test world::tests::caligar_weight_door_reports_busy_target ... FAILED": 1,
+      "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 610 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 610 filtered out; finished in 0.00s": 1,
+      "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 602 filtered out; finished in 0.00s": 1,
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 602 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
