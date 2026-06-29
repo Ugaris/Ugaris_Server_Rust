@@ -3906,6 +3906,10 @@ fn apply_pk_hate_command(
                 if let Some(source) = world.characters.get_mut(&character_id) {
                     source.flags.remove(CharacterFlags::LAG);
                 }
+                return Some(KeyringCommandResult {
+                    name_refresh: vec![character_id, target_id],
+                    ..Default::default()
+                });
             }
             Some(KeyringCommandResult::default())
         }
@@ -12026,6 +12030,7 @@ mod tests {
                 .expect("hate command should be recognized");
 
         assert!(result.messages.is_empty());
+        assert_eq!(result.name_refresh, vec![CharacterId(7), CharacterId(8)]);
         assert!(player.has_pk_hate_for(8));
         assert!(!world
             .characters
@@ -12114,6 +12119,35 @@ mod tests {
             apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/ha target", 0)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn pk_hate_command_uses_legacy_front_priority_on_duplicate_add() {
+        let mut attacker = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
+        attacker.flags.insert(CharacterFlags::PK);
+        attacker.level = 12;
+        let mut first = login_character(CharacterId(8), &login_block("First"), 1, 11, 10);
+        first.flags.insert(CharacterFlags::PK);
+        first.level = 10;
+        let mut second = login_character(CharacterId(9), &login_block("Second"), 1, 12, 10);
+        second.flags.insert(CharacterFlags::PK);
+        second.level = 10;
+        let mut world = World::default();
+        world.add_character(attacker);
+        world.add_character(first);
+        world.add_character(second);
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/hate first", 0)
+            .expect("hate command should be recognized");
+        apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/hate second", 0)
+            .expect("hate command should be recognized");
+        let refreshed =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/hate first", 0)
+                .expect("hate command should be recognized");
+
+        assert_eq!(player.pk_hate, vec![8, 9]);
+        assert_eq!(refreshed.name_refresh, vec![CharacterId(7), CharacterId(8)]);
     }
 
     #[test]
