@@ -1257,6 +1257,50 @@ fn apply_help_command(command: &str) -> Option<KeyringCommandResult> {
 
     Some(KeyringCommandResult {
         messages: vec![
+            "=== PLAYER COMMANDS ===".to_string(),
+            "== Communication Commands ==".to_string(),
+            "/holler <text> - Say something with very long range (costs endurance points)"
+                .to_string(),
+            "/shout <text> - Say something with extended range (costs endurance points)"
+                .to_string(),
+            "/say <text> - Make your character say text to nearby players".to_string(),
+            "/murmur <text> - Say something with reduced range (whisper alternative)".to_string(),
+            "/whisper <text> - Say something with very short range".to_string(),
+            "/tell <name> <text> - Send a private message to another player".to_string(),
+            "/emote <text> - Express an action (Example: /emote jumps shows Player jumps)"
+                .to_string(),
+            "/me <text> - Same as /emote (Example:  /me smiles  shows Player smiles)".to_string(),
+            "== Emote Shortcuts ==".to_string(),
+            "/wave - Wave at others (shortcut for /emote waves happily)".to_string(),
+            "/bow - Bow to others (shortcut for /emote bows deeply)".to_string(),
+            "/eg - Evil grin (shortcut for /emote grins evilly)".to_string(),
+            "/slap <name> - Slap someone with a large trout (humorous emote)".to_string(),
+            "/hugme - Show that you need a hug (shortcut for /emote is in need of a hug)"
+                .to_string(),
+            "== Chat Channel Commands ==".to_string(),
+            "/channels - List all available chat channels".to_string(),
+            "/join <nr> - Join chat channel number <nr>".to_string(),
+            "/leave <nr> - Leave chat channel number <nr>".to_string(),
+            "/joinall - Join all channels from 1-13 at once".to_string(),
+            "/ah - Various auction house commands".to_string(),
+            "== Character & Interaction Commands ==".to_string(),
+            "/description <text> - Change your character's description".to_string(),
+            "/status - Show your lag control settings and account info".to_string(),
+            "/time - Show the current game time and date".to_string(),
+            "/weather - Display current weather conditions".to_string(),
+            "/swap - Swap places with the player you're facing".to_string(),
+            "/allow <name> - Allow another player to search your grave if you die".to_string(),
+            "/lastseen <player> - Check when a player last logged into the game".to_string(),
+            "/showvalues <player> - Show your stats to another player".to_string(),
+            "/who - List all players currently in your area".to_string(),
+            "/achievements - View your unlocked achievements".to_string(),
+            "/achstats - View your achievement statistics".to_string(),
+            "== Command Aliases ==".to_string(),
+            "/aliases - Show your active command aliases".to_string(),
+            "/alias <short> <long> - Create an alias (Example: \"/alias ty Thank you!\")"
+                .to_string(),
+            "/alias <short> - Remove an existing alias".to_string(),
+            "/clearaliases - Delete ALL your command aliases".to_string(),
             "== PvP & Security Commands ==".to_string(),
             "/playerkiller - Toggle player killing mode on/off".to_string(),
             "/iwilldie <id> - Confirm enabling player killer mode".to_string(),
@@ -1264,6 +1308,65 @@ fn apply_help_command(command: &str) -> Option<KeyringCommandResult> {
             "/nohate <name> - Remove player from your PK list".to_string(),
             "/listhate - Show all players on your PK list".to_string(),
             "/clearhate - Clear your entire PK list at once".to_string(),
+            "/ignore <name> - Ignore a player in chat and tells".to_string(),
+            "/clearignore - Remove ALL players from your ignore list".to_string(),
+            "/notells - Toggle receiving private messages on/off".to_string(),
+            "/complain <player> [reason] - Report abuse or scamming by a player".to_string(),
+            "== Inventory & Gold Commands ==".to_string(),
+            "/gold <amount> - Move gold coins to your cursor".to_string(),
+            "/sort - Sort items in your inventory by value and type".to_string(),
+            "/depotsort - Sort the contents of your storage depot".to_string(),
+            "/accountdepotsort - Sort your account-wide storage depot".to_string(),
+            "/keyring - View keys stored on your keyring".to_string(),
+            "/keyring addall - Add all keys from inventory to keyring".to_string(),
+            "/keyring remove <n> - Remove key number <n> from keyring".to_string(),
+            "== Clan & Club Commands ==".to_string(),
+            "/clan - Show information about the clans".to_string(),
+            "/relation <nr> - Show clan <nr>'s diplomatic relations".to_string(),
+            "/clanpots - Display information about your clan's potions".to_string(),
+            "/clanlog - Check the clan logs (/clanlog -h for more details)".to_string(),
+            "/club - Show information about clubs".to_string(),
+            "== Character Development Commands ==".to_string(),
+            "/set <spell nr> <key> - Change spell key mappings".to_string(),
+            "/noexp - Toggle gaining experience on/off".to_string(),
+            "/nolevel - Toggle preventing level-ups while continuing to earn exp".to_string(),
+            "/hints - Toggle game hints on/off".to_string(),
+            "/killbless - Remove all Bless effects from your character".to_string(),
+            "== Thief-Specific Commands ==".to_string(),
+            "/thief - Toggle thief mode on/off (thief characters only)".to_string(),
+            "/steal - Attempt to steal an item from the character you're facing".to_string(),
+            "== Game Information Commands ==".to_string(),
+            "/orbs - Show available orbs and respawn timers".to_string(),
+            "/tunnel <level> - Show progress on a specific tunnel level".to_string(),
+            "/tunnels - Show list of all tunnel levels and their status".to_string(),
+            "/treasures - Show information on treasures (mine chests, etc.)".to_string(),
+            "/demonlords - Show information on demon lords and their status".to_string(),
+            "== Lag Control Commands ==".to_string(),
+            "/lag - Toggle artificial lag (for testing purposes)".to_string(),
+            "/maxlag <seconds> - Set delay for lag control to activate (3-20 seconds)".to_string(),
+            "/noball - Toggle using Ball Lightning spell during lag".to_string(),
+            "/nobless - Toggle using Bless spell during lag".to_string(),
+            "/nofireball - Toggle using Fireball spell during lag".to_string(),
+            "/noflash - Toggle using Lightning Flash spell during lag".to_string(),
+            "/nofreeze - Toggle using Freeze spell during lag".to_string(),
+            "/noheal - Toggle using Heal spell during lag".to_string(),
+            "/noshield - Toggle using Magic Shield spell during lag".to_string(),
+            "/nowarcry - Toggle using Warcry during lag".to_string(),
+            "/nopulse - Toggle using Pulse spell during lag".to_string(),
+            "/nolife - Toggle using Healing Potions during lag".to_string(),
+            "/nomana - Toggle using Mana Potions during lag".to_string(),
+            "/nocombo - Toggle using Combo Potions during lag".to_string(),
+            "/norecall - Toggle using Recall Scroll during lag".to_string(),
+            "/nomove - Toggle character movement during lag".to_string(),
+            "== Automation Commands ==".to_string(),
+            "/autobless - Toggle automatic re-blessing when spell expires".to_string(),
+            "/autoturn - Toggle automatic turning toward enemies".to_string(),
+            "/autopulse - Toggle automatic pulse casting".to_string(),
+            "/allowbless - Toggle allowing other players to bless you".to_string(),
+            "== Miscellaneous Commands ==".to_string(),
+            "/logout - Safely log out when standing on a blue square".to_string(),
+            "/wimp - Exit from a Live Quest (may have consequences)".to_string(),
+            "/help - Display this help text".to_string(),
         ],
         inventory_changed: false,
     })
@@ -7287,7 +7390,14 @@ mod tests {
     fn help_command_includes_legacy_pk_security_lines() {
         let result = apply_help_command("/help").expect("help command should be recognized");
 
-        assert_eq!(result.messages[0], "== PvP & Security Commands ==");
+        assert_eq!(result.messages[0], "=== PLAYER COMMANDS ===");
+        assert!(result
+            .messages
+            .contains(&"== Communication Commands ==".to_string()));
+        assert!(result.messages.contains(
+            &"/holler <text> - Say something with very long range (costs endurance points)"
+                .to_string()
+        ));
         assert!(result
             .messages
             .contains(&"/playerkiller - Toggle player killing mode on/off".to_string()));
@@ -7297,6 +7407,12 @@ mod tests {
         assert!(result
             .messages
             .contains(&"/clearhate - Clear your entire PK list at once".to_string()));
+        assert!(result
+            .messages
+            .contains(&"== Miscellaneous Commands ==".to_string()));
+        assert!(result
+            .messages
+            .contains(&"/help - Display this help text".to_string()));
         assert!(apply_help_command("/hel").is_none());
         assert!(!result.inventory_changed);
     }
