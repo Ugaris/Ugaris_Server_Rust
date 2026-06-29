@@ -744,6 +744,7 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         kind: u8,
+        demon_value: i32,
     },
     AccountDepotOpened {
         item_id: ItemId,
@@ -1280,7 +1281,16 @@ pub fn book_text_lines(kind: u8) -> &'static [&'static str] {
 }
 
 pub fn book_text_line_bytes(kind: u8) -> Vec<Vec<u8>> {
+    book_text_line_bytes_for_reader(kind, 0)
+}
+
+pub fn book_text_line_bytes_for_reader(kind: u8, demon_value: i32) -> Vec<Vec<u8>> {
     match kind {
+        18 => edemon_sign_line_bytes(demon_value, &["Defense Systems Control Room"]),
+        19 => edemon_sign_line_bytes(
+            demon_value,
+            &["Research Laboratorium", "Caution, live demons!"],
+        ),
         31 => vec![
             plain_book_line_bytes("Personal Diary of Korzam, Magical Advisor of Scarcewind."),
             dark_gray_book_line_bytes("The line above has been nearly scratched out, and replaced by:", false),
@@ -1317,6 +1327,23 @@ pub fn book_text_line_bytes(kind: u8) -> Vec<Vec<u8>> {
             .map(|line| plain_book_line_bytes(line))
             .collect(),
     }
+}
+
+fn edemon_sign_line_bytes(demon_value: i32, readable_lines: &[&str]) -> Vec<Vec<u8>> {
+    if demon_value < 1 {
+        return vec![plain_book_line_bytes(
+            "It's written in strange letters you cannot read.",
+        )];
+    }
+    if demon_value < 2 {
+        return vec![plain_book_line_bytes(
+            "You recognice some of the letters used in this sign from your studies of the ancient knowledge, but you cannot tell what the sign means.",
+        )];
+    }
+    readable_lines
+        .iter()
+        .map(|line| plain_book_line_bytes(line))
+        .collect()
 }
 
 pub fn book_nook_joke_line_bytes(roll: u32) -> Vec<Vec<u8>> {
@@ -1377,6 +1404,7 @@ fn book_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         item_id: item.id,
         character_id: character.id,
         kind: drdata(item, 0),
+        demon_value: i32::from(character.values[1][CharacterValue::Demon as usize]),
     }
 }
 
@@ -3756,6 +3784,7 @@ mod tests {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
                 kind: 8,
+                demon_value: 0,
             }
         );
         assert_eq!(
@@ -3827,6 +3856,29 @@ mod tests {
             .windows(3)
             .any(|bytes| bytes == crate::text::COL_RESET));
         assert!(mad_mages[2].ends_with(b"Bretl, Anna-Sofia, Leaner, Crem, Guiwynn."));
+    }
+
+    #[test]
+    fn earth_demon_sign_books_use_reader_demon_knowledge() {
+        assert_eq!(
+            book_text_line_bytes_for_reader(18, 0),
+            vec![b"It's written in strange letters you cannot read.".to_vec()]
+        );
+        assert_eq!(
+            book_text_line_bytes_for_reader(19, 1),
+            vec![b"You recognice some of the letters used in this sign from your studies of the ancient knowledge, but you cannot tell what the sign means.".to_vec()]
+        );
+        assert_eq!(
+            book_text_line_bytes_for_reader(18, 2),
+            vec![b"Defense Systems Control Room".to_vec()]
+        );
+        assert_eq!(
+            book_text_line_bytes_for_reader(19, 2),
+            vec![
+                b"Research Laboratorium".to_vec(),
+                b"Caution, live demons!".to_vec(),
+            ]
+        );
     }
 
     #[test]
