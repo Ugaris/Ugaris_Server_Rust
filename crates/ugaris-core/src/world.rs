@@ -8964,6 +8964,15 @@ impl World {
     }
 
     pub fn tick_basic_actions(&mut self) -> Vec<WorldActionCompletion> {
+        self.tick_basic_actions_with_attack_policy(|_, caster, target, map| {
+            can_attack(caster, target, map)
+        })
+    }
+
+    pub fn tick_basic_actions_with_attack_policy(
+        &mut self,
+        mut can_attack_target: impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) -> Vec<WorldActionCompletion> {
         let character_ids: Vec<CharacterId> = self.characters.keys().copied().collect();
         let mut completed = Vec::new();
 
@@ -9036,17 +9045,17 @@ impl World {
                     })
                     .is_some_and(|receiver_id| self.complete_give(character_id, receiver_id)),
                 action::MAGICSHIELD => self.complete_magicshield(character_id),
-                action::PULSE => self.complete_pulse(character_id),
+                action::PULSE => self.complete_pulse(character_id, &mut can_attack_target),
                 action::FIREBALL1 => self.complete_fireball(character_id),
                 action::FIREBALL2 => true,
                 action::BALL1 => self.complete_ball(character_id),
                 action::BALL2 => true,
                 action::EARTHRAIN => self.complete_earthrain(character_id),
                 action::EARTHMUD => self.complete_earthmud(character_id),
-                action::FIRERING => self.complete_firering(character_id),
-                action::FREEZE => self.complete_freeze(character_id),
+                action::FIRERING => self.complete_firering(character_id, &mut can_attack_target),
+                action::FREEZE => self.complete_freeze(character_id, &mut can_attack_target),
                 action::FLASH => self.complete_flash(character_id),
-                action::WARCRY => self.complete_warcry(character_id),
+                action::WARCRY => self.complete_warcry(character_id, &mut can_attack_target),
                 action::BLESS_SELF | action::BLESS1 | action::BLESS2 => self
                     .characters
                     .get(&character_id)
@@ -9211,7 +9220,11 @@ impl World {
         ) != 0
     }
 
-    fn complete_firering(&mut self, caster_id: CharacterId) -> bool {
+    fn complete_firering(
+        &mut self,
+        caster_id: CharacterId,
+        can_attack_target: &mut impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) -> bool {
         let Some(caster) = self.characters.get(&caster_id).cloned() else {
             return false;
         };
@@ -9262,7 +9275,7 @@ impl World {
                 let Some(target) = self.characters.get(&target_id) else {
                     continue;
                 };
-                if !can_attack(&caster, target, &self.map) {
+                if !can_attack_target(caster_id, &caster, target, &self.map) {
                     continue;
                 }
                 let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
@@ -9312,7 +9325,11 @@ impl World {
         true
     }
 
-    fn complete_pulse(&mut self, caster_id: CharacterId) -> bool {
+    fn complete_pulse(
+        &mut self,
+        caster_id: CharacterId,
+        can_attack_target: &mut impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) -> bool {
         let Some(caster) = self.characters.get(&caster_id).cloned() else {
             return false;
         };
@@ -9347,7 +9364,7 @@ impl World {
                 let Some(target) = self.characters.get(&target_id) else {
                     continue;
                 };
-                if !can_attack(&caster, target, &self.map) {
+                if !can_attack_target(caster_id, &caster, target, &self.map) {
                     continue;
                 }
                 if !self.map.can_see(caster_x, caster_y, x, y, DIST_MAX) {
@@ -9389,7 +9406,11 @@ impl World {
         true
     }
 
-    fn complete_freeze(&mut self, caster_id: CharacterId) -> bool {
+    fn complete_freeze(
+        &mut self,
+        caster_id: CharacterId,
+        can_attack_target: &mut impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) -> bool {
         let Some(caster) = self.characters.get(&caster_id).cloned() else {
             return false;
         };
@@ -9424,7 +9445,7 @@ impl World {
                 let Some(target) = self.characters.get(&target_id) else {
                     continue;
                 };
-                if !can_attack(&caster, target, &self.map)
+                if !can_attack_target(caster_id, &caster, target, &self.map)
                     || !self.map.can_see(caster_x, caster_y, x, y, DIST_MAX)
                 {
                     continue;
@@ -9471,7 +9492,11 @@ impl World {
         true
     }
 
-    fn complete_warcry(&mut self, caster_id: CharacterId) -> bool {
+    fn complete_warcry(
+        &mut self,
+        caster_id: CharacterId,
+        can_attack_target: &mut impl FnMut(CharacterId, &Character, &Character, &MapGrid) -> bool,
+    ) -> bool {
         let Some(caster) = self.characters.get(&caster_id).cloned() else {
             return false;
         };
@@ -9514,7 +9539,7 @@ impl World {
                 let Some(target) = self.characters.get(&target_id) else {
                     continue;
                 };
-                if !can_attack(&caster, target, &self.map) {
+                if !can_attack_target(caster_id, &caster, target, &self.map) {
                     continue;
                 }
 
@@ -20879,6 +20904,54 @@ mod tests {
                 && effect.x == 10
                 && effect.y == 10
         }));
+    }
+
+    #[test]
+    fn action_tick_attack_policy_can_block_area_spell_targets() {
+        let mut world = World::default();
+        world.tick = Tick(500);
+        let mut caster = character(1);
+        caster.flags.insert(CharacterFlags::PLAYER);
+        caster.mana = 100 * POWERSCALE;
+        caster.values[0][CharacterValue::Mana as usize] = 100;
+        caster.values[0][CharacterValue::Pulse as usize] = 200;
+        let mut target = character(2);
+        target
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::PK);
+        target.hp = 10 * POWERSCALE;
+        target.lifeshield = POWERSCALE;
+        target.values[0][CharacterValue::Hp as usize] = 100;
+        world.spawn_character(caster, 10, 10);
+        world.spawn_character(target, 12, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.action = QueuedAction {
+            action: PlayerActionCode::Pulse,
+            arg1: 0,
+            arg2: 0,
+        };
+
+        assert!(world.apply_player_action_setup(&mut player, 2));
+        world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+        let completed =
+            world.tick_basic_actions_with_attack_policy(|_caster_id, _caster, target, _map| {
+                target.id != CharacterId(2)
+            });
+
+        assert!(completed[0].ok);
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(target.hp, 10 * POWERSCALE);
+        assert_eq!(target.lifeshield, POWERSCALE);
+        assert!(target.driver_messages.is_empty());
+        assert!(world
+            .effects
+            .values()
+            .any(|effect| effect.effect_type == EF_PULSE && effect.x == 10 && effect.y == 10));
+        assert!(!world
+            .effects
+            .values()
+            .any(|effect| effect.effect_type == EF_PULSEBACK));
     }
 
     #[test]

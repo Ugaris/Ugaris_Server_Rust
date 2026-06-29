@@ -15458,7 +15458,29 @@ async fn main() -> anyhow::Result<()> {
                     }
                     info!(look_sessions, tick = world.tick.0, "queued look-map feedback");
                 }
-                let mut completed_actions = world.tick_basic_actions();
+                let mut completed_actions = world.tick_basic_actions_with_attack_policy(|caster_id, caster, target, map| {
+                    if let Some(player) = runtime.player_for_character_mut(caster_id) {
+                        let attack_policy = RuntimePlayerAttackPolicy { attacker_runtime: &*player };
+                        let can_attack = can_attack_in_area_with_clan_policy(
+                            caster,
+                            target,
+                            map,
+                            config.area_id,
+                            &attack_policy,
+                        );
+                        if !can_attack {
+                            remove_stale_pvp_hate_if_effect_check_fails(
+                                player,
+                                caster,
+                                target,
+                                config.area_id,
+                            );
+                        }
+                        can_attack
+                    } else {
+                        can_attack_in_area(caster, target, map, config.area_id)
+                    }
+                });
                 if !completed_actions.is_empty() {
                     info!(count = completed_actions.len(), tick = world.tick.0, "completed world actions");
                     let mut auto_keyring_feedback = Vec::new();
