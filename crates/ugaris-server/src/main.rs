@@ -1308,6 +1308,97 @@ fn legacy_pk_command_verb(verb: &str) -> Option<&'static str> {
     None
 }
 
+fn legacy_atoi_prefix(input: &str) -> i64 {
+    let input = input.trim_start();
+    let mut chars = input.chars().peekable();
+    let sign = match chars.peek().copied() {
+        Some('-') => {
+            chars.next();
+            -1
+        }
+        Some('+') => {
+            chars.next();
+            1
+        }
+        _ => 1,
+    };
+    let mut value = 0i64;
+    let mut seen_digit = false;
+    while let Some(ch) = chars.peek().copied() {
+        let Some(digit) = ch.to_digit(10) else {
+            break;
+        };
+        seen_digit = true;
+        chars.next();
+        value = value.saturating_mul(10).saturating_add(i64::from(digit));
+    }
+    if seen_digit {
+        value.saturating_mul(sign)
+    } else {
+        0
+    }
+}
+
+fn apply_gold_command(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("gold") {
+        return None;
+    }
+
+    let Some(amount) = legacy_atoi_prefix(rest).checked_mul(100) else {
+        return Some(KeyringCommandResult {
+            messages: vec!["Hu?".to_string()],
+            ..Default::default()
+        });
+    };
+    if amount < 1 {
+        return Some(KeyringCommandResult {
+            messages: vec!["Hu?".to_string()],
+            ..Default::default()
+        });
+    }
+    let amount = amount as u64;
+
+    let Some(character) = world.characters.get(&character_id) else {
+        return Some(KeyringCommandResult::default());
+    };
+    if amount > u64::from(character.gold) {
+        return Some(KeyringCommandResult {
+            messages: vec!["You do not have that much gold.".to_string()],
+            ..Default::default()
+        });
+    }
+    if character.cursor_item.is_some() {
+        return Some(KeyringCommandResult {
+            messages: vec!["Please free your hand (mouse cursor) first.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    let amount = amount as u32;
+    if !grant_money_to_cursor(world, loader, character_id, amount) {
+        return Some(KeyringCommandResult {
+            messages: vec!["Please free your hand (mouse cursor) first.".to_string()],
+            ..Default::default()
+        });
+    }
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.gold = character.gold.saturating_sub(amount);
+    }
+    Some(KeyringCommandResult {
+        inventory_changed: true,
+        ..Default::default()
+    })
+}
+
 fn apply_help_command(
     command: &str,
     flags: CharacterFlags,
@@ -4604,6 +4695,7 @@ fn inventory_snapshot_payload(world: &World, character: &Character) -> bytes::By
             .unwrap_or((0, 0));
         builder.set_item(slot as u8, sprite, flags);
     }
+    builder.gold(character.gold);
 
     builder.into_payload()
 }
@@ -6140,8 +6232,9 @@ mod tests {
         MAP_CHARACTER_ACTION, MAP_CHARACTER_SPRITE, MAP_CHARACTER_STATUS, MAP_EFFECT_0,
         MAP_EFFECT_1, MAP_EFFECT_2, MAP_EFFECT_3, MAP_TILE_FLAGS, MAP_TILE_FSPRITE,
         MAP_TILE_GSPRITE, MAP_TILE_ISPRITE, SV_CONCNT, SV_CONNAME, SV_CONTAINER, SV_CONTYPE,
-        SV_LOGINDONE, SV_MAP01, SV_MAP10, SV_MAP11, SV_MAPPOS, SV_MIRROR, SV_ORIGIN, SV_PROTOCOL,
-        SV_SETCITEM, SV_SETHP, SV_SETITEM, SV_SETVAL0, SV_SETVAL1, SV_SPECIAL, SV_TEXT, SV_TICKER,
+        SV_GOLD, SV_LOGINDONE, SV_MAP01, SV_MAP10, SV_MAP11, SV_MAPPOS, SV_MIRROR, SV_ORIGIN,
+        SV_PROTOCOL, SV_SETCITEM, SV_SETHP, SV_SETITEM, SV_SETVAL0, SV_SETVAL1, SV_SPECIAL,
+        SV_TEXT, SV_TICKER,
     };
 
     use super::*;
@@ -6513,6 +6606,7 @@ mod tests {
     fn inventory_snapshot_payload_sends_cursor_and_inventory() {
         let login = login_block("Tester");
         let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
+        character.gold = 12345;
         let cursor_id = ugaris_core::ids::ItemId(98);
         let slot_id = ugaris_core::ids::ItemId(99);
         character.cursor_item = Some(cursor_id);
@@ -6540,6 +6634,61 @@ mod tests {
                     0,
                 ]
         }));
+        assert!(payload
+            .windows(5)
+            .any(|window| window == [SV_GOLD, 0x39, 0x30, 0, 0]));
+    }
+
+    #[test]
+    fn gold_command_moves_character_gold_to_cursor_money_item() {
+        let mut world = World::default();
+        let mut loader = ZoneLoader::new();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.gold = 12_500;
+        world.add_character(character);
+
+        let result = apply_gold_command(&mut world, &mut loader, character_id, "/gold 12")
+            .expect("gold command should be recognized");
+
+        assert!(result.messages.is_empty());
+        assert!(result.inventory_changed);
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.gold, 11_300);
+        let money_id = character.cursor_item.expect("money should be on cursor");
+        let money = world.items.get(&money_id).unwrap();
+        assert!(money.flags.contains(ItemFlags::MONEY));
+        assert_eq!(money.value, 1_200);
+        assert_eq!(money.carried_by, Some(character_id));
+    }
+
+    #[test]
+    fn gold_command_preserves_c_guard_order_and_atoi_prefix() {
+        let mut world = World::default();
+        let mut loader = ZoneLoader::new();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.gold = 500;
+        world.add_character(character);
+
+        let invalid = apply_gold_command(&mut world, &mut loader, character_id, "/gold abc")
+            .expect("gold command should be recognized");
+        assert_eq!(invalid.messages, vec!["Hu?"]);
+
+        let too_much = apply_gold_command(&mut world, &mut loader, character_id, "/gold 6")
+            .expect("gold command should be recognized");
+        assert_eq!(too_much.messages, vec!["You do not have that much gold."]);
+
+        world.characters.get_mut(&character_id).unwrap().gold = 1_000;
+        let cursor_item = test_item(ItemId(99), 100, ItemFlags::TAKE);
+        world.add_item(cursor_item);
+        world.characters.get_mut(&character_id).unwrap().cursor_item = Some(ItemId(99));
+        let occupied = apply_gold_command(&mut world, &mut loader, character_id, "/gold 6abc")
+            .expect("gold command should be recognized");
+        assert_eq!(
+            occupied.messages,
+            vec!["Please free your hand (mouse cursor) first."]
+        );
     }
 
     #[test]
@@ -10848,6 +10997,15 @@ async fn main() -> anyhow::Result<()> {
                             if let Some(result) = apply_pk_hate_command(&mut world, player, character_id, &command, realtime_seconds) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_gold_command(&mut world, &mut zone_loader, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                if result.inventory_changed {
+                                    command_inventory_refresh.push(character_id);
                                 }
                                 continue;
                             }

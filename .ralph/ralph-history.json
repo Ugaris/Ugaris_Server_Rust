@@ -4013,15 +4013,42 @@
         "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok"
       ]
+    },
+    {
+      "iteration": 146,
+      "startedAt": "2026-06-29T01:09:06.023Z",
+      "endedAt": "2026-06-29T01:14:26.686Z",
+      "durationMs": 320489,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'inventory_snapshot_payload_sends_cursor_and_inventory' found",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 135 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 136 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 65799694,
+  "totalDurationMs": 66120183,
   "struggleIndicators": {
     "repeatedErrors": {
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
-      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 139,
-      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 137,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 128,
+      "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 140,
+      "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 138,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 129,
       "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 52,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 53,
@@ -4323,7 +4350,7 @@
       "test result: ok. 454 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
       "The walk-or-use behavior was already partially present, but the path selection can miss a C-like imm": 1,
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 52,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 53,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 454 filtered out; finished in 0.02s": 1,
       "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 427 filtered out; finished in 0.05s": 1,
       "test result: ok. 455 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -4349,7 +4376,7 @@
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-core simple_baddy_noncombat_threads_failed_use_into_secure_move": 1,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 42,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 466 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 43,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 44,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s": 1,
       "error: no library targets found in package `ugaris-server`": 1,
       "test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
@@ -4443,7 +4470,7 @@
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 511 filtered out; finished in 0.00s": 1,
       "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 481 filtered out; finished in 0.01s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 6,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 7,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.00s": 1,
       "test result: ok. 122 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: ": 1,
@@ -4469,7 +4496,11 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 134 filtered out; finished in 0.00s": 1,
       "error: unexpected argument 'help_command_includes_legacy_pk_security_lines' found": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 19 previous errors": 1,
-      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 131 filtered out; finished in 0.00s": 1
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 131 filtered out; finished in 0.00s": 1,
+      "error: unexpected argument 'inventory_snapshot_payload_sends_cursor_and_inventory' found": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 135 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 136 filtered out; finished in 0.00s": 1,
+      "test result: ok. 137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
