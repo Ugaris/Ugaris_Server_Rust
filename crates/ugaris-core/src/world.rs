@@ -1336,12 +1336,32 @@ impl World {
     }
 
     fn tick_burn_effect(&mut self, effect_id: u32) {
-        if self
-            .effects
-            .get(&effect_id)
-            .is_some_and(|effect| self.tick.0 >= effect.stop_tick as u64)
+        let Some(effect) = self.effects.get(&effect_id).cloned() else {
+            return;
+        };
+        let Some(target_id) = effect.target_character else {
+            self.effects.remove(&effect_id);
+            return;
+        };
+        if self.tick.0 >= effect.stop_tick as u64
+            || !self
+                .characters
+                .get(&target_id)
+                .is_some_and(|character| character.flags.contains(CharacterFlags::USED))
         {
             self.effects.remove(&effect_id);
+            return;
+        }
+
+        if effect.strength != 0 {
+            self.apply_legacy_hurt(
+                target_id,
+                None,
+                POWERSCALE / 6 + effect.strength,
+                30,
+                50,
+                75,
+            );
         }
     }
 
@@ -15337,6 +15357,47 @@ mod tests {
         assert_eq!(character.lifeshield, 0);
         assert_eq!(character.driver_messages[0].message_type, NT_GOTHIT);
         assert_eq!(character.driver_messages[0].dat2, 10 * POWERSCALE);
+    }
+
+    #[test]
+    fn burn_effect_tick_applies_recurring_legacy_hurt_damage() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.hp = 50 * POWERSCALE;
+        character.lifeshield = POWERSCALE;
+        world.add_character(character);
+
+        assert!(world.burn_character(CharacterId(1)));
+        let hp_after_initial_burn = world.characters[&CharacterId(1)].hp;
+        let shield_after_initial_burn = world.characters[&CharacterId(1)].lifeshield;
+
+        world.tick_effects();
+
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.hp, hp_after_initial_burn - 167);
+        assert_eq!(character.lifeshield, shield_after_initial_burn);
+        assert_eq!(
+            character.driver_messages.last().unwrap().message_type,
+            NT_GOTHIT
+        );
+        assert_eq!(character.driver_messages.last().unwrap().dat2, 167);
+        assert_eq!(world.effects.len(), 1);
+    }
+
+    #[test]
+    fn burn_effect_tick_removes_stale_attached_effect() {
+        let mut world = World::default();
+        assert!(!world.burn_character(CharacterId(1)));
+
+        let effect_id = world.next_effect_id();
+        let mut effect = Effect::new(EF_BURN, effect_id as i32, 0, TICKS_PER_SECOND as i32 * 60);
+        effect.target_character = Some(CharacterId(99));
+        effect.strength = 1;
+        world.effects.insert(effect_id, effect);
+
+        world.tick_effects();
+
+        assert!(world.effects.is_empty());
     }
 
     #[test]
