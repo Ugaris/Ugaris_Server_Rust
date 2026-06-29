@@ -882,6 +882,38 @@ impl World {
         effect_id
     }
 
+    fn create_caligar_gun_effects(&mut self, item_id: ItemId, direction: u8) -> bool {
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        let item_x = i32::from(item.x);
+        let item_y = i32::from(item.y);
+        let shots: &[(i32, i32, i32, i32)] = match direction {
+            1 => &[(1, 0, 10, 0)],
+            2 => &[(0, 1, 0, 10)],
+            3 => &[(-1, 0, -10, 0)],
+            4 => &[(0, -1, 0, -10)],
+            5 => &[
+                (0, 1, 0, 10),
+                (1, 0, 10, 0),
+                (0, -1, 0, -10),
+                (-1, 0, -10, 0),
+            ],
+            _ => return false,
+        };
+        for (start_dx, start_dy, target_dx, target_dy) in shots {
+            self.create_edemonball_effect(
+                clamp_world_coordinate(item_x + start_dx),
+                clamp_world_coordinate(item_y + start_dy),
+                clamp_world_coordinate(item_x + target_dx),
+                clamp_world_coordinate(item_y + target_dy),
+                50,
+                1,
+            );
+        }
+        true
+    }
+
     fn find_edemonball_target_shot(
         &self,
         item_id: ItemId,
@@ -5812,6 +5844,19 @@ impl World {
                 );
                 self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                 applied
+            }
+            ItemDriverOutcome::CaligarGunProjectile {
+                item_id,
+                direction,
+                schedule_after_ticks,
+                ..
+            } => {
+                if self.create_caligar_gun_effects(item_id, direction) {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
             }
             ItemDriverOutcome::SpikeTrapTriggered {
                 item_id,
@@ -11113,6 +11158,10 @@ fn offset_coordinate(value: usize, offset: i16) -> Option<usize> {
     }
 }
 
+fn clamp_world_coordinate(value: i32) -> u16 {
+    value.clamp(0, (MAX_MAP - 1) as i32) as u16
+}
+
 fn diagonal_slide_alternates(direction: u8) -> Option<(Direction, Direction)> {
     match Direction::try_from(direction).ok()? {
         Direction::LeftUp => Some((Direction::Left, Direction::Up)),
@@ -15805,6 +15854,61 @@ mod tests {
         assert_eq!((effect.to_x, effect.to_y), (10, 30));
         assert_eq!((effect.x, effect.y), (10 * 1024 + 512, 21 * 1024 + 512));
         assert_eq!(effect.stop_tick, 1 + (TICKS_PER_SECOND * 4) as i32);
+    }
+
+    #[test]
+    fn caligar_gun_timer_creates_fixed_edemonball_projectiles() {
+        let mut world = World::default();
+        let mut gun = item(7, ItemFlags::USED | ItemFlags::USE);
+        gun.driver = IDR_CALIGAR;
+        gun.x = 10;
+        gun.y = 20;
+        gun.driver_data = vec![9];
+        world.add_item(gun);
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+
+        world.advance();
+        let outcomes = world.process_due_timers(36);
+
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::CaligarGunProjectile {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                direction: 5,
+                schedule_after_ticks: 12,
+            }]
+        );
+        assert_eq!(world.effects.len(), 4);
+        let mut shots: Vec<_> = world
+            .effects
+            .values()
+            .map(|effect| {
+                (
+                    effect.effect_type,
+                    effect.from_x,
+                    effect.from_y,
+                    effect.to_x,
+                    effect.to_y,
+                    effect.strength,
+                    effect.base_sprite,
+                )
+            })
+            .collect();
+        shots.sort();
+        assert_eq!(
+            shots,
+            vec![
+                (EF_EDEMONBALL, 9, 20, 0, 20, 50, 1),
+                (EF_EDEMONBALL, 10, 19, 10, 10, 50, 1),
+                (EF_EDEMONBALL, 10, 21, 10, 30, 50, 1),
+                (EF_EDEMONBALL, 11, 20, 20, 20, 50, 1),
+            ]
+        );
+        for _ in 0..12 {
+            world.advance();
+        }
+        assert_eq!(world.process_due_timers(36).len(), 1);
     }
 
     #[test]

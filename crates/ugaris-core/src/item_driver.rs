@@ -370,6 +370,12 @@ pub enum ItemDriverOutcome {
         base_sprite: i32,
         schedule_after_ticks: u64,
     },
+    CaligarGunProjectile {
+        item_id: ItemId,
+        character_id: CharacterId,
+        direction: u8,
+        schedule_after_ticks: u64,
+    },
     FlameThrowerPulse {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1214,6 +1220,7 @@ fn caligar_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         1 => caligar_training_driver(character, item),
         2 | 4 => caligar_weight_driver(character, item),
         3 => caligar_weight_door_driver(character, item),
+        5..=9 => caligar_gun_driver(character, item),
         _ => ItemDriverOutcome::Unsupported {
             driver: IDR_CALIGAR,
             item_id: item.id,
@@ -1256,6 +1263,15 @@ fn caligar_weight_door_driver(character: &Character, item: &Item) -> ItemDriverO
     ItemDriverOutcome::CaligarWeightDoor {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn caligar_gun_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    ItemDriverOutcome::CaligarGunProjectile {
+        item_id: item.id,
+        character_id: character.id,
+        direction: drdata(item, 0) - 4,
+        schedule_after_ticks: 12,
     }
 }
 
@@ -5011,6 +5027,28 @@ mod tests {
                 },
             ),
             2
+        );
+
+        training.driver_data = vec![5, 0];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut training, request, 36, false),
+            ItemDriverOutcome::CaligarGunProjectile {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                direction: 1,
+                schedule_after_ticks: 12,
+            }
+        );
+
+        training.driver_data = vec![9, 0];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut training, request, 36, false),
+            ItemDriverOutcome::CaligarGunProjectile {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                direction: 5,
+                schedule_after_ticks: 12,
+            }
         );
 
         let mut timer_character = character(0);

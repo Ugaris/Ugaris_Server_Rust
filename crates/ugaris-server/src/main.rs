@@ -16106,6 +16106,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightMove { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoor { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightTimer { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarGunProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorToggle { .. } => {
                                             executed += 1;
                                         }

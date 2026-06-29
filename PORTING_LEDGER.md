@@ -436,3 +436,7 @@ Recommended next chest steps:
 ### Iteration 18 Additional Progress
 
 - Area 36 `IDR_CALIGAR` now dispatches the C `caligar_weight_door` branch (`drdata[0] == 3`): character use computes the opposite-side exact target from the actor/item relative position, preserves the southern lock check against the two legacy weight positions, halts on locked doors with `The door is locked.`, teleports only onto the exact target tile with busy-target feedback instead of nearby fallback placement, reverses cardinal facing after success, and preserves retry-style no-op behavior for automatic/diagonal/invalid calls. Focused core tests cover locked, successful, and busy-target outcomes. Remaining Caligar item gaps are gun/key/skelly-door/extinguish branches, quest NPC PPD state, exact log_area/dlog side effects, and live area-data smoke coverage.
+
+### Iteration 21 Additional Progress
+
+- Area 36 `IDR_CALIGAR` now dispatches the C `caligar_gun` branch (`drdata[0] == 5..=9`): subtypes map to the legacy east/south/west/north/all-direction shots, timer and character calls return a typed projectile outcome, world application creates retained `EF_EDEMONBALL` effects with C strength/base/start/target fields, and guns reschedule themselves after 12 ticks. Focused core/world tests cover subtype dispatch, four-way projectile placement, and timer rescheduling. Remaining Caligar item gaps are key assembly, skelly-door, extinguish, quest NPC PPD state, exact log_area/dlog side effects, and live area-data smoke coverage.
