@@ -19,6 +19,7 @@ use ugaris_core::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
         CHARACTER_VALUE_NAMES, POWERSCALE,
     },
+    game_settings::GameSettings,
     game_time::{
         GameDate, DAYS_PER_MOON_CYCLE, DAYS_PER_YEAR, FALL_EQUINOX_DAY, HALF_MOON_CYCLE, HOUR_LEN,
         MIN_LEN, SPRING_EQUINOX_DAY, START_TIME, SUMMER_SOLSTICE_DAY,
@@ -32,6 +33,7 @@ use ugaris_core::{
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
     legacy::{action, profession, INVENTORY_START_INVENTORY},
+    log_text::{holler_message, sanitize_log_bytes, say_message, shout_message, whisper_message},
     map::{MapFlags, MapTile},
     player::{
         CommandAlias, DemonShrineResult, IgnoreToggleResult, KeyringAddResult, PlayerActionCode,
@@ -942,6 +944,45 @@ struct TellCommandResult {
 struct ChatCommandResult {
     sender_messages: Vec<String>,
     delivered_message_bytes: Vec<(CharacterId, Vec<u8>)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalSpeechKind {
+    Holler,
+    Shout,
+    Say,
+    Murmur,
+    Whisper,
+}
+
+impl LocalSpeechKind {
+    fn from_verb(verb: &str) -> Option<Self> {
+        match verb.to_ascii_lowercase().as_str() {
+            "holler" => Some(Self::Holler),
+            "shout" => Some(Self::Shout),
+            "say" => Some(Self::Say),
+            "murmur" => Some(Self::Murmur),
+            "whisper" => Some(Self::Whisper),
+            _ => None,
+        }
+    }
+
+    fn max_distance(self, settings: &GameSettings) -> i32 {
+        match self {
+            Self::Holler => settings.holler_dist,
+            Self::Shout => settings.shout_dist,
+            Self::Say => settings.say_dist,
+            Self::Murmur | Self::Whisper => settings.whisper_dist,
+        }
+    }
+
+    fn endurance_cost(self, settings: &GameSettings) -> i32 {
+        match self {
+            Self::Holler => settings.holler_cost,
+            Self::Shout => settings.shout_cost,
+            Self::Say | Self::Murmur | Self::Whisper => 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2364,6 +2405,103 @@ fn legacy_spy_line(kind: &str, payload: &[u8]) -> Vec<u8> {
     out.extend_from_slice(payload);
     out.extend_from_slice(COL_RESET);
     out
+}
+
+fn local_speech_payload(kind: LocalSpeechKind, name: &str, text: &str) -> Option<Vec<u8>> {
+    match kind {
+        LocalSpeechKind::Holler => holler_message(name, text),
+        LocalSpeechKind::Shout => shout_message(name, text),
+        LocalSpeechKind::Say => Some(say_message(name, text)),
+        LocalSpeechKind::Murmur => (!text.contains('"'))
+            .then(|| sanitize_log_bytes(format!("{name} murmurs: \"{text}\"").as_bytes())),
+        LocalSpeechKind::Whisper => whisper_message(name, text),
+    }
+}
+
+fn apply_local_speech_command(
+    world: &mut World,
+    runtime: &ServerRuntime,
+    sender_id: CharacterId,
+    command: &str,
+    current_tick: u64,
+) -> Option<ChatCommandResult> {
+    let (verb, raw_text) = chat_command_verb(command);
+    let kind = LocalSpeechKind::from_verb(verb)?;
+    let settings = GameSettings::default();
+
+    let sender = world.characters.get(&sender_id)?;
+    let mut text = raw_text.trim_start();
+    if sender.flags.contains(CharacterFlags::SHUTUP) {
+        return Some(ChatCommandResult {
+            sender_messages: vec!["Sorry, you cannot say anything right now.".to_string()],
+            delivered_message_bytes: Vec::new(),
+        });
+    }
+
+    let underwater = world
+        .map
+        .tile(usize::from(sender.x), usize::from(sender.y))
+        .is_some_and(|tile| tile.flags.contains(MapFlags::UNDERWATER));
+    let actual_kind = if underwater {
+        text = "Blub.";
+        LocalSpeechKind::Say
+    } else {
+        kind
+    };
+
+    let cost = actual_kind.endurance_cost(&settings);
+    if cost > 0 && sender.endurance < cost {
+        let message = match actual_kind {
+            LocalSpeechKind::Holler => "You're too exhausted to holler.",
+            LocalSpeechKind::Shout => "You're too exhausted to shout.",
+            _ => unreachable!(),
+        };
+        return Some(ChatCommandResult {
+            sender_messages: vec![message.to_string()],
+            delivered_message_bytes: Vec::new(),
+        });
+    }
+
+    let Some(payload) = local_speech_payload(actual_kind, &sender.name, text) else {
+        return Some(ChatCommandResult::default());
+    };
+    let max_distance = actual_kind.max_distance(&settings);
+    let sender_x = i32::from(sender.x);
+    let sender_y = i32::from(sender.y);
+
+    if cost > 0 {
+        if let Some(sender) = world.characters.get_mut(&sender_id) {
+            sender.endurance = sender.endurance.saturating_sub(cost);
+            sender.regen_ticker = u32::try_from(current_tick).unwrap_or(u32::MAX);
+        }
+    }
+
+    let mut delivered_message_bytes = Vec::new();
+    for player in runtime.players.values() {
+        let Some(target_id) = player.character_id else {
+            continue;
+        };
+        let Some(target) = world.characters.get(&target_id) else {
+            continue;
+        };
+        if !target
+            .flags
+            .contains(CharacterFlags::PLAYER | CharacterFlags::USED)
+        {
+            continue;
+        }
+        if (i32::from(target.x) - sender_x).abs() > max_distance
+            || (i32::from(target.y) - sender_y).abs() > max_distance
+        {
+            continue;
+        }
+        delivered_message_bytes.push((target_id, payload.clone()));
+    }
+
+    Some(ChatCommandResult {
+        sender_messages: Vec::new(),
+        delivered_message_bytes,
+    })
 }
 
 fn apply_chat_command(
@@ -10124,6 +10262,149 @@ mod tests {
     }
 
     #[test]
+    fn local_speech_command_delivers_legacy_say_to_nearby_players() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let nearby_id = CharacterId(8);
+        let far_id = CharacterId(9);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.x = 10;
+        sender.y = 10;
+        world.add_character(sender);
+        let mut nearby = login_character(nearby_id, &login_block("Bob"), 1, 11, 10);
+        nearby.x = 11;
+        nearby.y = 10;
+        world.add_character(nearby);
+        let mut far = login_character(far_id, &login_block("Far"), 1, 250, 250);
+        far.x = 250;
+        far.y = 250;
+        world.add_character(far);
+
+        let mut runtime = ServerRuntime::default();
+        for (session, id) in [(1, sender_id), (2, nearby_id), (3, far_id)] {
+            runtime
+                .players
+                .insert(session, PlayerRuntime::connected(session, 0));
+            runtime.players.get_mut(&session).unwrap().character_id = Some(id);
+        }
+
+        let result = apply_local_speech_command(
+            &mut world,
+            &runtime,
+            sender_id,
+            "/say Hello \"quoted\"",
+            123,
+        )
+        .expect("say command should be recognized");
+
+        assert!(result.sender_messages.is_empty());
+        let mut deliveries = result
+            .delivered_message_bytes
+            .iter()
+            .map(|(id, bytes)| (*id, String::from_utf8_lossy(bytes).into_owned()))
+            .collect::<Vec<_>>();
+        deliveries.sort_by_key(|(id, _)| id.0);
+        assert_eq!(
+            deliveries,
+            vec![
+                (sender_id, "Alice says: \"Hello \"quoted\"\"".to_string()),
+                (nearby_id, "Alice says: \"Hello \"quoted\"\"".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn local_speech_command_preserves_mute_and_quote_rejection() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.flags.insert(CharacterFlags::SHUTUP);
+        sender.x = 10;
+        sender.y = 10;
+        world.add_character(sender);
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+
+        let muted = apply_local_speech_command(&mut world, &runtime, sender_id, "/whisper Hi", 1)
+            .expect("whisper should be recognized");
+        assert_eq!(
+            muted.sender_messages,
+            vec!["Sorry, you cannot say anything right now."]
+        );
+
+        world
+            .characters
+            .get_mut(&sender_id)
+            .unwrap()
+            .flags
+            .remove(CharacterFlags::SHUTUP);
+        let quoted =
+            apply_local_speech_command(&mut world, &runtime, sender_id, "/whisper bad\"quote", 1)
+                .expect("whisper should be recognized");
+        assert!(quoted.sender_messages.is_empty());
+        assert!(quoted.delivered_message_bytes.is_empty());
+    }
+
+    #[test]
+    fn shout_and_holler_apply_legacy_endurance_costs() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.endurance = GameSettings::default().shout_cost;
+        sender.x = 10;
+        sender.y = 10;
+        world.add_character(sender);
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+
+        let shouted = apply_local_speech_command(&mut world, &runtime, sender_id, "/shout Hi", 77)
+            .expect("shout should be recognized");
+        assert_eq!(shouted.delivered_message_bytes.len(), 1);
+        let sender = world.characters.get(&sender_id).unwrap();
+        assert_eq!(sender.endurance, 0);
+        assert_eq!(sender.regen_ticker, 77);
+
+        let tired = apply_local_speech_command(&mut world, &runtime, sender_id, "/holler Hi", 78)
+            .expect("holler should be recognized");
+        assert_eq!(
+            tired.sender_messages,
+            vec!["You're too exhausted to holler."]
+        );
+        assert!(tired.delivered_message_bytes.is_empty());
+    }
+
+    #[test]
+    fn underwater_speech_falls_back_to_blub_without_shout_cost() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.endurance = 0;
+        sender.x = 10;
+        sender.y = 10;
+        world.add_character(sender);
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::UNDERWATER);
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+
+        let result = apply_local_speech_command(&mut world, &runtime, sender_id, "/shout Help", 77)
+            .expect("shout should be recognized");
+        assert_eq!(result.sender_messages, Vec::<String>::new());
+        assert_eq!(
+            String::from_utf8_lossy(&result.delivered_message_bytes[0].1),
+            "Alice says: \"Blub.\""
+        );
+        assert_eq!(world.characters.get(&sender_id).unwrap().endurance, 0);
+    }
+
+    #[test]
     fn chat_command_preserves_join_and_access_gates() {
         let mut world = World::default();
         let sender_id = CharacterId(7);
@@ -15256,6 +15537,22 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 for (target_id, message) in result.delivered_messages {
                                     command_feedback.push((target_id, message));
+                                }
+                                for (target_id, message) in result.delivered_message_bytes {
+                                    command_feedback_bytes.push((target_id, message));
+                                }
+                                continue;
+                            }
+                            let current_tick = world.tick.0;
+                            if let Some(result) = apply_local_speech_command(
+                                &mut world,
+                                &runtime,
+                                character_id,
+                                &command,
+                                current_tick,
+                            ) {
+                                for message in result.sender_messages {
+                                    command_feedback.push((character_id, message));
                                 }
                                 for (target_id, message) in result.delivered_message_bytes {
                                     command_feedback_bytes.push((target_id, message));
