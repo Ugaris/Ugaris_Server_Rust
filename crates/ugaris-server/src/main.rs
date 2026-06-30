@@ -19581,6 +19581,7 @@ async fn main() -> anyhow::Result<()> {
                                                 template.as_str(),
                                             ) {
                                                 Some(item_name) => {
+                                                    world.notify_twocity_pick_from_character(character_id);
                                                     feedback.push((character_id, "You pick the lock.".to_string()));
                                                     feedback.push((character_id, format!("You found a {}.", item_name.to_ascii_lowercase())));
                                                     executed += 1;

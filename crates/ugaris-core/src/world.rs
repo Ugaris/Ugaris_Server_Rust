@@ -6,7 +6,7 @@ use crate::{
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
-        NT_DIDHIT, NT_GOTHIT, NT_SEEHIT,
+        NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
     },
     direction::Direction,
     do_action::{
@@ -512,6 +512,39 @@ impl World {
 
     pub fn drain_legacy_hurt_events(&mut self) -> Vec<LegacyHurtEvent> {
         self.pending_hurt_events.drain(..).collect()
+    }
+
+    pub fn notify_twocity_pick_from_character(&mut self, character_id: CharacterId) {
+        let Some(character) = self.characters.get(&character_id) else {
+            return;
+        };
+        let x = character.x;
+        let y = character.y;
+        self.notify_area(x, y, NT_NPC, NTID_TWOCITY_PICK, character_id.0 as i32, 0);
+    }
+
+    pub fn notify_area(
+        &mut self,
+        x: u16,
+        y: u16,
+        message_type: i32,
+        dat1: i32,
+        dat2: i32,
+        dat3: i32,
+    ) {
+        let min_x = x.saturating_sub(16);
+        let max_x = x.saturating_add(16);
+        let min_y = y.saturating_sub(16);
+        let max_y = y.saturating_add(16);
+        for character in self.characters.values_mut() {
+            if character.x >= min_x
+                && character.x <= max_x
+                && character.y >= min_y
+                && character.y <= max_y
+            {
+                character.push_driver_message(message_type, dat1, dat2, dat3);
+            }
+        }
     }
 
     pub fn add_character(&mut self, character: Character) {
@@ -6322,6 +6355,7 @@ impl World {
                 character_id,
             } => {
                 if self.toggle_pick_door(item_id, character_id) == DoorToggleResult::Toggled {
+                    self.notify_twocity_pick_from_character(character_id);
                     outcome
                 } else {
                     ItemDriverOutcome::Noop
@@ -6731,8 +6765,12 @@ impl World {
                 }
                 outcome
             }
-            ItemDriverOutcome::BurndownIgnite { item_id, .. } => {
+            ItemDriverOutcome::BurndownIgnite {
+                item_id,
+                character_id,
+            } => {
                 if self.ignite_burndown_barrel(item_id) {
+                    self.notify_twocity_pick_from_character(character_id);
                     outcome
                 } else {
                     ItemDriverOutcome::Noop
@@ -21806,6 +21844,14 @@ mod tests {
         actor.x = 8;
         actor.y = 8;
         world.add_character(actor);
+        let mut nearby_npc = character(2);
+        nearby_npc.x = 20;
+        nearby_npc.y = 8;
+        world.add_character(nearby_npc);
+        let mut distant_npc = character(3);
+        distant_npc.x = 25;
+        distant_npc.y = 8;
+        world.add_character(distant_npc);
         let mut door = item(
             7,
             ItemFlags::USED
@@ -21856,6 +21902,21 @@ mod tests {
             ItemFlags::MOVEBLOCK | ItemFlags::SIGHTBLOCK | ItemFlags::SOUNDBLOCK | ItemFlags::DOOR
         ));
         assert_eq!(world.timers.used_timers(), 1);
+        let nearby_messages = &world
+            .characters
+            .get(&CharacterId(2))
+            .unwrap()
+            .driver_messages;
+        assert_eq!(nearby_messages.len(), 1);
+        assert_eq!(nearby_messages[0].message_type, NT_NPC);
+        assert_eq!(nearby_messages[0].dat1, NTID_TWOCITY_PICK);
+        assert_eq!(nearby_messages[0].dat2, 1);
+        assert!(world
+            .characters
+            .get(&CharacterId(3))
+            .unwrap()
+            .driver_messages
+            .is_empty());
 
         world.tick = Tick(TICKS_PER_SECOND * 20);
         let outcomes = world.process_due_timers(17);
@@ -21883,6 +21944,10 @@ mod tests {
         actor.x = 8;
         actor.y = 8;
         world.add_character(actor);
+        let mut nearby_npc = character(2);
+        nearby_npc.x = 8;
+        nearby_npc.y = 24;
+        world.add_character(nearby_npc);
         let mut barrel = item(7, ItemFlags::USED | ItemFlags::USE);
         barrel.driver = crate::item_driver::IDR_BURNDOWN;
         barrel.sprite = 51076;
@@ -21922,6 +21987,15 @@ mod tests {
             1024 << 16
         );
         assert_eq!(world.timers.used_timers(), 1);
+        let nearby_messages = &world
+            .characters
+            .get(&CharacterId(2))
+            .unwrap()
+            .driver_messages;
+        assert_eq!(nearby_messages.len(), 1);
+        assert_eq!(nearby_messages[0].message_type, NT_NPC);
+        assert_eq!(nearby_messages[0].dat1, NTID_TWOCITY_PICK);
+        assert_eq!(nearby_messages[0].dat2, 1);
 
         world.tick = Tick(TICKS_PER_SECOND * 5);
         let outcomes = world.process_due_timers(17);
