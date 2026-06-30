@@ -22415,7 +22415,7 @@ mod tests {
                 request,
                 17,
                 &ItemDriverContext {
-                    has_area17_lockpick: true,
+                    has_area17_cursor_lockpick: true,
                     ..ItemDriverContext::default()
                 },
             ),

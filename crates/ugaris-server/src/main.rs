@@ -6172,7 +6172,7 @@ fn item_driver_context_for_request(
         };
     }
     if *driver == IDR_BOOKCASE || *driver == IDR_PICKCHEST || *driver == IDR_PICKDOOR {
-        let (has_area17_library_key, has_area17_lockpick) = world
+        let (has_area17_library_key, has_area17_lockpick, has_area17_cursor_lockpick) = world
             .characters
             .get(character_id)
             .map(|character| {
@@ -6188,12 +6188,19 @@ fn item_driver_context_for_request(
                         .get(item_id)
                         .is_some_and(|item| item.template_id == IID_AREA17_LOCKPICK)
                 });
-                (has_library_key, has_lockpick)
+                let has_cursor_lockpick = character.cursor_item.is_some_and(|item_id| {
+                    world
+                        .items
+                        .get(&item_id)
+                        .is_some_and(|item| item.template_id == IID_AREA17_LOCKPICK)
+                });
+                (has_library_key, has_lockpick, has_cursor_lockpick)
             })
             .unwrap_or_default();
         return ugaris_core::item_driver::ItemDriverContext {
             has_area17_library_key,
             has_area17_lockpick,
+            has_area17_cursor_lockpick,
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }

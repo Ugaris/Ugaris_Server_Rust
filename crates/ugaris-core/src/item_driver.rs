@@ -371,6 +371,7 @@ pub struct ItemDriverContext {
     pub bone_hint_pos: Option<u8>,
     pub has_area17_library_key: bool,
     pub has_area17_lockpick: bool,
+    pub has_area17_cursor_lockpick: bool,
     pub has_dungeon_door_key1: bool,
     pub has_dungeon_door_key2: bool,
     pub dungeon_defender_count: Option<u16>,
@@ -5347,7 +5348,7 @@ fn pick_door_driver(
     if drdata(item, 0) != 0 {
         return ItemDriverOutcome::Noop;
     }
-    if character.flags.contains(CharacterFlags::PLAYER) && !context.has_area17_lockpick {
+    if character.flags.contains(CharacterFlags::PLAYER) && !context.has_area17_cursor_lockpick {
         return ItemDriverOutcome::PickDoorLocked {
             item_id: item.id,
             character_id: character.id,
@@ -13621,6 +13622,25 @@ mod tests {
                 false,
                 &ItemDriverContext {
                     has_area17_lockpick: true,
+                    has_area17_cursor_lockpick: false,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::PickDoorLocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut door,
+                request,
+                17,
+                false,
+                &ItemDriverContext {
+                    has_area17_cursor_lockpick: true,
                     ..ItemDriverContext::default()
                 },
             ),

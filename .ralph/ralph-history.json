@@ -4332,21 +4332,50 @@
         "test result: ok. 800 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 158,
+      "startedAt": "2026-06-30T10:32:21.492Z",
+      "endedAt": "2026-06-30T10:40:30.246Z",
+      "durationMs": 488608,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The workspace failure is an existing world-level Area 17 test using the old inventory-lockpick context. I’ll update it to the new cursor-lockpick context.",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.00s",
+        "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_executes_area17_pick_door_with_legacy_timer ... FAILED",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 89151793,
+  "totalDurationMs": 89640401,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
       "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 18,
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
-      "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 19,
+      "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 133,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 131,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 119,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 123,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 99,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 134,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 132,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 120,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 124,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 100,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 62,
@@ -4364,7 +4393,7 @@
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 9,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 17,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 18,
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
@@ -4813,10 +4842,12 @@
       "The first verification command hit Cargo’s single-filter limitation, not a code failure. I’ll rerun ": 1,
       "error: unexpected argument 'entity::tests::driver_message_queue_preserves_legacy_payload_order' foun": 1,
       "error: could not compile `ugaris-core` (lib) due to 2 previous errors": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.00s": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 264 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 265 filtered out; finished in 0.00s": 1,
-      "test result: ok. 267 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
+      "test result: ok. 267 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "The workspace failure is an existing world-level Area 17 test using the old inventory-lockpick conte": 1,
+      "test world::tests::world_executes_area17_pick_door_with_legacy_timer ... FAILED": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
