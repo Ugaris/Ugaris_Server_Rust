@@ -266,6 +266,7 @@ struct ServerRuntime {
     next_character_id: u32,
     dlight_override: i32,
     show_attack: bool,
+    weather: WeatherState,
 }
 
 fn runtime_staff_code(runtime: &ServerRuntime, character_id: CharacterId) -> &str {
@@ -3755,7 +3756,7 @@ fn apply_time_command(date: GameDate, command: &str) -> Option<KeyringCommandRes
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct WeatherState {
     current_weather: i32,
     weather_intensity: usize,
@@ -3765,7 +3766,7 @@ struct WeatherState {
     transition_duration: u64,
     prev_weather: i32,
     weather_change_time: u64,
-    affected_areas: &'static [u16],
+    affected_areas: Vec<u16>,
 }
 
 const WEATHER_EFFECT_SLOW: u32 = 0x01;
@@ -3785,7 +3786,7 @@ impl Default for WeatherState {
             transition_duration: 0,
             prev_weather: 0,
             weather_change_time: 0,
-            affected_areas: &[],
+            affected_areas: Vec::new(),
         }
     }
 }
@@ -3826,11 +3827,175 @@ fn weather_description(weather_type: i32, intensity: usize) -> &'static str {
     }
 }
 
+fn is_valid_weather_type(weather_type: i64) -> bool {
+    (0..=5).contains(&weather_type)
+}
+
+fn is_valid_weather_intensity(intensity: i64) -> bool {
+    (1..=3).contains(&intensity)
+}
+
+fn weather_type_list_messages() -> Vec<String> {
+    vec![
+        "Invalid weather type. Valid types are:".to_string(),
+        "0 = Clear".to_string(),
+        "1 = Rain".to_string(),
+        "2 = Storm".to_string(),
+        "3 = Snow".to_string(),
+        "4 = Sandstorm".to_string(),
+        "5 = Fog".to_string(),
+    ]
+}
+
+fn calculate_weather_effects(weather_type: i32, intensity: usize) -> u32 {
+    if !is_valid_weather_type(i64::from(weather_type))
+        || !is_valid_weather_intensity(intensity as i64)
+    {
+        return 0;
+    }
+    match weather_type {
+        1 | 2 | 3 => WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP,
+        4 => {
+            WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_DAMAGE | WEATHER_EFFECT_SLIP
+        }
+        5 => WEATHER_EFFECT_BLIND,
+        _ => 0,
+    }
+}
+
+fn is_weather_allowed_in_area(weather_type: i64, area: i64) -> bool {
+    if !is_valid_weather_type(weather_type) || !(0..=255).contains(&area) {
+        return false;
+    }
+    const NO_WEATHER_AREAS: &[i64] =
+        &[4, 8, 11, 12, 13, 14, 16, 17, 18, 22, 25, 32, 33, 34, 36, 37];
+    if NO_WEATHER_AREAS.contains(&area) {
+        return weather_type == 0;
+    }
+    matches!(weather_type, 0..=3)
+}
+
+fn apply_weather_admin_command(
+    world: &World,
+    character_id: CharacterId,
+    weather: &mut WeatherState,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    let recognized = matches!(
+        lower.as_str(),
+        "setweather" | "clearweather" | "setareaweather"
+    );
+    if !recognized {
+        return None;
+    }
+    let Some(character) = world.characters.get(&character_id) else {
+        return Some(KeyringCommandResult::default());
+    };
+    if !character.flags.contains(CharacterFlags::GOD) {
+        return Some(KeyringCommandResult {
+            messages: vec!["You need to be a god to use this command.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    if lower == "clearweather" {
+        weather.prev_weather = weather.current_weather;
+        weather.current_weather = 0;
+        weather.weather_intensity = 1;
+        weather.weather_effects = 0;
+        weather.is_transitioning = true;
+        weather.transition_start = world.tick.0;
+        weather.transition_duration = TICKS_PER_SECOND * 60;
+        weather.affected_areas.clear();
+        return Some(KeyringCommandResult {
+            messages: vec!["Weather clearing globally.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    if lower == "setweather" {
+        let mut ptr = rest.trim_start();
+        let weather_type = legacy_atoi_prefix(ptr);
+        ptr = ptr.trim_start_matches(|ch: char| ch.is_ascii_digit());
+        let intensity = legacy_atoi_prefix(ptr.trim_start());
+        if !is_valid_weather_type(weather_type) {
+            return Some(KeyringCommandResult {
+                messages: weather_type_list_messages(),
+                ..Default::default()
+            });
+        }
+        if !is_valid_weather_intensity(intensity) {
+            return Some(KeyringCommandResult {
+                messages: vec![
+                    "Invalid intensity. Must be between 1 (Light) and 3 (Heavy).".to_string(),
+                ],
+                ..Default::default()
+            });
+        }
+        weather.prev_weather = weather.current_weather;
+        let weather_type = weather_type as i32;
+        weather.current_weather = weather_type;
+        weather.weather_intensity = intensity as usize;
+        weather.weather_effects = calculate_weather_effects(weather_type, intensity as usize);
+        weather.is_transitioning = true;
+        weather.transition_start = world.tick.0;
+        weather.transition_duration = TICKS_PER_SECOND * 60;
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Weather changing to {}",
+                weather_description(weather_type, intensity as usize)
+            )],
+            ..Default::default()
+        });
+    }
+
+    let mut ptr = rest.trim_start();
+    let area = legacy_atoi_prefix(ptr);
+    ptr = ptr.trim_start_matches(|ch: char| ch.is_ascii_digit());
+    let weather_type = legacy_atoi_prefix(ptr.trim_start());
+    if !(0..=255).contains(&area) {
+        return Some(KeyringCommandResult {
+            messages: vec!["Invalid area ID. Must be between 0 and 255.".to_string()],
+            ..Default::default()
+        });
+    }
+    if !is_valid_weather_type(weather_type) {
+        return Some(KeyringCommandResult {
+            messages: weather_type_list_messages(),
+            ..Default::default()
+        });
+    }
+    if !is_weather_allowed_in_area(weather_type, area) {
+        return Some(KeyringCommandResult {
+            messages: vec![format!("This weather type is not allowed in area {area}.")],
+            ..Default::default()
+        });
+    }
+    let area = area as u16;
+    if weather_type == 0 {
+        weather.affected_areas.retain(|affected| *affected != area);
+    } else if !weather.affected_areas.contains(&area) {
+        weather.affected_areas.push(area);
+    }
+    Some(KeyringCommandResult {
+        messages: vec![format!(
+            "Set weather in area {area} to {}",
+            weather_name(weather_type as i32)
+        )],
+        ..Default::default()
+    })
+}
+
 fn apply_weather_command(
     world: &World,
     character_id: CharacterId,
     area_id: u16,
-    weather: WeatherState,
+    weather: &WeatherState,
     command: &str,
 ) -> Option<KeyringCommandResult> {
     let (verb, _) = command
@@ -12944,16 +13109,21 @@ mod tests {
         character.y = 10;
         world.add_character(character);
 
-        let result =
-            apply_weather_command(&world, character_id, 1, WeatherState::default(), "/weather")
-                .expect("weather command should be recognized");
+        let result = apply_weather_command(
+            &world,
+            character_id,
+            1,
+            &WeatherState::default(),
+            "/weather",
+        )
+        .expect("weather command should be recognized");
 
         assert_eq!(
             result.messages,
             vec!["Current weather in this area: Clear skies"]
         );
         assert!(
-            apply_weather_command(&world, character_id, 1, WeatherState::default(), "/weath")
+            apply_weather_command(&world, character_id, 1, &WeatherState::default(), "/weath",)
                 .is_none()
         );
     }
@@ -12970,11 +13140,11 @@ mod tests {
             current_weather: 2,
             weather_intensity: 3,
             weather_effects: WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP,
-            affected_areas: &[1],
+            affected_areas: vec![1],
             ..WeatherState::default()
         };
 
-        let outdoor = apply_weather_command(&world, character_id, 1, weather, "/weather")
+        let outdoor = apply_weather_command(&world, character_id, 1, &weather, "/weather")
             .expect("weather command should be recognized");
         assert_eq!(
             outdoor.messages,
@@ -12987,7 +13157,7 @@ mod tests {
         );
 
         world.map.set_flags(10, 10, MapFlags::INDOORS);
-        let indoor = apply_weather_command(&world, character_id, 1, weather, "/weather")
+        let indoor = apply_weather_command(&world, character_id, 1, &weather, "/weather")
             .expect("weather command should be recognized");
         assert_eq!(
             indoor.messages,
@@ -13017,10 +13187,10 @@ mod tests {
             transition_duration: 48,
             prev_weather: 0,
             weather_change_time: 240,
-            affected_areas: &[1, 3],
+            affected_areas: vec![1, 3],
         };
 
-        let result = apply_weather_command(&world, character_id, 1, weather, "/weather")
+        let result = apply_weather_command(&world, character_id, 1, &weather, "/weather")
             .expect("weather command should be recognized");
 
         assert_eq!(
@@ -13039,6 +13209,116 @@ mod tests {
                 "  1 3 ",
                 "The weather is causing damage.",
             ]
+        );
+    }
+
+    #[test]
+    fn weather_admin_commands_mutate_runtime_state_with_legacy_feedback() {
+        let mut world = World::default();
+        world.tick = ugaris_core::Tick(48);
+        let character_id = CharacterId(7);
+        let mut god = login_character(character_id, &login_block("WeatherGod"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let mut weather = WeatherState::default();
+
+        let set =
+            apply_weather_admin_command(&world, character_id, &mut weather, "/setweather 2 3")
+                .expect("setweather should be recognized");
+        assert_eq!(set.messages, vec!["Weather changing to Heavy storm"]);
+        assert_eq!(weather.current_weather, 2);
+        assert_eq!(weather.weather_intensity, 3);
+        assert_eq!(
+            weather.weather_effects,
+            WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP
+        );
+        assert!(weather.is_transitioning);
+        assert_eq!(weather.transition_start, 48);
+        assert_eq!(weather.transition_duration, TICKS_PER_SECOND * 60);
+
+        let area =
+            apply_weather_admin_command(&world, character_id, &mut weather, "/setareaweather 1 2")
+                .expect("setareaweather should be recognized");
+        assert_eq!(area.messages, vec!["Set weather in area 1 to Storm"]);
+        assert_eq!(weather.affected_areas, vec![1]);
+
+        let clear_area =
+            apply_weather_admin_command(&world, character_id, &mut weather, "/setareaweather 1 0")
+                .expect("clear area weather should be recognized");
+        assert_eq!(clear_area.messages, vec!["Set weather in area 1 to Clear"]);
+        assert!(weather.affected_areas.is_empty());
+
+        let clear =
+            apply_weather_admin_command(&world, character_id, &mut weather, "/clearweather")
+                .expect("clearweather should be recognized");
+        assert_eq!(clear.messages, vec!["Weather clearing globally."]);
+        assert_eq!(weather.current_weather, 0);
+        assert_eq!(weather.weather_intensity, 1);
+        assert_eq!(weather.weather_effects, 0);
+    }
+
+    #[test]
+    fn weather_admin_commands_preserve_legacy_gates_and_validation() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Weather"),
+            1,
+            10,
+            10,
+        ));
+        let mut weather = WeatherState::default();
+
+        let denied =
+            apply_weather_admin_command(&world, character_id, &mut weather, "/setweather 1 1")
+                .expect("setweather should be recognized");
+        assert_eq!(
+            denied.messages,
+            vec!["You need to be a god to use this command."]
+        );
+        assert_eq!(weather, WeatherState::default());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let bad_type =
+            apply_weather_admin_command(&world, character_id, &mut weather, "/setweather 9 1")
+                .expect("bad setweather should be recognized");
+        assert_eq!(
+            bad_type.messages[0],
+            "Invalid weather type. Valid types are:"
+        );
+
+        let bad_intensity =
+            apply_weather_admin_command(&world, character_id, &mut weather, "/setweather 1 4")
+                .expect("bad intensity should be recognized");
+        assert_eq!(
+            bad_intensity.messages,
+            vec!["Invalid intensity. Must be between 1 (Light) and 3 (Heavy)."]
+        );
+
+        let bad_area = apply_weather_admin_command(
+            &world,
+            character_id,
+            &mut weather,
+            "/setareaweather 300 1",
+        )
+        .expect("bad area should be recognized");
+        assert_eq!(
+            bad_area.messages,
+            vec!["Invalid area ID. Must be between 0 and 255."]
+        );
+
+        let disallowed =
+            apply_weather_admin_command(&world, character_id, &mut weather, "/setareaweather 8 1")
+                .expect("disallowed area weather should be recognized");
+        assert_eq!(
+            disallowed.messages,
+            vec!["This weather type is not allowed in area 8."]
         );
     }
 
@@ -18358,11 +18638,22 @@ async fn main() -> anyhow::Result<()> {
                                 .get(&character_id)
                                 .map(|character| character.flags)
                                 .unwrap_or_else(CharacterFlags::empty);
+                            if let Some(result) = apply_weather_admin_command(
+                                &world,
+                                character_id,
+                                &mut runtime.weather,
+                                &command,
+                            ) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
                             if let Some(result) = apply_weather_command(
                                 &world,
                                 character_id,
                                 config.area_id,
-                                WeatherState::default(),
+                                &runtime.weather,
                                 &command,
                             ) {
                                 for message in result.messages {
