@@ -2051,6 +2051,7 @@ pub fn execute_item_driver_with_context(
                 IDR_TORCH => torch_driver(character, item, context),
                 IDR_FOOD => food_driver(character, item),
                 IDR_TOPLIST => toplist_driver(character, item),
+                IDR_ENHANCE => nomad_stack_driver(character, item),
                 IDR_ENCHANTITEM => enchant_driver(character, item),
                 IDR_ANTIENCHANTITEM => anti_enchant_driver(character, item, false),
                 IDR_SPECIALANTIENCHANTITEM => anti_enchant_driver(character, item, true),
@@ -10869,6 +10870,34 @@ mod tests {
                     spec: 0,
                 },
                 1,
+                false,
+            ),
+            ItemDriverOutcome::NomadStack {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn enhance_material_driver_dispatches_for_carried_items() {
+        let mut character = character(1);
+        let mut stack = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_ENHANCE);
+        stack.carried_by = Some(character.id);
+        stack.driver_data = vec![1, 100, 0, 0, 0];
+        character.inventory[30] = Some(stack.id);
+
+        assert_eq!(
+            execute_item_driver(
+                &mut character,
+                &mut stack,
+                ItemDriverRequest::Driver {
+                    driver: IDR_ENHANCE,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                12,
                 false,
             ),
             ItemDriverOutcome::NomadStack {

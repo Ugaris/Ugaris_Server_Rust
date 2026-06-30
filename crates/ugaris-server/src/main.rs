@@ -28,9 +28,9 @@ use ugaris_core::{
     ids::{CharacterId, ItemId},
     item_driver::{
         legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
-        IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_PICKCHEST,
-        IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE, IID_AREA17_LIBRARYKEY,
-        IID_AREA17_LOCKPICK, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2,
+        IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_KEY_RING,
+        IDR_PICKCHEST, IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE,
+        IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2,
         IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
@@ -6992,7 +6992,7 @@ fn apply_nomad_stack(
     character_id: CharacterId,
 ) -> NomadStackApplyResult {
     let Some((kind, unit, template)) = world.items.get(&item_id).and_then(|item| {
-        stack_kind(item.template_id).map(|kind| (kind, stack_unit(kind), stack_template(kind)))
+        stack_kind(item).map(|kind| (kind, stack_unit(kind), stack_template(kind)))
     }) else {
         return NomadStackApplyResult::Bug(
             if world
@@ -7023,11 +7023,7 @@ fn apply_nomad_stack(
     if cursor_item_id == item_id {
         return NomadStackApplyResult::MissingItem;
     }
-    let Some(cursor_kind) = world
-        .items
-        .get(&cursor_item_id)
-        .and_then(|item| stack_kind(item.template_id))
-    else {
+    let Some(cursor_kind) = world.items.get(&cursor_item_id).and_then(stack_kind) else {
         return NomadStackApplyResult::CannotMix;
     };
     if cursor_kind != kind {
@@ -7112,10 +7108,20 @@ enum StackKind {
     BronzeChip,
     SilverChip,
     GoldChip,
+    SilverUnit,
+    GoldUnit,
 }
 
-fn stack_kind(template_id: u32) -> Option<StackKind> {
-    match template_id {
+fn stack_kind(item: &Item) -> Option<StackKind> {
+    if item.driver == IDR_ENHANCE {
+        return match item.driver_data.first().copied() {
+            Some(1) => Some(StackKind::SilverUnit),
+            Some(2) => Some(StackKind::GoldUnit),
+            _ => None,
+        };
+    }
+
+    match item.template_id {
         IID_AREA19_SALT => Some(StackKind::Salt),
         IID_AREA19_WOLFSSKIN => Some(StackKind::Skin1),
         IID_AREA19_WOLFSSKIN2 => Some(StackKind::Skin2),
@@ -7134,6 +7140,8 @@ fn stack_template(kind: StackKind) -> &'static str {
         StackKind::BronzeChip => "bronzechip",
         StackKind::SilverChip => "silverchip",
         StackKind::GoldChip => "goldchip",
+        StackKind::SilverUnit => "silver",
+        StackKind::GoldUnit => "gold",
     }
 }
 
@@ -7142,6 +7150,7 @@ fn stack_unit(kind: StackKind) -> &'static str {
         StackKind::Salt => "ounce",
         StackKind::Skin1 | StackKind::Skin2 => "skin",
         StackKind::BronzeChip | StackKind::SilverChip | StackKind::GoldChip => "chip",
+        StackKind::SilverUnit | StackKind::GoldUnit => "unit",
     }
 }
 
@@ -7156,18 +7165,27 @@ fn stack_split_amount(mut amount: u32) -> u32 {
 }
 
 fn stack_count(item: &Item) -> u32 {
+    let offset = stack_kind(item).map(stack_count_offset).unwrap_or_default();
     let mut bytes = [0_u8; 4];
-    for (idx, byte) in item.driver_data.iter().take(4).enumerate() {
+    for (idx, byte) in item.driver_data.iter().skip(offset).take(4).enumerate() {
         bytes[idx] = *byte;
     }
     u32::from_le_bytes(bytes)
 }
 
-fn set_stack_count(item: &mut Item, count: u32, kind: StackKind) {
-    if item.driver_data.len() < 4 {
-        item.driver_data.resize(4, 0);
+fn stack_count_offset(kind: StackKind) -> usize {
+    match kind {
+        StackKind::SilverUnit | StackKind::GoldUnit => 1,
+        _ => 0,
     }
-    item.driver_data[..4].copy_from_slice(&count.to_le_bytes());
+}
+
+fn set_stack_count(item: &mut Item, count: u32, kind: StackKind) {
+    let offset = stack_count_offset(kind);
+    if item.driver_data.len() < offset + 4 {
+        item.driver_data.resize(offset + 4, 0);
+    }
+    item.driver_data[offset..offset + 4].copy_from_slice(&count.to_le_bytes());
     match kind {
         StackKind::Salt => {
             item.sprite = if count >= 10000 {
@@ -7194,6 +7212,9 @@ fn set_stack_count(item: &mut Item, count: u32, kind: StackKind) {
         StackKind::BronzeChip => set_chip_stack_data(item, count, 0),
         StackKind::SilverChip => set_chip_stack_data(item, count, 12),
         StackKind::GoldChip => set_chip_stack_data(item, count, 6),
+        StackKind::SilverUnit | StackKind::GoldUnit => {
+            item.description = format!("{count} units of {}.", item.name);
+        }
     }
 }
 
@@ -13228,6 +13249,91 @@ mod tests {
             apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
             NomadStackApplyResult::Bug("Bug #1445y")
         );
+    }
+
+    #[test]
+    fn enhance_silver_stack_split_uses_legacy_drdata_count_offset() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(20));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut stack = test_item(ItemId(20), 51054, ItemFlags::USED | ItemFlags::USE);
+        stack.name = "Silver".to_string();
+        stack.driver = IDR_ENHANCE;
+        stack.value = 1_230;
+        stack.carried_by = Some(character_id);
+        stack.driver_data = vec![1, 123, 0, 0, 0];
+        world.add_item(stack);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"silver: name="Silver" ID=01010101 flag=IF_TAKE flag=IF_USE driver=61 arg="0101000000" ;"#,
+            )
+            .unwrap();
+
+        assert_eq!(
+            apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
+            NomadStackApplyResult::Split {
+                left: 73,
+                right: 50,
+                unit: "unit",
+            }
+        );
+        let cursor_id = world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .cursor_item
+            .unwrap();
+        let carried = world.items.get(&ItemId(20)).unwrap();
+        let cursor = world.items.get(&cursor_id).unwrap();
+        assert_eq!(&carried.driver_data[..5], &[1, 73, 0, 0, 0]);
+        assert_eq!(&cursor.driver_data[..5], &[1, 50, 0, 0, 0]);
+        assert_eq!(carried.description, "73 units of Silver.");
+        assert_eq!(cursor.description, "50 units of Silver.");
+    }
+
+    #[test]
+    fn enhance_gold_stack_merge_consumes_matching_cursor_stack() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(20));
+        character.cursor_item = Some(ItemId(21));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut carried = test_item(ItemId(20), 51053, ItemFlags::USED | ItemFlags::USE);
+        carried.name = "Gold".to_string();
+        carried.driver = IDR_ENHANCE;
+        carried.value = 100;
+        carried.carried_by = Some(character_id);
+        carried.driver_data = vec![2, 4, 0, 0, 0];
+        world.add_item(carried);
+        let mut cursor = test_item(ItemId(21), 51053, ItemFlags::USED | ItemFlags::USE);
+        cursor.name = "Gold".to_string();
+        cursor.driver = IDR_ENHANCE;
+        cursor.value = 75;
+        cursor.carried_by = Some(character_id);
+        cursor.driver_data = vec![2, 3, 0, 0, 0];
+        world.add_item(cursor);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
+            NomadStackApplyResult::Merged {
+                count: 7,
+                unit: "unit",
+            }
+        );
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().cursor_item,
+            None
+        );
+        assert!(!world.items.contains_key(&ItemId(21)));
+        let stack = world.items.get(&ItemId(20)).unwrap();
+        assert_eq!(stack.driver_data, vec![2, 7, 0, 0, 0]);
+        assert_eq!(stack.value, 175);
+        assert_eq!(stack.description, "7 units of Gold.");
     }
 
     #[test]
