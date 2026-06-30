@@ -7631,6 +7631,71 @@ fn apply_lab2_water_altar(
     Lab2WaterApplyResult::Converted(converted)
 }
 
+const LAB2_DESCRIBED_GRAVES: [&str; 40] = [
+    "%s is buried in the third grave behind the chapel.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the seventh grave behind the chapel.",
+    "%s is buried at the left side of her husband John.",
+    "For his generosity %s is buried in the third grave of the first row next to the northwestern chapel aisle.",
+    "%s is buried at the left side of her husband John.",
+    "For his generosity %s is buried in the first grave of the second row next to the northwestern chapel aisle.",
+    "%s is buried at the left side of her husband John.",
+    "For his generosity %s is buried in the first grave of the second row next to the southeastern chapel aisle.",
+    "%s is buried at the left side of her husband John.",
+    "For his generosity %s is buried in the first grave of the first row next to the southeastern chapel aisle.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the fifth grave of the second row in the southwest section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the fourth grave of the third row in the southwest section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the fourth grave of the second row in the southeast section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the sixth grave of the sixth row in the southeast section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the fifth grave of the first row in the northwest entrance section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the seventh grave of the last row in the northwest entrance section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the first grave of the last row in the southeast entrance section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the sixth grave of the second row in the southeast entrance section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the second grave of the first row in the section with the cross in front of the administrative building.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the seventh grave of the last row in the section with the cross in front of the administrative building.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the second grave of the second row in the section without the cross in front of the administravive building.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the second grave of the third row in the section without the cross in front of the administravive building.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the first grave in the northeastern part of the northeast section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+    "%s is buried in the fourth grave of the last row in the northeastern part of the northeast section of the graveyard.",
+    "%s is buried at the left side of her husband John.",
+];
+
+fn lab2_grave_clue_text(
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    book: u8,
+) -> String {
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return "Congratulations, you detected bug no. 12/HIHO/17. Please report this to the development team.".to_string();
+    };
+    let indices = player.ensure_legacy_lab2_described_graves();
+    let (slot, name) = match book {
+        1 => (0, "Henry"),
+        2 => (1, "Eldrick"),
+        3 => (2, "John"),
+        4 => (3, "Mariah"),
+        _ => return "This grave is empty".to_string(),
+    };
+    LAB2_DESCRIBED_GRAVES
+        .get(indices[slot] as usize)
+        .unwrap_or(&"%s is buried in an unknown grave.")
+        .replace("%s", name)
+}
+
 fn grant_ice_itemspawn_to_cursor(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -26016,6 +26081,11 @@ async fn main() -> anyhow::Result<()> {
                                                     failed += 1;
                                                 }
                                             }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveClueBook { character_id, book, .. } => {
+                                            let text = lab2_grave_clue_text(&mut runtime, character_id, book);
+                                            feedback.push((character_id, text));
+                                            executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { character_id, .. } => {
                                             feedback.push((

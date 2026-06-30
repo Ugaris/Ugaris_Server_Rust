@@ -1910,6 +1910,11 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    Lab2GraveClueBook {
+        item_id: ItemId,
+        character_id: CharacterId,
+        book: u8,
+    },
     ParkShrine {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2729,6 +2734,7 @@ fn lab2_grave_driver(
     item: &mut Item,
     context: &ItemDriverContext,
 ) -> ItemDriverOutcome {
+    let grave_item = item.driver_data.first().copied().unwrap_or_default();
     let grave_open_character = item
         .driver_data
         .get(4..8)
@@ -2738,6 +2744,20 @@ fn lab2_grave_driver(
 
     if (context.timer_call || character.id.0 == 0) && grave_open_character == 0 {
         return ItemDriverOutcome::Noop;
+    }
+
+    if character.id.0 != 0 {
+        if !character.flags.contains(CharacterFlags::PLAYER) {
+            return ItemDriverOutcome::Noop;
+        }
+
+        if matches!(grave_item, 1..=4) {
+            return ItemDriverOutcome::Lab2GraveClueBook {
+                item_id: item.id,
+                character_id: character.id,
+                book: grave_item,
+            };
+        }
     }
 
     ItemDriverOutcome::Unsupported {
@@ -20036,6 +20056,35 @@ mod tests {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
             }
+        );
+    }
+
+    #[test]
+    fn lab2_grave_clue_books_return_typed_book_outcome() {
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        let mut grave_book = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_GRAVE);
+        grave_book.driver_data = vec![3; 16];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LAB2_GRAVE,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut grave_book, request, 22, false),
+            ItemDriverOutcome::Lab2GraveClueBook {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                book: 3,
+            }
+        );
+
+        actor.flags.remove(CharacterFlags::PLAYER);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut grave_book, request, 22, false),
+            ItemDriverOutcome::Noop
         );
     }
 

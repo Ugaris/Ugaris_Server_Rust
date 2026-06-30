@@ -44,6 +44,9 @@ pub const LEGACY_STAFFER_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_FARMY_PPD_SIZE: usize = 85 * 4;
 pub const LEGACY_TWOCITY_PPD_SIZE: usize = 29 * 4;
 pub const LEGACY_LAB_PPD_SIZE: usize = 360;
+pub const LEGACY_LAB2_GRAVE_VERSION: u8 = 2;
+pub const LEGACY_LAB2_GRAVEVERSION_OFFSET: usize = 43;
+pub const LEGACY_LAB2_GRAVEINDEX_OFFSET: usize = 44;
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
 pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
@@ -884,6 +887,36 @@ impl PlayerRuntime {
         self.lab_ppd = bytes.to_vec();
         self.lab_solved_bits = read_u64(bytes, 0);
         true
+    }
+
+    pub fn ensure_legacy_lab2_described_graves(&mut self) -> [u8; 4] {
+        self.ensure_legacy_lab2_described_graves_with_indices([0, 4, 8, 9])
+    }
+
+    pub fn ensure_legacy_lab2_described_graves_with_indices(
+        &mut self,
+        indices: [u8; 4],
+    ) -> [u8; 4] {
+        if self.lab_ppd.len() < LEGACY_LAB_PPD_SIZE {
+            self.lab_ppd.resize(LEGACY_LAB_PPD_SIZE, 0);
+        }
+        if self.lab_ppd[LEGACY_LAB2_GRAVEVERSION_OFFSET] != LEGACY_LAB2_GRAVE_VERSION {
+            self.lab_ppd[LEGACY_LAB2_GRAVEVERSION_OFFSET] = LEGACY_LAB2_GRAVE_VERSION;
+            self.lab_ppd[LEGACY_LAB2_GRAVEINDEX_OFFSET..LEGACY_LAB2_GRAVEINDEX_OFFSET + 4]
+                .copy_from_slice(&indices);
+        }
+        self.legacy_lab2_grave_indices()
+    }
+
+    pub fn legacy_lab2_grave_indices(&self) -> [u8; 4] {
+        if self.lab_ppd.len() < LEGACY_LAB2_GRAVEINDEX_OFFSET + 4 {
+            return [0, 0, 0, 0];
+        }
+        let mut indices = [0u8; 4];
+        indices.copy_from_slice(
+            &self.lab_ppd[LEGACY_LAB2_GRAVEINDEX_OFFSET..LEGACY_LAB2_GRAVEINDEX_OFFSET + 4],
+        );
+        indices
     }
 
     pub fn encode_legacy_pk_ppd(&self) -> Vec<u8> {
@@ -3471,6 +3504,20 @@ mod tests {
         assert_eq!(decoded.lab_solved_bits, (1_u64 << 10) | (1_u64 << 25));
         assert_eq!(decoded.lab_ppd, encoded);
         assert!(!decoded.decode_legacy_lab_ppd(&encoded[..7]));
+    }
+
+    #[test]
+    fn lab2_described_graves_use_legacy_lab_ppd_offsets() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let indices = player.ensure_legacy_lab2_described_graves_with_indices([2, 6, 10, 11]);
+
+        assert_eq!(indices, [2, 6, 10, 11]);
+        assert_eq!(player.lab_ppd.len(), LEGACY_LAB_PPD_SIZE);
+        assert_eq!(player.lab_ppd[LEGACY_LAB2_GRAVEVERSION_OFFSET], 2);
+        assert_eq!(player.legacy_lab2_grave_indices(), [2, 6, 10, 11]);
+
+        let preserved = player.ensure_legacy_lab2_described_graves_with_indices([0, 4, 8, 9]);
+        assert_eq!(preserved, [2, 6, 10, 11]);
     }
 
     #[test]
