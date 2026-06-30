@@ -29,7 +29,7 @@ use ugaris_core::{
     item_driver::{
         legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
         IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_KEY_RING,
-        IDR_PICKCHEST, IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE,
+        IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE,
         IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2,
         IID_AREA2_ZOMBIESKULL3,
     },
@@ -6115,6 +6115,38 @@ fn grant_template_item_to_cursor(
     character.cursor_item = Some(item_id);
     character.flags.insert(CharacterFlags::ITEMS);
     world.add_item(item);
+    Some(item_name)
+}
+
+fn grant_ice_itemspawn_to_cursor(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    template: &str,
+) -> Option<String> {
+    if world
+        .characters
+        .get(&character_id)
+        .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return None;
+    }
+    let item = loader
+        .instantiate_item_template(template, Some(character_id))
+        .ok()?;
+    let item_id = item.id;
+    let item_name = item.name.clone();
+    let should_schedule_melting = item.driver == IDR_MELTINGKEY;
+    let character = world.characters.get_mut(&character_id)?;
+    if character.cursor_item.is_some() {
+        return None;
+    }
+    character.cursor_item = Some(item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(item);
+    if should_schedule_melting {
+        world.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
+    }
     Some(item_name)
 }
 
@@ -16148,6 +16180,53 @@ mod tests {
     }
 
     #[test]
+    fn ice_itemspawn_melting_key_starts_timer_when_granted() {
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"
+                melting_key:
+                    name="Melting Key"
+                    sprite=50494
+                    flag=IF_TAKE
+                    driver=52
+                ;
+                "#,
+            )
+            .unwrap();
+        let mut world = World::default();
+        world.add_character(login_character(
+            CharacterId(7),
+            &login_block("Tester"),
+            10,
+            10,
+            10,
+        ));
+
+        assert_eq!(
+            grant_ice_itemspawn_to_cursor(&mut world, &mut loader, CharacterId(7), "melting_key"),
+            Some("Melting Key".to_string())
+        );
+
+        let item_id = world
+            .characters
+            .get(&CharacterId(7))
+            .unwrap()
+            .cursor_item
+            .unwrap();
+        let item = world.items.get_mut(&item_id).unwrap();
+        item.driver_data.resize(2, 0);
+        item.driver_data[0] = 3;
+        assert_eq!(world.timers.used_timers(), 1);
+
+        world.tick.0 = TICKS_PER_SECOND * 10;
+        let outcomes = world.process_due_timers(10);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(world.items.get(&item_id).unwrap().driver_data[1], 1);
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
     fn junkpile_search_grants_steelbar_and_destroys_pile() {
         let mut loader = ZoneLoader::new();
         loader
@@ -18330,7 +18409,7 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::IceItemSpawn { character_id, template, .. } => {
-                                            match grant_template_item_to_cursor(
+                                            match grant_ice_itemspawn_to_cursor(
                                                 &mut world,
                                                 &mut zone_loader,
                                                 character_id,
