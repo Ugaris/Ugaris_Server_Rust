@@ -5606,6 +5606,12 @@ enum RandomShrineSecurityApplyResult {
     Hardcore,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RandomShrineJoblessApplyResult {
+    Used,
+    AlreadyJobless,
+}
+
 fn legacy_save_number(saves: u8) -> String {
     match saves {
         0 => "no".to_string(),
@@ -5640,6 +5646,29 @@ fn apply_random_shrine_security(
     RandomShrineSecurityApplyResult::Used {
         saves: character.saves,
     }
+}
+
+fn apply_random_shrine_jobless(
+    player: &mut PlayerRuntime,
+    character: &mut Character,
+    shrine_type: u8,
+) -> RandomShrineJoblessApplyResult {
+    if character
+        .professions
+        .iter()
+        .all(|profession| *profession == 0)
+    {
+        return RandomShrineJoblessApplyResult::AlreadyJobless;
+    }
+
+    for profession in &mut character.professions {
+        *profession = 0;
+    }
+    character
+        .flags
+        .insert(CharacterFlags::PROF | CharacterFlags::UPDATE);
+    player.mark_random_shrine_used(shrine_type);
+    RandomShrineJoblessApplyResult::Used
 }
 
 fn pick_berry_template(kind: u8) -> Option<&'static str> {
@@ -9575,6 +9604,38 @@ mod tests {
         assert_eq!(result, RandomShrineSecurityApplyResult::Hardcore);
         assert_eq!(hardcore.saves, 0);
         assert!(!player.has_used_random_shrine(55));
+    }
+
+    #[test]
+    fn random_shrine_jobless_clears_professions_and_marks_ppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        character.professions[0] = 3;
+        character.professions[4] = 7;
+
+        let result = apply_random_shrine_jobless(&mut player, &mut character, 63);
+
+        assert_eq!(result, RandomShrineJoblessApplyResult::Used);
+        assert!(character
+            .professions
+            .iter()
+            .all(|profession| *profession == 0));
+        assert!(character
+            .flags
+            .contains(CharacterFlags::PROF | CharacterFlags::UPDATE));
+        assert!(player.has_used_random_shrine(63));
+    }
+
+    #[test]
+    fn random_shrine_jobless_blocks_without_marking_when_already_jobless() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+
+        let result = apply_random_shrine_jobless(&mut player, &mut character, 64);
+
+        assert_eq!(result, RandomShrineJoblessApplyResult::AlreadyJobless);
+        assert!(!character.flags.contains(CharacterFlags::PROF));
+        assert!(!player.has_used_random_shrine(64));
     }
 
     #[test]
@@ -18519,6 +18580,28 @@ async fn main() -> anyhow::Result<()> {
                                                         }
                                                         RandomShrineSecurityApplyResult::Hardcore => {
                                                             feedback.push((character_id, "A scared voice whispers: 'Thou wilt never be secure.'".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                    }
+                                                }
+                                                ugaris_core::item_driver::RandomShrineKind::Jobless => {
+                                                    let result = match (
+                                                        runtime.player_for_character_mut(character_id),
+                                                        world.characters.get_mut(&character_id),
+                                                    ) {
+                                                        (Some(player), Some(character)) => apply_random_shrine_jobless(player, character, shrine_type),
+                                                        _ => {
+                                                            failed += 1;
+                                                            continue;
+                                                        }
+                                                    };
+                                                    match result {
+                                                        RandomShrineJoblessApplyResult::Used => {
+                                                            feedback.push((character_id, "A bored voice says: 'Thou shalt be jobless.'".to_string()));
+                                                            executed += 1;
+                                                        }
+                                                        RandomShrineJoblessApplyResult::AlreadyJobless => {
+                                                            feedback.push((character_id, "A bored voice says: 'Thou art jobless already.'".to_string()));
                                                             blocked += 1;
                                                         }
                                                     }

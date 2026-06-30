@@ -16229,6 +16229,36 @@ mod tests {
             }
         );
 
+        shrine.driver_data = vec![63, 23];
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut shrine,
+            ItemDriverRequest::Driver {
+                driver: IDR_RANDOMSHRINE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            14,
+            false,
+            &ItemDriverContext {
+                has_matching_random_shrine_key: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::RandomShrineUse {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                shrine_type: 63,
+                level: 23,
+                kind: RandomShrineKind::Jobless,
+            }
+        );
+
+        shrine.driver_data = vec![54, 23];
         let outcome = execute_item_driver_with_context(
             &mut actor,
             &mut shrine,
