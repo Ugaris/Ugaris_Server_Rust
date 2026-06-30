@@ -538,6 +538,7 @@ fn next_legacy_name_value(input: &str) -> Option<(&str, &str, &str)> {
 pub enum CharacterDriverKind {
     SimpleBaddy,
     Macro,
+    PalaceIslena,
     Trader,
     Janitor,
 }
@@ -547,6 +548,7 @@ impl CharacterDriverKind {
         match driver {
             CDR_SIMPLEBADDY => Some(Self::SimpleBaddy),
             CDR_MACRO => Some(Self::Macro),
+            CDR_PALACEISLENA => Some(Self::PalaceIslena),
             CDR_TRADER => Some(Self::Trader),
             CDR_JANITOR => Some(Self::Janitor),
             _ => None,
@@ -557,6 +559,7 @@ impl CharacterDriverKind {
         match self {
             Self::SimpleBaddy => CDR_SIMPLEBADDY,
             Self::Macro => CDR_MACRO,
+            Self::PalaceIslena => CDR_PALACEISLENA,
             Self::Trader => CDR_TRADER,
             Self::Janitor => CDR_JANITOR,
         }
@@ -670,6 +673,10 @@ mod tests {
             CDR_SIMPLEBADDY
         );
         assert_eq!(CharacterDriverKind::Macro.legacy_id(), CDR_MACRO);
+        assert_eq!(
+            CharacterDriverKind::PalaceIslena.legacy_id(),
+            CDR_PALACEISLENA
+        );
         assert_eq!(CharacterDriverKind::Trader.legacy_id(), CDR_TRADER);
         assert_eq!(CharacterDriverKind::Janitor.legacy_id(), CDR_JANITOR);
     }
@@ -679,6 +686,7 @@ mod tests {
         for (driver, kind) in [
             (CDR_SIMPLEBADDY, CharacterDriverKind::SimpleBaddy),
             (CDR_MACRO, CharacterDriverKind::Macro),
+            (CDR_PALACEISLENA, CharacterDriverKind::PalaceIslena),
             (CDR_TRADER, CharacterDriverKind::Trader),
             (CDR_JANITOR, CharacterDriverKind::Janitor),
         ] {
@@ -723,6 +731,18 @@ mod tests {
         );
         assert_eq!(died.legacy_return_code(), 1);
 
+        let islena_died = execute_character_died_driver(CDR_PALACEISLENA, 123);
+        assert_eq!(
+            islena_died,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::PalaceIslena,
+                call: CharacterDriverCall::Died {
+                    killer_character_id: 123,
+                },
+            }
+        );
+        assert_eq!(islena_died.legacy_return_code(), 1);
+
         let simple_respawn = execute_character_respawn_driver(CDR_SIMPLEBADDY);
         assert_eq!(
             simple_respawn,
@@ -742,6 +762,16 @@ mod tests {
             }
         );
         assert_eq!(respawn.legacy_return_code(), 1);
+
+        let islena_respawn = execute_character_respawn_driver(CDR_PALACEISLENA);
+        assert_eq!(
+            islena_respawn,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::PalaceIslena,
+                call: CharacterDriverCall::Respawn,
+            }
+        );
+        assert_eq!(islena_respawn.legacy_return_code(), 1);
     }
 
     #[test]
