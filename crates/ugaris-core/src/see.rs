@@ -197,6 +197,7 @@ mod tests {
     fn character(id: u32, x: u16, y: u16, flags: CharacterFlags) -> Character {
         Character {
             id: CharacterId(id),
+            serial: id,
             name: format!("Character{id}"),
             description: String::new(),
             flags,

@@ -534,7 +534,7 @@ impl World {
         item_id: ItemId,
         slot: usize,
         character_id: CharacterId,
-        _serial: u32,
+        serial: u32,
     ) -> bool {
         let Some(item) = self.items.get_mut(&item_id) else {
             return false;
@@ -543,7 +543,7 @@ impl World {
         let offset = edemon_gate_slot_offset(mode, slot);
         item.driver_data.resize(offset + 4, 0);
         let character_id = character_id.0 as u16;
-        let serial = 0_u16;
+        let serial = serial as u16;
         item.driver_data[offset..offset + 2].copy_from_slice(&character_id.to_le_bytes());
         item.driver_data[offset + 2..offset + 4].copy_from_slice(&serial.to_le_bytes());
         true
@@ -660,7 +660,7 @@ impl World {
             return true;
         };
         let character_id = u16::from_le_bytes([bytes[0], bytes[1]]);
-        let _serial = u16::from_le_bytes([bytes[2], bytes[3]]);
+        let serial = u16::from_le_bytes([bytes[2], bytes[3]]);
         if character_id == 0 {
             return true;
         }
@@ -669,6 +669,7 @@ impl World {
             .is_none_or(|character| {
                 !character.flags.contains(CharacterFlags::USED)
                     || character.flags.contains(CharacterFlags::DEAD)
+                    || character.serial as u16 != serial
             })
     }
 
@@ -13328,6 +13329,7 @@ fn write_u32_le_prefix(bytes: &mut Vec<u8>, value: u32) {
 fn timer_callback_character() -> Character {
     Character {
         id: CharacterId(0),
+        serial: 0,
         name: String::new(),
         description: String::new(),
         flags: CharacterFlags::empty(),
@@ -25109,9 +25111,33 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn edemon_gate_spawn_slots_validate_character_serial_like_c() {
+        let mut world = World::default();
+        let mut gate = item(7, ItemFlags::USED);
+        gate.driver = IDR_EDEMONGATE;
+        gate.driver_data = vec![0];
+        world.add_item(gate);
+
+        assert!(world.apply_edemon_gate_spawn_result(ItemId(7), 0, CharacterId(2), 55));
+        let mut demon = character(2);
+        demon.serial = 55;
+        assert!(world.spawn_character(demon, 62, 157));
+
+        let context = world.edemon_gate_spawn_context(ItemId(7)).unwrap();
+        assert_eq!(context.slot, 1);
+        assert_eq!((context.x, context.y), (62, 164));
+
+        world.characters.get_mut(&CharacterId(2)).unwrap().serial = 56;
+        let context = world.edemon_gate_spawn_context(ItemId(7)).unwrap();
+        assert_eq!(context.slot, 0);
+        assert_eq!((context.x, context.y), (62, 157));
+    }
+
     fn character(id: u32) -> Character {
         Character {
             id: CharacterId(id),
+            serial: id,
             name: "Character".into(),
             description: String::new(),
             flags: CharacterFlags::USED,

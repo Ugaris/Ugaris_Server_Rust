@@ -682,6 +682,7 @@ mod tests {
     fn character(id: u32) -> Character {
         Character {
             id: CharacterId(id),
+            serial: id,
             name: format!("Char{id}"),
             description: String::new(),
             flags: CharacterFlags::PLAYER,

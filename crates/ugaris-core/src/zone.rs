@@ -374,6 +374,7 @@ impl ZoneLoader {
 
         let mut character = Character {
             id,
+            serial: id.0,
             name: template.name,
             description: template.description,
             flags: template.flags | CharacterFlags::USED,

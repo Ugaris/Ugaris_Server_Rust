@@ -183,6 +183,7 @@ mod tests {
     fn character() -> Character {
         Character {
             id: CharacterId(1),
+            serial: 1,
             name: "Tester".into(),
             description: String::new(),
             flags: CharacterFlags::USED,

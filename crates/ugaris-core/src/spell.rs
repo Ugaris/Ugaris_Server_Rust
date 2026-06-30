@@ -573,6 +573,7 @@ mod tests {
         values[0][CharacterValue::Hp as usize] = 10;
         Character {
             id: CharacterId(1),
+            serial: 1,
             name: "tester".to_string(),
             description: String::new(),
             flags: CharacterFlags::USED,

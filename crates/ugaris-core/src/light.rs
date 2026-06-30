@@ -475,6 +475,7 @@ mod tests {
     fn character(id: u32) -> Character {
         Character {
             id: CharacterId(id),
+            serial: id,
             name: String::new(),
             description: String::new(),
             flags: CharacterFlags::USED,

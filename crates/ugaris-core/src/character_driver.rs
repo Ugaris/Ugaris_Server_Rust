@@ -1116,6 +1116,7 @@ mod tests {
     fn test_character() -> Character {
         Character {
             id: crate::ids::CharacterId(1),
+            serial: 1,
             name: "Rat".to_string(),
             description: String::new(),
             flags: CharacterFlags::USED,

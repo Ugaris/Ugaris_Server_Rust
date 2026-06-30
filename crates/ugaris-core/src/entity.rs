@@ -289,6 +289,8 @@ impl Default for SpeedMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Character {
     pub id: CharacterId,
+    #[serde(default)]
+    pub serial: u32,
     pub name: String,
     pub description: String,
     pub flags: CharacterFlags,
@@ -481,6 +483,7 @@ mod tests {
     fn driver_message_queue_preserves_legacy_payload_order() {
         let mut character = Character {
             id: CharacterId(1),
+            serial: 1,
             name: String::new(),
             description: String::new(),
             flags: CharacterFlags::USED,

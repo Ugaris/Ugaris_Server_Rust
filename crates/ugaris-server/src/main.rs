@@ -1193,6 +1193,7 @@ fn login_character(
 
     Character {
         id: character_id,
+        serial: character_id.0,
         name: login.name.clone(),
         description: String::new(),
         flags: CharacterFlags::USED | CharacterFlags::PLAYER | CharacterFlags::ALIVE,
@@ -5891,13 +5892,14 @@ fn spawn_edemon_gate_character(
     else {
         return false;
     };
+    let serial = character.serial;
     if !world.spawn_character(character, usize::from(x), usize::from(y)) {
         return false;
     }
     for item in inventory_items {
         world.items.insert(item.id, item);
     }
-    world.apply_edemon_gate_spawn_result(item_id, slot, character_id, 0)
+    world.apply_edemon_gate_spawn_result(item_id, slot, character_id, serial)
 }
 
 fn spawn_chestspawn_character(

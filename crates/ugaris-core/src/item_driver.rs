@@ -15358,6 +15358,7 @@ mod tests {
     fn character(id: u32) -> Character {
         Character {
             id: CharacterId(id),
+            serial: id,
             name: "Character".into(),
             description: String::new(),
             flags: CharacterFlags::USED,
