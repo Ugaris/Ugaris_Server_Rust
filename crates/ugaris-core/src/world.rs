@@ -3244,9 +3244,6 @@ impl World {
             return i32::MIN;
         };
         let mut score = (999 - char_dist(attacker, target)) * 10;
-        if simple_baddy_enemy_hurtme(enemy) {
-            score += 100_000;
-        }
         if character_is_facing(attacker, target) {
             score += 5;
         }
@@ -16288,7 +16285,7 @@ mod tests {
     }
 
     #[test]
-    fn simple_baddy_attack_action_prefers_hurt_visible_enemy_before_distance_like_c() {
+    fn simple_baddy_attack_action_ignores_hurtme_priority_for_visible_score_like_c() {
         let mut world = World::default();
         world.tick = Tick(459);
         let mut npc = character(1);
@@ -16329,10 +16326,8 @@ mod tests {
         assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
 
         let npc = world.characters.get(&CharacterId(1)).unwrap();
-        assert_eq!(npc.action, action::WALK);
-        assert_eq!(npc.tox, 11);
-        assert_eq!(npc.toy, 10);
-        assert_eq!(npc.dir, Direction::Right as u8);
+        assert_eq!(npc.action, action::ATTACK1);
+        assert_eq!(npc.act1, 3);
     }
 
     #[test]
