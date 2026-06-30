@@ -202,6 +202,7 @@ pub const IID_AREA17_BLOODBOWL: u32 = (0x01 << 24) | 0x000071;
 pub const IID_AREA17_LOCKPICK: u32 = (0x01 << 24) | 0x000062;
 pub const IID_AREA16_ROBBERKEY: u32 = (0x01 << 24) | 0x000060;
 pub const IID_AREA16_SKELLYKEY: u32 = (0x01 << 24) | 0x000061;
+pub const IID_MINEGATEWAY: u32 = (0x01 << 24) | 0x000098;
 pub const IID_CALIGAR_PALACE_KEY_PART: u32 = (0x01 << 24) | 0x0000B3;
 pub const IID_AREA14_STEELBAR: u32 = (0x01 << 24) | 0x00005A;
 const V_LIGHT: i16 = 9;
@@ -390,6 +391,7 @@ pub struct ItemDriverContext {
     pub islena_resting: bool,
     pub has_area16_robber_key: bool,
     pub has_area16_skelly_key: bool,
+    pub has_mine_gateway_key: bool,
     pub swamp_arm_triggered: Option<bool>,
     pub swamp_whisp_move_succeeds: Option<bool>,
     pub swamp_whisp_turn_x: bool,
@@ -1637,6 +1639,24 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    MineGateway {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+        area_id: u16,
+    },
+    MineGatewayNeedsKey {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    MineGatewayBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+        area_id: u16,
+    },
     ArkhataKeyAssemble {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2283,6 +2303,7 @@ pub fn execute_item_driver_with_context(
                 IDR_STAFFER2 => staffer2_driver(character, item),
                 IDR_SHRIKEAMULET => shrike_amulet_driver(character, item, context),
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
+                IDR_MINEGATEWAY => mine_gateway_driver(character, item, context),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
@@ -6266,6 +6287,43 @@ fn mine_gateway_key_driver(
         character_id: character.id,
         cursor_item_id,
         combined_bits,
+    }
+}
+
+fn mine_gateway_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+    if !context.has_mine_gateway_key {
+        return ItemDriverOutcome::MineGatewayNeedsKey {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let x = drdata_u16(item, 0);
+    let y = drdata_u16(item, 2);
+    let area_id = drdata_u16(item, 4);
+    if x < 1 || x > 254 || y < 1 || y > 254 || area_id == 0 {
+        return ItemDriverOutcome::MineGatewayBug {
+            item_id: item.id,
+            character_id: character.id,
+            x,
+            y,
+            area_id,
+        };
+    }
+
+    ItemDriverOutcome::MineGateway {
+        item_id: item.id,
+        character_id: character.id,
+        x,
+        y,
+        area_id,
     }
 }
 
@@ -14289,6 +14347,94 @@ mod tests {
             ItemDriverOutcome::MineGatewayKeyDoesNotFit {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_mine_gateway_driver_requires_key_and_decodes_destination() {
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        let mut gateway = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_MINEGATEWAY);
+        set_drdata_u16(&mut gateway, 0, 42);
+        set_drdata_u16(&mut gateway, 2, 43);
+        set_drdata_u16(&mut gateway, 4, 12);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_MINEGATEWAY,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut gateway,
+                request,
+                12,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::MineGatewayNeedsKey {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut gateway,
+                request,
+                12,
+                false,
+                &ItemDriverContext {
+                    has_mine_gateway_key: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::MineGateway {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 42,
+                y: 43,
+                area_id: 12,
+            }
+        );
+    }
+
+    #[test]
+    fn execute_mine_gateway_driver_reports_bad_destination() {
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        let mut gateway = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_MINEGATEWAY);
+        set_drdata_u16(&mut gateway, 0, 0);
+        set_drdata_u16(&mut gateway, 2, 43);
+        set_drdata_u16(&mut gateway, 4, 12);
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut gateway,
+                ItemDriverRequest::Driver {
+                    driver: IDR_MINEGATEWAY,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                12,
+                false,
+                &ItemDriverContext {
+                    has_mine_gateway_key: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::MineGatewayBug {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 0,
+                y: 43,
+                area_id: 12,
             }
         );
     }

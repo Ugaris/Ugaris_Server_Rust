@@ -23952,6 +23952,33 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Interesting idea. Really. Doesn't work, though.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::MineGateway { character_id, area_id, .. } => {
+                                            if area_id != config.area_id {
+                                                feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
+                                                blocked += 1;
+                                            } else {
+                                                executed += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::MineGatewayNeedsKey { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "The door won't open. You notice an inscription: \"This door leads to the Dwarven town Grimroot. Only those who have proven their abilities as miners and fighters may enter.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::MineGatewayBug { character_id, x, y, area_id, .. } => {
+                                            let name = world
+                                                .characters
+                                                .get(&character_id)
+                                                .map(|character| character.name.as_str())
+                                                .unwrap_or("Someone");
+                                            feedback.push((
+                                                character_id,
+                                                format!("{name} touches a teleport object but nothing happens - BUG ({x},{y},{area_id})."),
+                                            ));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyNeedsCursor { character_id, .. } => {
                                             feedback.push((character_id, "You can only use this item with another item.".to_string()));
                                             blocked += 1;

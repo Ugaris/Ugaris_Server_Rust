@@ -33,9 +33,10 @@ use crate::{
         IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
         IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE,
         IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT,
-        IDR_LABTORCH, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE,
-        IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH,
+        IDR_LABTORCH, IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION,
+        IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH,
         IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
+        IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -3147,6 +3148,10 @@ impl World {
             && !context.has_area16_skelly_key)
             .then(|| self.character_has_template_id(character_id, IID_AREA16_SKELLYKEY))
             .unwrap_or(false);
+        let mine_gateway_key_context = (driver == Some(IDR_MINEGATEWAY)
+            && !context.has_mine_gateway_key)
+            .then(|| self.character_has_template_id(character_id, IID_MINEGATEWAY))
+            .unwrap_or(false);
         let swamp_arm_triggered = (driver == Some(IDR_SWAMPARM)
             && context.swamp_arm_triggered.is_none())
         .then(|| self.swamp_arm_triggered(item_id))
@@ -3202,6 +3207,7 @@ impl World {
         effective_context.has_area11_palace_key |= area11_palace_key_context;
         effective_context.has_area16_robber_key |= area16_robber_key_context;
         effective_context.has_area16_skelly_key |= area16_skelly_key_context;
+        effective_context.has_mine_gateway_key |= mine_gateway_key_context;
         if effective_context.swamp_arm_triggered.is_none() {
             effective_context.swamp_arm_triggered = swamp_arm_triggered;
         }
@@ -6659,6 +6665,22 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::MineGateway {
+                character_id,
+                x,
+                y,
+                area_id,
+                ..
+            } => {
+                if area_id != current_area_id {
+                    return outcome;
+                }
+                if self.teleport_character(character_id, x, y, true) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::BackToFire {
                 item_id,
                 character_id,
@@ -8698,8 +8720,6 @@ impl World {
         cursor_item_id: ItemId,
         combined_bits: u8,
     ) -> bool {
-        const IID_MINEGATEWAY: u32 = (0x01 << 24) | 0x000098;
-
         if !self.character_holds_cursor_item(character_id, cursor_item_id) {
             return false;
         }
@@ -23870,6 +23890,39 @@ mod tests {
         assert!(!base.flags.contains(ItemFlags::USE));
         assert!(!world.items.contains_key(&ItemId(8)));
         assert_eq!(world.characters[&CharacterId(1)].cursor_item, None);
+    }
+
+    #[test]
+    fn world_mine_gateway_requires_assembled_key_and_teleports_same_area() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.inventory[30] = Some(ItemId(8));
+        world.spawn_character(character, 10, 10);
+
+        let mut key = item(8, ItemFlags::USED);
+        key.template_id = crate::item_driver::IID_MINEGATEWAY;
+        key.carried_by = Some(CharacterId(1));
+        world.add_item(key);
+
+        let mut gateway = item(7, ItemFlags::USED | ItemFlags::USE);
+        gateway.driver = crate::item_driver::IDR_MINEGATEWAY;
+        gateway.driver_data = vec![20, 0, 21, 0, 12, 0];
+        world.add_item(gateway);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_MINEGATEWAY,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            12,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::MineGateway { .. }));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((character.x, character.y), (20, 21));
     }
 
     #[test]
