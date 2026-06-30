@@ -4873,9 +4873,32 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 178,
+      "startedAt": "2026-06-30T14:05:14.767Z",
+      "endedAt": "2026-06-30T14:10:23.560Z",
+      "durationMs": 308625,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'map_container_access_requires_facing_same_item_like_c_check_container_item' found",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 273 filtered out; finished in 0.00s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 267 filtered out; finished in 0.00s",
+        "- Area 15 `IDR_SWAMPWHISP = 74` now dispatches through the legacy area libload guard for C `swampwhisp`: zero-character timer-only execution, initial origin/direction `drdata[1..3]` setup, daylight da",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 275 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 101864285,
+  "totalDurationMs": 102172910,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4900,7 +4923,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 3,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 28,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 29,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 9,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -5409,7 +5432,12 @@
       "test result: ok. 829 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 829 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 827 filtered out; finished in 0.00s": 1,
-      "test result: ok. 832 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
+      "test result: ok. 832 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
+      "error: unexpected argument 'map_container_access_requires_facing_same_item_like_c_check_container_it": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 273 filtered out; finished in 0.00s": 1,
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 267 filtered out; finished in 0.00s": 1,
+      "- Area 15 `IDR_SWAMPWHISP = 74` now dispatches through the legacy area libload guard for C `swampwhi": 1,
+      "test result: ok. 275 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

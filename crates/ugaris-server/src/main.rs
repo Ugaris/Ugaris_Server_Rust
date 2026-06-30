@@ -13,6 +13,7 @@ use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{CharacterDriverState, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY},
+    direction::Direction,
     do_action::{can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy},
     drvlib::char_dist,
     effect::Effect,
@@ -9948,12 +9949,67 @@ fn current_container_payload(
     }
 }
 
+fn check_current_container(world: &mut World, character_id: CharacterId) -> bool {
+    let Some(character) = world.characters.get(&character_id) else {
+        return false;
+    };
+    let Some(container_id) = character.current_container else {
+        return false;
+    };
+    if character.action != action::IDLE && character.action != action::BLESS_SELF {
+        if let Some(character) = world.characters.get_mut(&character_id) {
+            character.current_container = None;
+        }
+        return false;
+    }
+
+    let valid = world.items.get(&container_id).is_some_and(|item| {
+        if !item.flags.contains(ItemFlags::USE) {
+            return false;
+        }
+        if item.driver != IDR_ACCOUNT_DEPOT
+            && item.content_id == 0
+            && !item.flags.contains(ItemFlags::DEPOT)
+        {
+            return false;
+        }
+
+        if item.x != 0 || item.y != 0 {
+            let Ok(direction) = Direction::try_from(character.dir) else {
+                return false;
+            };
+            let (dx, dy) = direction.delta();
+            let x = i32::from(character.x) + i32::from(dx);
+            let y = i32::from(character.y) + i32::from(dy);
+            if x < 1 || y < 1 {
+                return false;
+            }
+            return world
+                .map
+                .tile(x as usize, y as usize)
+                .is_some_and(|tile| tile.item == container_id.0);
+        }
+
+        true
+    });
+
+    if !valid {
+        if let Some(character) = world.characters.get_mut(&character_id) {
+            character.current_container = None;
+        }
+    }
+    valid
+}
+
 fn apply_account_depot_command(
     world: &mut World,
     depot: &mut AccountDepotState,
     character_id: CharacterId,
     action: &ClientAction,
 ) -> AccountDepotCommandResult {
+    if !check_current_container(world, character_id) {
+        return AccountDepotCommandResult::Ignored;
+    }
     let Some(character) = world.characters.get_mut(&character_id) else {
         return AccountDepotCommandResult::Ignored;
     };
@@ -10001,6 +10057,9 @@ fn apply_item_container_command(
     character_id: CharacterId,
     action: &ClientAction,
 ) -> AccountDepotCommandResult {
+    if !check_current_container(world, character_id) {
+        return AccountDepotCommandResult::Ignored;
+    }
     let Some(container_id) = world
         .characters
         .get(&character_id)
@@ -15972,6 +16031,53 @@ mod tests {
         );
     }
 
+    #[test]
+    fn container_access_is_cleared_when_player_is_busy_like_c_check_container_item() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.current_container = Some(ItemId(10));
+        character.action = action::USE;
+        world.add_character(character);
+
+        let mut container = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        container.content_id = 1;
+        world.add_item(container);
+
+        let result = apply_item_container_command(
+            &mut world,
+            character_id,
+            &ClientAction::LookContainer { slot: 0 },
+        );
+
+        assert_eq!(result, AccountDepotCommandResult::Ignored);
+        assert_eq!(world.characters[&character_id].current_container, None);
+    }
+
+    #[test]
+    fn map_container_access_requires_facing_same_item_like_c_check_container_item() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.dir = Direction::Left as u8;
+        character.current_container = Some(ItemId(10));
+        world.add_character(character);
+
+        let mut container = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        container.content_id = 1;
+        assert!(world.map.set_item_map(&mut container, 11, 10));
+        world.add_item(container);
+
+        let result = apply_item_container_command(
+            &mut world,
+            character_id,
+            &ClientAction::LookContainer { slot: 0 },
+        );
+
+        assert_eq!(result, AccountDepotCommandResult::Ignored);
+        assert_eq!(world.characters[&character_id].current_container, None);
+    }
+
     fn test_item(
         id: ugaris_core::ids::ItemId,
         sprite: i32,
@@ -21773,6 +21879,9 @@ async fn main() -> anyhow::Result<()> {
                     command_container_refresh.sort_unstable_by_key(|id| id.0);
                     command_container_refresh.dedup();
                     for character_id in command_container_refresh {
+                        if !check_current_container(&mut world, character_id) {
+                            continue;
+                        }
                         let payload = current_container_payload(
                             &world,
                             runtime.account_depots.get(&character_id),
