@@ -6,7 +6,8 @@ use crate::{
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
-        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL,
+        CDR_SWAMPMONSTER, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC,
+        NT_SEEHIT, NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -976,6 +977,13 @@ impl World {
 
     pub fn drain_pending_sound_specials(&mut self) -> Vec<WorldSoundSpecial> {
         self.pending_sound_specials.drain(..).collect()
+    }
+
+    pub fn queue_system_text(&mut self, character_id: CharacterId, message: impl Into<String>) {
+        self.pending_system_texts.push(WorldSystemText {
+            character_id,
+            message: message.into(),
+        });
     }
 
     pub fn drain_pending_system_texts(&mut self) -> Vec<WorldSystemText> {
@@ -6441,6 +6449,57 @@ impl World {
             strength,
         ));
         effects
+    }
+
+    pub fn apply_swamp_monster_death_driver(
+        &mut self,
+        dead_id: CharacterId,
+        killer_id: CharacterId,
+    ) -> bool {
+        let Some(dead) = self.characters.get(&dead_id) else {
+            return false;
+        };
+        if dead.driver != CDR_SWAMPMONSTER {
+            return false;
+        }
+        let Some(killer) = self.characters.get(&killer_id) else {
+            return false;
+        };
+        if !killer.flags.contains(CharacterFlags::PLAYER) {
+            return false;
+        }
+
+        let bit = match (killer.x, killer.y) {
+            (142..=153, 83..=92) => 1,
+            (34..=44, 150..=160) => 2,
+            (183..=192, 154..=162) => 4,
+            _ => 0,
+        };
+        if self.date.hour != 0 || bit == 0 {
+            return false;
+        }
+
+        let Some(item_id) = killer.inventory[worn_slot::RIGHT_HAND] else {
+            return false;
+        };
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.driver != 0 || item.driver_data.get(36).copied().unwrap_or_default() & bit != 0 {
+            return false;
+        }
+        if item.driver_data.len() <= 37 {
+            item.driver_data.resize(38, 0);
+        }
+        item.template_id = IID_HARDKILL;
+        item.driver_data[37] = item.driver_data[37].saturating_add(12);
+        item.driver_data[36] |= bit;
+        item.flags.insert(ItemFlags::QUEST);
+        self.pending_system_texts.push(WorldSystemText {
+            character_id: killer_id,
+            message: format!("Your {} starts to glow.", item.name),
+        });
+        true
     }
 
     fn simple_baddy_can_poison_hit(
@@ -19153,6 +19212,61 @@ mod tests {
             .effects
             .values()
             .any(|effect| effect.effect_type == EF_EARTHMUD && effect.strength == 6));
+    }
+
+    #[test]
+    fn swamp_monster_death_driver_upgrades_midnight_stone_circle_weapon() {
+        let mut world = World::default();
+        world.date.hour = 0;
+        let mut dead = character(1);
+        dead.driver = CDR_SWAMPMONSTER;
+        let mut killer = character(2);
+        killer.flags.insert(CharacterFlags::PLAYER);
+        killer.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(7));
+        let mut weapon = item(7, ItemFlags::empty());
+        weapon.name = "Sword".into();
+        weapon.driver_data.resize(38, 0);
+        assert!(world.spawn_character(dead, 10, 10));
+        assert!(world.spawn_character(killer, 145, 88));
+        world.add_item(weapon);
+
+        assert!(world.apply_swamp_monster_death_driver(CharacterId(1), CharacterId(2)));
+
+        let weapon = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(weapon.template_id, IID_HARDKILL);
+        assert_eq!(weapon.driver_data[36], 1);
+        assert_eq!(weapon.driver_data[37], 12);
+        assert!(weapon.flags.contains(ItemFlags::QUEST));
+        assert_eq!(
+            world.drain_pending_system_texts(),
+            vec![WorldSystemText {
+                character_id: CharacterId(2),
+                message: "Your Sword starts to glow.".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn swamp_monster_death_driver_rejects_repeated_or_non_midnight_circles() {
+        let mut world = World::default();
+        world.date.hour = 1;
+        let mut dead = character(1);
+        dead.driver = CDR_SWAMPMONSTER;
+        let mut killer = character(2);
+        killer.flags.insert(CharacterFlags::PLAYER);
+        killer.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(7));
+        let mut weapon = item(7, ItemFlags::empty());
+        weapon.driver_data.resize(38, 0);
+        assert!(world.spawn_character(dead, 10, 10));
+        assert!(world.spawn_character(killer, 145, 88));
+        world.add_item(weapon);
+
+        assert!(!world.apply_swamp_monster_death_driver(CharacterId(1), CharacterId(2)));
+        world.date.hour = 0;
+        world.items.get_mut(&ItemId(7)).unwrap().driver_data[36] = 1;
+
+        assert!(!world.apply_swamp_monster_death_driver(CharacterId(1), CharacterId(2)));
+        assert!(world.drain_pending_system_texts().is_empty());
     }
 
     #[test]

@@ -5130,9 +5130,37 @@
         "test result: ok. 838 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 188,
+      "startedAt": "2026-06-30T15:33:26.589Z",
+      "endedAt": "2026-06-30T15:42:10.313Z",
+      "durationMs": 523529,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 838 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 279 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 837 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 279 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 107125826,
+  "totalDurationMs": 107649355,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -5140,11 +5168,11 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 156,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 155,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 141,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 147,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 117,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 157,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 156,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 142,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 148,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 118,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 78,
@@ -5157,7 +5185,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 3,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 32,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 33,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 10,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -5696,7 +5724,11 @@
       "error: unexpected argument 'character_driver::tests::clara_driver_state_matches_legacy_runtime_data_": 1,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 1,
       "test result: ok. 838 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 838 filtered out; finished in 0.00s": 1,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 279 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 837 filtered out; finished in 0.00s": 1,
+      "test result: ok. 279 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

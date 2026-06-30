@@ -12,7 +12,9 @@ use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
-    character_driver::{CharacterDriverState, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY},
+    character_driver::{
+        CharacterDriverState, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
+    },
     direction::Direction,
     do_action::{can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy},
     drvlib::char_dist,
@@ -137,6 +139,8 @@ fn apply_pk_hate_from_hurt_events(
         apply_player_fightback_from_hurt_event(runtime, world, *event, world.tick.0);
     }
     for event in events {
+        apply_swamp_monster_death_from_hurt_event(runtime, world, event);
+
         let eligible = match (
             world.characters.get(&event.target_id),
             world.characters.get(&event.cause_id),
@@ -175,6 +179,39 @@ fn apply_pk_hate_from_hurt_events(
         }
     }
     applied
+}
+
+fn apply_swamp_monster_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_swamp_monster_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_SWAMPMONSTER && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_swamp_monster_kill {
+        return false;
+    }
+
+    let mut progressed_clara = false;
+    if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+        let clara_state = player.area3_clara_state();
+        if (12..=13).contains(&clara_state) {
+            player.set_area3_clara_state(14);
+            world.queue_system_text(event.cause_id, "Well done. Clara will be proud of thee!");
+            progressed_clara = true;
+        }
+    }
+
+    let upgraded_weapon = world.apply_swamp_monster_death_driver(event.target_id, event.cause_id);
+    progressed_clara || upgraded_weapon
 }
 
 fn apply_player_fightback_from_hurt_event(
