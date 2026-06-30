@@ -5515,6 +5515,49 @@ enum PickBerryApplyResult {
     Bug,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RandomShrineSecurityApplyResult {
+    Used { saves: u8 },
+    SecureAlready,
+    Hardcore,
+}
+
+fn legacy_save_number(saves: u8) -> String {
+    match saves {
+        0 => "no".to_string(),
+        1 => "one".to_string(),
+        2 => "two".to_string(),
+        3 => "three".to_string(),
+        4 => "four".to_string(),
+        5 => "five".to_string(),
+        6 => "six".to_string(),
+        7 => "seven".to_string(),
+        8 => "eight".to_string(),
+        9 => "nine".to_string(),
+        10 => "ten".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn apply_random_shrine_security(
+    player: &mut PlayerRuntime,
+    character: &mut Character,
+    shrine_type: u8,
+) -> RandomShrineSecurityApplyResult {
+    if character.saves > 5 {
+        return RandomShrineSecurityApplyResult::SecureAlready;
+    }
+    if character.flags.contains(CharacterFlags::HARDCORE) {
+        return RandomShrineSecurityApplyResult::Hardcore;
+    }
+
+    character.saves = character.saves.saturating_add(1);
+    player.mark_random_shrine_used(shrine_type);
+    RandomShrineSecurityApplyResult::Used {
+        saves: character.saves,
+    }
+}
+
 fn pick_berry_template(kind: u8) -> Option<&'static str> {
     match kind {
         1 => Some("lizard_brown_berry"),
@@ -9375,6 +9418,42 @@ mod tests {
         assert_eq!(&payload[109..113], &1u32.to_le_bytes());
         assert!(payload[105..109].iter().all(|byte| *byte == 0));
         assert!(payload[113..].iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn random_shrine_security_increments_saves_and_marks_ppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        character.saves = 5;
+
+        let result = apply_random_shrine_security(&mut player, &mut character, 53);
+
+        assert_eq!(result, RandomShrineSecurityApplyResult::Used { saves: 6 });
+        assert_eq!(character.saves, 6);
+        assert!(player.has_used_random_shrine(53));
+        assert_eq!(legacy_save_number(character.saves), "six");
+    }
+
+    #[test]
+    fn random_shrine_security_legacy_blocks_do_not_mark_ppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut secure = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        secure.saves = 6;
+
+        let result = apply_random_shrine_security(&mut player, &mut secure, 54);
+
+        assert_eq!(result, RandomShrineSecurityApplyResult::SecureAlready);
+        assert_eq!(secure.saves, 6);
+        assert!(!player.has_used_random_shrine(54));
+
+        let mut hardcore = login_character(CharacterId(8), &login_block("Lisa"), 14, 10, 10);
+        hardcore.flags.insert(CharacterFlags::HARDCORE);
+
+        let result = apply_random_shrine_security(&mut player, &mut hardcore, 55);
+
+        assert_eq!(result, RandomShrineSecurityApplyResult::Hardcore);
+        assert_eq!(hardcore.saves, 0);
+        assert!(!player.has_used_random_shrine(55));
     }
 
     #[test]
@@ -18031,8 +18110,42 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You have found bug #2116a.".to_string()));
                                             failed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::RandomShrineUse { character_id, kind, .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::RandomShrineUse { character_id, shrine_type, kind, .. } => {
                                             match kind {
+                                                ugaris_core::item_driver::RandomShrineKind::Security => {
+                                                    let result = match (
+                                                        runtime.player_for_character_mut(character_id),
+                                                        world.characters.get_mut(&character_id),
+                                                    ) {
+                                                        (Some(player), Some(character)) => apply_random_shrine_security(player, character, shrine_type),
+                                                        _ => {
+                                                            failed += 1;
+                                                            continue;
+                                                        }
+                                                    };
+                                                    match result {
+                                                        RandomShrineSecurityApplyResult::Used { saves } => {
+                                                            feedback.push((character_id, "A scared voice whispers: 'Thou shalt be secure.'".to_string()));
+                                                            feedback.push((
+                                                                character_id,
+                                                                format!(
+                                                                    "Thou hast {} save{}.",
+                                                                    legacy_save_number(saves),
+                                                                    if saves == 1 { "" } else { "s" }
+                                                                ),
+                                                            ));
+                                                            executed += 1;
+                                                        }
+                                                        RandomShrineSecurityApplyResult::SecureAlready => {
+                                                            feedback.push((character_id, "A scared voice whispers: 'Thou art secure already.'".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                        RandomShrineSecurityApplyResult::Hardcore => {
+                                                            feedback.push((character_id, "A scared voice whispers: 'Thou wilt never be secure.'".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                    }
+                                                }
                                                 ugaris_core::item_driver::RandomShrineKind::Dormant => {
                                                     executed += 1;
                                                 }
