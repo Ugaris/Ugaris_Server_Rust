@@ -2542,6 +2542,61 @@ fn apply_admin_character_command(
         });
     }
 
+    if lower == "reset" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let (name, _) = take_legacy_alpha_name(rest.trim_start());
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+
+        let Some(target) = world.characters.get_mut(&target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+        if target.values.len() < 2 {
+            target
+                .values
+                .resize_with(2, || vec![0; CHARACTER_VALUE_NAMES.len()]);
+        }
+        if target.values[1].len() < CHARACTER_VALUE_NAMES.len() {
+            target.values[1].resize(CHARACTER_VALUE_NAMES.len(), 0);
+        }
+        for index in 0..=CharacterValue::Immunity as usize {
+            let cap = if index <= CharacterValue::Strength as usize {
+                10
+            } else {
+                1
+            };
+            if target.values[1][index] > cap {
+                target.values[1][index] = cap;
+            }
+        }
+        for value in [CharacterValue::Rage, CharacterValue::Duration] {
+            let index = value as usize;
+            if target.values[1][index] > 1 {
+                target.values[1][index] = 1;
+            }
+        }
+        target.exp_used = 0;
+        target.flags.insert(CharacterFlags::UPDATE);
+        return Some(KeyringCommandResult {
+            inventory_changed: target_id == character_id,
+            name_changed: target_id == character_id,
+            ..Default::default()
+        });
+    }
+
     if lower == "resetgift" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -12883,6 +12938,85 @@ mod tests {
             1,
         )
         .is_none());
+    }
+
+    #[test]
+    fn god_reset_command_clamps_target_values_like_c() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
+        target.values[1][CharacterValue::Hp as usize] = 50;
+        target.values[1][CharacterValue::Strength as usize] = 18;
+        target.values[1][CharacterValue::Armor as usize] = 9;
+        target.values[1][CharacterValue::Immunity as usize] = 4;
+        target.values[1][CharacterValue::Demon as usize] = 7;
+        target.values[1][CharacterValue::Duration as usize] = 6;
+        target.values[1][CharacterValue::Rage as usize] = 5;
+        target.exp_used = 12345;
+        world.add_character(target);
+        let mut runtime = ServerRuntime::default();
+
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/reset Target ignored",
+            1,
+        )
+        .expect("god reset should be recognized");
+
+        assert!(result.messages.is_empty());
+        let target = world.characters.get(&target_id).unwrap();
+        assert_eq!(target.values[1][CharacterValue::Hp as usize], 10);
+        assert_eq!(target.values[1][CharacterValue::Strength as usize], 10);
+        assert_eq!(target.values[1][CharacterValue::Armor as usize], 1);
+        assert_eq!(target.values[1][CharacterValue::Immunity as usize], 1);
+        assert_eq!(target.values[1][CharacterValue::Demon as usize], 7);
+        assert_eq!(target.values[1][CharacterValue::Duration as usize], 1);
+        assert_eq!(target.values[1][CharacterValue::Rage as usize], 1);
+        assert_eq!(target.exp_used, 0);
+        assert!(target.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn reset_command_is_god_only_and_reports_missing_target_like_c() {
+        let mut world = World::default();
+        let caller_id = CharacterId(7);
+        world.add_character(login_character(
+            caller_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/reset Missing",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&caller_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let missing =
+            apply_admin_character_command(&mut world, &mut runtime, caller_id, "/reset Missing", 1)
+                .expect("god reset missing target should be handled");
+        assert_eq!(
+            missing.messages,
+            vec!["Sorry, no one by the name Missing around."]
+        );
     }
 
     #[test]

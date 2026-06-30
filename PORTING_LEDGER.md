@@ -659,3 +659,7 @@ Recommended next chest steps:
 ### Iteration 155 Additional Progress
 
 - C god-only `/resetgift <name> <area>` now has a Rust runtime command slice: full-command recognition, god-only gating, legacy alphabetic online-target parsing, `atoi`-prefix area parsing, `0..=63` area validation, fixed-layout `DRD_MISC_PPD.treedone` bit clearing through `PlayerRuntime`, and C-shaped missing-target/player-data/invalid-area/success feedback are covered by focused server tests. Remaining resetgift/admin gaps are exact audit/log side effects and cross-area/offline target lookup.
+
+### Iteration 161 Additional Progress
+
+- C god-only `/reset <name>` now has a Rust runtime command slice: full-command recognition, god-only gating, legacy alphabetic online-target parsing, local online target lookup, C value-clamping semantics for bare values `0..=V_IMMUNITY` (primary stats capped at 10, other represented skills capped at 1), `V_RAGE`/`V_DURATION` capping, `exp_used` clearing, update flagging, silent success, and missing-target feedback are covered by focused server tests. Remaining reset/admin gaps are exact `update_char` recomputation side effects beyond represented value/update state, audit/xlog side effects, and cross-area/offline target lookup.

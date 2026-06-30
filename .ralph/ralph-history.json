@@ -4417,9 +4417,36 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 161,
+      "startedAt": "2026-06-30T11:03:28.388Z",
+      "endedAt": "2026-06-30T11:10:45.159Z",
+      "durationMs": 436583,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "I’ll edit the weighted fight-task runner to preserve the legacy close-range emergency attack attempt, then add a focused regression test that forces every normal task to fail while the fallback can st",
+        "The compile failure was only enum naming in the new test (`Hp`/`Demon` are the Rust names). I corrected the test and will rerun formatting plus the targeted suite.",
+        "error: unexpected argument 'reset_command_is_god_only_and_reports_missing_target_like_c' found",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 4 previous errors",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 270 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 272 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 91009321,
+  "totalDurationMs": 91445904,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4428,9 +4455,9 @@
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
       "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 136,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 134,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 122,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 126,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 135,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 123,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 127,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 102,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
@@ -4444,7 +4471,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 2,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 27,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 28,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 9,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -4907,7 +4934,13 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 267 filtered out; finished in 0.00s": 1,
       "test result: ok. 270 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 800 filtered out; finished in 0.00s": 1,
-      "test result: ok. 804 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 804 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "I’ll edit the weighted fight-task runner to preserve the legacy close-range emergency attack attempt": 1,
+      "The compile failure was only enum naming in the new test (`Hp`/`Demon` are the Rust names). I correc": 1,
+      "error: unexpected argument 'reset_command_is_god_only_and_reports_missing_target_like_c' found": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 4 previous errors": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 270 filtered out; finished in 0.00s": 1,
+      "test result: ok. 272 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
