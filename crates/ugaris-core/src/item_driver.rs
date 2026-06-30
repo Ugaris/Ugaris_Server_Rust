@@ -1918,6 +1918,12 @@ pub enum ItemDriverOutcome {
     Lab2GraveClose {
         item_id: ItemId,
     },
+    Lab2GraveCheckOpen {
+        item_id: ItemId,
+        undead_id: CharacterId,
+        undead_serial: u32,
+        schedule_after_ticks: u64,
+    },
     ParkShrine {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2762,8 +2768,21 @@ fn lab2_grave_driver(
         return ItemDriverOutcome::Lab2GraveClose { item_id: item.id };
     }
 
+    if (context.timer_call || character.id.0 == 0) && grave_open_character > 0 {
+        return ItemDriverOutcome::Lab2GraveCheckOpen {
+            item_id: item.id,
+            undead_id: CharacterId(grave_open_character as u32),
+            undead_serial: grave_open_serial as u32,
+            schedule_after_ticks: TICKS_PER_SECOND * 5,
+        };
+    }
+
     if character.id.0 != 0 {
         if !character.flags.contains(CharacterFlags::PLAYER) {
+            return ItemDriverOutcome::Noop;
+        }
+
+        if grave_open_character != 0 {
             return ItemDriverOutcome::Noop;
         }
 
@@ -20074,6 +20093,41 @@ mod tests {
     }
 
     #[test]
+    fn lab2_grave_live_open_timer_checks_undead_serial() {
+        let mut timer = character(0);
+        let mut grave = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_GRAVE);
+        grave.driver_data = vec![0; 16];
+        grave.driver_data[4..8].copy_from_slice(&77_i32.to_le_bytes());
+        grave.driver_data[8..12].copy_from_slice(&123_i32.to_le_bytes());
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LAB2_GRAVE,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer,
+                &mut grave,
+                request,
+                22,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::Lab2GraveCheckOpen {
+                item_id: ItemId(8),
+                undead_id: CharacterId(77),
+                undead_serial: 123,
+                schedule_after_ticks: TICKS_PER_SECOND * 5,
+            }
+        );
+    }
+
+    #[test]
     fn lab2_grave_is_area22_guarded_and_player_use_stays_explicitly_unported() {
         let mut actor = character(1);
         actor.flags.insert(CharacterFlags::PLAYER);
@@ -20103,6 +20157,14 @@ mod tests {
                 character_id: CharacterId(1),
             }
         );
+
+        grave.driver_data = vec![0; 16];
+        grave.driver_data[4..8].copy_from_slice(&77_i32.to_le_bytes());
+        grave.driver_data[8..12].copy_from_slice(&123_i32.to_le_bytes());
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut grave, request, 22, false),
+            ItemDriverOutcome::Noop
+        );
     }
 
     #[test]
@@ -20110,7 +20172,8 @@ mod tests {
         let mut actor = character(1);
         actor.flags.insert(CharacterFlags::PLAYER);
         let mut grave_book = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_GRAVE);
-        grave_book.driver_data = vec![3; 16];
+        grave_book.driver_data = vec![0; 16];
+        grave_book.driver_data[0] = 3;
         let request = ItemDriverRequest::Driver {
             driver: IDR_LAB2_GRAVE,
             item_id: ItemId(8),

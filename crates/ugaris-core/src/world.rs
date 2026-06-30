@@ -6909,6 +6909,23 @@ impl World {
                 self.close_lab2_grave(item_id);
                 outcome
             }
+            ItemDriverOutcome::Lab2GraveCheckOpen {
+                item_id,
+                undead_id,
+                undead_serial,
+                schedule_after_ticks,
+            } => {
+                let undead_still_open = self
+                    .characters
+                    .get(&undead_id)
+                    .is_some_and(|character| character.serial == undead_serial);
+                if undead_still_open {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                } else {
+                    self.close_lab2_grave(item_id);
+                }
+                outcome
+            }
             ItemDriverOutcome::Lab2StepActionDaemonCheck {
                 item_id,
                 character_id,
@@ -28345,6 +28362,86 @@ mod tests {
             i32::from_le_bytes(grave.driver_data[8..12].try_into().unwrap()),
             0
         );
+    }
+
+    #[test]
+    fn world_lab2_grave_live_timer_reschedules_while_undead_exists() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        let mut undead = character(77);
+        undead.serial = 123;
+        world.add_character(undead);
+
+        let mut grave = item(8, ItemFlags::USED | ItemFlags::USE);
+        grave.driver = crate::item_driver::IDR_LAB2_GRAVE;
+        grave.sprite = 1201;
+        grave.driver_data = vec![0; 16];
+        grave.driver_data[4..8].copy_from_slice(&77_i32.to_le_bytes());
+        grave.driver_data[8..12].copy_from_slice(&123_i32.to_le_bytes());
+        world.add_item(grave);
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_LAB2_GRAVE,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            22,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::Lab2GraveCheckOpen { .. }
+        ));
+        assert_eq!(world.items[&ItemId(8)].sprite, 1201);
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_lab2_grave_live_timer_closes_when_undead_serial_is_stale() {
+        let mut world = World::default();
+        let mut undead = character(77);
+        undead.serial = 124;
+        world.add_character(undead);
+
+        let mut grave = item(8, ItemFlags::USED | ItemFlags::USE);
+        grave.driver = crate::item_driver::IDR_LAB2_GRAVE;
+        grave.sprite = 1201;
+        grave.driver_data = vec![0; 16];
+        grave.driver_data[4..8].copy_from_slice(&77_i32.to_le_bytes());
+        grave.driver_data[8..12].copy_from_slice(&123_i32.to_le_bytes());
+        world.add_item(grave);
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_LAB2_GRAVE,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            22,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::Lab2GraveCheckOpen { .. }
+        ));
+        let grave = &world.items[&ItemId(8)];
+        assert_eq!(grave.sprite, 1200);
+        assert_eq!(
+            i32::from_le_bytes(grave.driver_data[4..8].try_into().unwrap()),
+            0
+        );
+        assert_eq!(world.timers.used_timers(), 0);
     }
 
     #[test]
