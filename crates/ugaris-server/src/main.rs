@@ -7925,6 +7925,7 @@ fn spawn_teufel_ratnest_character(
     character.lifeshield =
         i32::from(character.values[0][CharacterValue::MagicShield as usize]) * POWERSCALE;
     character.flags.insert(CharacterFlags::NONOTIFY);
+    apply_teufel_ratnest_random_suffix(&mut character, runtime_random_below);
     let serial = character.serial;
 
     if !world.spawn_character(character, usize::from(x), usize::from(y)) {
@@ -8007,6 +8008,29 @@ fn apply_teufel_ratnest_spawn_result(
         }
     }
     true
+}
+
+fn apply_teufel_ratnest_random_suffix(
+    character: &mut Character,
+    mut random_below: impl FnMut(i32) -> i32,
+) {
+    let Some((value, name_suffix, description_suffix)) = (match random_below(20) {
+        0 => Some((CharacterValue::Attack, " *A", " Increased Attack.")),
+        1 => Some((CharacterValue::Parry, " *P", " Increased Parry.")),
+        2 => Some((CharacterValue::Freeze, " *R", " Increased Freeze.")),
+        3 => Some((CharacterValue::Flash, " *F", " Increased Flash.")),
+        4 => Some((CharacterValue::Immunity, " *I", " Increased Immunity.")),
+        _ => None,
+    }) else {
+        return;
+    };
+
+    let amount = random_below(10).clamp(0, 9) as i16 + 7;
+    character.values[1][value as usize] =
+        character.values[1][value as usize].saturating_add(amount);
+    character.name.push_str(name_suffix);
+    character.description.push_str(description_suffix);
+    character.flags.insert(CharacterFlags::UPDATE);
 }
 
 fn spawn_fdemon_gate_character(
@@ -17371,6 +17395,57 @@ mod tests {
             ]),
             0x1122_3344
         );
+    }
+
+    #[test]
+    fn teufel_ratnest_random_suffix_adds_legacy_stat_and_text() {
+        let cases = [
+            (
+                0,
+                CharacterValue::Attack,
+                "Ice Rat *A",
+                " Increased Attack.",
+            ),
+            (1, CharacterValue::Parry, "Ice Rat *P", " Increased Parry."),
+            (
+                2,
+                CharacterValue::Freeze,
+                "Ice Rat *R",
+                " Increased Freeze.",
+            ),
+            (3, CharacterValue::Flash, "Ice Rat *F", " Increased Flash."),
+            (
+                4,
+                CharacterValue::Immunity,
+                "Ice Rat *I",
+                " Increased Immunity.",
+            ),
+        ];
+
+        for (roll, value, name, description) in cases {
+            let mut rat = login_character(CharacterId(70), &login_block("Ice Rat"), 34, 10, 10);
+            rat.flags.remove(CharacterFlags::UPDATE);
+            let mut rolls = [roll, 9].into_iter();
+
+            apply_teufel_ratnest_random_suffix(&mut rat, |_| rolls.next().unwrap());
+
+            assert_eq!(rat.values[1][value as usize], 16);
+            assert_eq!(rat.name, name);
+            assert_eq!(rat.description, description);
+            assert!(rat.flags.contains(CharacterFlags::UPDATE));
+        }
+    }
+
+    #[test]
+    fn teufel_ratnest_random_suffix_noops_for_default_rolls() {
+        let mut rat = login_character(CharacterId(70), &login_block("Ice Rat"), 34, 10, 10);
+        rat.flags.remove(CharacterFlags::UPDATE);
+
+        apply_teufel_ratnest_random_suffix(&mut rat, |_| 5);
+
+        assert_eq!(rat.name, "Ice Rat");
+        assert!(rat.description.is_empty());
+        assert!(!rat.flags.contains(CharacterFlags::UPDATE));
     }
 
     #[test]
