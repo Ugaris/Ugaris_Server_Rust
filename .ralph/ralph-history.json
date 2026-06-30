@@ -5289,9 +5289,27 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
       ]
+    },
+    {
+      "iteration": 194,
+      "startedAt": "2026-06-30T18:43:18.486Z",
+      "endedAt": "2026-06-30T18:45:37.016Z",
+      "durationMs": 138367,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 846 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 118499952,
+  "totalDurationMs": 118638319,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -5873,7 +5891,9 @@
       "The focused test failed because queued sound fan-out only materializes for nearby player recipients.": 1,
       "test world::tests::world_applies_pentagram_activate_and_timer_deactivate ... FAILED": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 848 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 848 filtered out; finished in 0.00s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 848 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 846 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
