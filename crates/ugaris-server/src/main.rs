@@ -1944,6 +1944,110 @@ fn parse_itemmod_args(rest: &str) -> (i64, i64, i64) {
     (pos, nr, val)
 }
 
+fn parse_setskill_args(rest: &str) -> (String, i64, i64) {
+    let mut chars = rest.trim_start().char_indices();
+    let mut name_end = 0;
+    for (idx, ch) in &mut chars {
+        if !ch.is_ascii_alphabetic() {
+            break;
+        }
+        name_end = idx + ch.len_utf8();
+    }
+    let name = rest.trim_start()[..name_end.min(79)].to_string();
+    let mut ptr = &rest.trim_start()[name_end..];
+    ptr = ptr.trim_start();
+    let token = ptr
+        .split_once(char::is_whitespace)
+        .map(|(token, _)| token)
+        .unwrap_or(ptr);
+    let pos = legacy_lookup_skill(token)
+        .map(i64::from)
+        .unwrap_or_else(|| legacy_atoi_prefix(ptr));
+    ptr = ptr.trim_start_matches(|ch: char| ch.is_ascii_alphanumeric());
+    ptr = ptr.trim_start();
+    let val = legacy_atoi_prefix(ptr);
+    (name, pos, val)
+}
+
+fn legacy_skill_start(value: usize) -> i32 {
+    match value {
+        0..=6 => 10,
+        42 => -1,
+        11..=41 => 1,
+        _ => -1,
+    }
+}
+
+fn legacy_skill_cost_factor(value: usize) -> i32 {
+    match value {
+        0..=2 | 42 => 3,
+        3..=6 => 2,
+        11..=37 | 39 | 40 => 1,
+        _ => 0,
+    }
+}
+
+fn legacy_skillmax(character: &Character) -> i32 {
+    if !character.flags.contains(CharacterFlags::ARCH) {
+        return 50;
+    }
+    if character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE)
+    {
+        110
+    } else {
+        125
+    }
+}
+
+fn legacy_raise_cost(value: usize, current: i32, seyan: bool) -> u32 {
+    let nr = current - legacy_skill_start(value) + 1 + 5;
+    let cost = nr * nr * nr * legacy_skill_cost_factor(value);
+    let cost = if seyan { cost * 4 / 30 } else { cost / 10 };
+    cost.max(1) as u32
+}
+
+fn legacy_supermax_canraise(value: usize) -> i32 {
+    match value {
+        3..=6 => 2,
+        11 | 12..=24 | 25..=37 | 39 | 40 => 1,
+        _ => 0,
+    }
+}
+
+fn legacy_supermax_cost(character: &Character, value: usize, current: i32) -> u32 {
+    let seyan = character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE);
+    (legacy_supermax_canraise(value) * 3_000_000) as u32 + legacy_raise_cost(value, current, seyan)
+}
+
+fn legacy_calc_exp_used(character: &Character) -> u32 {
+    let seyan = character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE);
+    let Some(bare_values) = character.values.get(1) else {
+        return 0;
+    };
+    let mut exp = 0_u32;
+    for value in 0..CHARACTER_VALUE_NAMES.len() {
+        let bare = i32::from(*bare_values.get(value).unwrap_or(&0));
+        if bare == 0 || legacy_skill_cost_factor(value) == 0 {
+            continue;
+        }
+        for n in (legacy_skill_start(value) + 1)..=bare {
+            let current = n - 1;
+            let cost = if character.flags.contains(CharacterFlags::PLAYER)
+                && current >= legacy_skillmax(character)
+            {
+                legacy_supermax_cost(character, value, current)
+            } else {
+                legacy_raise_cost(value, current, seyan)
+            };
+            exp = exp.saturating_add(cost);
+        }
+    }
+    exp
+}
+
 fn apply_description_command(
     world: &mut World,
     character_id: CharacterId,
@@ -2326,6 +2430,67 @@ fn apply_admin_character_command(
         runtime.staff_codes.insert(target_id, code.clone());
         return Some(KeyringCommandResult {
             messages: vec![format!("Set {target_name}'s staff code to {code}.")],
+            ..Default::default()
+        });
+    }
+
+    if lower == "setskill" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let (name, pos, val) = parse_setskill_args(rest);
+        let Some(target_id) = find_online_character_by_name(world, &name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+        if pos < 0 || pos >= CHARACTER_VALUE_NAMES.len() as i64 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Position out of bounds.".to_string()],
+                ..Default::default()
+            });
+        }
+        if !(0..=255).contains(&val) {
+            return Some(KeyringCommandResult {
+                messages: vec!["Value out of bounds.".to_string()],
+                ..Default::default()
+            });
+        }
+
+        let Some(target) = world.characters.get_mut(&target_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if target.values.len() < 2 {
+            target
+                .values
+                .resize_with(2, || vec![0; CHARACTER_VALUE_NAMES.len()]);
+        }
+        if target.values[1].len() < CHARACTER_VALUE_NAMES.len() {
+            target.values[1].resize(CHARACTER_VALUE_NAMES.len(), 0);
+        }
+        let pos = pos as usize;
+        let old_value = target.values[1][pos];
+        let old_exp_used = target.exp_used;
+        target.values[1][pos] = val as i16;
+        target.exp_used = legacy_calc_exp_used(target);
+        target.flags.insert(CharacterFlags::UPDATE);
+        let diff = i64::from(target.exp_used) - i64::from(old_exp_used);
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Skill: {} (pos {}), Old value: {}, New value: {}, exp used changed by {}.",
+                value_name(pos as i16),
+                pos,
+                old_value,
+                target.values[1][pos],
+                diff
+            )],
+            inventory_changed: true,
+            name_changed: target_id == character_id,
             ..Default::default()
         });
     }
@@ -12272,6 +12437,115 @@ mod tests {
             .unwrap()
             .messages,
             vec!["Val out of bounds."]
+        );
+    }
+
+    #[test]
+    fn god_setskill_mutates_online_target_and_recalculates_exp_used() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
+        target.flags.insert(CharacterFlags::PLAYER);
+        target.values[1][CharacterValue::Sword as usize] = 1;
+        target.exp_used = legacy_calc_exp_used(&target);
+        let old_exp_used = target.exp_used;
+        world.add_character(target);
+        let mut runtime = ServerRuntime::default();
+
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setskill target sword 3",
+            1,
+        )
+        .expect("god setskill should be recognized");
+        assert_eq!(
+            result.messages,
+            vec!["Skill: Sword (pos 15), Old value: 1, New value: 3, exp used changed by 55."]
+        );
+        let target = world.characters.get(&target_id).unwrap();
+        assert_eq!(target.values[1][CharacterValue::Sword as usize], 3);
+        assert_eq!(target.exp_used, old_exp_used + 55);
+        assert!(target.flags.contains(CharacterFlags::UPDATE));
+        assert!(result.inventory_changed);
+    }
+
+    #[test]
+    fn setskill_is_god_only_and_checks_target_position_and_value() {
+        let mut world = World::default();
+        let caller_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        world.add_character(login_character(
+            caller_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        world.add_character(login_character(
+            target_id,
+            &login_block("Target"),
+            1,
+            11,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/setskill Target sword 3",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&caller_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert_eq!(
+            apply_admin_character_command(
+                &mut world,
+                &mut runtime,
+                caller_id,
+                "/setskill Missing sword 3",
+                1,
+            )
+            .unwrap()
+            .messages,
+            vec!["Sorry, no one by the name Missing around."]
+        );
+        assert_eq!(
+            apply_admin_character_command(
+                &mut world,
+                &mut runtime,
+                caller_id,
+                "/setskill Target 43 3",
+                1,
+            )
+            .unwrap()
+            .messages,
+            vec!["Position out of bounds."]
+        );
+        assert_eq!(
+            apply_admin_character_command(
+                &mut world,
+                &mut runtime,
+                caller_id,
+                "/setskill Target sword 256",
+                1,
+            )
+            .unwrap()
+            .messages,
+            vec!["Value out of bounds."]
         );
     }
 
