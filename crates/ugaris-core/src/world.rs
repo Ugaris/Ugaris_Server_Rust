@@ -7948,6 +7948,20 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::MineWallDig { item_id, .. } => {
+                if self.apply_staffer_mine_dig(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::MineWallCollapse { item_id, .. } => {
+                if self.apply_staffer_mine_timer(item_id) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::StafferBlockMove {
                 item_id,
                 character_id,
@@ -28403,6 +28417,116 @@ mod tests {
         world.tick = Tick(2);
         let due = world.process_due_timers(15);
         assert_eq!(due.len(), 1);
+    }
+
+    #[test]
+    fn minewall_dig_stage_three_removes_sightblock() {
+        let mut world = World::default();
+        let mut wall = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::SIGHTBLOCK);
+        wall.x = 10;
+        wall.y = 10;
+        wall.driver_data = vec![0, 0, 0, 3];
+        world.add_item(wall);
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::TSIGHTBLOCK);
+
+        let outcome = world.apply_item_driver_outcome(
+            ItemDriverOutcome::MineWallDig {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                endurance_delta: 0,
+                stage: 3,
+                opened: false,
+            },
+            12,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::MineWallDig { .. }));
+        assert!(!world
+            .map
+            .tile(10, 10)
+            .unwrap()
+            .flags
+            .contains(MapFlags::TSIGHTBLOCK));
+        assert!(!world.items[&ItemId(7)]
+            .flags
+            .contains(ItemFlags::SIGHTBLOCK));
+    }
+
+    #[test]
+    fn minewall_dig_stage_eight_opens_wall_and_schedules_collapse() {
+        let mut world = World::default();
+        let mut wall = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::SIGHTBLOCK);
+        wall.x = 10;
+        wall.y = 10;
+        wall.driver = crate::item_driver::IDR_MINEWALL;
+        wall.driver_data = vec![0, 0, 0, 8];
+        world.add_item(wall);
+        world.map.tile_mut(10, 10).unwrap().item = 7;
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK);
+
+        let outcome = world.apply_item_driver_outcome(
+            ItemDriverOutcome::MineWallDig {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                endurance_delta: 0,
+                stage: 8,
+                opened: true,
+            },
+            12,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::MineWallDig { .. }));
+        let tile = world.map.tile(10, 10).unwrap();
+        assert_eq!(tile.item, 0);
+        assert!(!tile.flags.contains(MapFlags::TMOVEBLOCK));
+        let wall = &world.items[&ItemId(7)];
+        assert!(!wall.flags.contains(ItemFlags::USE));
+        assert!(wall.flags.contains(ItemFlags::VOID));
+        assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn minewall_collapse_restores_blockers_when_tile_is_free() {
+        let mut world = World::default();
+        let mut wall = item(7, ItemFlags::USED | ItemFlags::VOID);
+        wall.x = 10;
+        wall.y = 10;
+        wall.sprite = 15078;
+        wall.driver_data = vec![0, 0, 0, 8, 1];
+        world.add_item(wall);
+
+        let outcome = world.apply_item_driver_outcome(
+            ItemDriverOutcome::MineWallCollapse {
+                item_id: ItemId(7),
+                schedule_after_ticks: 10,
+            },
+            12,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::MineWallCollapse { .. }
+        ));
+        let tile = world.map.tile(10, 10).unwrap();
+        assert_eq!(tile.item, 7);
+        assert!(tile
+            .flags
+            .contains(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK));
+        let wall = &world.items[&ItemId(7)];
+        assert_eq!(wall.sprite, 15070);
+        assert_eq!(wall.driver_data[3], 0);
+        assert!(wall.flags.contains(ItemFlags::USE | ItemFlags::SIGHTBLOCK));
+        assert!(!wall.flags.contains(ItemFlags::VOID));
     }
 
     fn character(id: u32) -> Character {
