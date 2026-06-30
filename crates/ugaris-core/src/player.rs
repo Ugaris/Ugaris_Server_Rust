@@ -50,6 +50,48 @@ pub const LEGACY_LAB2_GRAVE_VERSION: u8 = 2;
 pub const LEGACY_LAB2_GRAVEVERSION_OFFSET: usize = 43;
 pub const LEGACY_LAB2_GRAVEINDEX_OFFSET: usize = 44;
 pub const LAB2_GRAVE_BITSET_BYTES: usize = 256;
+pub const LAB2_DESCRIBED_GRAVES: [((u16, u16), &str); 40] = [
+    ((194, 183), "%s is buried in the third grave behind the chapel."),
+    ((192, 183), "%s is buried at the left side of her husband John."),
+    ((186, 183), "%s is buried in the seventh grave behind the chapel."),
+    ((184, 183), "%s is buried at the left side of her husband John."),
+    ((176, 194), "For his generosity %s is buried in the third grave of the first row next to the northwestern chapel aisle."),
+    ((176, 196), "%s is buried at the left side of her husband John."),
+    ((173, 191), "For his generosity %s is buried in the first grave of the second row next to the northwestern chapel aisle."),
+    ((173, 193), "%s is buried at the left side of her husband John."),
+    ((199, 195), "For his generosity %s is buried in the first grave of the second row next to the southeastern chapel aisle."),
+    ((199, 193), "%s is buried at the left side of her husband John."),
+    ((196, 196), "For his generosity %s is buried in the first grave of the first row next to the southeastern chapel aisle."),
+    ((196, 194), "%s is buried at the left side of her husband John."),
+    ((160, 233), "%s is buried in the fifth grave of the second row in the southwest section of the graveyard."),
+    ((158, 233), "%s is buried at the left side of her husband John."),
+    ((162, 230), "%s is buried in the fourth grave of the third row in the southwest section of the graveyard."),
+    ((160, 230), "%s is buried at the left side of her husband John."),
+    ((210, 244), "%s is buried in the fourth grave of the second row in the southeast section of the graveyard."),
+    ((208, 244), "%s is buried at the left side of her husband John."),
+    ((206, 232), "%s is buried in the sixth grave of the sixth row in the southeast section of the graveyard."),
+    ((204, 232), "%s is buried at the left side of her husband John."),
+    ((172, 228), "%s is buried in the fifth grave of the first row in the northwest entrance section of the graveyard."),
+    ((172, 226), "%s is buried at the left side of her husband John."),
+    ((181, 224), "%s is buried in the seventh grave of the last row in the northwest entrance section of the graveyard."),
+    ((181, 222), "%s is buried at the left side of her husband John."),
+    ((191, 222), "%s is buried in the first grave of the last row in the southeast entrance section of the graveyard."),
+    ((191, 224), "%s is buried at the left side of her husband John."),
+    ((197, 232), "%s is buried in the sixth grave of the second row in the southeast entrance section of the graveyard."),
+    ((197, 234), "%s is buried at the left side of her husband John."),
+    ((155, 211), "%s is buried in the second grave of the first row in the section with the cross in front of the administrative building."),
+    ((155, 209), "%s is buried at the left side of her husband John."),
+    ((164, 201), "%s is buried in the seventh grave of the last row in the section with the cross in front of the administrative building."),
+    ((164, 199), "%s is buried at the left side of her husband John."),
+    ((158, 189), "%s is buried in the second grave of the second row in the section without the cross in front of the administravive building."),
+    ((158, 187), "%s is buried at the left side of her husband John."),
+    ((161, 189), "%s is buried in the second grave of the third row in the section without the cross in front of the administravive building."),
+    ((161, 187), "%s is buried at the left side of her husband John."),
+    ((208, 182), "%s is buried in the first grave in the northeastern part of the northeast section of the graveyard."),
+    ((210, 182), "%s is buried at the left side of her husband John."),
+    ((214, 191), "%s is buried in the fourth grave of the last row in the northeastern part of the northeast section of the graveyard."),
+    ((212, 191), "%s is buried at the left side of her husband John."),
+];
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
 pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
@@ -948,6 +990,30 @@ impl PlayerRuntime {
             &self.lab_ppd[LEGACY_LAB2_GRAVEINDEX_OFFSET..LEGACY_LAB2_GRAVEINDEX_OFFSET + 4],
         );
         indices
+    }
+
+    pub fn legacy_lab2_grave_clue_text(&mut self, book: u8) -> Option<String> {
+        let indices = self.ensure_legacy_lab2_described_graves();
+        let (slot, name) = match book {
+            1 => (0, "Henry"),
+            2 => (1, "Eldrick"),
+            3 => (2, "John"),
+            4 => (3, "Mariah"),
+            _ => return None,
+        };
+        let description = LAB2_DESCRIBED_GRAVES
+            .get(indices[slot] as usize)
+            .map(|(_, description)| *description)
+            .unwrap_or("%s is buried in an unknown grave.");
+        Some(description.replace("%s", name))
+    }
+
+    pub fn legacy_lab2_special_grave_kind_at(&mut self, x: u16, y: u16) -> Option<u8> {
+        let indices = self.ensure_legacy_lab2_described_graves();
+        indices.into_iter().enumerate().find_map(|(slot, index)| {
+            let ((grave_x, grave_y), _) = *LAB2_DESCRIBED_GRAVES.get(index as usize)?;
+            (grave_x == x && grave_y == y).then_some(slot as u8 + 1)
+        })
     }
 
     pub fn legacy_lab2_grave_cleared(&self, grave_number: usize) -> bool {
@@ -3768,6 +3834,32 @@ mod tests {
 
         let preserved = player.ensure_legacy_lab2_described_graves_with_indices([0, 4, 8, 9]);
         assert_eq!(preserved, [2, 6, 10, 11]);
+    }
+
+    #[test]
+    fn lab2_grave_clue_text_uses_legacy_described_grave_table() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.ensure_legacy_lab2_described_graves_with_indices([0, 4, 8, 9]);
+
+        assert_eq!(
+            player.legacy_lab2_grave_clue_text(1).as_deref(),
+            Some("Henry is buried in the third grave behind the chapel.")
+        );
+        assert_eq!(
+            player.legacy_lab2_grave_clue_text(3).as_deref(),
+            Some("For his generosity John is buried in the first grave of the second row next to the southeastern chapel aisle.")
+        );
+        assert_eq!(player.legacy_lab2_grave_clue_text(5), None);
+    }
+
+    #[test]
+    fn lab2_special_grave_kind_matches_player_specific_coordinates() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.ensure_legacy_lab2_described_graves_with_indices([0, 4, 8, 9]);
+
+        assert_eq!(player.legacy_lab2_special_grave_kind_at(194, 183), Some(1));
+        assert_eq!(player.legacy_lab2_special_grave_kind_at(199, 195), Some(3));
+        assert_eq!(player.legacy_lab2_special_grave_kind_at(212, 191), None);
     }
 
     #[test]

@@ -7978,92 +7978,6 @@ fn apply_lab2_water_altar(
     Lab2WaterApplyResult::Converted(converted)
 }
 
-const LAB2_DESCRIBED_GRAVES: [&str; 40] = [
-    "%s is buried in the third grave behind the chapel.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the seventh grave behind the chapel.",
-    "%s is buried at the left side of her husband John.",
-    "For his generosity %s is buried in the third grave of the first row next to the northwestern chapel aisle.",
-    "%s is buried at the left side of her husband John.",
-    "For his generosity %s is buried in the first grave of the second row next to the northwestern chapel aisle.",
-    "%s is buried at the left side of her husband John.",
-    "For his generosity %s is buried in the first grave of the second row next to the southeastern chapel aisle.",
-    "%s is buried at the left side of her husband John.",
-    "For his generosity %s is buried in the first grave of the first row next to the southeastern chapel aisle.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the fifth grave of the second row in the southwest section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the fourth grave of the third row in the southwest section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the fourth grave of the second row in the southeast section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the sixth grave of the sixth row in the southeast section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the fifth grave of the first row in the northwest entrance section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the seventh grave of the last row in the northwest entrance section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the first grave of the last row in the southeast entrance section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the sixth grave of the second row in the southeast entrance section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the second grave of the first row in the section with the cross in front of the administrative building.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the seventh grave of the last row in the section with the cross in front of the administrative building.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the second grave of the second row in the section without the cross in front of the administravive building.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the second grave of the third row in the section without the cross in front of the administravive building.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the first grave in the northeastern part of the northeast section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-    "%s is buried in the fourth grave of the last row in the northeastern part of the northeast section of the graveyard.",
-    "%s is buried at the left side of her husband John.",
-];
-
-const LAB2_DESCRIBED_GRAVE_COORDS: [(u16, u16); 40] = [
-    (194, 183),
-    (192, 183),
-    (186, 183),
-    (184, 183),
-    (176, 194),
-    (176, 196),
-    (173, 191),
-    (173, 193),
-    (199, 195),
-    (199, 193),
-    (196, 196),
-    (196, 194),
-    (160, 233),
-    (158, 233),
-    (162, 230),
-    (160, 230),
-    (210, 244),
-    (208, 244),
-    (206, 232),
-    (204, 232),
-    (172, 228),
-    (172, 226),
-    (181, 224),
-    (181, 222),
-    (191, 222),
-    (191, 224),
-    (197, 232),
-    (197, 234),
-    (155, 211),
-    (155, 209),
-    (164, 201),
-    (164, 199),
-    (158, 189),
-    (158, 187),
-    (161, 189),
-    (161, 187),
-    (208, 182),
-    (210, 182),
-    (214, 191),
-    (212, 191),
-];
-
 fn lab2_grave_clue_text(
     runtime: &mut ServerRuntime,
     character_id: CharacterId,
@@ -8072,18 +7986,9 @@ fn lab2_grave_clue_text(
     let Some(player) = runtime.player_for_character_mut(character_id) else {
         return "Congratulations, you detected bug no. 12/HIHO/17. Please report this to the development team.".to_string();
     };
-    let indices = player.ensure_legacy_lab2_described_graves();
-    let (slot, name) = match book {
-        1 => (0, "Henry"),
-        2 => (1, "Eldrick"),
-        3 => (2, "John"),
-        4 => (3, "Mariah"),
-        _ => return "This grave is empty".to_string(),
-    };
-    LAB2_DESCRIBED_GRAVES
-        .get(indices[slot] as usize)
-        .unwrap_or(&"%s is buried in an unknown grave.")
-        .replace("%s", name)
+    player
+        .legacy_lab2_grave_clue_text(book)
+        .unwrap_or_else(|| "This grave is empty".to_string())
 }
 
 fn lab2_special_grave_template(kind: u8) -> Option<&'static str> {
@@ -8128,15 +8033,9 @@ fn apply_lab2_grave_open(
     let mut special_item = fixed_item;
     if special_item == 0 {
         if let Some(player) = runtime.player_for_character_mut(character_id) {
-            let indices = player.ensure_legacy_lab2_described_graves();
-            for (slot, index) in indices.into_iter().enumerate() {
-                if LAB2_DESCRIBED_GRAVE_COORDS.get(index as usize).copied()
-                    == Some((grave_x, grave_y))
-                {
-                    special_item = slot as u8 + 1;
-                    break;
-                }
-            }
+            special_item = player
+                .legacy_lab2_special_grave_kind_at(grave_x, grave_y)
+                .unwrap_or_default();
         }
     }
 
