@@ -341,6 +341,8 @@ pub struct Character {
     pub military_normal_exp: i32,
     pub gold: u32,
     #[serde(default)]
+    pub karma: i32,
+    #[serde(default)]
     pub creation_time: u64,
     #[serde(default)]
     pub saves: u8,
@@ -485,6 +487,7 @@ mod tests {
         assert_eq!(character.c3, 0);
         assert_eq!(character.driver, 0);
         assert!(character.staff_code.is_empty());
+        assert_eq!(character.karma, 0);
     }
 
     #[test]
@@ -529,6 +532,7 @@ mod tests {
             military_points: 0,
             military_normal_exp: 0,
             gold: 0,
+            karma: 0,
             creation_time: 0,
             saves: 0,
             deaths: 0,

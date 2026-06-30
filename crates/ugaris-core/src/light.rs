@@ -513,6 +513,7 @@ mod tests {
             military_points: 0,
             military_normal_exp: 0,
             gold: 0,
+            karma: 0,
             creation_time: 0,
             saves: 0,
             deaths: 0,

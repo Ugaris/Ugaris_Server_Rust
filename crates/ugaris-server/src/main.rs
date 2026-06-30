@@ -1361,6 +1361,7 @@ fn login_character(
         military_points: 0,
         military_normal_exp: 0,
         gold: 0,
+        karma: 0,
         creation_time: 0,
         saves: 0,
         deaths: 0,
@@ -2641,6 +2642,43 @@ fn apply_admin_character_command(
 
         return Some(KeyringCommandResult {
             messages,
+            ..Default::default()
+        });
+    }
+
+    if lower.len() >= 5 && "setkarma".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let rest = rest.trim_start();
+        let mut split = rest.splitn(2, char::is_whitespace);
+        let name = split.next().unwrap_or_default();
+        let karma_text = split.next().unwrap_or_default().trim_start();
+        let karma =
+            legacy_atoi_prefix(karma_text).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Character {name} not found")],
+                ..Default::default()
+            });
+        };
+        let Some(target) = world.characters.get_mut(&target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Character {name} not found")],
+                ..Default::default()
+            });
+        };
+        let old_karma = target.karma;
+        target.karma = karma;
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Changed {}'s karma from {} to {}",
+                target.name, old_karma, target.karma
+            )],
             ..Default::default()
         });
     }
@@ -13070,6 +13108,82 @@ mod tests {
             &mut runtime,
             character_id,
             "/list 99",
+            1,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn god_setkarma_mutates_online_target_with_legacy_feedback() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
+        target.karma = -3;
+        world.add_character(god);
+        world.add_character(target);
+        let mut runtime = ServerRuntime::default();
+
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setka Target 42abc",
+            1,
+        )
+        .expect("legacy cmdcmp accepts setkarma prefix length five");
+
+        assert_eq!(
+            result.messages,
+            vec!["Changed Target's karma from -3 to 42"]
+        );
+        assert_eq!(world.characters.get(&target_id).unwrap().karma, 42);
+    }
+
+    #[test]
+    fn setkarma_is_god_only_and_reports_missing_target_like_c() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setkarma Missing 12",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let missing = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setkarma Missing 12",
+            1,
+        )
+        .expect("god setkarma missing target should be handled");
+        assert_eq!(missing.messages, vec!["Character Missing not found"]);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setk Missing 12",
             1,
         )
         .is_none());
