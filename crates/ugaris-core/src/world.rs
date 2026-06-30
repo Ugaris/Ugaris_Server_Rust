@@ -6308,6 +6308,27 @@ impl World {
             .is_some_and(|character| do_idle(character, TICKS_PER_SECOND as i32).is_ok())
     }
 
+    fn close_lab2_grave(&mut self, item_id: ItemId) -> bool {
+        let (x, y) = {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            if item.driver_data.len() < 12 {
+                item.driver_data.resize(12, 0);
+            }
+            let open_character = i32::from_le_bytes(item.driver_data[4..8].try_into().unwrap());
+            if open_character == 0 {
+                return false;
+            }
+            item.sprite -= 1;
+            item.driver_data[4..8].copy_from_slice(&0_i32.to_le_bytes());
+            item.driver_data[8..12].copy_from_slice(&0_i32.to_le_bytes());
+            (item.x, item.y)
+        };
+        self.mark_dirty_sector(usize::from(x), usize::from(y));
+        true
+    }
+
     fn regenerate_simple_baddy(&mut self, character_id: CharacterId) -> bool {
         self.characters
             .get_mut(&character_id)
@@ -6882,6 +6903,10 @@ impl World {
                     }
                 }
                 self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::Lab2GraveClose { item_id } => {
+                self.close_lab2_grave(item_id);
                 outcome
             }
             ItemDriverOutcome::Lab2StepActionDaemonCheck {
@@ -28277,6 +28302,49 @@ mod tests {
         world.tick = Tick(132);
         let due = world.process_due_timers(22);
         assert_eq!(due.len(), 1);
+    }
+
+    #[test]
+    fn world_lab2_grave_empty_open_timer_closes_grave() {
+        let mut world = World::default();
+        let mut grave = item(8, ItemFlags::USED | ItemFlags::USE);
+        grave.driver = crate::item_driver::IDR_LAB2_GRAVE;
+        grave.sprite = 1201;
+        grave.x = 4;
+        grave.y = 5;
+        grave.driver_data = vec![0; 16];
+        grave.driver_data[4..8].copy_from_slice(&(-1_i32).to_le_bytes());
+        grave.driver_data[8..12].copy_from_slice(&(-1_i32).to_le_bytes());
+        world.add_item(grave);
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_LAB2_GRAVE,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            22,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::Lab2GraveClose { item_id: ItemId(8) }
+        );
+        let grave = &world.items[&ItemId(8)];
+        assert_eq!(grave.sprite, 1200);
+        assert_eq!(
+            i32::from_le_bytes(grave.driver_data[4..8].try_into().unwrap()),
+            0
+        );
+        assert_eq!(
+            i32::from_le_bytes(grave.driver_data[8..12].try_into().unwrap()),
+            0
+        );
     }
 
     #[test]

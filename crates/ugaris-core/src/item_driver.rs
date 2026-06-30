@@ -1915,6 +1915,9 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         book: u8,
     },
+    Lab2GraveClose {
+        item_id: ItemId,
+    },
     ParkShrine {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2741,9 +2744,22 @@ fn lab2_grave_driver(
         .and_then(|bytes| bytes.try_into().ok())
         .map(i32::from_le_bytes)
         .unwrap_or_default();
+    let grave_open_serial = item
+        .driver_data
+        .get(8..12)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(i32::from_le_bytes)
+        .unwrap_or_default();
 
     if (context.timer_call || character.id.0 == 0) && grave_open_character == 0 {
         return ItemDriverOutcome::Noop;
+    }
+
+    if (context.timer_call || character.id.0 == 0)
+        && grave_open_character != 0
+        && grave_open_serial == -1
+    {
+        return ItemDriverOutcome::Lab2GraveClose { item_id: item.id };
     }
 
     if character.id.0 != 0 {
@@ -20024,6 +20040,36 @@ mod tests {
         assert_eq!(
             legacy_item_driver_return_code(Some(IDR_LAB2_GRAVE), &outcome),
             1
+        );
+    }
+
+    #[test]
+    fn lab2_grave_empty_open_timer_requests_close() {
+        let mut timer = character(0);
+        let mut grave = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_GRAVE);
+        grave.driver_data = vec![0; 16];
+        grave.driver_data[4..8].copy_from_slice(&(-1_i32).to_le_bytes());
+        grave.driver_data[8..12].copy_from_slice(&(-1_i32).to_le_bytes());
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LAB2_GRAVE,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer,
+                &mut grave,
+                request,
+                22,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::Lab2GraveClose { item_id: ItemId(8) }
         );
     }
 

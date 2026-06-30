@@ -26087,6 +26087,9 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, text));
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveClose { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { character_id, .. } => {
                                             feedback.push((
                                                 character_id,
