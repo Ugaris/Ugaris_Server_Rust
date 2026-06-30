@@ -603,6 +603,16 @@ pub enum ItemDriverOutcome {
         y: u16,
         area_id: u16,
     },
+    TeufelArenaExit {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+    },
+    TeufelArenaExitLowHealth {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     DungeonTeleport {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2194,6 +2204,7 @@ pub fn execute_item_driver_with_context(
                 IDR_XMASMAKER => xmasmaker_driver(character, item),
                 IDR_CALIGAR => caligar_driver(character, item, context),
                 IDR_ARKHATA => arkhata_driver(character, item, context),
+                IDR_TEUFELARENAEXIT => teufel_arena_exit_driver(character, item),
                 IDR_CALIGARFLAME => flamethrow_driver(character, item, context),
                 IDR_FREAKDOOR => freakdoor_driver(character, item),
                 IDR_KEY_RING => keyring_driver(character, item),
@@ -2230,6 +2241,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_LAB2_WATER | IDR_LAB2_REGENERATE | IDR_LABTORCH => Some(22),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
+        IDR_TEUFELDOOR | IDR_TEUFELARENA | IDR_TEUFELRATNEST | IDR_TEUFELARENAEXIT => Some(34),
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
         IDR_DUNGEONTELE | IDR_DUNGEONFAKE | IDR_DUNGEONDOOR | IDR_DUNGEONKEY => Some(13),
@@ -2319,6 +2331,33 @@ fn lab2_water_driver(character: &Character, item: &mut Item) -> ItemDriverOutcom
             character_id: character.id,
         },
         _ => ItemDriverOutcome::Noop,
+    }
+}
+
+fn teufel_arena_exit_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let max_hp = character
+        .values
+        .get(0)
+        .and_then(|values| values.get(CharacterValue::Hp as usize))
+        .copied()
+        .unwrap_or_default() as i32
+        * POWERSCALE;
+    if character.hp < max_hp {
+        return ItemDriverOutcome::TeufelArenaExitLowHealth {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::TeufelArenaExit {
+        item_id: item.id,
+        character_id: character.id,
+        x: 206,
+        y: 231,
     }
 }
 
@@ -18205,6 +18244,39 @@ mod tests {
             ItemDriverOutcome::Lab2WaterAltar {
                 item_id: ItemId(9),
                 character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn teufel_arena_exit_requires_full_health_and_targets_legacy_exit_tile() {
+        let mut actor = character(1);
+        actor.values[0][CharacterValue::Hp as usize] = 100;
+        actor.hp = 99 * POWERSCALE;
+        let mut exit = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TEUFELARENAEXIT);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TEUFELARENAEXIT,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut exit, request, 34, false),
+            ItemDriverOutcome::TeufelArenaExitLowHealth {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.hp = 100 * POWERSCALE;
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut exit, request, 34, false),
+            ItemDriverOutcome::TeufelArenaExit {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 206,
+                y: 231,
             }
         );
     }

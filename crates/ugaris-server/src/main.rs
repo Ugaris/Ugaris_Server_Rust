@@ -22078,6 +22078,13 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. } => {
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExit { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExitLowHealth { character_id, .. } => {
+                                            feedback.push((character_id, "You cannot leave with less than full health.".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseDust { character_id, .. } => {
                                             feedback.push((character_id, "The skeleton crumbles to dust as you touch it.".to_string()));
                                             executed += 1;

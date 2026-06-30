@@ -6588,6 +6588,15 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::TeufelArenaExit {
+                character_id, x, y, ..
+            } => {
+                if self.teleport_character(character_id, x, y, true) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
             ItemDriverOutcome::DoorToggle {
                 item_id,
                 character_id,
@@ -22589,6 +22598,40 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn world_executes_teufel_arena_exit_same_area_teleport() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.values[0][CharacterValue::Hp as usize] = 100;
+        actor.hp = 100 * POWERSCALE;
+        world.spawn_character(actor, 150, 220);
+        let mut exit = item(8, ItemFlags::USED | ItemFlags::USE);
+        exit.driver = crate::item_driver::IDR_TEUFELARENAEXIT;
+        world.add_item(exit);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_TEUFELARENAEXIT,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            34,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TeufelArenaExit {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 206,
+                y: 231,
+            }
+        );
+        let actor = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((actor.x, actor.y), (206, 231));
     }
 
     #[test]
