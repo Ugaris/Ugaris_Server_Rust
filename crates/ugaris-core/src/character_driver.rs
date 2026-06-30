@@ -429,9 +429,10 @@ pub fn add_simple_baddy_enemy_unchecked(
     if let Some(enemy) = data
         .enemies
         .iter_mut()
+        .take(9)
         .find(|enemy| enemy.target_id == target_id)
     {
-        enemy.priority = enemy.priority.max(priority);
+        enemy.priority = priority;
         enemy.last_seen_tick = current_tick;
         return false;
     }
@@ -1111,6 +1112,65 @@ mod tests {
         assert_eq!(data.enemies[0].target_id, crate::ids::CharacterId(10));
         assert_eq!(data.enemies[8].target_id, crate::ids::CharacterId(18));
         assert_eq!(data.enemies[9].target_id, crate::ids::CharacterId(21));
+    }
+
+    #[test]
+    fn add_simple_baddy_enemy_matches_c_slot_nine_overflow_semantics() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+
+        for target in 1..=10 {
+            assert!(add_simple_baddy_enemy_unchecked(
+                &mut character,
+                crate::ids::CharacterId(target),
+                0,
+                target as i32,
+            ));
+        }
+
+        assert!(add_simple_baddy_enemy_unchecked(
+            &mut character,
+            crate::ids::CharacterId(10),
+            1,
+            99,
+        ));
+
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.enemies.len(), 10);
+        assert_eq!(data.enemies[9].target_id, crate::ids::CharacterId(10));
+        assert_eq!(data.enemies[9].priority, 1);
+        assert_eq!(data.enemies[9].last_seen_tick, 99);
+    }
+
+    #[test]
+    fn add_simple_baddy_enemy_overwrites_priority_like_c_hurtme_flag() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+
+        assert!(add_simple_baddy_enemy_unchecked(
+            &mut character,
+            crate::ids::CharacterId(2),
+            1,
+            10,
+        ));
+        assert!(!add_simple_baddy_enemy_unchecked(
+            &mut character,
+            crate::ids::CharacterId(2),
+            0,
+            11,
+        ));
+
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.enemies[0].priority, 0);
+        assert_eq!(data.enemies[0].last_seen_tick, 11);
     }
 
     fn test_character() -> Character {
