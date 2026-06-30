@@ -610,7 +610,7 @@ impl World {
         item_id: ItemId,
         slot: usize,
         character_id: CharacterId,
-        _serial: u32,
+        serial: u32,
     ) -> bool {
         let Some(item) = self.items.get_mut(&item_id) else {
             return false;
@@ -621,7 +621,7 @@ impl World {
         let offset = fdemon_gate_slot_offset(slot);
         item.driver_data.resize(offset + 4, 0);
         let character_id = character_id.0 as u16;
-        let serial = 0_u16;
+        let serial = serial as u16;
         item.driver_data[offset..offset + 2].copy_from_slice(&character_id.to_le_bytes());
         item.driver_data[offset + 2..offset + 4].copy_from_slice(&serial.to_le_bytes());
         true
@@ -699,7 +699,7 @@ impl World {
             return true;
         };
         let character_id = u16::from_le_bytes([bytes[0], bytes[1]]);
-        let _serial = u16::from_le_bytes([bytes[2], bytes[3]]);
+        let serial = u16::from_le_bytes([bytes[2], bytes[3]]);
         if character_id == 0 {
             return true;
         }
@@ -708,6 +708,7 @@ impl World {
             .is_none_or(|character| {
                 !character.flags.contains(CharacterFlags::USED)
                     || character.flags.contains(CharacterFlags::DEAD)
+                    || character.serial as u16 != serial
             })
     }
 
@@ -18525,6 +18526,63 @@ mod tests {
             }
         );
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn world_fdemon_gate_slots_use_legacy_character_serial_guards() {
+        let mut world = World::default();
+        world.add_character(character(0));
+        let mut existing = character(1);
+        existing.serial = 55;
+        world.add_character(existing);
+        let mut gate = item(7, ItemFlags::USED);
+        gate.driver = IDR_FDEMONGATE;
+        gate.x = 10;
+        gate.y = 20;
+        gate.driver_data = vec![2, 10, 0, 0, 1, 0, 55, 0];
+        world.add_item(gate);
+
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONGATE,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            8,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonGateSpawn { slot: 1, .. }
+        ));
+        assert!(world.apply_fdemon_gate_spawn_result(ItemId(7), 1, CharacterId(2), 77));
+        let gate = &world.items[&ItemId(7)];
+        assert_eq!(&gate.driver_data[8..12], &[2, 0, 77, 0]);
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().serial = 56;
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONGATE,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            8,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonGateSpawn { slot: 0, .. }
+        ));
     }
 
     #[test]

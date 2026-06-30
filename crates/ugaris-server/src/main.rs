@@ -6062,13 +6062,14 @@ fn spawn_fdemon_gate_character(
     character.rest_x = x;
     character.rest_y = y;
     character.dir = ugaris_core::direction::Direction::RightDown as u8;
+    let serial = character.serial;
     if !world.spawn_character(character, usize::from(x), usize::from(y)) {
         return false;
     }
     for item in inventory_items {
         world.items.insert(item.id, item);
     }
-    world.apply_fdemon_gate_spawn_result(item_id, slot, character_id, 0)
+    world.apply_fdemon_gate_spawn_result(item_id, slot, character_id, serial)
 }
 
 fn apply_xmasmaker(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) -> bool {
@@ -19568,6 +19569,13 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PentBossDoor { .. } => {
                                             executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PentagramActivate { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PentagramTimer { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PentagramAlreadyActive { .. } => {
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PentBossDoorLocked { character_id, .. } => {
                                             feedback.push((
