@@ -2642,9 +2642,36 @@
         "test result: ok. 739 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 96,
+      "startedAt": "2026-06-30T00:17:08.409Z",
+      "endedAt": "2026-06-30T00:23:25.021Z",
+      "durationMs": 376434,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_scavenger_recent_fight_does_not_secure_teleport_home ... FAILED",
+        "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 734 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 734 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 741 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
+      ]
     }
   ],
-  "totalDurationMs": 52427559,
+  "totalDurationMs": 52803993,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -2652,11 +2679,11 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 12,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 12,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 81,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 79,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 70,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 73,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 58,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 82,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 80,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 71,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 74,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 59,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 35,
@@ -2678,7 +2705,7 @@
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 22,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 23,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test player::tests::pk_hate_helpers_preserve_legacy_front_priority_and_eviction ... FAILED": 1,
       "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.00s": 1,
@@ -2969,7 +2996,11 @@
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 732 filtered out; finished in 0.00s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out; finished in 0.00s": 1,
-      "test result: ok. 739 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 739 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "test world::tests::simple_baddy_scavenger_recent_fight_does_not_secure_teleport_home ... FAILED": 1,
+      "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 734 filtered out; finished in 0.00s": 1,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 734 filtered out; finished in 0.00s": 1,
+      "test result: ok. 741 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

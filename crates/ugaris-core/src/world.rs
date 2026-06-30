@@ -5505,27 +5505,43 @@ impl World {
             if character.x.abs_diff(target_x) >= scavenger_distance
                 || character.y.abs_diff(target_y) >= scavenger_distance
             {
-                let min_dist = if data.notsecure != 0 {
-                    data.mindist.max(0) as usize
+                if data.notsecure == 0
+                    && current_tick - data.lastfight > (TICKS_PER_SECOND * 10) as i32
+                {
+                    if self.secure_move_driver(
+                        character_id,
+                        target_x,
+                        target_y,
+                        Direction::Down as u8,
+                        ret,
+                        last_action,
+                        area_id,
+                    ) {
+                        return true;
+                    }
                 } else {
-                    0
-                };
-                if self.setup_walk_toward(
-                    character_id,
-                    usize::from(target_x),
-                    usize::from(target_y),
-                    min_dist,
-                    area_id,
-                    false,
-                ) || self.setup_walk_toward(
-                    character_id,
-                    usize::from(target_x),
-                    usize::from(target_y),
-                    min_dist,
-                    area_id,
-                    true,
-                ) {
-                    return true;
+                    let min_dist = if data.notsecure != 0 {
+                        data.mindist.max(0) as usize
+                    } else {
+                        0
+                    };
+                    if self.setup_walk_toward(
+                        character_id,
+                        usize::from(target_x),
+                        usize::from(target_y),
+                        min_dist,
+                        area_id,
+                        false,
+                    ) || self.setup_walk_toward(
+                        character_id,
+                        usize::from(target_x),
+                        usize::from(target_y),
+                        min_dist,
+                        area_id,
+                        true,
+                    ) {
+                        return true;
+                    }
                 }
             }
             if self.regenerate_simple_baddy(character_id) {
@@ -16879,6 +16895,94 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::IDLE);
         assert_eq!(npc.duration, TICKS_PER_SECOND as i32);
+    }
+
+    #[test]
+    fn simple_baddy_scavenger_uses_secure_move_when_returning_home() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 20) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 12;
+        npc.rest_y = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            scavenger: 2,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+
+        let completions = [WorldActionCompletion {
+            character_id: CharacterId(1),
+            action_id: action::USE,
+            action_item_id: None,
+            ok: false,
+            legacy_return_code: 2,
+            item_use: None,
+            old_x: 10,
+            old_y: 10,
+            new_x: 10,
+            new_y: 10,
+        }];
+
+        assert_eq!(
+            world.process_simple_baddy_noncombat_actions_with_completions(1, &completions),
+            1
+        );
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((npc.x, npc.y), (12, 10));
+        assert_eq!(npc.action, action::IDLE);
+    }
+
+    #[test]
+    fn simple_baddy_scavenger_recent_fight_does_not_secure_teleport_home() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 20) as u64);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 12;
+        npc.rest_y = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            scavenger: 2,
+            lastfight: (TICKS_PER_SECOND * 15) as i32,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::MOVEBLOCK);
+
+        let completions = [WorldActionCompletion {
+            character_id: CharacterId(1),
+            action_id: action::USE,
+            action_item_id: None,
+            ok: false,
+            legacy_return_code: 2,
+            item_use: None,
+            old_x: 10,
+            old_y: 10,
+            new_x: 10,
+            new_y: 10,
+        }];
+
+        assert_eq!(
+            world.process_simple_baddy_noncombat_actions_with_completions(1, &completions),
+            1
+        );
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((npc.x, npc.y), (10, 10));
+        assert_eq!(npc.action, action::WALK);
     }
 
     #[test]
