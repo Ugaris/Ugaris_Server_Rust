@@ -3579,6 +3579,11 @@ impl World {
                     }
                     applied.push(ItemDriverOutcome::Noop);
                 }
+                SimpleBaddyMessageOutcome::TextNotification { .. } => {
+                    // Legacy `tabunga` receives a raw text pointer. The Rust message carrier
+                    // preserves the notification for now, but cannot reconstruct text yet.
+                    applied.push(ItemDriverOutcome::Noop);
+                }
                 SimpleBaddyMessageOutcome::NoteHit => {
                     if let Some(CharacterDriverState::SimpleBaddy(data)) = self
                         .characters

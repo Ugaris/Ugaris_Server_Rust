@@ -205,6 +205,10 @@ pub enum SimpleBaddyMessageOutcome {
         attacker_id: CharacterId,
         victim_id: CharacterId,
     },
+    TextNotification {
+        speaker_id: CharacterId,
+        text_token: i32,
+    },
     NoteHit,
 }
 
@@ -341,6 +345,13 @@ pub fn process_simple_baddy_messages(
             outcomes.push(SimpleBaddyMessageOutcome::StandardSeenHit {
                 attacker_id: CharacterId(message.dat1 as u32),
                 victim_id: CharacterId(message.dat2 as u32),
+            });
+        }
+
+        if message.message_type == NT_TEXT && message.dat3 > 0 {
+            outcomes.push(SimpleBaddyMessageOutcome::TextNotification {
+                speaker_id: CharacterId(message.dat3 as u32),
+                text_token: message.dat2,
             });
         }
 
@@ -1293,6 +1304,26 @@ mod tests {
                     target_id: crate::ids::CharacterId(2),
                 },
             ]
+        );
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_text_message_preserves_tabunga_notification_boundary() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        character.push_driver_message(NT_TEXT, 0, 12345, 7);
+
+        let outcomes = process_simple_baddy_messages(&mut character, &[]);
+
+        assert_eq!(
+            outcomes,
+            vec![SimpleBaddyMessageOutcome::TextNotification {
+                speaker_id: crate::ids::CharacterId(7),
+                text_token: 12345,
+            }]
         );
         assert!(character.driver_messages.is_empty());
     }
