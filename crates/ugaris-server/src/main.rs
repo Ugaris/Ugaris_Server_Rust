@@ -1797,8 +1797,16 @@ fn legacy_color_word(red: i64, green: i64, blue: i64) -> u16 {
 
 fn parse_legacy_color_triplet(rest: &str) -> [i64; 3] {
     let mut values = [0; 3];
-    for (index, part) in rest.split_whitespace().take(3).enumerate() {
-        values[index] = legacy_atoi_prefix(part);
+    let mut input = rest;
+    for value in &mut values {
+        input = input.trim_start();
+        *value = legacy_atoi_prefix(input);
+
+        let digit_len = input
+            .bytes()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        input = &input[digit_len..];
     }
     values
 }
@@ -16060,6 +16068,23 @@ mod tests {
         let report = apply_color_command(&mut world, CharacterId(7), "/color")
             .expect("god color command should be recognized");
         assert_eq!(report.messages, vec!["c1=443, c2=0, c3=0"]);
+    }
+
+    #[test]
+    fn color_commands_match_c_atoi_pointer_edges() {
+        let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        let mut world = World::default();
+        world.add_character(character);
+
+        apply_color_command(&mut world, CharacterId(7), "/col2 -1 2 3")
+            .expect("col2 should be recognized");
+        let character = world.characters.get(&CharacterId(7)).unwrap();
+        assert_eq!(character.c2, ((-1_i64 << 10) + (-1_i64 << 5) - 1) as u16);
+
+        apply_color_command(&mut world, CharacterId(7), "/col3 12x34 5 6")
+            .expect("col3 should be recognized");
+        let character = world.characters.get(&CharacterId(7)).unwrap();
+        assert_eq!(character.c3, 12_u16 << 10);
     }
 
     #[test]

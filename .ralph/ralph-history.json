@@ -3461,9 +3461,36 @@
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
         "test result: ok. 766 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
       ]
+    },
+    {
+      "iteration": 127,
+      "startedAt": "2026-06-30T04:58:38.043Z",
+      "endedAt": "2026-06-30T05:07:12.276Z",
+      "durationMs": 514042,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "I’ll add the C emergency adjacent-attack fallback after the weighted task loop and cover it with a test where the only generated task deliberately fails but a direct attack is still legal.",
+        "The latest handoff points exactly at the next slice: `fight_driver_attack_enemy` fallback ordering for failed tasks. I found a testable Rust gap by using a target close enough for the C final fallback",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 766 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 69224798,
+  "totalDurationMs": 69738840,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -3471,14 +3498,14 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 17,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 17,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 106,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 105,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 93,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 97,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 76,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 107,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 106,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 94,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 98,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 77,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 46,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 47,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 29,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
@@ -3871,7 +3898,11 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 246 filtered out; finished in 0.00s": 1,
       "test result: ok. 248 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 765 filtered out; finished in 0.00s": 1,
-      "test result: ok. 766 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 766 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "I’ll add the C emergency adjacent-attack fallback after the weighted task loop and cover it with a t": 1,
+      "The latest handoff points exactly at the next slice: `fight_driver_attack_enemy` fallback ordering f": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.00s": 1,
+      "test result: ok. 766 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
