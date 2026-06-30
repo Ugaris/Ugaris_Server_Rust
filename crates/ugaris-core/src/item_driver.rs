@@ -2184,7 +2184,10 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         ItemDriverOutcome::Noop
             if matches!(
                 driver,
-                Some(IDR_CLANVAULT) | Some(IDR_PALACEBOMB) | Some(IDR_PALACECAP)
+                Some(IDR_CLANVAULT)
+                    | Some(IDR_PALACEBOMB)
+                    | Some(IDR_PALACECAP)
+                    | Some(IDR_LAB2_GRAVE)
             ) =>
         {
             1
@@ -2419,6 +2422,7 @@ pub fn execute_item_driver_with_context(
                 IDR_LAB2_WATER => lab2_water_driver(character, item),
                 IDR_LAB2_STEPACTION => lab2_stepaction_driver(character, item),
                 IDR_LAB2_REGENERATE => lab2_regenerate_driver(character, item, context),
+                IDR_LAB2_GRAVE => lab2_grave_driver(character, item, context),
                 IDR_LABTORCH => labtorch_driver(character, item),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_LABENTRANCE => labentrance_driver(character, item, context),
@@ -2467,7 +2471,8 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_SWAMPARM | IDR_SWAMPWHISP | IDR_SWAMPSPAWN => Some(15),
         IDR_FORESTCHEST => Some(16),
         IDR_LQ_TICKER | IDR_LQ_ENTRANCE => Some(20),
-        IDR_LAB2_WATER | IDR_LAB2_STEPACTION | IDR_LAB2_REGENERATE | IDR_LABTORCH => Some(22),
+        IDR_LAB2_WATER | IDR_LAB2_STEPACTION | IDR_LAB2_REGENERATE | IDR_LAB2_GRAVE
+        | IDR_LABTORCH => Some(22),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_TEUFELDOOR | IDR_TEUFELARENA | IDR_TEUFELRATNEST | IDR_TEUFELARENAEXIT => Some(34),
@@ -2716,6 +2721,29 @@ fn lab2_stepaction_driver(character: &Character, item: &mut Item) -> ItemDriverO
             character_id: character.id,
         },
         _ => ItemDriverOutcome::Noop,
+    }
+}
+
+fn lab2_grave_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    let grave_open_character = item
+        .driver_data
+        .get(4..8)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(i32::from_le_bytes)
+        .unwrap_or_default();
+
+    if (context.timer_call || character.id.0 == 0) && grave_open_character == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::Unsupported {
+        driver: item.driver,
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -19942,6 +19970,69 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut actor, &mut step, request, 22, false),
             ItemDriverOutcome::Lab2StepActionDaemonCheck {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn lab2_grave_closed_timer_is_handled_like_legacy_module() {
+        let mut timer = character(0);
+        let mut grave = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_GRAVE);
+        grave.driver_data = vec![0; 16];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LAB2_GRAVE,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer,
+            &mut grave,
+            request,
+            22,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(outcome, ItemDriverOutcome::Noop);
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_LAB2_GRAVE), &outcome),
+            1
+        );
+    }
+
+    #[test]
+    fn lab2_grave_is_area22_guarded_and_player_use_stays_explicitly_unported() {
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        let mut grave = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_GRAVE);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LAB2_GRAVE,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut grave, request, 1, false),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_LAB2_GRAVE,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                required_area: 22,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut grave, request, 22, false),
+            ItemDriverOutcome::Unsupported {
+                driver: IDR_LAB2_GRAVE,
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
             }
