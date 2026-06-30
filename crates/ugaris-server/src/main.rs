@@ -7626,7 +7626,7 @@ fn spawn_lq_npc_character(
 ) -> bool {
     let character_id = runtime.allocate_character_id();
     let template = format!("lq_{}", request.basename);
-    let Ok((mut character, inventory_items)) =
+    let Ok((mut character, mut inventory_items)) =
         loader.instantiate_character_template(&template, character_id)
     else {
         return false;
@@ -7647,6 +7647,7 @@ fn spawn_lq_npc_character(
     if !request.description.is_empty() {
         character.description = request.description.clone();
     }
+    add_lq_statboost_items(&mut character, loader, &mut inventory_items);
     character.hp = i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
     character.endurance =
         i32::from(character.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
@@ -7659,6 +7660,109 @@ fn spawn_lq_npc_character(
         world.items.insert(item.id, item);
     }
     world.apply_lq_npc_spawn_result(request.slot, character_id, serial)
+}
+
+fn add_lq_statboost_items(
+    character: &mut Character,
+    loader: &mut ZoneLoader,
+    inventory_items: &mut Vec<Item>,
+) {
+    let boost = (character.level / 5 + 1).min(i16::MAX as u32) as i16;
+    let stat_boost = (character.level / 3 + 1).min(i16::MAX as u32) as i16;
+
+    let weapon_skill = if lq_base_value(character, CharacterValue::Dagger) != 0 {
+        CharacterValue::Dagger
+    } else if lq_base_value(character, CharacterValue::Staff) != 0 {
+        CharacterValue::Staff
+    } else if lq_base_value(character, CharacterValue::Sword) != 0 {
+        CharacterValue::Sword
+    } else if lq_base_value(character, CharacterValue::TwoHand) != 0 {
+        CharacterValue::TwoHand
+    } else {
+        CharacterValue::Hand
+    };
+    let mut warrior_modifiers = vec![(weapon_skill, boost)];
+    if lq_base_value(character, CharacterValue::Attack) != 0 {
+        warrior_modifiers.extend([
+            (CharacterValue::Attack, boost),
+            (CharacterValue::Parry, boost),
+            (CharacterValue::Tactics, boost),
+        ]);
+    }
+    if lq_base_value(character, CharacterValue::Warcry) != 0 {
+        warrior_modifiers.push((CharacterValue::Warcry, boost));
+    }
+    add_lq_spell_item(character, loader, inventory_items, &warrior_modifiers);
+
+    let mut mage_modifiers = Vec::new();
+    for value in [
+        CharacterValue::Bless,
+        CharacterValue::Light,
+        CharacterValue::Fireball,
+        CharacterValue::MagicShield,
+        CharacterValue::Freeze,
+    ] {
+        if lq_base_value(character, value) != 0 {
+            mage_modifiers.push((value, boost));
+        }
+    }
+    if !mage_modifiers.is_empty() {
+        add_lq_spell_item(character, loader, inventory_items, &mage_modifiers);
+    }
+
+    add_lq_spell_item(
+        character,
+        loader,
+        inventory_items,
+        &[
+            (CharacterValue::Immunity, boost),
+            (CharacterValue::Wisdom, stat_boost),
+            (CharacterValue::Intelligence, stat_boost),
+            (CharacterValue::Agility, stat_boost),
+            (CharacterValue::Strength, stat_boost),
+        ],
+    );
+}
+
+fn add_lq_spell_item(
+    character: &mut Character,
+    loader: &mut ZoneLoader,
+    inventory_items: &mut Vec<Item>,
+    modifiers: &[(CharacterValue, i16)],
+) -> bool {
+    let Some(slot) = (12..30).find(|slot| character.inventory[*slot].is_none()) else {
+        return false;
+    };
+    let Ok(mut item) = loader.instantiate_item_template("lqx_spell", Some(character.id)) else {
+        return false;
+    };
+    for (index, (value, amount)) in modifiers.iter().take(5).enumerate() {
+        item.modifier_index[index] = *value as i16;
+        item.modifier_value[index] = *amount;
+        add_lq_effective_value(character, *value, *amount);
+    }
+    character.inventory[slot] = Some(item.id);
+    inventory_items.push(item);
+    true
+}
+
+fn add_lq_effective_value(character: &mut Character, value: CharacterValue, amount: i16) {
+    if let Some(slot) = character
+        .values
+        .get_mut(0)
+        .and_then(|values| values.get_mut(value as usize))
+    {
+        *slot = slot.saturating_add(amount);
+    }
+}
+
+fn lq_base_value(character: &Character, value: CharacterValue) -> i16 {
+    character
+        .values
+        .get(1)
+        .and_then(|values| values.get(value as usize))
+        .copied()
+        .unwrap_or_default()
 }
 
 fn apply_xmasmaker(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) -> bool {
@@ -11392,6 +11496,21 @@ mod tests {
                   V_HP=10
                   V_ENDURANCE=8
                   V_MANA=6
+                  V_DAGGER=10
+                  V_ATTACK=8
+                  V_WARCRY=7
+                  V_BLESS=9
+                  V_FIREBALL=6
+                  V_MAGICSHIELD=5
+                ;
+            "#,
+            )
+            .unwrap();
+        loader
+            .load_item_templates_str(
+                r#"
+                lqx_spell:
+                  name="LQX Spell"
                 ;
             "#,
             )
@@ -11442,9 +11561,37 @@ mod tests {
         assert_eq!((character.rest_x, character.rest_y), (12, 13));
         assert_eq!(character.level, 17);
         assert_eq!(character.hp, 10 * POWERSCALE);
+        assert_eq!(character.values[0][CharacterValue::Dagger as usize], 14);
+        assert_eq!(character.values[0][CharacterValue::Attack as usize], 12);
+        assert_eq!(character.values[0][CharacterValue::Parry as usize], 4);
+        assert_eq!(character.values[0][CharacterValue::Tactics as usize], 4);
+        assert_eq!(character.values[0][CharacterValue::Warcry as usize], 11);
+        assert_eq!(character.values[0][CharacterValue::Bless as usize], 13);
+        assert_eq!(character.values[0][CharacterValue::Fireball as usize], 10);
+        assert_eq!(character.values[0][CharacterValue::MagicShield as usize], 9);
+        assert_eq!(character.values[0][CharacterValue::Immunity as usize], 4);
+        assert_eq!(character.values[0][CharacterValue::Wisdom as usize], 6);
+        assert_eq!(
+            character.values[0][CharacterValue::Intelligence as usize],
+            6
+        );
+        assert_eq!(character.inventory[12], Some(ItemId(1)));
+        assert_eq!(character.inventory[13], Some(ItemId(2)));
+        assert_eq!(character.inventory[14], Some(ItemId(3)));
         assert!(character
             .flags
             .contains(CharacterFlags::IMMORTAL | CharacterFlags::NOATTACK));
+        let warrior_spell = world.items.get(&ItemId(1)).unwrap();
+        assert_eq!(warrior_spell.name, "LQX Spell");
+        assert_eq!(warrior_spell.carried_by, Some(CharacterId(200)));
+        assert_eq!(warrior_spell.modifier_index, [12, 18, 19, 21, 20]);
+        assert_eq!(warrior_spell.modifier_value, [4, 4, 4, 4, 4]);
+        let mage_spell = world.items.get(&ItemId(2)).unwrap();
+        assert_eq!(mage_spell.modifier_index[0..3], [28, 33, 31]);
+        assert_eq!(mage_spell.modifier_value[0..3], [4, 4, 4]);
+        let misc_spell = world.items.get(&ItemId(3)).unwrap();
+        assert_eq!(misc_spell.modifier_index, [37, 3, 4, 5, 6]);
+        assert_eq!(misc_spell.modifier_value, [4, 6, 6, 6, 6]);
         let npc = world.lq_npcs.iter().find(|npc| npc.slot == 2).unwrap();
         assert_eq!(npc.character_id, Some(CharacterId(200)));
         assert_eq!(npc.character_serial, character.serial);
