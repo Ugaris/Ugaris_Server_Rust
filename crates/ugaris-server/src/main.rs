@@ -23606,7 +23606,8 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::FreakDoorUse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Teleport { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::MineDoorTeleport { .. }
+                                          | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::FireballMachineProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
@@ -23653,6 +23654,9 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
                                             executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::MineDoorMissingTarget { .. } => {
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::NomadDice {
                                             item_id,

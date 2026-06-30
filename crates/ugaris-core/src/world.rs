@@ -33,10 +33,10 @@ use crate::{
         IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
         IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE,
         IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT,
-        IDR_LABTORCH, IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION,
-        IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH,
-        IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
-        IID_MINEGATEWAY,
+        IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
+        IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN,
+        IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
+        IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -3152,6 +3152,9 @@ impl World {
             && !context.has_mine_gateway_key)
             .then(|| self.character_has_template_id(character_id, IID_MINEGATEWAY))
             .unwrap_or(false);
+        let mine_door_target = (driver == Some(IDR_MINEDOOR) && context.mine_door_target.is_none())
+            .then(|| self.mine_door_target(item_id))
+            .flatten();
         let swamp_arm_triggered = (driver == Some(IDR_SWAMPARM)
             && context.swamp_arm_triggered.is_none())
         .then(|| self.swamp_arm_triggered(item_id))
@@ -3208,6 +3211,9 @@ impl World {
         effective_context.has_area16_robber_key |= area16_robber_key_context;
         effective_context.has_area16_skelly_key |= area16_skelly_key_context;
         effective_context.has_mine_gateway_key |= mine_gateway_key_context;
+        if effective_context.mine_door_target.is_none() {
+            effective_context.mine_door_target = mine_door_target;
+        }
         if effective_context.swamp_arm_triggered.is_none() {
             effective_context.swamp_arm_triggered = swamp_arm_triggered;
         }
@@ -6676,6 +6682,22 @@ impl World {
                     return outcome;
                 }
                 if self.teleport_character(character_id, x, y, true) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::MineDoorTeleport {
+                character_id,
+                target_x,
+                target_y,
+                fallback_x,
+                fallback_y,
+                ..
+            } => {
+                if self.teleport_character(character_id, target_x, target_y, false)
+                    || self.teleport_character(character_id, fallback_x, fallback_y, false)
+                {
                     outcome
                 } else {
                     ItemDriverOutcome::Noop
@@ -10343,6 +10365,34 @@ impl World {
                 self.map
                     .tile(nx, ny)
                     .is_some_and(|tile| tile.character != 0)
+            })
+    }
+
+    fn mine_door_target(&self, item_id: ItemId) -> Option<(u16, u16, u8)> {
+        let item = self.items.get(&item_id)?;
+        let nr = item.driver_data.first().copied().unwrap_or_default();
+        let source = item.driver_data.get(1).copied().unwrap_or_default() == 0;
+
+        self.items
+            .values()
+            .filter(|candidate| candidate.driver == IDR_MINEDOOR)
+            .filter(|candidate| candidate.driver_data.first().copied().unwrap_or_default() == nr)
+            .find(|candidate| {
+                let candidate_is_target =
+                    candidate.driver_data.get(1).copied().unwrap_or_default() != 0;
+                if source {
+                    candidate_is_target
+                } else {
+                    !candidate_is_target
+                        && candidate.driver_data.get(3).copied().unwrap_or_default() != 0
+                }
+            })
+            .map(|candidate| {
+                (
+                    candidate.x,
+                    candidate.y,
+                    candidate.driver_data.get(2).copied().unwrap_or_default(),
+                )
             })
     }
 
@@ -23276,6 +23326,49 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn world_executes_area12_mine_door_target_teleport() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(actor, 10, 10));
+
+        let mut source = item(7, ItemFlags::USED | ItemFlags::USE);
+        source.driver = crate::item_driver::IDR_MINEDOOR;
+        source.x = 20;
+        source.y = 20;
+        source.driver_data = vec![4, 0, 7, 1];
+        world.add_item(source);
+
+        let mut target = item(8, ItemFlags::USED | ItemFlags::USE);
+        target.driver = crate::item_driver::IDR_MINEDOOR;
+        target.x = 30;
+        target.y = 40;
+        target.driver_data = vec![4, 1, 5, 0];
+        world.add_item(target);
+
+        let request = ItemDriverRequest::Driver {
+            driver: crate::item_driver::IDR_MINEDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            world.execute_item_driver_request(request, 12),
+            ItemDriverOutcome::MineDoorTeleport {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                target_x: 31,
+                target_y: 40,
+                fallback_x: 230,
+                fallback_y: 240,
+            }
+        );
+        let actor = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((actor.x, actor.y), (31, 40));
     }
 
     #[test]

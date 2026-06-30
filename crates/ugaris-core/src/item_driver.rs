@@ -392,6 +392,7 @@ pub struct ItemDriverContext {
     pub has_area16_robber_key: bool,
     pub has_area16_skelly_key: bool,
     pub has_mine_gateway_key: bool,
+    pub mine_door_target: Option<(u16, u16, u8)>,
     pub swamp_arm_triggered: Option<bool>,
     pub swamp_whisp_move_succeeds: Option<bool>,
     pub swamp_whisp_turn_x: bool,
@@ -753,6 +754,18 @@ pub enum ItemDriverOutcome {
         picked_lock: bool,
     },
     PickDoorLocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    MineDoorTeleport {
+        item_id: ItemId,
+        character_id: CharacterId,
+        target_x: u16,
+        target_y: u16,
+        fallback_x: u16,
+        fallback_y: u16,
+    },
+    MineDoorMissingTarget {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -2251,6 +2264,7 @@ pub fn execute_item_driver_with_context(
                 IDR_FORESTCHEST => forest_chest_driver(character, item, context),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
+                IDR_MINEDOOR => mine_door_driver(character, item, context, area_id),
                 IDR_PENT => pentagram_driver(character, item, context),
                 IDR_PENTBOSSDOOR => pent_boss_door_driver(character, item, context),
                 IDR_BURNDOWN => burndown_driver(character, item, context),
@@ -2355,6 +2369,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_ISLENADOOR => Some(11),
         IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
+        IDR_MINEWALL | IDR_MINEDOOR | IDR_MINEGATEWAY => Some(12),
         IDR_RANDOMSHRINE | IDR_TRAPDOOR | IDR_JUNKPILE | IDR_GASTRAP => Some(14),
         IDR_SWAMPARM | IDR_SWAMPWHISP | IDR_SWAMPSPAWN => Some(15),
         IDR_FORESTCHEST => Some(16),
@@ -5939,6 +5954,49 @@ fn pick_door_driver(
         item_id: item.id,
         character_id: character.id,
         picked_lock: character.flags.contains(CharacterFlags::PLAYER),
+    }
+}
+
+fn mine_door_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+    area_id: u16,
+) -> ItemDriverOutcome {
+    if context.timer_call || character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some((door_x, door_y, direction)) = context.mine_door_target else {
+        return ItemDriverOutcome::MineDoorMissingTarget {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    let (target_x, target_y) = mine_door_destination(door_x, door_y, direction);
+    let (fallback_x, fallback_y) = if area_id == 31 {
+        (211, 231)
+    } else {
+        (230, 240)
+    };
+    ItemDriverOutcome::MineDoorTeleport {
+        item_id: item.id,
+        character_id: character.id,
+        target_x,
+        target_y,
+        fallback_x,
+        fallback_y,
+    }
+}
+
+fn mine_door_destination(x: u16, y: u16, direction: u8) -> (u16, u16) {
+    match direction {
+        7 => (x, y.saturating_sub(1)),
+        3 => (x, y.saturating_add(1)),
+        1 => (x.saturating_sub(1), y),
+        5 => (x.saturating_add(1), y),
+        _ => (x, y),
     }
 }
 
@@ -14874,6 +14932,72 @@ mod tests {
                 character_id: CharacterId(0),
                 picked_lock: false,
             }
+        );
+    }
+
+    #[test]
+    fn mine_door_ports_player_teleport_boundary() {
+        let mut actor = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_MINEDOOR);
+        door.driver_data = vec![3, 0, 7, 1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_MINEDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut door,
+                request,
+                12,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::MineDoorMissingTarget {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut door,
+                request,
+                12,
+                false,
+                &ItemDriverContext {
+                    mine_door_target: Some((50, 60, 1)),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::MineDoorTeleport {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                target_x: 49,
+                target_y: 60,
+                fallback_x: 230,
+                fallback_y: 240,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut door,
+                request,
+                12,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    mine_door_target: Some((50, 60, 3)),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::Noop
         );
     }
 
