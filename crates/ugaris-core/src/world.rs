@@ -29,10 +29,10 @@ use crate::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item,
         EdemonGateSpawnContext, FdemonGateSpawnContext, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL, IDR_CALIGAR,
-        IDR_CALIGARFLAME, IDR_DUNGEONDOOR, IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE,
-        IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONFARM, IDR_FDEMONGATE,
-        IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT,
-        IDR_ONOFFLIGHT, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH,
+        IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DUNGEONDOOR, IDR_EDEMONBLOCK, IDR_EDEMONDOOR,
+        IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONFARM,
+        IDR_FDEMONGATE, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT,
+        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH,
         IID_AREA14_SHRINEKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
@@ -2410,6 +2410,7 @@ impl World {
                     Some(item_id)
                 }
                 IDR_TORCH if item.driver_data.first().copied().unwrap_or(0) != 0 => Some(item_id),
+                IDR_CLANSPAWN => Some(item_id),
                 IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_EDEMONLOADER
                 | IDR_EDEMONBLOCK | IDR_EDEMONTUBE | IDR_FDEMONLIGHT | IDR_FDEMONLOADER
                 | IDR_FDEMONGATE | IDR_FDEMONFARM => Some(item_id),
@@ -2901,6 +2902,9 @@ impl World {
         .flatten();
         let dungeon_door_context = (driver == Some(IDR_DUNGEONDOOR))
             .then(|| self.dungeon_door_context(character_id, item_id));
+        let clanspawn_contested = (driver == Some(IDR_CLANSPAWN))
+            .then(|| self.clanspawn_is_contested(character_id, item_id))
+            .unwrap_or(false);
         let random_shrine_key_context = (driver == Some(IDR_RANDOMSHRINE)
             && !context.has_matching_random_shrine_key)
             .then(|| self.has_matching_random_shrine_key(character_id, item_id))
@@ -2935,6 +2939,7 @@ impl World {
                 .dungeon_defender_count
                 .or(Some(defender_count));
         }
+        effective_context.clanspawn_contested |= clanspawn_contested;
         effective_context.has_matching_random_shrine_key |= random_shrine_key_context;
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
@@ -2967,6 +2972,32 @@ impl World {
             self.refresh_item_light_after_mutation(&before, item_id);
         }
         self.apply_item_driver_outcome(outcome, area_id)
+    }
+
+    fn clanspawn_is_contested(&self, character_id: CharacterId, item_id: ItemId) -> bool {
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        for tx in x.saturating_sub(1)..=x.saturating_add(1) {
+            for ty in y.saturating_sub(1)..=y.saturating_add(1) {
+                let Some(tile) = self.map.tile(tx, ty) else {
+                    continue;
+                };
+                if tile.character == 0 || u32::from(tile.character) == character_id.0 {
+                    continue;
+                }
+                if self
+                    .characters
+                    .get(&CharacterId(u32::from(tile.character)))
+                    .is_some_and(|character| character.flags.contains(CharacterFlags::PLAYER))
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     pub fn process_simple_baddy_message_actions(
@@ -6872,6 +6903,14 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::ClanSpawnTimer {
+                item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
             ItemDriverOutcome::ArkhataStopwatch {
                 item_id,
                 character_id: _,
@@ -7812,7 +7851,7 @@ impl World {
             .is_some_and(|character| character.cursor_item == Some(item_id))
     }
 
-    fn schedule_item_driver_timer(
+    pub fn schedule_item_driver_timer(
         &mut self,
         item_id: ItemId,
         character_id: CharacterId,

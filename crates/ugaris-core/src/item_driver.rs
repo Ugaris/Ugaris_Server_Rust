@@ -179,6 +179,11 @@ pub const IDR_LABTORCH: u16 = 199;
 pub const IDR_KEY_RING: u16 = 200;
 pub const IDR_SKELETON_KEY: u16 = 201;
 
+pub const CLANSPAWN_DEFAULT_FREQ_HOURS: u8 = 48;
+pub const CLANSPAWN_CHECK_INTERVAL_TICKS: u64 = TICKS_PER_SECOND as u64 * 60;
+pub const CLANSPAWN_TIME_GRANULARITY_SECONDS: u32 = 30 * 60;
+pub const CLANSPAWN_DEFAULT_MAX_JEWELS: u8 = 2;
+
 pub const CLANJEWEL_CHECK_INTERVAL_TICKS: u64 = TICKS_PER_SECOND * 30;
 pub const CLANJEWEL_LIFETIME_SECONDS: u32 = 60 * 60;
 pub const IID_ALCHEMY_INGREDIENT: u32 = (0x01 << 24) | 0x000043;
@@ -370,6 +375,9 @@ pub struct ItemDriverContext {
     pub pent_demon_lord_access_seconds: Option<u32>,
     pub has_matching_random_shrine_key: bool,
     pub random_shrine_already_used: bool,
+    pub clanspawn_max_jewel_count: Option<u8>,
+    pub clanspawn_contested: bool,
+    pub clanspawn_random_seconds: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1097,6 +1105,34 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: Option<CharacterId>,
         item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
+    },
+    ClanSpawnTimer {
+        item_id: ItemId,
+        spawned: bool,
+        jewel_count: u8,
+        next_spawn_seconds: u32,
+        schedule_after_ticks: u64,
+    },
+    ClanSpawnLevelTooHigh {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ClanSpawnContested {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ClanSpawnCountdown {
+        item_id: ItemId,
+        character_id: CharacterId,
+        remaining_minutes: u32,
+        freq_hours: u8,
+        god_added: bool,
+    },
+    ClanSpawnAward {
+        item_id: ItemId,
+        character_id: CharacterId,
+        level: u8,
+        remaining_jewels: u8,
     },
     DecayItemToggled {
         item_id: ItemId,
@@ -1921,6 +1957,7 @@ pub fn execute_item_driver_with_context(
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
                 IDR_TRANSPORT => transport_driver(character, item, spec),
                 IDR_STATSCROLL => stat_scroll_driver(character, item),
+                IDR_CLANSPAWN => clanspawn_driver(character, item, context),
                 IDR_CLANVAULT => ItemDriverOutcome::Noop,
                 IDR_CLANJEWEL => clanjewel_driver(character, item, context),
                 IDR_CLANSPAWNEXIT => clanspawn_exit_driver(character, item),
@@ -2018,6 +2055,124 @@ fn clanspawn_exit_driver(character: &Character, item: &Item) -> ItemDriverOutcom
         area_id: character.rest_area,
         x: character.rest_x,
         y: character.rest_y,
+    }
+}
+
+fn clanspawn_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    let freq_hours = match drdata(item, 1) {
+        0 => CLANSPAWN_DEFAULT_FREQ_HOURS,
+        freq => freq,
+    };
+    let max_jewel_count = context
+        .clanspawn_max_jewel_count
+        .unwrap_or(CLANSPAWN_DEFAULT_MAX_JEWELS);
+
+    if context.timer_call && character.id.0 == 0 {
+        let current_seconds = context.current_tick / TICKS_PER_SECOND as u32;
+        let freq_seconds = u32::from(freq_hours) * 60 * 60;
+        let mut next_spawn_seconds = drdata_u32(item, 4);
+        if next_spawn_seconds == 0 {
+            let random = context
+                .clanspawn_random_seconds
+                .unwrap_or(0)
+                .min(freq_seconds.saturating_div(2).saturating_sub(1));
+            next_spawn_seconds = round_down_to_granularity(
+                current_seconds + random + freq_seconds / 4,
+                CLANSPAWN_TIME_GRANULARITY_SECONDS,
+            );
+            set_drdata_u32(item, 4, next_spawn_seconds);
+            item.max_level = drdata(item, 0);
+        }
+
+        let mut jewel_count = drdata(item, 2);
+        let mut spawned = false;
+        if current_seconds >= next_spawn_seconds && jewel_count <= max_jewel_count {
+            if jewel_count == 0 {
+                item.sprite += 1;
+            }
+            jewel_count = jewel_count.saturating_add(1);
+            set_drdata(item, 2, jewel_count);
+            let random = context
+                .clanspawn_random_seconds
+                .unwrap_or(0)
+                .min(freq_seconds.saturating_sub(1));
+            next_spawn_seconds = round_down_to_granularity(
+                current_seconds + random + freq_seconds / 2,
+                CLANSPAWN_TIME_GRANULARITY_SECONDS,
+            );
+            set_drdata_u32(item, 4, next_spawn_seconds);
+            spawned = true;
+        }
+
+        return ItemDriverOutcome::ClanSpawnTimer {
+            item_id: item.id,
+            spawned,
+            jewel_count,
+            next_spawn_seconds,
+            schedule_after_ticks: CLANSPAWN_CHECK_INTERVAL_TICKS,
+        };
+    }
+
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if character.level > u32::from(drdata(item, 0)) {
+        return ItemDriverOutcome::ClanSpawnLevelTooHigh {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    if context.clanspawn_contested {
+        return ItemDriverOutcome::ClanSpawnContested {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let current_seconds = context.current_tick / TICKS_PER_SECOND as u32;
+    let next_spawn_seconds = drdata_u32(item, 4);
+    let mut jewel_count = drdata(item, 2);
+    if jewel_count == 0 {
+        let god_added = character.flags.contains(CharacterFlags::GOD);
+        if god_added {
+            item.sprite += 1;
+            jewel_count = 1;
+            set_drdata(item, 2, jewel_count);
+        }
+        let remaining_minutes = next_spawn_seconds.saturating_sub(current_seconds) / 60;
+        return ItemDriverOutcome::ClanSpawnCountdown {
+            item_id: item.id,
+            character_id: character.id,
+            remaining_minutes,
+            freq_hours,
+            god_added,
+        };
+    }
+
+    jewel_count = jewel_count.saturating_sub(1);
+    set_drdata(item, 2, jewel_count);
+    if jewel_count == 0 {
+        item.sprite -= 1;
+    }
+    ItemDriverOutcome::ClanSpawnAward {
+        item_id: item.id,
+        character_id: character.id,
+        level: item.max_level,
+        remaining_jewels: jewel_count,
+    }
+}
+
+fn round_down_to_granularity(value: u32, granularity: u32) -> u32 {
+    if granularity == 0 {
+        value
+    } else {
+        (value / granularity) * granularity
     }
 }
 
@@ -7775,6 +7930,213 @@ mod tests {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
                 required_area: 30,
+            }
+        );
+    }
+
+    #[test]
+    fn clanspawn_timer_initializes_and_spawns_on_legacy_rounded_schedule() {
+        let mut timer_character = character(0);
+        let mut spawner = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_CLANSPAWN);
+        spawner.sprite = 1000;
+        spawner.driver_data = vec![75, 4, 0];
+
+        let init = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut spawner,
+            ItemDriverRequest::Driver {
+                driver: IDR_CLANSPAWN,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            30,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                current_tick: 100 * TICKS_PER_SECOND as u32,
+                clanspawn_random_seconds: Some(123),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(spawner.max_level, 75);
+        assert_eq!(drdata_u32(&spawner, 4), 3_600);
+        assert_eq!(drdata(&spawner, 2), 0);
+        assert_eq!(
+            init,
+            ItemDriverOutcome::ClanSpawnTimer {
+                item_id: ItemId(8),
+                spawned: false,
+                jewel_count: 0,
+                next_spawn_seconds: 3_600,
+                schedule_after_ticks: CLANSPAWN_CHECK_INTERVAL_TICKS,
+            }
+        );
+
+        let spawned = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut spawner,
+            ItemDriverRequest::Driver {
+                driver: IDR_CLANSPAWN,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            30,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                current_tick: 3_700 * TICKS_PER_SECOND as u32,
+                clanspawn_random_seconds: Some(321),
+                clanspawn_max_jewel_count: Some(2),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(spawner.sprite, 1001);
+        assert_eq!(drdata(&spawner, 2), 1);
+        assert_eq!(drdata_u32(&spawner, 4), 10_800);
+        assert_eq!(
+            spawned,
+            ItemDriverOutcome::ClanSpawnTimer {
+                item_id: ItemId(8),
+                spawned: true,
+                jewel_count: 1,
+                next_spawn_seconds: 10_800,
+                schedule_after_ticks: CLANSPAWN_CHECK_INTERVAL_TICKS,
+            }
+        );
+    }
+
+    #[test]
+    fn clanspawn_player_use_blocks_level_contested_and_reports_countdown() {
+        let mut character = character(1);
+        character.level = 80;
+        let mut spawner = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_CLANSPAWN);
+        spawner.driver_data = vec![75, 48, 0];
+        set_drdata_u32(&mut spawner, 4, 10_000);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_CLANSPAWN,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut spawner,
+                request,
+                30,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::ClanSpawnLevelTooHigh {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.level = 75;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut spawner,
+                request,
+                30,
+                false,
+                &ItemDriverContext {
+                    clanspawn_contested: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::ClanSpawnContested {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut spawner,
+                request,
+                30,
+                false,
+                &ItemDriverContext {
+                    current_tick: 4_000 * TICKS_PER_SECOND as u32,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::ClanSpawnCountdown {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                remaining_minutes: 100,
+                freq_hours: 48,
+                god_added: false,
+            }
+        );
+    }
+
+    #[test]
+    fn clanspawn_god_force_adds_and_award_decrements_jewels() {
+        let mut character = character(1);
+        character.level = 20;
+        character.flags.insert(CharacterFlags::GOD);
+        let mut spawner = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_CLANSPAWN);
+        spawner.sprite = 500;
+        spawner.max_level = 20;
+        spawner.driver_data = vec![20, 0, 0];
+        set_drdata_u32(&mut spawner, 4, 10_000);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_CLANSPAWN,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut spawner,
+                request,
+                30,
+                false,
+                &ItemDriverContext {
+                    current_tick: 4_000 * TICKS_PER_SECOND as u32,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::ClanSpawnCountdown {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                remaining_minutes: 100,
+                freq_hours: CLANSPAWN_DEFAULT_FREQ_HOURS,
+                god_added: true,
+            }
+        );
+        assert_eq!(spawner.sprite, 501);
+        assert_eq!(drdata(&spawner, 2), 1);
+
+        let award = execute_item_driver_with_context(
+            &mut character,
+            &mut spawner,
+            request,
+            30,
+            false,
+            &ItemDriverContext::default(),
+        );
+
+        assert_eq!(spawner.sprite, 500);
+        assert_eq!(drdata(&spawner, 2), 0);
+        assert_eq!(
+            award,
+            ItemDriverOutcome::ClanSpawnAward {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                level: 20,
+                remaining_jewels: 0,
             }
         );
     }

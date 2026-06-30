@@ -1391,6 +1391,31 @@ fn grant_orb_spawn_item(
     Some(item_name)
 }
 
+fn grant_clan_jewel(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) -> bool {
+    let Ok(mut item) = loader.instantiate_item_template("clan_jewel", Some(character_id)) else {
+        return false;
+    };
+    let item_id = item.id;
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return false;
+    };
+    match give_item_to_character(character, &mut item, GiveItemFlags::NONE) {
+        GiveItemResult::Ok => {
+            world.add_item(item);
+            world.schedule_item_driver_timer(
+                item_id,
+                CharacterId(0),
+                ugaris_core::item_driver::CLANJEWEL_CHECK_INTERVAL_TICKS,
+            );
+            true
+        }
+        GiveItemResult::Money
+        | GiveItemResult::Dropped
+        | GiveItemResult::Full
+        | GiveItemResult::Failed => false,
+    }
+}
+
 fn instantiate_orb_with_modifier(
     loader: &mut ZoneLoader,
     character_id: CharacterId,
@@ -17797,6 +17822,36 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExitBusy { character_id, .. } => {
                                             feedback.push((character_id, "Please try again soon. Target is busy".to_string()));
                                             blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnLevelTooHigh { character_id, .. } => {
+                                            feedback.push((character_id, "Thou mayest not use this clan spawner for thy level is too great.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnContested { character_id, .. } => {
+                                            feedback.push((character_id, "Thou mayest not use this clan spawner while others can touch it.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnCountdown { character_id, remaining_minutes, freq_hours, god_added, .. } => {
+                                            if god_added {
+                                                feedback.push((character_id, "A jewel has been added to the clan spawner.".to_string()));
+                                            }
+                                            feedback.push((character_id, format!(
+                                                "{:02}:{:02} to go, about one jewel every {} hours.",
+                                                remaining_minutes / 60,
+                                                remaining_minutes % 60,
+                                                freq_hours
+                                            )));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnAward { character_id, .. } => {
+                                            if grant_clan_jewel(&mut world, &mut zone_loader, character_id) {
+                                                executed += 1;
+                                            } else {
+                                                blocked += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnTimer { .. } => {
+                                            executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { .. } => {
                                             // Legacy C returns without output when arena rankings are not loaded.
