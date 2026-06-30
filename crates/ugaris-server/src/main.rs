@@ -45,7 +45,10 @@ use ugaris_core::{
     },
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
     legacy::{action, profession, worn_slot, INVENTORY_START_INVENTORY},
-    log_text::{holler_message, sanitize_log_bytes, say_message, shout_message, whisper_message},
+    log_text::{
+        emote_message, holler_message, sanitize_log_bytes, say_message, shout_message,
+        whisper_message,
+    },
     map::{MapFlags, MapTile},
     player::{
         CommandAlias, DemonShrineResult, IgnoreToggleResult, KeyringAddResult, PlayerActionCode,
@@ -1207,6 +1210,7 @@ struct ChatCommandResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LocalSpeechKind {
+    Emote,
     Holler,
     Shout,
     Say,
@@ -1228,6 +1232,7 @@ impl LocalSpeechKind {
 
     fn max_distance(self, settings: &GameSettings) -> i32 {
         match self {
+            Self::Emote => settings.emote_dist,
             Self::Holler => settings.holler_dist,
             Self::Shout => settings.shout_dist,
             Self::Say => settings.say_dist,
@@ -1239,7 +1244,7 @@ impl LocalSpeechKind {
         match self {
             Self::Holler => settings.holler_cost,
             Self::Shout => settings.shout_cost,
-            Self::Say | Self::Murmur | Self::Whisper => 0,
+            Self::Emote | Self::Say | Self::Murmur | Self::Whisper => 0,
         }
     }
 }
@@ -3795,6 +3800,40 @@ fn chat_command_verb(command: &str) -> (&str, &str) {
     (verb.trim_start_matches('/').trim_start_matches('#'), rest)
 }
 
+fn legacy_cmd_prefix(verb: &str, full: &str, min_len: usize) -> bool {
+    let verb = verb.to_ascii_lowercase();
+    verb.len() >= min_len && full.starts_with(&verb)
+}
+
+fn legacy_emote_text(verb: &str, raw_text: &str, underwater: bool) -> Option<String> {
+    if legacy_cmd_prefix(verb, "emote", 2) || legacy_cmd_prefix(verb, "me", 2) {
+        return Some(if underwater {
+            "feels wet".to_string()
+        } else {
+            raw_text.trim_start().to_string()
+        });
+    }
+    if legacy_cmd_prefix(verb, "slap", 4) {
+        return Some(format!(
+            "slaps {} around a bit with a large trout",
+            raw_text.trim_start()
+        ));
+    }
+    if legacy_cmd_prefix(verb, "wave", 2) {
+        return Some("waves happily".to_string());
+    }
+    if legacy_cmd_prefix(verb, "hugme", 5) {
+        return Some("is in need of a hug".to_string());
+    }
+    if legacy_cmd_prefix(verb, "bow", 2) {
+        return Some("bows deeply".to_string());
+    }
+    if legacy_cmd_prefix(verb, "eg", 2) {
+        return Some("grins evilly".to_string());
+    }
+    None
+}
+
 fn apply_demon_ritual_speech(world: &mut World, sender_id: CharacterId, text: &str) -> Vec<String> {
     let Some(sender) = world.characters.get_mut(&sender_id) else {
         return Vec::new();
@@ -3929,6 +3968,7 @@ fn legacy_spy_line(kind: &str, payload: &[u8]) -> Vec<u8> {
 
 fn local_speech_payload(kind: LocalSpeechKind, name: &str, text: &str) -> Option<Vec<u8>> {
     match kind {
+        LocalSpeechKind::Emote => emote_message(name, text),
         LocalSpeechKind::Holler => holler_message(name, text),
         LocalSpeechKind::Shout => shout_message(name, text),
         LocalSpeechKind::Say => Some(say_message(name, text)),
@@ -3946,12 +3986,10 @@ fn apply_local_speech_command(
     current_tick: u64,
 ) -> Option<ChatCommandResult> {
     let (verb, raw_text) = chat_command_verb(command);
-    let kind = LocalSpeechKind::from_verb(verb)?;
     let is_plain_speech = !command.starts_with('/') && !command.starts_with('#');
     let settings = GameSettings::default();
 
     let sender = world.characters.get(&sender_id)?;
-    let mut text = raw_text.trim_start();
     if sender.flags.contains(CharacterFlags::SHUTUP) {
         return Some(ChatCommandResult {
             sender_messages: vec!["Sorry, you cannot say anything right now.".to_string()],
@@ -3963,8 +4001,21 @@ fn apply_local_speech_command(
         .map
         .tile(usize::from(sender.x), usize::from(sender.y))
         .is_some_and(|tile| tile.flags.contains(MapFlags::UNDERWATER));
-    let actual_kind = if underwater {
-        text = "Blub.";
+
+    let emote_text = legacy_emote_text(verb, raw_text, underwater);
+    let kind = if emote_text.is_some() {
+        LocalSpeechKind::Emote
+    } else {
+        LocalSpeechKind::from_verb(verb)?
+    };
+    let text = if let Some(text) = emote_text.as_deref() {
+        text
+    } else if underwater {
+        "Blub."
+    } else {
+        raw_text.trim_start()
+    };
+    let actual_kind = if underwater && kind != LocalSpeechKind::Emote {
         LocalSpeechKind::Say
     } else {
         kind
@@ -17161,6 +17212,82 @@ mod tests {
             "Alice says: \"Blub.\""
         );
         assert_eq!(world.characters.get(&sender_id).unwrap().endurance, 0);
+    }
+
+    #[test]
+    fn emote_commands_preserve_legacy_shortcuts_and_quotes() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.x = 10;
+        sender.y = 10;
+        world.add_character(sender);
+        let mut target = login_character(target_id, &login_block("Bob"), 1, 11, 10);
+        target.x = 11;
+        target.y = 10;
+        world.add_character(target);
+        let mut runtime = ServerRuntime::default();
+        for (session, id) in [(1, sender_id), (2, target_id)] {
+            runtime
+                .players
+                .insert(session, PlayerRuntime::connected(session, 0));
+            runtime.players.get_mut(&session).unwrap().character_id = Some(id);
+        }
+
+        let emote = apply_local_speech_command(&mut world, &runtime, sender_id, "/em jumps", 1)
+            .expect("legacy /em prefix should be recognized");
+        assert_eq!(
+            String::from_utf8_lossy(&emote.delivered_message_bytes[0].1),
+            "Alice jumps."
+        );
+
+        let slap = apply_local_speech_command(&mut world, &runtime, sender_id, "/slap Bob", 1)
+            .expect("slap should be recognized");
+        assert_eq!(
+            String::from_utf8_lossy(&slap.delivered_message_bytes[0].1),
+            "Alice slaps Bob around a bit with a large trout."
+        );
+
+        let wave = apply_local_speech_command(&mut world, &runtime, sender_id, "/wa", 1)
+            .expect("legacy wave abbreviation should be recognized");
+        assert_eq!(
+            String::from_utf8_lossy(&wave.delivered_message_bytes[0].1),
+            "Alice waves happily."
+        );
+
+        let quoted =
+            apply_local_speech_command(&mut world, &runtime, sender_id, "/me bad\"quote", 1)
+                .expect("me should be recognized");
+        assert!(quoted.sender_messages.is_empty());
+        assert!(quoted.delivered_message_bytes.is_empty());
+    }
+
+    #[test]
+    fn underwater_emote_uses_legacy_feels_wet_text() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.x = 10;
+        sender.y = 10;
+        world.add_character(sender);
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::UNDERWATER);
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+
+        let result = apply_local_speech_command(&mut world, &runtime, sender_id, "/me waves", 1)
+            .expect("underwater emote should be recognized");
+
+        assert_eq!(
+            String::from_utf8_lossy(&result.delivered_message_bytes[0].1),
+            "Alice feels wet."
+        );
     }
 
     #[test]
