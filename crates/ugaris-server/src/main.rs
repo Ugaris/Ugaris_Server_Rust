@@ -35,7 +35,7 @@ use ugaris_core::{
     item_driver::{
         legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
         IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_ISLENADOOR,
-        IDR_KEY_RING, IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_RATCHEST,
+        IDR_KEY_RING, IDR_LAB2_GRAVE, IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_RATCHEST,
         IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
         IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
@@ -8047,6 +8047,20 @@ fn lab2_special_grave_template(kind: u8) -> Option<&'static str> {
     }
 }
 
+fn lab2_grave_number(world: &World, item_id: ItemId) -> Option<usize> {
+    let mut graves: Vec<_> = world
+        .items
+        .values()
+        .filter(|item| item.driver == IDR_LAB2_GRAVE)
+        .filter(|item| !matches!(item.driver_data.first().copied().unwrap_or_default(), 1..=4))
+        .map(|item| (item.y, item.x, item.id.0, item.id))
+        .collect();
+    graves.sort_unstable_by_key(|(y, x, id, _)| (*y, *x, *id));
+    graves
+        .into_iter()
+        .position(|(_, _, _, candidate_id)| candidate_id == item_id)
+}
+
 fn apply_lab2_grave_open(
     world: &mut World,
     runtime: &mut ServerRuntime,
@@ -8073,6 +8087,17 @@ fn apply_lab2_grave_open(
                 }
             }
         }
+    }
+
+    if special_item == 0
+        && lab2_grave_number(world, item_id).is_some_and(|grave_number| {
+            runtime
+                .player_for_character_mut(character_id)
+                .is_some_and(|player| player.legacy_lab2_grave_cleared(grave_number))
+        })
+    {
+        world.queue_system_text(character_id, "This grave is empty");
+        return world.open_empty_lab2_grave(item_id);
     }
 
     let character_id_new = runtime.allocate_character_id();
@@ -18022,6 +18047,88 @@ mod tests {
         assert_eq!((undead.x, undead.y), (194, 183));
         let hat_id = undead.inventory[INVENTORY_START_INVENTORY].unwrap();
         assert_eq!(world.items.get(&hat_id).unwrap().name, "Elias Hat");
+    }
+
+    #[test]
+    fn lab2_grave_open_reopens_cleared_normal_grave_empty() {
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_character_templates_str(
+                r#"
+                lab2_undead:
+                  name="Undead"
+                  V_HP=40
+                  V_ENDURANCE=20
+                  V_MANA=0
+                ;
+                lab2_skeleton:
+                  name="Skeleton"
+                  V_HP=30
+                  V_ENDURANCE=10
+                  V_MANA=0
+                ;
+            "#,
+            )
+            .unwrap();
+
+        let mut world = World::default();
+        let actor_id = CharacterId(1);
+        let login = LoginBlock {
+            name: "Tester".to_string(),
+            password: String::new(),
+            vendor: 0,
+            client_version: None,
+            his_ip: 0,
+            our_ip: 0,
+            unique: 0,
+        };
+        assert!(world.spawn_character(login_character(actor_id, &login, 22, 10, 10), 10, 10));
+
+        let mut earlier_grave =
+            test_item_with_driver(ItemId(7), ugaris_core::item_driver::IDR_LAB2_GRAVE);
+        earlier_grave.x = 10;
+        earlier_grave.y = 10;
+        earlier_grave.driver_data = vec![0; 16];
+        world.add_item(earlier_grave);
+
+        let mut grave = test_item_with_driver(ItemId(8), ugaris_core::item_driver::IDR_LAB2_GRAVE);
+        grave.x = 11;
+        grave.y = 10;
+        grave.sprite = 11000;
+        grave.driver_data = vec![0; 16];
+        world.add_item(grave);
+
+        let mut runtime = ServerRuntime::default();
+        runtime.next_character_id = 100;
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(actor_id);
+        assert!(player.mark_legacy_lab2_grave_cleared(1));
+        runtime.players.insert(1, player);
+
+        assert!(apply_lab2_grave_open(
+            &mut world,
+            &mut runtime,
+            &mut loader,
+            ItemId(8),
+            actor_id,
+            0,
+        ));
+
+        assert!(!world.characters.contains_key(&CharacterId(100)));
+        let grave = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(grave.sprite, 11001);
+        assert_eq!(
+            i32::from_le_bytes(grave.driver_data[4..8].try_into().unwrap()),
+            -1
+        );
+        assert_eq!(
+            i32::from_le_bytes(grave.driver_data[8..12].try_into().unwrap()),
+            -1
+        );
+        let texts = world.drain_pending_system_texts();
+        assert_eq!(texts.len(), 1);
+        assert_eq!(texts[0].character_id, actor_id);
+        assert_eq!(texts[0].message, "This grave is empty");
     }
 
     #[test]

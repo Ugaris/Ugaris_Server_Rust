@@ -49,6 +49,7 @@ pub const LEGACY_LAB_PPD_SIZE: usize = 360;
 pub const LEGACY_LAB2_GRAVE_VERSION: u8 = 2;
 pub const LEGACY_LAB2_GRAVEVERSION_OFFSET: usize = 43;
 pub const LEGACY_LAB2_GRAVEINDEX_OFFSET: usize = 44;
+pub const LAB2_GRAVE_BITSET_BYTES: usize = 256;
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
 pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
@@ -383,6 +384,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub lab_solved_bits: u64,
     #[serde(default)]
+    pub lab2_grave_bits: Vec<u8>,
+    #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
     pub pk_deaths: u32,
@@ -490,6 +493,7 @@ impl PlayerRuntime {
             twocity_ppd: Vec::new(),
             lab_ppd: Vec::new(),
             lab_solved_bits: 0,
+            lab2_grave_bits: Vec::new(),
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,
@@ -944,6 +948,28 @@ impl PlayerRuntime {
             &self.lab_ppd[LEGACY_LAB2_GRAVEINDEX_OFFSET..LEGACY_LAB2_GRAVEINDEX_OFFSET + 4],
         );
         indices
+    }
+
+    pub fn legacy_lab2_grave_cleared(&self, grave_number: usize) -> bool {
+        let byte = grave_number / 8;
+        let bit = grave_number % 8;
+        self.lab2_grave_bits
+            .get(byte)
+            .is_some_and(|value| value & (1 << bit) != 0)
+    }
+
+    pub fn mark_legacy_lab2_grave_cleared(&mut self, grave_number: usize) -> bool {
+        let byte = grave_number / 8;
+        let bit = grave_number % 8;
+        if byte >= LAB2_GRAVE_BITSET_BYTES {
+            return false;
+        }
+        if self.lab2_grave_bits.len() <= byte {
+            self.lab2_grave_bits.resize(byte + 1, 0);
+        }
+        let was_cleared = self.lab2_grave_bits[byte] & (1 << bit) != 0;
+        self.lab2_grave_bits[byte] |= 1 << bit;
+        !was_cleared
     }
 
     pub fn encode_legacy_pk_ppd(&self) -> Vec<u8> {
@@ -3742,6 +3768,18 @@ mod tests {
 
         let preserved = player.ensure_legacy_lab2_described_graves_with_indices([0, 4, 8, 9]);
         assert_eq!(preserved, [2, 6, 10, 11]);
+    }
+
+    #[test]
+    fn lab2_grave_bitset_uses_legacy_one_bit_per_grave_layout() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert!(!player.legacy_lab2_grave_cleared(9));
+        assert!(player.mark_legacy_lab2_grave_cleared(9));
+        assert!(!player.mark_legacy_lab2_grave_cleared(9));
+        assert!(player.legacy_lab2_grave_cleared(9));
+        assert_eq!(player.lab2_grave_bits[1], 0b0000_0010);
+        assert!(!player.mark_legacy_lab2_grave_cleared(LAB2_GRAVE_BITSET_BYTES * 8));
     }
 
     #[test]

@@ -6335,6 +6335,28 @@ impl World {
         true
     }
 
+    pub fn open_empty_lab2_grave(&mut self, item_id: ItemId) -> bool {
+        let (x, y) = {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            if item.driver_data.len() < 12 {
+                item.driver_data.resize(12, 0);
+            }
+            let open_character = i32::from_le_bytes(item.driver_data[4..8].try_into().unwrap());
+            if open_character != 0 {
+                return false;
+            }
+            item.sprite += 1;
+            item.driver_data[4..8].copy_from_slice(&(-1_i32).to_le_bytes());
+            item.driver_data[8..12].copy_from_slice(&(-1_i32).to_le_bytes());
+            (item.x, item.y)
+        };
+        self.mark_dirty_sector(usize::from(x), usize::from(y));
+        self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 5);
+        true
+    }
+
     fn close_lab2_grave(&mut self, item_id: ItemId) -> bool {
         let (x, y) = {
             let Some(item) = self.items.get_mut(&item_id) else {
