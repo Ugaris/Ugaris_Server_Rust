@@ -3813,9 +3813,26 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 140,
+      "startedAt": "2026-06-30T08:05:59.569Z",
+      "endedAt": "2026-06-30T08:11:10.588Z",
+      "durationMs": 310728,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 775 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 80426611,
+  "totalDurationMs": 80737339,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4255,7 +4272,7 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 253 filtered out; finished in 0.00s": 1,
       "test result: ok. 255 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 778 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 2,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 775 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 775 filtered out; finished in 0.00s": 2,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 255 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 255 filtered out; finished in 0.00s": 1,
       "test result: ok. 257 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
