@@ -5999,6 +5999,7 @@ impl World {
             if character.x.abs_diff(target_x) >= scavenger_distance
                 || character.y.abs_diff(target_y) >= scavenger_distance
             {
+                self.clear_simple_baddy_scavenger_direction(character_id);
                 if data.notsecure == 0
                     && current_tick - data.lastfight > (TICKS_PER_SECOND * 10) as i32
                 {
@@ -18334,6 +18335,7 @@ mod tests {
         npc.rest_y = 10;
         npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
             scavenger: 2,
+            dir: Direction::Left as i32,
             lastfight: (TICKS_PER_SECOND * 15) as i32,
             ..SimpleBaddyDriverData::default()
         }));
@@ -18366,6 +18368,10 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!((npc.x, npc.y), (10, 10));
         assert_eq!(npc.action, action::WALK);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.dir, 0);
     }
 
     #[test]

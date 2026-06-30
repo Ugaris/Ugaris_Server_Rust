@@ -4685,9 +4685,36 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
       ]
+    },
+    {
+      "iteration": 171,
+      "startedAt": "2026-06-30T13:06:25.809Z",
+      "endedAt": "2026-06-30T13:11:11.108Z",
+      "durationMs": 285101,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 813 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 820 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 98356687,
+  "totalDurationMs": 98641788,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4695,15 +4722,15 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 144,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 143,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 130,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 135,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 107,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 145,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 144,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 131,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 136,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 108,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 69,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 43,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 70,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 44,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
       "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 69,
@@ -4792,7 +4819,7 @@
       "\u001b[0m$ \u001b[0mcargo test -p ugaris-server apply_caligar --no-fail-fast": 1,
       "test result: ok. 622 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 622 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 13,
+      "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 14,
       "[ ] Add focused tests for tell command success and failure paths": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 184 filtered out; finished in 0.00s": 1,
       "test result: ok. 622 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
@@ -5206,7 +5233,9 @@
       "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/area/15/swa": 1,
       "error: unexpected argument 'character_driver_ids_match_c_drvlib' found": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 819 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 272 filtered out; finished in 0.00s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 272 filtered out; finished in 0.00s": 1,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 813 filtered out; finished in 0.00s": 1,
+      "test result: ok. 820 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
