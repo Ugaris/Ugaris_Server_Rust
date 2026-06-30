@@ -2243,6 +2243,25 @@ fn apply_hints_command(player: &mut PlayerRuntime, command: &str) -> Option<Keyr
     })
 }
 
+fn apply_wimp_command(command: &str) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 4 || !"wimp".starts_with(&lower) {
+        return None;
+    }
+
+    Some(KeyringCommandResult {
+        messages: vec![
+            "You're not in the live quest area. You'll have to wimp out on your own here... That means: RUN!"
+                .to_string(),
+        ],
+        ..Default::default()
+    })
+}
+
 fn apply_autoturn_command(
     character: &Character,
     player: &mut PlayerRuntime,
@@ -11698,6 +11717,18 @@ mod tests {
     }
 
     #[test]
+    fn wimp_command_emits_non_live_quest_fallback() {
+        let result = apply_wimp_command("/wimp").expect("wimp command should be recognized");
+        assert_eq!(
+            result.messages,
+            vec!["You're not in the live quest area. You'll have to wimp out on your own here... That means: RUN!".to_string()]
+        );
+
+        assert!(apply_wimp_command("/wim").is_none());
+        assert!(apply_wimp_command("/wimpx").is_none());
+    }
+
+    #[test]
     fn autoturn_command_toggles_lostcon_flag_and_shows_status() {
         let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
         let mut player = PlayerRuntime::connected(1, 0);
@@ -19622,6 +19653,12 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             }
                             if let Some(result) = apply_hints_command(player, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_wimp_command(&command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
