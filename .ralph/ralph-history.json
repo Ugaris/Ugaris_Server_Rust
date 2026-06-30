@@ -4923,9 +4923,33 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 180,
+      "startedAt": "2026-06-30T14:14:29.037Z",
+      "endedAt": "2026-06-30T14:24:05.522Z",
+      "durationMs": 576311,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The targeted test now fails as expected because HP is scaled from 10 to 25 before resource initialization. I’ll inspect the full actual spawned value set, then pin the new C-shaped expectations.",
+        "test tests::lq_npc_spawn_request_instantiates_template_and_records_slot_identity ... FAILED",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 274 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 274 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 275 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 102412340,
+  "totalDurationMs": 102988651,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4950,9 +4974,9 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 3,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 29,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 30,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
-      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 9,
+      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 10,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 20,
@@ -5464,8 +5488,12 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 273 filtered out; finished in 0.00s": 1,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 267 filtered out; finished in 0.00s": 1,
       "- Area 15 `IDR_SWAMPWHISP = 74` now dispatches through the legacy area libload guard for C `swampwhi": 1,
-      "test result: ok. 275 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 810 filtered out; finished in 0.00s": 1
+      "test result: ok. 275 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
+      "test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 810 filtered out; finished in 0.00s": 1,
+      "The targeted test now fails as expected because HP is scaled from 10 to 25 before resource initializ": 1,
+      "test tests::lq_npc_spawn_request_instantiates_template_and_records_slot_identity ... FAILED": 1,
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 274 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 274 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

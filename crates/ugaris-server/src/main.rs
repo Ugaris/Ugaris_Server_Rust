@@ -7648,6 +7648,7 @@ fn spawn_lq_npc_character(
     if !request.description.is_empty() {
         character.description = request.description.clone();
     }
+    apply_lq_raise(&mut character, request.level);
     add_lq_statboost_items(&mut character, loader, &mut inventory_items);
     character.hp = i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
     character.endurance =
@@ -7723,6 +7724,69 @@ fn add_lq_statboost_items(
             (CharacterValue::Strength, stat_boost),
         ],
     );
+}
+
+fn apply_lq_raise(character: &mut Character, level: u16) {
+    let spend = legacy_level2exp(u32::from(level) + 2).saturating_sub(1);
+    let sum: i32 = character.values[1]
+        .iter()
+        .enumerate()
+        .filter_map(|(value, &amount)| {
+            (!lq_raise_skips_value(value) && amount != 0).then_some(i32::from(amount))
+        })
+        .sum();
+    if sum <= 0 {
+        character.exp = 0;
+        character.exp_used = 0;
+        character.level = 1;
+        return;
+    }
+
+    let seyan = character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE);
+    for value in 0..CHARACTER_VALUE_NAMES.len() {
+        if lq_raise_skips_value(value) || character.values[1][value] == 0 {
+            continue;
+        }
+        let cost =
+            (f64::from(spend) / f64::from(sum) * f64::from(character.values[1][value])) as i32;
+        let raised =
+            legacy_cost_to_skill(value, cost, seyan).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        character.values[1][value] = raised;
+        character.values[0][value] = raised;
+    }
+    character.exp = legacy_calc_exp_used(character);
+    character.exp_used = character.exp;
+    character.level = legacy_exp_to_level(character.exp);
+}
+
+fn lq_raise_skips_value(value: usize) -> bool {
+    value == CharacterValue::Profession as usize
+        || value == CharacterValue::Cold as usize
+        || value == CharacterValue::Demon as usize
+        || value == CharacterValue::Speed as usize
+        || value == CharacterValue::Light as usize
+        || value == CharacterValue::Weapon as usize
+        || value == CharacterValue::Armor as usize
+}
+
+fn legacy_cost_to_skill(value: usize, cost: i32, seyan: bool) -> i32 {
+    let mut sum = 0_i32;
+    for n in (legacy_skill_start(value) + 1)..200 {
+        sum += legacy_raise_cost(value, n, seyan) as i32;
+        if sum > cost {
+            return n - 1;
+        }
+    }
+    199
+}
+
+fn legacy_level2exp(level: u32) -> u32 {
+    level.saturating_pow(4)
+}
+
+fn legacy_exp_to_level(exp: u32) -> u32 {
+    (exp as f64).sqrt().sqrt().floor().max(1.0) as u32
 }
 
 fn add_lq_spell_item(
@@ -11619,15 +11683,34 @@ mod tests {
         assert_eq!((character.x, character.y), (12, 13));
         assert_eq!((character.rest_x, character.rest_y), (12, 13));
         assert_eq!(character.level, 17);
-        assert_eq!(character.hp, 10 * POWERSCALE);
-        assert_eq!(character.values[0][CharacterValue::Dagger as usize], 14);
-        assert_eq!(character.values[0][CharacterValue::Attack as usize], 12);
+        assert_eq!(character.exp, 102_690);
+        assert_eq!(character.exp_used, 102_690);
+        assert_eq!(character.hp, 25 * POWERSCALE);
+        assert_eq!(character.endurance, 24 * POWERSCALE);
+        assert_eq!(character.mana, 23 * POWERSCALE);
+        assert_eq!(character.values[1][CharacterValue::Hp as usize], 25);
+        assert_eq!(character.values[1][CharacterValue::Endurance as usize], 24);
+        assert_eq!(character.values[1][CharacterValue::Mana as usize], 23);
+        assert_eq!(character.values[1][CharacterValue::Dagger as usize], 24);
+        assert_eq!(character.values[1][CharacterValue::Attack as usize], 22);
+        assert_eq!(character.values[1][CharacterValue::Warcry as usize], 21);
+        assert_eq!(character.values[1][CharacterValue::Bless as usize], 23);
+        assert_eq!(character.values[1][CharacterValue::Fireball as usize], 20);
+        assert_eq!(
+            character.values[1][CharacterValue::MagicShield as usize],
+            19
+        );
+        assert_eq!(character.values[0][CharacterValue::Dagger as usize], 28);
+        assert_eq!(character.values[0][CharacterValue::Attack as usize], 26);
         assert_eq!(character.values[0][CharacterValue::Parry as usize], 4);
         assert_eq!(character.values[0][CharacterValue::Tactics as usize], 4);
-        assert_eq!(character.values[0][CharacterValue::Warcry as usize], 11);
-        assert_eq!(character.values[0][CharacterValue::Bless as usize], 13);
-        assert_eq!(character.values[0][CharacterValue::Fireball as usize], 10);
-        assert_eq!(character.values[0][CharacterValue::MagicShield as usize], 9);
+        assert_eq!(character.values[0][CharacterValue::Warcry as usize], 25);
+        assert_eq!(character.values[0][CharacterValue::Bless as usize], 27);
+        assert_eq!(character.values[0][CharacterValue::Fireball as usize], 24);
+        assert_eq!(
+            character.values[0][CharacterValue::MagicShield as usize],
+            23
+        );
         assert_eq!(character.values[0][CharacterValue::Immunity as usize], 4);
         assert_eq!(character.values[0][CharacterValue::Wisdom as usize], 6);
         assert_eq!(
