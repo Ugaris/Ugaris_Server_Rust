@@ -90,6 +90,7 @@ struct FdemonCannonShot {
 }
 const EDEMON_GATE_MODE1_SLOT_BASE: usize = 404;
 const MAX_LQ_DOORS: usize = 256;
+const MAX_LQ_NPCS: usize = 512;
 const DEV_ID_LQ: u32 = 0x05;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,6 +134,37 @@ pub struct LqDoorState {
     pub item_id: ItemId,
     pub nick: String,
     pub key_id: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LqNpcState {
+    pub slot: usize,
+    pub basename: String,
+    pub x: u16,
+    pub y: u16,
+    pub dir: u8,
+    pub level: u16,
+    pub mode: u8,
+    pub respawn_seconds: u32,
+    pub name: String,
+    pub description: String,
+    pub nick: [String; 2],
+    pub character_id: Option<CharacterId>,
+    pub character_serial: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LqNpcSpawnRequest {
+    pub slot: usize,
+    pub basename: String,
+    pub x: u16,
+    pub y: u16,
+    pub dir: u8,
+    pub level: u16,
+    pub mode: u8,
+    pub name: String,
+    pub description: String,
+    pub nick: [String; 2],
 }
 
 const ITEM_DRIVER_TIMER: &str = "item_driver";
@@ -317,6 +349,9 @@ pub struct World {
     pub legacy_random_seed: u32,
     pub lq_doors_initialized: bool,
     pub lq_doors: Vec<LqDoorState>,
+    pub lq_npcs: Vec<LqNpcState>,
+    pub lq_npc_respawns: Vec<(usize, u64)>,
+    pending_lq_npc_spawns: Vec<LqNpcSpawnRequest>,
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,
     pending_system_texts: Vec<WorldSystemText>,
@@ -549,6 +584,50 @@ impl World {
 
     pub fn drain_legacy_hurt_events(&mut self) -> Vec<LegacyHurtEvent> {
         self.pending_hurt_events.drain(..).collect()
+    }
+
+    pub fn configure_lq_npc(&mut self, mut npc: LqNpcState) -> bool {
+        if npc.slot == 0 || npc.slot >= MAX_LQ_NPCS || npc.basename.is_empty() {
+            return false;
+        }
+
+        npc.basename.truncate(39);
+        npc.name.truncate(39);
+        npc.description.truncate(159);
+        npc.nick[0].truncate(39);
+        npc.nick[1].truncate(39);
+        if let Some(existing) = self
+            .lq_npcs
+            .iter_mut()
+            .find(|existing| existing.slot == npc.slot)
+        {
+            *existing = npc;
+        } else {
+            self.lq_npcs.push(npc);
+            self.lq_npcs.sort_by_key(|npc| npc.slot);
+        }
+        true
+    }
+
+    pub fn schedule_lq_npc_respawn(&mut self, slot: usize, due_tick: u64) -> bool {
+        if slot == 0 || slot >= MAX_LQ_NPCS || !self.lq_npcs.iter().any(|npc| npc.slot == slot) {
+            return false;
+        }
+        if let Some((_, existing_due_tick)) = self
+            .lq_npc_respawns
+            .iter_mut()
+            .find(|(existing_slot, _)| *existing_slot == slot)
+        {
+            *existing_due_tick = due_tick;
+        } else {
+            self.lq_npc_respawns.push((slot, due_tick));
+            self.lq_npc_respawns.sort_by_key(|(slot, _)| *slot);
+        }
+        true
+    }
+
+    pub fn drain_pending_lq_npc_spawns(&mut self) -> Vec<LqNpcSpawnRequest> {
+        std::mem::take(&mut self.pending_lq_npc_spawns)
     }
 
     pub fn notify_twocity_pick_from_character(&mut self, character_id: CharacterId) {
@@ -6534,6 +6613,7 @@ impl World {
         match outcome {
             ItemDriverOutcome::LqTicker { .. } => {
                 self.discover_lq_doors_once();
+                self.queue_due_lq_npc_respawns();
                 outcome
             }
             ItemDriverOutcome::Teleport {
@@ -8073,6 +8153,45 @@ impl World {
                 key_id: 0,
             });
         }
+    }
+
+    fn queue_due_lq_npc_respawns(&mut self) {
+        let now = self.tick.0;
+        let mut due_slots: Vec<usize> = self
+            .lq_npc_respawns
+            .iter()
+            .filter_map(|(slot, due_tick)| (*due_tick != 0 && *due_tick <= now).then_some(*slot))
+            .collect();
+        if due_slots.is_empty() {
+            return;
+        }
+        due_slots.sort_unstable();
+
+        for slot in due_slots {
+            let Some(npc) = self.lq_npcs.iter().find(|npc| npc.slot == slot) else {
+                continue;
+            };
+            self.pending_lq_npc_spawns.push(LqNpcSpawnRequest {
+                slot: npc.slot,
+                basename: npc.basename.clone(),
+                x: npc.x,
+                y: npc.y,
+                dir: npc.dir,
+                level: npc.level,
+                mode: npc.mode,
+                name: npc.name.clone(),
+                description: npc.description.clone(),
+                nick: npc.nick.clone(),
+            });
+            if let Some((_, due_tick)) = self
+                .lq_npc_respawns
+                .iter_mut()
+                .find(|(existing_slot, _)| *existing_slot == slot)
+            {
+                *due_tick = 0;
+            }
+        }
+        self.lq_npc_respawns.retain(|(_, due_tick)| *due_tick != 0);
     }
 
     fn apply_fdemon_farm_foreground(&mut self, item_id: ItemId, foreground_sprite: u32) {
@@ -27049,6 +27168,116 @@ mod tests {
         );
         assert_eq!(world.lq_doors.len(), 1);
         assert_eq!(world.items[&ItemId(10)].driver_data[1], 77);
+    }
+
+    #[test]
+    fn lq_ticker_queues_due_npc_respawns_and_clears_schedule() {
+        let mut world = World {
+            tick: Tick(200),
+            ..World::default()
+        };
+        world.add_character(character(0));
+
+        let mut ticker = item(7, ItemFlags::USED | ItemFlags::USE);
+        ticker.driver = crate::item_driver::IDR_LQ_TICKER;
+        world.add_item(ticker);
+
+        assert!(world.configure_lq_npc(LqNpcState {
+            slot: 3,
+            basename: "guard_base".to_string(),
+            x: 45,
+            y: 67,
+            dir: Direction::Down as u8,
+            level: 42,
+            mode: b'a',
+            respawn_seconds: 30,
+            name: "Gate Guard".to_string(),
+            description: "A stern live quest guard.".to_string(),
+            nick: ["guard".to_string(), "gate".to_string()],
+            character_id: None,
+            character_serial: 0,
+        }));
+        assert!(world.schedule_lq_npc_respawn(3, 199));
+        assert!(!world.schedule_lq_npc_respawn(0, 199));
+        assert!(!world.schedule_lq_npc_respawn(MAX_LQ_NPCS, 199));
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_LQ_TICKER,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            20,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::LqTicker { .. }));
+        assert!(world.lq_npc_respawns.is_empty());
+        assert_eq!(
+            world.drain_pending_lq_npc_spawns(),
+            vec![LqNpcSpawnRequest {
+                slot: 3,
+                basename: "guard_base".to_string(),
+                x: 45,
+                y: 67,
+                dir: Direction::Down as u8,
+                level: 42,
+                mode: b'a',
+                name: "Gate Guard".to_string(),
+                description: "A stern live quest guard.".to_string(),
+                nick: ["guard".to_string(), "gate".to_string()],
+            }]
+        );
+    }
+
+    #[test]
+    fn lq_ticker_keeps_future_npc_respawns_pending() {
+        let mut world = World {
+            tick: Tick(200),
+            ..World::default()
+        };
+        world.add_character(character(0));
+
+        let mut ticker = item(7, ItemFlags::USED | ItemFlags::USE);
+        ticker.driver = crate::item_driver::IDR_LQ_TICKER;
+        world.add_item(ticker);
+        assert!(world.configure_lq_npc(LqNpcState {
+            slot: 2,
+            basename: "rat".to_string(),
+            x: 1,
+            y: 2,
+            dir: Direction::Left as u8,
+            level: 1,
+            mode: b'n',
+            respawn_seconds: 10,
+            name: String::new(),
+            description: String::new(),
+            nick: [String::new(), String::new()],
+            character_id: None,
+            character_serial: 0,
+        }));
+        assert!(world.schedule_lq_npc_respawn(2, 201));
+
+        let _ = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_LQ_TICKER,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            20,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(world.lq_npc_respawns, vec![(2, 201)]);
+        assert!(world.drain_pending_lq_npc_spawns().is_empty());
     }
 
     #[test]

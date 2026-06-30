@@ -674,3 +674,7 @@ Recommended next chest steps:
 ### Iteration 167 Additional Progress
 
 - Area 20 `IDR_LQ_TICKER = 103` now also applies the C `lq_ticker` one-time door discovery slice: the world scans live normal `IDR_DOOR` items with `drdata[10]`, records LQ door slots in stable item-id order starting at slot 1, stores the door nickname from the item name, writes the legacy `MAKE_ITEMID(DEV_ID_LQ, keyID)` bytes into `drdata[1..4]` with initial key `0`, and does not rediscover or overwrite doors on later ticker callbacks. Focused core coverage verifies discovery filtering, byte layout, and one-time behavior. Remaining live-quest gaps are real LQ door admin command wiring, NPC table discovery/respawn spawning, LQ player/NPC PPD state, character drivers, and full quest progression side effects.
+
+### Iteration 168 Additional Progress
+
+- Area 20 `IDR_LQ_TICKER = 103` now has a Rust state boundary for the C `lq_respawn[]` scan: `World` stores fixed-slot LQ NPC definitions with legacy slot bounds `1..512`, records scheduled respawn ticks, timer callbacks queue due `LqNpcSpawnRequest` values in slot order, clear consumed respawn entries like successful C `spawn_npc`, and leave future respawns pending. Focused core tests cover due respawn queuing, schedule clearing, future retention, and slot-bound rejection. Remaining live-quest gaps are applying queued spawn requests through template-backed runtime character creation, LQ NPC command/admin table wiring, real LQ door admin command wiring, LQ player/NPC PPD state, character drivers, and full quest progression side effects.
