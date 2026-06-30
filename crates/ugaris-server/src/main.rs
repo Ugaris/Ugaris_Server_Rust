@@ -2254,6 +2254,53 @@ fn apply_gold_command(
     })
 }
 
+fn apply_create_command(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 3 || !"create".starts_with(&lower) {
+        return None;
+    }
+
+    let character = world.characters.get(&character_id)?;
+    if !character.flags.contains(CharacterFlags::GOD) {
+        return None;
+    }
+    if character.cursor_item.is_some() {
+        return Some(KeyringCommandResult {
+            messages: vec!["Please empty your mouse cursor first.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    let template = rest.trim_start();
+    let Ok(mut item) = loader.instantiate_item_template(template, Some(character_id)) else {
+        return Some(KeyringCommandResult {
+            messages: vec!["No such template exists.".to_string()],
+            ..Default::default()
+        });
+    };
+    let item_id = item.id;
+    item.carried_by = Some(character_id);
+    world.add_item(item);
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.cursor_item = Some(item_id);
+        character.flags.insert(CharacterFlags::ITEMS);
+    }
+
+    Some(KeyringCommandResult {
+        inventory_changed: true,
+        ..Default::default()
+    })
+}
+
 fn apply_laugh_command(
     world: &mut World,
     character_id: CharacterId,
@@ -12909,6 +12956,80 @@ mod tests {
     }
 
     #[test]
+    fn create_command_instantiates_template_on_god_cursor() {
+        let mut world = World::default();
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"test_sword: name="Test Sword" description="Created" ID=01001234 sprite=4321 flag=IF_TAKE ;"#,
+            )
+            .unwrap();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("God"), 1, 10, 10);
+        character
+            .flags
+            .insert(CharacterFlags::GOD | CharacterFlags::PLAYER);
+        world.add_character(character);
+
+        let result = apply_create_command(&mut world, &mut loader, character_id, "/cre test_sword")
+            .expect("legacy create prefix should be recognized");
+
+        assert!(result.messages.is_empty());
+        assert!(result.inventory_changed);
+        let character = world.characters.get(&character_id).unwrap();
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        let item_id = character
+            .cursor_item
+            .expect("created item should be on cursor");
+        let item = world.items.get(&item_id).unwrap();
+        assert_eq!(item.name, "Test Sword");
+        assert_eq!(item.description, "Created");
+        assert_eq!(item.template_id, 0x0100_1234);
+        assert_eq!(item.sprite, 4321);
+        assert_eq!(item.carried_by, Some(character_id));
+    }
+
+    #[test]
+    fn create_command_is_god_only_and_preserves_legacy_feedback() {
+        let mut world = World::default();
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"test_item: name="Test Item" flag=IF_TAKE ;"#)
+            .unwrap();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::PLAYER);
+        world.add_character(character);
+
+        assert!(
+            apply_create_command(&mut world, &mut loader, character_id, "/create test_item")
+                .is_none()
+        );
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let missing =
+            apply_create_command(&mut world, &mut loader, character_id, "/create missing")
+                .expect("god create should handle missing templates");
+        assert_eq!(missing.messages, vec!["No such template exists."]);
+
+        let cursor_id = ItemId(99);
+        world.add_item(test_item(cursor_id, 1234, ItemFlags::TAKE));
+        world.characters.get_mut(&character_id).unwrap().cursor_item = Some(cursor_id);
+        let occupied =
+            apply_create_command(&mut world, &mut loader, character_id, "/create test_item")
+                .expect("god create should handle occupied cursor");
+        assert_eq!(
+            occupied.messages,
+            vec!["Please empty your mouse cursor first."]
+        );
+    }
+
+    #[test]
     fn ggold_command_is_god_only_and_uses_atoi_prefix() {
         let mut world = World::default();
         let mut loader = ZoneLoader::new();
@@ -21813,6 +21934,20 @@ async fn main() -> anyhow::Result<()> {
                             if let Some(result) = apply_description_command(&mut world, character_id, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_create_command(
+                                &mut world,
+                                &mut zone_loader,
+                                character_id,
+                                &command,
+                            ) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                if result.inventory_changed {
+                                    command_inventory_refresh.push(character_id);
                                 }
                                 continue;
                             }
