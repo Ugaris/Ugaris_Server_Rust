@@ -1688,6 +1688,13 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    Lab2RegenerateTick {
+        item_id: ItemId,
+        target_id: CharacterId,
+        start_tick: u32,
+        regen_percent: u8,
+        schedule_after_ticks: u64,
+    },
     ParkShrine {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2156,6 +2163,7 @@ pub fn execute_item_driver_with_context(
                 IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
                 IDR_LAB3_PLANT => lab3_plant_driver(character, item, context),
                 IDR_LAB2_WATER => lab2_water_driver(character, item),
+                IDR_LAB2_REGENERATE => lab2_regenerate_driver(character, item, context),
                 IDR_LABTORCH => labtorch_driver(character, item),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_LABENTRANCE => labentrance_driver(character, item, context),
@@ -2197,7 +2205,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_RANDOMSHRINE | IDR_TRAPDOOR | IDR_JUNKPILE | IDR_GASTRAP => Some(14),
         IDR_FORESTCHEST => Some(16),
         IDR_LQ_TICKER => Some(20),
-        IDR_LAB2_WATER | IDR_LABTORCH => Some(22),
+        IDR_LAB2_WATER | IDR_LAB2_REGENERATE | IDR_LABTORCH => Some(22),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
@@ -2289,6 +2297,26 @@ fn lab2_water_driver(character: &Character, item: &mut Item) -> ItemDriverOutcom
             character_id: character.id,
         },
         _ => ItemDriverOutcome::Noop,
+    }
+}
+
+fn lab2_regenerate_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 || !context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let speed = drdata(item, 0);
+    let schedule_after_ticks = u64::from(speed).saturating_mul(TICKS_PER_SECOND) / 24;
+    ItemDriverOutcome::Lab2RegenerateTick {
+        item_id: item.id,
+        target_id: CharacterId(drdata_u32(item, 4)),
+        start_tick: drdata_u32(item, 8),
+        regen_percent: drdata(item, 1),
+        schedule_after_ticks,
     }
 }
 
@@ -17645,6 +17673,44 @@ mod tests {
             ItemDriverOutcome::Lab2WaterAltar {
                 item_id: ItemId(9),
                 character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn lab2_regenerate_timer_decodes_legacy_spell_data() {
+        let mut timer = character(0);
+        let mut spell = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_REGENERATE);
+        set_drdata(&mut spell, 0, 12);
+        set_drdata(&mut spell, 1, 64);
+        set_drdata_u32(&mut spell, 4, 3);
+        set_drdata_u32(&mut spell, 8, 120);
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer,
+            &mut spell,
+            ItemDriverRequest::Driver {
+                driver: IDR_LAB2_REGENERATE,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            22,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::Lab2RegenerateTick {
+                item_id: ItemId(8),
+                target_id: CharacterId(3),
+                start_tick: 120,
+                regen_percent: 64,
+                schedule_after_ticks: 12,
             }
         );
     }

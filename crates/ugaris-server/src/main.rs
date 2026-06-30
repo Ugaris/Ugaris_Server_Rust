@@ -23365,6 +23365,9 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::ClanJewelRescheduled { .. } => {
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2RegenerateTick { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ClanJewelExpired { character_id, item_name, .. } => {
                                             if let Some(character_id) = character_id {
                                                 let item_name = String::from_utf8_lossy(&item_name)

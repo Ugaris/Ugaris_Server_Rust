@@ -6278,6 +6278,38 @@ impl World {
                 }
                 outcome
             }
+            ItemDriverOutcome::Lab2RegenerateTick {
+                item_id,
+                target_id,
+                start_tick,
+                regen_percent,
+                schedule_after_ticks,
+            } => {
+                let carried_by_target = self
+                    .items
+                    .get(&item_id)
+                    .is_some_and(|item| item.carried_by == Some(target_id));
+                if carried_by_target {
+                    let current_tick = self.tick.0 as u32;
+                    if let Some(target) = self.characters.get_mut(&target_id) {
+                        if current_tick >= start_tick {
+                            let max_hp = character_value(target, CharacterValue::Hp) * POWERSCALE;
+                            let diff = max_hp - target.hp;
+                            let add = if diff > 0 {
+                                i32::from(regen_percent) * diff / 256
+                            } else {
+                                1
+                            };
+                            target.hp = max_hp.min(target.hp + add);
+                            target.flags.insert(CharacterFlags::NODEATH);
+                        } else {
+                            target.flags.remove(CharacterFlags::NODEATH);
+                        }
+                    }
+                }
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
             ItemDriverOutcome::MeltingKeyTick {
                 item_id,
                 melted,
@@ -13985,10 +14017,10 @@ mod tests {
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGAR,
             IDR_CALIGARFLAME, IDR_CHESTSPAWN, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT,
             IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW,
-            IDR_FLASK, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT,
-            IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION,
-            IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP,
-            IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_LIZARDFLOWER,
+            IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY,
+            IDR_POTION, IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
+            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -26308,6 +26340,87 @@ mod tests {
         ));
         assert_eq!(world.items[&ItemId(7)].sprite & 1, 0);
         assert!(world.effects.is_empty());
+    }
+
+    #[test]
+    fn world_lab2_regenerate_timer_heals_target_and_reschedules() {
+        let mut world = World::default();
+        world.tick = Tick(120);
+        let mut target = character(3);
+        target.values[0][CharacterValue::Hp as usize] = 20;
+        target.hp = 10 * POWERSCALE;
+        world.add_character(target);
+
+        let mut spell = item(8, ItemFlags::USED | ItemFlags::USE);
+        spell.driver = IDR_LAB2_REGENERATE;
+        spell.carried_by = Some(CharacterId(3));
+        spell.driver_data = vec![12, 64, 0, 0, 3, 0, 0, 0, 120, 0, 0, 0];
+        world.add_item(spell);
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_LAB2_REGENERATE,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            22,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::Lab2RegenerateTick { .. }
+        ));
+        let target = world.characters.get(&CharacterId(3)).unwrap();
+        assert_eq!(target.hp, 12 * POWERSCALE + POWERSCALE / 2);
+        assert!(target.flags.contains(CharacterFlags::NODEATH));
+
+        world.tick = Tick(132);
+        let due = world.process_due_timers(22);
+        assert_eq!(due.len(), 1);
+    }
+
+    #[test]
+    fn world_lab2_regenerate_timer_clears_nodeath_before_start() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        let mut target = character(3);
+        target.flags.insert(CharacterFlags::NODEATH);
+        target.values[0][CharacterValue::Hp as usize] = 20;
+        target.hp = 10 * POWERSCALE;
+        world.add_character(target);
+
+        let mut spell = item(8, ItemFlags::USED | ItemFlags::USE);
+        spell.driver = IDR_LAB2_REGENERATE;
+        spell.carried_by = Some(CharacterId(3));
+        spell.driver_data = vec![12, 64, 0, 0, 3, 0, 0, 0, 120, 0, 0, 0];
+        world.add_item(spell);
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_LAB2_REGENERATE,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            22,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::Lab2RegenerateTick { .. }
+        ));
+        let target = world.characters.get(&CharacterId(3)).unwrap();
+        assert_eq!(target.hp, 10 * POWERSCALE);
+        assert!(!target.flags.contains(CharacterFlags::NODEATH));
     }
 
     fn character(id: u32) -> Character {
