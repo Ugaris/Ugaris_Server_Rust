@@ -8,7 +8,7 @@ use crate::{
     },
     ids::{CharacterId, ItemId},
     item_ops::consume_item,
-    legacy::{action, MAX_MAP},
+    legacy::{action, profession, MAX_MAP},
     text::{COL_DARK_GRAY, COL_LIGHT_GREEN, COL_RESET},
     tick::TICKS_PER_SECOND,
 };
@@ -2075,6 +2075,29 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    MineWallInitialized {
+        item_id: ItemId,
+        sprite: i32,
+    },
+    MineWallDig {
+        item_id: ItemId,
+        character_id: CharacterId,
+        endurance_delta: i32,
+        stage: u8,
+        opened: bool,
+    },
+    MineWallCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    MineWallExhausted {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    MineWallCollapse {
+        item_id: ItemId,
+        schedule_after_ticks: u32,
+    },
     AccountDepotOpened {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2298,6 +2321,7 @@ pub fn execute_item_driver_with_context(
                 IDR_BOOKCASE => bookcase_driver(character, item, context),
                 IDR_DEMONSHRINE => demonshrine_driver(character, item, area_id),
                 IDR_PALACEKEY => palace_key_driver(character, item, context),
+                IDR_MINEWALL => minewall_driver(character, item),
                 IDR_INFINITE_CHEST => infinite_chest_driver(character, item, context),
                 IDR_RECALL => recall_driver(character, item, area_id, in_arena),
                 IDR_TRANSPORT => transport_driver(character, item, spec),
@@ -6108,6 +6132,62 @@ fn mine_door_driver(
         target_y,
         fallback_x,
         fallback_y,
+    }
+}
+
+fn minewall_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        if drdata(item, 4) == 0 {
+            set_drdata(item, 4, 1);
+            item.sprite = match (u32::from(item.x) + u32::from(item.y)) % 3 {
+                0 => 15070,
+                1 => 15078,
+                _ => 15086,
+            };
+        }
+        if drdata(item, 3) == 8 {
+            return ItemDriverOutcome::MineWallCollapse {
+                item_id: item.id,
+                schedule_after_ticks: TICKS_PER_SECOND as u32,
+            };
+        }
+        return ItemDriverOutcome::MineWallInitialized {
+            item_id: item.id,
+            sprite: item.sprite,
+        };
+    }
+
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::MineWallCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if character.endurance < POWERSCALE {
+        return ItemDriverOutcome::MineWallExhausted {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let miner = character
+        .professions
+        .get(profession::MINER)
+        .copied()
+        .unwrap_or_default()
+        .max(0) as i32;
+    let endurance_delta = -(POWERSCALE / 4 - miner * POWERSCALE / (4 * 25));
+    let stage = drdata(item, 3).saturating_add(1);
+    set_drdata(item, 3, stage);
+    set_drdata(item, 5, 0);
+    item.sprite += 1;
+
+    ItemDriverOutcome::MineWallDig {
+        item_id: item.id,
+        character_id: character.id,
+        endurance_delta,
+        stage,
+        opened: stage >= 8,
     }
 }
 
@@ -14528,6 +14608,90 @@ mod tests {
                 character_id: CharacterId(1),
             }
         );
+    }
+
+    #[test]
+    fn execute_minewall_timer_initializes_legacy_sprite_and_collapse_boundary() {
+        let mut timer = character(0);
+        let mut wall = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_MINEWALL);
+        wall.x = 10;
+        wall.y = 12;
+        wall.sprite = 1;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_MINEWALL,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut timer, &mut wall, request, 12, false),
+            ItemDriverOutcome::MineWallInitialized {
+                item_id: ItemId(7),
+                sprite: 15078,
+            }
+        );
+        assert_eq!(wall.sprite, 15078);
+        assert_eq!(drdata(&wall, 4), 1);
+
+        set_drdata(&mut wall, 3, 8);
+        assert_eq!(
+            execute_item_driver(&mut timer, &mut wall, request, 12, false),
+            ItemDriverOutcome::MineWallCollapse {
+                item_id: ItemId(7),
+                schedule_after_ticks: TICKS_PER_SECOND as u32,
+            }
+        );
+    }
+
+    #[test]
+    fn execute_minewall_player_gates_and_dig_mutation() {
+        let mut character = character(1);
+        character.endurance = POWERSCALE;
+        character.professions[profession::MINER] = 25;
+        let mut wall = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_MINEWALL);
+        wall.sprite = 15070;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_MINEWALL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        character.cursor_item = Some(ItemId(8));
+        assert_eq!(
+            execute_item_driver(&mut character, &mut wall, request, 12, false),
+            ItemDriverOutcome::MineWallCursorOccupied {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.cursor_item = None;
+        character.endurance = POWERSCALE - 1;
+        assert_eq!(
+            execute_item_driver(&mut character, &mut wall, request, 12, false),
+            ItemDriverOutcome::MineWallExhausted {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.endurance = POWERSCALE;
+        set_drdata(&mut wall, 3, 7);
+        assert_eq!(
+            execute_item_driver(&mut character, &mut wall, request, 12, false),
+            ItemDriverOutcome::MineWallDig {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                endurance_delta: 0,
+                stage: 8,
+                opened: true,
+            }
+        );
+        assert_eq!(drdata(&wall, 3), 8);
+        assert_eq!(drdata(&wall, 5), 0);
+        assert_eq!(wall.sprite, 15071);
     }
 
     #[test]

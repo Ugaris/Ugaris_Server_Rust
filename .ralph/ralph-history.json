@@ -5234,9 +5234,37 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 192,
+      "startedAt": "2026-06-30T16:08:26.660Z",
+      "endedAt": "2026-06-30T18:34:16.718Z",
+      "durationMs": 8749860,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The focused mine-wall tests are in place. I’m running formatting and the relevant crate tests first, then I’ll expand if failures point to exhaustive match handling elsewhere.",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 846 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 848 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s"
+      ]
     }
   ],
-  "totalDurationMs": 109214249,
+  "totalDurationMs": 117964109,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -5244,11 +5272,11 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 159,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 158,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 144,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 150,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 120,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 160,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 159,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 145,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 151,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 121,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 79,
@@ -5266,7 +5294,7 @@
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 10,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 20,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 21,
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
@@ -5295,7 +5323,7 @@
       "The focused server test exposed a type mismatch: this runtime send path expects `BytesMut`, unlike s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 597 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 32,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 33,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 187 filtered out; finished in 0.00s": 3,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 181 filtered out; finished in 0.00s": 1,
       "test result: ok. 598 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -5811,7 +5839,10 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 278 filtered out; finished in 0.00s": 1,
       "test result: ok. 281 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 843 filtered out; finished in 0.00s": 1,
-      "test result: ok. 846 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 846 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "The focused mine-wall tests are in place. I’m running formatting and the relevant crate tests first,": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 846 filtered out; finished in 0.00s": 1,
+      "test result: ok. 848 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
