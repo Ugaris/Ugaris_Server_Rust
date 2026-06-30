@@ -2243,6 +2243,24 @@ fn apply_hints_command(player: &mut PlayerRuntime, command: &str) -> Option<Keyr
     })
 }
 
+fn apply_autoturn_command(
+    character: &Character,
+    player: &mut PlayerRuntime,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 5 || !"autoturn".starts_with(&lower) {
+        return None;
+    }
+
+    player.toggle_autoturn();
+    apply_status_command(character, player, "/status")
+}
+
 fn apply_lag_command(
     world: &mut World,
     player: &PlayerRuntime,
@@ -2364,7 +2382,10 @@ fn apply_status_command(
         messages.push("Automatic Pulse [/AUTOPULSE]: Off.".to_string());
     }
     messages.extend([
-        "Automatic Turning [/AUTOTURN]: Off.".to_string(),
+        format!(
+            "Automatic Turning [/AUTOTURN]: {}.",
+            if player.autoturn_enabled { "On" } else { "Off" }
+        ),
         "Protection Settings:".to_string(),
         format!(
             "Allow others to bless me [/ALLOWBLESS]: {}.",
@@ -11669,6 +11690,30 @@ mod tests {
     }
 
     #[test]
+    fn autoturn_command_toggles_lostcon_flag_and_shows_status() {
+        let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let enabled = apply_autoturn_command(&character, &mut player, "/autot")
+            .expect("legacy autoturn abbreviation should be recognized");
+        assert!(player.autoturn_enabled);
+        assert!(enabled
+            .messages
+            .contains(&"Automatic Turning [/AUTOTURN]: On.".to_string()));
+        assert_eq!(enabled.messages[0], "Lag Control Settings:");
+
+        let disabled = apply_autoturn_command(&character, &mut player, "/autoturn")
+            .expect("autoturn command should be recognized");
+        assert!(!player.autoturn_enabled);
+        assert!(disabled
+            .messages
+            .contains(&"Automatic Turning [/AUTOTURN]: Off.".to_string()));
+
+        assert!(apply_autoturn_command(&character, &mut player, "/auto").is_none());
+        assert!(apply_autoturn_command(&character, &mut player, "/autoturnx").is_none());
+    }
+
+    #[test]
     fn lag_command_toggles_artificial_lag_with_legacy_feedback() {
         let mut world = World::default();
         world.map = ugaris_core::map::MapGrid::new(20, 20);
@@ -11825,6 +11870,7 @@ mod tests {
         character.values[1][CharacterValue::Fireball as usize] = 5;
         let mut player = PlayerRuntime::connected(1, 0);
         player.set_max_lag_seconds(12);
+        player.autoturn_enabled = true;
 
         let result = apply_status_command(&character, &player, "/status")
             .expect("status command should be recognized");
@@ -11842,6 +11888,9 @@ mod tests {
         assert!(result
             .messages
             .contains(&"Automatic Pulse [/AUTOPULSE]: Off.".to_string()));
+        assert!(result
+            .messages
+            .contains(&"Automatic Turning [/AUTOTURN]: On.".to_string()));
         assert!(result
             .messages
             .contains(&"Allow others to bless me [/ALLOWBLESS]: No.".to_string()));
@@ -19569,6 +19618,14 @@ async fn main() -> anyhow::Result<()> {
                                     command_feedback.push((character_id, message));
                                 }
                                 continue;
+                            }
+                            if let Some(character) = world.characters.get(&character_id) {
+                                if let Some(result) = apply_autoturn_command(character, player, &command) {
+                                    for message in result.messages {
+                                        command_feedback.push((character_id, message));
+                                    }
+                                    continue;
+                                }
                             }
                             if let Some(result) = apply_lag_command(&mut world, player, character_id, &command) {
                                 for message in result.messages {

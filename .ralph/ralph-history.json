@@ -3515,9 +3515,37 @@
         "test result: ok. 767 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 129,
+      "startedAt": "2026-06-30T05:12:49.023Z",
+      "endedAt": "2026-06-30T05:22:23.203Z",
+      "durationMs": 574000,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/player.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/system/lostcon.h",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/player.rs:",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 765 filtered out; finished in 0.00s",
+        "error: unexpected argument 'status_command_shows_represented_lostcon_and_account_state' found",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 249 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 70069818,
+  "totalDurationMs": 70643818,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -3525,18 +3553,18 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 17,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 17,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 108,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 107,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 95,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 99,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 78,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 109,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 108,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 96,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 100,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 79,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 48,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 29,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 46,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 47,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 3,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
@@ -3931,7 +3959,11 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.00s": 1,
       "test result: ok. 766 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s": 1,
-      "test result: ok. 767 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 767 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/system/": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 765 filtered out; finished in 0.00s": 1,
+      "error: unexpected argument 'status_command_shows_represented_lostcon_and_account_state' found": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 249 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

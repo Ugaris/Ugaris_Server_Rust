@@ -600,3 +600,7 @@ Recommended next chest steps:
 ### Iteration 126 Additional Progress
 
 - `src/system/drvlib.c` simple-baddy fight-driver warcry task admission now preserves the C strict endurance gate: NPC fight-task selection requires endurance greater than `V_WARCRY * POWERSCALE / 3`, while the lower-level `do_warcry` primitive still mirrors C's direct spell cast allowance at exact cost. Focused core coverage verifies exact-cost fight tasks skip warcry and above-cost tasks admit it. Remaining fight-driver gaps include exact `fight_driver_attack_enemy` fallback ordering for failed tasks, broader area-driver reuse, exact global RNG/sound cadence, and exact NPC scheduling.
+
+### Iteration 129 Additional Progress
+
+- `src/system/command.c` `/autoturn` now has a Rust runtime command slice: the legacy `cmdcmp(..., minlen=5)` prefix shape is represented, `PlayerRuntime` persists the C `lostcon_ppd.autoturn` int at slot 16 in the fixed `DRD_LOSTCON_PPD` layout, the command toggles the flag and reprints the lag-control status like C `show_lostconppd`, and `/status` reflects the stored automatic-turning state. Focused core/server tests cover byte layout, outer PPD append behavior, command toggling, and status output. Remaining lost-connection work is actual autoturn driver behavior and the other lag-control automation toggles.
