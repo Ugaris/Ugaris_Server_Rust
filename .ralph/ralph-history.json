@@ -100,29 +100,56 @@
         "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
         "test result: ok. 289 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
       ]
+    },
+    {
+      "iteration": 5,
+      "startedAt": "2026-06-30T20:56:53.956Z",
+      "endedAt": "2026-06-30T21:05:41.941Z",
+      "durationMs": 527802,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/world.rs:",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 859 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 860 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 2523504,
+  "totalDurationMs": 3051306,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 2,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 3,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 2,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 2,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 3,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 3,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 2,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 1,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 1,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 1,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 2,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 2,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 2,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
       "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAIL": 1,
       "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,": 1,
@@ -132,7 +159,11 @@
       "+- C `can_attack` player-vs-player hate-list gating is now represented in the shared attack-policy d": 1,
       "+- C `can_attack` player-vs-player hate-list admission has an explicit Rust policy seam: after the e": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.00s": 1,
-      "test result: ok. 289 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 289 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 859 filtered out; finished in 0.00s": 1,
+      "test result: ok. 860 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

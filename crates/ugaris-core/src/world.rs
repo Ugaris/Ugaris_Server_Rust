@@ -35,8 +35,8 @@ use crate::{
         IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE,
         IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT,
         IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-        IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN,
-        IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
+        IDR_PALACEBOMB, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM,
+        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
         IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
@@ -7534,6 +7534,16 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::SpikeTrapReset { .. } => outcome,
+            ItemDriverOutcome::PalaceBombExplode {
+                item_id,
+                owner_id,
+                x,
+                y,
+                ..
+            } => {
+                self.apply_palace_bomb_explosion(item_id, owner_id, x, y);
+                outcome
+            }
             ItemDriverOutcome::Extinguish {
                 item_id,
                 character_id,
@@ -9378,6 +9388,64 @@ impl World {
         self.effects.insert(effect_id, effect);
         self.apply_legacy_hurt(character_id, None, 20 * POWERSCALE, 1, 50, 75);
         true
+    }
+
+    fn create_palace_bomb_burn_effect(&mut self, character_id: CharacterId) -> bool {
+        let effect_id = self.next_effect_id();
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let mut effect = Effect::new(
+            EF_BURN,
+            effect_id as i32,
+            self.tick.0 as i32,
+            self.tick.0.saturating_add(TICKS_PER_SECOND * 60) as i32,
+        );
+        effect.light = 250;
+        effect.strength = POWERSCALE * 2;
+        effect.target_character = Some(character_id);
+        effect.x = i32::from(character.x);
+        effect.y = i32::from(character.y);
+        self.effects.insert(effect_id, effect);
+        true
+    }
+
+    fn apply_palace_bomb_explosion(&mut self, item_id: ItemId, owner_id: u32, x: u16, y: u16) {
+        let x_usize = usize::from(x);
+        let y_usize = usize::from(y);
+        self.create_explosion_effect(i32::from(x), i32::from(y), 8, 50050);
+        self.queue_sound_area(x_usize, y_usize, 6);
+
+        let mut burn_targets = Vec::new();
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let Some(tx) = offset_coordinate(x_usize, dx) else {
+                    continue;
+                };
+                let Some(ty) = offset_coordinate(y_usize, dy) else {
+                    continue;
+                };
+                let Some(character_id) = self.map.tile(tx, ty).and_then(|tile| {
+                    (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+                }) else {
+                    continue;
+                };
+                let Some(character) = self.characters.get(&character_id) else {
+                    continue;
+                };
+                if character.name == "Islena" {
+                    continue;
+                }
+                if character.flags.contains(CharacterFlags::PLAYER) && character.id.0 != owner_id {
+                    continue;
+                }
+                burn_targets.push(character_id);
+            }
+        }
+        for character_id in burn_targets {
+            self.create_palace_bomb_burn_effect(character_id);
+        }
+        self.destroy_item(item_id);
     }
 
     pub fn remove_character_burn_effect(&mut self, character_id: CharacterId) -> bool {
@@ -21547,6 +21615,77 @@ mod tests {
         assert_eq!(character.lifeshield, 0);
         assert_eq!(character.driver_messages[0].message_type, NT_GOTHIT);
         assert_eq!(character.driver_messages[0].dat2, 2_000);
+    }
+
+    #[test]
+    fn palace_bomb_explosion_creates_effect_sound_burns_and_removes_item() {
+        let mut world = World::default();
+
+        let mut owner = character(1);
+        owner.flags |= CharacterFlags::PLAYER;
+        owner.hp = 10_000;
+        assert!(world.spawn_character(owner, 10, 10));
+
+        let mut npc = character(2);
+        npc.hp = 10_000;
+        assert!(world.spawn_character(npc, 11, 10));
+
+        let mut other_player = character(3);
+        other_player.flags |= CharacterFlags::PLAYER;
+        other_player.hp = 10_000;
+        assert!(world.spawn_character(other_player, 10, 11));
+
+        let mut islena = character(4);
+        islena.name = "Islena".to_string();
+        islena.hp = 10_000;
+        assert!(world.spawn_character(islena, 9, 10));
+
+        let mut bomb = item(7, ItemFlags::USED);
+        bomb.driver = IDR_PALACEBOMB;
+        bomb.driver_data = vec![2, 1, 0, 0, 0];
+        bomb.x = 10;
+        bomb.y = 10;
+        world.add_item(bomb);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_PALACEBOMB,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            11,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::PalaceBombExplode { .. }
+        ));
+        assert!(!world.items.contains_key(&ItemId(7)));
+        assert_eq!(world.map.tile(10, 10).unwrap().item, 0);
+        assert!(world.effects.values().any(|effect| {
+            effect.effect_type == EF_EXPLODE
+                && effect.base_sprite == 50050
+                && effect
+                    .fields
+                    .iter()
+                    .any(|&field| field == world.map.legacy_index(10, 10).unwrap() as i32)
+        }));
+        let burn_targets: Vec<CharacterId> = world
+            .effects
+            .values()
+            .filter(|effect| effect.effect_type == EF_BURN)
+            .filter_map(|effect| effect.target_character)
+            .collect();
+        assert!(burn_targets.contains(&CharacterId(1)));
+        assert!(burn_targets.contains(&CharacterId(2)));
+        assert!(!burn_targets.contains(&CharacterId(3)));
+        assert!(!burn_targets.contains(&CharacterId(4)));
+        assert_eq!(world.characters[&CharacterId(1)].hp, 10_000);
+
+        let sounds = world.drain_pending_sound_specials();
+        assert!(!sounds.is_empty());
+        assert!(sounds.iter().all(|sound| sound.special.special_type == 6));
     }
 
     #[test]
