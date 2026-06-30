@@ -2006,6 +2006,7 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::PickDoorLocked { .. }
         | ItemDriverOutcome::CaligarWeightDoorLocked { .. }
         | ItemDriverOutcome::CaligarSkellyDoorLocked { .. }
+        | ItemDriverOutcome::CaligarSkellyDoorBusy { .. }
         | ItemDriverOutcome::PentBossDoorLocked { .. }
         | ItemDriverOutcome::PentBossDoorBusy { .. } => 2,
         ItemDriverOutcome::EdemonBlockMove { .. }
@@ -10872,6 +10873,16 @@ mod tests {
             legacy_item_driver_return_code(
                 Some(IDR_CALIGAR),
                 &ItemDriverOutcome::CaligarSkellyDoorLocked {
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                },
+            ),
+            2
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(
+                Some(IDR_CALIGAR),
+                &ItemDriverOutcome::CaligarSkellyDoorBusy {
                     item_id: ItemId(8),
                     character_id: CharacterId(1),
                 },

@@ -9949,15 +9949,24 @@ impl World {
         door_index: u8,
     ) -> ItemDriverOutcome {
         let Some(item) = self.items.get(&item_id) else {
-            return ItemDriverOutcome::Noop;
+            return ItemDriverOutcome::CaligarSkellyDoorBusy {
+                item_id,
+                character_id,
+            };
         };
         let Some(character) = self.characters.get(&character_id) else {
-            return ItemDriverOutcome::Noop;
+            return ItemDriverOutcome::CaligarSkellyDoorBusy {
+                item_id,
+                character_id,
+            };
         };
         let dx = i32::from(character.x) - i32::from(item.x);
         let dy = i32::from(character.y) - i32::from(item.y);
         if dx != 0 && dy != 0 {
-            return ItemDriverOutcome::Noop;
+            return ItemDriverOutcome::CaligarSkellyDoorBusy {
+                item_id,
+                character_id,
+            };
         }
 
         let target_x = i32::from(item.x) - dx;
@@ -9967,7 +9976,10 @@ impl World {
             || target_x as usize > self.map.width().saturating_sub(2)
             || target_y as usize > self.map.height().saturating_sub(2)
         {
-            return ItemDriverOutcome::Noop;
+            return ItemDriverOutcome::CaligarSkellyDoorBusy {
+                item_id,
+                character_id,
+            };
         }
 
         if !self.teleport_character_exact(character_id, target_x as usize, target_y as usize) {
@@ -26512,6 +26524,35 @@ mod tests {
             }
         );
         assert_eq!(world.characters.get(&CharacterId(1)).unwrap().x, 9);
+    }
+
+    #[test]
+    fn caligar_skelly_door_diagonal_touch_preserves_retry_return_shape() {
+        let mut world = World::default();
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(player, 9, 9));
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_CALIGAR;
+        door.driver_data = vec![12, 1];
+        assert!(world.map.set_item_map(&mut door, 10, 10));
+        world.add_item(door);
+
+        let outcome = world.apply_caligar_skelly_door(ItemId(8), CharacterId(1), 1);
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::CaligarSkellyDoorBusy {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(
+            crate::item_driver::legacy_item_driver_return_code(Some(IDR_CALIGAR), &outcome),
+            2
+        );
+        let player = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((player.x, player.y), (9, 9));
     }
 
     #[test]

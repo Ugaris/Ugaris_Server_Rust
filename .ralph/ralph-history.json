@@ -4739,9 +4739,37 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 173,
+      "startedAt": "2026-06-30T13:16:36.781Z",
+      "endedAt": "2026-06-30T13:23:19.600Z",
+      "durationMs": 402639,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 820 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 822 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 823 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 98961800,
+  "totalDurationMs": 99364439,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4749,14 +4777,14 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 146,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 145,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 132,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 137,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 109,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 147,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 146,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 133,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 138,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 110,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 71,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 72,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 45,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
@@ -4771,7 +4799,7 @@
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 9,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 19,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 20,
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
@@ -5265,7 +5293,10 @@
       "test result: ok. 820 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "error: unexpected argument 'simple_baddy_attack_drops_visible_enemy_beyond_stopdist_like_c' found": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 820 filtered out; finished in 0.00s": 1,
-      "test result: ok. 822 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 822 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 820 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 822 filtered out; finished in 0.00s": 1,
+      "test result: ok. 823 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
