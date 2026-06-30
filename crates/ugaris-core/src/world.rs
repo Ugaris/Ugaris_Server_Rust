@@ -4391,8 +4391,11 @@ impl World {
                 FightDriverTaskKind::Bless => {
                     self.setup_simple_baddy_self_bless_action(character_id)
                 }
-                FightDriverTaskKind::Fireball | FightDriverTaskKind::FireRing => {
+                FightDriverTaskKind::Fireball => {
                     self.setup_simple_baddy_fireball_attack(character_id, target, area_id)
+                }
+                FightDriverTaskKind::FireRing => {
+                    self.setup_simple_baddy_firering_attack(character_id, target)
                 }
                 FightDriverTaskKind::Ball => {
                     self.setup_simple_baddy_ball_attack(character_id, target, random)
@@ -4778,6 +4781,53 @@ impl World {
             &self.items,
             target_x,
             target_y,
+            self.tick.0 as u32,
+        )
+        .is_err()
+        {
+            return false;
+        }
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = attacker_mut.driver_state.as_mut() {
+            data.lastfight = self.tick.0 as i32;
+        }
+        true
+    }
+
+    fn setup_simple_baddy_firering_attack(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if character_value(&attacker, CharacterValue::Fireball) <= 1
+            || attacker.mana < FIREBALL_COST
+            || tile_char_dist(&attacker, target) >= 2
+            || may_add_spell(&attacker, &self.items, IDR_FIRERING, self.tick.0 as u32).is_none()
+        {
+            return false;
+        }
+
+        let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
+        let damage = fireball_damage(
+            character_value(&attacker, CharacterValue::Fireball),
+            character_value(target, CharacterValue::Immunity),
+            character_value(target, CharacterValue::Tactics),
+            has_tactics,
+        );
+        if damage < POWERSCALE {
+            return false;
+        }
+
+        let Some(attacker_mut) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        if do_fireball(
+            attacker_mut,
+            &self.items,
+            usize::from(attacker.x),
+            usize::from(attacker.y),
             self.tick.0 as u32,
         )
         .is_err()
@@ -15437,6 +15487,37 @@ mod tests {
             panic!("simple baddy state missing");
         };
         assert_eq!(data.lastfight, 455);
+    }
+
+    #[test]
+    fn simple_baddy_firering_helper_respects_active_spell_blocker() {
+        let mut world = World::default();
+        world.tick = Tick(456);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FIREBALL_COST;
+        npc.values[0][CharacterValue::Fireball as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let mut blocker = item(20, ItemFlags::empty());
+        blocker.driver = IDR_FIRERING;
+        npc.inventory[SPELL_SLOT_START] = Some(blocker.id);
+        let target = character(2);
+        world.items.insert(blocker.id, blocker);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target.clone(), 11, 10);
+
+        assert!(!world.setup_simple_baddy_firering_attack(CharacterId(1), &target));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, 0);
+        assert_eq!(npc.mana, FIREBALL_COST);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 0);
     }
 
     #[test]
