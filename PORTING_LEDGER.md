@@ -629,3 +629,7 @@ Recommended next chest steps:
 ### Iteration 144 Additional Progress
 
 - Area 20 `IDR_LQ_TICKER = 103` now dispatches from the Rust item-driver registry for the C `lq_ticker` boundary: it is guarded to area 20 like the legacy module load, nonzero-character calls return a handled no-op, zero-character timer calls return a typed one-second reschedule request, and the server runtime applies that request through the existing item-driver timer queue. Focused core tests cover timer rescheduling, character-call no-op behavior, and area guard parity. Remaining live-quest gaps are initial door/NPC table discovery, NPC respawn spawning, `IDR_LQ_ENTRANCE`, LQ player/NPC PPD state, character drivers, and full quest progression side effects.
+
+### Iteration 145 Additional Progress
+
+- Area 22 Lab 1 `IDR_LABTORCH = 199` now dispatches from the Rust item-driver registry for C `labtorch`: it is guarded to area 22 like the legacy module load, zero-character calls store the current light modifier in `drdata[1]`, player use cannot light an unlit torch, NPC/non-player use lights unlit torches by incrementing the sprite/restoring `V_LIGHT`, and lit-torch use extinguishes by decrementing the sprite/clearing light. Focused core tests cover area guard, timer storage, player no-op, NPC lighting, and extinguishing. Remaining Lab 1 torch gap is the exact `notify_area(..., NT_NPC, NTID_LABGNOMETORCH, ...)` fan-out on extinguish.
