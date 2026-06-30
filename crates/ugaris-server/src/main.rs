@@ -2347,6 +2347,18 @@ fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    if lower == "sprite" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        character.sprite = legacy_atoi_prefix(rest) as i32;
+        return Some(KeyringCommandResult {
+            inventory_changed: true,
+            name_changed: true,
+            ..Default::default()
+        });
+    }
+
     if lower.len() >= 2 && "immortal".starts_with(&lower) {
         if !is_lqmaster {
             return None;
@@ -10836,6 +10848,69 @@ mod tests {
     }
 
     #[test]
+    fn god_sprite_command_sets_character_sprite_silently() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Godmode"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::GOD);
+        character.sprite = 100;
+        world.add_character(character);
+        let mut runtime = ServerRuntime::default();
+
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/sprite 27abc",
+            1,
+        )
+        .expect("god sprite command should be recognized");
+
+        assert_eq!(world.characters[&character_id].sprite, 27);
+        assert!(result.messages.is_empty());
+        assert!(result.inventory_changed);
+        assert!(result.name_changed);
+    }
+
+    #[test]
+    fn sprite_command_is_god_only_and_requires_full_name() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/sprite 42",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/sprit 42",
+            1,
+        )
+        .is_none());
+    }
+
+    #[test]
     fn god_itemname_and_itemdesc_mutate_cursor_item_with_look_feedback() {
         let mut world = World::default();
         let character_id = CharacterId(7);
@@ -17253,6 +17328,9 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 if result.inventory_changed {
                                     command_inventory_refresh.push(character_id);
+                                }
+                                if result.name_changed {
+                                    command_name_refresh.push(character_id);
                                 }
                                 continue;
                             }
