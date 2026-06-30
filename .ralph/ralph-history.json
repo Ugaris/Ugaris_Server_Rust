@@ -3353,9 +3353,36 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 123,
+      "startedAt": "2026-06-30T04:28:30.949Z",
+      "endedAt": "2026-06-30T04:37:44.135Z",
+      "durationMs": 553020,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 246 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 764 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 67429023,
+  "totalDurationMs": 67982043,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -3363,14 +3390,14 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 15,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 15,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 103,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 101,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 89,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 93,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 73,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 104,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 102,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 90,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 94,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 74,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 45,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 46,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 29,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
@@ -3380,7 +3407,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 2,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 20,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 21,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 7,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -3740,7 +3767,7 @@
       "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 227 filtered out; finished in 0.00s": 1,
-      "test result: ok. 764 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 5,
+      "test result: ok. 764 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 6,
       "test tests::ice_itemspawn_silently_rejects_wrong_owner_bondtake_like_c_can_carry ... FAILED": 1,
       "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 235 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 235 filtered out; finished in 0.00s": 1,
@@ -3752,7 +3779,9 @@
       "test result: ok. 242 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 242 filtered out; finished in 0.00s": 1,
       "error: unexpected argument 'world_executes_area17_burndown_barrel_ignite_and_timer' found": 1,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 761 filtered out; finished in 0.00s": 1
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 761 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s": 1,
+      "test result: ok. 246 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

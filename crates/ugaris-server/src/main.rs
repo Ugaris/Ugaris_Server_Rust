@@ -777,6 +777,17 @@ enum NomadStackApplyResult {
         unit: &'static str,
     },
     CannotMix,
+    EnhanceNeedsSilver,
+    EnhanceNeedsGold,
+    EnhanceNotEnough {
+        material: String,
+        need: u32,
+    },
+    EnhanceConfirmUnusable,
+    Enhanced {
+        used: u32,
+        target_name: String,
+    },
     Bug(&'static str),
     MissingPlayer,
     MissingItem,
@@ -7396,9 +7407,15 @@ fn apply_nomad_stack(
         return NomadStackApplyResult::MissingItem;
     }
     let Some(cursor_kind) = world.items.get(&cursor_item_id).and_then(stack_kind) else {
+        if matches!(kind, StackKind::SilverUnit | StackKind::GoldUnit) {
+            return apply_enhance_material(world, item_id, cursor_item_id, character_id, kind);
+        }
         return NomadStackApplyResult::CannotMix;
     };
     if cursor_kind != kind {
+        if matches!(kind, StackKind::SilverUnit | StackKind::GoldUnit) {
+            return apply_enhance_material(world, item_id, cursor_item_id, character_id, kind);
+        }
         return NomadStackApplyResult::CannotMix;
     }
     let cursor_value = world
@@ -7425,6 +7442,251 @@ fn apply_nomad_stack(
     character.cursor_item = None;
     character.flags.insert(CharacterFlags::ITEMS);
     NomadStackApplyResult::Merged { count, unit }
+}
+
+fn apply_enhance_material(
+    world: &mut World,
+    material_id: ItemId,
+    target_id: ItemId,
+    character_id: CharacterId,
+    material_kind: StackKind,
+) -> NomadStackApplyResult {
+    let Some(target) = world.items.get(&target_id) else {
+        return NomadStackApplyResult::MissingItem;
+    };
+    if target.flags.contains(ItemFlags::NOENHANCE) {
+        return NomadStackApplyResult::CannotMix;
+    }
+    let Some(enhanced_sprite) = enhance_item_sprite(target.sprite) else {
+        return NomadStackApplyResult::CannotMix;
+    };
+    let needs_gold = (59200..59299).contains(&enhanced_sprite) || enhanced_sprite == 59474;
+    if needs_gold && material_kind != StackKind::GoldUnit {
+        return NomadStackApplyResult::EnhanceNeedsGold;
+    }
+    if !needs_gold && material_kind != StackKind::SilverUnit {
+        return NomadStackApplyResult::EnhanceNeedsSilver;
+    }
+
+    let need = enhance_item_price(target);
+    let material_count = world
+        .items
+        .get(&material_id)
+        .map(stack_count)
+        .unwrap_or_default();
+    let material_name = world
+        .items
+        .get(&material_id)
+        .map(|item| item.name.clone())
+        .unwrap_or_else(|| "material".to_string());
+    if need > material_count {
+        return NomadStackApplyResult::EnhanceNotEnough {
+            material: material_name,
+            need,
+        };
+    }
+
+    let Some(character) = world.characters.get(&character_id) else {
+        return NomadStackApplyResult::MissingPlayer;
+    };
+    if enhance_would_make_unusable(target, character) {
+        let now = current_realtime_seconds();
+        let confirmed = world.items.get(&material_id).is_some_and(|material| {
+            read_driver_data_u32(material, 8) == target_id.0
+                && now.saturating_sub(read_driver_data_u32(material, 12)) <= 15
+        });
+        if !confirmed {
+            if let Some(material) = world.items.get_mut(&material_id) {
+                write_driver_data_u32(material, 8, target_id.0);
+                write_driver_data_u32(material, 12, now);
+            }
+            return NomadStackApplyResult::EnhanceConfirmUnusable;
+        }
+    }
+
+    let price = world
+        .items
+        .get(&material_id)
+        .map(|material| material.value.saturating_mul(need) / material_count.max(1))
+        .unwrap_or_default();
+    let remaining = material_count.saturating_sub(need);
+    if remaining < 1 {
+        world.items.remove(&material_id);
+        if let Some(character) = world.characters.get_mut(&character_id) {
+            for slot in character.inventory.iter_mut() {
+                if *slot == Some(material_id) {
+                    *slot = None;
+                }
+            }
+        }
+    } else if let Some(material) = world.items.get_mut(&material_id) {
+        material.value = material.value.saturating_sub(price);
+        set_stack_count(material, remaining, material_kind);
+    }
+
+    let Some(target) = world.items.get_mut(&target_id) else {
+        return NomadStackApplyResult::MissingItem;
+    };
+    target.sprite = enhanced_sprite;
+    target.value = target.value.saturating_add(price);
+    for slot in 0..ugaris_core::entity::MAX_MODIFIERS {
+        if target.modifier_value[slot] == 0 {
+            continue;
+        }
+        match target.modifier_index[slot] {
+            index
+                if index == -(CharacterValue::ArmorSkill as i16)
+                    || index == -(CharacterValue::Dagger as i16)
+                    || index == -(CharacterValue::Staff as i16)
+                    || index == -(CharacterValue::Sword as i16)
+                    || index == -(CharacterValue::TwoHand as i16) =>
+            {
+                target.modifier_value[slot] = target.modifier_value[slot].saturating_add(10);
+            }
+            index if index == CharacterValue::Armor as i16 => {
+                target.modifier_value[slot] =
+                    target.modifier_value[slot].saturating_add(armor_bonus(target));
+            }
+            index if index == CharacterValue::Weapon as i16 => {
+                target.modifier_value[slot] = target.modifier_value[slot].saturating_add(10);
+            }
+            index if index >= 0 && target.modifier_value[slot] < 20 => {
+                target.modifier_value[slot] += 1;
+            }
+            _ => {}
+        }
+    }
+    let target_name = target.name.clone();
+
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.flags.insert(CharacterFlags::ITEMS);
+    }
+    NomadStackApplyResult::Enhanced {
+        used: need,
+        target_name,
+    }
+}
+
+fn enhance_item_sprite(sprite: i32) -> Option<i32> {
+    let sprite = if (10120..=10159).contains(&sprite) {
+        sprite - 10120 + 59300
+    } else if (10190..=10199).contains(&sprite) {
+        sprite - 10190 + 59340
+    } else if (10220..=10229).contains(&sprite) {
+        sprite - 10220 + 59350
+    } else if (10250..=10259).contains(&sprite) {
+        sprite - 10250 + 59360
+    } else if (10280..=10289).contains(&sprite) {
+        sprite - 10280 + 59370
+    } else if (59300..=59399).contains(&sprite) {
+        sprite - 59300 + 59200
+    } else {
+        match sprite {
+            50510 => 59388,
+            50025 => 59380,
+            50026 => 59381,
+            50122 => 59382,
+            50123 => 59383,
+            50124 => 59384,
+            50125 => 59385,
+            50126 => 59386,
+            50141 => 59387,
+            50512 => 59389,
+            50513 => 59390,
+            51084 => 59473,
+            51617 => 59299,
+            59299 => 59291,
+            59473 => 59474,
+            _ => return None,
+        }
+    };
+    Some(sprite)
+}
+
+fn enhance_item_price(item: &Item) -> u32 {
+    enhance_item_max_modifier(item).saturating_mul(100) + 100
+}
+
+fn enhance_item_max_modifier(item: &Item) -> u32 {
+    let mut max_modifier = 0_u32;
+    for slot in 0..ugaris_core::entity::MAX_MODIFIERS {
+        match item.modifier_index[slot] {
+            index
+                if index == CharacterValue::Weapon as i16
+                    || index == CharacterValue::Armor as i16
+                    || index == CharacterValue::Speed as i16
+                    || index == CharacterValue::Demon as i16
+                    || index == CharacterValue::Light as i16 => {}
+            index if index >= 0 => {
+                max_modifier = max_modifier.max(item.modifier_value[slot].max(0) as u32);
+            }
+            _ => {}
+        }
+    }
+    max_modifier
+}
+
+fn enhance_would_make_unusable(item: &Item, character: &Character) -> bool {
+    for slot in 0..ugaris_core::entity::MAX_MODIFIERS {
+        let value = item.modifier_value[slot];
+        if value == 0 {
+            continue;
+        }
+        let required_skill = match item.modifier_index[slot] {
+            index if index == -(CharacterValue::ArmorSkill as i16) => CharacterValue::ArmorSkill,
+            index if index == -(CharacterValue::Dagger as i16) => CharacterValue::Dagger,
+            index if index == -(CharacterValue::Staff as i16) => CharacterValue::Staff,
+            index if index == -(CharacterValue::Sword as i16) => CharacterValue::Sword,
+            index if index == -(CharacterValue::TwoHand as i16) => CharacterValue::TwoHand,
+            _ => continue,
+        };
+        let effective = character
+            .values
+            .get(1)
+            .and_then(|values| values.get(required_skill as usize))
+            .copied()
+            .unwrap_or_default();
+        if effective < value + 10 {
+            return true;
+        }
+    }
+    false
+}
+
+fn armor_bonus(item: &Item) -> i16 {
+    if item.flags.contains(ItemFlags::WNHEAD) {
+        40
+    } else if item.flags.contains(ItemFlags::WNARMS) {
+        30
+    } else if item.flags.contains(ItemFlags::WNLEGS) {
+        30
+    } else if item.flags.contains(ItemFlags::WNBODY) {
+        100
+    } else {
+        0
+    }
+}
+
+fn read_driver_data_u32(item: &Item, offset: usize) -> u32 {
+    let mut bytes = [0_u8; 4];
+    for (idx, byte) in item.driver_data.iter().skip(offset).take(4).enumerate() {
+        bytes[idx] = *byte;
+    }
+    u32::from_le_bytes(bytes)
+}
+
+fn write_driver_data_u32(item: &mut Item, offset: usize, value: u32) {
+    if item.driver_data.len() < offset + 4 {
+        item.driver_data.resize(offset + 4, 0);
+    }
+    item.driver_data[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn current_realtime_seconds() -> u32 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs().min(u64::from(u32::MAX)) as u32)
+        .unwrap_or_default()
 }
 
 fn split_nomad_stack(
@@ -14170,6 +14432,113 @@ mod tests {
     }
 
     #[test]
+    fn enhance_material_enhances_cursor_item_with_legacy_sprite_and_cost() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(20));
+        character.cursor_item = Some(ItemId(21));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut material = test_item(ItemId(20), 51054, ItemFlags::USED | ItemFlags::USE);
+        material.name = "Silver".to_string();
+        material.driver = IDR_ENHANCE;
+        material.value = 1_000;
+        material.carried_by = Some(character_id);
+        material.driver_data = vec![1, 244, 1, 0, 0];
+        world.add_item(material);
+        let mut target = test_item(ItemId(21), 10120, ItemFlags::USED | ItemFlags::TAKE);
+        target.name = "Sword".to_string();
+        target.carried_by = Some(character_id);
+        target.modifier_index[0] = CharacterValue::Wisdom as i16;
+        target.modifier_value[0] = 2;
+        target.modifier_index[1] = CharacterValue::Weapon as i16;
+        target.modifier_value[1] = 12;
+        world.add_item(target);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
+            NomadStackApplyResult::Enhanced {
+                used: 300,
+                target_name: "Sword".to_string(),
+            }
+        );
+        let material = world.items.get(&ItemId(20)).unwrap();
+        assert_eq!(stack_count(material), 200);
+        assert_eq!(material.value, 400);
+        let target = world.items.get(&ItemId(21)).unwrap();
+        assert_eq!(target.sprite, 59300);
+        assert_eq!(target.value, 600);
+        assert_eq!(target.modifier_value[0], 3);
+        assert_eq!(target.modifier_value[1], 22);
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
+    fn enhance_material_requires_gold_for_already_silvered_items() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(20));
+        character.cursor_item = Some(ItemId(21));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut silver = test_item(ItemId(20), 51054, ItemFlags::USED | ItemFlags::USE);
+        silver.name = "Silver".to_string();
+        silver.driver = IDR_ENHANCE;
+        silver.carried_by = Some(character_id);
+        silver.driver_data = vec![1, 244, 1, 0, 0];
+        world.add_item(silver);
+        let mut target = test_item(ItemId(21), 59300, ItemFlags::USED | ItemFlags::TAKE);
+        target.carried_by = Some(character_id);
+        world.add_item(target);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
+            NomadStackApplyResult::EnhanceNeedsGold
+        );
+        assert_eq!(world.items.get(&ItemId(21)).unwrap().sprite, 59300);
+        assert_eq!(stack_count(world.items.get(&ItemId(20)).unwrap()), 500);
+    }
+
+    #[test]
+    fn enhance_material_prompts_before_making_item_unusable() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(20));
+        character.cursor_item = Some(ItemId(21));
+        character.values[1][CharacterValue::Sword as usize] = 14;
+        let mut world = World::default();
+        world.add_character(character);
+        let mut material = test_item(ItemId(20), 51054, ItemFlags::USED | ItemFlags::USE);
+        material.name = "Silver".to_string();
+        material.driver = IDR_ENHANCE;
+        material.carried_by = Some(character_id);
+        material.driver_data = vec![1, 244, 1, 0, 0];
+        world.add_item(material);
+        let mut target = test_item(ItemId(21), 10120, ItemFlags::USED | ItemFlags::TAKE);
+        target.carried_by = Some(character_id);
+        target.modifier_index[0] = -(CharacterValue::Sword as i16);
+        target.modifier_value[0] = 5;
+        world.add_item(target);
+        let mut loader = ZoneLoader::new();
+
+        assert_eq!(
+            apply_nomad_stack(&mut world, &mut loader, ItemId(20), character_id),
+            NomadStackApplyResult::EnhanceConfirmUnusable
+        );
+        let material = world.items.get(&ItemId(20)).unwrap();
+        assert_eq!(read_driver_data_u32(material, 8), ItemId(21).0);
+        assert_eq!(stack_count(material), 500);
+        assert_eq!(world.items.get(&ItemId(21)).unwrap().sprite, 10120);
+    }
+
+    #[test]
     fn account_depot_swap_moves_cursor_item_into_snapshot_slot() {
         let character_id = CharacterId(7);
         let cursor_id = ItemId(20);
@@ -19769,6 +20138,26 @@ async fn main() -> anyhow::Result<()> {
                                                 NomadStackApplyResult::CannotMix => {
                                                     feedback.push((character_id, "You cannot mix those.".to_string()));
                                                     blocked += 1;
+                                                }
+                                                NomadStackApplyResult::EnhanceNeedsSilver => {
+                                                    feedback.push((character_id, "To enhance this item, you need silver.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                NomadStackApplyResult::EnhanceNeedsGold => {
+                                                    feedback.push((character_id, "This item has already been enhanced once. For further enhancements, you need gold.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                NomadStackApplyResult::EnhanceNotEnough { material, need } => {
+                                                    feedback.push((character_id, format!("You do not have enough {material} to enhance this item. You need {need} units.")));
+                                                    blocked += 1;
+                                                }
+                                                NomadStackApplyResult::EnhanceConfirmUnusable => {
+                                                    feedback.push((character_id, "Enhancing this item would make it unusable for you. Click again if this is what you want.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                NomadStackApplyResult::Enhanced { used, target_name } => {
+                                                    feedback.push((character_id, format!("You used {used} units to enhance your {target_name}.")));
+                                                    executed += 1;
                                                 }
                                                 NomadStackApplyResult::Bug(message) => {
                                                     feedback.push((character_id, message.to_string()));
