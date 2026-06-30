@@ -3543,9 +3543,39 @@
         "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
       ]
+    },
+    {
+      "iteration": 130,
+      "startedAt": "2026-06-30T05:22:26.076Z",
+      "endedAt": "2026-06-30T05:36:40.199Z",
+      "durationMs": 853963,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/player.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 769 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 771 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 70643818,
+  "totalDurationMs": 71497781,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -3553,18 +3583,18 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 17,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 17,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 109,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 108,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 96,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 100,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 79,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 110,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 109,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 97,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 101,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 80,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 48,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 49,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 29,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 47,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 48,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 3,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
@@ -3575,7 +3605,7 @@
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 8,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 14,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 15,
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
@@ -3963,7 +3993,9 @@
       "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/system/": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 765 filtered out; finished in 0.00s": 1,
       "error: unexpected argument 'status_command_shows_represented_lostcon_and_account_state' found": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 249 filtered out; finished in 0.00s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 249 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 769 filtered out; finished in 0.00s": 1,
+      "test result: ok. 771 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

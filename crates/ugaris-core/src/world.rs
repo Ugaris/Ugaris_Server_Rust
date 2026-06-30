@@ -7141,9 +7141,10 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
-            ItemDriverOutcome::LabExitUse { .. } | ItemDriverOutcome::LabExitWrongOwner { .. } => {
-                outcome
-            }
+            ItemDriverOutcome::LabExitUse { .. }
+            | ItemDriverOutcome::LabExitWrongOwner { .. }
+            | ItemDriverOutcome::LabEntranceSolvedAll { .. }
+            | ItemDriverOutcome::LabEntranceTooLow { .. } => outcome,
             ItemDriverOutcome::StafferMineDig {
                 item_id,
                 character_id: _,

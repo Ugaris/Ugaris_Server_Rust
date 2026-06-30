@@ -43,6 +43,7 @@ pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_STAFFER_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_FARMY_PPD_SIZE: usize = 85 * 4;
 pub const LEGACY_TWOCITY_PPD_SIZE: usize = 29 * 4;
+pub const LEGACY_LAB_PPD_SIZE: usize = 360;
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
 pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
@@ -89,6 +90,7 @@ pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DAT
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TWOCITY_PPD: u32 = make_drd(DEV_ID_DB, 97 | PERSISTENT_PLAYER_DATA);
+pub const DRD_LAB_PPD: u32 = make_drd(DEV_ID_DB, 116 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
 
@@ -347,6 +349,10 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub twocity_ppd: Vec<u8>,
     #[serde(default)]
+    pub lab_ppd: Vec<u8>,
+    #[serde(default)]
+    pub lab_solved_bits: u64,
+    #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
     pub pk_deaths: u32,
@@ -448,6 +454,8 @@ impl PlayerRuntime {
             staffer_ppd: Vec::new(),
             farmy_ppd: Vec::new(),
             twocity_ppd: Vec::new(),
+            lab_ppd: Vec::new(),
+            lab_solved_bits: 0,
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,
@@ -849,6 +857,28 @@ impl PlayerRuntime {
             return false;
         }
         self.transport_seen = read_u64(bytes, 0);
+        true
+    }
+
+    pub fn encode_legacy_lab_ppd(&self) -> Vec<u8> {
+        let mut bytes = if self.lab_ppd.len() >= LEGACY_LAB_PPD_SIZE {
+            self.lab_ppd.clone()
+        } else {
+            let mut bytes = vec![0; LEGACY_LAB_PPD_SIZE];
+            let copy_len = self.lab_ppd.len().min(LEGACY_LAB_PPD_SIZE);
+            bytes[..copy_len].copy_from_slice(&self.lab_ppd[..copy_len]);
+            bytes
+        };
+        write_u64(&mut bytes, 0, self.lab_solved_bits);
+        bytes
+    }
+
+    pub fn decode_legacy_lab_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < 8 {
+            return false;
+        }
+        self.lab_ppd = bytes.to_vec();
+        self.lab_solved_bits = read_u64(bytes, 0);
         true
     }
 
@@ -1609,6 +1639,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_LAB_PPD => {
+                    if !self.decode_legacy_lab_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_PK_PPD => {
                     if !self.decode_legacy_pk_ppd(block.data) {
                         return false;
@@ -1715,6 +1750,7 @@ impl PlayerRuntime {
         let mut had_keyring = false;
         let mut had_treasure_chest = false;
         let mut had_transport = false;
+        let mut had_lab = false;
         let mut had_pk = false;
         let mut had_randchest = false;
         let mut had_demonshrine = false;
@@ -1765,6 +1801,9 @@ impl PlayerRuntime {
                     DRD_TRANSPORT_PPD,
                     &self.encode_legacy_transport_ppd(),
                 );
+            } else if block.id == DRD_LAB_PPD {
+                had_lab = true;
+                write_ppd_block(&mut encoded, DRD_LAB_PPD, &self.encode_legacy_lab_ppd());
             } else if block.id == DRD_PK_PPD {
                 had_pk = true;
                 write_ppd_block(&mut encoded, DRD_PK_PPD, &self.encode_legacy_pk_ppd());
@@ -1906,6 +1945,12 @@ impl PlayerRuntime {
                 DRD_TRANSPORT_PPD,
                 &self.encode_legacy_transport_ppd(),
             );
+        }
+        if !had_lab
+            && (existing_was_valid || existing.is_empty())
+            && (self.lab_solved_bits != 0 || !self.lab_ppd.is_empty())
+        {
+            write_ppd_block(&mut encoded, DRD_LAB_PPD, &self.encode_legacy_lab_ppd());
         }
         if !had_pk && (existing_was_valid || existing.is_empty()) {
             if self.pk_kills != 0
@@ -3320,6 +3365,48 @@ mod tests {
         assert!(decoded.decode_legacy_transport_ppd(&encoded));
         assert_eq!(decoded.transport_seen, 0x0102_0304_0506_0708);
         assert!(!decoded.decode_legacy_transport_ppd(&encoded[..7]));
+    }
+
+    #[test]
+    fn lab_ppd_codec_preserves_legacy_solved_bits_and_payload() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.lab_ppd = vec![0xaa; LEGACY_LAB_PPD_SIZE];
+        player.lab_solved_bits = (1_u64 << 10) | (1_u64 << 25);
+
+        let encoded = player.encode_legacy_lab_ppd();
+        assert_eq!(encoded.len(), LEGACY_LAB_PPD_SIZE);
+        assert_eq!(read_u64(&encoded, 0), (1_u64 << 10) | (1_u64 << 25));
+        assert_eq!(encoded[8], 0xaa);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_lab_ppd(&encoded));
+        assert_eq!(decoded.lab_solved_bits, (1_u64 << 10) | (1_u64 << 25));
+        assert_eq!(decoded.lab_ppd, encoded);
+        assert!(!decoded.decode_legacy_lab_ppd(&encoded[..7]));
+    }
+
+    #[test]
+    fn lab_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_lab = vec![0; LEGACY_LAB_PPD_SIZE];
+        write_u64(&mut existing_lab, 0, 1_u64 << 10);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_LAB_PPD, &existing_lab);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.lab_solved_bits = (1_u64 << 15) | (1_u64 << 20);
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_LAB_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_LAB_PPD_SIZE as u32);
+        assert_eq!(read_u64(&encoded, 20), (1_u64 << 15) | (1_u64 << 20));
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.lab_solved_bits, (1_u64 << 15) | (1_u64 << 20));
     }
 
     #[test]

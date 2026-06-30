@@ -5772,6 +5772,14 @@ fn item_driver_context_for_request(
         }
         return ugaris_core::item_driver::ItemDriverContext::default();
     }
+    if *driver == ugaris_core::item_driver::IDR_LABENTRANCE {
+        return ugaris_core::item_driver::ItemDriverContext {
+            lab_solved_bits: player
+                .map(|player| player.lab_solved_bits)
+                .unwrap_or_default(),
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
     if *driver == IDR_BOOKCASE || *driver == IDR_PICKCHEST || *driver == IDR_PICKDOOR {
         let (has_area17_library_key, has_area17_lockpick) = world
             .characters
@@ -22150,6 +22158,20 @@ async fn main() -> anyhow::Result<()> {
                                                 feedback.push((character_id, "Thou art still chewing a brown berry.".to_string()));
                                                 blocked += 1;
                                             }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You have solved all existing labyrinths already. You can now fight the gatekeeper.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LabEntranceTooLow { character_id, required_level, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                format!("You may not enter before reaching level {required_level}."),
+                                            ));
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::LabExitWrongOwner { character_id, .. } => {
                                             feedback.push((character_id, "This gate has not been created for you. You cannot use it.".to_string()));

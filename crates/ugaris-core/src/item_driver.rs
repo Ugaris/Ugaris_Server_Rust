@@ -372,6 +372,7 @@ pub struct ItemDriverContext {
     pub has_dungeon_door_key1: bool,
     pub has_dungeon_door_key2: bool,
     pub dungeon_defender_count: Option<u16>,
+    pub lab_solved_bits: u64,
     pub pent_last_solve_tick: Option<u32>,
     pub pent_demon_lord_access_seconds: Option<u32>,
     pub has_matching_random_shrine_key: bool,
@@ -1219,6 +1220,15 @@ pub enum ItemDriverOutcome {
     LabExitWrongOwner {
         item_id: ItemId,
         character_id: CharacterId,
+    },
+    LabEntranceSolvedAll {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    LabEntranceTooLow {
+        item_id: ItemId,
+        character_id: CharacterId,
+        required_level: u16,
     },
     BeyondPotion {
         item_id: ItemId,
@@ -2075,6 +2085,7 @@ pub fn execute_item_driver_with_context(
                 IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
                 IDR_LAB3_PLANT => lab3_plant_driver(character, item, context),
                 IDR_LABEXIT => labexit_driver(character, item, context),
+                IDR_LABENTRANCE => labentrance_driver(character, item, context),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
                 IDR_XMASMAKER => xmasmaker_driver(character, item),
@@ -6134,6 +6145,58 @@ fn set_drdata_u16(item: &mut Item, idx: usize, value: u16) {
 fn set_drdata_u32(item: &mut Item, idx: usize, value: u32) {
     for (offset, byte) in value.to_le_bytes().into_iter().enumerate() {
         set_drdata(item, idx + offset, byte);
+    }
+}
+
+fn legacy_lab_destination(lab_level: u8) -> Option<(u16, u16, u16, u16)> {
+    match lab_level {
+        10 => Some((10, 22, 27, 242)),
+        15 => Some((12, 22, 69, 105)),
+        20 => Some((15, 22, 227, 250)),
+        25 => Some((20, 22, 144, 103)),
+        30 => Some((25, 22, 163, 243)),
+        _ => None,
+    }
+}
+
+fn labentrance_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    for lab_level in 0..64_u8 {
+        let bit = 1_u64 << lab_level;
+        if context.lab_solved_bits & bit != 0 {
+            continue;
+        }
+        let Some((required_level, area_id, x, y)) = legacy_lab_destination(lab_level) else {
+            continue;
+        };
+        if character.level < u32::from(required_level) {
+            return ItemDriverOutcome::LabEntranceTooLow {
+                item_id: item.id,
+                character_id: character.id,
+                required_level,
+            };
+        }
+        return ItemDriverOutcome::Teleport {
+            item_id: item.id,
+            character_id: character.id,
+            x,
+            y,
+            area_id,
+            stop_driver: true,
+            quiet: false,
+        };
+    }
+
+    ItemDriverOutcome::LabEntranceSolvedAll {
+        item_id: item.id,
+        character_id: character.id,
     }
 }
 
@@ -15688,6 +15751,120 @@ mod tests {
             }
         );
         assert_eq!(drdata_u32(&gate, 8), 227);
+    }
+
+    #[test]
+    fn labentrance_selects_next_unsolved_legacy_lab() {
+        let mut character = character(42);
+        character.level = 25;
+        let mut entrance = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LABENTRANCE);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LABENTRANCE,
+            item_id: ItemId(7),
+            character_id: CharacterId(42),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut entrance,
+                request,
+                3,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::Teleport {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                x: 27,
+                y: 242,
+                area_id: 22,
+                stop_driver: true,
+                quiet: false,
+            }
+        );
+
+        let context = ItemDriverContext {
+            lab_solved_bits: 1_u64 << 10,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut entrance,
+                request,
+                3,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::Teleport {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                x: 69,
+                y: 105,
+                area_id: 22,
+                stop_driver: true,
+                quiet: false,
+            }
+        );
+    }
+
+    #[test]
+    fn labentrance_ports_level_gate_and_all_solved_feedback_boundary() {
+        let mut character = character(42);
+        character.level = 11;
+        let mut entrance = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LABENTRANCE);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LABENTRANCE,
+            item_id: ItemId(7),
+            character_id: CharacterId(42),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            lab_solved_bits: 1_u64 << 10,
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut entrance,
+                request,
+                3,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::LabEntranceTooLow {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                required_level: 12,
+            }
+        );
+
+        character.level = 30;
+        let context = ItemDriverContext {
+            lab_solved_bits: (1_u64 << 10)
+                | (1_u64 << 15)
+                | (1_u64 << 20)
+                | (1_u64 << 25)
+                | (1_u64 << 30),
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut entrance,
+                request,
+                3,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::LabEntranceSolvedAll {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+            }
+        );
     }
 
     #[test]
