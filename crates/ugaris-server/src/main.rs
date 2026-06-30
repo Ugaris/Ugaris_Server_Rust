@@ -67,7 +67,34 @@ struct RuntimePlayerAttackPolicy<'a> {
     attacker_runtime: &'a PlayerRuntime,
 }
 
+#[derive(Debug, Clone, Default)]
+struct PkRelationSnapshot {
+    hate_by_character: HashMap<CharacterId, Vec<u32>>,
+}
+
 const ARKHATA_CLERK_TIME_SECONDS: i32 = 60 * 15;
+
+impl PkRelationSnapshot {
+    fn from_runtime(runtime: &ServerRuntime) -> Self {
+        let hate_by_character = runtime
+            .players
+            .values()
+            .filter_map(|player| {
+                let character_id = player.character_id?;
+                Some((character_id, player.pk_hate.clone()))
+            })
+            .collect();
+        Self { hate_by_character }
+    }
+
+    fn has_hate(&self, source: CharacterId, target: CharacterId) -> bool {
+        target.0 != 0
+            && self
+                .hate_by_character
+                .get(&source)
+                .is_some_and(|hate| hate.iter().any(|id| *id == target.0))
+    }
+}
 
 impl ClanAttackPolicy for RuntimePlayerAttackPolicy<'_> {
     fn has_pk_hate(&self, _attacker: &Character, defender: &Character) -> bool {
@@ -364,16 +391,37 @@ impl ServerRuntime {
             .collect()
     }
 
-    fn refresh_known_character_name(&mut self, character: &Character) -> Vec<u64> {
+    fn refresh_known_character_name(
+        &mut self,
+        world: &World,
+        pk_relations: &PkRelationSnapshot,
+        character: &Character,
+    ) -> Vec<(u64, bytes::BytesMut)> {
         let character_id = client_character_id(character);
-        let packet = character_name_packet(character).to_vec();
         let mut sessions = Vec::new();
+        let viewer_packets: HashMap<u64, bytes::BytesMut> = self
+            .players
+            .iter()
+            .filter_map(|(session_id, player)| {
+                let viewer = player
+                    .character_id
+                    .and_then(|viewer_id| world.characters.get(&viewer_id))?;
+                Some((
+                    *session_id,
+                    character_name_packet_for_viewer(pk_relations, viewer, character),
+                ))
+            })
+            .collect();
         for (session_id, cache) in &mut self.map_caches {
             if cache.known_character_names.contains_key(&character_id) {
+                let packet = viewer_packets
+                    .get(session_id)
+                    .cloned()
+                    .unwrap_or_else(|| character_name_packet(character));
                 cache
                     .known_character_names
-                    .insert(character_id, packet.clone());
-                sessions.push(*session_id);
+                    .insert(character_id, packet.to_vec());
+                sessions.push((*session_id, packet));
             }
         }
         sessions
@@ -8549,13 +8597,19 @@ fn next_runtime_item_id(world: &World) -> ItemId {
 fn login_bootstrap_payloads(
     world: &World,
     character: &Character,
+    pk_relations: &PkRelationSnapshot,
     mirror_id: u16,
     tick: u64,
     view_distance: usize,
     effect_cache: &mut ClientEffectCache,
 ) -> Vec<bytes::BytesMut> {
     let mut payloads = vec![login_payload(world, character, mirror_id, tick)];
-    payloads.extend(initial_map_payloads(world, character, view_distance));
+    payloads.extend(initial_map_payloads(
+        world,
+        character,
+        pk_relations,
+        view_distance,
+    ));
     payloads.extend(client_effect_payloads(
         world,
         character,
@@ -8568,19 +8622,26 @@ fn login_bootstrap_payloads(
 fn map_refresh_payloads(
     world: &World,
     character: &Character,
+    pk_relations: &PkRelationSnapshot,
     view_distance: usize,
 ) -> Vec<bytes::BytesMut> {
     let mut builder = PacketBuilder::new();
     builder.origin(character.x, character.y);
 
     let mut payloads = vec![builder.into_payload()];
-    payloads.extend(initial_map_payloads(world, character, view_distance));
+    payloads.extend(initial_map_payloads(
+        world,
+        character,
+        pk_relations,
+        view_distance,
+    ));
     payloads
 }
 
 fn visible_map_cache(
     world: &World,
     character: &Character,
+    pk_relations: &PkRelationSnapshot,
     view_distance: usize,
 ) -> VisibleMapCache {
     let mut known_character_names = HashMap::new();
@@ -8589,11 +8650,12 @@ fn visible_map_cache(
             let tile = world.map.tile(map_x, map_y)?;
             let visible_character = tile_character(world, tile);
             let character_id = visible_character.map(client_character_id);
-            let character_packet = visible_character
-                .map(|character| map_character_packet(character, client_pos).to_vec());
-            let character_name_packet = visible_character.map(|character| {
-                let packet = character_name_packet(character).to_vec();
-                known_character_names.insert(client_character_id(character), packet.clone());
+            let character_packet =
+                visible_character.map(|visible| map_character_packet(visible, client_pos).to_vec());
+            let character_name_packet = visible_character.map(|visible| {
+                let packet =
+                    character_name_packet_for_viewer(pk_relations, character, visible).to_vec();
+                known_character_names.insert(client_character_id(visible), packet.clone());
                 packet
             });
             Some((
@@ -8621,6 +8683,7 @@ fn visible_map_cache(
 fn map_diff_payloads(
     world: &World,
     character: &Character,
+    pk_relations: &PkRelationSnapshot,
     view_distance: usize,
     cache: &mut VisibleMapCache,
 ) -> Vec<bytes::BytesMut> {
@@ -8628,11 +8691,11 @@ fn map_diff_payloads(
         || cache.center_y != character.y
         || cache.view_distance != view_distance
     {
-        *cache = visible_map_cache(world, character, view_distance);
-        return map_refresh_payloads(world, character, view_distance);
+        *cache = visible_map_cache(world, character, pk_relations, view_distance);
+        return map_refresh_payloads(world, character, pk_relations, view_distance);
     }
 
-    let next_cache = visible_map_cache(world, character, view_distance);
+    let next_cache = visible_map_cache(world, character, pk_relations, view_distance);
     let mut payloads = Vec::new();
     let mut current = bytes::BytesMut::new();
 
@@ -8973,6 +9036,7 @@ fn effect_visible_to_viewer(
 }
 
 fn queue_periodic_player_frames(runtime: &mut ServerRuntime, world: &World) -> (usize, usize) {
+    let pk_relations = PkRelationSnapshot::from_runtime(runtime);
     let sessions: Vec<_> = runtime
         .players
         .iter()
@@ -8991,12 +9055,12 @@ fn queue_periodic_player_frames(runtime: &mut ServerRuntime, world: &World) -> (
             continue;
         };
         let mut payloads = match runtime.map_caches.get_mut(&session_id) {
-            Some(cache) => map_diff_payloads(world, character, view_distance, cache),
+            Some(cache) => map_diff_payloads(world, character, &pk_relations, view_distance, cache),
             None => {
-                let payloads = map_refresh_payloads(world, character, view_distance);
+                let payloads = map_refresh_payloads(world, character, &pk_relations, view_distance);
                 runtime.map_caches.insert(
                     session_id,
-                    visible_map_cache(world, character, view_distance),
+                    visible_map_cache(world, character, &pk_relations, view_distance),
                 );
                 payloads
             }
@@ -9123,6 +9187,7 @@ fn area_sound_payload(
 fn movement_scroll_payload(
     world: &World,
     character: &Character,
+    pk_relations: &PkRelationSnapshot,
     old_x: u16,
     old_y: u16,
     view_distance: usize,
@@ -9149,9 +9214,13 @@ fn movement_scroll_payload(
             continue;
         };
         payload.extend_from_slice(&map_tile_packet(world, tile, client_pos));
-        if let Some(character) = tile_character(world, tile) {
-            payload.extend_from_slice(&character_name_packet(character));
-            payload.extend_from_slice(&map_character_packet(character, client_pos));
+        if let Some(visible) = tile_character(world, tile) {
+            payload.extend_from_slice(&character_name_packet_for_viewer(
+                pk_relations,
+                character,
+                visible,
+            ));
+            payload.extend_from_slice(&map_character_packet(visible, client_pos));
         }
     }
 
@@ -9229,6 +9298,7 @@ fn map_character_clear_packet(client_pos: u16) -> bytes::BytesMut {
 fn initial_map_payloads(
     world: &World,
     viewer: &Character,
+    pk_relations: &PkRelationSnapshot,
     view_distance: usize,
 ) -> Vec<bytes::BytesMut> {
     let mut payloads = Vec::new();
@@ -9257,7 +9327,7 @@ fn initial_map_payloads(
             append_map_packet(
                 &mut payloads,
                 &mut current,
-                character_name_packet(character),
+                character_name_packet_for_viewer(pk_relations, viewer, character),
             );
             append_map_packet(
                 &mut payloads,
@@ -9379,6 +9449,41 @@ fn client_character_id(character: &Character) -> u16 {
 }
 
 fn character_name_packet(character: &Character) -> bytes::BytesMut {
+    character_name_packet_with_relation(character, 0)
+}
+
+fn character_name_packet_for_viewer(
+    pk_relations: &PkRelationSnapshot,
+    viewer: &Character,
+    character: &Character,
+) -> bytes::BytesMut {
+    character_name_packet_with_relation(
+        character,
+        pk_relation_for_viewer(pk_relations, viewer, character),
+    )
+}
+
+fn pk_relation_for_viewer(
+    pk_relations: &PkRelationSnapshot,
+    viewer: &Character,
+    character: &Character,
+) -> u8 {
+    if !character.flags.contains(CharacterFlags::PK) {
+        return 0;
+    }
+
+    let him = pk_relations.has_hate(character.id, viewer.id);
+    let me = pk_relations.has_hate(viewer.id, character.id);
+    match (him, me) {
+        (true, true) => 5,
+        (true, false) => 4,
+        (false, true) => 3,
+        (false, false) if pk_hate_prerequisites(viewer, character) => 2,
+        (false, false) => 1,
+    }
+}
+
+fn character_name_packet_with_relation(character: &Character, pk_relation: u8) -> bytes::BytesMut {
     let name = if character.flags.contains(CharacterFlags::WON) {
         if character.flags.contains(CharacterFlags::FEMALE) {
             format!("Lady {}", character.name)
@@ -9399,7 +9504,7 @@ fn character_name_packet(character: &Character) -> bytes::BytesMut {
         character.level.min(u32::from(u8::MAX)) as u8,
         colors,
         character.clan.min(u16::from(u8::MAX)) as u8,
-        0,
+        pk_relation,
         &name,
     )
 }
@@ -14410,6 +14515,45 @@ mod tests {
     }
 
     #[test]
+    fn character_name_packet_uses_viewer_specific_pk_relation() {
+        let mut viewer = login_character(CharacterId(7), &login_block("Viewer"), 1, 10, 10);
+        let mut target = login_character(CharacterId(8), &login_block("Target"), 1, 11, 10);
+        viewer.flags |= CharacterFlags::PK;
+        target.flags |= CharacterFlags::PK;
+
+        let mut relations = PkRelationSnapshot::default();
+        assert_eq!(
+            character_name_packet_for_viewer(&relations, &viewer, &target)[11],
+            2
+        );
+
+        relations
+            .hate_by_character
+            .insert(viewer.id, vec![target.id.0]);
+        assert_eq!(
+            character_name_packet_for_viewer(&relations, &viewer, &target)[11],
+            3
+        );
+
+        relations.hate_by_character.clear();
+        relations
+            .hate_by_character
+            .insert(target.id, vec![viewer.id.0]);
+        assert_eq!(
+            character_name_packet_for_viewer(&relations, &viewer, &target)[11],
+            4
+        );
+
+        relations
+            .hate_by_character
+            .insert(viewer.id, vec![target.id.0]);
+        assert_eq!(
+            character_name_packet_for_viewer(&relations, &viewer, &target)[11],
+            5
+        );
+    }
+
+    #[test]
     fn runtime_refreshes_known_character_name_cache_after_color_change() {
         let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
         let old_packet = character_name_packet(&character).to_vec();
@@ -14426,9 +14570,12 @@ mod tests {
         );
 
         character.c1 = 0x0443;
-        let sessions = runtime.refresh_known_character_name(&character);
+        let pk_relations = PkRelationSnapshot::default();
+        let sessions =
+            runtime.refresh_known_character_name(&World::default(), &pk_relations, &character);
 
-        assert_eq!(sessions, vec![11]);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].0, 11);
         assert_ne!(
             runtime
                 .map_caches
@@ -14720,7 +14867,8 @@ mod tests {
         let mut world = World::default();
         assert!(world.spawn_character(character.clone(), LOGIN_SPAWN_X, LOGIN_SPAWN_Y));
 
-        let payloads = initial_map_payloads(&world, &character, 1);
+        let pk_relations = PkRelationSnapshot::default();
+        let payloads = initial_map_payloads(&world, &character, &pk_relations, 1);
         assert_eq!(payloads.len(), 1);
         let payload = &payloads[0];
 
@@ -14776,7 +14924,8 @@ mod tests {
             .effects = [42, 0, 77, 0];
         assert!(world.spawn_character(character.clone(), LOGIN_SPAWN_X, LOGIN_SPAWN_Y));
 
-        let payloads = initial_map_payloads(&world, &character, 1);
+        let pk_relations = PkRelationSnapshot::default();
+        let payloads = initial_map_payloads(&world, &character, &pk_relations, 1);
         let payload = &payloads[0];
 
         assert!(payload.windows(19).any(|window| {
@@ -14819,10 +14968,11 @@ mod tests {
         let mut world = World::default();
         world.map.tile_mut(10, 10).unwrap().effects = [42, 0, 77, 0];
         assert!(world.spawn_character(character.clone(), 10, 10));
-        let mut cache = visible_map_cache(&world, &character, 1);
+        let pk_relations = PkRelationSnapshot::default();
+        let mut cache = visible_map_cache(&world, &character, &pk_relations, 1);
         world.map.tile_mut(10, 10).unwrap().effects = [0; 4];
 
-        let payloads = map_diff_payloads(&world, &character, 1, &mut cache);
+        let payloads = map_diff_payloads(&world, &character, &pk_relations, 1, &mut cache);
         let payload = payloads.concat();
 
         assert!(payload.windows(19).any(|window| {
@@ -14866,7 +15016,8 @@ mod tests {
         let mut world = World::default();
         assert!(world.spawn_character(character.clone(), LOGIN_SPAWN_X, LOGIN_SPAWN_Y));
 
-        let payloads = initial_map_payloads(&world, &character, 40);
+        let pk_relations = PkRelationSnapshot::default();
+        let payloads = initial_map_payloads(&world, &character, &pk_relations, 40);
 
         assert!(payloads.len() > 1);
         assert!(payloads
@@ -14884,7 +15035,8 @@ mod tests {
         let mut world = World::default();
         assert!(world.spawn_character(character.clone(), LOGIN_SPAWN_X, LOGIN_SPAWN_Y));
 
-        let payloads = map_refresh_payloads(&world, &character, 1);
+        let pk_relations = PkRelationSnapshot::default();
+        let payloads = map_refresh_payloads(&world, &character, &pk_relations, 1);
 
         assert_eq!(&payloads[0][..], &[SV_ORIGIN, 128, 0, 128, 0]);
         assert_eq!(
@@ -14916,7 +15068,16 @@ mod tests {
         world.effects.insert(123, effect);
         let mut effect_cache = ClientEffectCache::default();
 
-        let payloads = login_bootstrap_payloads(&world, &character, 1, 10, 2, &mut effect_cache);
+        let pk_relations = PkRelationSnapshot::default();
+        let payloads = login_bootstrap_payloads(
+            &world,
+            &character,
+            &pk_relations,
+            1,
+            10,
+            2,
+            &mut effect_cache,
+        );
 
         assert!(payloads.iter().any(|payload| {
             payload.first().copied() == Some(ugaris_protocol::packet::SV_CEFFECT)
@@ -14939,10 +15100,11 @@ mod tests {
         character.y = 10;
         let mut world = World::default();
         assert!(world.spawn_character(character.clone(), 10, 10));
-        let mut cache = visible_map_cache(&world, &character, 1);
+        let pk_relations = PkRelationSnapshot::default();
+        let mut cache = visible_map_cache(&world, &character, &pk_relations, 1);
 
         world.map.tile_mut(11, 10).unwrap().ground_sprite = 777;
-        let payloads = map_diff_payloads(&world, &character, 1, &mut cache);
+        let payloads = map_diff_payloads(&world, &character, &pk_relations, 1, &mut cache);
 
         assert_eq!(payloads.len(), 1);
         let payload = &payloads[0];
@@ -14974,7 +15136,7 @@ mod tests {
                     0,
                 ]
         }));
-        assert!(map_diff_payloads(&world, &character, 1, &mut cache).is_empty());
+        assert!(map_diff_payloads(&world, &character, &pk_relations, 1, &mut cache).is_empty());
     }
 
     #[test]
@@ -14989,10 +15151,11 @@ mod tests {
         let mut world = World::default();
         assert!(world.spawn_character(character.clone(), 10, 10));
         assert!(world.spawn_character(other, 11, 10));
-        let mut cache = visible_map_cache(&world, &character, 1);
+        let pk_relations = PkRelationSnapshot::default();
+        let mut cache = visible_map_cache(&world, &character, &pk_relations, 1);
 
         world.remove_character(CharacterId(8));
-        let payloads = map_diff_payloads(&world, &character, 1, &mut cache);
+        let payloads = map_diff_payloads(&world, &character, &pk_relations, 1, &mut cache);
 
         assert_eq!(payloads.len(), 1);
         assert!(payloads[0]
@@ -15011,10 +15174,11 @@ mod tests {
         other.y = 10;
         let mut world = World::default();
         assert!(world.spawn_character(character.clone(), 10, 10));
-        let mut cache = visible_map_cache(&world, &character, 1);
+        let pk_relations = PkRelationSnapshot::default();
+        let mut cache = visible_map_cache(&world, &character, &pk_relations, 1);
 
         assert!(world.spawn_character(other, 11, 10));
-        let payloads = map_diff_payloads(&world, &character, 1, &mut cache);
+        let payloads = map_diff_payloads(&world, &character, &pk_relations, 1, &mut cache);
 
         assert_eq!(payloads.len(), 1);
         assert!(payload_contains_character_name(&payloads[0], 8, "Guard"));
@@ -15028,7 +15192,7 @@ mod tests {
                 && window[7] == 8
                 && window[8] == 0
         }));
-        assert!(map_diff_payloads(&world, &character, 1, &mut cache).is_empty());
+        assert!(map_diff_payloads(&world, &character, &pk_relations, 1, &mut cache).is_empty());
     }
 
     #[test]
@@ -15495,7 +15659,9 @@ mod tests {
         assert!(world.spawn_character(character.clone(), 11, 10));
         world.map.tile_mut(12, 10).unwrap().ground_sprite = 777;
 
-        let payload = movement_scroll_payload(&world, &character, 10, 10, 1).unwrap();
+        let pk_relations = PkRelationSnapshot::default();
+        let payload =
+            movement_scroll_payload(&world, &character, &pk_relations, 10, 10, 1).unwrap();
 
         assert_eq!(payload[0], SV_SCROLL_RIGHT);
         assert_eq!(payload[1], SV_ORIGIN);
@@ -15569,7 +15735,9 @@ mod tests {
         assert!(world.spawn_character(character.clone(), 11, 10));
         assert!(world.spawn_character(other, 12, 10));
 
-        let payload = movement_scroll_payload(&world, &character, 10, 10, 1).unwrap();
+        let pk_relations = PkRelationSnapshot::default();
+        let payload =
+            movement_scroll_payload(&world, &character, &pk_relations, 10, 10, 1).unwrap();
 
         assert!(payload_contains_character_name(&payload, 8, "Guard"));
     }
@@ -17804,12 +17972,14 @@ async fn main() -> anyhow::Result<()> {
                     let mut name_sessions = 0;
                     command_name_refresh.sort_unstable_by_key(|id| id.0);
                     command_name_refresh.dedup();
+                    let pk_relations = PkRelationSnapshot::from_runtime(&runtime);
                     for character_id in command_name_refresh {
                         let Some(character) = world.characters.get(&character_id).cloned() else {
                             continue;
                         };
-                        let payload = character_name_packet(&character);
-                        for session_id in runtime.refresh_known_character_name(&character) {
+                        for (session_id, payload) in
+                            runtime.refresh_known_character_name(&world, &pk_relations, &character)
+                        {
                             if runtime.send_to_session(session_id, payload.clone()) {
                                 name_sessions += 1;
                             }
@@ -20269,6 +20439,7 @@ async fn main() -> anyhow::Result<()> {
                         } else {
                             None
                         };
+                        let pk_relations = PkRelationSnapshot::from_runtime(&runtime);
                         for (session_id, view_distance) in runtime.sessions_for_character(completion.character_id) {
                             let mut payloads = if completion.ok
                                 && completion.action_id == ugaris_core::legacy::action::WALK
@@ -20276,15 +20447,16 @@ async fn main() -> anyhow::Result<()> {
                                 let payloads = movement_scroll_payload(
                                     &world,
                                     character,
+                                    &pk_relations,
                                     completion.old_x,
                                     completion.old_y,
                                     view_distance,
                                 )
                                 .map(|payload| vec![payload])
-                                .unwrap_or_else(|| map_refresh_payloads(&world, character, view_distance));
+                                .unwrap_or_else(|| map_refresh_payloads(&world, character, &pk_relations, view_distance));
                                 runtime.map_caches.insert(
                                     session_id,
-                                    visible_map_cache(&world, character, view_distance),
+                                    visible_map_cache(&world, character, &pk_relations, view_distance),
                                 );
                                 payloads
                             } else {
@@ -20292,15 +20464,16 @@ async fn main() -> anyhow::Result<()> {
                                     Some(cache) => map_diff_payloads(
                                         &world,
                                         character,
+                                        &pk_relations,
                                         view_distance,
                                         cache,
                                     ),
                                     None => {
                                         let payloads =
-                                            map_refresh_payloads(&world, character, view_distance);
+                                            map_refresh_payloads(&world, character, &pk_relations, view_distance);
                                         runtime.map_caches.insert(
                                             session_id,
-                                            visible_map_cache(&world, character, view_distance),
+                                            visible_map_cache(&world, character, &pk_relations, view_distance),
                                         );
                                         payloads
                                     }
@@ -20525,17 +20698,19 @@ async fn main() -> anyhow::Result<()> {
                             .get(&id.0)
                             .map(|player| player.view_distance)
                             .unwrap_or(ugaris_core::legacy::DIST_OLD);
+                        let pk_relations = PkRelationSnapshot::from_runtime(&runtime);
                         let payloads = world
                             .characters
                             .get(&character_id)
                             .map(|character| {
                                 runtime.map_caches.insert(
                                     id.0,
-                                    visible_map_cache(&world, character, view_distance),
+                                    visible_map_cache(&world, character, &pk_relations, view_distance),
                                 );
                                 login_bootstrap_payloads(
                                     &world,
                                     character,
+                                    &pk_relations,
                                     config.mirror_id,
                                     world.tick.0,
                                     view_distance,
@@ -20552,11 +20727,17 @@ async fn main() -> anyhow::Result<()> {
                                 );
                                 runtime.map_caches.insert(
                                     id.0,
-                                    visible_map_cache(&world, &fallback_character, view_distance),
+                                    visible_map_cache(
+                                        &world,
+                                        &fallback_character,
+                                        &pk_relations,
+                                        view_distance,
+                                    ),
                                 );
                                 login_bootstrap_payloads(
                                     &world,
                                     &fallback_character,
+                                    &pk_relations,
                                     config.mirror_id,
                                     world.tick.0,
                                     view_distance,
