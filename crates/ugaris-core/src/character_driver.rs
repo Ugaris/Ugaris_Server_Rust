@@ -18,6 +18,8 @@ pub const CDT_SPECIAL: u16 = 4;
 
 pub const CDR_SIMPLEBADDY: u16 = 7;
 pub const CDR_MACRO: u16 = 37;
+pub const CDR_SWAMPCLARA: u16 = 54;
+pub const CDR_SWAMPMONSTER: u16 = 56;
 pub const CDR_PALACEISLENA: u16 = 57;
 pub const CDR_TRADER: u16 = 72;
 pub const CDR_LQNPC: u16 = 74;
@@ -539,6 +541,8 @@ fn next_legacy_name_value(input: &str) -> Option<(&str, &str, &str)> {
 pub enum CharacterDriverKind {
     SimpleBaddy,
     Macro,
+    SwampClara,
+    SwampMonster,
     PalaceIslena,
     Trader,
     LqNpc,
@@ -550,6 +554,8 @@ impl CharacterDriverKind {
         match driver {
             CDR_SIMPLEBADDY => Some(Self::SimpleBaddy),
             CDR_MACRO => Some(Self::Macro),
+            CDR_SWAMPCLARA => Some(Self::SwampClara),
+            CDR_SWAMPMONSTER => Some(Self::SwampMonster),
             CDR_PALACEISLENA => Some(Self::PalaceIslena),
             CDR_TRADER => Some(Self::Trader),
             CDR_LQNPC => Some(Self::LqNpc),
@@ -562,6 +568,8 @@ impl CharacterDriverKind {
         match self {
             Self::SimpleBaddy => CDR_SIMPLEBADDY,
             Self::Macro => CDR_MACRO,
+            Self::SwampClara => CDR_SWAMPCLARA,
+            Self::SwampMonster => CDR_SWAMPMONSTER,
             Self::PalaceIslena => CDR_PALACEISLENA,
             Self::Trader => CDR_TRADER,
             Self::LqNpc => CDR_LQNPC,
@@ -668,6 +676,8 @@ mod tests {
     fn base_character_driver_ids_match_c_drvlib() {
         assert_eq!(CDR_SIMPLEBADDY, 7);
         assert_eq!(CDR_MACRO, 37);
+        assert_eq!(CDR_SWAMPCLARA, 54);
+        assert_eq!(CDR_SWAMPMONSTER, 56);
         assert_eq!(CDR_PALACEISLENA, 57);
         assert_eq!(CDR_TRADER, 72);
         assert_eq!(CDR_LQNPC, 74);
@@ -678,6 +688,11 @@ mod tests {
             CDR_SIMPLEBADDY
         );
         assert_eq!(CharacterDriverKind::Macro.legacy_id(), CDR_MACRO);
+        assert_eq!(CharacterDriverKind::SwampClara.legacy_id(), CDR_SWAMPCLARA);
+        assert_eq!(
+            CharacterDriverKind::SwampMonster.legacy_id(),
+            CDR_SWAMPMONSTER
+        );
         assert_eq!(
             CharacterDriverKind::PalaceIslena.legacy_id(),
             CDR_PALACEISLENA
@@ -692,6 +707,8 @@ mod tests {
         for (driver, kind) in [
             (CDR_SIMPLEBADDY, CharacterDriverKind::SimpleBaddy),
             (CDR_MACRO, CharacterDriverKind::Macro),
+            (CDR_SWAMPCLARA, CharacterDriverKind::SwampClara),
+            (CDR_SWAMPMONSTER, CharacterDriverKind::SwampMonster),
             (CDR_PALACEISLENA, CharacterDriverKind::PalaceIslena),
             (CDR_TRADER, CharacterDriverKind::Trader),
             (CDR_LQNPC, CharacterDriverKind::LqNpc),
@@ -750,6 +767,30 @@ mod tests {
         );
         assert_eq!(islena_died.legacy_return_code(), 1);
 
+        let clara_died = execute_character_died_driver(CDR_SWAMPCLARA, 123);
+        assert_eq!(
+            clara_died,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::SwampClara,
+                call: CharacterDriverCall::Died {
+                    killer_character_id: 123,
+                },
+            }
+        );
+        assert_eq!(clara_died.legacy_return_code(), 1);
+
+        let swamp_monster_died = execute_character_died_driver(CDR_SWAMPMONSTER, 123);
+        assert_eq!(
+            swamp_monster_died,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::SwampMonster,
+                call: CharacterDriverCall::Died {
+                    killer_character_id: 123,
+                },
+            }
+        );
+        assert_eq!(swamp_monster_died.legacy_return_code(), 1);
+
         let simple_respawn = execute_character_respawn_driver(CDR_SIMPLEBADDY);
         assert_eq!(
             simple_respawn,
@@ -779,6 +820,26 @@ mod tests {
             }
         );
         assert_eq!(islena_respawn.legacy_return_code(), 1);
+
+        let clara_respawn = execute_character_respawn_driver(CDR_SWAMPCLARA);
+        assert_eq!(
+            clara_respawn,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::SwampClara,
+                call: CharacterDriverCall::Respawn,
+            }
+        );
+        assert_eq!(clara_respawn.legacy_return_code(), 1);
+
+        let swamp_monster_respawn = execute_character_respawn_driver(CDR_SWAMPMONSTER);
+        assert_eq!(
+            swamp_monster_respawn,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::SwampMonster,
+                call: CharacterDriverCall::Respawn,
+            }
+        );
+        assert_eq!(swamp_monster_respawn.legacy_return_code(), 1);
     }
 
     #[test]
