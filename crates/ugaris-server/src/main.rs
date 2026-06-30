@@ -2048,6 +2048,30 @@ fn apply_gold_command(
     })
 }
 
+fn apply_laugh_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("laugh") {
+        return None;
+    }
+
+    let Some(character) = world.characters.get(&character_id) else {
+        return Some(KeyringCommandResult::default());
+    };
+    if !character.flags.contains(CharacterFlags::GOD) {
+        return None;
+    }
+    let (x, y) = (usize::from(character.x), usize::from(character.y));
+    world.queue_sound_area(x, y, 13);
+    Some(KeyringCommandResult::default())
+}
+
 fn apply_maxlag_command(player: &mut PlayerRuntime, command: &str) -> Option<KeyringCommandResult> {
     let (verb, rest) = command
         .split_once(char::is_whitespace)
@@ -11063,6 +11087,28 @@ mod tests {
     }
 
     #[test]
+    fn laugh_command_is_god_only_and_queues_legacy_sound() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        world.add_character(character.clone());
+
+        assert!(apply_laugh_command(&mut world, character_id, "/laugh").is_none());
+        assert!(world.drain_pending_sound_specials().is_empty());
+
+        character.flags.insert(CharacterFlags::GOD);
+        world.characters.insert(character_id, character);
+        let result = apply_laugh_command(&mut world, character_id, "/laugh")
+            .expect("god laugh command should be recognized");
+
+        assert!(result.messages.is_empty());
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].character_id, character_id);
+        assert_eq!(sounds[0].special.special_type, 13);
+    }
+
+    #[test]
     fn client_take_gold_deposits_cursor_money_before_taking_requested_amount() {
         let mut world = World::default();
         let mut loader = ZoneLoader::new();
@@ -18876,6 +18922,12 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 if result.inventory_changed {
                                     command_inventory_refresh.push(character_id);
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_laugh_command(&mut world, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
                                 }
                                 continue;
                             }
