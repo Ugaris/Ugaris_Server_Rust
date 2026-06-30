@@ -22416,6 +22416,25 @@ async fn main() -> anyhow::Result<()> {
                                             world.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LqEntranceClosed { character_id, .. } => {
+                                            feedback.push((character_id, "No quest is in progress, you may not enter.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LqEntranceLevelBlocked { character_id, min_level, max_level, .. } => {
+                                            feedback.push((character_id, format!("This quest is for levels {min_level} to {max_level}, you may not enter.")));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LqEntranceUndefined { character_id, .. } => {
+                                            feedback.push((character_id, "No entrance defined, bad quest.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LqEntrancePenalty { character_id, remaining_seconds, .. } => {
+                                            feedback.push((character_id, format!(
+                                                "You may not enter again yet. Your remaining penalty is: {:.2} minutes.",
+                                                remaining_seconds as f64 / 60.0
+                                            )));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { .. } => {
                                             // Legacy C returns without output when arena rankings are not loaded.
                                             executed += 1;
