@@ -319,7 +319,7 @@ struct Args {
     zone_root: Option<PathBuf>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ServerRuntime {
     players: HashMap<u64, PlayerRuntime>,
     sessions: HashMap<u64, mpsc::Sender<SessionCommand>>,
@@ -331,7 +331,27 @@ struct ServerRuntime {
     next_character_id: u32,
     dlight_override: i32,
     show_attack: bool,
+    exp_modifier: f64,
     weather: WeatherState,
+}
+
+impl Default for ServerRuntime {
+    fn default() -> Self {
+        Self {
+            players: HashMap::new(),
+            sessions: HashMap::new(),
+            map_caches: HashMap::new(),
+            effect_caches: HashMap::new(),
+            account_depots: HashMap::new(),
+            staff_codes: HashMap::new(),
+            action_queue: VecDeque::new(),
+            next_character_id: 0,
+            dlight_override: 0,
+            show_attack: false,
+            exp_modifier: 1.0,
+            weather: WeatherState::default(),
+        }
+    }
 }
 
 fn staff_code_for<'a>(
@@ -1904,6 +1924,51 @@ fn legacy_atoi_prefix(input: &str) -> i64 {
     }
 }
 
+fn legacy_atof_prefix(input: &str) -> f64 {
+    let input = input.trim_start();
+    let bytes = input.as_bytes();
+    let mut end = 0usize;
+
+    if matches!(bytes.get(end), Some(b'+' | b'-')) {
+        end += 1;
+    }
+
+    let mut saw_digit = false;
+    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+        saw_digit = true;
+        end += 1;
+    }
+
+    if bytes.get(end) == Some(&b'.') {
+        end += 1;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            saw_digit = true;
+            end += 1;
+        }
+    }
+
+    if saw_digit && matches!(bytes.get(end), Some(b'e' | b'E')) {
+        let exp_start = end;
+        end += 1;
+        if matches!(bytes.get(end), Some(b'+' | b'-')) {
+            end += 1;
+        }
+        let exp_digits_start = end;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        if exp_digits_start == end {
+            end = exp_start;
+        }
+    }
+
+    if saw_digit {
+        input[..end].parse::<f64>().unwrap_or(0.0)
+    } else {
+        0.0
+    }
+}
+
 fn legacy_color_word(red: i64, green: i64, blue: i64) -> u16 {
     ((red << 10) + (green << 5) + blue) as u16
 }
@@ -3013,6 +3078,34 @@ fn apply_admin_character_command(
                 "Changed {}'s karma from {} to {}",
                 target.name, old_karma, target.karma
             )],
+            ..Default::default()
+        });
+    }
+
+    if lower == "setexpmod" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let value = legacy_atof_prefix(rest);
+        if (0.1..=1000.0).contains(&value) {
+            let old_value = runtime.exp_modifier;
+            runtime.exp_modifier = value;
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Global experience modifier changed from {old_value:.2} to {value:.2}"
+                )],
+                ..Default::default()
+            });
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Invalid value. Please specify a number between 0.1 and 1000.0".to_string(),
+            ],
             ..Default::default()
         });
     }
@@ -15064,6 +15157,73 @@ mod tests {
             &mut runtime,
             character_id,
             "/setk Missing 12",
+            1,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn god_setexpmod_updates_runtime_with_legacy_feedback() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let mut runtime = ServerRuntime::default();
+
+        let result =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/setexpmod 2.5xyz", 1)
+                .expect("god setexpmod should be recognized");
+
+        assert_eq!(runtime.exp_modifier, 2.5);
+        assert_eq!(
+            result.messages,
+            vec!["Global experience modifier changed from 1.00 to 2.50"]
+        );
+
+        let invalid =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/setexpmod 0.09", 1)
+                .expect("god setexpmod should handle invalid values");
+        assert_eq!(runtime.exp_modifier, 2.5);
+        assert_eq!(
+            invalid.messages,
+            vec!["Invalid value. Please specify a number between 0.1 and 1000.0"]
+        );
+    }
+
+    #[test]
+    fn setexpmod_is_god_only_and_full_command_only() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setexpmod 2",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setexpmo 2",
             1,
         )
         .is_none());
