@@ -6289,6 +6289,7 @@ fn apply_forest_spade_find(
             if !player.mark_treasure_dig(dig_index, realtime_seconds) {
                 return ForestSpadeApplyResult::MissingPlayer;
             }
+            player.set_forestbran_done(dig_index);
             ForestSpadeApplyResult::FoundMoney { amount }
         }
     }

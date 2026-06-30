@@ -136,6 +136,7 @@ const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const LOSTCON_PPD_AUTOTURN_OFFSET: usize = 16 * 4;
 const LOSTCON_PPD_MAXLAG_OFFSET: usize = 17 * 4;
 const LOSTCON_PPD_HINTS_OFFSET: usize = 18 * 4;
+const STAFFER_PPD_FORESTBRAN_DONE_OFFSET: usize = 11 * 4;
 const PK_PPD_KILLS_OFFSET: usize = 0;
 const PK_PPD_DEATHS_OFFSET: usize = 4;
 const PK_PPD_LAST_KILL_OFFSET: usize = 8;
@@ -1535,6 +1536,29 @@ impl PlayerRuntime {
         }
         self.staffer_ppd = bytes[..LEGACY_STAFFER_PPD_SIZE].to_vec();
         true
+    }
+
+    pub fn forestbran_done(&self) -> u8 {
+        if self.staffer_ppd.len() < LEGACY_STAFFER_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.staffer_ppd, STAFFER_PPD_FORESTBRAN_DONE_OFFSET).clamp(0, 5) as u8
+    }
+
+    pub fn set_forestbran_done(&mut self, dig_index: u8) -> Option<u8> {
+        if dig_index >= TREASURE_DIG_PPD_ENTRIES as u8 {
+            return None;
+        }
+        let done = dig_index + 1;
+        if self.staffer_ppd.len() < LEGACY_STAFFER_PPD_SIZE {
+            self.staffer_ppd.resize(LEGACY_STAFFER_PPD_SIZE, 0);
+        }
+        write_i32(
+            &mut self.staffer_ppd,
+            STAFFER_PPD_FORESTBRAN_DONE_OFFSET,
+            i32::from(done),
+        );
+        Some(done)
     }
 
     pub fn mark_staffer_animation_book_seen(&mut self) -> bool {
@@ -4021,6 +4045,50 @@ mod tests {
         let mut decoded = PlayerRuntime::connected(2, 0);
         assert!(decoded.decode_legacy_area3_ppd(&encoded));
         assert_eq!(decoded.area3_imp_flags(), 3);
+    }
+
+    #[test]
+    fn staffer_ppd_tracks_forestbran_done_from_treasure_dig() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(player.forestbran_done(), 0);
+        assert_eq!(player.set_forestbran_done(2), Some(3));
+        assert_eq!(player.set_forestbran_done(5), None);
+        assert_eq!(player.forestbran_done(), 3);
+
+        let encoded = player.encode_legacy_staffer_ppd();
+        assert_eq!(encoded.len(), LEGACY_STAFFER_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_FORESTBRAN_DONE_OFFSET), 3);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_staffer_ppd(&encoded));
+        assert_eq!(decoded.forestbran_done(), 3);
+    }
+
+    #[test]
+    fn staffer_ppd_blob_replaces_and_appends_legacy_block() {
+        let mut existing_staffer = vec![0; LEGACY_STAFFER_PPD_SIZE];
+        write_i32(&mut existing_staffer, STAFFER_PPD_FORESTBRAN_DONE_OFFSET, 4);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, DRD_STAFFER_PPD, &existing_staffer);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.set_forestbran_done(1), Some(2));
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), DRD_STAFFER_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_STAFFER_PPD_SIZE as u32);
+        assert_eq!(
+            read_i32(&encoded, 8 + STAFFER_PPD_FORESTBRAN_DONE_OFFSET),
+            2
+        );
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.forestbran_done(), 2);
+
+        let appended = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended, 0), DRD_STAFFER_PPD);
     }
 
     #[test]
