@@ -5717,6 +5717,33 @@ enum RandomShrineJoblessApplyResult {
     AlreadyJobless,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RandomShrineEdgeApplyResult {
+    Used { exp: u32 },
+    AlreadyOnEdge,
+    NoExp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RandomShrineKindnessApplyResult {
+    Used,
+    AlreadyKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RandomShrineBravenessApplyResult {
+    Used { exp: u32, gold: u32 },
+    Coward,
+}
+
+fn legacy_level_value(level: u32) -> u32 {
+    let level = u64::from(level);
+    let next = level.saturating_add(1);
+    next.saturating_pow(4)
+        .saturating_sub(level.saturating_pow(4))
+        .min(u64::from(u32::MAX)) as u32
+}
+
 fn legacy_save_number(saves: u8) -> String {
     match saves {
         0 => "no".to_string(),
@@ -5774,6 +5801,76 @@ fn apply_random_shrine_jobless(
         .insert(CharacterFlags::PROF | CharacterFlags::UPDATE);
     player.mark_random_shrine_used(shrine_type);
     RandomShrineJoblessApplyResult::Used
+}
+
+fn apply_random_shrine_edge(
+    player: &mut PlayerRuntime,
+    character: &mut Character,
+    shrine_type: u8,
+    shrine_level: u8,
+) -> RandomShrineEdgeApplyResult {
+    if character.saves == 0 {
+        return RandomShrineEdgeApplyResult::AlreadyOnEdge;
+    }
+    if character.flags.contains(CharacterFlags::NOEXP) {
+        return RandomShrineEdgeApplyResult::NoExp;
+    }
+
+    let level = character
+        .level
+        .saturating_add(5)
+        .min(u32::from(shrine_level));
+    let level_value = legacy_level_value(level);
+    let exp = level_value.saturating_div(3).saturating_add(
+        u32::from(character.saves)
+            .saturating_mul(level_value)
+            .saturating_div(30),
+    );
+    character.exp = character.exp.saturating_add(exp);
+    character.saves = 0;
+    character.flags.insert(CharacterFlags::UPDATE);
+    player.mark_random_shrine_used(shrine_type);
+    RandomShrineEdgeApplyResult::Used { exp }
+}
+
+fn apply_random_shrine_kindness(
+    player: &mut PlayerRuntime,
+    character: &mut Character,
+    shrine_type: u8,
+) -> RandomShrineKindnessApplyResult {
+    if !character.flags.contains(CharacterFlags::PK) {
+        return RandomShrineKindnessApplyResult::AlreadyKind;
+    }
+
+    character.flags.remove(CharacterFlags::PK);
+    character.flags.insert(CharacterFlags::UPDATE);
+    player.mark_random_shrine_used(shrine_type);
+    RandomShrineKindnessApplyResult::Used
+}
+
+fn apply_random_shrine_braveness(
+    player: &mut PlayerRuntime,
+    character: &mut Character,
+    shrine_type: u8,
+    shrine_level: u8,
+) -> RandomShrineBravenessApplyResult {
+    if !player.has_used_random_shrine(51) {
+        return RandomShrineBravenessApplyResult::Coward;
+    }
+
+    let level = character
+        .level
+        .saturating_add(5)
+        .min(u32::from(shrine_level));
+    let exp = legacy_level_value(level);
+    let gold = exp / 10;
+    character.exp = character.exp.saturating_add(exp);
+    character.gold = character.gold.saturating_add(gold);
+    character
+        .flags
+        .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+    player.mark_random_shrine_used(shrine_type);
+    RandomShrineBravenessApplyResult::Used { exp, gold }
 }
 
 fn pick_berry_template(kind: u8) -> Option<&'static str> {
@@ -9851,6 +9948,100 @@ mod tests {
         assert_eq!(result, RandomShrineJoblessApplyResult::AlreadyJobless);
         assert!(!character.flags.contains(CharacterFlags::PROF));
         assert!(!player.has_used_random_shrine(64));
+    }
+
+    #[test]
+    fn random_shrine_edge_spends_saves_for_legacy_exp_and_marks_ppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        character.level = 10;
+        character.saves = 3;
+
+        let result = apply_random_shrine_edge(&mut player, &mut character, 30, 20);
+
+        let level_value = legacy_level_value(15);
+        let expected = level_value / 3 + 3 * level_value / 30;
+        assert_eq!(result, RandomShrineEdgeApplyResult::Used { exp: expected });
+        assert_eq!(character.exp, expected);
+        assert_eq!(character.saves, 0);
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
+        assert!(player.has_used_random_shrine(30));
+    }
+
+    #[test]
+    fn random_shrine_edge_blocks_without_marking_for_no_saves_or_noexp() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut no_saves = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+
+        let result = apply_random_shrine_edge(&mut player, &mut no_saves, 31, 20);
+
+        assert_eq!(result, RandomShrineEdgeApplyResult::AlreadyOnEdge);
+        assert!(!player.has_used_random_shrine(31));
+
+        let mut noexp = login_character(CharacterId(8), &login_block("Lisa"), 14, 10, 10);
+        noexp.saves = 1;
+        noexp.flags.insert(CharacterFlags::NOEXP);
+
+        let result = apply_random_shrine_edge(&mut player, &mut noexp, 32, 20);
+
+        assert_eq!(result, RandomShrineEdgeApplyResult::NoExp);
+        assert_eq!(noexp.saves, 1);
+        assert!(!player.has_used_random_shrine(32));
+    }
+
+    #[test]
+    fn random_shrine_kindness_clears_pk_and_marks_ppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        character.flags.insert(CharacterFlags::PK);
+
+        let result = apply_random_shrine_kindness(&mut player, &mut character, 40);
+
+        assert_eq!(result, RandomShrineKindnessApplyResult::Used);
+        assert!(!character.flags.contains(CharacterFlags::PK));
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
+        assert!(player.has_used_random_shrine(40));
+    }
+
+    #[test]
+    fn random_shrine_kindness_blocks_already_kind_without_marking() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+
+        let result = apply_random_shrine_kindness(&mut player, &mut character, 41);
+
+        assert_eq!(result, RandomShrineKindnessApplyResult::AlreadyKind);
+        assert!(!player.has_used_random_shrine(41));
+    }
+
+    #[test]
+    fn random_shrine_braveness_requires_death_shrine_then_grants_exp_gold() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        character.level = 7;
+
+        let result = apply_random_shrine_braveness(&mut player, &mut character, 52, 20);
+
+        assert_eq!(result, RandomShrineBravenessApplyResult::Coward);
+        assert!(!player.has_used_random_shrine(52));
+
+        player.mark_random_shrine_used(51);
+        let result = apply_random_shrine_braveness(&mut player, &mut character, 52, 20);
+
+        let expected = legacy_level_value(12);
+        assert_eq!(
+            result,
+            RandomShrineBravenessApplyResult::Used {
+                exp: expected,
+                gold: expected / 10,
+            }
+        );
+        assert_eq!(character.exp, expected);
+        assert_eq!(character.gold, expected / 10);
+        assert!(character
+            .flags
+            .contains(CharacterFlags::ITEMS | CharacterFlags::UPDATE));
+        assert!(player.has_used_random_shrine(52));
     }
 
     #[test]
@@ -19135,7 +19326,7 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You have found bug #2116a.".to_string()));
                                             failed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::RandomShrineUse { character_id, shrine_type, kind, .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::RandomShrineUse { character_id, shrine_type, level, kind, .. } => {
                                             match kind {
                                                 ugaris_core::item_driver::RandomShrineKind::Security => {
                                                     let result = match (
@@ -19189,6 +19380,92 @@ async fn main() -> anyhow::Result<()> {
                                                         }
                                                         RandomShrineJoblessApplyResult::AlreadyJobless => {
                                                             feedback.push((character_id, "A bored voice says: 'Thou art jobless already.'".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                    }
+                                                }
+                                                ugaris_core::item_driver::RandomShrineKind::Edge => {
+                                                    let result = match (
+                                                        runtime.player_for_character_mut(character_id),
+                                                        world.characters.get_mut(&character_id),
+                                                    ) {
+                                                        (Some(player), Some(character)) => apply_random_shrine_edge(player, character, shrine_type, level),
+                                                        _ => {
+                                                            failed += 1;
+                                                            continue;
+                                                        }
+                                                    };
+                                                    match result {
+                                                        RandomShrineEdgeApplyResult::Used { .. } => {
+                                                            feedback.push((character_id, "A booming voice declares: 'Living on the edge has its merits - and its dangers!'".to_string()));
+                                                            feedback.push((character_id, "Thou hast no saves left.".to_string()));
+                                                            executed += 1;
+                                                        }
+                                                        RandomShrineEdgeApplyResult::AlreadyOnEdge => {
+                                                            feedback.push((character_id, "A booming voice declares: 'Thou art living on the edge already!'".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                        RandomShrineEdgeApplyResult::NoExp => {
+                                                            feedback.push((character_id, "A deadly voice says: 'Thou canst live on the edge as long as thou has /noexp turned on.'".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                    }
+                                                }
+                                                ugaris_core::item_driver::RandomShrineKind::Kindness => {
+                                                    let result = match (
+                                                        runtime.player_for_character_mut(character_id),
+                                                        world.characters.get_mut(&character_id),
+                                                    ) {
+                                                        (Some(player), Some(character)) => apply_random_shrine_kindness(player, character, shrine_type),
+                                                        _ => {
+                                                            failed += 1;
+                                                            continue;
+                                                        }
+                                                    };
+                                                    match result {
+                                                        RandomShrineKindnessApplyResult::Used => {
+                                                            feedback.push((character_id, "A tender voice whispers: 'Mayest thou find other ways to amuse thyself. Thou art not a killer henceforth.'".to_string()));
+                                                            executed += 1;
+                                                        }
+                                                        RandomShrineKindnessApplyResult::AlreadyKind => {
+                                                            feedback.push((character_id, "A tender voice whispers: 'But thou art a kind soul already...'".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                    }
+                                                }
+                                                ugaris_core::item_driver::RandomShrineKind::Death => {
+                                                    match runtime.player_for_character_mut(character_id) {
+                                                        Some(player) => player.mark_random_shrine_used(shrine_type),
+                                                        None => {
+                                                            failed += 1;
+                                                            continue;
+                                                        }
+                                                    }
+                                                    if let Some(character) = world.characters.get_mut(&character_id) {
+                                                        character.saves = 0;
+                                                    }
+                                                    feedback.push((character_id, "You hear a manical laugh.".to_string()));
+                                                    world.apply_legacy_hurt(character_id, None, i32::MAX / 4, 1, 100, 100);
+                                                    executed += 1;
+                                                }
+                                                ugaris_core::item_driver::RandomShrineKind::Braveness => {
+                                                    let result = match (
+                                                        runtime.player_for_character_mut(character_id),
+                                                        world.characters.get_mut(&character_id),
+                                                    ) {
+                                                        (Some(player), Some(character)) => apply_random_shrine_braveness(player, character, shrine_type, level),
+                                                        _ => {
+                                                            failed += 1;
+                                                            continue;
+                                                        }
+                                                    };
+                                                    match result {
+                                                        RandomShrineBravenessApplyResult::Used { .. } => {
+                                                            feedback.push((character_id, "A triumphant voice says: 'Thou art brave indeed!'".to_string()));
+                                                            executed += 1;
+                                                        }
+                                                        RandomShrineBravenessApplyResult::Coward => {
+                                                            feedback.push((character_id, "An insulting voice says: 'Thou art a coward, bother me not!".to_string()));
                                                             blocked += 1;
                                                         }
                                                     }

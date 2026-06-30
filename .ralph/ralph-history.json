@@ -3190,9 +3190,36 @@
         "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
       ]
+    },
+    {
+      "iteration": 117,
+      "startedAt": "2026-06-30T03:44:17.174Z",
+      "endedAt": "2026-06-30T03:51:15.100Z",
+      "durationMs": 417755,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 3 previous errors",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 227 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 764 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 64793217,
+  "totalDurationMs": 65210972,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -3200,18 +3227,18 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 15,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 15,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 97,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 95,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 83,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 87,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 68,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 98,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 96,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 84,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 88,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 69,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 41,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 42,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 26,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 42,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 43,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 3,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
@@ -3489,7 +3516,7 @@
       "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 717 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 721 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 721 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 3 previous errors": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 3 previous errors": 2,
       "test result: ok. 723 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 723 filtered out; finished in 0.00s": 1,
       "test result: ok. 725 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
@@ -3575,7 +3602,9 @@
       "The failing test setup used rest coordinates but the C guard checks current `x/y`; I corrected the t": 1,
       "test tests::noexp_and_nolevel_cannot_be_enabled_in_gatekeeper_room ... FAILED": 1,
       "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s": 1,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s": 1
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s": 1,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 227 filtered out; finished in 0.00s": 1,
+      "test result: ok. 764 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
