@@ -3855,7 +3855,7 @@ impl World {
     fn simple_baddy_can_warcry(&self, attacker: &Character, target: &Character) -> bool {
         if character_value(attacker, CharacterValue::Warcry) <= 1
             || attacker.endurance
-                < character_value(attacker, CharacterValue::Warcry) * POWERSCALE / 3
+                <= character_value(attacker, CharacterValue::Warcry) * POWERSCALE / 3
             || char_dist(attacker, target) >= 8
         {
             return false;
@@ -15927,6 +15927,47 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::WARCRY);
         assert_eq!(npc.endurance, 10 * POWERSCALE - 2 * POWERSCALE / 3);
+    }
+
+    #[test]
+    fn simple_baddy_warcry_task_requires_more_than_exact_endurance_cost_like_c() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.values[0][CharacterValue::Warcry as usize] = 9;
+        npc.values[0][CharacterValue::MagicShield as usize] = 10;
+        npc.values[1][CharacterValue::MagicShield as usize] = 10;
+        npc.lifeshield = 0;
+        npc.endurance = 9 * POWERSCALE / 3;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 12, 10);
+
+        let exact_cost_tasks = world.simple_baddy_fight_tasks(
+            CharacterId(1),
+            world.characters.get(&CharacterId(2)).unwrap(),
+            1,
+            false,
+        );
+
+        assert!(!exact_cost_tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::Warcry));
+
+        world.characters.get_mut(&CharacterId(1)).unwrap().endurance += 1;
+        let above_cost_tasks = world.simple_baddy_fight_tasks(
+            CharacterId(1),
+            world.characters.get(&CharacterId(2)).unwrap(),
+            1,
+            false,
+        );
+
+        assert!(above_cost_tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::Warcry));
     }
 
     #[test]
