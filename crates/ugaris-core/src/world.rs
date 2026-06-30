@@ -3961,8 +3961,10 @@ impl World {
 
     fn simple_baddy_lastfight(&self, character_id: CharacterId) -> Option<i32> {
         let character = self.characters.get(&character_id)?;
-        let CharacterDriverState::SimpleBaddy(data) = character.driver_state.as_ref()?;
-        Some(data.lastfight)
+        match character.driver_state.as_ref()? {
+            CharacterDriverState::SimpleBaddy(data) => Some(data.lastfight),
+            CharacterDriverState::Clara(_) => None,
+        }
     }
 
     fn queue_simple_baddy_attack_sound(
@@ -5507,6 +5509,7 @@ impl World {
                         .map(|enemy| enemy.target_id)
                         .collect::<Vec<_>>(),
                 ),
+                CharacterDriverState::Clara(_) => None,
             })
             .unwrap_or_default()
     }
@@ -6351,6 +6354,7 @@ impl World {
             .and_then(|character| character.driver_state.as_ref())
             .and_then(|state| match state {
                 CharacterDriverState::SimpleBaddy(data) => data.pending_bless_friend,
+                CharacterDriverState::Clara(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

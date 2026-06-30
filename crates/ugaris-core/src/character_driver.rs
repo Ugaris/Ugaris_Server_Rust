@@ -26,6 +26,7 @@ pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
+pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 
 pub const NT_CHAR: i32 = 1;
 pub const NT_ITEM: i32 = 2;
@@ -67,6 +68,13 @@ pub struct CharacterDriverMessage {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CharacterDriverState {
     SimpleBaddy(SimpleBaddyDriverData),
+    Clara(ClaraDriverData),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClaraDriverData {
+    pub last_talk_tick: i32,
+    pub current_victim: Option<CharacterId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -254,6 +262,7 @@ pub fn apply_simple_baddy_create_message(
 ) -> Vec<UnknownSimpleBaddyArgument> {
     let mut data = match character.driver_state.take() {
         Some(CharacterDriverState::SimpleBaddy(data)) => data,
+        Some(CharacterDriverState::Clara(_)) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
 
@@ -700,6 +709,24 @@ mod tests {
         assert_eq!(CharacterDriverKind::Trader.legacy_id(), CDR_TRADER);
         assert_eq!(CharacterDriverKind::LqNpc.legacy_id(), CDR_LQNPC);
         assert_eq!(CharacterDriverKind::Janitor.legacy_id(), CDR_JANITOR);
+        assert_eq!(DRD_CLARADRIVER, 0x0100_0059);
+    }
+
+    #[test]
+    fn clara_driver_state_matches_legacy_runtime_data_shape() {
+        let mut data = ClaraDriverData::default();
+        assert_eq!(data.last_talk_tick, 0);
+        assert_eq!(data.current_victim, None);
+
+        data.last_talk_tick = 1234;
+        data.current_victim = Some(CharacterId(77));
+        assert_eq!(
+            CharacterDriverState::Clara(data),
+            CharacterDriverState::Clara(ClaraDriverData {
+                last_talk_tick: 1234,
+                current_victim: Some(CharacterId(77)),
+            })
+        );
     }
 
     #[test]

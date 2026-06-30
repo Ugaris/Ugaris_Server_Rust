@@ -118,9 +118,11 @@ const ORBSPAWN_PPD_IDS_OFFSET: usize = 0;
 const ORBSPAWN_PPD_LAST_USED_OFFSET: usize = ORBSPAWN_PPD_IDS_OFFSET + ORBSPAWN_MAX_ENTRIES * 4;
 const FLOWER_PPD_IDS_OFFSET: usize = 0;
 const FLOWER_PPD_LAST_USED_OFFSET: usize = FLOWER_PPD_IDS_OFFSET + FLOWER_MAX_ENTRIES * 4;
+const AREA3_PPD_KELLY_STATE_OFFSET: usize = 1 * 4;
 const AREA3_PPD_KELLY_FOUND1_OFFSET: usize = 3 * 4;
 const AREA3_PPD_KELLY_FOUND2_OFFSET: usize = 4 * 4;
 const AREA3_PPD_KELLY_FOUND3_OFFSET: usize = 5 * 4;
+const AREA3_PPD_CLARA_STATE_OFFSET: usize = 9 * 4;
 const AREA3_PPD_IMP_FLAGS_OFFSET: usize = 12 * 4;
 const CALIGAR_PPD_WATCH_FLAG_OFFSET: usize = 4 * 4;
 const CALIGAR_PPD_DOOR_FLAG_OFFSET: usize = 14 * 4;
@@ -1475,6 +1477,36 @@ impl PlayerRuntime {
             return 0;
         }
         read_i32(&self.area3_ppd, AREA3_PPD_IMP_FLAGS_OFFSET).max(0) as u32
+    }
+
+    pub fn area3_kelly_state(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_KELLY_STATE_OFFSET)
+    }
+
+    pub fn set_area3_kelly_state(&mut self, state: i32) {
+        self.write_area3_i32(AREA3_PPD_KELLY_STATE_OFFSET, state);
+    }
+
+    pub fn area3_clara_state(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_CLARA_STATE_OFFSET)
+    }
+
+    pub fn set_area3_clara_state(&mut self, state: i32) {
+        self.write_area3_i32(AREA3_PPD_CLARA_STATE_OFFSET, state);
+    }
+
+    fn read_area3_i32(&self, offset: usize) -> i32 {
+        if self.area3_ppd.len() < LEGACY_AREA3_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.area3_ppd, offset)
+    }
+
+    fn write_area3_i32(&mut self, offset: usize, value: i32) {
+        if self.area3_ppd.len() < LEGACY_AREA3_PPD_SIZE {
+            self.area3_ppd.resize(LEGACY_AREA3_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.area3_ppd, offset, value);
     }
 
     pub fn mark_area3_imp_flag(&mut self, mask: u32) -> bool {
@@ -4035,6 +4067,26 @@ mod tests {
         assert!(decoded.decode_legacy_area3_ppd(&encoded));
         assert_eq!(decoded.memorize_park_shrine(2), Some(false));
         assert_eq!(decoded.memorize_park_shrine(3), Some(true));
+    }
+
+    #[test]
+    fn area3_ppd_exposes_clara_and_kelly_quest_states() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(player.area3_kelly_state(), 0);
+        assert_eq!(player.area3_clara_state(), 0);
+
+        player.set_area3_kelly_state(18);
+        player.set_area3_clara_state(6);
+
+        let encoded = player.encode_legacy_area3_ppd();
+        assert_eq!(read_i32(&encoded, AREA3_PPD_KELLY_STATE_OFFSET), 18);
+        assert_eq!(read_i32(&encoded, AREA3_PPD_CLARA_STATE_OFFSET), 6);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_area3_ppd(&encoded));
+        assert_eq!(decoded.area3_kelly_state(), 18);
+        assert_eq!(decoded.area3_clara_state(), 6);
     }
 
     #[test]
