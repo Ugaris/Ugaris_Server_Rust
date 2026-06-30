@@ -6728,6 +6728,10 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::MineDoorTimer { item_id } => {
+                self.apply_mine_door_timer(item_id);
+                outcome
+            }
             ItemDriverOutcome::BackToFire {
                 item_id,
                 character_id,
@@ -10419,6 +10423,102 @@ impl World {
                     candidate.driver_data.get(2).copied().unwrap_or_default(),
                 )
             })
+    }
+
+    fn apply_mine_door_timer(&mut self, item_id: ItemId) -> bool {
+        self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 30);
+
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+        if item.driver_data.get(3).copied().unwrap_or_default() != 0 {
+            return false;
+        }
+        let nr = item.driver_data.first().copied().unwrap_or_default();
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        if !self.mine_door_neighbors_have(x, y, MapFlags::SIGHTBLOCK | MapFlags::TSIGHTBLOCK) {
+            return false;
+        }
+
+        let current_source_id = self
+            .items
+            .values()
+            .filter(|candidate| candidate.driver == IDR_MINEDOOR)
+            .filter(|candidate| candidate.driver_data.first().copied().unwrap_or_default() == nr)
+            .find(|candidate| {
+                candidate.driver_data.get(1).copied().unwrap_or_default() == 0
+                    && candidate.driver_data.get(3).copied().unwrap_or_default() != 0
+            })
+            .map(|candidate| candidate.id);
+
+        if let Some(source_id) = current_source_id {
+            let Some(source) = self.items.get(&source_id) else {
+                return false;
+            };
+            let sx = usize::from(source.x);
+            let sy = usize::from(source.y);
+            if !self.mine_door_neighbors_have(sx, sy, MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK) {
+                return false;
+            }
+            let roll = legacy_random_below_from_seed(&mut self.legacy_random_seed, 20);
+            if roll != 0 {
+                return false;
+            }
+            if let Some(dirty) = self.items.get_mut(&source_id).map(|source| {
+                let dirty = (usize::from(source.x), usize::from(source.y));
+                source.sprite = 15000;
+                source.flags.remove(ItemFlags::USE);
+                source.driver_data.resize(4, 0);
+                source.driver_data[3] = 0;
+                dirty
+            }) {
+                self.mark_dirty_sector(dirty.0, dirty.1);
+            }
+        }
+
+        if let Some(dirty) = self.items.get_mut(&item_id).map(|item| {
+            let dirty = (usize::from(item.x), usize::from(item.y));
+            item.driver_data.resize(4, 0);
+            item.sprite = match item.driver_data.get(2).copied().unwrap_or_default() {
+                7 | 3 => 20124,
+                1 | 5 => 20122,
+                _ => item.sprite,
+            };
+            item.flags.insert(ItemFlags::USE);
+            item.driver_data[3] = 1;
+            dirty
+        }) {
+            self.mark_dirty_sector(dirty.0, dirty.1);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn mine_door_neighbors_have(&self, x: usize, y: usize, flags: MapFlags) -> bool {
+        [
+            (1isize, 0isize),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1),
+        ]
+        .into_iter()
+        .all(|(dx, dy)| {
+            let Some(nx) = x.checked_add_signed(dx) else {
+                return false;
+            };
+            let Some(ny) = y.checked_add_signed(dy) else {
+                return false;
+            };
+            self.map
+                .tile(nx, ny)
+                .is_some_and(|tile| tile.flags.intersects(flags))
+        })
     }
 
     fn ignite_burndown_barrel(&mut self, item_id: ItemId) -> bool {
@@ -23404,6 +23504,93 @@ mod tests {
         );
         let actor = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!((actor.x, actor.y), (31, 40));
+    }
+
+    #[test]
+    fn world_mine_door_timer_opens_source_and_closes_previous_source() {
+        let mut world = World::default();
+        world.legacy_random_seed = 3;
+
+        for (x, y) in mine_door_neighbor_points(20, 20)
+            .into_iter()
+            .chain(mine_door_neighbor_points(30, 30))
+        {
+            world
+                .map
+                .tile_mut(x, y)
+                .unwrap()
+                .flags
+                .insert(MapFlags::SIGHTBLOCK | MapFlags::MOVEBLOCK);
+        }
+
+        let mut old_source = item(7, ItemFlags::USED | ItemFlags::USE);
+        old_source.driver = crate::item_driver::IDR_MINEDOOR;
+        old_source.x = 20;
+        old_source.y = 20;
+        old_source.sprite = 20124;
+        old_source.driver_data = vec![4, 0, 7, 1];
+        world.add_item(old_source);
+
+        let mut new_source = item(8, ItemFlags::USED);
+        new_source.driver = crate::item_driver::IDR_MINEDOOR;
+        new_source.x = 30;
+        new_source.y = 30;
+        new_source.sprite = 15000;
+        new_source.driver_data = vec![4, 0, 5, 0];
+        world.add_item(new_source);
+
+        let outcome = world
+            .apply_item_driver_outcome(ItemDriverOutcome::MineDoorTimer { item_id: ItemId(8) }, 12);
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::MineDoorTimer { item_id: ItemId(8) }
+        );
+        let old_source = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(old_source.sprite, 15000);
+        assert!(!old_source.flags.contains(ItemFlags::USE));
+        assert_eq!(old_source.driver_data[3], 0);
+        let new_source = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(new_source.sprite, 20122);
+        assert!(new_source.flags.contains(ItemFlags::USE));
+        assert_eq!(new_source.driver_data[3], 1);
+    }
+
+    #[test]
+    fn world_mine_door_timer_keeps_dug_out_doors_closed() {
+        let mut world = World::default();
+        let mut door = item(8, ItemFlags::USED);
+        door.driver = crate::item_driver::IDR_MINEDOOR;
+        door.x = 30;
+        door.y = 30;
+        door.sprite = 15000;
+        door.driver_data = vec![4, 0, 5, 0];
+        world.add_item(door);
+
+        let outcome = world
+            .apply_item_driver_outcome(ItemDriverOutcome::MineDoorTimer { item_id: ItemId(8) }, 12);
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::MineDoorTimer { item_id: ItemId(8) }
+        );
+        let door = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(door.sprite, 15000);
+        assert!(!door.flags.contains(ItemFlags::USE));
+        assert_eq!(door.driver_data[3], 0);
+    }
+
+    fn mine_door_neighbor_points(x: usize, y: usize) -> [(usize, usize); 8] {
+        [
+            (x + 1, y),
+            (x - 1, y),
+            (x, y + 1),
+            (x, y - 1),
+            (x + 1, y + 1),
+            (x + 1, y - 1),
+            (x - 1, y + 1),
+            (x - 1, y - 1),
+        ]
     }
 
     #[test]

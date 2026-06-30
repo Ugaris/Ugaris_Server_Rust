@@ -5024,9 +5024,38 @@
         "test result: ok. 834 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 184,
+      "startedAt": "2026-06-30T14:46:17.319Z",
+      "endedAt": "2026-06-30T15:11:52.361Z",
+      "durationMs": 1534862,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: could not compile `ugaris-core` (lib test) due to 2 previous errors",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test world::tests::world_mine_door_timer_keeps_dug_out_doors_closed ... FAILED",
+        "test world::tests::world_mine_door_timer_opens_source_and_closes_previous_source ... FAILED",
+        "test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 832 filtered out; finished in 0.00s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 832 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 104308026,
+  "totalDurationMs": 105842888,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -5034,17 +5063,17 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 153,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 152,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 154,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 153,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 139,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 144,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 145,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 115,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 77,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 48,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
+      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 5,
       "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 70,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 4,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
@@ -5060,7 +5089,7 @@
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 26,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 27,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test player::tests::pk_hate_helpers_preserve_legacy_front_priority_and_eviction ... FAILED": 1,
       "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.00s": 1,
@@ -5085,7 +5114,7 @@
       "The focused server test exposed a type mismatch: this runtime send path expects `BytesMut`, unlike s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 597 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 29,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 30,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 187 filtered out; finished in 0.00s": 3,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 181 filtered out; finished in 0.00s": 1,
       "test result: ok. 598 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -5577,7 +5606,11 @@
       "The focused regression passed. I’ll record this iteration in `PORTING_LEDGER.md`, then run a broader": 1,
       "The workspace failure is an existing test expecting the previous Rust-only feedback. I’ll update tha": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 275 filtered out; finished in 0.00s": 1,
-      "test result: ok. 834 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 834 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "test world::tests::world_mine_door_timer_keeps_dug_out_doors_closed ... FAILED": 1,
+      "test world::tests::world_mine_door_timer_opens_source_and_closes_previous_source ... FAILED": 1,
+      "test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 832 filtered out; finished in 0.00s": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 832 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -769,6 +769,9 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    MineDoorTimer {
+        item_id: ItemId,
+    },
     StafferSpecDoorToggle {
         item_id: ItemId,
         character_id: CharacterId,
@@ -5964,7 +5967,7 @@ fn mine_door_driver(
     area_id: u16,
 ) -> ItemDriverOutcome {
     if context.timer_call || character.id.0 == 0 {
-        return ItemDriverOutcome::Noop;
+        return ItemDriverOutcome::MineDoorTimer { item_id: item.id };
     }
 
     let Some((door_x, door_y, direction)) = context.mine_door_target else {
@@ -14997,7 +15000,7 @@ mod tests {
                     ..ItemDriverContext::default()
                 },
             ),
-            ItemDriverOutcome::Noop
+            ItemDriverOutcome::MineDoorTimer { item_id: ItemId(7) }
         );
     }
 

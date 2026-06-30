@@ -23657,11 +23657,12 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoubleDoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FreakDoorUse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Teleport { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::MineDoorTeleport { .. }
-                                          | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::FireballMachineProjectile { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeleportDoor { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::MineDoorTeleport { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::MineDoorTimer { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Recall { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CityRecall { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FireballMachineProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn { .. }
