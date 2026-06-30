@@ -220,6 +220,31 @@ fn send_pending_world_system_texts(runtime: &mut ServerRuntime, world: &mut Worl
     }
     sent
 }
+
+fn send_pending_world_area_texts(runtime: &mut ServerRuntime, world: &mut World) -> usize {
+    let mut sent = 0;
+    for event in world.drain_pending_area_texts() {
+        let payload = ugaris_protocol::packet::system_text(&event.message);
+        let max_distance = i32::from(event.max_distance);
+        let recipients: Vec<_> = world
+            .characters
+            .iter()
+            .filter_map(|(&character_id, character)| {
+                ((i32::from(character.x) - i32::from(event.x)).abs() <= max_distance
+                    && (i32::from(character.y) - i32::from(event.y)).abs() <= max_distance)
+                    .then_some(character_id)
+            })
+            .collect();
+        for character_id in recipients {
+            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                if runtime.send_to_session(session_id, payload.clone()) {
+                    sent += 1;
+                }
+            }
+        }
+    }
+    sent
+}
 use ugaris_db::{
     CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
     LoginRequest,
@@ -24963,6 +24988,11 @@ async fn main() -> anyhow::Result<()> {
                     apply_pk_hate_from_hurt_events(&mut runtime, &mut world, realtime_seconds);
                 if pk_hate_updates != 0 {
                     info!(pk_hate_updates, tick = world.tick.0, "applied PK hate updates from hurt events");
+                }
+
+                let area_text_sessions = send_pending_world_area_texts(&mut runtime, &mut world);
+                if area_text_sessions != 0 {
+                    info!(area_text_sessions, tick = world.tick.0, "queued world area text feedback");
                 }
 
                 let world_text_sessions = send_pending_world_system_texts(&mut runtime, &mut world);

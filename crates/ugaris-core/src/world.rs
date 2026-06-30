@@ -39,13 +39,15 @@ use crate::{
         IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
-    legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
+    legacy::{
+        action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP, SAY_DIST,
+    },
     light::{
         add_character_light, add_effect_light, add_item_light, compute_dlight, compute_groundlight,
         compute_shadow_with_random, remove_character_light, remove_effect_light, remove_item_light,
         reset_dlight, LIGHT_DISTANCE,
     },
-    log_text::LOG_TALK,
+    log_text::{emote_message, LOG_TALK},
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},
     player::{PlayerActionCode, PlayerRuntime},
@@ -126,6 +128,14 @@ pub struct WorldSoundSpecial {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorldSystemText {
     pub character_id: CharacterId,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorldAreaText {
+    pub x: u16,
+    pub y: u16,
+    pub max_distance: u16,
     pub message: String,
 }
 
@@ -356,6 +366,7 @@ pub struct World {
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,
     pending_system_texts: Vec<WorldSystemText>,
+    pending_area_texts: Vec<WorldAreaText>,
     pending_hurt_events: Vec<LegacyHurtEvent>,
 }
 
@@ -969,6 +980,10 @@ impl World {
 
     pub fn drain_pending_system_texts(&mut self) -> Vec<WorldSystemText> {
         self.pending_system_texts.drain(..).collect()
+    }
+
+    pub fn drain_pending_area_texts(&mut self) -> Vec<WorldAreaText> {
+        self.pending_area_texts.drain(..).collect()
     }
 
     pub fn add_item(&mut self, item: Item) {
@@ -6365,6 +6380,16 @@ impl World {
                     .is_some_and(|item| item.driver == IDR_POISON0)
             });
         if has_poison0 {
+            if let Some(message) = emote_message(&character.name, "drinks a potion")
+                .and_then(|message| String::from_utf8(message).ok())
+            {
+                self.pending_area_texts.push(WorldAreaText {
+                    x: character.x,
+                    y: character.y,
+                    max_distance: (SAY_DIST / 2) as u16,
+                    message,
+                });
+            }
             self.remove_all_poison(character_id);
         }
     }
@@ -18840,6 +18865,15 @@ mod tests {
             .flags
             .contains(CharacterFlags::ITEMS | CharacterFlags::UPDATE));
         assert_eq!(npc.action, action::IDLE);
+        assert_eq!(
+            world.drain_pending_area_texts(),
+            vec![WorldAreaText {
+                x: 10,
+                y: 10,
+                max_distance: (SAY_DIST / 2) as u16,
+                message: "Character drinks a potion.".to_string(),
+            }]
+        );
     }
 
     #[test]
@@ -18896,6 +18930,7 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.inventory[SPELL_SLOT_START], Some(ItemId(11)));
         assert!(world.items.contains_key(&ItemId(11)));
+        assert!(world.drain_pending_area_texts().is_empty());
     }
 
     #[test]
