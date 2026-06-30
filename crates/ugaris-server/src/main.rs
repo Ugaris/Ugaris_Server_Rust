@@ -43,6 +43,7 @@ use ugaris_core::{
         CommandAlias, DemonShrineResult, IgnoreToggleResult, KeyringAddResult, PlayerActionCode,
         PlayerConnectionState, PlayerRuntime, QueuedAction, XmasTreeResult,
     },
+    quest::QuestReopenResult,
     spell::{
         EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN,
         EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_LAG,
@@ -17252,6 +17253,32 @@ async fn main() -> anyhow::Result<()> {
                             if let Some(player) = runtime.players.get(&session_id) {
                                 let payload = legacy_questlog_payload(player);
                                 runtime.send_to_session(session_id, payload);
+                            }
+                        }
+                        ClientAction::ReopenQuest { quest } => {
+                            let result_and_payload = runtime.players.get_mut(&session_id).map(|player| {
+                                let result = player.quest_log.try_reopen_legacy(quest as usize);
+                                let payload = (result == QuestReopenResult::Reopened)
+                                    .then(|| legacy_questlog_payload(player));
+                                (result, payload)
+                            });
+                            if let Some((result, payload)) = result_and_payload {
+                                match result {
+                                    QuestReopenResult::Reopened => {
+                                        if let Some(payload) = payload {
+                                            runtime.send_to_session(session_id, payload);
+                                        }
+                                    }
+                                    QuestReopenResult::CannotOpenAgain => command_feedback.push((
+                                        character_id,
+                                        "You cannot open this quest again.".to_string(),
+                                    )),
+                                    QuestReopenResult::CannotOpenNow => command_feedback.push((
+                                        character_id,
+                                        "You cannot open this quest at the moment.".to_string(),
+                                    )),
+                                    QuestReopenResult::InvalidQuest => {}
+                                }
                             }
                         }
                         _ => {}
