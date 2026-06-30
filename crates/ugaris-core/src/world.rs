@@ -3530,6 +3530,13 @@ impl World {
                 area_id,
                 true,
             ) {
+                if let Some(character) = self.characters.get_mut(&character_id) {
+                    if let Some(CharacterDriverState::SimpleBaddy(data)) =
+                        character.driver_state.as_mut()
+                    {
+                        data.lastfight = self.tick.0 as i32;
+                    }
+                }
                 return true;
             }
             self.remove_simple_baddy_enemy(character_id, enemy.target_id);
@@ -17739,6 +17746,7 @@ mod tests {
     #[test]
     fn simple_baddy_attack_action_follows_invisible_enemy_last_position() {
         let mut world = World::default();
+        world.tick = Tick(468);
         let mut npc = character(1);
         npc.driver = CDR_SIMPLEBADDY;
         npc.values[0][CharacterValue::Attack as usize] = 20;
@@ -17766,6 +17774,10 @@ mod tests {
         assert_eq!(npc.tox, 11);
         assert_eq!(npc.toy, 10);
         assert_eq!(npc.dir, Direction::Right as u8);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.lastfight, 468);
     }
 
     #[test]

@@ -4552,9 +4552,32 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
       ]
+    },
+    {
+      "iteration": 166,
+      "startedAt": "2026-06-30T11:51:20.568Z",
+      "endedAt": "2026-06-30T12:29:34.478Z",
+      "durationMs": 2293732,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 701 filtered out; finished in 0.07s"
+      ]
     }
   ],
-  "totalDurationMs": 93866131,
+  "totalDurationMs": 96159863,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4562,10 +4585,10 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 139,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 138,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 125,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 130,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 140,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 139,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 126,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 131,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 104,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
@@ -5059,9 +5082,10 @@
       "error: unexpected argument 'simple_baddy_default_attack_action_consumes_world_rng_seed' found": 1,
       "test world::tests::legacy_random_below_advances_seed_like_c_style_lcg ... FAILED": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.00s": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.01s": 1,
-      "test world::tests::simple_baddy_attack_action_uses_ball_against_distant_recorded_enemy ... FAILED": 1
+      "test world::tests::simple_baddy_attack_action_uses_ball_against_distant_recorded_enemy ... FAILED": 1,
+      "test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 701 filtered out; finished in 0.07s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
