@@ -2629,6 +2629,57 @@ fn apply_admin_character_command(
         });
     }
 
+    if lower == "setlevel" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let level = legacy_atoi_prefix(rest).max(0) as u32;
+        if let Some(character) = world.characters.get_mut(&character_id) {
+            character.level = level;
+            character.exp = legacy_level_exp(level);
+            if character.values.len() < 2 {
+                character
+                    .values
+                    .resize_with(2, || vec![0; CHARACTER_VALUE_NAMES.len()]);
+            }
+            if character.values[1].len() < CHARACTER_VALUE_NAMES.len() {
+                character.values[1].resize(CHARACTER_VALUE_NAMES.len(), 0);
+            }
+
+            if level < 30 {
+                character.flags.remove(CharacterFlags::ARCH);
+                character.values[1][CharacterValue::Duration as usize] = 0;
+                character.values[1][CharacterValue::Rage as usize] = 0;
+            }
+            if level > 35 {
+                character.flags.insert(CharacterFlags::ARCH);
+                let mage_only = character.flags.contains(CharacterFlags::MAGE)
+                    && !character.flags.contains(CharacterFlags::WARRIOR);
+                let warrior_only = character.flags.contains(CharacterFlags::WARRIOR)
+                    && !character.flags.contains(CharacterFlags::MAGE);
+                if mage_only && character.values[1][CharacterValue::Duration as usize] == 0 {
+                    character.values[1][CharacterValue::Duration as usize] = 1;
+                }
+                if warrior_only && character.values[1][CharacterValue::Rage as usize] == 0 {
+                    character.values[1][CharacterValue::Rage as usize] = 1;
+                }
+            }
+            character
+                .flags
+                .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+        }
+        world.clear_character_spell_slots_and_effects(character_id);
+        return Some(KeyringCommandResult {
+            inventory_changed: true,
+            name_changed: true,
+            ..Default::default()
+        });
+    }
+
     if lower.len() >= 3 && "exp".starts_with(&lower) {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -6366,6 +6417,10 @@ fn legacy_level_value(level: u32) -> u32 {
     next.saturating_pow(4)
         .saturating_sub(level.saturating_pow(4))
         .min(u64::from(u32::MAX)) as u32
+}
+
+fn legacy_level_exp(level: u32) -> u32 {
+    u64::from(level).saturating_pow(4).min(u64::from(u32::MAX)) as u32
 }
 
 fn legacy_save_number(saves: u8) -> String {
@@ -13098,6 +13153,122 @@ mod tests {
             .messages,
             vec!["Value out of bounds."]
         );
+    }
+
+    #[test]
+    fn god_setlevel_mutates_self_and_clears_spell_slots_and_effects() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Godmode"), 1, 10, 10);
+        character
+            .flags
+            .insert(CharacterFlags::GOD | CharacterFlags::MAGE | CharacterFlags::ARCH);
+        character.values[1][CharacterValue::Duration as usize] = 9;
+        character.values[1][CharacterValue::Rage as usize] = 8;
+        character.inventory[12] = Some(ItemId(99));
+        world.add_character(character);
+        world.add_item(Item {
+            id: ItemId(99),
+            name: "Spell".to_string(),
+            description: String::new(),
+            flags: ItemFlags::TAKE,
+            sprite: 1,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [0; 5],
+            modifier_value: [0; 5],
+            x: 0,
+            y: 0,
+            carried_by: Some(character_id),
+            contained_in: None,
+            content_id: 0,
+            driver: IDR_ARMOR,
+            driver_data: vec![0; 40],
+            serial: 1,
+        });
+        let mut effect = Effect::new(EF_BLESS, 1, 0, 10);
+        effect.target_character = Some(character_id);
+        world.effects.insert(1, effect);
+        let mut runtime = ServerRuntime::default();
+
+        let low = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setlevel 29",
+            1,
+        )
+        .expect("god setlevel should be recognized");
+        assert!(low.messages.is_empty());
+        assert!(low.inventory_changed);
+        assert!(low.name_changed);
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.level, 29);
+        assert_eq!(character.exp, legacy_level_exp(29));
+        assert!(!character.flags.contains(CharacterFlags::ARCH));
+        assert_eq!(character.values[1][CharacterValue::Duration as usize], 0);
+        assert_eq!(character.values[1][CharacterValue::Rage as usize], 0);
+        assert_eq!(character.inventory[12], None);
+        assert!(!world.items.contains_key(&ItemId(99)));
+        assert!(world.effects.is_empty());
+
+        let high = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setlevel 36",
+            1,
+        )
+        .expect("god setlevel should be recognized");
+        assert!(high.messages.is_empty());
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.level, 36);
+        assert_eq!(character.exp, legacy_level_exp(36));
+        assert!(character.flags.contains(CharacterFlags::ARCH));
+        assert_eq!(character.values[1][CharacterValue::Duration as usize], 1);
+        assert_eq!(character.values[1][CharacterValue::Rage as usize], 0);
+    }
+
+    #[test]
+    fn setlevel_is_god_only_and_requires_full_command() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setlevel 36",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setleve 36",
+            1,
+        )
+        .is_none());
     }
 
     #[test]

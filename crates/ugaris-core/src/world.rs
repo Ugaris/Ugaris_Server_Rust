@@ -8581,6 +8581,35 @@ impl World {
         true
     }
 
+    pub fn clear_character_spell_slots_and_effects(&mut self, character_id: CharacterId) {
+        let spell_items = self
+            .characters
+            .get(&character_id)
+            .map(|character| {
+                character.inventory[12..30]
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for item_id in spell_items {
+            self.destroy_item(item_id);
+        }
+
+        let effect_ids = self
+            .effects
+            .iter()
+            .filter_map(|(&effect_id, effect)| {
+                (effect.target_character == Some(character_id)).then_some(effect_id)
+            })
+            .collect::<Vec<_>>();
+        for effect_id in effect_ids {
+            self.remove_effect_from_map(effect_id);
+            self.effects.remove(&effect_id);
+        }
+    }
+
     pub fn apply_skelraise_raise(
         &mut self,
         item_id: ItemId,
