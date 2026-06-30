@@ -34,8 +34,8 @@ use crate::{
         IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT,
         IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT, IDR_LABTORCH,
         IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP,
-        IDR_SWAMPARM, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY,
-        IID_AREA16_SKELLYKEY,
+        IDR_SWAMPARM, IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
+        IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -238,6 +238,10 @@ fn item_light_may_have_changed(outcome: &ItemDriverOutcome) -> bool {
             | ItemDriverOutcome::OnOffLightChanged { .. }
             | ItemDriverOutcome::FlameThrowerPulse { .. }
             | ItemDriverOutcome::FlameThrowerExtinguished { .. }
+            | ItemDriverOutcome::SwampWhispPulse {
+                light_changed: true,
+                ..
+            }
             | ItemDriverOutcome::DecayItemToggled { .. }
     )
 }
@@ -833,6 +837,41 @@ impl World {
         add_item_light(&mut self.map, &item);
         self.mark_item_light_area(&item);
         self.items.insert(item.id, item);
+    }
+
+    fn move_item_map_slot(&mut self, item_id: ItemId, from: (u16, u16), to: (u16, u16)) {
+        let Some(item) = self.items.get(&item_id) else {
+            return;
+        };
+        let item_flags = item.flags;
+        let from_x = usize::from(from.0);
+        let from_y = usize::from(from.1);
+        let to_x = usize::from(to.0);
+        let to_y = usize::from(to.1);
+
+        if let Some(source) = self.map.tile_mut(from_x, from_y) {
+            if source.item == item_id.0 {
+                source.item = 0;
+                if item_flags.contains(ItemFlags::MOVEBLOCK) {
+                    source.flags.remove(MapFlags::TMOVEBLOCK);
+                }
+                if item_flags.contains(ItemFlags::SIGHTBLOCK) {
+                    source.flags.remove(MapFlags::TSIGHTBLOCK);
+                }
+                self.mark_dirty_sector(from_x, from_y);
+            }
+        }
+
+        if let Some(target) = self.map.tile_mut(to_x, to_y) {
+            target.item = item_id.0;
+            if item_flags.contains(ItemFlags::MOVEBLOCK) {
+                target.flags.insert(MapFlags::TMOVEBLOCK);
+            }
+            if item_flags.contains(ItemFlags::SIGHTBLOCK) {
+                target.flags.insert(MapFlags::TSIGHTBLOCK);
+            }
+            self.mark_dirty_sector(to_x, to_y);
+        }
     }
 
     fn move_edemon_block(&mut self, item_id: ItemId, target_x: u16, target_y: u16) -> bool {
@@ -2971,6 +3010,10 @@ impl World {
             && context.swamp_arm_triggered.is_none())
         .then(|| self.swamp_arm_triggered(item_id))
         .flatten();
+        let swamp_whisp_move_succeeds = (driver == Some(IDR_SWAMPWHISP)
+            && context.swamp_whisp_move_succeeds.is_none())
+        .then(|| self.swamp_whisp_move_succeeds(item_id))
+        .flatten();
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -3008,6 +3051,9 @@ impl World {
         effective_context.has_area16_skelly_key |= area16_skelly_key_context;
         if effective_context.swamp_arm_triggered.is_none() {
             effective_context.swamp_arm_triggered = swamp_arm_triggered;
+        }
+        if effective_context.swamp_whisp_move_succeeds.is_none() {
+            effective_context.swamp_whisp_move_succeeds = swamp_whisp_move_succeeds;
         }
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
@@ -3109,6 +3155,52 @@ impl World {
             .into_iter()
             .filter_map(|dx| self.map_character_at(x + dx, y))
             .collect()
+    }
+
+    fn swamp_whisp_move_succeeds(&self, item_id: ItemId) -> Option<bool> {
+        let item = self.items.get(&item_id)?;
+        let frame = item.driver_data.first().copied().unwrap_or_default();
+        let direction = item
+            .driver_data
+            .get(3)
+            .copied()
+            .unwrap_or(Direction::Down as u8);
+        let target = match direction {
+            value if value == Direction::Down as u8 && frame.wrapping_add(1) == 12 => {
+                Some((usize::from(item.x), usize::from(item.y).saturating_add(1)))
+            }
+            value if value == Direction::Up as u8 && frame.wrapping_sub(1) == 2 => {
+                Some((usize::from(item.x), usize::from(item.y).saturating_sub(1)))
+            }
+            value if value == Direction::Left as u8 && frame.wrapping_add(1) > 15 => {
+                Some((usize::from(item.x).saturating_add(1), usize::from(item.y)))
+            }
+            value if value == Direction::Right as u8 && frame.wrapping_sub(1) == 6 => {
+                Some((usize::from(item.x).saturating_sub(1), usize::from(item.y)))
+            }
+            _ => None,
+        };
+        let Some((x, y)) = target else {
+            return Some(false);
+        };
+        Some(self.item_can_be_set_on_map(item, x, y))
+    }
+
+    fn item_can_be_set_on_map(&self, item: &Item, x: usize, y: usize) -> bool {
+        if x < 1
+            || y < 1
+            || x >= self.map.width()
+            || y >= self.map.height()
+            || item.flags.is_empty()
+        {
+            return false;
+        }
+        self.map.tile(x, y).is_some_and(|tile| {
+            tile.item == 0
+                && !tile
+                    .flags
+                    .intersects(MapFlags::TMOVEBLOCK | MapFlags::MOVEBLOCK)
+        })
     }
 
     fn map_character_at(&self, x: i32, y: i32) -> Option<CharacterId> {
@@ -6241,6 +6333,9 @@ impl World {
         if driver == IDR_FDEMONGATE && effective_context.fdemon_gate_spawn.is_none() {
             effective_context.fdemon_gate_spawn = self.fdemon_gate_spawn_context(item_id);
         }
+        if driver == IDR_SWAMPWHISP && effective_context.swamp_whisp_move_succeeds.is_none() {
+            effective_context.swamp_whisp_move_succeeds = self.swamp_whisp_move_succeeds(item_id);
+        }
         if matches!(driver, IDR_FDEMONLIGHT | IDR_FDEMONCANNON)
             && effective_context.fdemon_loader_power.is_none()
         {
@@ -6251,6 +6346,10 @@ impl World {
         let Some(item) = self.items.get_mut(&item_id) else {
             return ItemDriverOutcome::Noop;
         };
+        effective_context.current_tick = self.tick.0 as u32;
+        effective_context.daylight = effective_context
+            .daylight
+            .max(self.date.daylight.clamp(0, 255) as u8);
         let mut timer_character = timer_callback_character();
         let before = item.clone();
         let outcome = execute_item_driver_with_context(
@@ -6764,6 +6863,21 @@ impl World {
                     for target_id in self.swamp_arm_damage_targets(item_id) {
                         self.apply_legacy_hurt(target_id, None, 10 * POWERSCALE, 1, 50, 90);
                     }
+                }
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::SwampWhispPulse {
+                item_id,
+                moved_from,
+                moved_to,
+                schedule_after_ticks,
+                ..
+            } => {
+                if let (Some(from), Some(to)) = (moved_from, moved_to) {
+                    self.move_item_map_slot(item_id, from, to);
+                } else if let Some(item) = self.items.get(&item_id) {
+                    self.mark_dirty_sector(usize::from(item.x), usize::from(item.y));
                 }
                 self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                 outcome
@@ -14094,7 +14208,7 @@ mod tests {
             IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_LIZARDFLOWER,
             IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY,
             IDR_POTION, IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
-            IDR_STEPTRAP, IDR_SWAMPARM, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -26541,6 +26655,51 @@ mod tests {
         ));
         assert_eq!(world.characters[&CharacterId(3)].hp, 10 * POWERSCALE);
         assert_eq!(world.characters[&CharacterId(4)].hp, 20 * POWERSCALE);
+    }
+
+    #[test]
+    fn swampwhisp_timer_moves_item_map_slot_and_reschedules() {
+        let mut world = World {
+            map: MapGrid::new(20, 20),
+            ..World::default()
+        };
+        world.add_character(character(0));
+        let mut whisp = item(8, ItemFlags::USED | ItemFlags::USE);
+        whisp.driver = IDR_SWAMPWHISP;
+        whisp.sprite = 20945;
+        whisp.driver_data = vec![11, 10, 10, Direction::Down as u8];
+        assert!(world.map.set_item_map(&mut whisp, 10, 10));
+        world.add_item(whisp);
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_SWAMPWHISP,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            15,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::SwampWhispPulse {
+                moved_from: Some((10, 10)),
+                moved_to: Some((10, 11)),
+                ..
+            }
+        ));
+        assert_eq!(world.items[&ItemId(8)].y, 11);
+        assert_eq!(world.map.tile(10, 10).unwrap().item, 0);
+        assert_eq!(world.map.tile(10, 11).unwrap().item, 8);
+
+        world.tick = Tick(2);
+        let due = world.process_due_timers(15);
+        assert_eq!(due.len(), 1);
     }
 
     fn character(id: u32) -> Character {

@@ -391,6 +391,9 @@ pub struct ItemDriverContext {
     pub has_area16_robber_key: bool,
     pub has_area16_skelly_key: bool,
     pub swamp_arm_triggered: Option<bool>,
+    pub swamp_whisp_move_succeeds: Option<bool>,
+    pub swamp_whisp_turn_x: bool,
+    pub swamp_whisp_turn_y: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1108,6 +1111,14 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         damage_now: bool,
+        schedule_after_ticks: u64,
+    },
+    SwampWhispPulse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        moved_from: Option<(u16, u16)>,
+        moved_to: Option<(u16, u16)>,
+        light_changed: bool,
         schedule_after_ticks: u64,
     },
     FdemonWaypoint {
@@ -2106,6 +2117,7 @@ pub fn execute_item_driver_with_context(
                 IDR_JUNKPILE => junkpile_driver(character, item, context),
                 IDR_GASTRAP => gastrap_driver(character, item, context),
                 IDR_SWAMPARM => swamparm_driver(character, item, context),
+                IDR_SWAMPWHISP => swampwhisp_driver(character, item, context),
                 IDR_PALACEDOOR => palace_door_driver(character, item, context),
                 IDR_ISLENADOOR => islena_door_driver(character, item, context),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
@@ -4841,6 +4853,165 @@ fn swamparm_driver(
         character_id: CharacterId(0),
         damage_now,
         schedule_after_ticks: 1,
+    }
+}
+
+const SWAMPWHISP_CIRCLE_LEFT: u8 = 10;
+const SWAMPWHISP_CIRCLE_RIGHT: u8 = 11;
+const SWAMPWHISP_DARK: u8 = 12;
+
+fn swampwhisp_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 || !context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    item.driver_data.resize(4, 0);
+    if item.driver_data[1] == 0 {
+        item.driver_data[1] = item.x as u8;
+        item.driver_data[2] = item.y as u8;
+        item.driver_data[3] = crate::direction::Direction::Down as u8;
+    }
+
+    let origin_x = i32::from(item.driver_data[1]);
+    let origin_y = i32::from(item.driver_data[2]);
+    let dx = i32::from(item.x) - origin_x;
+    let dy = i32::from(item.y) - origin_y;
+    if context.daylight > 50 {
+        item.driver_data[3] = SWAMPWHISP_DARK;
+    }
+
+    let from = (item.x, item.y);
+    let mut moved_to = None;
+    let mut light_changed = false;
+    let mut schedule_after_ticks = 2;
+
+    match item.driver_data[3] {
+        direction if direction == crate::direction::Direction::Down as u8 => {
+            item.driver_data[0] = item.driver_data[0].wrapping_add(1);
+            if item.driver_data[0] > 15 {
+                item.driver_data[0] = 0;
+            }
+            if item.driver_data[0] == 12 {
+                if context.swamp_whisp_move_succeeds == Some(true) {
+                    item.y = item.y.saturating_add(1);
+                    item.driver_data[0] = 1;
+                    item.driver_data[3] = SWAMPWHISP_CIRCLE_LEFT;
+                    moved_to = Some((item.x, item.y));
+                } else {
+                    item.driver_data[3] = SWAMPWHISP_CIRCLE_RIGHT;
+                }
+            }
+        }
+        direction if direction == crate::direction::Direction::Up as u8 => {
+            item.driver_data[0] = item.driver_data[0].wrapping_sub(1);
+            if item.driver_data[0] > 15 {
+                item.driver_data[0] = 15;
+            }
+            if item.driver_data[0] == 2 {
+                if context.swamp_whisp_move_succeeds == Some(true) {
+                    item.y = item.y.saturating_sub(1);
+                    item.driver_data[0] = 14;
+                    item.driver_data[3] = SWAMPWHISP_CIRCLE_RIGHT;
+                    moved_to = Some((item.x, item.y));
+                } else {
+                    item.driver_data[3] = SWAMPWHISP_CIRCLE_LEFT;
+                }
+            }
+        }
+        direction if direction == crate::direction::Direction::Left as u8 => {
+            item.driver_data[0] = item.driver_data[0].wrapping_add(1);
+            if item.driver_data[0] > 15 {
+                item.driver_data[0] = 0;
+            }
+            if item.driver_data[0] == 0 {
+                if context.swamp_whisp_move_succeeds == Some(true) {
+                    item.x = item.x.saturating_add(1);
+                    item.driver_data[0] = 7;
+                    item.driver_data[3] = SWAMPWHISP_CIRCLE_LEFT;
+                    moved_to = Some((item.x, item.y));
+                } else {
+                    item.driver_data[3] = SWAMPWHISP_CIRCLE_RIGHT;
+                }
+            }
+        }
+        direction if direction == crate::direction::Direction::Right as u8 => {
+            item.driver_data[0] = item.driver_data[0].wrapping_sub(1);
+            if item.driver_data[0] > 15 {
+                item.driver_data[0] = 15;
+            }
+            if item.driver_data[0] == 6 {
+                if context.swamp_whisp_move_succeeds == Some(true) {
+                    item.x = item.x.saturating_sub(1);
+                    item.driver_data[0] = 2;
+                    item.driver_data[3] = SWAMPWHISP_CIRCLE_RIGHT;
+                    moved_to = Some((item.x, item.y));
+                } else {
+                    item.driver_data[3] = SWAMPWHISP_CIRCLE_LEFT;
+                }
+            }
+        }
+        SWAMPWHISP_CIRCLE_LEFT => {
+            item.driver_data[0] = item.driver_data[0].wrapping_sub(1);
+            if item.driver_data[0] > 15 {
+                item.driver_data[0] = 15;
+            }
+            if dx < 2 && context.swamp_whisp_turn_x {
+                item.driver_data[3] = crate::direction::Direction::Right as u8;
+            }
+            if dy < 2 && context.swamp_whisp_turn_y {
+                item.driver_data[3] = crate::direction::Direction::Down as u8;
+            }
+        }
+        SWAMPWHISP_CIRCLE_RIGHT => {
+            item.driver_data[0] = item.driver_data[0].wrapping_add(1);
+            if item.driver_data[0] > 15 {
+                item.driver_data[0] = 0;
+            }
+            if dx > -2 && context.swamp_whisp_turn_x {
+                item.driver_data[3] = crate::direction::Direction::Left as u8;
+            }
+            if dy > -2 && context.swamp_whisp_turn_y {
+                item.driver_data[3] = crate::direction::Direction::Up as u8;
+            }
+        }
+        SWAMPWHISP_DARK => {
+            if context.daylight < 50 {
+                item.driver_data[3] = SWAMPWHISP_CIRCLE_LEFT;
+                item.modifier_value[0] = 100;
+                light_changed = true;
+                schedule_after_ticks = 1;
+            } else if item.sprite != 0 {
+                item.sprite = 0;
+                item.modifier_value[0] = 0;
+                light_changed = true;
+                schedule_after_ticks = TICKS_PER_SECOND;
+            } else {
+                schedule_after_ticks = TICKS_PER_SECOND;
+            }
+            return ItemDriverOutcome::SwampWhispPulse {
+                item_id: item.id,
+                character_id: CharacterId(0),
+                moved_from: None,
+                moved_to: None,
+                light_changed,
+                schedule_after_ticks,
+            };
+        }
+        _ => {}
+    }
+
+    item.sprite = 20934 + i32::from(item.driver_data[0]);
+    ItemDriverOutcome::SwampWhispPulse {
+        item_id: item.id,
+        character_id: CharacterId(0),
+        moved_from: moved_to.map(|_| from),
+        moved_to,
+        light_changed,
+        schedule_after_ticks,
     }
 }
 
@@ -8269,6 +8440,7 @@ mod tests {
         assert_eq!(IDR_MINEWALL, 60);
         assert_eq!(IDR_TOPLIST, 63);
         assert_eq!(IDR_DUNGEONTELE, 65);
+        assert_eq!(IDR_SWAMPWHISP, 74);
         assert_eq!(IDR_SWAMPSPAWN, 75);
         assert_eq!(IDR_PALACEDOOR, 76);
         assert_eq!(IDR_BONEHOLDER, 91);
@@ -8471,6 +8643,139 @@ mod tests {
                 &ItemDriverContext::default(),
             ),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn swampwhisp_initializes_and_moves_down_at_frame_twelve() {
+        let mut actor = character(0);
+        let mut whisp = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SWAMPWHISP);
+        whisp.x = 10;
+        whisp.y = 20;
+        whisp.driver_data = vec![11];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPWHISP,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut whisp,
+            request,
+            15,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                swamp_whisp_move_succeeds: Some(true),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(whisp.x, 10);
+        assert_eq!(whisp.y, 21);
+        assert_eq!(whisp.driver_data[0], 1);
+        assert_eq!(whisp.driver_data[1], 10);
+        assert_eq!(whisp.driver_data[2], 20);
+        assert_eq!(whisp.driver_data[3], SWAMPWHISP_CIRCLE_LEFT);
+        assert_eq!(whisp.sprite, 20935);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SwampWhispPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                moved_from: Some((10, 20)),
+                moved_to: Some((10, 21)),
+                light_changed: false,
+                schedule_after_ticks: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn swampwhisp_blocks_move_and_circles_opposite_direction() {
+        let mut actor = character(0);
+        let mut whisp = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SWAMPWHISP);
+        whisp.x = 10;
+        whisp.y = 20;
+        whisp.driver_data = vec![11, 10, 20, crate::direction::Direction::Down as u8];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPWHISP,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut whisp,
+            request,
+            15,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                swamp_whisp_move_succeeds: Some(false),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!((whisp.x, whisp.y), (10, 20));
+        assert_eq!(whisp.driver_data[0], 12);
+        assert_eq!(whisp.driver_data[3], SWAMPWHISP_CIRCLE_RIGHT);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SwampWhispPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                moved_from: None,
+                moved_to: None,
+                light_changed: false,
+                schedule_after_ticks: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn swampwhisp_daylight_darkens_and_reschedules_slowly() {
+        let mut actor = character(0);
+        let mut whisp = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SWAMPWHISP);
+        whisp.sprite = 20940;
+        whisp.modifier_value[0] = 100;
+        whisp.driver_data = vec![6, 10, 20, SWAMPWHISP_CIRCLE_LEFT];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPWHISP,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut whisp,
+            request,
+            15,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                daylight: 60,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(whisp.driver_data[3], SWAMPWHISP_DARK);
+        assert_eq!(whisp.sprite, 0);
+        assert_eq!(whisp.modifier_value[0], 0);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SwampWhispPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                moved_from: None,
+                moved_to: None,
+                light_changed: true,
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }
         );
     }
 
