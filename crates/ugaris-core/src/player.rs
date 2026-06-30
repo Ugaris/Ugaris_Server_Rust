@@ -130,6 +130,7 @@ const TWOCITY_PPD_SOLVED_LIBRARY_OFFSET: usize = 24 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const LOSTCON_PPD_MAXLAG_OFFSET: usize = 17 * 4;
+const LOSTCON_PPD_HINTS_OFFSET: usize = 18 * 4;
 const PK_PPD_KILLS_OFFSET: usize = 0;
 const PK_PPD_DEATHS_OFFSET: usize = 4;
 const PK_PPD_LAST_KILL_OFFSET: usize = 8;
@@ -367,6 +368,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub max_lag_seconds: u8,
     #[serde(default)]
+    pub hints_disabled: bool,
+    #[serde(default)]
     pub shutup_until_seconds: u64,
     #[serde(default)]
     pub swear_ppd: Vec<u8>,
@@ -453,6 +456,7 @@ impl PlayerRuntime {
             transport_seen: 0,
             current_mirror_id: 0,
             max_lag_seconds: 0,
+            hints_disabled: false,
             shutup_until_seconds: 0,
             swear_ppd: Vec::new(),
             tell_data: TellData::default(),
@@ -759,12 +763,22 @@ impl PlayerRuntime {
         self.max_lag_seconds = seconds;
     }
 
+    pub fn toggle_hints(&mut self) -> bool {
+        self.hints_disabled = !self.hints_disabled;
+        self.hints_disabled
+    }
+
     pub fn encode_legacy_lostcon_ppd(&self) -> Vec<u8> {
         let mut bytes = vec![0; LEGACY_LOSTCON_PPD_SIZE];
         write_i32(
             &mut bytes,
             LOSTCON_PPD_MAXLAG_OFFSET,
             i32::from(self.max_lag_seconds),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_HINTS_OFFSET,
+            i32::from(self.hints_disabled),
         );
         bytes
     }
@@ -775,6 +789,7 @@ impl PlayerRuntime {
         }
         self.max_lag_seconds =
             read_i32(bytes, LOSTCON_PPD_MAXLAG_OFFSET).clamp(0, i32::from(u8::MAX)) as u8;
+        self.hints_disabled = read_i32(bytes, LOSTCON_PPD_HINTS_OFFSET) != 0;
         true
     }
 
@@ -1922,7 +1937,9 @@ impl PlayerRuntime {
                 );
             }
         }
-        if !had_lostcon && (existing_was_valid || existing.is_empty()) && self.max_lag_seconds != 0
+        if !had_lostcon
+            && (existing_was_valid || existing.is_empty())
+            && (self.max_lag_seconds != 0 || self.hints_disabled)
         {
             write_ppd_block(
                 &mut encoded,
@@ -3247,20 +3264,22 @@ mod tests {
 
     #[test]
     fn lostcon_ppd_codec_matches_legacy_c_layout() {
-        assert_eq!(LOSTCON_PPD_MAXLAG_OFFSET + 8, LEGACY_LOSTCON_PPD_SIZE);
+        assert_eq!(LOSTCON_PPD_HINTS_OFFSET + 4, LEGACY_LOSTCON_PPD_SIZE);
 
         let mut player = PlayerRuntime::connected(1, 0);
         player.set_max_lag_seconds(17);
+        player.hints_disabled = true;
 
         let encoded = player.encode_legacy_lostcon_ppd();
         assert_eq!(encoded.len(), LEGACY_LOSTCON_PPD_SIZE);
         assert_eq!(read_i32(&encoded, 0), 0);
         assert_eq!(read_i32(&encoded, LOSTCON_PPD_MAXLAG_OFFSET), 17);
-        assert_eq!(read_i32(&encoded, LOSTCON_PPD_MAXLAG_OFFSET + 4), 0);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_HINTS_OFFSET), 1);
 
         let mut decoded = PlayerRuntime::connected(2, 0);
         assert!(decoded.decode_legacy_lostcon_ppd(&encoded));
         assert_eq!(decoded.max_lag_seconds, 17);
+        assert!(decoded.hints_disabled);
         assert!(!decoded.decode_legacy_lostcon_ppd(&encoded[..LEGACY_LOSTCON_PPD_SIZE - 1]));
     }
 
@@ -3475,12 +3494,13 @@ mod tests {
     #[test]
     fn ppd_blob_appends_lostcon_without_existing_block() {
         let mut player = PlayerRuntime::connected(1, 0);
-        player.set_max_lag_seconds(20);
+        player.hints_disabled = true;
 
         let encoded = player.encode_legacy_ppd_blob(&[]);
         assert_eq!(read_u32(&encoded, 0), DRD_LOSTCON_PPD);
         assert_eq!(read_u32(&encoded, 4), LEGACY_LOSTCON_PPD_SIZE as u32);
-        assert_eq!(read_i32(&encoded, 8 + LOSTCON_PPD_MAXLAG_OFFSET), 20);
+        assert_eq!(read_i32(&encoded, 8 + LOSTCON_PPD_MAXLAG_OFFSET), 0);
+        assert_eq!(read_i32(&encoded, 8 + LOSTCON_PPD_HINTS_OFFSET), 1);
     }
 
     #[test]

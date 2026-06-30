@@ -1990,6 +1990,26 @@ fn apply_maxlag_command(player: &mut PlayerRuntime, command: &str) -> Option<Key
     })
 }
 
+fn apply_hints_command(player: &mut PlayerRuntime, command: &str) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 4 || !"hints".starts_with(&lower) {
+        return None;
+    }
+
+    let disabled = player.toggle_hints();
+    Some(KeyringCommandResult {
+        messages: vec![format!(
+            "Hints turned {}.",
+            if disabled { "off" } else { "on" }
+        )],
+        ..Default::default()
+    })
+}
+
 fn apply_lag_command(
     world: &mut World,
     player: &PlayerRuntime,
@@ -10335,6 +10355,24 @@ mod tests {
     }
 
     #[test]
+    fn hints_command_toggles_lostcon_hint_flag_with_legacy_feedback() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        let off = apply_hints_command(&mut player, "/hint")
+            .expect("legacy hints abbreviation should be recognized");
+        assert!(player.hints_disabled);
+        assert_eq!(off.messages, vec!["Hints turned off.".to_string()]);
+
+        let on =
+            apply_hints_command(&mut player, "/hints").expect("hints command should be recognized");
+        assert!(!player.hints_disabled);
+        assert_eq!(on.messages, vec!["Hints turned on.".to_string()]);
+
+        assert!(apply_hints_command(&mut player, "/hin").is_none());
+        assert!(apply_hints_command(&mut player, "/hintsx").is_none());
+    }
+
+    #[test]
     fn lag_command_toggles_artificial_lag_with_legacy_feedback() {
         let mut world = World::default();
         world.map = ugaris_core::map::MapGrid::new(20, 20);
@@ -17351,6 +17389,12 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             }
                             if let Some(result) = apply_maxlag_command(player, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_hints_command(player, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
