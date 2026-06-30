@@ -6454,6 +6454,36 @@ fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
+    if *driver == ugaris_core::item_driver::IDR_TEUFELRATNEST {
+        let teufel_ratnest_guard_active = world.items.get(item_id).is_some_and(|item| {
+            (0..5).any(|slot| {
+                let id_offset = 10 + slot * 2;
+                let serial_offset = 20 + slot * 4;
+                let character_id = item
+                    .driver_data
+                    .get(id_offset..id_offset + 2)
+                    .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                    .unwrap_or_default();
+                let serial = item
+                    .driver_data
+                    .get(serial_offset..serial_offset + 4)
+                    .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+                    .unwrap_or_default();
+                character_id != 0
+                    && world
+                        .characters
+                        .get(&CharacterId(u32::from(character_id)))
+                        .is_some_and(|character| {
+                            character.flags.contains(CharacterFlags::USED)
+                                && character.serial == serial
+                        })
+            })
+        });
+        return ugaris_core::item_driver::ItemDriverContext {
+            teufel_ratnest_guard_active,
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
     if *driver == IDR_WARMFIRE {
         let has_curse_spell = world
             .characters
@@ -23168,6 +23198,17 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorBug { character_id, x, y, .. } => {
                                             feedback.push((character_id, format!("You touch a teleport object but nothing happens - BUG ({x},{y}).")));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestSpawn { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestDestroyed { character_id, .. } => {
+                                            feedback.push((character_id, "You destroy the rat nest.".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestGuarded { character_id, .. } => {
+                                            feedback.push((character_id, "You need a moment of peace to destroy the nest. There is still a guard left, distracting you.".to_string()));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseDust { character_id, .. } => {

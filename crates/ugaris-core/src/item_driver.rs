@@ -406,6 +406,7 @@ pub struct ItemDriverContext {
     pub lq_entrance: Option<(u16, u16)>,
     pub lq_death_penalty_seconds: Option<u32>,
     pub teufel_arena_roll: Option<u8>,
+    pub teufel_ratnest_guard_active: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -678,6 +679,22 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         x: i32,
         y: i32,
+    },
+    TeufelRatNestSpawn {
+        item_id: ItemId,
+        nest_kind: u8,
+        wave: u16,
+        level: u16,
+        template: &'static str,
+        schedule_after_ticks: u64,
+    },
+    TeufelRatNestDestroyed {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelRatNestGuarded {
+        item_id: ItemId,
+        character_id: CharacterId,
     },
     DungeonTeleport {
         item_id: ItemId,
@@ -2342,6 +2359,7 @@ pub fn execute_item_driver_with_context(
                 IDR_ARKHATA => arkhata_driver(character, item, context),
                 IDR_TEUFELDOOR => teufel_door_driver(character, item),
                 IDR_TEUFELARENA => teufel_arena_driver(character, item, context),
+                IDR_TEUFELRATNEST => teufel_ratnest_driver(character, item, context),
                 IDR_TEUFELARENAEXIT => teufel_arena_exit_driver(character, item),
                 IDR_CALIGARFLAME => flamethrow_driver(character, item, context),
                 IDR_FREAKDOOR => freakdoor_driver(character, item),
@@ -2654,6 +2672,106 @@ fn teufel_door_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
         character_id: character.id,
         x: x as u16,
         y: y as u16,
+    }
+}
+
+fn teufel_ratnest_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        if !context.timer_call {
+            return ItemDriverOutcome::Noop;
+        }
+
+        if drdata(item, 2) > 0 {
+            let remaining = drdata(item, 2).saturating_sub(1);
+            set_drdata(item, 2, remaining);
+            if remaining == 0 {
+                item.sprite = 15281;
+            } else {
+                return ItemDriverOutcome::Noop;
+            }
+        }
+
+        let mut wave = drdata_u16(item, 0);
+        if wave > 0 {
+            wave -= 1;
+            set_drdata_u16(item, 0, wave);
+        }
+        let nest_kind = drdata(item, 4);
+        let (level, template) = teufel_ratnest_spawn(nest_kind, wave);
+        item.description = format!(
+            "An Ice Rat nest[{}]. You could destroy it...[{},{}]",
+            nest_kind, wave, level
+        );
+
+        return ItemDriverOutcome::TeufelRatNestSpawn {
+            item_id: item.id,
+            nest_kind,
+            wave,
+            level,
+            template,
+            schedule_after_ticks: TICKS_PER_SECOND * 20,
+        };
+    }
+
+    if context.teufel_ratnest_guard_active {
+        return ItemDriverOutcome::TeufelRatNestGuarded {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    set_drdata_u16(item, 0, 0);
+    set_drdata(item, 2, 5);
+    item.sprite = 0;
+    ItemDriverOutcome::TeufelRatNestDestroyed {
+        item_id: item.id,
+        character_id: character.id,
+    }
+}
+
+fn teufel_ratnest_spawn(nest_kind: u8, wave: u16) -> (u16, &'static str) {
+    let tier = match wave {
+        0..=99 => 0,
+        100..=199 => 1,
+        200..=399 => 2,
+        400..=799 => 3,
+        800..=1599 => 4,
+        1600..=3199 => 5,
+        3200..=6399 => 6,
+        6400..=12799 => 7,
+        12800..=25599 => 8,
+        _ => 9,
+    };
+
+    match nest_kind {
+        1 => {
+            const LEVELS: [u16; 10] = [70, 74, 78, 83, 87, 92, 96, 100, 103, 108];
+            const TEMPLATES: [&str; 10] = [
+                "rat80", "rat80b", "rat81", "rat81b", "rat82", "rat82b", "rat83", "rat83b",
+                "rat84", "rat84b",
+            ];
+            (LEVELS[tier], TEMPLATES[tier])
+        }
+        2 => {
+            const LEVELS: [u16; 10] = [109, 113, 117, 121, 125, 129, 133, 137, 141, 145];
+            const TEMPLATES: [&str; 10] = [
+                "rat90", "rat90b", "rat91", "rat91b", "rat92", "rat92b", "rat93", "rat93b",
+                "rat94", "rat94b",
+            ];
+            (LEVELS[tier], TEMPLATES[tier])
+        }
+        _ => {
+            const LEVELS: [u16; 10] = [45, 47, 50, 53, 56, 60, 63, 66, 70, 73];
+            const TEMPLATES: [&str; 10] = [
+                "rat70", "rat70b", "rat71", "rat71b", "rat72", "rat72b", "rat73", "rat73b",
+                "rat74", "rat74b",
+            ];
+            (LEVELS[tier], TEMPLATES[tier])
+        }
     }
 }
 
@@ -19405,6 +19523,130 @@ mod tests {
             ),
             ItemDriverOutcome::Noop
         );
+    }
+
+    #[test]
+    fn teufel_ratnest_timer_decays_wave_and_classifies_spawn_template() {
+        let mut timer = character(0);
+        let mut nest = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TEUFELRATNEST);
+        nest.sprite = 15280;
+        set_drdata_u16(&mut nest, 0, 201);
+        set_drdata(&mut nest, 4, 1);
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer,
+            &mut nest,
+            ItemDriverRequest::Driver {
+                driver: IDR_TEUFELRATNEST,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            34,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(drdata_u16(&nest, 0), 200);
+        assert_eq!(
+            nest.description,
+            "An Ice Rat nest[1]. You could destroy it...[200,78]"
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TeufelRatNestSpawn {
+                item_id: ItemId(8),
+                nest_kind: 1,
+                wave: 200,
+                level: 78,
+                template: "rat81",
+                schedule_after_ticks: TICKS_PER_SECOND * 20,
+            }
+        );
+    }
+
+    #[test]
+    fn teufel_ratnest_timer_honors_destroy_cooldown_before_respawn() {
+        let mut timer = character(0);
+        let mut nest = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TEUFELRATNEST);
+        nest.sprite = 0;
+        set_drdata(&mut nest, 2, 2);
+
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TEUFELRATNEST,
+            item_id: ItemId(8),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(&mut timer, &mut nest, request, 34, false, &context),
+            ItemDriverOutcome::Noop
+        );
+        assert_eq!(drdata(&nest, 2), 1);
+        assert_eq!(nest.sprite, 0);
+
+        assert!(matches!(
+            execute_item_driver_with_context(&mut timer, &mut nest, request, 34, false, &context),
+            ItemDriverOutcome::TeufelRatNestSpawn {
+                template: "rat70",
+                ..
+            }
+        ));
+        assert_eq!(drdata(&nest, 2), 0);
+        assert_eq!(nest.sprite, 15281);
+    }
+
+    #[test]
+    fn teufel_ratnest_player_destroy_requires_no_live_guard() {
+        let mut actor = character(1);
+        let mut nest = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TEUFELRATNEST);
+        nest.sprite = 15281;
+        set_drdata_u16(&mut nest, 0, 500);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TEUFELRATNEST,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut nest,
+                request,
+                34,
+                false,
+                &ItemDriverContext {
+                    teufel_ratnest_guard_active: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::TeufelRatNestGuarded {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(drdata_u16(&nest, 0), 500);
+        assert_eq!(nest.sprite, 15281);
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut nest, request, 34, false),
+            ItemDriverOutcome::TeufelRatNestDestroyed {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(drdata_u16(&nest, 0), 0);
+        assert_eq!(drdata(&nest, 2), 5);
+        assert_eq!(nest.sprite, 0);
     }
 
     #[test]
