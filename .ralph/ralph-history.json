@@ -79,13 +79,34 @@
         "+- C `can_attack` player-vs-player hate-list gating is now represented in the shared attack-policy default: area-aware PvP no longer succeeds with only `CF_PK` and level range unless the caller suppli",
         "+- C `can_attack` player-vs-player hate-list admission has an explicit Rust policy seam: after the existing area-1, PK-flag, and three-level-range guards, `can_attack_in_area_with_clan_policy` calls `"
       ]
+    },
+    {
+      "iteration": 4,
+      "startedAt": "2026-06-30T20:51:56.313Z",
+      "endedAt": "2026-06-30T20:56:51.118Z",
+      "durationMs": 294487,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/PORTING_LEDGER.md:",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 289 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 2229017,
+  "totalDurationMs": 2523504,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 2,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
@@ -97,7 +118,7 @@
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 1,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 2,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 1,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 1,
@@ -109,7 +130,9 @@
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 848 filtered out; finished in 0.00s": 1,
       "- Area 37 `IDR_ARKHATA` subtype `1` now ports the C `stopwatch_driver` timer path: zero-character ti": 1,
       "+- C `can_attack` player-vs-player hate-list gating is now represented in the shared attack-policy d": 1,
-      "+- C `can_attack` player-vs-player hate-list admission has an explicit Rust policy seam: after the e": 1
+      "+- C `can_attack` player-vs-player hate-list admission has an explicit Rust policy seam: after the e": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.00s": 1,
+      "test result: ok. 289 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

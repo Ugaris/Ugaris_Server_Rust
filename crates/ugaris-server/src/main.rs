@@ -2706,6 +2706,20 @@ fn apply_admin_character_command(
     let verb = verb.trim_start_matches('/').trim_start_matches('#');
     let lower = verb.to_ascii_lowercase();
 
+    if lower.len() >= 4 && "prof".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec!["--- Profile ---".to_string(), "---------------".to_string()],
+            ..Default::default()
+        });
+    }
+
     if lower.len() >= 6 && "staffcode".starts_with(&lower) {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -14195,6 +14209,37 @@ mod tests {
             .expect("god showattack command should toggle back off");
         assert!(!runtime.show_attack);
         assert!(!world.show_attack_debug);
+    }
+
+    #[test]
+    fn god_prof_command_reports_empty_profile_boundary_like_c() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let mut runtime = ServerRuntime::default();
+
+        let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/prof", 1)
+            .expect("legacy cmdcmp accepts prof prefix length four");
+
+        assert_eq!(result.messages, vec!["--- Profile ---", "---------------"]);
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/pro", 1).is_none()
+        );
+
+        let mortal_id = CharacterId(8);
+        world.add_character(login_character(
+            mortal_id,
+            &login_block("Mortal"),
+            1,
+            11,
+            10,
+        ));
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, mortal_id, "/prof", 1)
+                .is_none()
+        );
     }
 
     #[test]
