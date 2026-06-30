@@ -2195,6 +2195,38 @@ fn apply_admin_character_command(
     let is_lqmaster = character.flags.contains(CharacterFlags::GOD)
         || character.flags.contains(CharacterFlags::EVENTMASTER)
         || (area_id == 20 && character.flags.contains(CharacterFlags::LQMASTER));
+
+    if lower == "noexp" {
+        character.flags.toggle(CharacterFlags::NOEXP);
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Turned NoExp mode {}.",
+                if character.flags.contains(CharacterFlags::NOEXP) {
+                    "on"
+                } else {
+                    "off"
+                }
+            )],
+            inventory_changed: true,
+            ..Default::default()
+        });
+    }
+
+    if lower == "nolevel" {
+        character.flags.toggle(CharacterFlags::NOLEVEL);
+        let enabled = character.flags.contains(CharacterFlags::NOLEVEL);
+        return Some(KeyringCommandResult {
+            messages: vec![if enabled {
+                "NoLevel mode enabled. You will not level up until you disable this mode."
+                    .to_string()
+            } else {
+                "NoLevel mode disabled. You will now gain levels normally.".to_string()
+            }],
+            inventory_changed: true,
+            ..Default::default()
+        });
+    }
+
     if lower == "itemmod" {
         if !character.flags.contains(CharacterFlags::GOD) {
             return None;
@@ -10962,6 +10994,85 @@ mod tests {
             .messages,
             vec!["Val out of bounds."]
         );
+    }
+
+    #[test]
+    fn noexp_and_nolevel_toggle_legacy_flags_and_feedback() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        let noexp_on =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 1)
+                .expect("noexp should be recognized");
+        assert_eq!(noexp_on.messages, vec!["Turned NoExp mode on."]);
+        assert!(noexp_on.inventory_changed);
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::NOEXP));
+
+        let noexp_off =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 1)
+                .expect("noexp should toggle off");
+        assert_eq!(noexp_off.messages, vec!["Turned NoExp mode off."]);
+        assert!(!world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::NOEXP));
+
+        let nolevel_on =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/nolevel", 1)
+                .expect("nolevel should be recognized");
+        assert_eq!(
+            nolevel_on.messages,
+            vec!["NoLevel mode enabled. You will not level up until you disable this mode."]
+        );
+        assert!(nolevel_on.inventory_changed);
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::NOLEVEL));
+
+        let nolevel_off =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/nolevel", 1)
+                .expect("nolevel should toggle off");
+        assert_eq!(
+            nolevel_off.messages,
+            vec!["NoLevel mode disabled. You will now gain levels normally."]
+        );
+        assert!(!world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::NOLEVEL));
+
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/noex", 1,)
+                .is_none()
+        );
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/noleve",
+            1,
+        )
+        .is_none());
     }
 
     #[test]
