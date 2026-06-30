@@ -1304,6 +1304,30 @@ pub enum ItemDriverOutcome {
         closed: bool,
         blocked: bool,
     },
+    PalaceBombExplode {
+        item_id: ItemId,
+        character_id: CharacterId,
+        owner_id: u32,
+        x: u16,
+        y: u16,
+    },
+    PalaceBombTimer {
+        item_id: ItemId,
+        character_id: CharacterId,
+        armed: bool,
+        schedule_after_ticks: u64,
+    },
+    PalaceBombToggled {
+        item_id: ItemId,
+        character_id: CharacterId,
+        active: bool,
+    },
+    PalaceCapTimer {
+        item_id: ItemId,
+        character_id: CharacterId,
+        active: bool,
+        schedule_after_ticks: u64,
+    },
     PalaceDoorKeyRequired {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2143,7 +2167,14 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         ItemDriverOutcome::EdemonBlockMove { .. }
         | ItemDriverOutcome::EdemonBlockBlocked { .. }
         | ItemDriverOutcome::EdemonTubePulse { .. } => 1,
-        ItemDriverOutcome::Noop if matches!(driver, Some(IDR_CLANVAULT)) => 1,
+        ItemDriverOutcome::Noop
+            if matches!(
+                driver,
+                Some(IDR_CLANVAULT) | Some(IDR_PALACEBOMB) | Some(IDR_PALACECAP)
+            ) =>
+        {
+            1
+        }
         ItemDriverOutcome::Noop
             if matches!(
                 driver,
@@ -2287,6 +2318,8 @@ pub fn execute_item_driver_with_context(
                 IDR_WARMFIRE => warmfire_driver(character, item, area_id, context),
                 IDR_BACKTOFIRE => backtofire_driver(character, item, area_id),
                 IDR_MELTINGKEY => meltingkey_driver(character, item, area_id),
+                IDR_PALACEBOMB => palace_bomb_driver(character, item),
+                IDR_PALACECAP => palace_cap_driver(character, item, context),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -2426,9 +2459,81 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
         IDR_DUNGEONTELE | IDR_DUNGEONFAKE | IDR_DUNGEONDOOR | IDR_DUNGEONKEY => Some(13),
+        IDR_PALACEBOMB | IDR_PALACECAP => Some(11),
         IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONCANNON | IDR_FDEMONGATE
         | IDR_FDEMONWAYPOINT | IDR_FDEMONFARM | IDR_FDEMONBLOOD | IDR_FDEMONLAVA => Some(8),
         _ => None,
+    }
+}
+
+fn palace_bomb_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
+    match (
+        character.id.0 != 0,
+        drdata(item, 0),
+        item.carried_by.is_some(),
+    ) {
+        (true, 2, _) => ItemDriverOutcome::PalaceBombExplode {
+            item_id: item.id,
+            character_id: character.id,
+            owner_id: drdata_u32(item, 1),
+            x: item.x,
+            y: item.y,
+        },
+        (true, 1, true) => {
+            set_drdata(item, 0, 0);
+            item.sprite -= 1;
+            ItemDriverOutcome::PalaceBombToggled {
+                item_id: item.id,
+                character_id: character.id,
+                active: false,
+            }
+        }
+        (true, 0, true) => {
+            set_drdata(item, 0, 1);
+            write_drdata_u32(item, 1, character.id.0);
+            item.sprite += 1;
+            ItemDriverOutcome::PalaceBombToggled {
+                item_id: item.id,
+                character_id: character.id,
+                active: true,
+            }
+        }
+        (true, _, _) => ItemDriverOutcome::Noop,
+        (false, 1, false) => {
+            set_drdata(item, 0, 2);
+            item.sprite += 1;
+            item.flags.insert(ItemFlags::STEPACTION);
+            item.flags.remove(ItemFlags::TAKE | ItemFlags::USE);
+            ItemDriverOutcome::PalaceBombTimer {
+                item_id: item.id,
+                character_id: character.id,
+                armed: true,
+                schedule_after_ticks: TICKS_PER_SECOND * 5,
+            }
+        }
+        (false, _, _) => ItemDriverOutcome::PalaceBombTimer {
+            item_id: item.id,
+            character_id: character.id,
+            armed: false,
+            schedule_after_ticks: TICKS_PER_SECOND * 5,
+        },
+    }
+}
+
+fn palace_cap_driver(
+    character: &Character,
+    item: &Item,
+    _context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::PalaceCapTimer {
+        item_id: item.id,
+        character_id: item.carried_by.unwrap_or(character.id),
+        active: drdata(item, 0) != 0,
+        schedule_after_ticks: TICKS_PER_SECOND / 4,
     }
 }
 
@@ -9117,6 +9222,13 @@ fn set_drdata(item: &mut Item, idx: usize, value: u8) {
     item.driver_data[idx] = value;
 }
 
+fn write_drdata_u32(item: &mut Item, idx: usize, value: u32) {
+    if item.driver_data.len() <= idx + 3 {
+        item.driver_data.resize(idx + 4, 0);
+    }
+    item.driver_data[idx..idx + 4].copy_from_slice(&value.to_le_bytes());
+}
+
 fn clamp_legacy_coordinate(value: i32) -> u16 {
     value.clamp(0, i32::from(u16::MAX)) as u16
 }
@@ -10010,6 +10122,218 @@ mod tests {
         assert_eq!(torch.sprite, 100);
         assert_eq!(torch.driver_data[0], 0);
         assert_eq!(torch.modifier_value[0], 0);
+    }
+
+    #[test]
+    fn palace_bomb_toggles_carried_state_and_stores_owner() {
+        let mut actor = character(1234);
+        let mut bomb = item(
+            7,
+            ItemFlags::USED | ItemFlags::TAKE | ItemFlags::USE,
+            0,
+            IDR_PALACEBOMB,
+        );
+        bomb.carried_by = Some(CharacterId(1234));
+        bomb.sprite = 500;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PALACEBOMB,
+            item_id: ItemId(7),
+            character_id: CharacterId(1234),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bomb,
+                request,
+                11,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PalaceBombToggled {
+                item_id: ItemId(7),
+                character_id: CharacterId(1234),
+                active: true,
+            }
+        );
+        assert_eq!(bomb.driver_data[0], 1);
+        assert_eq!(drdata_u32(&bomb, 1), 1234);
+        assert_eq!(bomb.sprite, 501);
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bomb,
+                request,
+                11,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PalaceBombToggled {
+                item_id: ItemId(7),
+                character_id: CharacterId(1234),
+                active: false,
+            }
+        );
+        assert_eq!(bomb.driver_data[0], 0);
+        assert_eq!(bomb.sprite, 500);
+    }
+
+    #[test]
+    fn palace_bomb_timer_arms_ground_bomb_then_exposes_explosion_outcome() {
+        let mut timer = character(0);
+        let mut bomb = item(
+            7,
+            ItemFlags::USED | ItemFlags::TAKE | ItemFlags::USE,
+            0,
+            IDR_PALACEBOMB,
+        );
+        bomb.driver_data = vec![1, 0x39, 0x30, 0, 0];
+        bomb.sprite = 500;
+        bomb.x = 10;
+        bomb.y = 11;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PALACEBOMB,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer,
+                &mut bomb,
+                request,
+                11,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PalaceBombTimer {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                armed: true,
+                schedule_after_ticks: TICKS_PER_SECOND * 5,
+            }
+        );
+        assert_eq!(bomb.driver_data[0], 2);
+        assert_eq!(bomb.sprite, 501);
+        assert!(bomb.flags.contains(ItemFlags::STEPACTION));
+        assert!(!bomb.flags.intersects(ItemFlags::TAKE | ItemFlags::USE));
+
+        let mut actor = character(99);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bomb,
+                ItemDriverRequest::Driver {
+                    driver: IDR_PALACEBOMB,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(99),
+                    spec: 0,
+                },
+                11,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PalaceBombExplode {
+                item_id: ItemId(7),
+                character_id: CharacterId(99),
+                owner_id: 12345,
+                x: 10,
+                y: 11,
+            }
+        );
+    }
+
+    #[test]
+    fn palace_cap_timer_reschedules_for_carried_cap_only_on_timer_calls() {
+        let mut timer = character(0);
+        let mut cap = item(7, ItemFlags::USED, 0, IDR_PALACECAP);
+        cap.carried_by = Some(CharacterId(2));
+        cap.driver_data = vec![1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PALACECAP,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer,
+                &mut cap,
+                request,
+                11,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PalaceCapTimer {
+                item_id: ItemId(7),
+                character_id: CharacterId(2),
+                active: true,
+                schedule_after_ticks: TICKS_PER_SECOND / 4,
+            }
+        );
+
+        let mut actor = character(2);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut cap,
+                ItemDriverRequest::Driver {
+                    driver: IDR_PALACECAP,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(2),
+                    spec: 0,
+                },
+                11,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::Noop,
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_PALACECAP), &ItemDriverOutcome::Noop),
+            1
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_PALACEBOMB), &ItemDriverOutcome::Noop),
+            1
+        );
+    }
+
+    #[test]
+    fn palace_bomb_and_cap_keep_area_11_libload_guard() {
+        let mut actor = character(1);
+        let mut bomb = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PALACEBOMB);
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut bomb,
+            ItemDriverRequest::Driver {
+                driver: IDR_PALACEBOMB,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            1,
+            false,
+            &ItemDriverContext::default(),
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_PALACEBOMB,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                required_area: 11,
+            }
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_PALACEBOMB), &outcome),
+            1
+        );
     }
 
     #[test]
