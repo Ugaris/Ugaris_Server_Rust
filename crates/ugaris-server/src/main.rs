@@ -2512,6 +2512,62 @@ fn apply_admin_character_command(
         });
     }
 
+    if lower.len() >= 5 && "listitem".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let item_id = ItemId(legacy_atoi_prefix(rest).max(0) as u32);
+        let Some(item) = world.items.get(&item_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Invalid item number or item doesn't exist".to_string()],
+                ..Default::default()
+            });
+        };
+
+        let mut messages = vec![
+            format!("Item #{}: {}", item.id.0, item.name),
+            format!("Description: {}", item.description),
+            format!("Flags: 0x{:x}", item.flags.bits()),
+            format!(
+                "Driver: {}, ID: {}, Sprite: {}",
+                item.driver, item.template_id, item.sprite
+            ),
+        ];
+        if let Some(carried_by) = item.carried_by {
+            let carrier_name = world
+                .characters
+                .get(&carried_by)
+                .map(|character| character.name.as_str())
+                .unwrap_or("Unknown");
+            messages.push(format!("Carried by: {} ({})", carrier_name, carried_by.0));
+        } else if item.x != 0 {
+            messages.push(format!("Position: {},{}", item.x, item.y));
+        }
+        for n in 0..ugaris_core::entity::MAX_MODIFIERS {
+            let modifier_index = item.modifier_index[n];
+            if modifier_index != 0 {
+                let skill_name = if modifier_index > 0 {
+                    value_name(modifier_index)
+                } else {
+                    "unknown"
+                };
+                messages.push(format!(
+                    "Mod #{}: {:+} to {}",
+                    n, item.modifier_value[n], skill_name
+                ));
+            }
+        }
+
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
     if lower == "setskill" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -12529,6 +12585,123 @@ mod tests {
         assert_eq!(desc.messages[0], "Renamed Cursor Item:");
         assert_eq!(desc.messages[1], "x".repeat(79));
         assert_eq!(world.items.get(&ItemId(99)).unwrap().description.len(), 79);
+    }
+
+    #[test]
+    fn god_listitem_reports_legacy_item_details() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let carrier_id = CharacterId(8);
+        world.add_character(login_character(
+            carrier_id,
+            &login_block("Carrier"),
+            1,
+            11,
+            10,
+        ));
+        let mut item = Item {
+            id: ItemId(99),
+            name: "Listed Item".to_string(),
+            description: "Listed description".to_string(),
+            flags: ItemFlags::TAKE | ItemFlags::USE,
+            sprite: 1234,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 5678,
+            owner_id: 0,
+            modifier_index: [0; 5],
+            modifier_value: [0; 5],
+            x: 0,
+            y: 0,
+            carried_by: Some(carrier_id),
+            contained_in: None,
+            content_id: 0,
+            driver: 42,
+            driver_data: vec![0; 40],
+            serial: 1,
+        };
+        item.modifier_index[1] = CharacterValue::Sword as i16;
+        item.modifier_value[1] = 7;
+        world.add_item(item);
+        let mut runtime = ServerRuntime::default();
+
+        let result =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/listi 99xyz", 1)
+                .expect("legacy cmdcmp accepts listitem prefix length five");
+
+        assert_eq!(result.messages[0], "Item #99: Listed Item");
+        assert_eq!(result.messages[1], "Description: Listed description");
+        assert_eq!(result.messages[2], "Flags: 0x18");
+        assert_eq!(result.messages[3], "Driver: 42, ID: 5678, Sprite: 1234");
+        assert_eq!(result.messages[4], "Carried by: Carrier (8)");
+        assert_eq!(result.messages[5], "Mod #1: +7 to Sword");
+
+        let item = world.items.get_mut(&ItemId(99)).unwrap();
+        item.carried_by = None;
+        item.x = 12;
+        item.y = 34;
+        let positioned =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/listitem 99", 1)
+                .expect("god listitem should be recognized");
+        assert!(positioned
+            .messages
+            .iter()
+            .any(|line| line == "Position: 12,34"));
+    }
+
+    #[test]
+    fn listitem_is_god_only_and_reports_invalid_ids() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/listitem 99",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let missing = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/listitem 99",
+            1,
+        )
+        .expect("god listitem should report invalid IDs");
+        assert_eq!(
+            missing.messages,
+            vec!["Invalid item number or item doesn't exist"]
+        );
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/list 99",
+            1,
+        )
+        .is_none());
     }
 
     #[test]
