@@ -7785,6 +7785,118 @@ fn spawn_swampspawn_character(
     world.apply_swampspawn_spawn_result(item_id, character_id, serial)
 }
 
+fn spawn_teufel_ratnest_character(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    item_id: ItemId,
+    level: u16,
+    template: &str,
+) -> bool {
+    let Some((x, y, slot, wave_increase)) = teufel_ratnest_spawn_slot(world, item_id, level) else {
+        return false;
+    };
+
+    let character_id = runtime.allocate_character_id();
+    let Ok((mut character, inventory_items)) =
+        loader.instantiate_character_template(template, character_id)
+    else {
+        return false;
+    };
+    character.rest_x = x;
+    character.rest_y = y;
+    character.dir = Direction::RightDown as u8;
+    character.hp = i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
+    character.endurance =
+        i32::from(character.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
+    character.mana = i32::from(character.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+    character.lifeshield =
+        i32::from(character.values[0][CharacterValue::MagicShield as usize]) * POWERSCALE;
+    character.flags.insert(CharacterFlags::NONOTIFY);
+    let serial = character.serial;
+
+    if !world.spawn_character(character, usize::from(x), usize::from(y)) {
+        return false;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+    apply_teufel_ratnest_spawn_result(world, item_id, slot, character_id, serial, wave_increase)
+}
+
+fn teufel_ratnest_spawn_slot(
+    world: &mut World,
+    item_id: ItemId,
+    level: u16,
+) -> Option<(u16, u16, usize, bool)> {
+    let (x, y) = world.items.get(&item_id).map(|item| (item.x, item.y))?;
+    for slot in 0..5 {
+        let (stored_id, stored_serial) = world.items.get(&item_id).map(|item| {
+            let id_offset = 10 + slot * 2;
+            let serial_offset = 20 + slot * 4;
+            let stored_id = item
+                .driver_data
+                .get(id_offset..id_offset + 2)
+                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                .unwrap_or_default();
+            let stored_serial = item
+                .driver_data
+                .get(serial_offset..serial_offset + 4)
+                .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+                .unwrap_or_default();
+            (stored_id, stored_serial)
+        })?;
+        if stored_id == 0 {
+            return Some((x, y, slot, true));
+        }
+        let character_id = CharacterId(u32::from(stored_id));
+        let live = world
+            .characters
+            .get(&character_id)
+            .is_some_and(|character| {
+                character.flags.contains(CharacterFlags::USED) && character.serial == stored_serial
+            });
+        if !live {
+            return Some((x, y, slot, true));
+        }
+        if world
+            .characters
+            .get(&character_id)
+            .is_some_and(|character| character.level > u32::from(level))
+        {
+            let _ = world.remove_character(character_id);
+            return Some((x, y, slot, false));
+        }
+    }
+    None
+}
+
+fn apply_teufel_ratnest_spawn_result(
+    world: &mut World,
+    item_id: ItemId,
+    slot: usize,
+    character_id: CharacterId,
+    serial: u32,
+    wave_increase: bool,
+) -> bool {
+    let Some(item) = world.items.get_mut(&item_id) else {
+        return false;
+    };
+    item.driver_data.resize(40, 0);
+    let id_offset = 10 + slot * 2;
+    let serial_offset = 20 + slot * 4;
+    item.driver_data[id_offset..id_offset + 2]
+        .copy_from_slice(&(character_id.0 as u16).to_le_bytes());
+    item.driver_data[serial_offset..serial_offset + 4].copy_from_slice(&serial.to_le_bytes());
+    if wave_increase {
+        let wave = u16::from_le_bytes([item.driver_data[0], item.driver_data[1]]);
+        if wave < 50_000 {
+            item.driver_data[0..2].copy_from_slice(&wave.saturating_add(10).to_le_bytes());
+        }
+    }
+    true
+}
+
 fn spawn_fdemon_gate_character(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -16700,6 +16812,46 @@ mod tests {
     }
 
     #[test]
+    fn teufel_ratnest_spawn_result_stores_slot_serial_and_increases_wave() {
+        let mut world = World::default();
+        let mut nest = test_item(
+            ItemId(10),
+            15281,
+            ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK,
+        );
+        nest.driver_data = vec![5, 0];
+        world.add_item(nest);
+
+        assert!(apply_teufel_ratnest_spawn_result(
+            &mut world,
+            ItemId(10),
+            2,
+            CharacterId(77),
+            0x1122_3344,
+            true,
+        ));
+
+        let nest = &world.items[&ItemId(10)];
+        assert_eq!(
+            u16::from_le_bytes([nest.driver_data[0], nest.driver_data[1]]),
+            15
+        );
+        assert_eq!(
+            u16::from_le_bytes([nest.driver_data[14], nest.driver_data[15]]),
+            77
+        );
+        assert_eq!(
+            u32::from_le_bytes([
+                nest.driver_data[28],
+                nest.driver_data[29],
+                nest.driver_data[30],
+                nest.driver_data[31],
+            ]),
+            0x1122_3344
+        );
+    }
+
+    #[test]
     fn grant_template_item_smart_places_xmaspop_in_inventory_first() {
         let character_id = CharacterId(7);
         let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -23200,8 +23352,20 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, format!("You touch a teleport object but nothing happens - BUG ({x},{y}).")));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestSpawn { .. } => {
-                                            executed += 1;
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestSpawn { item_id, level, template, schedule_after_ticks, .. } => {
+                                            world.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                                            if spawn_teufel_ratnest_character(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                &mut runtime,
+                                                item_id,
+                                                level,
+                                                template,
+                                            ) {
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestDestroyed { character_id, .. } => {
                                             feedback.push((character_id, "You destroy the rat nest.".to_string()));
