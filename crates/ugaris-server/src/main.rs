@@ -14,6 +14,7 @@ use ugaris_core::{
     area_sound::area_sound_special,
     character_driver::{CharacterDriverState, CDR_SIMPLEBADDY},
     do_action::{can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy},
+    drvlib::char_dist,
     effect::Effect,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
@@ -57,7 +58,7 @@ use ugaris_core::{
         COL_RESET,
     },
     tick::TICKS_PER_SECOND,
-    world::LookMapRequest,
+    world::{LegacyHurtEvent, LookMapRequest},
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
 };
@@ -103,7 +104,11 @@ fn apply_pk_hate_from_hurt_events(
     realtime_seconds: u64,
 ) -> usize {
     let mut applied = 0;
-    for event in world.drain_legacy_hurt_events() {
+    let events = world.drain_legacy_hurt_events();
+    for event in &events {
+        apply_player_fightback_from_hurt_event(runtime, world, *event, world.tick.0);
+    }
+    for event in events {
         let eligible = match (
             world.characters.get(&event.target_id),
             world.characters.get(&event.cause_id),
@@ -142,6 +147,37 @@ fn apply_pk_hate_from_hurt_events(
         }
     }
     applied
+}
+
+fn apply_player_fightback_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &World,
+    event: LegacyHurtEvent,
+    current_tick: u64,
+) -> bool {
+    let Some((attacker_serial, legacy_distance)) = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .and_then(|(target, attacker)| {
+            target
+                .flags
+                .contains(CharacterFlags::PLAYER)
+                .then_some((attacker.serial, char_dist(target, attacker)))
+        })
+    else {
+        return false;
+    };
+    runtime
+        .player_for_character_mut(event.target_id)
+        .is_some_and(|player| {
+            player.apply_got_hit_fightback(
+                event.cause_id,
+                attacker_serial,
+                legacy_distance,
+                current_tick,
+            )
+        })
 }
 
 fn send_pending_world_system_texts(runtime: &mut ServerRuntime, world: &mut World) -> usize {
@@ -302,6 +338,7 @@ impl ServerRuntime {
             let Some(character_id) = player.character_id else {
                 continue;
             };
+            player.apply_deferred_fightback(world.tick.0);
             if world
                 .characters
                 .get(&character_id)
@@ -16921,6 +16958,88 @@ mod tests {
             .unwrap()
             .flags
             .contains(CharacterFlags::LAG));
+    }
+
+    #[test]
+    fn hurt_events_start_legacy_player_fightback_for_nearby_attacker() {
+        let mut world = World::default();
+        let target = login_character(CharacterId(1), &login_block("Target"), 1, 10, 10);
+        let mut attacker = login_character(CharacterId(2), &login_block("Attacker"), 1, 11, 10);
+        attacker.serial = 99;
+        world.add_character(target);
+        world.add_character(attacker);
+        world.tick.0 = TICKS_PER_SECOND * 4;
+
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        runtime.players.insert(1, player);
+
+        world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
+        assert_eq!(
+            apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0),
+            0
+        );
+
+        let player = runtime.player_for_character(CharacterId(1)).unwrap();
+        assert_eq!(player.action.action, PlayerActionCode::Kill);
+        assert_eq!((player.action.arg1, player.action.arg2), (2, 99));
+    }
+
+    #[test]
+    fn hurt_events_defer_legacy_player_fightback_while_busy() {
+        let mut world = World::default();
+        let target = login_character(CharacterId(1), &login_block("Target"), 1, 10, 10);
+        let mut attacker = login_character(CharacterId(2), &login_block("Attacker"), 1, 11, 10);
+        attacker.serial = 99;
+        world.add_character(target);
+        world.add_character(attacker);
+        world.tick.0 = TICKS_PER_SECOND * 4;
+
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.driver_move(12, 10);
+        runtime.players.insert(1, player);
+
+        world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
+        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0);
+
+        let player = runtime.player_for_character(CharacterId(1)).unwrap();
+        assert_eq!(player.action.action, PlayerActionCode::Move);
+        assert_eq!(player.next_fightback_character, Some(CharacterId(2)));
+        assert_eq!(player.next_fightback_serial, 99);
+    }
+
+    #[test]
+    fn setup_world_actions_promotes_deferred_legacy_player_fightback() {
+        let mut world = World::default();
+        let mut target = login_character(CharacterId(1), &login_block("Target"), 1, 10, 10);
+        target.x = 10;
+        target.y = 10;
+        let mut attacker = login_character(CharacterId(2), &login_block("Attacker"), 1, 11, 10);
+        attacker.flags.remove(CharacterFlags::PLAYER);
+        attacker.x = 11;
+        attacker.y = 10;
+        world.map.tile_mut(10, 10).unwrap().character = 1;
+        world.map.tile_mut(11, 10).unwrap().character = 2;
+        world.add_character(target);
+        world.add_character(attacker);
+        world.tick.0 = TICKS_PER_SECOND * 4 + 1;
+
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(1));
+        player.next_fightback_character = Some(CharacterId(2));
+        player.next_fightback_serial = 99;
+        player.next_fightback_tick = TICKS_PER_SECOND * 4;
+        runtime.players.insert(1, player);
+
+        assert_eq!(runtime.setup_world_actions(&mut world, 1), 1);
+
+        let target = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(target.action, action::ATTACK1);
+        assert_eq!(target.act1, 2);
     }
 
     #[test]

@@ -8,6 +8,7 @@ use crate::{
     legacy::DIST_OLD,
     quest::QuestLog,
     tell::TellData,
+    tick::TICKS_PER_SECOND,
 };
 
 pub const MAX_PLAYERS: usize = 512;
@@ -2476,6 +2477,50 @@ impl PlayerRuntime {
         });
     }
 
+    pub fn apply_got_hit_fightback(
+        &mut self,
+        attacker: CharacterId,
+        attacker_serial: u32,
+        legacy_distance: i32,
+        current_tick: u64,
+    ) -> bool {
+        if attacker.0 == 0
+            || legacy_distance >= 3
+            || current_tick.saturating_sub(self.nofight_timer) <= TICKS_PER_SECOND * 3
+        {
+            return false;
+        }
+
+        match self.action.action {
+            PlayerActionCode::Idle => {
+                self.driver_kill(attacker, attacker_serial);
+                true
+            }
+            PlayerActionCode::Kill => false,
+            _ => {
+                self.next_fightback_character = Some(attacker);
+                self.next_fightback_serial = attacker_serial;
+                self.next_fightback_tick = current_tick;
+                true
+            }
+        }
+    }
+
+    pub fn apply_deferred_fightback(&mut self, current_tick: u64) -> bool {
+        if self.action.action != PlayerActionCode::Idle
+            || current_tick.saturating_sub(self.next_fightback_tick) >= TICKS_PER_SECOND
+            || current_tick.saturating_sub(self.nofight_timer) <= TICKS_PER_SECOND * 3
+        {
+            return false;
+        }
+        let Some(attacker) = self.next_fightback_character else {
+            return false;
+        };
+
+        self.driver_kill(attacker, self.next_fightback_serial);
+        true
+    }
+
     fn insert_driver_queue(&mut self, action: QueuedAction) {
         if self.queue.len() == COMMAND_QUEUE_SIZE {
             if let Some(back) = self.queue.back_mut() {
@@ -4134,6 +4179,62 @@ mod tests {
         player.driver_drop(12, 13);
         assert_eq!(player.action.action, PlayerActionCode::Drop);
         assert_eq!((player.action.arg1, player.action.arg2), (12, 13));
+    }
+
+    #[test]
+    fn got_hit_fightback_immediately_kills_when_idle_and_nearby() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert!(player.apply_got_hit_fightback(CharacterId(2), 77, 2, TICKS_PER_SECOND * 3 + 1,));
+
+        assert_eq!(player.action.action, PlayerActionCode::Kill);
+        assert_eq!((player.action.arg1, player.action.arg2), (2, 77));
+        assert_eq!(player.next_fightback_character, None);
+    }
+
+    #[test]
+    fn got_hit_fightback_defers_while_busy_and_promotes_when_idle() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.driver_move(20, 21);
+        let hit_tick = TICKS_PER_SECOND * 4;
+
+        assert!(player.apply_got_hit_fightback(CharacterId(3), 88, 2, hit_tick));
+        assert_eq!(player.action.action, PlayerActionCode::Move);
+        assert_eq!(player.next_fightback_character, Some(CharacterId(3)));
+        assert_eq!(player.next_fightback_serial, 88);
+        assert_eq!(player.next_fightback_tick, hit_tick);
+
+        player.driver_halt();
+        player.next_fightback_character = Some(CharacterId(3));
+        player.next_fightback_serial = 88;
+        player.next_fightback_tick = hit_tick;
+
+        assert!(player.apply_deferred_fightback(hit_tick + TICKS_PER_SECOND - 1));
+        assert_eq!(player.action.action, PlayerActionCode::Kill);
+        assert_eq!((player.action.arg1, player.action.arg2), (3, 88));
+    }
+
+    #[test]
+    fn got_hit_fightback_obeys_legacy_no_fight_and_distance_gates() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.driver_stop(TICKS_PER_SECOND * 10, true);
+
+        assert!(!player.apply_got_hit_fightback(CharacterId(2), 77, 2, TICKS_PER_SECOND * 13,));
+        assert_eq!(player.action.action, PlayerActionCode::Idle);
+
+        assert!(!player.apply_got_hit_fightback(CharacterId(2), 77, 3, TICKS_PER_SECOND * 14,));
+        assert_eq!(player.action.action, PlayerActionCode::Idle);
+    }
+
+    #[test]
+    fn deferred_fightback_expires_after_one_second() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.next_fightback_character = Some(CharacterId(2));
+        player.next_fightback_serial = 77;
+        player.next_fightback_tick = TICKS_PER_SECOND * 4;
+
+        assert!(!player.apply_deferred_fightback(TICKS_PER_SECOND * 5));
+        assert_eq!(player.action.action, PlayerActionCode::Idle);
     }
 
     #[test]
