@@ -34,8 +34,8 @@ use crate::{
         IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT,
         IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT, IDR_LABTORCH,
         IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP,
-        IDR_SWAMPARM, IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
-        IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
+        IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY,
+        IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -619,6 +619,25 @@ impl World {
         let y = usize::from(item.y);
         self.mark_dirty_sector(x, y);
         self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
+        true
+    }
+
+    pub fn apply_swampspawn_spawn_result(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        serial: u32,
+    ) -> bool {
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        item.driver_data.resize(20, 0);
+        item.driver_data[4..8].copy_from_slice(&character_id.0.to_le_bytes());
+        item.driver_data[8..12].copy_from_slice(&serial.to_le_bytes());
+        item.driver_data[12..16].copy_from_slice(&(self.tick.0 as u32).to_le_bytes());
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        self.mark_dirty_sector(x, y);
         true
     }
 
@@ -3014,6 +3033,18 @@ impl World {
             && context.swamp_whisp_move_succeeds.is_none())
         .then(|| self.swamp_whisp_move_succeeds(item_id))
         .flatten();
+        let swamp_spawn_live = (driver == Some(IDR_SWAMPSPAWN)
+            && context.swamp_spawn_live.is_none())
+        .then(|| self.swamp_spawn_live(item_id))
+        .flatten();
+        let swamp_spawn_player_close = (driver == Some(IDR_SWAMPSPAWN)
+            && context.swamp_spawn_player_close.is_none())
+        .then(|| self.swamp_spawn_player_close(item_id, 4))
+        .flatten();
+        let swamp_spawn_ground_sprite = (driver == Some(IDR_SWAMPSPAWN)
+            && context.swamp_spawn_ground_sprite.is_none())
+        .then(|| self.swamp_spawn_ground_sprite(item_id))
+        .flatten();
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -3054,6 +3085,15 @@ impl World {
         }
         if effective_context.swamp_whisp_move_succeeds.is_none() {
             effective_context.swamp_whisp_move_succeeds = swamp_whisp_move_succeeds;
+        }
+        if effective_context.swamp_spawn_live.is_none() {
+            effective_context.swamp_spawn_live = swamp_spawn_live;
+        }
+        if effective_context.swamp_spawn_player_close.is_none() {
+            effective_context.swamp_spawn_player_close = swamp_spawn_player_close;
+        }
+        if effective_context.swamp_spawn_ground_sprite.is_none() {
+            effective_context.swamp_spawn_ground_sprite = swamp_spawn_ground_sprite;
         }
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
@@ -3184,6 +3224,51 @@ impl World {
             return Some(false);
         };
         Some(self.item_can_be_set_on_map(item, x, y))
+    }
+
+    fn swamp_spawn_live(&self, item_id: ItemId) -> Option<bool> {
+        let item = self.items.get(&item_id)?;
+        let character_id = u32::from_le_bytes([
+            *item.driver_data.get(4).unwrap_or(&0),
+            *item.driver_data.get(5).unwrap_or(&0),
+            *item.driver_data.get(6).unwrap_or(&0),
+            *item.driver_data.get(7).unwrap_or(&0),
+        ]);
+        let serial = u32::from_le_bytes([
+            *item.driver_data.get(8).unwrap_or(&0),
+            *item.driver_data.get(9).unwrap_or(&0),
+            *item.driver_data.get(10).unwrap_or(&0),
+            *item.driver_data.get(11).unwrap_or(&0),
+        ]);
+        if character_id == 0 {
+            return Some(false);
+        }
+        Some(
+            self.characters
+                .get(&CharacterId(character_id))
+                .is_some_and(|character| {
+                    character.flags.contains(CharacterFlags::USED) && character.serial == serial
+                }),
+        )
+    }
+
+    fn swamp_spawn_player_close(&self, item_id: ItemId, distance: u16) -> Option<bool> {
+        let item = self.items.get(&item_id)?;
+        let x = i32::from(item.x);
+        let y = i32::from(item.y);
+        let distance = i32::from(distance);
+        Some(self.characters.values().any(|character| {
+            character.flags.contains(CharacterFlags::PLAYER)
+                && (i32::from(character.x) - x).abs() <= distance
+                && (i32::from(character.y) - y).abs() <= distance
+        }))
+    }
+
+    fn swamp_spawn_ground_sprite(&self, item_id: ItemId) -> Option<u32> {
+        let item = self.items.get(&item_id)?;
+        self.map
+            .tile(usize::from(item.x), usize::from(item.y))
+            .map(|tile| tile.ground_sprite)
     }
 
     fn item_can_be_set_on_map(&self, item: &Item, x: usize, y: usize) -> bool {
@@ -6336,6 +6421,19 @@ impl World {
         if driver == IDR_SWAMPWHISP && effective_context.swamp_whisp_move_succeeds.is_none() {
             effective_context.swamp_whisp_move_succeeds = self.swamp_whisp_move_succeeds(item_id);
         }
+        if driver == IDR_SWAMPSPAWN {
+            if effective_context.swamp_spawn_live.is_none() {
+                effective_context.swamp_spawn_live = self.swamp_spawn_live(item_id);
+            }
+            if effective_context.swamp_spawn_player_close.is_none() {
+                effective_context.swamp_spawn_player_close =
+                    self.swamp_spawn_player_close(item_id, 4);
+            }
+            if effective_context.swamp_spawn_ground_sprite.is_none() {
+                effective_context.swamp_spawn_ground_sprite =
+                    self.swamp_spawn_ground_sprite(item_id);
+            }
+        }
         if matches!(driver, IDR_FDEMONLIGHT | IDR_FDEMONCANNON)
             && effective_context.fdemon_loader_power.is_none()
         {
@@ -6705,6 +6803,25 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::ChestSpawn { .. } => outcome,
+            ItemDriverOutcome::SwampSpawn {
+                item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::SwampSpawnPulse {
+                item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                if let Some(item) = self.items.get(&item_id) {
+                    self.mark_dirty_sector(usize::from(item.x), usize::from(item.y));
+                }
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
             ItemDriverOutcome::ChestSpawnCheck {
                 item_id,
                 spawned_character_id,
@@ -14217,7 +14334,8 @@ mod tests {
             IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_LIZARDFLOWER,
             IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY,
             IDR_POTION, IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
-            IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP,
+            IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -14319,6 +14437,45 @@ mod tests {
         let spawner = &world.items[&ItemId(8)];
         assert_eq!(spawner.sprite, 1234);
         assert_eq!(spawner.driver_data[1], 0);
+    }
+
+    #[test]
+    fn swampspawn_timer_uses_nearby_player_and_records_spawn_result() {
+        let mut world = World::default();
+        let mut spawner = item(8, ItemFlags::USE);
+        spawner.driver = IDR_SWAMPSPAWN;
+        spawner.sprite = 21008;
+        spawner.x = 10;
+        spawner.y = 10;
+        spawner.driver_data = vec![1, 1, 3];
+        spawner.driver_data.resize(20, 0);
+        spawner.driver_data[16..20].copy_from_slice(&21000_u32.to_le_bytes());
+        world.items.insert(spawner.id, spawner);
+        world.map.tile_mut(10, 10).unwrap().ground_sprite = 59423;
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(player, 13, 10));
+        assert!(world.schedule_item_driver_timer(ItemId(8), CharacterId(0), 1));
+        world.tick.0 = 1;
+
+        let outcomes = world.process_due_timers(15);
+
+        assert_eq!(outcomes.len(), 1);
+        assert!(matches!(
+            outcomes[0],
+            ItemDriverOutcome::SwampSpawn {
+                template: "swamp27n",
+                x: 10,
+                y: 10,
+                schedule_after_ticks: 3,
+                ..
+            }
+        ));
+        assert!(world.apply_swampspawn_spawn_result(ItemId(8), CharacterId(44), 99));
+        let spawner = &world.items[&ItemId(8)];
+        assert_eq!(&spawner.driver_data[4..8], &44_u32.to_le_bytes());
+        assert_eq!(&spawner.driver_data[8..12], &99_u32.to_le_bytes());
+        assert_eq!(&spawner.driver_data[12..16], &1_u32.to_le_bytes());
     }
 
     #[test]

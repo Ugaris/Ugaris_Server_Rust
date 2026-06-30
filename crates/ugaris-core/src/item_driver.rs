@@ -394,6 +394,9 @@ pub struct ItemDriverContext {
     pub swamp_whisp_move_succeeds: Option<bool>,
     pub swamp_whisp_turn_x: bool,
     pub swamp_whisp_turn_y: bool,
+    pub swamp_spawn_live: Option<bool>,
+    pub swamp_spawn_player_close: Option<bool>,
+    pub swamp_spawn_ground_sprite: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -749,6 +752,19 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         spawned_character_id: CharacterId,
+        schedule_after_ticks: u64,
+    },
+    SwampSpawn {
+        item_id: ItemId,
+        character_id: CharacterId,
+        template: &'static str,
+        x: u16,
+        y: u16,
+        schedule_after_ticks: u64,
+    },
+    SwampSpawnPulse {
+        item_id: ItemId,
+        character_id: CharacterId,
         schedule_after_ticks: u64,
     },
     FdemonGateSpawn {
@@ -2128,6 +2144,7 @@ pub fn execute_item_driver_with_context(
                 IDR_GASTRAP => gastrap_driver(character, item, context),
                 IDR_SWAMPARM => swamparm_driver(character, item, context),
                 IDR_SWAMPWHISP => swampwhisp_driver(character, item, context),
+                IDR_SWAMPSPAWN => swampspawn_driver(character, item, context),
                 IDR_PALACEDOOR => palace_door_driver(character, item, context),
                 IDR_ISLENADOOR => islena_door_driver(character, item, context),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
@@ -5051,6 +5068,99 @@ fn swampwhisp_driver(
         moved_to,
         light_changed,
         schedule_after_ticks,
+    }
+}
+
+fn swampspawn_template(kind: u8) -> Option<&'static str> {
+    match kind {
+        0 => Some("swamp25n"),
+        1 => Some("swamp27n"),
+        2 => Some("swamp29n"),
+        3 => Some("swamp31n"),
+        _ => None,
+    }
+}
+
+fn swampspawn_stop_frame(ground_sprite: u32) -> u8 {
+    match ground_sprite & 0xffff {
+        59405..=59413 => 6,
+        59414..=59422 => 5,
+        59423..=59431 => 3,
+        _ => 7,
+    }
+}
+
+fn swampspawn_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 || !context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    item.driver_data.resize(20, 0);
+    if item.driver_data[1] == 0 {
+        item.driver_data[1] = 1;
+        let base_sprite = item.sprite.saturating_sub(8) as u32;
+        set_drdata_u32(item, 16, base_sprite);
+        item.sprite = 0;
+    }
+
+    if item.driver_data[2] == 0 && context.swamp_spawn_live == Some(true) {
+        return ItemDriverOutcome::SwampSpawnPulse {
+            item_id: item.id,
+            character_id: CharacterId(0),
+            schedule_after_ticks: TICKS_PER_SECOND,
+        };
+    }
+
+    let last_tick = drdata_u32(item, 12);
+    let current_tick = context.current_tick;
+    if item.driver_data[2] == 0
+        && last_tick != 0
+        && current_tick.wrapping_sub(last_tick) < (TICKS_PER_SECOND * 60 * 2) as u32
+    {
+        return ItemDriverOutcome::SwampSpawnPulse {
+            item_id: item.id,
+            character_id: CharacterId(0),
+            schedule_after_ticks: TICKS_PER_SECOND,
+        };
+    }
+
+    if item.driver_data[2] != 0 || context.swamp_spawn_player_close == Some(true) {
+        item.driver_data[2] = item.driver_data[2].saturating_add(1);
+        let base_sprite = drdata_u32(item, 16) as i32;
+        item.sprite = base_sprite + i32::from(item.driver_data[2]);
+
+        let ground_sprite = context.swamp_spawn_ground_sprite.unwrap_or_default();
+        if item.driver_data[2] > swampspawn_stop_frame(ground_sprite) {
+            item.driver_data[2] = 0;
+            item.sprite = 0;
+
+            if let Some(template) = swampspawn_template(item.driver_data[0]) {
+                return ItemDriverOutcome::SwampSpawn {
+                    item_id: item.id,
+                    character_id: CharacterId(0),
+                    template,
+                    x: item.x,
+                    y: item.y,
+                    schedule_after_ticks: 3,
+                };
+            }
+        }
+
+        return ItemDriverOutcome::SwampSpawnPulse {
+            item_id: item.id,
+            character_id: CharacterId(0),
+            schedule_after_ticks: 3,
+        };
+    }
+
+    ItemDriverOutcome::SwampSpawnPulse {
+        item_id: item.id,
+        character_id: CharacterId(0),
+        schedule_after_ticks: TICKS_PER_SECOND,
     }
 }
 
@@ -8816,6 +8926,149 @@ mod tests {
                 schedule_after_ticks: TICKS_PER_SECOND,
             }
         );
+    }
+
+    #[test]
+    fn swampspawn_initializes_and_waits_without_player() {
+        let mut actor = character(0);
+        let mut spawn = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SWAMPSPAWN);
+        spawn.sprite = 20999;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPSPAWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut spawn,
+            request,
+            15,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                swamp_spawn_player_close: Some(false),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(spawn.sprite, 0);
+        assert_eq!(spawn.driver_data[1], 1);
+        assert_eq!(drdata_u32(&spawn, 16), 20991);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SwampSpawnPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }
+        );
+    }
+
+    #[test]
+    fn swampspawn_animates_to_template_spawn() {
+        let mut actor = character(0);
+        let mut spawn = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SWAMPSPAWN);
+        spawn.x = 12;
+        spawn.y = 13;
+        spawn.sprite = 0;
+        spawn.driver_data = vec![2, 1, 3];
+        set_drdata_u32(&mut spawn, 16, 21000);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPSPAWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut actor,
+            &mut spawn,
+            request,
+            15,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                current_tick: 20_000,
+                swamp_spawn_player_close: Some(true),
+                swamp_spawn_ground_sprite: Some(59423),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(spawn.driver_data[2], 0);
+        assert_eq!(spawn.sprite, 0);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SwampSpawn {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                template: "swamp29n",
+                x: 12,
+                y: 13,
+                schedule_after_ticks: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn swampspawn_respects_live_spawn_and_recent_cooldown() {
+        let mut actor = character(0);
+        let mut spawn = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SWAMPSPAWN);
+        spawn.driver_data = vec![0, 1, 0];
+        set_drdata_u32(&mut spawn, 12, 9_000);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPSPAWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let recent = execute_item_driver_with_context(
+            &mut actor,
+            &mut spawn,
+            request,
+            15,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                current_tick: 9_500,
+                swamp_spawn_player_close: Some(true),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(spawn.driver_data[2], 0);
+        assert!(matches!(
+            recent,
+            ItemDriverOutcome::SwampSpawnPulse {
+                schedule_after_ticks: TICKS_PER_SECOND,
+                ..
+            }
+        ));
+
+        let live = execute_item_driver_with_context(
+            &mut actor,
+            &mut spawn,
+            request,
+            15,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                current_tick: 30_000,
+                swamp_spawn_live: Some(true),
+                swamp_spawn_player_close: Some(true),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(spawn.driver_data[2], 0);
+        assert!(matches!(
+            live,
+            ItemDriverOutcome::SwampSpawnPulse {
+                schedule_after_ticks: TICKS_PER_SECOND,
+                ..
+            }
+        ));
     }
 
     #[test]
