@@ -33,7 +33,8 @@ use crate::{
         IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONSWITCH,
         IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT,
         IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-        IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH, IID_AREA14_SHRINEKEY,
+        IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH,
+        IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2953,6 +2954,10 @@ impl World {
             && !context.has_matching_random_shrine_key)
             .then(|| self.has_matching_random_shrine_key(character_id, item_id))
             .unwrap_or(false);
+        let area11_palace_key_context = (driver == Some(IDR_PALACEDOOR)
+            && !context.has_area11_palace_key)
+            .then(|| self.character_has_template_id(character_id, IID_AREA11_PALACEKEY))
+            .unwrap_or(false);
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -2985,6 +2990,7 @@ impl World {
         }
         effective_context.clanspawn_contested |= clanspawn_contested;
         effective_context.has_matching_random_shrine_key |= random_shrine_key_context;
+        effective_context.has_area11_palace_key |= area11_palace_key_context;
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
         {
@@ -7055,6 +7061,31 @@ impl World {
                     blocked,
                 }
             }
+            ItemDriverOutcome::PalaceDoorTick {
+                item_id,
+                schedule_after_ticks,
+                set_tmoveblock,
+                ..
+            } => {
+                if let Some(blocked) = set_tmoveblock {
+                    if let Some(item) = self.items.get(&item_id) {
+                        if let Some(tile) =
+                            self.map.tile_mut(usize::from(item.x), usize::from(item.y))
+                        {
+                            if blocked {
+                                tile.flags.insert(MapFlags::TMOVEBLOCK);
+                            } else {
+                                tile.flags.remove(MapFlags::TMOVEBLOCK);
+                            }
+                        }
+                    }
+                }
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
+                }
+                outcome
+            }
+            ItemDriverOutcome::PalaceDoorKeyRequired { .. } => outcome,
             ItemDriverOutcome::TorchExtinguishedUnderwater {
                 item_id,
                 character_id,

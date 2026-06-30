@@ -20153,6 +20153,13 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::MeltingKeyTick { .. } => {
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PalaceDoorKeyRequired { character_id, .. } => {
+                                            feedback.push((character_id, "You need a key to open this gate.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PalaceDoorTick { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::InfiniteChest { character_id, template, key_name, .. } => {
                                             match grant_template_item_to_cursor(
                                                 &mut world,

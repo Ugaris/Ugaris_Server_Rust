@@ -381,6 +381,7 @@ pub struct ItemDriverContext {
     pub clanspawn_contested: bool,
     pub clanspawn_random_seconds: Option<u32>,
     pub has_curse_spell: bool,
+    pub has_area11_palace_key: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1140,6 +1141,19 @@ pub enum ItemDriverOutcome {
         opened: bool,
         closed: bool,
         blocked: bool,
+    },
+    PalaceDoorKeyRequired {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    PalaceDoorTick {
+        item_id: ItemId,
+        character_id: CharacterId,
+        state: u8,
+        frame: u8,
+        sprite: i32,
+        set_tmoveblock: Option<bool>,
+        schedule_after_ticks: Option<u64>,
     },
     TorchExtinguishedUnderwater {
         item_id: ItemId,
@@ -2022,6 +2036,7 @@ pub fn execute_item_driver_with_context(
                 IDR_TRAPDOOR => trapdoor_driver(character, item, context),
                 IDR_JUNKPILE => junkpile_driver(character, item, context),
                 IDR_GASTRAP => gastrap_driver(character, item, context),
+                IDR_PALACEDOOR => palace_door_driver(character, item, context),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
@@ -7370,6 +7385,91 @@ fn palace_gate_driver(
     }
 }
 
+fn palace_door_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    item.driver_data.resize(2, 0);
+
+    if context.timer_call || character.id.0 == 0 {
+        match item.driver_data[1] {
+            1 => {
+                item.driver_data[1] = 2;
+                ItemDriverOutcome::PalaceDoorTick {
+                    item_id: item.id,
+                    character_id: CharacterId(0),
+                    state: 2,
+                    frame: item.driver_data[0],
+                    sprite: item.sprite,
+                    set_tmoveblock: Some(true),
+                    schedule_after_ticks: Some(3),
+                }
+            }
+            2 => {
+                item.driver_data[0] = item.driver_data[0].saturating_sub(1);
+                item.sprite = 15196 + i32::from(item.driver_data[0]);
+                let schedule_after_ticks = if item.driver_data[0] != 0 {
+                    Some(3)
+                } else {
+                    item.driver_data[1] = 0;
+                    None
+                };
+                ItemDriverOutcome::PalaceDoorTick {
+                    item_id: item.id,
+                    character_id: CharacterId(0),
+                    state: item.driver_data[1],
+                    frame: item.driver_data[0],
+                    sprite: item.sprite,
+                    set_tmoveblock: None,
+                    schedule_after_ticks,
+                }
+            }
+            3 => {
+                item.driver_data[0] = item.driver_data[0].saturating_add(1);
+                item.sprite = 15196 + i32::from(item.driver_data[0]);
+                let (state, set_tmoveblock, schedule_after_ticks) = if item.driver_data[0] < 15 {
+                    (3, None, Some(3))
+                } else {
+                    item.driver_data[1] = 1;
+                    (1, Some(false), Some(TICKS_PER_SECOND * 10))
+                };
+                ItemDriverOutcome::PalaceDoorTick {
+                    item_id: item.id,
+                    character_id: CharacterId(0),
+                    state,
+                    frame: item.driver_data[0],
+                    sprite: item.sprite,
+                    set_tmoveblock,
+                    schedule_after_ticks,
+                }
+            }
+            _ => ItemDriverOutcome::Noop,
+        }
+    } else {
+        if item.driver_data[1] != 0 {
+            return ItemDriverOutcome::Noop;
+        }
+        if !context.has_area11_palace_key {
+            return ItemDriverOutcome::PalaceDoorKeyRequired {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+
+        item.driver_data[1] = 3;
+        ItemDriverOutcome::PalaceDoorTick {
+            item_id: item.id,
+            character_id: character.id,
+            state: 3,
+            frame: item.driver_data[0],
+            sprite: item.sprite,
+            set_tmoveblock: None,
+            schedule_after_ticks: Some(2),
+        }
+    }
+}
+
 fn food_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
     if item.carried_by != Some(character.id) {
         return ItemDriverOutcome::Noop;
@@ -7877,6 +7977,108 @@ mod tests {
         assert_eq!(IDR_LAB5_ITEM, 190);
         assert_eq!(IDR_LABTORCH, 199);
         assert_eq!(IDR_SKELETON_KEY, 201);
+    }
+
+    #[test]
+    fn palace_door_requires_key_and_starts_opening() {
+        let mut actor = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PALACEDOOR);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PALACEDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut door,
+                request,
+                11,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PalaceDoorKeyRequired {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let context = ItemDriverContext {
+            has_area11_palace_key: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut door, request, 11, false, &context),
+            ItemDriverOutcome::PalaceDoorTick {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                state: 3,
+                frame: 0,
+                sprite: door.sprite,
+                set_tmoveblock: None,
+                schedule_after_ticks: Some(2),
+            }
+        );
+        assert_eq!(door.driver_data[1], 3);
+    }
+
+    #[test]
+    fn palace_door_timer_animates_open_and_close() {
+        let mut timer = character(0);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PALACEDOOR);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PALACEDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        };
+
+        door.driver_data = vec![14, 3];
+        assert_eq!(
+            execute_item_driver_with_context(&mut timer, &mut door, request, 11, false, &context),
+            ItemDriverOutcome::PalaceDoorTick {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                state: 1,
+                frame: 15,
+                sprite: 15211,
+                set_tmoveblock: Some(false),
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 10),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(&mut timer, &mut door, request, 11, false, &context),
+            ItemDriverOutcome::PalaceDoorTick {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                state: 2,
+                frame: 15,
+                sprite: 15211,
+                set_tmoveblock: Some(true),
+                schedule_after_ticks: Some(3),
+            }
+        );
+
+        door.driver_data = vec![1, 2];
+        assert_eq!(
+            execute_item_driver_with_context(&mut timer, &mut door, request, 11, false, &context),
+            ItemDriverOutcome::PalaceDoorTick {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                state: 0,
+                frame: 0,
+                sprite: 15196,
+                set_tmoveblock: None,
+                schedule_after_ticks: None,
+            }
+        );
     }
 
     #[test]
