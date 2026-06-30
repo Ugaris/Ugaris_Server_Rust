@@ -13,6 +13,7 @@ pub const MAX_MODIFIERS: usize = 5;
 pub const POWERSCALE: i32 = 1000;
 pub const CHARACTER_VALUE_COUNT: usize = 43;
 pub const PROFESSION_COUNT: usize = 20;
+pub const V_FIREBALL: i32 = 33;
 
 pub const CHARACTER_VALUE_NAMES: [&str; CHARACTER_VALUE_COUNT] = [
     "Hitpoints",

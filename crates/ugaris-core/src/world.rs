@@ -6,7 +6,7 @@ use crate::{
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
-        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
+        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -21,7 +21,7 @@ use crate::{
     effect::Effect,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
-        CHARACTER_VALUE_COUNT, INVENTORY_SIZE, MAX_MODIFIERS, POWERSCALE,
+        CHARACTER_VALUE_COUNT, INVENTORY_SIZE, MAX_MODIFIERS, POWERSCALE, V_FIREBALL,
     },
     game_time::GameDate,
     ids::{CharacterId, ItemId},
@@ -6709,7 +6709,11 @@ impl World {
                 schedule_after_ticks,
                 ..
             } => {
-                self.create_fireball_machine_effect(start_x, start_y, target_x, target_y, power);
+                let effect_id = self
+                    .create_fireball_machine_effect(start_x, start_y, target_x, target_y, power);
+                if let Some(item) = self.items.get(&item_id) {
+                    self.notify_area(item.x, item.y, NT_SPELL, 0, V_FIREBALL, effect_id as i32);
+                }
                 if let Some(after_ticks) = schedule_after_ticks {
                     self.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
                 }
@@ -19726,6 +19730,14 @@ mod tests {
         machine.y = 20;
         machine.driver_data = vec![130, 125, 42, 9];
         world.add_item(machine);
+        let mut nearby = character(1);
+        nearby.x = 20;
+        nearby.y = 20;
+        world.add_character(nearby);
+        let mut far = character(2);
+        far.x = 40;
+        far.y = 20;
+        world.add_character(far);
         assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
 
         world.advance();
@@ -19755,6 +19767,16 @@ mod tests {
         assert_eq!((effect.x, effect.y), (11 * 1024 + 512, 19 * 1024 + 512));
         assert_eq!(effect.caster, None);
         assert_eq!(effect.stop_tick, 1 + TICKS_PER_SECOND as i32);
+        assert_eq!(
+            world.characters[&CharacterId(1)].driver_messages,
+            vec![crate::character_driver::CharacterDriverMessage {
+                message_type: NT_SPELL,
+                dat1: 0,
+                dat2: V_FIREBALL,
+                dat3: effect.serial,
+            }]
+        );
+        assert!(world.characters[&CharacterId(2)].driver_messages.is_empty());
 
         for _ in 0..8 {
             world.advance();

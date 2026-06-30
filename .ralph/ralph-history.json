@@ -4150,20 +4150,48 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
       ]
+    },
+    {
+      "iteration": 152,
+      "startedAt": "2026-06-30T09:37:28.191Z",
+      "endedAt": "2026-06-30T09:43:32.574Z",
+      "durationMs": 364215,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/entity.rs",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/world.rs:",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 792 filtered out; finished in 0.00s",
+        "- `src/system/drvlib.c` / `src/system/effect.c` simple-baddy direct-ball task selection now ports the C `calc_steps_ball(cn, from, target) > tile_dist * 2 - 5` gate before adding the weighted `ball` t",
+        "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok",
+        "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 85877889,
+  "totalDurationMs": 86242104,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
       "test item_driver::tests::execute_assemble_driver_reports_legacy_failures ... ok": 18,
-      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 18,
-      "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 18,
+      "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
+      "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 19,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 127,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 125,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 113,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 118,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 128,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 126,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 114,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 119,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 95,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
@@ -4171,7 +4199,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 38,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 59,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 60,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 4,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
@@ -4182,7 +4210,7 @@
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 9,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 16,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 17,
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
@@ -4619,7 +4647,8 @@
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 261 filtered out; finished in 0.00s": 2,
       "test result: ok. 793 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 2,
       "test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 771 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 792 filtered out; finished in 0.00s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 792 filtered out; finished in 0.00s": 2,
+      "- `src/system/drvlib.c` / `src/system/effect.c` simple-baddy direct-ball task selection now ports th": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
