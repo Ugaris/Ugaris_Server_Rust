@@ -1334,6 +1334,8 @@ fn login_character(
         level: 1,
         exp: 0,
         exp_used: 0,
+        military_points: 0,
+        military_normal_exp: 0,
         gold: 0,
         creation_time: 0,
         saves: 0,
@@ -2706,6 +2708,43 @@ fn apply_admin_character_command(
             target.flags.insert(CharacterFlags::UPDATE);
             return Some(KeyringCommandResult {
                 messages: vec![format!("Gave {} {} exp.", target.name, exp)],
+                inventory_changed: true,
+                ..Default::default()
+            });
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec![format!("{} has {} exp.", target.name, target.exp)],
+            ..Default::default()
+        });
+    }
+
+    if lower == "milexp" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let (target_id, target_name, exp) = parse_exp_command_target(world, character_id, rest);
+        let Some(target) = world.characters.get_mut(&target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {target_name} around.")],
+                ..Default::default()
+            });
+        };
+        if exp != 0 {
+            target.exp = target.exp.saturating_add(1);
+            target.military_normal_exp = target.military_normal_exp.saturating_add(1);
+            let mut points = exp.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+            if target.flags.contains(CharacterFlags::HARDCORE) {
+                points = (f64::from(points) * 1.10) as i32;
+            }
+            target.military_points = target.military_points.saturating_add(points);
+            target.flags.insert(CharacterFlags::UPDATE);
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Gave {} {} military exp.", target.name, exp)],
                 inventory_changed: true,
                 ..Default::default()
             });
@@ -12965,6 +13004,109 @@ mod tests {
             &mut runtime,
             character_id,
             "/expx 10",
+            1
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn god_milexp_command_reports_and_grants_military_points() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        god.exp = 100;
+        let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
+        target.exp = 200;
+        target.flags.insert(CharacterFlags::HARDCORE);
+        world.add_character(god);
+        world.add_character(target);
+        let mut runtime = ServerRuntime::default();
+
+        let report = apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp", 1)
+            .expect("god milexp should be recognized");
+        assert_eq!(report.messages, vec!["Godmode has 100 exp."]);
+
+        let self_grant =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp 25", 1)
+                .expect("god milexp self grant should be recognized");
+        assert_eq!(self_grant.messages, vec!["Gave Godmode 25 military exp."]);
+        assert!(self_grant.inventory_changed);
+        let god = world.characters.get(&god_id).unwrap();
+        assert_eq!(god.exp, 101);
+        assert_eq!(god.military_normal_exp, 1);
+        assert_eq!(god.military_points, 25);
+        assert!(god.flags.contains(CharacterFlags::UPDATE));
+
+        let target_grant =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp Target 50", 1)
+                .expect("god milexp target grant should be recognized");
+        assert_eq!(target_grant.messages, vec!["Gave Target 50 military exp."]);
+        let target = world.characters.get(&target_id).unwrap();
+        assert_eq!(target.exp, 201);
+        assert_eq!(target.military_normal_exp, 1);
+        assert_eq!(target.military_points, 55);
+
+        let target_report =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp Target", 1)
+                .expect("god milexp target report should be recognized");
+        assert_eq!(target_report.messages, vec!["Target has 201 exp."]);
+    }
+
+    #[test]
+    fn milexp_command_is_god_only_full_command_and_not_found_feedback() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/milexp 10",
+            1
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let missing = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/milexp Missing 10",
+            1,
+        )
+        .expect("god milexp missing target should be handled");
+        assert_eq!(
+            missing.messages,
+            vec!["Sorry, no one by the name Missing around."]
+        );
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/milex 10",
+            1
+        )
+        .is_none());
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/milexpx 10",
             1
         )
         .is_none());

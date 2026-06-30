@@ -408,6 +408,8 @@ impl ZoneLoader {
             level: template.level_override.unwrap_or(0),
             exp: 0,
             exp_used: 0,
+            military_points: 0,
+            military_normal_exp: 0,
             gold: template.gold,
             creation_time: 0,
             saves: 0,

@@ -2423,6 +2423,8 @@ mod tests {
             level: 1,
             exp: 0,
             exp_used: 0,
+            military_points: 0,
+            military_normal_exp: 0,
             gold: 0,
             creation_time: 0,
             saves: 0,

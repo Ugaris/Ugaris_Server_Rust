@@ -332,6 +332,10 @@ pub struct Character {
     pub level: u32,
     pub exp: u32,
     pub exp_used: u32,
+    #[serde(default)]
+    pub military_points: i32,
+    #[serde(default)]
+    pub military_normal_exp: i32,
     pub gold: u32,
     #[serde(default)]
     pub creation_time: u64,
@@ -517,6 +521,8 @@ mod tests {
             level: 0,
             exp: 0,
             exp_used: 0,
+            military_points: 0,
+            military_normal_exp: 0,
             gold: 0,
             creation_time: 0,
             saves: 0,
