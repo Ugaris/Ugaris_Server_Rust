@@ -4997,9 +4997,36 @@
         "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
         "test result: ok. 275 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
       ]
+    },
+    {
+      "iteration": 183,
+      "startedAt": "2026-06-30T14:41:56.368Z",
+      "endedAt": "2026-06-30T14:46:14.408Z",
+      "durationMs": 257810,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The focused regression passed. I’ll record this iteration in `PORTING_LEDGER.md`, then run a broader workspace test to catch integration failures.",
+        "The workspace failure is an existing test expecting the previous Rust-only feedback. I’ll update that test to the C behavior we just restored and rerun.",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 275 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 834 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 104050216,
+  "totalDurationMs": 104308026,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -5007,14 +5034,14 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 152,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 151,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 138,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 143,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 114,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 153,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 152,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 139,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 144,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 115,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 76,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 77,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 48,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
@@ -5546,7 +5573,11 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 274 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::mine_door_ports_player_teleport_boundary ... FAILED": 1,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 832 filtered out; finished in 0.00s": 1,
-      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 832 filtered out; finished in 0.00s": 2
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 832 filtered out; finished in 0.00s": 2,
+      "The focused regression passed. I’ll record this iteration in `PORTING_LEDGER.md`, then run a broader": 1,
+      "The workspace failure is an existing test expecting the previous Rust-only feedback. I’ll update tha": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 275 filtered out; finished in 0.00s": 1,
+      "test result: ok. 834 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

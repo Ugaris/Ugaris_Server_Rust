@@ -5409,7 +5409,7 @@ fn apply_pk_hate_command(
                 player.pk_hate.clear();
             }
             Some(KeyringCommandResult {
-                messages: vec!["Hate list has been erased.".to_string()],
+                messages: Vec::new(),
                 inventory_changed: false,
                 ..Default::default()
             })
@@ -18130,6 +18130,33 @@ mod tests {
     }
 
     #[test]
+    fn pk_clearhate_is_silent_and_only_mutates_pk_characters() {
+        let mut pk_character = login_character(CharacterId(7), &login_block("Pk"), 1, 10, 10);
+        pk_character.flags.insert(CharacterFlags::PK);
+        let non_pk_character = login_character(CharacterId(8), &login_block("NonPk"), 1, 11, 10);
+        let mut world = World::default();
+        world.add_character(pk_character);
+        world.add_character(non_pk_character);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.add_pk_hate(100));
+        let pk_clear =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate", 0)
+                .expect("clearhate command should be recognized");
+
+        assert!(pk_clear.messages.is_empty());
+        assert!(player.pk_hate.is_empty());
+
+        assert!(player.add_pk_hate(100));
+        let non_pk_clear =
+            apply_pk_hate_command(&mut world, &mut player, CharacterId(8), "/clearhate", 0)
+                .expect("clearhate command should be recognized");
+
+        assert!(non_pk_clear.messages.is_empty());
+        assert!(player.has_pk_hate_for(100));
+    }
+
+    #[test]
     fn pk_hate_command_uses_legacy_front_priority_on_duplicate_add() {
         let mut attacker = login_character(CharacterId(7), &login_block("Attacker"), 1, 10, 10);
         attacker.flags.insert(CharacterFlags::PK);
@@ -18478,7 +18505,7 @@ mod tests {
         let not_pk =
             apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate", 0)
                 .expect("clearhate command should be recognized");
-        assert_eq!(not_pk.messages, vec!["Hate list has been erased."]);
+        assert!(not_pk.messages.is_empty());
         assert!(player.has_pk_hate_for(8));
 
         world
@@ -18490,7 +18517,7 @@ mod tests {
         let cleared =
             apply_pk_hate_command(&mut world, &mut player, CharacterId(7), "/clearhate", 0)
                 .expect("clearhate command should be recognized");
-        assert_eq!(cleared.messages, vec!["Hate list has been erased."]);
+        assert!(cleared.messages.is_empty());
         assert!(player.pk_hate.is_empty());
     }
 
