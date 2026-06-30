@@ -24,6 +24,7 @@ pub const CDR_PALACEISLENA: u16 = 57;
 pub const CDR_TRADER: u16 = 72;
 pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
+pub const CDR_LAB2UNDEAD: u16 = 198;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;

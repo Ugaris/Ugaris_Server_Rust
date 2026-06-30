@@ -1928,6 +1928,11 @@ pub enum ItemDriverOutcome {
         undead_serial: u32,
         schedule_after_ticks: u64,
     },
+    Lab2GraveOpen {
+        item_id: ItemId,
+        character_id: CharacterId,
+        fixed_item: u8,
+    },
     ParkShrine {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2798,13 +2803,15 @@ fn lab2_grave_driver(
                 book: grave_item,
             };
         }
+
+        return ItemDriverOutcome::Lab2GraveOpen {
+            item_id: item.id,
+            character_id: character.id,
+            fixed_item: grave_item,
+        };
     }
 
-    ItemDriverOutcome::Unsupported {
-        driver: item.driver,
-        item_id: item.id,
-        character_id: character.id,
-    }
+    ItemDriverOutcome::Noop
 }
 
 fn teufel_arena_exit_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
@@ -20192,7 +20199,7 @@ mod tests {
     }
 
     #[test]
-    fn lab2_grave_is_area22_guarded_and_player_use_stays_explicitly_unported() {
+    fn lab2_grave_is_area22_guarded_and_player_use_opens_closed_grave() {
         let mut actor = character(1);
         actor.flags.insert(CharacterFlags::PLAYER);
         let mut grave = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_GRAVE);
@@ -20215,10 +20222,10 @@ mod tests {
 
         assert_eq!(
             execute_item_driver(&mut actor, &mut grave, request, 22, false),
-            ItemDriverOutcome::Unsupported {
-                driver: IDR_LAB2_GRAVE,
+            ItemDriverOutcome::Lab2GraveOpen {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+                fixed_item: 0,
             }
         );
 
@@ -20228,6 +20235,30 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut actor, &mut grave, request, 22, false),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn lab2_grave_player_use_preserves_fixed_special_item_kind() {
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        let mut grave = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_GRAVE);
+        grave.driver_data = vec![0; 16];
+        grave.driver_data[0] = 6;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LAB2_GRAVE,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut grave, request, 22, false),
+            ItemDriverOutcome::Lab2GraveOpen {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                fixed_item: 6,
+            }
         );
     }
 

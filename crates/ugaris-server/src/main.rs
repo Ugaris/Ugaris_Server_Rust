@@ -13,7 +13,8 @@ use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{
-        CharacterDriverState, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
+        CharacterDriverState, CDR_LAB2UNDEAD, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY,
+        CDR_SWAMPMONSTER,
     },
     direction::Direction,
     do_action::{
@@ -7969,6 +7970,49 @@ const LAB2_DESCRIBED_GRAVES: [&str; 40] = [
     "%s is buried at the left side of her husband John.",
 ];
 
+const LAB2_DESCRIBED_GRAVE_COORDS: [(u16, u16); 40] = [
+    (194, 183),
+    (192, 183),
+    (186, 183),
+    (184, 183),
+    (176, 194),
+    (176, 196),
+    (173, 191),
+    (173, 193),
+    (199, 195),
+    (199, 193),
+    (196, 196),
+    (196, 194),
+    (160, 233),
+    (158, 233),
+    (162, 230),
+    (160, 230),
+    (210, 244),
+    (208, 244),
+    (206, 232),
+    (204, 232),
+    (172, 228),
+    (172, 226),
+    (181, 224),
+    (181, 222),
+    (191, 222),
+    (191, 224),
+    (197, 232),
+    (197, 234),
+    (155, 211),
+    (155, 209),
+    (164, 201),
+    (164, 199),
+    (158, 189),
+    (158, 187),
+    (161, 189),
+    (161, 187),
+    (208, 182),
+    (210, 182),
+    (214, 191),
+    (212, 191),
+];
+
 fn lab2_grave_clue_text(
     runtime: &mut ServerRuntime,
     character_id: CharacterId,
@@ -7989,6 +8033,112 @@ fn lab2_grave_clue_text(
         .get(indices[slot] as usize)
         .unwrap_or(&"%s is buried in an unknown grave.")
         .replace("%s", name)
+}
+
+fn lab2_special_grave_template(kind: u8) -> Option<&'static str> {
+    match kind {
+        1 => Some("lab2_elias_hat"),
+        2 => Some("lab2_elias_cape"),
+        3 => Some("lab2_elias_boots"),
+        4 => Some("lab2_elias_belt"),
+        5 => Some("lab2_elias_amulet"),
+        6 => Some("lab2_arathas_ring"),
+        _ => None,
+    }
+}
+
+fn apply_lab2_grave_open(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    item_id: ItemId,
+    character_id: CharacterId,
+    fixed_item: u8,
+) -> bool {
+    let Some(grave) = world.items.get(&item_id) else {
+        return false;
+    };
+    let (grave_x, grave_y) = (grave.x, grave.y);
+
+    let mut special_item = fixed_item;
+    if special_item == 0 {
+        if let Some(player) = runtime.player_for_character_mut(character_id) {
+            let indices = player.ensure_legacy_lab2_described_graves();
+            for (slot, index) in indices.into_iter().enumerate() {
+                if LAB2_DESCRIBED_GRAVE_COORDS.get(index as usize).copied()
+                    == Some((grave_x, grave_y))
+                {
+                    special_item = slot as u8 + 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    let character_id_new = runtime.allocate_character_id();
+    let spawn_template =
+        if special_item == 5 || (special_item == 0 && runtime_random_below(100) > 66) {
+            "lab2_skeleton"
+        } else {
+            "lab2_undead"
+        };
+
+    let Ok((mut undead, inventory_items)) =
+        loader.instantiate_character_template(spawn_template, character_id_new)
+    else {
+        return false;
+    };
+    undead.dir = Direction::Down as u8;
+    undead.flags.remove(CharacterFlags::RESPAWN);
+    undead.driver = CDR_LAB2UNDEAD;
+
+    if special_item == 5 {
+        undead.name = "Elias Skeleton".to_string();
+        undead.values[1][CharacterValue::Hp as usize] = 5;
+        undead.values[1][CharacterValue::Attack as usize] = 5;
+        undead.values[1][CharacterValue::Parry as usize] = 5;
+    } else if special_item == 6 {
+        undead.name = "Undead Arathas".to_string();
+    }
+
+    undead.hp = i32::from(undead.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
+    undead.endurance = i32::from(undead.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
+    undead.mana = i32::from(undead.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+
+    let mut created_special_item = None;
+    if let Some(template) = lab2_special_grave_template(special_item) {
+        if let Some(slot) = undead.inventory[INVENTORY_START_INVENTORY..]
+            .iter()
+            .position(Option::is_none)
+            .map(|index| index + INVENTORY_START_INVENTORY)
+        {
+            if let Ok(mut item) = loader.instantiate_item_template(template, Some(character_id_new))
+            {
+                let item_id = item.id;
+                item.carried_by = Some(character_id_new);
+                undead.inventory[slot] = Some(item_id);
+                world.add_item(item);
+                created_special_item = Some(item_id);
+            }
+        }
+    }
+
+    if !world.spawn_character(undead, usize::from(grave_x), usize::from(grave_y)) {
+        if let Some(item_id) = created_special_item {
+            world.items.remove(&item_id);
+        }
+        return false;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+
+    let serial = world
+        .characters
+        .get(&character_id_new)
+        .map(|character| character.serial)
+        .unwrap_or_default();
+    world.open_lab2_grave(item_id, character_id_new, serial)
 }
 
 fn grant_ice_itemspawn_to_cursor(
@@ -17789,6 +17939,92 @@ mod tests {
     }
 
     #[test]
+    fn lab2_grave_open_spawns_undead_and_attaches_described_grave_item() {
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_character_templates_str(
+                r#"
+                lab2_undead:
+                  name="Undead"
+                  V_HP=40
+                  V_ENDURANCE=20
+                  V_MANA=0
+                ;
+                lab2_skeleton:
+                  name="Skeleton"
+                  V_HP=30
+                  V_ENDURANCE=10
+                  V_MANA=0
+                ;
+            "#,
+            )
+            .unwrap();
+        loader
+            .load_item_templates_str(
+                r#"
+                lab2_elias_hat:
+                  name="Elias Hat"
+                  flag=IF_TAKE
+                ;
+            "#,
+            )
+            .unwrap();
+
+        let mut world = World::default();
+        let actor_id = CharacterId(1);
+        let login = LoginBlock {
+            name: "Tester".to_string(),
+            password: String::new(),
+            vendor: 0,
+            client_version: None,
+            his_ip: 0,
+            our_ip: 0,
+            unique: 0,
+        };
+        assert!(world.spawn_character(login_character(actor_id, &login, 22, 10, 10), 10, 10));
+
+        let mut grave = test_item_with_driver(ItemId(8), ugaris_core::item_driver::IDR_LAB2_GRAVE);
+        grave.x = 194;
+        grave.y = 183;
+        grave.sprite = 11000;
+        grave.driver_data = vec![0; 16];
+        world.add_item(grave);
+
+        let mut runtime = ServerRuntime::default();
+        runtime.next_character_id = 100;
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(actor_id);
+        runtime.players.insert(1, player);
+
+        assert!(apply_lab2_grave_open(
+            &mut world,
+            &mut runtime,
+            &mut loader,
+            ItemId(8),
+            actor_id,
+            0,
+        ));
+
+        let grave = world.items.get(&ItemId(8)).unwrap();
+        assert_eq!(grave.sprite, 11001);
+        assert_eq!(
+            i32::from_le_bytes(grave.driver_data[4..8].try_into().unwrap()),
+            100
+        );
+        assert_eq!(
+            i32::from_le_bytes(grave.driver_data[8..12].try_into().unwrap()),
+            100
+        );
+
+        let undead = world.characters.get(&CharacterId(100)).unwrap();
+        assert_eq!(undead.name, "Undead");
+        assert_eq!(undead.driver, CDR_LAB2UNDEAD);
+        assert_eq!((undead.x, undead.y), (194, 183));
+        let hat_id = undead.inventory[INVENTORY_START_INVENTORY].unwrap();
+        assert_eq!(world.items.get(&hat_id).unwrap().name, "Elias Hat");
+    }
+
+    #[test]
     fn teufel_ratnest_spawn_result_stores_slot_serial_and_increases_wave() {
         let mut world = World::default();
         let mut nest = test_item(
@@ -26488,6 +26724,20 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveClose { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveCheckOpen { .. } => {
                                             executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveOpen { item_id, character_id, fixed_item } => {
+                                            if apply_lab2_grave_open(
+                                                &mut world,
+                                                &mut runtime,
+                                                &mut zone_loader,
+                                                item_id,
+                                                character_id,
+                                                fixed_item,
+                                            ) {
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { character_id, .. } => {
                                             feedback.push((
