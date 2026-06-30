@@ -6532,6 +6532,7 @@ impl World {
             && character_value(caster, CharacterValue::Bless) > 0
             && caster.mana >= BLESS_COST
             && !target.flags.contains(CharacterFlags::DEAD)
+            && char_see_char(caster, target, &self.map, self.date.daylight)
             && may_add_spell(target, &self.items, IDR_BLESS, self.tick.0 as u32).is_some()
     }
 
@@ -15629,7 +15630,7 @@ mod tests {
         friend.group = 7;
         world.items.insert(existing_bless.id, existing_bless);
         world.spawn_character(npc, 10, 10);
-        world.spawn_character(friend, 12, 10);
+        world.spawn_character(friend, 11, 10);
 
         let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
@@ -15670,6 +15671,38 @@ mod tests {
         other.group = 8;
         world.spawn_character(npc, 10, 10);
         world.spawn_character(other, 12, 10);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, 0);
+        assert_eq!(npc.mana, 10 * POWERSCALE);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.pending_bless_friend, None);
+        assert!(npc.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_reject_helper_bless_without_visibility() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Bless as usize] = 40;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helper: 1,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_CHAR, 2, 0, 0);
+        let mut friend = character(2);
+        friend.group = 7;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(friend, 12, 10);
+        world.map.tile_mut(12, 10).unwrap().light = 32;
+        world.map.set_flags(11, 10, MapFlags::SIGHTBLOCK);
 
         let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
