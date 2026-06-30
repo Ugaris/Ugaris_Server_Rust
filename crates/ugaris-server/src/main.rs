@@ -269,6 +269,29 @@ struct ServerRuntime {
     weather: WeatherState,
 }
 
+fn staff_code_for<'a>(
+    runtime: Option<&'a ServerRuntime>,
+    world: &'a World,
+    character_id: CharacterId,
+) -> &'a str {
+    if let Some(code) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.staff_code.as_str())
+        .filter(|code| !code.is_empty())
+    {
+        return code;
+    }
+
+    runtime
+        .into_iter()
+        .flat_map(|runtime| runtime.staff_codes.get(&character_id))
+        .next()
+        .map(String::as_str)
+        .unwrap_or("")
+}
+
+#[cfg(test)]
 fn runtime_staff_code(runtime: &ServerRuntime, character_id: CharacterId) -> &str {
     runtime
         .staff_codes
@@ -1313,6 +1336,7 @@ fn login_character(
         clan: 0,
         clan_rank: 0,
         clan_serial: 0,
+        staff_code: String::new(),
         speed_mode: SpeedMode::Normal,
         x: 0,
         y: 0,
@@ -2502,11 +2526,14 @@ fn apply_admin_character_command(
             .map(|ch| ch.to_ascii_uppercase())
             .unwrap_or('A');
         let code = format!("{first}{second}");
-        let target_name = world
-            .characters
-            .get(&target_id)
-            .map(|target| target.name.clone())
-            .unwrap_or_else(|| name.to_string());
+        let Some(target) = world.characters.get_mut(&target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+        let target_name = target.name.clone();
+        target.staff_code = code.clone();
         runtime.staff_codes.insert(target_id, code.clone());
         return Some(KeyringCommandResult {
             messages: vec![format!("Set {target_name}'s staff code to {code}.")],
@@ -3520,7 +3547,7 @@ fn apply_chat_command(
     let sender_mirror = sender_runtime
         .map(|player| player.current_mirror_id)
         .unwrap_or_default();
-    let staff_code = runtime_staff_code(runtime, sender_id);
+    let staff_code = staff_code_for(Some(runtime), world, sender_id);
     let line = legacy_chat_line(sender, staff_code, sender_mirror, channel, text);
     let sender_public_id = if sender
         .flags
@@ -3906,7 +3933,7 @@ fn apply_tell_command(
         .map(|player| player.current_mirror_id)
         .unwrap_or_default();
     let staff_code = if sender.flags.contains(CharacterFlags::STAFF) {
-        format!(" [{}]", runtime_staff_code(runtime, sender_id))
+        format!(" [{}]", staff_code_for(Some(runtime), world, sender_id))
     } else {
         String::new()
     };
@@ -4055,9 +4082,7 @@ fn apply_who_command(
             messages.push(format!(
                 "{} [{}]{}",
                 character.name,
-                runtime
-                    .map(|runtime| runtime_staff_code(runtime, character.id))
-                    .unwrap_or(""),
+                staff_code_for(runtime, world, character.id),
                 if character.driver == 0 {
                     ""
                 } else {
@@ -12551,6 +12576,7 @@ mod tests {
 
         assert_eq!(result.messages, vec!["Set Staffer's staff code to XY."]);
         assert_eq!(runtime_staff_code(&runtime, staff_id), "XY");
+        assert_eq!(world.characters.get(&staff_id).unwrap().staff_code, "XY");
 
         let defaulted = apply_admin_character_command(
             &mut world,
@@ -12562,6 +12588,7 @@ mod tests {
         .expect("god staffcode command should be recognized");
         assert_eq!(defaulted.messages, vec!["Set Staffer's staff code to AA."]);
         assert_eq!(runtime_staff_code(&runtime, staff_id), "AA");
+        assert_eq!(world.characters.get(&staff_id).unwrap().staff_code, "AA");
 
         assert!(apply_admin_character_command(
             &mut world,
@@ -13894,17 +13921,17 @@ mod tests {
     }
 
     #[test]
-    fn tell_command_includes_runtime_staff_code_for_staff_senders() {
+    fn tell_command_includes_persisted_staff_code_for_staff_senders() {
         let mut world = World::default();
         let sender_id = CharacterId(7);
         let target_id = CharacterId(8);
         let mut sender = login_character(sender_id, &login_block("Helper"), 1, 10, 10);
         sender.flags.insert(CharacterFlags::STAFF);
+        sender.staff_code = "HM".to_string();
         world.add_character(sender);
         world.add_character(login_character(target_id, &login_block("Bob"), 1, 11, 10));
 
         let mut runtime = ServerRuntime::default();
-        runtime.staff_codes.insert(sender_id, "HM".to_string());
         runtime.players.insert(1, PlayerRuntime::connected(1, 0));
         runtime.players.insert(2, PlayerRuntime::connected(2, 0));
         runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
@@ -14100,17 +14127,17 @@ mod tests {
     }
 
     #[test]
-    fn chat_command_includes_runtime_staff_code_for_staff_senders() {
+    fn chat_command_includes_persisted_staff_code_for_staff_senders() {
         let mut world = World::default();
         let sender_id = CharacterId(7);
         let target_id = CharacterId(8);
         let mut sender = login_character(sender_id, &login_block("Helper"), 1, 10, 10);
         sender.flags.insert(CharacterFlags::STAFF);
+        sender.staff_code = "HM".to_string();
         world.add_character(sender);
         world.add_character(login_character(target_id, &login_block("Bob"), 1, 11, 10));
 
         let mut runtime = ServerRuntime::default();
-        runtime.staff_codes.insert(sender_id, "HM".to_string());
         runtime.players.insert(1, PlayerRuntime::connected(1, 0));
         runtime.players.insert(2, PlayerRuntime::connected(2, 0));
         runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);

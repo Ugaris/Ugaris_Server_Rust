@@ -646,3 +646,7 @@ Recommended next chest steps:
 ### Iteration 148 Additional Progress
 
 - `src/system/drvlib.c` `fight_driver_attack_enemy` now preserves the C `!nomove` gate for simple-baddy movement-only weighted tasks: distance-3 spacing, distance-7 spacing, and attack-back positioning are no longer enqueued when a caller requests no movement, while the existing C exception for adjacent/distance-two direct attacks remains intact. Focused core coverage pins the nomove suppression for attack-back/spacing task kinds. Remaining fight-driver gaps include exact shared global RNG use, broader area-driver reuse, and exact NPC scheduling cadence.
+
+### Iteration 151 Additional Progress
+
+- C god-only `/staffcode` now persists through the Rust character snapshot path instead of living only in transient server runtime state: `Character` carries a serde-defaulted `staff_code`, the command mutates both the persisted character field and compatibility runtime map, and `/tell`, channel chat, and `/whostaff` display prefer the persisted field with runtime fallback. Focused core/server tests cover legacy snapshot defaulting, command mutation, and persisted-code tell/chat formatting. Remaining staff-code/admin gaps are exact audit/server-chat side effects and cross-area/offline target lookup.

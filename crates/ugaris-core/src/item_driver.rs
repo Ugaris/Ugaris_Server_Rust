@@ -17673,6 +17673,7 @@ mod tests {
             clan: 0,
             clan_rank: 0,
             clan_serial: 0,
+            staff_code: String::new(),
             speed_mode: SpeedMode::Normal,
             x: 0,
             y: 0,

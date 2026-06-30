@@ -311,6 +311,8 @@ pub struct Character {
     pub clan_rank: u8,
     #[serde(default)]
     pub clan_serial: u32,
+    #[serde(default)]
+    pub staff_code: String,
     pub speed_mode: SpeedMode,
     pub x: u16,
     pub y: u16,
@@ -481,6 +483,7 @@ mod tests {
         assert_eq!(character.c2, 0);
         assert_eq!(character.c3, 0);
         assert_eq!(character.driver, 0);
+        assert!(character.staff_code.is_empty());
     }
 
     #[test]
@@ -500,6 +503,7 @@ mod tests {
             clan: 0,
             clan_rank: 0,
             clan_serial: 0,
+            staff_code: String::new(),
             speed_mode: SpeedMode::Normal,
             x: 0,
             y: 0,
