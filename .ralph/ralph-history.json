@@ -4712,9 +4712,36 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 172,
+      "startedAt": "2026-06-30T13:11:13.744Z",
+      "endedAt": "2026-06-30T13:16:33.926Z",
+      "durationMs": 320012,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'simple_baddy_attack_drops_visible_enemy_beyond_stopdist_like_c' found",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 820 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 822 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 98641788,
+  "totalDurationMs": 98961800,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4722,15 +4749,15 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 145,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 144,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 131,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 136,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 108,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 146,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 145,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 132,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 137,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 109,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 70,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 44,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 71,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 45,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
       "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 69,
@@ -5235,7 +5262,10 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 819 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 272 filtered out; finished in 0.00s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 813 filtered out; finished in 0.00s": 1,
-      "test result: ok. 820 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 820 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "error: unexpected argument 'simple_baddy_attack_drops_visible_enemy_beyond_stopdist_like_c' found": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 820 filtered out; finished in 0.00s": 1,
+      "test result: ok. 822 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
