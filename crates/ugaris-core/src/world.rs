@@ -2688,7 +2688,7 @@ impl World {
                 IDR_CLANSPAWN => Some(item_id),
                 IDR_FLAMETHROW | IDR_CALIGARFLAME | IDR_EDEMONLIGHT | IDR_EDEMONLOADER
                 | IDR_EDEMONBLOCK | IDR_EDEMONTUBE | IDR_FDEMONLIGHT | IDR_FDEMONLOADER
-                | IDR_FDEMONGATE | IDR_FDEMONFARM => Some(item_id),
+                | IDR_FDEMONGATE | IDR_FDEMONFARM | IDR_MINEDOOR => Some(item_id),
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
@@ -24071,6 +24071,23 @@ mod tests {
         assert_eq!(door.sprite, 15000);
         assert!(!door.flags.contains(ItemFlags::USE));
         assert_eq!(door.driver_data[3], 0);
+    }
+
+    #[test]
+    fn schedule_existing_light_timers_includes_mine_doors() {
+        let mut world = World::default();
+        let mut door = item(8, ItemFlags::USED);
+        door.driver = crate::item_driver::IDR_MINEDOOR;
+        door.driver_data = vec![4, 0, 5, 0];
+        world.add_item(door);
+
+        assert_eq!(world.schedule_existing_light_timers(), 1);
+        world.tick.0 = 1;
+
+        assert_eq!(
+            world.process_due_timers(12),
+            vec![ItemDriverOutcome::MineDoorTimer { item_id: ItemId(8) }]
+        );
     }
 
     fn mine_door_neighbor_points(x: usize, y: usize) -> [(usize, usize); 8] {
