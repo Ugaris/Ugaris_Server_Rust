@@ -39,7 +39,7 @@ use ugaris_core::{
         GiveItemResult,
     },
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
-    legacy::{action, profession, INVENTORY_START_INVENTORY},
+    legacy::{action, profession, worn_slot, INVENTORY_START_INVENTORY},
     log_text::{holler_message, sanitize_log_bytes, say_message, shout_message, whisper_message},
     map::{MapFlags, MapTile},
     player::{
@@ -7675,6 +7675,7 @@ fn spawn_lq_npc_character(
     }
     apply_lq_raise(&mut character, request.level);
     add_lq_statboost_items(&mut character, loader, &mut inventory_items);
+    add_lq_equipment_items(&mut character, loader, &mut inventory_items);
     character.hp = i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
     character.endurance =
         i32::from(character.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
@@ -7749,6 +7750,75 @@ fn add_lq_statboost_items(
             (CharacterValue::Strength, stat_boost),
         ],
     );
+}
+
+fn add_lq_equipment_items(
+    character: &mut Character,
+    loader: &mut ZoneLoader,
+    inventory_items: &mut Vec<Item>,
+) {
+    let mut weapon_template = None;
+    for (value, prefix) in [
+        (CharacterValue::Dagger, "dagger"),
+        (CharacterValue::Staff, "staff"),
+        (CharacterValue::Sword, "sword"),
+        (CharacterValue::TwoHand, "twohand"),
+    ] {
+        let base = lq_base_value(character, value);
+        if base != 0 {
+            weapon_template = Some(format!("{}{}q1", prefix, lq_equipment_tier(base)));
+        }
+    }
+    if let Some(template) = weapon_template {
+        set_lq_equipment_item(
+            character,
+            loader,
+            inventory_items,
+            worn_slot::RIGHT_HAND,
+            &template,
+        );
+    }
+
+    let armor_base = lq_base_value(character, CharacterValue::ArmorSkill);
+    if armor_base != 0 {
+        let tier = lq_equipment_tier(armor_base);
+        for (slot, prefix) in [
+            (worn_slot::HEAD, "helmet"),
+            (worn_slot::BODY, "armor"),
+            (worn_slot::LEGS, "leggings"),
+            (worn_slot::ARMS, "sleeves"),
+        ] {
+            set_lq_equipment_item(
+                character,
+                loader,
+                inventory_items,
+                slot,
+                &format!("{}{}q1", prefix, tier),
+            );
+        }
+    }
+}
+
+fn set_lq_equipment_item(
+    character: &mut Character,
+    loader: &mut ZoneLoader,
+    inventory_items: &mut Vec<Item>,
+    slot: usize,
+    template: &str,
+) -> bool {
+    let Ok(item) = loader.instantiate_item_template(template, Some(character.id)) else {
+        return false;
+    };
+    if let Some(previous_id) = character.inventory[slot] {
+        inventory_items.retain(|item| item.id != previous_id);
+    }
+    character.inventory[slot] = Some(item.id);
+    inventory_items.push(item);
+    true
+}
+
+fn lq_equipment_tier(base: i16) -> i16 {
+    (base / 10 + 1).min(10)
 }
 
 fn apply_lq_raise(character: &mut Character, level: u16) {
@@ -11660,6 +11730,9 @@ mod tests {
                 lqx_spell:
                   name="LQX Spell"
                 ;
+                dagger3q1:
+                  name="Quest Dagger"
+                ;
             "#,
             )
             .unwrap();
@@ -11745,6 +11818,7 @@ mod tests {
         assert_eq!(character.inventory[12], Some(ItemId(1)));
         assert_eq!(character.inventory[13], Some(ItemId(2)));
         assert_eq!(character.inventory[14], Some(ItemId(3)));
+        assert_eq!(character.inventory[worn_slot::RIGHT_HAND], Some(ItemId(4)));
         assert!(character
             .flags
             .contains(CharacterFlags::IMMORTAL | CharacterFlags::NOATTACK));
@@ -11759,9 +11833,60 @@ mod tests {
         let misc_spell = world.items.get(&ItemId(3)).unwrap();
         assert_eq!(misc_spell.modifier_index, [37, 3, 4, 5, 6]);
         assert_eq!(misc_spell.modifier_value, [4, 6, 6, 6, 6]);
+        let weapon = world.items.get(&ItemId(4)).unwrap();
+        assert_eq!(weapon.name, "Quest Dagger");
+        assert_eq!(weapon.carried_by, Some(CharacterId(200)));
         let npc = world.lq_npcs.iter().find(|npc| npc.slot == 2).unwrap();
         assert_eq!(npc.character_id, Some(CharacterId(200)));
         assert_eq!(npc.character_serial, character.serial);
+    }
+
+    #[test]
+    fn lq_equipment_creates_legacy_weapon_and_armor_slots() {
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_character_templates_str(
+                r#"
+                lq_equipment_test:
+                  name="LQ Equipment Test"
+                ;
+            "#,
+            )
+            .unwrap();
+        loader
+            .load_item_templates_str(
+                r#"
+                sword4q1: name="Sword Four" ;
+                twohand4q1: name="Twohand Four" ;
+                helmet3q1: name="Helmet Three" ;
+                armor3q1: name="Armor Three" ;
+                leggings3q1: name="Leggings Three" ;
+                sleeves3q1: name="Sleeves Three" ;
+            "#,
+            )
+            .unwrap();
+        let (mut character, mut inventory_items) = loader
+            .instantiate_character_template("lq_equipment_test", CharacterId(300))
+            .unwrap();
+        character.values[1][CharacterValue::Sword as usize] = 31;
+        character.values[1][CharacterValue::TwoHand as usize] = 34;
+        character.values[1][CharacterValue::ArmorSkill as usize] = 29;
+
+        add_lq_equipment_items(&mut character, &mut loader, &mut inventory_items);
+
+        assert_eq!(character.inventory[worn_slot::RIGHT_HAND], Some(ItemId(1)));
+        assert_eq!(character.inventory[worn_slot::HEAD], Some(ItemId(2)));
+        assert_eq!(character.inventory[worn_slot::BODY], Some(ItemId(3)));
+        assert_eq!(character.inventory[worn_slot::LEGS], Some(ItemId(4)));
+        assert_eq!(character.inventory[worn_slot::ARMS], Some(ItemId(5)));
+        assert_eq!(inventory_items[0].name, "Twohand Four");
+        assert_eq!(inventory_items[1].name, "Helmet Three");
+        assert_eq!(inventory_items[2].name, "Armor Three");
+        assert_eq!(inventory_items[3].name, "Leggings Three");
+        assert_eq!(inventory_items[4].name, "Sleeves Three");
+        assert!(inventory_items
+            .iter()
+            .all(|item| item.carried_by == Some(CharacterId(300))));
     }
 
     #[test]
