@@ -633,3 +633,7 @@ Recommended next chest steps:
 ### Iteration 145 Additional Progress
 
 - Area 22 Lab 1 `IDR_LABTORCH = 199` now dispatches from the Rust item-driver registry for C `labtorch`: it is guarded to area 22 like the legacy module load, zero-character calls store the current light modifier in `drdata[1]`, player use cannot light an unlit torch, NPC/non-player use lights unlit torches by incrementing the sprite/restoring `V_LIGHT`, and lit-torch use extinguishes by decrementing the sprite/clearing light. Focused core tests cover area guard, timer storage, player no-op, NPC lighting, and extinguishing. Remaining Lab 1 torch gap is the exact `notify_area(..., NT_NPC, NTID_LABGNOMETORCH, ...)` fan-out on extinguish.
+
+### Iteration 146 Additional Progress
+
+- `/iwilldie` confirmation now uses C `atoi`-style numeric-prefix parsing instead of strict Rust integer parsing, so inputs such as `/iwilldie 77abc` confirm character ID `77` like the legacy command path. Focused server coverage pins the accepted numeric-prefix behavior. Remaining PK command gaps are offline `lookup_name`/`lookup_ID` repository integration for names, reset-name/audit side effects, broader command/help parity, repository-backed clan/alliance policy, and exact realtime source persistence semantics.

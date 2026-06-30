@@ -5104,7 +5104,7 @@ fn apply_pk_hate_command(
                 );
             } else if !character.flags.contains(CharacterFlags::PAID) {
                 messages.push("Sorry, only paying players may become player killers.".to_string());
-            } else if name.parse::<u32>().ok() != Some(character.id.0) {
+            } else if legacy_atoi_prefix(name) != i64::from(character.id.0) {
                 messages.push("Please type: '/playerkiller' first.".to_string());
             } else {
                 player.pk_kills = 0;
@@ -17254,9 +17254,14 @@ mod tests {
             vec!["Please type: '/playerkiller' first.", "PK is off."]
         );
 
-        let joined =
-            apply_pk_hate_command(&mut world, &mut player, CharacterId(77), "/iwilldie 77", 0)
-                .expect("iwilldie command should be recognized");
+        let joined = apply_pk_hate_command(
+            &mut world,
+            &mut player,
+            CharacterId(77),
+            "/iwilldie 77abc",
+            0,
+        )
+        .expect("iwilldie command should be recognized");
         assert_eq!(joined.messages, vec!["PK is on."]);
         assert!(world
             .characters
