@@ -20768,8 +20768,8 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You've found bug #8331.".to_string()));
                                             failed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::PickDoorToggle { character_id, .. } => {
-                                            if character_id.0 != 0 {
+                                        ugaris_core::item_driver::ItemDriverOutcome::PickDoorToggle { character_id, picked_lock, .. } => {
+                                            if picked_lock {
                                                 feedback.push((character_id, "You pick the lock.".to_string()));
                                             }
                                             executed += 1;

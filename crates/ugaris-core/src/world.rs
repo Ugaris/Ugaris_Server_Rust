@@ -6429,9 +6429,12 @@ impl World {
             ItemDriverOutcome::PickDoorToggle {
                 item_id,
                 character_id,
+                picked_lock,
             } => {
                 if self.toggle_pick_door(item_id, character_id) == DoorToggleResult::Toggled {
-                    self.notify_twocity_pick_from_character(character_id);
+                    if picked_lock {
+                        self.notify_twocity_pick_from_character(character_id);
+                    }
                     outcome
                 } else {
                     ItemDriverOutcome::Noop
@@ -22130,6 +22133,7 @@ mod tests {
             ItemDriverOutcome::PickDoorToggle {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
+                picked_lock: true,
             }
         );
         let door = world.items.get(&ItemId(7)).unwrap();
@@ -22163,6 +22167,7 @@ mod tests {
             ItemDriverOutcome::PickDoorToggle {
                 item_id: ItemId(7),
                 character_id: CharacterId(0),
+                picked_lock: false,
             }
         );
         let door = world.items.get(&ItemId(7)).unwrap();
@@ -22172,6 +22177,15 @@ mod tests {
         assert!(door.flags.contains(ItemFlags::SIGHTBLOCK));
         assert!(door.flags.contains(ItemFlags::SOUNDBLOCK));
         assert!(door.flags.contains(ItemFlags::DOOR));
+        assert_eq!(
+            world
+                .characters
+                .get(&CharacterId(2))
+                .unwrap()
+                .driver_messages
+                .len(),
+            1
+        );
     }
 
     #[test]

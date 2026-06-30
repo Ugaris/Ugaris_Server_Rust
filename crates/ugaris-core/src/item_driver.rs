@@ -670,6 +670,7 @@ pub enum ItemDriverOutcome {
     PickDoorToggle {
         item_id: ItemId,
         character_id: CharacterId,
+        picked_lock: bool,
     },
     PickDoorLocked {
         item_id: ItemId,
@@ -5158,6 +5159,7 @@ fn pick_door_driver(
         return ItemDriverOutcome::PickDoorToggle {
             item_id: item.id,
             character_id: character.id,
+            picked_lock: false,
         };
     }
     if drdata(item, 0) != 0 {
@@ -5172,6 +5174,7 @@ fn pick_door_driver(
     ItemDriverOutcome::PickDoorToggle {
         item_id: item.id,
         character_id: character.id,
+        picked_lock: character.flags.contains(CharacterFlags::PLAYER),
     }
 }
 
@@ -13054,6 +13057,7 @@ mod tests {
             ItemDriverOutcome::PickDoorToggle {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
+                picked_lock: true,
             }
         );
     }
@@ -13101,6 +13105,7 @@ mod tests {
             ItemDriverOutcome::PickDoorToggle {
                 item_id: ItemId(7),
                 character_id: CharacterId(0),
+                picked_lock: false,
             }
         );
     }
