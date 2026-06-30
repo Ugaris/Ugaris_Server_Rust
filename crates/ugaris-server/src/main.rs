@@ -1985,6 +1985,28 @@ fn parse_setskill_args(rest: &str) -> (String, i64, i64) {
     (name, pos, val)
 }
 
+fn parse_exp_command_target(
+    world: &World,
+    character_id: CharacterId,
+    rest: &str,
+) -> (CharacterId, String, i64) {
+    let mut text = rest.trim_start();
+    if text.is_empty() || text.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+        let name = world
+            .characters
+            .get(&character_id)
+            .map(|character| character.name.clone())
+            .unwrap_or_default();
+        return (character_id, name, legacy_atoi_prefix(text));
+    }
+
+    let mut split = text.splitn(2, char::is_whitespace);
+    let name = split.next().unwrap_or_default();
+    text = split.next().unwrap_or_default();
+    let target_id = find_online_character_by_name(world, name).unwrap_or(CharacterId(0));
+    (target_id, name.to_string(), legacy_atoi_prefix(text))
+}
+
 fn legacy_skill_start(value: usize) -> i32 {
     match value {
         0..=6 => 10,
@@ -2547,6 +2569,43 @@ fn apply_admin_character_command(
             )],
             inventory_changed: true,
             name_changed: target_id == character_id,
+            ..Default::default()
+        });
+    }
+
+    if lower.len() >= 3 && "exp".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let (target_id, target_name, exp) = parse_exp_command_target(world, character_id, rest);
+        let Some(target) = world.characters.get_mut(&target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {target_name} around.")],
+                ..Default::default()
+            });
+        };
+        if exp != 0 {
+            if exp.is_positive() {
+                let gain = (exp as u64).min(u64::from(u32::MAX)) as u32;
+                target.exp = target.exp.saturating_add(gain);
+            } else {
+                let loss = exp.unsigned_abs().min(u64::from(u32::MAX)) as u32;
+                target.exp = target.exp.saturating_sub(loss);
+            }
+            target.flags.insert(CharacterFlags::UPDATE);
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Gave {} {} exp.", target.name, exp)],
+                inventory_changed: true,
+                ..Default::default()
+            });
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec![format!("{} has {} exp.", target.name, target.exp)],
             ..Default::default()
         });
     }
@@ -12583,6 +12642,103 @@ mod tests {
         let item = world.items.get(&ItemId(99)).unwrap();
         assert_eq!(item.modifier_index[0], CharacterValue::Attack as i16);
         assert_eq!(item.modifier_value[0], 21);
+    }
+
+    #[test]
+    fn god_exp_command_reports_and_grants_self_or_named_target() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        god.exp = 100;
+        let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
+        target.exp = 200;
+        world.add_character(god);
+        world.add_character(target);
+        let mut runtime = ServerRuntime::default();
+
+        let report = apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp", 1)
+            .expect("god exp should be recognized");
+        assert_eq!(report.messages, vec!["Godmode has 100 exp."]);
+
+        let self_grant =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp 25", 1)
+                .expect("god exp self grant should be recognized");
+        assert_eq!(self_grant.messages, vec!["Gave Godmode 25 exp."]);
+        assert!(self_grant.inventory_changed);
+        assert_eq!(world.characters.get(&god_id).unwrap().exp, 125);
+        assert!(world
+            .characters
+            .get(&god_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::UPDATE));
+
+        let target_grant =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Target 50", 1)
+                .expect("god exp target grant should be recognized");
+        assert_eq!(target_grant.messages, vec!["Gave Target 50 exp."]);
+        assert_eq!(world.characters.get(&target_id).unwrap().exp, 250);
+
+        let target_report =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Target", 1)
+                .expect("god exp target report should be recognized");
+        assert_eq!(target_report.messages, vec!["Target has 250 exp."]);
+    }
+
+    #[test]
+    fn exp_command_is_god_only_uses_legacy_prefix_and_not_found_feedback() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/exp 10",
+            1
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let missing = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/exp Missing 10",
+            1,
+        )
+        .expect("god exp missing target should be handled");
+        assert_eq!(
+            missing.messages,
+            vec!["Sorry, no one by the name Missing around."]
+        );
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/ex 10", 1)
+                .is_none()
+        );
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/expx 10",
+            1
+        )
+        .is_none());
     }
 
     #[test]

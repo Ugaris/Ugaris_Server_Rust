@@ -3710,9 +3710,36 @@
         "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok"
       ]
+    },
+    {
+      "iteration": 136,
+      "startedAt": "2026-06-30T07:38:01.524Z",
+      "endedAt": "2026-06-30T07:46:55.432Z",
+      "durationMs": 533714,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'exp_command_is_god_only_uses_legacy_prefix_and_not_found_feedback' found",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 253 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 255 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 778 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s"
+      ]
     }
   ],
-  "totalDurationMs": 78760533,
+  "totalDurationMs": 79294247,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -3720,11 +3747,11 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 18,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 18,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 114,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 112,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 100,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 105,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 83,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 115,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 113,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 101,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 106,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 84,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 51,
@@ -3737,7 +3764,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 2,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 23,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 24,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 9,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -4147,7 +4174,11 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 777 filtered out; finished in 0.00s": 1,
       "test tests::islena_door_context_scans_legacy_room_state ... FAILED": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 252 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 252 filtered out; finished in 0.00s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 252 filtered out; finished in 0.00s": 1,
+      "error: unexpected argument 'exp_command_is_god_only_uses_legacy_prefix_and_not_found_feedback' found": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 253 filtered out; finished in 0.00s": 1,
+      "test result: ok. 255 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "test result: ok. 778 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
