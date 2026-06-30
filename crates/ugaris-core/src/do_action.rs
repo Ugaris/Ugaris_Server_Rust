@@ -104,7 +104,7 @@ pub trait ClanAttackPolicy {
     }
 
     fn has_pk_hate(&self, _attacker: &Character, _defender: &Character) -> bool {
-        true
+        false
     }
 }
 
@@ -1973,11 +1973,12 @@ mod tests {
     }
 
     #[test]
-    fn can_attack_in_area_requires_pk_and_level_range_for_player_vs_player() {
+    fn can_attack_in_area_requires_pk_level_range_and_hate_for_player_vs_player() {
         let map = MapGrid::new(20, 20);
         let mut attacker = character();
         let mut defender = character();
-        defender.id = CharacterId(2);
+        attacker.id = CharacterId(100);
+        defender.id = CharacterId(200);
         defender.x = 11;
         defender.y = 10;
         attacker.flags.insert(CharacterFlags::PLAYER);
@@ -1989,10 +1990,23 @@ mod tests {
         assert!(!can_attack_in_area(&attacker, &defender, &map, 2));
 
         defender.flags.insert(CharacterFlags::PK);
-        assert!(can_attack_in_area(&attacker, &defender, &map, 2));
+        assert!(!can_attack_in_area(&attacker, &defender, &map, 2));
+        assert!(can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            2,
+            &TestClanPolicy
+        ));
 
         defender.level = attacker.level + 4;
-        assert!(!can_attack_in_area(&attacker, &defender, &map, 2));
+        assert!(!can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            2,
+            &TestClanPolicy
+        ));
     }
 
     #[test]
@@ -2069,7 +2083,8 @@ mod tests {
         let map = MapGrid::new(20, 20);
         let mut attacker = character();
         let mut defender = character();
-        defender.id = CharacterId(2);
+        attacker.id = CharacterId(100);
+        defender.id = CharacterId(200);
         defender.x = 11;
         defender.y = 10;
         attacker
@@ -2081,7 +2096,13 @@ mod tests {
         attacker.group = 7;
         defender.group = 7;
 
-        assert!(can_attack_in_area(&attacker, &defender, &map, 2));
+        assert!(can_attack_in_area_with_clan_policy(
+            &attacker,
+            &defender,
+            &map,
+            2,
+            &TestClanPolicy
+        ));
     }
 
     #[test]

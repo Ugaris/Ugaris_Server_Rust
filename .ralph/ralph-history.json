@@ -53,9 +53,35 @@
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
       ]
+    },
+    {
+      "iteration": 3,
+      "startedAt": "2026-06-30T20:44:06.732Z",
+      "endedAt": "2026-06-30T20:51:54.135Z",
+      "durationMs": 467247,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/do_action.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying a more specific patch to the exact failing test.",
+        "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAILED",
+        "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,",
+        "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 848 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 848 filtered out; finished in 0.00s",
+        "- Area 37 `IDR_ARKHATA` subtype `1` now ports the C `stopwatch_driver` timer path: zero-character timer calls reschedule every 10 ticks, carried stopwatch items resolve the carrying player, `DRD_ARKHA",
+        "+- C `can_attack` player-vs-player hate-list gating is now represented in the shared attack-policy default: area-aware PvP no longer succeeds with only `CF_PK` and level range unless the caller suppli",
+        "+- C `can_attack` player-vs-player hate-list admission has an explicit Rust policy seam: after the existing area-1, PK-flag, and three-level-range guards, `can_attack_in_area_with_clan_policy` calls `"
+      ]
     }
   ],
-  "totalDurationMs": 1761770,
+  "totalDurationMs": 2229017,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -64,7 +90,7 @@
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 1,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 2,
       "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 2,
@@ -75,7 +101,15 @@
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 1,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 1,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 1
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 1,
+      "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
+      "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAIL": 1,
+      "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,": 1,
+      "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 848 filtered out; finished in 0.00s": 1,
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 848 filtered out; finished in 0.00s": 1,
+      "- Area 37 `IDR_ARKHATA` subtype `1` now ports the C `stopwatch_driver` timer path: zero-character ti": 1,
+      "+- C `can_attack` player-vs-player hate-list gating is now represented in the shared attack-policy d": 1,
+      "+- C `can_attack` player-vs-player hate-list admission has an explicit Rust policy seam: after the e": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
