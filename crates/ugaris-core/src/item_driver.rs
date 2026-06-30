@@ -1664,6 +1664,22 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    PentagramActivate {
+        item_id: ItemId,
+        character_id: CharacterId,
+        level: u8,
+        color: u8,
+    },
+    PentagramAlreadyActive {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    PentagramTimer {
+        item_id: ItemId,
+        level: u8,
+        status: u8,
+        area_status: u8,
+    },
     BoneHint {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1951,6 +1967,7 @@ pub fn execute_item_driver_with_context(
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
+                IDR_PENT => pentagram_driver(character, item, context),
                 IDR_PENTBOSSDOOR => pent_boss_door_driver(character, item, context),
                 IDR_BURNDOWN => burndown_driver(character, item, context),
                 IDR_COLORTILE => colortile_driver(character, item),
@@ -4980,6 +4997,40 @@ fn pick_door_driver(
     ItemDriverOutcome::PickDoorToggle {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+fn pentagram_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    let level = drdata(item, 0);
+    let status = drdata(item, 1);
+    let color = drdata(item, 2);
+    let area_status = drdata(item, 4);
+
+    if context.timer_call || character.id.0 == 0 {
+        return ItemDriverOutcome::PentagramTimer {
+            item_id: item.id,
+            level,
+            status,
+            area_status,
+        };
+    }
+
+    if status != 0 {
+        return ItemDriverOutcome::PentagramAlreadyActive {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::PentagramActivate {
+        item_id: item.id,
+        character_id: character.id,
+        level,
+        color,
     }
 }
 
@@ -12184,6 +12235,79 @@ mod tests {
     }
 
     #[test]
+    fn pentagram_driver_ports_activation_and_timer_boundaries() {
+        let mut actor = character(1);
+        let mut pent = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PENT);
+        pent.driver_data = vec![12, 0, 4, 99, 8];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_PENT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut pent,
+                request,
+                4,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PentagramActivate {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                level: 12,
+                color: 4,
+            }
+        );
+
+        pent.driver_data[1] = 77;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut pent,
+                request,
+                4,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::PentagramAlreadyActive {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let mut timer = character(0);
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_PENT,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer,
+                &mut pent,
+                timer_request,
+                4,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::PentagramTimer {
+                item_id: ItemId(7),
+                level: 12,
+                status: 77,
+                area_status: 8,
+            }
+        );
+    }
+
+    #[test]
     fn pent_boss_door_preserves_legacy_access_and_position_checks() {
         let mut character = character(1);
         character.x = 11;
@@ -12256,9 +12380,9 @@ mod tests {
     #[test]
     fn pent_drivers_keep_area4_libload_guard() {
         let mut character = character(1);
-        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PENTBOSSDOOR);
-        let request = ItemDriverRequest::Driver {
-            driver: IDR_PENTBOSSDOOR,
+        let mut pent = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_PENT);
+        let pent_request = ItemDriverRequest::Driver {
+            driver: IDR_PENT,
             item_id: ItemId(7),
             character_id: CharacterId(1),
             spec: 0,
@@ -12267,15 +12391,39 @@ mod tests {
         assert_eq!(
             execute_item_driver_with_context(
                 &mut character,
+                &mut pent,
+                pent_request,
+                1,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_PENT,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                required_area: 4,
+            }
+        );
+
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_PENTBOSSDOOR);
+        let door_request = ItemDriverRequest::Driver {
+            driver: IDR_PENTBOSSDOOR,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
                 &mut door,
-                request,
+                door_request,
                 1,
                 false,
                 &ItemDriverContext::default(),
             ),
             ItemDriverOutcome::LibloadAreaBlocked {
                 driver: IDR_PENTBOSSDOOR,
-                item_id: ItemId(7),
+                item_id: ItemId(8),
                 character_id: CharacterId(1),
                 required_area: 4,
             }
