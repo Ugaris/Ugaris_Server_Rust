@@ -2353,6 +2353,89 @@ fn apply_create_command(
     })
 }
 
+fn apply_create_orb_command(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("create_orb") {
+        return None;
+    }
+
+    let character = world.characters.get(&character_id)?;
+    if !character.flags.contains(CharacterFlags::GOD) {
+        return None;
+    }
+
+    let rest = rest.trim_start();
+    let (modifier, value) = if rest.is_empty() {
+        (
+            legacy_orb_value_from_seed(world.tick.0 + u64::from(character_id.0)) as i16,
+            1,
+        )
+    } else if let Some(skill) = legacy_lookup_skill(rest) {
+        (skill, 1)
+    } else {
+        let value = legacy_atoi_prefix(rest);
+        let Some(skill) = (if value > 0 {
+            let skill_text = rest
+                .trim_start_matches(|ch: char| ch.is_ascii_digit())
+                .trim_start();
+            legacy_lookup_skill(skill_text)
+        } else {
+            None
+        }) else {
+            return Some(KeyringCommandResult::default());
+        };
+        (skill, value.clamp(1, 255) as u8)
+    };
+
+    let inventory_changed =
+        grant_created_orb(world, loader, character_id, modifier, value).is_some();
+    Some(KeyringCommandResult {
+        inventory_changed,
+        ..Default::default()
+    })
+}
+
+fn grant_created_orb(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    modifier: i16,
+    value: u8,
+) -> Option<ItemId> {
+    let value_name = CHARACTER_VALUE_NAMES.get(usize::try_from(modifier).ok()?)?;
+    let Ok(mut item) = loader.instantiate_item_template("empty_orb", Some(character_id)) else {
+        return None;
+    };
+    item.name = if value == 1 {
+        format!("Orb of {value_name}")
+    } else {
+        format!("Orb of {value} {value_name}")
+    };
+    ensure_drdata_len(&mut item, 2);
+    item.driver_data[0] = u8::try_from(modifier).ok()?;
+    item.driver_data[1] = value;
+    let item_id = item.id;
+    let character = world.characters.get_mut(&character_id)?;
+    match give_item_to_character(character, &mut item, GiveItemFlags::NONE) {
+        GiveItemResult::Ok => {
+            world.add_item(item);
+            Some(item_id)
+        }
+        GiveItemResult::Money
+        | GiveItemResult::Dropped
+        | GiveItemResult::Full
+        | GiveItemResult::Failed => None,
+    }
+}
+
 fn apply_laugh_command(
     world: &mut World,
     character_id: CharacterId,
@@ -13450,6 +13533,93 @@ mod tests {
     }
 
     #[test]
+    fn create_orb_command_supports_random_skill_and_valued_skill() {
+        let mut world = World::default();
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"empty_orb: name="Empty Orb" flag=IF_TAKE ;"#)
+            .unwrap();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("God"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::GOD);
+        world.add_character(character);
+
+        let skill =
+            apply_create_orb_command(&mut world, &mut loader, character_id, "/create_orb sword")
+                .expect("god create_orb should be recognized");
+        assert!(skill.inventory_changed);
+        let skill_item_id = world.characters[&character_id].inventory[30].unwrap();
+        let skill_item = world.items.get(&skill_item_id).unwrap();
+        assert_eq!(skill_item.name, "Orb of Sword");
+        assert_eq!(skill_item.driver_data[0], CharacterValue::Sword as u8);
+        assert_eq!(skill_item.driver_data[1], 1);
+
+        let valued = apply_create_orb_command(
+            &mut world,
+            &mut loader,
+            character_id,
+            "/create_orb 5 immunity",
+        )
+        .expect("god create_orb valued skill should be recognized");
+        assert!(valued.inventory_changed);
+        let valued_item_id = world.characters[&character_id].inventory[31].unwrap();
+        let valued_item = world.items.get(&valued_item_id).unwrap();
+        assert_eq!(valued_item.name, "Orb of 5 Immunity");
+        assert_eq!(valued_item.driver_data[0], CharacterValue::Immunity as u8);
+        assert_eq!(valued_item.driver_data[1], 5);
+
+        world.tick = ugaris_core::Tick(0);
+        let random = apply_create_orb_command(&mut world, &mut loader, character_id, "/create_orb")
+            .expect("god create_orb random should be recognized");
+        assert!(random.inventory_changed);
+        let random_item_id = world.characters[&character_id].inventory[32].unwrap();
+        let random_item = world.items.get(&random_item_id).unwrap();
+        assert!(random_item.name.starts_with("Orb of "));
+        assert_eq!(random_item.driver_data[1], 1);
+    }
+
+    #[test]
+    fn create_orb_command_is_god_only_and_silent_on_bad_args() {
+        let mut world = World::default();
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(r#"empty_orb: name="Empty Orb" flag=IF_TAKE ;"#)
+            .unwrap();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+
+        assert!(apply_create_orb_command(
+            &mut world,
+            &mut loader,
+            character_id,
+            "/create_orb sword"
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let bad = apply_create_orb_command(
+            &mut world,
+            &mut loader,
+            character_id,
+            "/create_orb nonsense",
+        )
+        .expect("god create_orb bad args should be handled");
+        assert_eq!(bad, KeyringCommandResult::default());
+        assert!(world.characters[&character_id].inventory[30].is_none());
+    }
+
+    #[test]
     fn ggold_command_is_god_only_and_uses_atoi_prefix() {
         let mut world = World::default();
         let mut loader = ZoneLoader::new();
@@ -22626,6 +22796,20 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
+                            if let Some(result) = apply_create_orb_command(
+                                &mut world,
+                                &mut zone_loader,
+                                character_id,
+                                &command,
+                            ) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                if result.inventory_changed {
+                                    command_inventory_refresh.push(character_id);
+                                }
+                                continue;
+                            }
                             if let Some(result) = apply_create_command(
                                 &mut world,
                                 &mut zone_loader,
@@ -25845,6 +26029,12 @@ async fn main() -> anyhow::Result<()> {
                                                 .trim_end_matches('\0')
                                                 .to_string();
                                             feedback.push((character_id, format!("Your {item_name} expired.")));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::PalaceBombExplode { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PalaceBombTimer { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PalaceBombToggled { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PalaceCapTimer { .. } => {
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::Noop => {

@@ -26,9 +26,36 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok"
       ]
+    },
+    {
+      "iteration": 2,
+      "startedAt": "2026-06-30T20:28:57.894Z",
+      "endedAt": "2026-06-30T20:44:04.547Z",
+      "durationMs": 906352,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test suite once more.",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 855418,
+  "totalDurationMs": 1761770,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -39,8 +66,16 @@
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 1
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 2,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 2,
+      "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 1,
+      "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 1,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 1,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
