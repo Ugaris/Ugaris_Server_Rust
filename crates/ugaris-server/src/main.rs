@@ -2541,6 +2541,54 @@ fn apply_admin_character_command(
         });
     }
 
+    if lower == "resetgift" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let rest = rest.trim_start();
+        let (name, area_text) = take_legacy_alpha_name(rest);
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+        let area_id = legacy_atoi_prefix(area_text.trim_start());
+        if !(0..=63).contains(&area_id) {
+            return Some(KeyringCommandResult {
+                messages: vec!["Invalid area ID. Must be between 0 and 63.".to_string()],
+                ..Default::default()
+            });
+        }
+
+        let Some(target_player) = runtime.player_for_character_mut(target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Could not retrieve player data.".to_string()],
+                ..Default::default()
+            });
+        };
+        let was_set = target_player.xmas_tree_marked(area_id as u16);
+        target_player.unmark_xmas_tree(area_id as u16);
+        let target_name = world
+            .characters
+            .get(&target_id)
+            .map(|character| character.name.as_str())
+            .unwrap_or(name);
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Reset gift flag for {} in area {} (was {}).",
+                target_name,
+                area_id,
+                if was_set { "set" } else { "not set" }
+            )],
+            ..Default::default()
+        });
+    }
+
     if lower.len() >= 5 && "listitem".starts_with(&lower) {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -12598,6 +12646,135 @@ mod tests {
             1,
         )
         .is_none());
+    }
+
+    #[test]
+    fn god_resetgift_clears_xmas_tree_area_bit_with_legacy_feedback() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        world.add_character(login_character(
+            target_id,
+            &login_block("Target"),
+            1,
+            11,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+        let mut target_player = PlayerRuntime::connected(80, 0);
+        target_player.character_id = Some(target_id);
+        assert_eq!(
+            target_player.touch_xmas_tree(29, 2026, true, true),
+            XmasTreeResult::GiftGranted
+        );
+        runtime.players.insert(80, target_player);
+
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/resetgift Target 29abc",
+            1,
+        )
+        .expect("god resetgift should be recognized");
+
+        assert_eq!(
+            result.messages,
+            vec!["Reset gift flag for Target in area 29 (was set)."]
+        );
+        assert!(!runtime
+            .player_for_character(target_id)
+            .unwrap()
+            .xmas_tree_marked(29));
+
+        let repeat = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/resetgift Target 29",
+            1,
+        )
+        .expect("god resetgift repeat should be recognized");
+        assert_eq!(
+            repeat.messages,
+            vec!["Reset gift flag for Target in area 29 (was not set)."]
+        );
+    }
+
+    #[test]
+    fn resetgift_is_god_only_checks_target_and_area() {
+        let mut world = World::default();
+        let caller_id = CharacterId(7);
+        world.add_character(login_character(
+            caller_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/resetgift Missing 1",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&caller_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let missing = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/resetgift Missing 1",
+            1,
+        )
+        .expect("god resetgift missing target should be handled");
+        assert_eq!(
+            missing.messages,
+            vec!["Sorry, no one by the name Missing around."]
+        );
+
+        let target_id = CharacterId(8);
+        world.add_character(login_character(
+            target_id,
+            &login_block("Target"),
+            1,
+            11,
+            10,
+        ));
+        let invalid_area = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/resetgift Target 64",
+            1,
+        )
+        .expect("god resetgift invalid area should be handled");
+        assert_eq!(
+            invalid_area.messages,
+            vec!["Invalid area ID. Must be between 0 and 63."]
+        );
+
+        let no_runtime = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/resetgift Target 1",
+            1,
+        )
+        .expect("god resetgift missing player data should be handled");
+        assert_eq!(no_runtime.messages, vec!["Could not retrieve player data."]);
     }
 
     #[test]

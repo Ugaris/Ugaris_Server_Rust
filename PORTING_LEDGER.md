@@ -651,3 +651,7 @@ Recommended next chest steps:
 ### Iteration 151 Additional Progress
 
 - C god-only `/staffcode` now persists through the Rust character snapshot path instead of living only in transient server runtime state: `Character` carries a serde-defaulted `staff_code`, the command mutates both the persisted character field and compatibility runtime map, and `/tell`, channel chat, and `/whostaff` display prefer the persisted field with runtime fallback. Focused core/server tests cover legacy snapshot defaulting, command mutation, and persisted-code tell/chat formatting. Remaining staff-code/admin gaps are exact audit/server-chat side effects and cross-area/offline target lookup.
+
+### Iteration 155 Additional Progress
+
+- C god-only `/resetgift <name> <area>` now has a Rust runtime command slice: full-command recognition, god-only gating, legacy alphabetic online-target parsing, `atoi`-prefix area parsing, `0..=63` area validation, fixed-layout `DRD_MISC_PPD.treedone` bit clearing through `PlayerRuntime`, and C-shaped missing-target/player-data/invalid-area/success feedback are covered by focused server tests. Remaining resetgift/admin gaps are exact audit/log side effects and cross-area/offline target lookup.

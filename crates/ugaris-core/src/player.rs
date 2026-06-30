@@ -2242,6 +2242,14 @@ impl PlayerRuntime {
         }
     }
 
+    pub fn xmas_tree_marked(&self, area_id: u16) -> bool {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            return false;
+        }
+        let idx = usize::from(area_id / 8);
+        idx < 8 && self.misc_ppd[MISC_PPD_TREEDONE_OFFSET + idx] & (1u8 << (area_id % 8)) != 0
+    }
+
     pub fn add_keyring_key(
         &mut self,
         template_id: u32,
