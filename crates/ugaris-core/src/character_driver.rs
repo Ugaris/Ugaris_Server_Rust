@@ -411,11 +411,10 @@ pub fn process_simple_baddy_messages(
             && helpid != 0
             && message.dat1 == helpid
             && message.dat2 > 0
-            && message.dat3 > 0
         {
             outcomes.push(SimpleBaddyMessageOutcome::AddEnemy {
                 caller_id: CharacterId(message.dat2 as u32),
-                target_id: CharacterId(message.dat3 as u32),
+                target_id: CharacterId(message.dat3.max(0) as u32),
             });
         }
     }
@@ -1386,6 +1385,27 @@ mod tests {
             vec![SimpleBaddyMessageOutcome::AddEnemy {
                 caller_id: crate::ids::CharacterId(2),
                 target_id: crate::ids::CharacterId(99),
+            }]
+        );
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_npc_message_preserves_zero_target_like_c() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helpid: NTID_GLADIATOR,
+            ..SimpleBaddyDriverData::default()
+        }));
+        character.push_driver_message(NT_NPC, NTID_GLADIATOR, 2, 0);
+
+        let outcomes = process_simple_baddy_messages(&mut character, &[]);
+
+        assert_eq!(
+            outcomes,
+            vec![SimpleBaddyMessageOutcome::AddEnemy {
+                caller_id: crate::ids::CharacterId(2),
+                target_id: crate::ids::CharacterId(0),
             }]
         );
         assert!(character.driver_messages.is_empty());
