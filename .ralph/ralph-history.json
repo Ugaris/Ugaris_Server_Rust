@@ -4361,9 +4361,36 @@
         "test world::tests::world_executes_area17_pick_door_with_legacy_timer ... FAILED",
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
       ]
+    },
+    {
+      "iteration": 159,
+      "startedAt": "2026-06-30T10:40:33.295Z",
+      "endedAt": "2026-06-30T10:46:24.530Z",
+      "durationMs": 351069,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 267 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 270 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 800 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 89640401,
+  "totalDurationMs": 89991470,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4371,14 +4398,14 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 134,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 132,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 120,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 124,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 100,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 135,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 133,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 121,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 125,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 101,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 62,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 63,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 39,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
@@ -4388,7 +4415,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 2,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 26,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 27,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 9,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -4838,7 +4865,7 @@
       "test result: ok. 800 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 261 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 797 filtered out; finished in 0.00s": 1,
-      "test result: ok. 800 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 2,
+      "test result: ok. 800 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 3,
       "The first verification command hit Cargo’s single-filter limitation, not a code failure. I’ll rerun ": 1,
       "error: unexpected argument 'entity::tests::driver_message_queue_preserves_legacy_payload_order' foun": 1,
       "error: could not compile `ugaris-core` (lib) due to 2 previous errors": 1,
@@ -4847,7 +4874,9 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 265 filtered out; finished in 0.00s": 1,
       "test result: ok. 267 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The workspace failure is an existing world-level Area 17 test using the old inventory-lockpick conte": 1,
-      "test world::tests::world_executes_area17_pick_door_with_legacy_timer ... FAILED": 1
+      "test world::tests::world_executes_area17_pick_door_with_legacy_timer ... FAILED": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 267 filtered out; finished in 0.00s": 1,
+      "test result: ok. 270 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -6624,6 +6624,17 @@ enum RandomShrineBravenessApplyResult {
     Coward,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RandomShrineVitalityApplyResult {
+    Used {
+        value: CharacterValue,
+        amount: i16,
+        cost: u32,
+    },
+    NoExp,
+    Capped,
+}
+
 fn legacy_level_value(level: u32) -> u32 {
     let level = u64::from(level);
     let next = level.saturating_add(1);
@@ -6763,6 +6774,64 @@ fn apply_random_shrine_braveness(
         .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
     player.mark_random_shrine_used(shrine_type);
     RandomShrineBravenessApplyResult::Used { exp, gold }
+}
+
+fn apply_random_shrine_vitality(
+    player: &mut PlayerRuntime,
+    character: &mut Character,
+    shrine_type: u8,
+) -> RandomShrineVitalityApplyResult {
+    if character.flags.contains(CharacterFlags::NOEXP) {
+        return RandomShrineVitalityApplyResult::NoExp;
+    }
+
+    if character.values.len() < 2 {
+        character
+            .values
+            .resize_with(2, || vec![0; CHARACTER_VALUE_NAMES.len()]);
+    }
+    for values in &mut character.values[..2] {
+        if values.len() < CHARACTER_VALUE_NAMES.len() {
+            values.resize(CHARACTER_VALUE_NAMES.len(), 0);
+        }
+    }
+
+    let value = if character.flags.contains(CharacterFlags::WARRIOR) {
+        CharacterValue::Hp
+    } else {
+        CharacterValue::Mana
+    };
+    let seyan = character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE);
+    let cap = if seyan { 100 } else { 115 };
+    let value_index = value as usize;
+    let current = character.values[1][value_index];
+    let amount = (cap - current).clamp(0, 5);
+    if amount < 1 {
+        return RandomShrineVitalityApplyResult::Capped;
+    }
+
+    let mut cost = 0_u32;
+    for n in 0..amount {
+        cost = cost.saturating_add(legacy_raise_cost(
+            value_index,
+            i32::from(current.saturating_add(n)),
+            seyan,
+        ));
+    }
+
+    character.values[1][value_index] = current.saturating_add(amount);
+    character.values[0][value_index] = character.values[0][value_index].saturating_add(amount);
+    character.exp_used = character.exp_used.saturating_add(cost);
+    character.exp = character.exp.saturating_add(cost);
+    character.flags.insert(CharacterFlags::UPDATE);
+    player.mark_random_shrine_used(shrine_type);
+
+    RandomShrineVitalityApplyResult::Used {
+        value,
+        amount,
+        cost,
+    }
 }
 
 fn pick_berry_template(kind: u8) -> Option<&'static str> {
@@ -11383,6 +11452,81 @@ mod tests {
             .flags
             .contains(CharacterFlags::ITEMS | CharacterFlags::UPDATE));
         assert!(player.has_used_random_shrine(52));
+    }
+
+    #[test]
+    fn random_shrine_vitality_raises_warrior_hp_and_marks_ppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        character.flags.insert(CharacterFlags::WARRIOR);
+        character.values[0][CharacterValue::Hp as usize] = 95;
+        character.values[1][CharacterValue::Hp as usize] = 95;
+
+        let result = apply_random_shrine_vitality(&mut player, &mut character, 50);
+
+        let mut expected_cost = 0;
+        for current in 95..100 {
+            expected_cost += legacy_raise_cost(CharacterValue::Hp as usize, current, false);
+        }
+        assert_eq!(
+            result,
+            RandomShrineVitalityApplyResult::Used {
+                value: CharacterValue::Hp,
+                amount: 5,
+                cost: expected_cost,
+            }
+        );
+        assert_eq!(character.values[1][CharacterValue::Hp as usize], 100);
+        assert_eq!(character.values[0][CharacterValue::Hp as usize], 100);
+        assert_eq!(character.exp, expected_cost);
+        assert_eq!(character.exp_used, expected_cost);
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
+        assert!(player.has_used_random_shrine(50));
+    }
+
+    #[test]
+    fn random_shrine_vitality_raises_non_warrior_mana_to_legacy_cap() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Lisa"), 14, 10, 10);
+        character.values[0][CharacterValue::Mana as usize] = 113;
+        character.values[1][CharacterValue::Mana as usize] = 113;
+
+        let result = apply_random_shrine_vitality(&mut player, &mut character, 50);
+
+        let expected_cost = legacy_raise_cost(CharacterValue::Mana as usize, 113, false)
+            + legacy_raise_cost(CharacterValue::Mana as usize, 114, false);
+        assert_eq!(
+            result,
+            RandomShrineVitalityApplyResult::Used {
+                value: CharacterValue::Mana,
+                amount: 2,
+                cost: expected_cost,
+            }
+        );
+        assert_eq!(character.values[1][CharacterValue::Mana as usize], 115);
+        assert!(player.has_used_random_shrine(50));
+    }
+
+    #[test]
+    fn random_shrine_vitality_blocks_noexp_and_capped_without_marking() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut noexp = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        noexp
+            .flags
+            .insert(CharacterFlags::WARRIOR | CharacterFlags::NOEXP);
+
+        let result = apply_random_shrine_vitality(&mut player, &mut noexp, 50);
+
+        assert_eq!(result, RandomShrineVitalityApplyResult::NoExp);
+        assert!(!player.has_used_random_shrine(50));
+
+        let mut capped = login_character(CharacterId(8), &login_block("Lisa"), 14, 10, 10);
+        capped.values[1][CharacterValue::Mana as usize] = 115;
+
+        let result = apply_random_shrine_vitality(&mut player, &mut capped, 50);
+
+        assert_eq!(result, RandomShrineVitalityApplyResult::Capped);
+        assert!(!player.has_used_random_shrine(50));
     }
 
     #[test]
@@ -22247,6 +22391,31 @@ async fn main() -> anyhow::Result<()> {
                                                     feedback.push((character_id, "You hear a manical laugh.".to_string()));
                                                     world.apply_legacy_hurt(character_id, None, i32::MAX / 4, 1, 100, 100);
                                                     executed += 1;
+                                                }
+                                                ugaris_core::item_driver::RandomShrineKind::Vitality => {
+                                                    let result = match (
+                                                        runtime.player_for_character_mut(character_id),
+                                                        world.characters.get_mut(&character_id),
+                                                    ) {
+                                                        (Some(player), Some(character)) => apply_random_shrine_vitality(player, character, shrine_type),
+                                                        _ => {
+                                                            failed += 1;
+                                                            continue;
+                                                        }
+                                                    };
+                                                    match result {
+                                                        RandomShrineVitalityApplyResult::Used { .. } => {
+                                                            executed += 1;
+                                                        }
+                                                        RandomShrineVitalityApplyResult::NoExp => {
+                                                            feedback.push((character_id, "A lively voice says: 'Thou canst improve thine vitality any more as long as thou has /noexp turned on.'".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                        RandomShrineVitalityApplyResult::Capped => {
+                                                            feedback.push((character_id, "A lively voice says: 'Thou canst improve thine vitality any more.'".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                    }
                                                 }
                                                 ugaris_core::item_driver::RandomShrineKind::Braveness => {
                                                     let result = match (
