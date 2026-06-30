@@ -34,9 +34,9 @@ use ugaris_core::{
     item_driver::{
         legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
         IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_ISLENADOOR,
-        IDR_KEY_RING, IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH,
-        IDR_WARMFIRE, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK, IID_AREA2_ZOMBIESKULL1,
-        IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
+        IDR_KEY_RING, IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_RATCHEST,
+        IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
+        IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
         can_use_inventory_slot, consume_item, give_item_to_character, replace_item_in_character,
@@ -969,6 +969,8 @@ const IID_PLACEHOLDER_KEY: u32 = (59 << 24) | 0x000004;
 const IID_AREA1_SKELKEY1: u32 = (1 << 24) | 0x000002;
 const INVENTORY_KEY_START_SLOT: usize = 30;
 const RANDCHEST_COOLDOWN_SECONDS: u64 = 60 * 60 * 24;
+const RATCHEST_COOLDOWN_SECONDS: u64 = 60 * 60 * 23;
+const RATCHEST_TREASURE_RESPAWN_SECONDS: u64 = 60 * 60 * 24;
 const ORBSPAWN_RESPAWN_SECONDS: u64 = 60 * 60 * 24 * 30;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1102,6 +1104,15 @@ fn character_save_request(
 enum RandomChestApplyResult {
     Money { amount: u32 },
     Item { item_name: String },
+    Empty,
+    CursorOccupied,
+    MissingPlayer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RatChestApplyResult {
+    Money { amount: u32 },
+    Treasure { item_name: String },
     Empty,
     CursorOccupied,
     MissingPlayer,
@@ -6913,6 +6924,197 @@ fn apply_random_chest(
     }
     player.record_chest_opened(0);
     RandomChestApplyResult::Money { amount }
+}
+
+fn apply_rat_chest(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    player: Option<&mut PlayerRuntime>,
+    item_id: ItemId,
+    character_id: CharacterId,
+    area_id: u16,
+    realtime_seconds: u64,
+    random_seed: u64,
+) -> RatChestApplyResult {
+    if world
+        .characters
+        .get(&character_id)
+        .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return RatChestApplyResult::CursorOccupied;
+    }
+
+    let Some(player) = player else {
+        return RatChestApplyResult::MissingPlayer;
+    };
+
+    ensure_rat_chest_treasure(world, player, area_id, realtime_seconds, random_seed);
+
+    let Some(chest) = world.items.get(&item_id) else {
+        return RatChestApplyResult::MissingPlayer;
+    };
+    if chest.x == player.rat_chest_treasure_x && chest.y == player.rat_chest_treasure_y {
+        player.rat_chest_treasure_x = 0;
+        player.rat_chest_treasure_y = 0;
+        player.rat_chest_last_treasure_seconds = realtime_seconds;
+        if let Some(item_name) = grant_rat_chest_treasure(world, loader, character_id, random_seed)
+        {
+            player.record_chest_opened(0);
+            return RatChestApplyResult::Treasure { item_name };
+        }
+        return RatChestApplyResult::Empty;
+    }
+
+    let location_id = random_chest_location_id(chest.x, chest.y, area_id);
+    if player
+        .rat_chest_last_used_seconds(location_id)
+        .is_some_and(|last_used| {
+            last_used.saturating_add(RATCHEST_COOLDOWN_SECONDS) > realtime_seconds
+        })
+    {
+        return RatChestApplyResult::Empty;
+    }
+    player.mark_rat_chest_used(location_id, realtime_seconds);
+
+    if legacy_random(random_seed, 4) != 0 {
+        return RatChestApplyResult::Empty;
+    }
+
+    let money_level = chest.driver_data.first().copied().unwrap_or_default();
+    let amount = random_chest_money_amount(money_level, random_seed);
+    if amount == 0 || !grant_money_to_cursor(world, loader, character_id, amount) {
+        return RatChestApplyResult::Empty;
+    }
+    player.record_chest_opened(0);
+    RatChestApplyResult::Money { amount }
+}
+
+fn ensure_rat_chest_treasure(
+    world: &World,
+    player: &mut PlayerRuntime,
+    area_id: u16,
+    realtime_seconds: u64,
+    random_seed: u64,
+) {
+    if player.rat_chest_treasure_x != 0
+        || realtime_seconds.saturating_sub(player.rat_chest_last_treasure_seconds)
+            < RATCHEST_TREASURE_RESPAWN_SECONDS
+    {
+        return;
+    }
+    let Some(character_id) = player.character_id else {
+        return;
+    };
+    let Some(character) = world.characters.get(&character_id) else {
+        return;
+    };
+    let chest_number = match character.level {
+        37.. => 40,
+        29.. => 30,
+        21.. => 20,
+        13.. => 10,
+        _ => return,
+    };
+    let mut candidates = world
+        .items
+        .values()
+        .filter(|item| {
+            item.driver == IDR_RATCHEST
+                && item.driver_data.first().copied() == Some(chest_number)
+                && random_chest_location_id(item.x, item.y, area_id) >> 16 == u32::from(area_id)
+        })
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return;
+    }
+    candidates.sort_by_key(|item| item.id.0);
+    let index = legacy_random(random_seed.wrapping_add(3), candidates.len() as u32) as usize;
+    let selected = candidates[index];
+    player.rat_chest_treasure_x = selected.x;
+    player.rat_chest_treasure_y = selected.y;
+}
+
+fn grant_rat_chest_treasure(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    random_seed: u64,
+) -> Option<String> {
+    let character = world.characters.get(&character_id)?.clone();
+    let (template, modifier) = match legacy_random(random_seed.wrapping_add(4), 3) {
+        0 => (
+            "sewer_ring",
+            if character.flags.contains(CharacterFlags::MAGE)
+                && !character.flags.contains(CharacterFlags::WARRIOR)
+            {
+                CharacterValue::MagicShield
+            } else {
+                CharacterValue::Parry
+            },
+        ),
+        1 => (
+            "sewer_ring",
+            if character.flags.contains(CharacterFlags::MAGE)
+                && !character.flags.contains(CharacterFlags::WARRIOR)
+            {
+                let fireball = character
+                    .values
+                    .get(1)
+                    .and_then(|values| values.get(CharacterValue::Fireball as usize))
+                    .copied()
+                    .unwrap_or_default();
+                let flash = character
+                    .values
+                    .get(1)
+                    .and_then(|values| values.get(CharacterValue::Flash as usize))
+                    .copied()
+                    .unwrap_or_default();
+                if fireball > flash {
+                    CharacterValue::Fireball
+                } else {
+                    CharacterValue::Flash
+                }
+            } else {
+                CharacterValue::Attack
+            },
+        ),
+        _ => ("sewer_amulet", CharacterValue::Immunity),
+    };
+    let mut item = loader
+        .instantiate_item_template(template, Some(character_id))
+        .ok()?;
+    item.modifier_index[0] = modifier as i16;
+    item.modifier_value[0] = rat_chest_skill_value(&character);
+    item.value = u32::from(item.modifier_value[0] as u16) * 300;
+    let item_id = item.id;
+    let item_name = item.name.clone();
+    let character = world.characters.get_mut(&character_id)?;
+    if character.cursor_item.is_some() {
+        return None;
+    }
+    character.cursor_item = Some(item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(item);
+    Some(item_name.to_lowercase())
+}
+
+fn rat_chest_skill_value(character: &Character) -> i16 {
+    let value = match character.level {
+        0..=14 => 4,
+        15..=16 => 5,
+        17..=19 => 6,
+        20..=22 => 7,
+        23..=25 => 8,
+        26..=29 => 9,
+        30..=32 => 10,
+        33..=35 => 11,
+        _ => 12,
+    };
+    if character.flags.contains(CharacterFlags::ARCH) {
+        value
+    } else {
+        value.min(9)
+    }
 }
 
 const FOREST_SPADE_DIG_COOLDOWN_SECONDS: u64 = 365 * 24 * 60 * 60;
@@ -23835,6 +24037,42 @@ async fn main() -> anyhow::Result<()> {
                                                     blocked += 1;
                                                 }
                                                 RandomChestApplyResult::MissingPlayer => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::RatChest { item_id, character_id } => {
+                                            let random_seed = world.tick.0
+                                                ^ (u64::from(item_id.0) << 16)
+                                                ^ u64::from(character_id.0)
+                                                ^ 0x5241_5443_4845_5354;
+                                            match apply_rat_chest(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                runtime.player_for_character_mut(character_id),
+                                                item_id,
+                                                character_id,
+                                                config.area_id,
+                                                realtime_seconds,
+                                                random_seed,
+                                            ) {
+                                                RatChestApplyResult::Money { amount } => {
+                                                    feedback.push((character_id, format!("You found some money ({:.2}G)!", f64::from(amount) / 100.0)));
+                                                    executed += 1;
+                                                }
+                                                RatChestApplyResult::Treasure { item_name } => {
+                                                    feedback.push((character_id, format!("You found a {item_name}.")));
+                                                    executed += 1;
+                                                }
+                                                RatChestApplyResult::Empty => {
+                                                    feedback.push((character_id, RANDCHEST_EMPTY_MESSAGE.to_string()));
+                                                    blocked += 1;
+                                                }
+                                                RatChestApplyResult::CursorOccupied => {
+                                                    feedback.push((character_id, RANDCHEST_CURSOR_OCCUPIED_MESSAGE.to_string()));
+                                                    blocked += 1;
+                                                }
+                                                RatChestApplyResult::MissingPlayer => {
                                                     failed += 1;
                                                 }
                                             }

@@ -1019,6 +1019,10 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    RatChest {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     InfiniteChest {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2379,6 +2383,7 @@ pub fn execute_item_driver_with_context(
                 IDR_SKELRAISE => skelraise_driver(character, item, context),
                 IDR_RANDOMSHRINE => randomshrine_driver(character, item, context),
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
+                IDR_RATCHEST => ratchest_driver(character, item),
                 IDR_CHESTSPAWN => chestspawn_driver(character, item),
                 IDR_PARKSHRINE => parkshrine_driver(character, item),
                 IDR_BOOK => book_driver(character, item),
@@ -6183,6 +6188,23 @@ fn randchest_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     }
 }
 
+fn ratchest_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::BlockedByRequirements {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::RatChest {
+        item_id: item.id,
+        character_id: character.id,
+    }
+}
+
 fn forest_spade_driver(character: &Character, item: &Item, area_id: u16) -> ItemDriverOutcome {
     if item.carried_by != Some(character.id) {
         return ItemDriverOutcome::Noop;
@@ -9395,6 +9417,7 @@ mod tests {
         assert_eq!(IDR_LFREDUCT, 97);
         assert_eq!(IDR_LQ_KEY, 100);
         assert_eq!(IDR_STR_DEPOT, 108);
+        assert_eq!(IDR_RATCHEST, 111);
         assert_eq!(IDR_WARPKEYDOOR, 116);
         assert_eq!(IDR_STAFFER, 121);
         assert_eq!(IDR_MINEGATEWAY, 127);
@@ -9404,6 +9427,47 @@ mod tests {
         assert_eq!(IDR_LAB5_ITEM, 190);
         assert_eq!(IDR_LABTORCH, 199);
         assert_eq!(IDR_SKELETON_KEY, 201);
+    }
+
+    #[test]
+    fn rat_chest_dispatch_returns_typed_runtime_outcome() {
+        let mut actor = character(1);
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_RATCHEST);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_RATCHEST,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut chest, request, 1, false),
+            ItemDriverOutcome::RatChest {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn rat_chest_requires_empty_cursor() {
+        let mut actor = character(1);
+        actor.cursor_item = Some(ItemId(99));
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_RATCHEST);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_RATCHEST,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut chest, request, 1, false),
+            ItemDriverOutcome::BlockedByRequirements {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
     }
 
     #[test]

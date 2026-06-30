@@ -26,6 +26,8 @@ pub const LEGACY_TREASURE_CHEST_PPD_SIZE: usize = TREASURE_CHEST_PPD_ENTRIES * 4
 pub const LEGACY_TRANSPORT_PPD_SIZE: usize = 8;
 pub const RANDCHEST_MAX_ENTRIES: usize = 100;
 pub const LEGACY_RANDCHEST_PPD_SIZE: usize = RANDCHEST_MAX_ENTRIES * 4 * 2;
+pub const RATCHEST_MAX_ENTRIES: usize = 100;
+pub const LEGACY_RATCHEST_PPD_SIZE: usize = RATCHEST_MAX_ENTRIES * 4 * 2 + 3 * 4;
 pub const ORBSPAWN_MAX_ENTRIES: usize = 100;
 pub const LEGACY_ORBSPAWN_PPD_SIZE: usize = ORBSPAWN_MAX_ENTRIES * 4 * 2;
 pub const FLOWER_MAX_ENTRIES: usize = 100;
@@ -76,6 +78,7 @@ pub const TRANSPORT_MAJOR_CITIES_MASK: u64 = 0x03E0_0205;
 pub const TRANSPORT_ALL_TELEPORTS_MASK: u64 = 0x03F3_F7FF;
 pub const TRANSPORT_EARTH_UNDERGROUND_MASK: u64 = 0x01F8;
 pub const DRD_RANDCHEST_PPD: u32 = make_drd(DEV_ID_DB, 63 | PERSISTENT_PLAYER_DATA);
+pub const DRD_RATCHEST_PPD: u32 = make_drd(DEV_ID_DB, 84 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEMONSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 68 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RANDOMSHRINE_PPD: u32 = make_drd(DEV_ID_DB, 86 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ORBSPAWN_PPD: u32 = make_drd(DEV_ID_DB, 105 | PERSISTENT_PLAYER_DATA);
@@ -117,6 +120,12 @@ const KEYRING_PPD_EXPIRE_OFFSET: usize =
 const KEYRING_PPD_AUTO_ADD_OFFSET: usize = KEYRING_PPD_EXPIRE_OFFSET + KEYRING_MAX_KEYS;
 const RANDCHEST_PPD_IDS_OFFSET: usize = 0;
 const RANDCHEST_PPD_LAST_USED_OFFSET: usize = RANDCHEST_PPD_IDS_OFFSET + RANDCHEST_MAX_ENTRIES * 4;
+const RATCHEST_PPD_IDS_OFFSET: usize = 0;
+const RATCHEST_PPD_LAST_USED_OFFSET: usize = RATCHEST_PPD_IDS_OFFSET + RATCHEST_MAX_ENTRIES * 4;
+const RATCHEST_PPD_TREASURE_X_OFFSET: usize =
+    RATCHEST_PPD_LAST_USED_OFFSET + RATCHEST_MAX_ENTRIES * 4;
+const RATCHEST_PPD_TREASURE_Y_OFFSET: usize = RATCHEST_PPD_TREASURE_X_OFFSET + 4;
+const RATCHEST_PPD_LAST_TREASURE_OFFSET: usize = RATCHEST_PPD_TREASURE_Y_OFFSET + 4;
 const ORBSPAWN_PPD_IDS_OFFSET: usize = 0;
 const ORBSPAWN_PPD_LAST_USED_OFFSET: usize = ORBSPAWN_PPD_IDS_OFFSET + ORBSPAWN_MAX_ENTRIES * 4;
 const FLOWER_PPD_IDS_OFFSET: usize = 0;
@@ -217,6 +226,12 @@ pub struct KeyringEntry {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RandomChestAccess {
+    pub location_id: u32,
+    pub last_used_seconds: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RatChestAccess {
     pub location_id: u32,
     pub last_used_seconds: u64,
 }
@@ -331,6 +346,14 @@ pub struct PlayerRuntime {
     pub chest_last_access_seconds: HashMap<u8, u64>,
     pub keyring: Vec<KeyringEntry>,
     pub random_chests: Vec<RandomChestAccess>,
+    #[serde(default)]
+    pub rat_chests: Vec<RatChestAccess>,
+    #[serde(default)]
+    pub rat_chest_treasure_x: u16,
+    #[serde(default)]
+    pub rat_chest_treasure_y: u16,
+    #[serde(default)]
+    pub rat_chest_last_treasure_seconds: u64,
     #[serde(default)]
     pub orb_spawns: Vec<OrbSpawnAccess>,
     #[serde(default)]
@@ -449,6 +472,10 @@ impl PlayerRuntime {
             chest_last_access_seconds: HashMap::new(),
             keyring: Vec::new(),
             random_chests: Vec::new(),
+            rat_chests: Vec::new(),
+            rat_chest_treasure_x: 0,
+            rat_chest_treasure_y: 0,
+            rat_chest_last_treasure_seconds: 0,
             orb_spawns: Vec::new(),
             flowers: Vec::new(),
             demonshrines: Vec::new(),
@@ -1257,6 +1284,66 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_ratchest_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_RATCHEST_PPD_SIZE];
+        for (index, entry) in self
+            .rat_chests
+            .iter()
+            .take(RATCHEST_MAX_ENTRIES)
+            .enumerate()
+        {
+            write_i32(
+                &mut bytes,
+                RATCHEST_PPD_IDS_OFFSET + index * 4,
+                entry.location_id.min(i32::MAX as u32) as i32,
+            );
+            write_i32(
+                &mut bytes,
+                RATCHEST_PPD_LAST_USED_OFFSET + index * 4,
+                entry.last_used_seconds.min(i32::MAX as u64) as i32,
+            );
+        }
+        write_i32(
+            &mut bytes,
+            RATCHEST_PPD_TREASURE_X_OFFSET,
+            i32::from(self.rat_chest_treasure_x),
+        );
+        write_i32(
+            &mut bytes,
+            RATCHEST_PPD_TREASURE_Y_OFFSET,
+            i32::from(self.rat_chest_treasure_y),
+        );
+        write_i32(
+            &mut bytes,
+            RATCHEST_PPD_LAST_TREASURE_OFFSET,
+            self.rat_chest_last_treasure_seconds.min(i32::MAX as u64) as i32,
+        );
+        bytes
+    }
+
+    pub fn decode_legacy_ratchest_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_RATCHEST_PPD_SIZE {
+            return false;
+        }
+
+        self.rat_chests.clear();
+        for index in 0..RATCHEST_MAX_ENTRIES {
+            let location_id = read_i32(bytes, RATCHEST_PPD_IDS_OFFSET + index * 4);
+            let last_used_seconds = read_i32(bytes, RATCHEST_PPD_LAST_USED_OFFSET + index * 4);
+            if location_id > 0 && last_used_seconds > 0 {
+                self.rat_chests.push(RatChestAccess {
+                    location_id: location_id as u32,
+                    last_used_seconds: last_used_seconds as u64,
+                });
+            }
+        }
+        self.rat_chest_treasure_x = read_i32(bytes, RATCHEST_PPD_TREASURE_X_OFFSET).max(0) as u16;
+        self.rat_chest_treasure_y = read_i32(bytes, RATCHEST_PPD_TREASURE_Y_OFFSET).max(0) as u16;
+        self.rat_chest_last_treasure_seconds =
+            read_i32(bytes, RATCHEST_PPD_LAST_TREASURE_OFFSET).max(0) as u64;
+        true
+    }
+
     pub fn encode_legacy_orbspawn_ppd(&self) -> Vec<u8> {
         let mut bytes = vec![0; LEGACY_ORBSPAWN_PPD_SIZE];
         for (index, entry) in self
@@ -1767,6 +1854,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_RATCHEST_PPD => {
+                    if !self.decode_legacy_ratchest_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_DEMONSHRINE_PPD => {
                     if !self.decode_legacy_demonshrine_ppd(block.data) {
                         return false;
@@ -1866,6 +1958,7 @@ impl PlayerRuntime {
         let mut had_lab = false;
         let mut had_pk = false;
         let mut had_randchest = false;
+        let mut had_ratchest = false;
         let mut had_demonshrine = false;
         let mut had_randomshrine = false;
         let mut had_orbspawn = false;
@@ -1926,6 +2019,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_RANDCHEST_PPD,
                     &self.encode_legacy_randchest_ppd(),
+                );
+            } else if block.id == DRD_RATCHEST_PPD {
+                had_ratchest = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_RATCHEST_PPD,
+                    &self.encode_legacy_ratchest_ppd(),
                 );
             } else if block.id == DRD_DEMONSHRINE_PPD {
                 had_demonshrine = true;
@@ -2081,6 +2181,19 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_RANDCHEST_PPD,
                     &self.encode_legacy_randchest_ppd(),
+                );
+            }
+        }
+        if !had_ratchest && (existing_was_valid || existing.is_empty()) {
+            if !self.rat_chests.is_empty()
+                || self.rat_chest_treasure_x != 0
+                || self.rat_chest_treasure_y != 0
+                || self.rat_chest_last_treasure_seconds != 0
+            {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_RATCHEST_PPD,
+                    &self.encode_legacy_ratchest_ppd(),
                 );
             }
         }
@@ -2493,6 +2606,41 @@ impl PlayerRuntime {
             .min_by_key(|entry| entry.last_used_seconds)
         {
             *oldest = RandomChestAccess {
+                location_id,
+                last_used_seconds: realtime_seconds,
+            };
+        }
+    }
+
+    pub fn rat_chest_last_used_seconds(&self, location_id: u32) -> Option<u64> {
+        self.rat_chests
+            .iter()
+            .find(|entry| entry.location_id == location_id)
+            .map(|entry| entry.last_used_seconds)
+    }
+
+    pub fn mark_rat_chest_used(&mut self, location_id: u32, realtime_seconds: u64) {
+        if let Some(entry) = self
+            .rat_chests
+            .iter_mut()
+            .find(|entry| entry.location_id == location_id)
+        {
+            entry.last_used_seconds = realtime_seconds;
+            return;
+        }
+        if self.rat_chests.len() < RATCHEST_MAX_ENTRIES {
+            self.rat_chests.push(RatChestAccess {
+                location_id,
+                last_used_seconds: realtime_seconds,
+            });
+            return;
+        }
+        if let Some(oldest) = self
+            .rat_chests
+            .iter_mut()
+            .min_by_key(|entry| entry.last_used_seconds)
+        {
+            *oldest = RatChestAccess {
                 location_id,
                 last_used_seconds: realtime_seconds,
             };
@@ -3460,6 +3608,82 @@ mod tests {
             Some(777)
         );
         assert_eq!(decoded.random_chest_last_used_seconds(0x0001_0203), None);
+    }
+
+    #[test]
+    fn ratchest_ppd_codec_matches_legacy_c_layout() {
+        assert_eq!(LEGACY_RATCHEST_PPD_SIZE, 812);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_rat_chest_used(0x0007_0506, 1234);
+        player.mark_rat_chest_used(0x0007_0708, i32::MAX as u64 + 99);
+        player.rat_chest_treasure_x = 321;
+        player.rat_chest_treasure_y = 654;
+        player.rat_chest_last_treasure_seconds = 9876;
+
+        let bytes = player.encode_legacy_ratchest_ppd();
+        assert_eq!(bytes.len(), LEGACY_RATCHEST_PPD_SIZE);
+        assert_eq!(read_i32(&bytes, 0), 0x0007_0506);
+        assert_eq!(read_i32(&bytes, 4), 0x0007_0708);
+        assert_eq!(read_i32(&bytes, RATCHEST_PPD_LAST_USED_OFFSET), 1234);
+        assert_eq!(
+            read_i32(&bytes, RATCHEST_PPD_LAST_USED_OFFSET + 4),
+            i32::MAX
+        );
+        assert_eq!(read_i32(&bytes, RATCHEST_PPD_TREASURE_X_OFFSET), 321);
+        assert_eq!(read_i32(&bytes, RATCHEST_PPD_TREASURE_Y_OFFSET), 654);
+        assert_eq!(read_i32(&bytes, RATCHEST_PPD_LAST_TREASURE_OFFSET), 9876);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ratchest_ppd(&bytes));
+        assert_eq!(decoded.rat_chest_last_used_seconds(0x0007_0506), Some(1234));
+        assert_eq!(
+            decoded.rat_chest_last_used_seconds(0x0007_0708),
+            Some(i32::MAX as u64)
+        );
+        assert_eq!(decoded.rat_chest_last_used_seconds(0x0007_090a), None);
+        assert_eq!(decoded.rat_chest_treasure_x, 321);
+        assert_eq!(decoded.rat_chest_treasure_y, 654);
+        assert_eq!(decoded.rat_chest_last_treasure_seconds, 9876);
+    }
+
+    #[test]
+    fn ratchest_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_ratchest = vec![0; LEGACY_RATCHEST_PPD_SIZE];
+        write_i32(&mut existing_ratchest, RATCHEST_PPD_IDS_OFFSET, 0x0007_0203);
+        write_i32(&mut existing_ratchest, RATCHEST_PPD_LAST_USED_OFFSET, 44);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_RATCHEST_PPD, &existing_ratchest);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.mark_rat_chest_used(0x0007_0506, 777);
+        player.rat_chest_treasure_x = 12;
+        player.rat_chest_treasure_y = 34;
+        player.rat_chest_last_treasure_seconds = 55;
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_RATCHEST_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_RATCHEST_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20), 0x0007_0506);
+        assert_eq!(read_i32(&encoded, 20 + RATCHEST_PPD_LAST_USED_OFFSET), 777);
+        assert_eq!(read_i32(&encoded, 20 + RATCHEST_PPD_TREASURE_X_OFFSET), 12);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.rat_chest_last_used_seconds(0x0007_0506), Some(777));
+        assert_eq!(decoded.rat_chest_last_used_seconds(0x0007_0203), None);
+        assert_eq!(decoded.rat_chest_treasure_y, 34);
+        assert_eq!(decoded.rat_chest_last_treasure_seconds, 55);
+
+        let mut appended = PlayerRuntime::connected(3, 0);
+        appended.mark_rat_chest_used(0x0007_0203, 66);
+        let appended_blob = appended.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended_blob, 0), DRD_RATCHEST_PPD);
+        assert_eq!(read_i32(&appended_blob, 8), 0x0007_0203);
     }
 
     #[test]
