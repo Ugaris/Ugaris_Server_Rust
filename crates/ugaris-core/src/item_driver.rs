@@ -1672,6 +1672,22 @@ pub enum ItemDriverOutcome {
         duration_ticks: u64,
         installed: bool,
     },
+    Lab2WaterWell {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    Lab2WaterAltar {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    Lab2WaterDrink {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    Lab2WaterCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     ParkShrine {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2139,6 +2155,7 @@ pub fn execute_item_driver_with_context(
                 IDR_PICKBERRY => pick_berry_driver(character, item, area_id),
                 IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
                 IDR_LAB3_PLANT => lab3_plant_driver(character, item, context),
+                IDR_LAB2_WATER => lab2_water_driver(character, item),
                 IDR_LABTORCH => labtorch_driver(character, item),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_LABENTRANCE => labentrance_driver(character, item, context),
@@ -2180,7 +2197,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_RANDOMSHRINE | IDR_TRAPDOOR | IDR_JUNKPILE | IDR_GASTRAP => Some(14),
         IDR_FORESTCHEST => Some(16),
         IDR_LQ_TICKER => Some(20),
-        IDR_LABTORCH => Some(22),
+        IDR_LAB2_WATER | IDR_LABTORCH => Some(22),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
@@ -2229,6 +2246,49 @@ fn labtorch_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome 
         item_id: item.id,
         character_id: character.id,
         schedule_after_ticks: None,
+    }
+}
+
+fn lab2_water_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
+    item.driver_data.resize(1, 0);
+
+    if character.id.0 == 0 {
+        if item.driver_data[0] == 0 {
+            item.driver_data[0] = match item.sprite {
+                11008..=11010 => 2,
+                20793..=20796 => 1,
+                11011 => 3,
+                11012 => 4,
+                11013 => 5,
+                _ => 0,
+            };
+        }
+        return ItemDriverOutcome::Noop;
+    }
+
+    match item.driver_data[0] {
+        1 => {
+            if character.cursor_item.is_some() {
+                ItemDriverOutcome::Lab2WaterCursorOccupied {
+                    item_id: item.id,
+                    character_id: character.id,
+                }
+            } else {
+                ItemDriverOutcome::Lab2WaterWell {
+                    item_id: item.id,
+                    character_id: character.id,
+                }
+            }
+        }
+        2 => ItemDriverOutcome::Lab2WaterAltar {
+            item_id: item.id,
+            character_id: character.id,
+        },
+        4 | 5 => ItemDriverOutcome::Lab2WaterDrink {
+            item_id: item.id,
+            character_id: character.id,
+        },
+        _ => ItemDriverOutcome::Noop,
     }
 }
 
@@ -17485,6 +17545,106 @@ mod tests {
                 shrine_type: 255,
                 level: 99,
                 kind: RandomShrineKind::Continuity,
+            }
+        );
+    }
+
+    #[test]
+    fn lab2_water_timer_initializes_kind_from_legacy_sprites() {
+        for (sprite, expected_kind) in [
+            (11008, 2),
+            (11010, 2),
+            (20793, 1),
+            (20796, 1),
+            (11011, 3),
+            (11012, 4),
+            (11013, 5),
+        ] {
+            let mut timer = character(0);
+            let mut water = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_WATER);
+            water.sprite = sprite;
+
+            let outcome = execute_item_driver(
+                &mut timer,
+                &mut water,
+                ItemDriverRequest::Driver {
+                    driver: IDR_LAB2_WATER,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(0),
+                    spec: 0,
+                },
+                22,
+                false,
+            );
+
+            assert_eq!(outcome, ItemDriverOutcome::Noop);
+            assert_eq!(water.driver_data[0], expected_kind);
+        }
+    }
+
+    #[test]
+    fn lab2_water_well_and_altar_return_typed_outcomes() {
+        let mut actor = character(1);
+        let mut well = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_WATER);
+        well.driver_data = vec![1];
+
+        assert_eq!(
+            execute_item_driver(
+                &mut actor,
+                &mut well,
+                ItemDriverRequest::Driver {
+                    driver: IDR_LAB2_WATER,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                22,
+                false,
+            ),
+            ItemDriverOutcome::Lab2WaterWell {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.cursor_item = Some(ItemId(99));
+        assert_eq!(
+            execute_item_driver(
+                &mut actor,
+                &mut well,
+                ItemDriverRequest::Driver {
+                    driver: IDR_LAB2_WATER,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                22,
+                false,
+            ),
+            ItemDriverOutcome::Lab2WaterCursorOccupied {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let mut altar = item(9, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_WATER);
+        altar.driver_data = vec![2];
+        assert_eq!(
+            execute_item_driver(
+                &mut actor,
+                &mut altar,
+                ItemDriverRequest::Driver {
+                    driver: IDR_LAB2_WATER,
+                    item_id: ItemId(9),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                22,
+                false,
+            ),
+            ItemDriverOutcome::Lab2WaterAltar {
+                item_id: ItemId(9),
+                character_id: CharacterId(1),
             }
         );
     }

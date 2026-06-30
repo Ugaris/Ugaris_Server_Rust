@@ -6420,6 +6420,13 @@ enum PickBerryApplyResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lab2WaterApplyResult {
+    Converted(usize),
+    MissingPlayer,
+    TemplateMissing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RandomShrineSecurityApplyResult {
     Used { saves: u8 },
     SecureAlready,
@@ -6952,6 +6959,71 @@ fn grant_template_item_to_cursor(
     character.flags.insert(CharacterFlags::ITEMS);
     world.add_item(item);
     Some(item_name)
+}
+
+fn apply_lab2_water_altar(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+) -> Lab2WaterApplyResult {
+    let Some(character) = world.characters.get(&character_id) else {
+        return Lab2WaterApplyResult::MissingPlayer;
+    };
+
+    let mut water_bowls = Vec::new();
+    if let Some(cursor_item_id) = character.cursor_item {
+        if world.items.get(&cursor_item_id).is_some_and(|item| {
+            item.driver == ugaris_core::item_driver::IDR_LAB2_WATER
+                && item.driver_data.first().copied() == Some(4)
+        }) {
+            water_bowls.push(cursor_item_id);
+        }
+    }
+    for item_id in character.inventory[INVENTORY_START_INVENTORY..]
+        .iter()
+        .flatten()
+    {
+        if world.items.get(item_id).is_some_and(|item| {
+            item.driver == ugaris_core::item_driver::IDR_LAB2_WATER
+                && item.driver_data.first().copied() == Some(4)
+        }) {
+            water_bowls.push(*item_id);
+        }
+    }
+
+    let mut converted = 0;
+    for old_item_id in water_bowls {
+        let Some(mut new_item) = loader
+            .instantiate_item_template("lab2_holywaterbowl", Some(character_id))
+            .ok()
+        else {
+            return Lab2WaterApplyResult::TemplateMissing;
+        };
+        let new_item_id = new_item.id;
+        let Some(character) = world.characters.get_mut(&character_id) else {
+            return Lab2WaterApplyResult::MissingPlayer;
+        };
+
+        if character.cursor_item == Some(old_item_id) {
+            character.cursor_item = Some(new_item_id);
+        } else if let Some(slot) = character
+            .inventory
+            .iter_mut()
+            .find(|slot| **slot == Some(old_item_id))
+        {
+            *slot = Some(new_item_id);
+        } else {
+            continue;
+        }
+
+        character.flags.insert(CharacterFlags::ITEMS);
+        new_item.carried_by = Some(character_id);
+        world.items.remove(&old_item_id);
+        world.add_item(new_item);
+        converted += 1;
+    }
+
+    Lab2WaterApplyResult::Converted(converted)
 }
 
 fn grant_ice_itemspawn_to_cursor(
@@ -23080,6 +23152,46 @@ async fn main() -> anyhow::Result<()> {
                                                 feedback.push((character_id, "Thou art still chewing a brown berry.".to_string()));
                                                 blocked += 1;
                                             }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterWell { character_id, .. } => {
+                                            if let Some(item_name) = grant_template_item_to_cursor(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                "lab2_waterbowl",
+                                            ) {
+                                                feedback.push((character_id, format!("You received a {item_name}.")));
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterAltar { character_id, .. } => {
+                                            match apply_lab2_water_altar(&mut world, &mut zone_loader, character_id) {
+                                                Lab2WaterApplyResult::Converted(0) => {
+                                                    feedback.push((character_id, "You feel the holyness of the Altar. Water would be holy now, if you had some.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                Lab2WaterApplyResult::Converted(1) => {
+                                                    feedback.push((character_id, "The water inside your bowl is holy now.".to_string()));
+                                                    executed += 1;
+                                                }
+                                                Lab2WaterApplyResult::Converted(count) => {
+                                                    feedback.push((character_id, format!("The water inside your {count} bowls is holy now.")));
+                                                    executed += 1;
+                                                }
+                                                Lab2WaterApplyResult::MissingPlayer | Lab2WaterApplyResult::TemplateMissing => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterDrink { character_id, .. } => {
+                                            feedback.push((character_id, "Skoll!".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterCursorOccupied { character_id, .. } => {
+                                            feedback.push((character_id, "You won't throw this into the water, will you?".to_string()));
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { character_id, .. } => {
                                             feedback.push((
