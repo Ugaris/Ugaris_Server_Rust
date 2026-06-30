@@ -581,3 +581,7 @@ Recommended next chest steps:
 ### Iteration 115 Additional Progress
 
 - Area 10/11 shared `src/common/ice_shared.c` item-spawn melting keys now start their C ten-second zero-character timer immediately when granted to the cursor, instead of depending on template/startup scheduling. Focused server coverage verifies spawned `IDR_MELTINGKEY` items are queued, tick once after ten seconds, age their `drdata[1]`, and reschedule. Remaining ice/palace shared gaps are exact `can_carry` no-feedback behavior for item spawns, exact dlog/audit side effects, and live area-10/11 data smoke coverage.
+
+### Iteration 118 Additional Progress
+
+- Area 10/11 shared `src/common/ice_shared.c` `IDR_ITEMSPAWN` now applies the represented C `can_carry(cn, in2, 0)` gates after template creation and before cursor assignment: duplicate `IDR_ONECARRY` rewards such as palace bombs/caps are rejected with the legacy one-carry feedback, `IF_BONDTAKE` owner mismatches are silently rejected, failed grants no longer masquerade as template-creation bug feedback, and successful melting-key grants still schedule the ten-second timer. Focused server tests cover melting-key scheduling, duplicate one-carry rejection, and bonded-item silent rejection. Remaining ice/palace shared gaps are exact dlog/audit side effects and live area-10/11 data smoke coverage.

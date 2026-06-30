@@ -47,10 +47,10 @@ use ugaris_core::{
     },
     quest::QuestReopenResult,
     spell::{
-        EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN,
-        EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_LAG,
-        EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
-        IDR_ARMOR, IDR_CURSE, IDR_HP, IDR_MANA, IDR_WEAPON,
+        is_one_carry_driver, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD,
+        EF_EARTHRAIN, EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,
+        EF_HEAL, EF_LAG, EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE,
+        EF_WARCRY, IDR_ARMOR, IDR_CURSE, IDR_HP, IDR_MANA, IDR_WEAPON,
     },
     tell::tell_not_listening_message,
     text::{
@@ -6240,31 +6240,65 @@ fn grant_ice_itemspawn_to_cursor(
     loader: &mut ZoneLoader,
     character_id: CharacterId,
     template: &str,
-) -> Option<String> {
+) -> IceItemSpawnGrantResult {
     if world
         .characters
         .get(&character_id)
         .is_none_or(|character| character.cursor_item.is_some())
     {
-        return None;
+        return IceItemSpawnGrantResult::Bug;
     }
     let item = loader
         .instantiate_item_template(template, Some(character_id))
-        .ok()?;
+        .ok();
+    let Some(item) = item else {
+        return IceItemSpawnGrantResult::Bug;
+    };
     let item_id = item.id;
     let item_name = item.name.clone();
     let should_schedule_melting = item.driver == IDR_MELTINGKEY;
-    let character = world.characters.get_mut(&character_id)?;
+    let Some(character) = world.characters.get(&character_id) else {
+        return IceItemSpawnGrantResult::Bug;
+    };
     if character.cursor_item.is_some() {
-        return None;
+        return IceItemSpawnGrantResult::Bug;
     }
+    if is_one_carry_driver(item.driver)
+        && character
+            .inventory
+            .iter()
+            .filter_map(|slot| slot.and_then(|id| world.items.get(&id)))
+            .chain(
+                character
+                    .cursor_item
+                    .and_then(|id| world.items.get(&id))
+                    .into_iter(),
+            )
+            .any(|carried| carried.driver == item.driver)
+    {
+        return IceItemSpawnGrantResult::OneCarry { item_name };
+    }
+    if item.flags.contains(ItemFlags::BONDTAKE) && item.owner_id != character.id.0 as i32 {
+        return IceItemSpawnGrantResult::CannotCarry;
+    }
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return IceItemSpawnGrantResult::Bug;
+    };
     character.cursor_item = Some(item_id);
     character.flags.insert(CharacterFlags::ITEMS);
     world.add_item(item);
     if should_schedule_melting {
         world.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
     }
-    Some(item_name)
+    IceItemSpawnGrantResult::Granted { item_name }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum IceItemSpawnGrantResult {
+    Granted { item_name: String },
+    OneCarry { item_name: String },
+    CannotCarry,
+    Bug,
 }
 
 fn grant_warmfire_scroll_to_cursor(
@@ -16509,7 +16543,9 @@ mod tests {
 
         assert_eq!(
             grant_ice_itemspawn_to_cursor(&mut world, &mut loader, CharacterId(7), "melting_key"),
-            Some("Melting Key".to_string())
+            IceItemSpawnGrantResult::Granted {
+                item_name: "Melting Key".to_string()
+            }
         );
 
         let item_id = world
@@ -16528,6 +16564,83 @@ mod tests {
         assert_eq!(outcomes.len(), 1);
         assert_eq!(world.items.get(&item_id).unwrap().driver_data[1], 1);
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn ice_itemspawn_rejects_duplicate_onecarry_like_c_can_carry() {
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"
+                palace_bomb:
+                    name="Palace Bomb"
+                    sprite=50496
+                    flag=IF_TAKE
+                    driver=56
+                ;
+                "#,
+            )
+            .unwrap();
+        let mut world = World::default();
+        let mut character = login_character(CharacterId(7), &login_block("Tester"), 10, 10, 10);
+        character.inventory[30] = Some(ItemId(30));
+        world.add_character(character);
+        let mut existing = test_item(ItemId(30), 50496, ItemFlags::USED | ItemFlags::TAKE);
+        existing.name = "Palace Bomb".to_string();
+        existing.driver = ugaris_core::item_driver::IDR_PALACEBOMB;
+        existing.carried_by = Some(CharacterId(7));
+        world.add_item(existing);
+
+        assert_eq!(
+            grant_ice_itemspawn_to_cursor(&mut world, &mut loader, CharacterId(7), "palace_bomb"),
+            IceItemSpawnGrantResult::OneCarry {
+                item_name: "Palace Bomb".to_string()
+            }
+        );
+        assert!(world
+            .characters
+            .get(&CharacterId(7))
+            .unwrap()
+            .cursor_item
+            .is_none());
+        assert_eq!(world.items.len(), 1);
+    }
+
+    #[test]
+    fn ice_itemspawn_silently_rejects_wrong_owner_bondtake_like_c_can_carry() {
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_item_templates_str(
+                r#"
+                bonded_prize:
+                    name="Bonded Prize"
+                    sprite=50500
+                    flag=IF_TAKE
+                    flag=IF_BONDTAKE
+                ;
+                "#,
+            )
+            .unwrap();
+        let mut world = World::default();
+        world.add_character(login_character(
+            CharacterId(7),
+            &login_block("Tester"),
+            10,
+            10,
+            10,
+        ));
+
+        assert_eq!(
+            grant_ice_itemspawn_to_cursor(&mut world, &mut loader, CharacterId(7), "bonded_prize"),
+            IceItemSpawnGrantResult::CannotCarry
+        );
+        assert!(world
+            .characters
+            .get(&CharacterId(7))
+            .unwrap()
+            .cursor_item
+            .is_none());
+        assert!(world.items.is_empty());
     }
 
     #[test]
@@ -18719,11 +18832,18 @@ async fn main() -> anyhow::Result<()> {
                                                 character_id,
                                                 template,
                                             ) {
-                                                Some(item_name) => {
+                                                IceItemSpawnGrantResult::Granted { item_name } => {
                                                     feedback.push((character_id, format!("You got a {item_name}.")));
                                                     executed += 1;
                                                 }
-                                                None => {
+                                                IceItemSpawnGrantResult::OneCarry { item_name } => {
+                                                    feedback.push((character_id, format!("You can only carry one {item_name} at a time!")));
+                                                    blocked += 1;
+                                                }
+                                                IceItemSpawnGrantResult::CannotCarry => {
+                                                    blocked += 1;
+                                                }
+                                                IceItemSpawnGrantResult::Bug => {
                                                     feedback.push((
                                                         character_id,
                                                         "Congratulations, you have just discovered bug #4244C, please report it to the authorities!".to_string(),
