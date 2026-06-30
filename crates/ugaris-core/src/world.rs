@@ -267,6 +267,14 @@ fn legacy_random_below_from_seed(seed: &mut u32, below: u32) -> u32 {
     *seed % below
 }
 
+fn legacy_random_variant_below_from_seed(seed: &mut u32, below: u32) -> u32 {
+    if below == 0 {
+        return 0;
+    }
+    *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+    *seed % below
+}
+
 fn write_lq_door_key_id(item: &mut Item, key_id: u32) {
     if item.driver_data.len() < 5 {
         item.driver_data.resize(5, 0);
@@ -2744,13 +2752,16 @@ impl World {
                 .wrapping_add(u64::from(character_id.0).wrapping_mul(32));
             if cadence % 6 == 0 && (cadence / TICKS_PER_SECOND) % 3 == 0 {
                 let bubble_effect_id = self.create_bubble_effect(x as i32, y as i32, 45, 1);
-                if cadence % 12 == 0 {
-                    self.queue_sound_area(x, y, 44);
+                let sound_type = (cadence % 12 == 0).then(|| {
+                    44 + legacy_random_variant_below_from_seed(&mut self.legacy_random_seed, 3)
+                });
+                if let Some(sound_type) = sound_type {
+                    self.queue_sound_area(x, y, sound_type);
                 }
                 return TileSpecialOutcome {
                     damage: 0,
                     bubble_effect_id: Some(bubble_effect_id),
-                    sound_type: (cadence % 12 == 0).then_some(44),
+                    sound_type,
                 };
             }
             return TileSpecialOutcome::default();
@@ -2763,11 +2774,10 @@ impl World {
             100
         };
         self.apply_legacy_hurt(character_id, None, damage, 1, 25, 66);
-        self.queue_sound_area(x, y, 66);
         TileSpecialOutcome {
             damage,
             bubble_effect_id: None,
-            sound_type: Some(66),
+            sound_type: None,
         }
     }
 
@@ -26905,7 +26915,11 @@ mod tests {
 
         let effect_id = outcome.bubble_effect_id.unwrap();
         assert_eq!(outcome.damage, 0);
-        assert_eq!(outcome.sound_type, Some(44));
+        assert_eq!(outcome.sound_type, Some(45));
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            45
+        );
         let player = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(player.hp, 1_000);
         let effect = world.effects.get(&effect_id).unwrap();
@@ -26935,7 +26949,8 @@ mod tests {
 
         assert_eq!(outcome.damage, 250);
         assert_eq!(outcome.bubble_effect_id, None);
-        assert_eq!(outcome.sound_type, Some(66));
+        assert_eq!(outcome.sound_type, None);
+        assert!(world.drain_pending_sound_specials().is_empty());
         let player = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(player.hp, 750);
         assert!(player.flags.contains(CharacterFlags::UPDATE));
