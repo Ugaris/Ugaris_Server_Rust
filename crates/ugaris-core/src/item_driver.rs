@@ -378,6 +378,7 @@ pub struct ItemDriverContext {
     pub clanspawn_max_jewel_count: Option<u8>,
     pub clanspawn_contested: bool,
     pub clanspawn_random_seconds: Option<u32>,
+    pub has_curse_spell: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1078,6 +1079,43 @@ pub enum ItemDriverOutcome {
         target_character_id: Option<CharacterId>,
         target_serial: Option<u32>,
         schedule_after_ticks: u64,
+    },
+    IceItemSpawn {
+        item_id: ItemId,
+        character_id: CharacterId,
+        template: &'static str,
+    },
+    IceItemSpawnCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    IceItemSpawnBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+        kind: u8,
+    },
+    WarmFire {
+        item_id: ItemId,
+        character_id: CharacterId,
+        create_scroll: bool,
+        removed_curse: bool,
+    },
+    WarmFireCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    BackToFire {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+    },
+    MeltingKeyTick {
+        item_id: ItemId,
+        character_id: CharacterId,
+        melted: bool,
+        started_melting: bool,
+        schedule_after_ticks: Option<u64>,
     },
     EdemonSwitchStuck {
         item_id: ItemId,
@@ -1953,6 +1991,10 @@ pub fn execute_item_driver_with_context(
                 IDR_FDEMONFARM => fdemon_farm_driver(character, item, context),
                 IDR_FDEMONBLOOD => fdemon_blood_driver(character, item, context),
                 IDR_FDEMONLAVA => fdemon_lava_driver(character, item, context),
+                IDR_ITEMSPAWN => itemspawn_driver(character, item, area_id),
+                IDR_WARMFIRE => warmfire_driver(character, item, area_id, context),
+                IDR_BACKTOFIRE => backtofire_driver(character, item, area_id),
+                IDR_MELTINGKEY => meltingkey_driver(character, item, area_id),
                 IDR_FLAMETHROW => flamethrow_driver(character, item, context),
                 IDR_USETRAP => usetrap_driver(character, item),
                 IDR_STEPTRAP => steptrap_driver(character, item, context),
@@ -6971,6 +7013,126 @@ fn fdemon_lava_driver(
     }
 }
 
+fn is_ice_shared_area(area_id: u16) -> bool {
+    matches!(area_id, 10 | 11)
+}
+
+fn itemspawn_template(kind: u8) -> Option<&'static str> {
+    match kind {
+        0 => Some("melting_key"),
+        1 => Some("ice_boots1"),
+        2 => Some("ice_cape1"),
+        3 => Some("ice_belt1"),
+        4 => Some("ice_ring1"),
+        5 => Some("ice_amulet1"),
+        6 => Some("melting_key2"),
+        7 => Some("ice_boots2"),
+        8 => Some("ice_cape2"),
+        9 => Some("ice_belt2"),
+        10 => Some("ice_ring2"),
+        11 => Some("ice_amulet2"),
+        12 => Some("ice_boots3"),
+        13 => Some("ice_cape3"),
+        14 => Some("ice_belt3"),
+        15 => Some("ice_ring3"),
+        16 => Some("ice_amulet3"),
+        17 => Some("palace_bomb"),
+        18 => Some("palace_cap"),
+        _ => None,
+    }
+}
+
+fn itemspawn_driver(character: &Character, item: &Item, area_id: u16) -> ItemDriverOutcome {
+    if character.id.0 == 0 || !is_ice_shared_area(area_id) {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::IceItemSpawnCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    let kind = drdata(item, 0);
+    let Some(template) = itemspawn_template(kind) else {
+        return ItemDriverOutcome::IceItemSpawnBug {
+            item_id: item.id,
+            character_id: character.id,
+            kind,
+        };
+    };
+    ItemDriverOutcome::IceItemSpawn {
+        item_id: item.id,
+        character_id: character.id,
+        template,
+    }
+}
+
+fn warmfire_driver(
+    character: &Character,
+    item: &Item,
+    area_id: u16,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 || !is_ice_shared_area(area_id) {
+        return ItemDriverOutcome::Noop;
+    }
+    let create_scroll = drdata(item, 0) == 0;
+    if create_scroll && character.cursor_item.is_some() {
+        return ItemDriverOutcome::WarmFireCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    ItemDriverOutcome::WarmFire {
+        item_id: item.id,
+        character_id: character.id,
+        create_scroll,
+        removed_curse: context.has_curse_spell,
+    }
+}
+
+fn backtofire_driver(character: &Character, item: &Item, area_id: u16) -> ItemDriverOutcome {
+    if character.id.0 == 0 || !is_ice_shared_area(area_id) || item.carried_by != Some(character.id)
+    {
+        return ItemDriverOutcome::Noop;
+    }
+    ItemDriverOutcome::BackToFire {
+        item_id: item.id,
+        character_id: character.id,
+        x: u16::from(drdata(item, 0)),
+        y: u16::from(drdata(item, 1)),
+    }
+}
+
+fn meltingkey_driver(character: &Character, item: &mut Item, area_id: u16) -> ItemDriverOutcome {
+    if character.id.0 != 0 || !is_ice_shared_area(area_id) || item.carried_by.is_none() {
+        return ItemDriverOutcome::Noop;
+    }
+    let limit = drdata(item, 0);
+    let next_age = drdata(item, 1).wrapping_add(1);
+    set_drdata(item, 1, next_age);
+    if next_age >= limit {
+        return ItemDriverOutcome::MeltingKeyTick {
+            item_id: item.id,
+            character_id: item.carried_by.unwrap_or(CharacterId(0)),
+            melted: true,
+            started_melting: false,
+            schedule_after_ticks: None,
+        };
+    }
+
+    let old_sprite = item.sprite;
+    let sprite = 50494 + i32::from(next_age) * 5 / i32::from(limit.max(1));
+    item.sprite = sprite;
+    ItemDriverOutcome::MeltingKeyTick {
+        item_id: item.id,
+        character_id: item.carried_by.unwrap_or(CharacterId(0)),
+        melted: false,
+        started_melting: old_sprite != sprite && sprite == 50495,
+        schedule_after_ticks: Some(TICKS_PER_SECOND * 10),
+    }
+}
+
 fn torch_driver(
     character: &mut Character,
     item: &mut Item,
@@ -7618,6 +7780,170 @@ mod tests {
         assert_eq!(IDR_LAB5_ITEM, 190);
         assert_eq!(IDR_LABTORCH, 199);
         assert_eq!(IDR_SKELETON_KEY, 201);
+    }
+
+    #[test]
+    fn ice_shared_itemspawn_maps_legacy_templates_and_blocks_cursor() {
+        let mut actor = character(1);
+        let mut spawner = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_ITEMSPAWN);
+        spawner.driver_data = vec![17];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ITEMSPAWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut spawner, request, 11, false),
+            ItemDriverOutcome::IceItemSpawn {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                template: "palace_bomb",
+            }
+        );
+
+        actor.cursor_item = Some(ItemId(9));
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut spawner, request, 11, false),
+            ItemDriverOutcome::IceItemSpawnCursorOccupied {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.cursor_item = None;
+        spawner.driver_data = vec![19];
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut spawner, request, 10, false),
+            ItemDriverOutcome::IceItemSpawnBug {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                kind: 19,
+            }
+        );
+    }
+
+    #[test]
+    fn ice_shared_warmfire_reports_scroll_and_curse_branches() {
+        let mut actor = character(1);
+        let mut fire = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARMFIRE);
+        fire.driver_data = vec![0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARMFIRE,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut fire,
+                request,
+                10,
+                false,
+                &ItemDriverContext {
+                    has_curse_spell: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::WarmFire {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                create_scroll: true,
+                removed_curse: true,
+            }
+        );
+
+        actor.cursor_item = Some(ItemId(9));
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut fire, request, 10, false),
+            ItemDriverOutcome::WarmFireCursorOccupied {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn ice_shared_backtofire_and_melting_key_match_timer_core() {
+        let mut actor = character(1);
+        let mut scroll = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_BACKTOFIRE);
+        scroll.carried_by = Some(CharacterId(1));
+        scroll.driver_data = vec![123, 45];
+        assert_eq!(
+            execute_item_driver(
+                &mut actor,
+                &mut scroll,
+                ItemDriverRequest::Driver {
+                    driver: IDR_BACKTOFIRE,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                10,
+                false,
+            ),
+            ItemDriverOutcome::BackToFire {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 123,
+                y: 45,
+            }
+        );
+
+        let mut timer = character(0);
+        let mut key = item(8, ItemFlags::USED, 0, IDR_MELTINGKEY);
+        key.carried_by = Some(CharacterId(1));
+        key.sprite = 50494;
+        key.driver_data = vec![5, 0];
+        assert_eq!(
+            execute_item_driver(
+                &mut timer,
+                &mut key,
+                ItemDriverRequest::Driver {
+                    driver: IDR_MELTINGKEY,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(0),
+                    spec: 0,
+                },
+                11,
+                false,
+            ),
+            ItemDriverOutcome::MeltingKeyTick {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                melted: false,
+                started_melting: true,
+                schedule_after_ticks: Some(TICKS_PER_SECOND * 10),
+            }
+        );
+        assert_eq!(key.driver_data[1], 1);
+        assert_eq!(key.sprite, 50495);
+
+        key.driver_data = vec![5, 4];
+        assert_eq!(
+            execute_item_driver(
+                &mut timer,
+                &mut key,
+                ItemDriverRequest::Driver {
+                    driver: IDR_MELTINGKEY,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(0),
+                    spec: 0,
+                },
+                11,
+                false,
+            ),
+            ItemDriverOutcome::MeltingKeyTick {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                melted: true,
+                started_melting: false,
+                schedule_after_ticks: None,
+            }
+        );
     }
 
     #[test]

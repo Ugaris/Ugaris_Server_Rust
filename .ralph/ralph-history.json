@@ -2911,9 +2911,33 @@
         "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
         "test result: ok. 217 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
       ]
+    },
+    {
+      "iteration": 106,
+      "startedAt": "2026-06-30T02:14:48.341Z",
+      "endedAt": "2026-06-30T02:28:02.457Z",
+      "durationMs": 793941,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/item_driver.rs:",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 751 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 216 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 59457464,
+  "totalDurationMs": 60251405,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -2932,7 +2956,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 38,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 40,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 3,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
@@ -2972,7 +2996,7 @@
       "The focused server test exposed a type mismatch: this runtime send path expects `BytesMut`, unlike s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 597 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 19,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 20,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 187 filtered out; finished in 0.00s": 3,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 181 filtered out; finished in 0.00s": 1,
       "test result: ok. 598 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
@@ -3265,8 +3289,9 @@
       "test result: ok. 751 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 751 filtered out; finished in 0.00s": 1,
       "test world::tests::simple_baddy_attack_action_prefers_hurt_visible_enemy_before_distance_like_c ... ": 1,
-      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 216 filtered out; finished in 0.00s": 1,
-      "test result: ok. 217 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 216 filtered out; finished in 0.00s": 2,
+      "test result: ok. 217 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 751 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -28,8 +28,9 @@ use ugaris_core::{
     item_driver::{
         legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
         IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_FOOD, IDR_KEY_RING, IDR_PICKCHEST,
-        IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
-        IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
+        IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE, IID_AREA17_LIBRARYKEY,
+        IID_AREA17_LOCKPICK, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2,
+        IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
         consume_item, give_item_to_character, replace_item_in_character, GiveItemFlags,
@@ -48,7 +49,7 @@ use ugaris_core::{
         EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN,
         EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_LAG,
         EF_MAGICSHIELD, EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY,
-        IDR_ARMOR, IDR_HP, IDR_MANA, IDR_WEAPON,
+        IDR_ARMOR, IDR_CURSE, IDR_HP, IDR_MANA, IDR_WEAPON,
     },
     tell::tell_not_listening_message,
     text::{
@@ -5278,6 +5279,24 @@ fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
+    if *driver == IDR_WARMFIRE {
+        let has_curse_spell = world
+            .characters
+            .get(character_id)
+            .map(|character| {
+                character.inventory.iter().flatten().any(|item_id| {
+                    world
+                        .items
+                        .get(item_id)
+                        .is_some_and(|item| item.driver == IDR_CURSE)
+                })
+            })
+            .unwrap_or(false);
+        return ugaris_core::item_driver::ItemDriverContext {
+            has_curse_spell,
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
     if *driver != ugaris_core::item_driver::IDR_DOOR
         && *driver != ugaris_core::item_driver::IDR_EDEMONDOOR
         && *driver != ugaris_core::item_driver::IDR_INFINITE_CHEST
@@ -5941,6 +5960,42 @@ fn grant_template_item_to_cursor(
     let item = loader
         .instantiate_item_template(template, Some(character_id))
         .ok()?;
+    let item_id = item.id;
+    let item_name = item.name.clone();
+    let character = world.characters.get_mut(&character_id)?;
+    if character.cursor_item.is_some() {
+        return None;
+    }
+    character.cursor_item = Some(item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(item);
+    Some(item_name)
+}
+
+fn grant_warmfire_scroll_to_cursor(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+) -> Option<String> {
+    let (x, y) = world
+        .characters
+        .get(&character_id)
+        .map(|character| (character.x as u8, character.y as u8))?;
+    if world
+        .characters
+        .get(&character_id)
+        .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return None;
+    }
+    let mut item = loader
+        .instantiate_item_template("ice_scroll", Some(character_id))
+        .ok()?;
+    if item.driver_data.len() < 2 {
+        item.driver_data.resize(2, 0);
+    }
+    item.driver_data[0] = x;
+    item.driver_data[1] = y;
     let item_id = item.id;
     let item_name = item.name.clone();
     let character = world.characters.get_mut(&character_id)?;
@@ -17695,6 +17750,67 @@ async fn main() -> anyhow::Result<()> {
                                                     failed += 1;
                                                 }
                                             }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::IceItemSpawn { character_id, template, .. } => {
+                                            match grant_template_item_to_cursor(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                template,
+                                            ) {
+                                                Some(item_name) => {
+                                                    feedback.push((character_id, format!("You got a {item_name}.")));
+                                                    executed += 1;
+                                                }
+                                                None => {
+                                                    feedback.push((
+                                                        character_id,
+                                                        "Congratulations, you have just discovered bug #4244C, please report it to the authorities!".to_string(),
+                                                    ));
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::IceItemSpawnCursorOccupied { character_id, .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::WarmFireCursorOccupied { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Please empty your 'hand' (mouse cursor) first.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::IceItemSpawnBug { character_id, kind, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                format!(
+                                                    "Congratulations, you have just discovered bug #4244B-{kind}, please report it to the authorities!"
+                                                ),
+                                            ));
+                                            failed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarmFire { character_id, create_scroll, removed_curse, .. } => {
+                                            if create_scroll && grant_warmfire_scroll_to_cursor(&mut world, &mut zone_loader, character_id).is_some() {
+                                                feedback.push((
+                                                    character_id,
+                                                    "Next to the fire, you find an ancient scroll. It seems to be a scroll of teleport which will take you back here.".to_string(),
+                                                ));
+                                            }
+                                            if removed_curse {
+                                                feedback.push((
+                                                    character_id,
+                                                    "You move close to the heat of the fire, and you feel the demon's cold leave you.".to_string(),
+                                                ));
+                                            } else {
+                                                feedback.push((character_id, "You warm your hands on the fire.".to_string()));
+                                            }
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BackToFire { character_id, .. } => {
+                                            feedback.push((character_id, "The scroll vanished.".to_string()));
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::MeltingKeyTick { .. } => {
+                                            executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::InfiniteChest { character_id, template, key_name, .. } => {
                                             match grant_template_item_to_cursor(

@@ -6137,6 +6137,43 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::BackToFire {
+                item_id,
+                character_id,
+                x,
+                y,
+            } => {
+                if self.teleport_character(character_id, x, y, false) {
+                    self.destroy_item(item_id);
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::WarmFire {
+                character_id,
+                removed_curse,
+                ..
+            } => {
+                if removed_curse {
+                    self.remove_driver_spells(character_id, IDR_CURSE);
+                    self.remove_show_effect_type(character_id, EF_CURSE);
+                }
+                outcome
+            }
+            ItemDriverOutcome::MeltingKeyTick {
+                item_id,
+                melted,
+                schedule_after_ticks,
+                ..
+            } => {
+                if melted {
+                    self.destroy_item(item_id);
+                } else if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
+                }
+                outcome
+            }
             ItemDriverOutcome::PentBossDoor {
                 item_id,
                 character_id,
