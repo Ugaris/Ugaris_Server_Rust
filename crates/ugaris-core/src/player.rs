@@ -40,6 +40,7 @@ pub const LEGACY_AREA3_PPD_SIZE: usize = 17 * 4;
 pub const LEGACY_CALIGAR_PPD_SIZE: usize = 14 * 4 + 4;
 pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_STAFFER_PPD_SIZE: usize = 25 * 4;
+pub const LEGACY_FARMY_PPD_SIZE: usize = 85 * 4;
 pub const LEGACY_TWOCITY_PPD_SIZE: usize = 29 * 4;
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
@@ -85,6 +86,7 @@ pub const DRD_RUNE_PPD: u32 = make_drd(DEV_ID_DB, 108 | PERSISTENT_PLAYER_DATA);
 pub const DRD_CALIGAR_PPD: u32 = make_drd(DEV_ID_DB, 159 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DATA);
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
+pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TWOCITY_PPD: u32 = make_drd(DEV_ID_DB, 97 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
@@ -122,6 +124,7 @@ const CALIGAR_PPD_DOOR_FLAG_COUNT: usize = 4;
 pub const ARKHATA_PPD_CLERK_STATE_OFFSET: usize = 16 * 4;
 pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 const STAFFER_PPD_SHANRA_STATE_OFFSET: usize = 16 * 4;
+const FARMY_PPD_BOSS_STAGE_OFFSET: usize = 0;
 const TWOCITY_PPD_GOODTILE_OFFSET: usize = 19 * 4;
 const TWOCITY_PPD_SOLVED_LIBRARY_OFFSET: usize = 24 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
@@ -337,6 +340,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub staffer_ppd: Vec<u8>,
     #[serde(default)]
+    pub farmy_ppd: Vec<u8>,
+    #[serde(default)]
     pub twocity_ppd: Vec<u8>,
     #[serde(default)]
     pub pk_kills: u32,
@@ -434,6 +439,7 @@ impl PlayerRuntime {
             caligar_ppd: Vec::new(),
             arkhata_ppd: Vec::new(),
             staffer_ppd: Vec::new(),
+            farmy_ppd: Vec::new(),
             twocity_ppd: Vec::new(),
             pk_kills: 0,
             pk_deaths: 0,
@@ -1458,6 +1464,52 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_farmy_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_FARMY_PPD_SIZE];
+        let len = self.farmy_ppd.len().min(LEGACY_FARMY_PPD_SIZE);
+        bytes[..len].copy_from_slice(&self.farmy_ppd[..len]);
+        bytes
+    }
+
+    pub fn decode_legacy_farmy_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_FARMY_PPD_SIZE {
+            return false;
+        }
+        self.farmy_ppd = bytes[..LEGACY_FARMY_PPD_SIZE].to_vec();
+        true
+    }
+
+    pub fn farmy_boss_stage(&self) -> i32 {
+        if self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.farmy_ppd, FARMY_PPD_BOSS_STAGE_OFFSET)
+    }
+
+    pub fn advance_farmy_blood_stage(&mut self) -> bool {
+        let stage = self.farmy_boss_stage();
+        if !(19..=20).contains(&stage) {
+            return false;
+        }
+        if self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE {
+            self.farmy_ppd.resize(LEGACY_FARMY_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.farmy_ppd, FARMY_PPD_BOSS_STAGE_OFFSET, 21);
+        true
+    }
+
+    pub fn advance_farmy_lava_stage(&mut self) -> bool {
+        let stage = self.farmy_boss_stage();
+        if !(22..=23).contains(&stage) {
+            return false;
+        }
+        if self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE {
+            self.farmy_ppd.resize(LEGACY_FARMY_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.farmy_ppd, FARMY_PPD_BOSS_STAGE_OFFSET, 24);
+        true
+    }
+
     pub fn arkhata_clerk_state(&self) -> i32 {
         if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
             return 0;
@@ -1581,6 +1633,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_FARMY_PPD => {
+                    if !self.decode_legacy_farmy_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TWOCITY_PPD => {
                     if !self.decode_legacy_twocity_ppd(block.data) {
                         return false;
@@ -1638,6 +1695,7 @@ impl PlayerRuntime {
         let mut had_caligar = false;
         let mut had_arkhata = false;
         let mut had_staffer = false;
+        let mut had_farmy = false;
         let mut had_twocity = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
@@ -1745,6 +1803,9 @@ impl PlayerRuntime {
                     DRD_STAFFER_PPD,
                     &self.encode_legacy_staffer_ppd(),
                 );
+            } else if block.id == DRD_FARMY_PPD {
+                had_farmy = true;
+                write_ppd_block(&mut encoded, DRD_FARMY_PPD, &self.encode_legacy_farmy_ppd());
             } else if block.id == DRD_TWOCITY_PPD {
                 had_twocity = true;
                 write_ppd_block(
@@ -1908,6 +1969,9 @@ impl PlayerRuntime {
                 DRD_STAFFER_PPD,
                 &self.encode_legacy_staffer_ppd(),
             );
+        }
+        if !had_farmy && (existing_was_valid || existing.is_empty()) && !self.farmy_ppd.is_empty() {
+            write_ppd_block(&mut encoded, DRD_FARMY_PPD, &self.encode_legacy_farmy_ppd());
         }
         if !had_twocity && (existing_was_valid || existing.is_empty()) {
             if !self.twocity_ppd.is_empty()
@@ -2532,6 +2596,7 @@ mod tests {
         assert_eq!(DRD_IGNORE_PPD, 0x8100_0064);
         assert_eq!(DRD_SWEAR_PPD, 0x8100_006d);
         assert_eq!(DRD_STAFFER_PPD, 0x8100_0082);
+        assert_eq!(DRD_FARMY_PPD, 0x8100_004d);
         assert_eq!(DRD_KEYRING_PPD, 0xbb00_0007);
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
@@ -2541,6 +2606,7 @@ mod tests {
         assert_eq!(LEGACY_IGNORE_PPD_SIZE, 400);
         assert_eq!(LEGACY_SWEAR_PPD_SIZE, 932);
         assert_eq!(LEGACY_STAFFER_PPD_SIZE, 100);
+        assert_eq!(LEGACY_FARMY_PPD_SIZE, 340);
     }
 
     #[test]
@@ -2581,6 +2647,42 @@ mod tests {
             read_i32(&decoded.staffer_ppd, STAFFER_PPD_SHANRA_STATE_OFFSET),
             3
         );
+    }
+
+    #[test]
+    fn farmy_ppd_advances_blood_and_lava_quest_stages() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.farmy_boss_stage(), 0);
+        assert!(!player.advance_farmy_blood_stage());
+
+        player.farmy_ppd.resize(LEGACY_FARMY_PPD_SIZE, 0);
+        write_i32(&mut player.farmy_ppd, FARMY_PPD_BOSS_STAGE_OFFSET, 20);
+        assert!(player.advance_farmy_blood_stage());
+        assert_eq!(player.farmy_boss_stage(), 21);
+        assert!(!player.advance_farmy_blood_stage());
+
+        write_i32(&mut player.farmy_ppd, FARMY_PPD_BOSS_STAGE_OFFSET, 22);
+        assert!(player.advance_farmy_lava_stage());
+        assert_eq!(player.farmy_boss_stage(), 24);
+        assert!(!player.advance_farmy_lava_stage());
+    }
+
+    #[test]
+    fn farmy_ppd_round_trips_through_outer_blob() {
+        let mut farmy = vec![0; LEGACY_FARMY_PPD_SIZE];
+        write_i32(&mut farmy, FARMY_PPD_BOSS_STAGE_OFFSET, 19);
+        let mut blob = Vec::new();
+        write_ppd_block(&mut blob, DRD_FARMY_PPD, &farmy);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.decode_legacy_ppd_blob(&blob));
+        assert_eq!(player.farmy_boss_stage(), 19);
+
+        assert!(player.advance_farmy_blood_stage());
+        let encoded = player.encode_legacy_ppd_blob(&blob);
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.farmy_boss_stage(), 21);
     }
 
     #[test]

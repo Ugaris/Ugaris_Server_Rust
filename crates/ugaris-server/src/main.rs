@@ -18253,8 +18253,17 @@ async fn main() -> anyhow::Result<()> {
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodFilled {
+                                            character_id,
                                             ..
                                         } => {
+                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                if player.advance_farmy_blood_stage() {
+                                                    feedback.push((
+                                                        character_id,
+                                                        "That's it. Now report to the commander.".to_string(),
+                                                    ));
+                                                }
+                                            }
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaBlocked {
@@ -18271,8 +18280,17 @@ async fn main() -> anyhow::Result<()> {
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaActivated {
+                                            character_id,
                                             ..
                                         } => {
+                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                if player.advance_farmy_lava_stage() {
+                                                    feedback.push((
+                                                        character_id,
+                                                        "You got it. Now report to the commander.".to_string(),
+                                                    ));
+                                                }
+                                            }
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk {
