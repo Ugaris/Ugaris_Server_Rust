@@ -1002,6 +1002,14 @@ enum ForestSpadeApplyResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum ForestChestApplyResult {
+    FoundMoney { amount: u32 },
+    Empty,
+    CursorOccupied,
+    MissingPlayer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum JunkpileApplyResult {
     Found { item_name: String },
     FoundMoney { amount: u32 },
@@ -6071,6 +6079,39 @@ fn apply_forest_spade_find(
             ForestSpadeApplyResult::FoundMoney { amount }
         }
     }
+}
+
+fn apply_forest_chest(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    player: Option<&mut PlayerRuntime>,
+    character_id: CharacterId,
+    amount: u32,
+    imp_flag_mask: u32,
+) -> ForestChestApplyResult {
+    if world.characters.get(&character_id).is_none() {
+        return ForestChestApplyResult::MissingPlayer;
+    }
+    if world
+        .characters
+        .get(&character_id)
+        .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return ForestChestApplyResult::CursorOccupied;
+    }
+    let Some(player) = player else {
+        return ForestChestApplyResult::MissingPlayer;
+    };
+    if player.area3_imp_flags() & imp_flag_mask != 0 {
+        return ForestChestApplyResult::Empty;
+    }
+    if !grant_money_to_cursor(world, loader, character_id, amount) {
+        return ForestChestApplyResult::Empty;
+    }
+    if !player.mark_area3_imp_flag(imp_flag_mask) {
+        return ForestChestApplyResult::Empty;
+    }
+    ForestChestApplyResult::FoundMoney { amount }
 }
 
 fn apply_junkpile_search(
@@ -18690,6 +18731,51 @@ mod tests {
     }
 
     #[test]
+    fn apply_forest_chest_grants_money_and_marks_area3_imp_flag() {
+        let mut loader = ZoneLoader::new();
+        let mut world = World::default();
+        world.add_character(login_character(
+            CharacterId(7),
+            &login_block("Tester"),
+            16,
+            10,
+            10,
+        ));
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(7));
+
+        assert_eq!(
+            apply_forest_chest(
+                &mut world,
+                &mut loader,
+                Some(&mut player),
+                CharacterId(7),
+                9_733,
+                1,
+            ),
+            ForestChestApplyResult::FoundMoney { amount: 9_733 }
+        );
+        assert_eq!(player.area3_imp_flags(), 1);
+        let character = world.characters.get_mut(&CharacterId(7)).unwrap();
+        let money_id = character.cursor_item.take().unwrap();
+        let money = world.items.remove(&money_id).unwrap();
+        assert!(money.flags.contains(ItemFlags::MONEY));
+        assert_eq!(money.value, 9_733);
+
+        assert_eq!(
+            apply_forest_chest(
+                &mut world,
+                &mut loader,
+                Some(&mut player),
+                CharacterId(7),
+                9_733,
+                1,
+            ),
+            ForestChestApplyResult::Empty
+        );
+    }
+
+    #[test]
     fn apply_random_chest_can_grant_template_loot_for_tier_rolls() {
         let mut loader = ZoneLoader::new();
         loader
@@ -20315,6 +20401,40 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeCursorOccupied { character_id, .. } => {
                                             feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ForestChest { character_id, amount, imp_flag_mask, .. } => {
+                                            match apply_forest_chest(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                runtime.player_for_character_mut(character_id),
+                                                character_id,
+                                                amount,
+                                                imp_flag_mask,
+                                            ) {
+                                                ForestChestApplyResult::FoundMoney { .. } => {
+                                                    feedback.push((character_id, "You found a nice sum of money!".to_string()));
+                                                    executed += 1;
+                                                }
+                                                ForestChestApplyResult::Empty => {
+                                                    feedback.push((character_id, "The chest is empty.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                ForestChestApplyResult::CursorOccupied => {
+                                                    feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                                ForestChestApplyResult::MissingPlayer => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ForestChestCursorOccupied { character_id, .. } => {
+                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::ForestChestLocked { character_id, .. } => {
+                                            feedback.push((character_id, "The chest is locked and you don't have the right key.".to_string()));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::JunkpileSearch { item_id, character_id, level } => {

@@ -200,6 +200,8 @@ pub const IID_AREA6_YELLOWCRYSTAL: u32 = (0x01 << 24) | 0x000049;
 pub const IID_AREA17_LIBRARYKEY: u32 = (0x01 << 24) | 0x00006F;
 pub const IID_AREA17_BLOODBOWL: u32 = (0x01 << 24) | 0x000071;
 pub const IID_AREA17_LOCKPICK: u32 = (0x01 << 24) | 0x000062;
+pub const IID_AREA16_ROBBERKEY: u32 = (0x01 << 24) | 0x000060;
+pub const IID_AREA16_SKELLYKEY: u32 = (0x01 << 24) | 0x000061;
 pub const IID_CALIGAR_PALACE_KEY_PART: u32 = (0x01 << 24) | 0x0000B3;
 pub const IID_AREA14_STEELBAR: u32 = (0x01 << 24) | 0x00005A;
 const V_LIGHT: i16 = 9;
@@ -382,6 +384,8 @@ pub struct ItemDriverContext {
     pub clanspawn_random_seconds: Option<u32>,
     pub has_curse_spell: bool,
     pub has_area11_palace_key: bool,
+    pub has_area16_robber_key: bool,
+    pub has_area16_skelly_key: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -918,6 +922,20 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
     },
     ForestSpadeCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ForestChest {
+        item_id: ItemId,
+        character_id: CharacterId,
+        amount: u32,
+        imp_flag_mask: u32,
+    },
+    ForestChestCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    ForestChestLocked {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -2038,6 +2056,7 @@ pub fn execute_item_driver_with_context(
                 IDR_GASTRAP => gastrap_driver(character, item, context),
                 IDR_PALACEDOOR => palace_door_driver(character, item, context),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
+                IDR_FORESTCHEST => forest_chest_driver(character, item, context),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
                 IDR_PENT => pentagram_driver(character, item, context),
@@ -2135,6 +2154,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
         IDR_RANDOMSHRINE | IDR_TRAPDOOR | IDR_JUNKPILE | IDR_GASTRAP => Some(14),
+        IDR_FORESTCHEST => Some(16),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
@@ -5036,6 +5056,42 @@ fn forest_spade_treasure(
         item_id,
         character_id,
         find: ForestSpadeFind::BranningtonTreasure { dig_index },
+    }
+}
+
+fn forest_chest_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::ForestChestCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let (has_key, amount, imp_flag_mask) = if drdata(item, 0) == 0 {
+        (context.has_area16_robber_key, 9_733, 1)
+    } else {
+        (context.has_area16_skelly_key, 17_587, 2)
+    };
+
+    if !has_key {
+        return ItemDriverOutcome::ForestChestLocked {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::ForestChest {
+        item_id: item.id,
+        character_id: character.id,
+        amount,
+        imp_flag_mask,
     }
 }
 
@@ -16143,6 +16199,128 @@ mod tests {
             ItemDriverOutcome::ForestSpadeNothing {
                 item_id: ItemId(7),
                 character_id: CharacterId(42),
+            }
+        );
+    }
+
+    #[test]
+    fn forest_chest_ports_key_gates_and_reward_classification() {
+        let mut character = character(42);
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FORESTCHEST);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FORESTCHEST,
+            item_id: ItemId(7),
+            character_id: CharacterId(42),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut chest,
+                request,
+                16,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::ForestChestLocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+            }
+        );
+
+        let context = ItemDriverContext {
+            has_area16_robber_key: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut chest,
+                request,
+                16,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::ForestChest {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                amount: 9_733,
+                imp_flag_mask: 1,
+            }
+        );
+
+        chest.driver_data = vec![1];
+        let context = ItemDriverContext {
+            has_area16_skelly_key: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut chest,
+                request,
+                16,
+                false,
+                &context,
+            ),
+            ItemDriverOutcome::ForestChest {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                amount: 17_587,
+                imp_flag_mask: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn forest_chest_blocks_cursor_and_area16_libload_guard() {
+        let mut character = character(42);
+        character.cursor_item = Some(ItemId(9));
+        let mut chest = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FORESTCHEST);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_FORESTCHEST,
+            item_id: ItemId(7),
+            character_id: CharacterId(42),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut chest,
+                request,
+                16,
+                false,
+                &ItemDriverContext {
+                    has_area16_robber_key: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::ForestChestCursorOccupied {
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+            }
+        );
+
+        character.cursor_item = None;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut chest,
+                request,
+                1,
+                false,
+                &ItemDriverContext {
+                    has_area16_robber_key: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_FORESTCHEST,
+                item_id: ItemId(7),
+                character_id: CharacterId(42),
+                required_area: 16,
             }
         );
     }

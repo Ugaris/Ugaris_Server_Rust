@@ -121,6 +121,7 @@ const FLOWER_PPD_LAST_USED_OFFSET: usize = FLOWER_PPD_IDS_OFFSET + FLOWER_MAX_EN
 const AREA3_PPD_KELLY_FOUND1_OFFSET: usize = 3 * 4;
 const AREA3_PPD_KELLY_FOUND2_OFFSET: usize = 4 * 4;
 const AREA3_PPD_KELLY_FOUND3_OFFSET: usize = 5 * 4;
+const AREA3_PPD_IMP_FLAGS_OFFSET: usize = 12 * 4;
 const CALIGAR_PPD_WATCH_FLAG_OFFSET: usize = 4 * 4;
 const CALIGAR_PPD_DOOR_FLAG_OFFSET: usize = 14 * 4;
 const CALIGAR_PPD_DOOR_FLAG_COUNT: usize = 4;
@@ -1465,6 +1466,29 @@ impl PlayerRuntime {
             return false;
         }
         self.area3_ppd = bytes[..LEGACY_AREA3_PPD_SIZE].to_vec();
+        true
+    }
+
+    pub fn area3_imp_flags(&self) -> u32 {
+        if self.area3_ppd.len() < LEGACY_AREA3_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.area3_ppd, AREA3_PPD_IMP_FLAGS_OFFSET).max(0) as u32
+    }
+
+    pub fn mark_area3_imp_flag(&mut self, mask: u32) -> bool {
+        if self.area3_ppd.len() < LEGACY_AREA3_PPD_SIZE {
+            self.area3_ppd.resize(LEGACY_AREA3_PPD_SIZE, 0);
+        }
+        let current = self.area3_imp_flags();
+        if current & mask != 0 {
+            return false;
+        }
+        write_i32(
+            &mut self.area3_ppd,
+            AREA3_PPD_IMP_FLAGS_OFFSET,
+            (current | mask) as i32,
+        );
         true
     }
 
@@ -3979,6 +4003,24 @@ mod tests {
         assert!(decoded.decode_legacy_area3_ppd(&encoded));
         assert_eq!(decoded.memorize_park_shrine(2), Some(false));
         assert_eq!(decoded.memorize_park_shrine(3), Some(true));
+    }
+
+    #[test]
+    fn area3_ppd_tracks_forest_chest_imp_flags() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(player.area3_imp_flags(), 0);
+        assert!(player.mark_area3_imp_flag(1));
+        assert!(!player.mark_area3_imp_flag(1));
+        assert!(player.mark_area3_imp_flag(2));
+        assert_eq!(player.area3_imp_flags(), 3);
+
+        let encoded = player.encode_legacy_area3_ppd();
+        assert_eq!(read_i32(&encoded, AREA3_PPD_IMP_FLAGS_OFFSET), 3);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_area3_ppd(&encoded));
+        assert_eq!(decoded.area3_imp_flags(), 3);
     }
 
     #[test]

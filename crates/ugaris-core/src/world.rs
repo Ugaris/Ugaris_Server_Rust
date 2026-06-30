@@ -32,9 +32,9 @@ use crate::{
         IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DUNGEONDOOR, IDR_EDEMONBALL, IDR_EDEMONBLOCK,
         IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONSWITCH,
         IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT,
-        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-        IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH,
-        IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
+        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT, IDR_NIGHTLIGHT,
+        IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH,
+        IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -2958,6 +2958,14 @@ impl World {
             && !context.has_area11_palace_key)
             .then(|| self.character_has_template_id(character_id, IID_AREA11_PALACEKEY))
             .unwrap_or(false);
+        let area16_robber_key_context = (driver == Some(IDR_FORESTCHEST)
+            && !context.has_area16_robber_key)
+            .then(|| self.character_has_template_id(character_id, IID_AREA16_ROBBERKEY))
+            .unwrap_or(false);
+        let area16_skelly_key_context = (driver == Some(IDR_FORESTCHEST)
+            && !context.has_area16_skelly_key)
+            .then(|| self.character_has_template_id(character_id, IID_AREA16_SKELLYKEY))
+            .unwrap_or(false);
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -2991,6 +2999,8 @@ impl World {
         effective_context.clanspawn_contested |= clanspawn_contested;
         effective_context.has_matching_random_shrine_key |= random_shrine_key_context;
         effective_context.has_area11_palace_key |= area11_palace_key_context;
+        effective_context.has_area16_robber_key |= area16_robber_key_context;
+        effective_context.has_area16_skelly_key |= area16_skelly_key_context;
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
         {

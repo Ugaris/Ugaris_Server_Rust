@@ -607,3 +607,7 @@ Recommended next chest steps:
 ### Iteration 129 Additional Progress
 
 - `src/system/command.c` `/autoturn` now has a Rust runtime command slice: the legacy `cmdcmp(..., minlen=5)` prefix shape is represented, `PlayerRuntime` persists the C `lostcon_ppd.autoturn` int at slot 16 in the fixed `DRD_LOSTCON_PPD` layout, the command toggles the flag and reprints the lag-control status like C `show_lostconppd`, and `/status` reflects the stored automatic-turning state. Focused core/server tests cover byte layout, outer PPD append behavior, command toggling, and status output. Remaining lost-connection work is actual autoturn driver behavior and the other lag-control automation toggles.
+
+### Iteration 133 Additional Progress
+
+- Area 16 `IDR_FORESTCHEST = 78` now dispatches from the forest item-driver path for C `forest.c` `chest`: it is guarded to area 16 like the legacy module load, preserves the occupied-cursor block, requires the exact robber/skelly key item IDs from carried items, maps chest `drdata[0]` to the C money amounts `9733` and `17587`, creates a cursor money item on success, and tracks the one-time reward state in the C-compatible `DRD_AREA3_PPD.imp_flags` slot. Runtime feedback now emits the legacy cursor/key/empty/success text, and focused core/player/server tests cover dispatch gates, PPD layout, money creation, and repeat-empty behavior. Remaining forest gaps are Forest Imp/William/Hermit character drivers, monster death quest side effects, exact dlog/audit behavior, and live area-16 data smoke coverage.
