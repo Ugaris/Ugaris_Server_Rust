@@ -6077,7 +6077,7 @@ impl World {
             return false;
         }
         (!require_visible || char_see_char(character, target, &self.map, self.date.daylight))
-            && self.simple_baddy_enemy_within_start_limits(character, target)
+            && (hurtme || self.simple_baddy_enemy_within_start_limits(character, target))
     }
 
     fn simple_baddy_enemy_within_start_limits(
@@ -14964,6 +14964,39 @@ mod tests {
                 last_y: 10,
             }]
         );
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_keeps_hurt_enemy_outside_start_or_char_distance() {
+        let mut world = World::default();
+        world.tick = Tick(325);
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            startdist: 6,
+            chardist: 4,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_GOTHIT, 2, 10, 0);
+        let mut attacker = character(2);
+        attacker.group = 8;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(attacker, 14, 10);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.last_hit, 325);
+        assert_eq!(data.enemies.len(), 1);
+        assert_eq!(data.enemies[0].target_id, CharacterId(2));
+        assert_eq!(data.enemies[0].priority, 1);
     }
 
     #[test]
