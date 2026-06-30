@@ -732,3 +732,7 @@ Recommended next chest steps:
 ### Iteration 6 Additional Progress
 
 - Area 34 `IDR_TEUFELRATNEST` spawned rats now apply the C random stat-suffix slice after successful template instantiation: a `RANDOM(20)` roll of `0..4` adds `RANDOM(10)+7` to Attack, Parry, Freeze, Flash, or Immunity respectively, appends the legacy ` *A`/` *P`/` *R`/` *F`/` *I` name suffix, appends the matching description sentence, and marks the character for update. Focused server tests cover all five suffixes and the default no-suffix branch. Remaining Teufel rat-nest gaps are exact `item_drop_char` placement behavior/home coordinates after drop, rat death PPD score updates, exact global RNG stream parity, dlog/audit side effects, and live area-34 data smoke coverage.
+
+### Iteration 8 Additional Progress
+
+- Area 34 `IDR_TEUFELRATNEST` spawned rats now use a C-shaped `item_drop_char` placement helper instead of generic 3x3 character dropping: placement tries the nest tile, front-side tiles, behind-side tiles when `IF_FRONTWALL` is not set, then the legacy two-tile front/behind fallback order including the duplicated C attempts. Rat `rest_x/rest_y` now store the actual placed tile after successful drop, matching the C `tmpx/tmpy = ch[co].x/y` side effect. Focused core/server tests cover normal and front-wall drop order plus blocked-center rat spawn home coordinates. Remaining Teufel rat-nest gaps are rat death PPD score updates, exact global RNG stream parity, dlog/audit side effects, and live area-34 data smoke coverage.

@@ -721,6 +721,23 @@ impl World {
         true
     }
 
+    pub fn spawn_character_from_item_drop(
+        &mut self,
+        mut character: Character,
+        item_id: ItemId,
+    ) -> Option<(u16, u16)> {
+        if self.characters.contains_key(&character.id) {
+            return None;
+        }
+        let item = self.items.get(&item_id)?.clone();
+        if !self.map.drop_char_from_item(&mut character, &item) {
+            return None;
+        }
+        let placed = (character.x, character.y);
+        self.add_character(character);
+        Some(placed)
+    }
+
     pub fn apply_edemon_gate_spawn_result(
         &mut self,
         item_id: ItemId,

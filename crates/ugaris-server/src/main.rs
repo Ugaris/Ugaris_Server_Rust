@@ -7905,7 +7905,8 @@ fn spawn_teufel_ratnest_character(
     level: u16,
     template: &str,
 ) -> bool {
-    let Some((x, y, slot, wave_increase)) = teufel_ratnest_spawn_slot(world, item_id, level) else {
+    let Some((_x, _y, slot, wave_increase)) = teufel_ratnest_spawn_slot(world, item_id, level)
+    else {
         return false;
     };
 
@@ -7915,8 +7916,6 @@ fn spawn_teufel_ratnest_character(
     else {
         return false;
     };
-    character.rest_x = x;
-    character.rest_y = y;
     character.dir = Direction::RightDown as u8;
     character.hp = i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
     character.endurance =
@@ -7928,8 +7927,13 @@ fn spawn_teufel_ratnest_character(
     apply_teufel_ratnest_random_suffix(&mut character, runtime_random_below);
     let serial = character.serial;
 
-    if !world.spawn_character(character, usize::from(x), usize::from(y)) {
+    let Some((placed_x, placed_y)) = world.spawn_character_from_item_drop(character, item_id)
+    else {
         return false;
+    };
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.rest_x = placed_x;
+        character.rest_y = placed_y;
     }
     for item in inventory_items {
         world.items.insert(item.id, item);
@@ -17395,6 +17399,53 @@ mod tests {
             ]),
             0x1122_3344
         );
+    }
+
+    #[test]
+    fn teufel_ratnest_spawn_uses_item_drop_char_order_and_actual_rest_tile() {
+        let mut world = World::default();
+        world.map = ugaris_core::map::MapGrid::new(20, 20);
+        for (x, y) in [(10, 10), (11, 10), (10, 11), (11, 11)] {
+            world.map.set_flags(x, y, MapFlags::MOVEBLOCK);
+        }
+        let mut nest = test_item(
+            ItemId(10),
+            15281,
+            ItemFlags::USED | ItemFlags::USE | ItemFlags::MOVEBLOCK,
+        );
+        nest.x = 10;
+        nest.y = 10;
+        nest.driver_data = vec![0; 40];
+        world.add_item(nest);
+
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_character_templates_str(
+                r#"
+                rat70:
+                  name="Ice Rat"
+                  V_HP=10
+                  V_ENDURANCE=8
+                  V_MANA=6
+                ;
+            "#,
+            )
+            .unwrap();
+        let mut runtime = ServerRuntime::default();
+        runtime.set_next_character_id(70);
+
+        assert!(spawn_teufel_ratnest_character(
+            &mut world,
+            &mut loader,
+            &mut runtime,
+            ItemId(10),
+            45,
+            "rat70",
+        ));
+
+        let rat = world.characters.get(&CharacterId(70)).unwrap();
+        assert_eq!((rat.x, rat.y), (9, 10));
+        assert_eq!((rat.rest_x, rat.rest_y), (9, 10));
     }
 
     #[test]

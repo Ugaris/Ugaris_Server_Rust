@@ -260,6 +260,30 @@ impl MapGrid {
         false
     }
 
+    pub fn drop_char_from_item(&mut self, character: &mut Character, item: &Item) -> bool {
+        let x = usize::from(item.x);
+        let y = usize::from(item.y);
+        let candidates: &[(isize, isize)] = if item.flags.contains(ItemFlags::FRONTWALL) {
+            &ITEM_DROP_CHAR_OFFSETS_FRONT_ONLY
+        } else {
+            &ITEM_DROP_CHAR_OFFSETS_WITH_BEHIND
+        };
+
+        for (dx, dy) in candidates {
+            let Some(nx) = offset_coordinate(x, *dx) else {
+                continue;
+            };
+            let Some(ny) = offset_coordinate(y, *dy) else {
+                continue;
+            };
+            if self.set_char(character, nx, ny) {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn drop_char_extended(
         &mut self,
         character: &mut Character,
@@ -524,6 +548,50 @@ const DROP_OFFSETS: [(isize, isize); 9] = [
     (-1, -1),
 ];
 
+const ITEM_DROP_CHAR_OFFSETS_WITH_BEHIND: [(isize, isize); 29] = [
+    (0, 0),
+    (1, 0),
+    (0, 1),
+    (1, 1),
+    (-1, 0),
+    (0, -1),
+    (-1, -1),
+    (-1, 1),
+    (1, -1),
+    (2, 0),
+    (0, 2),
+    (2, 1),
+    (1, 2),
+    (2, 2),
+    (2, 2),
+    (-1, 0),
+    (0, -1),
+    (-1, -1),
+    (-2, 0),
+    (0, -2),
+    (-2, -1),
+    (-1, -2),
+    (-2, 1),
+    (1, -2),
+    (-1, 2),
+    (2, -1),
+    (-2, 2),
+    (2, -2),
+    (-2, -2),
+];
+
+const ITEM_DROP_CHAR_OFFSETS_FRONT_ONLY: [(isize, isize); 9] = [
+    (0, 0),
+    (1, 0),
+    (0, 1),
+    (1, 1),
+    (2, 0),
+    (0, 2),
+    (2, 1),
+    (1, 2),
+    (2, 2),
+];
+
 fn offset_coordinate(value: usize, offset: isize) -> Option<usize> {
     if offset.is_negative() {
         value.checked_sub(offset.unsigned_abs())
@@ -677,6 +745,36 @@ mod tests {
 
         assert!(grid.drop_char(&mut character, 10, 10));
         assert_eq!((character.x, character.y), (10, 11));
+    }
+
+    #[test]
+    fn drop_char_from_item_matches_legacy_front_then_behind_order() {
+        let mut grid = MapGrid::new(20, 20);
+        let mut character = character(3);
+        for (x, y) in [(10, 10), (11, 10), (10, 11), (11, 11)] {
+            grid.set_flags(x, y, MapFlags::MOVEBLOCK);
+        }
+        let mut item = item(7, ItemFlags::USED);
+        item.x = 10;
+        item.y = 10;
+
+        assert!(grid.drop_char_from_item(&mut character, &item));
+        assert_eq!((character.x, character.y), (9, 10));
+    }
+
+    #[test]
+    fn drop_char_from_frontwall_item_skips_behind_tiles() {
+        let mut grid = MapGrid::new(20, 20);
+        let mut character = character(3);
+        for (x, y) in [(10, 10), (11, 10), (10, 11), (11, 11)] {
+            grid.set_flags(x, y, MapFlags::MOVEBLOCK);
+        }
+        let mut item = item(7, ItemFlags::USED | ItemFlags::FRONTWALL);
+        item.x = 10;
+        item.y = 10;
+
+        assert!(grid.drop_char_from_item(&mut character, &item));
+        assert_eq!((character.x, character.y), (12, 10));
     }
 
     #[test]
