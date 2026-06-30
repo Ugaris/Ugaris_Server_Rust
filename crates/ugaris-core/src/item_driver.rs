@@ -1215,6 +1215,10 @@ pub enum ItemDriverOutcome {
         next_spawn_seconds: u32,
         schedule_after_ticks: u64,
     },
+    LqTicker {
+        item_id: ItemId,
+        schedule_after_ticks: u64,
+    },
     ClanSpawnLevelTooHigh {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2137,6 +2141,7 @@ pub fn execute_item_driver_with_context(
                 IDR_LAB3_PLANT => lab3_plant_driver(character, item, context),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_LABENTRANCE => labentrance_driver(character, item, context),
+                IDR_LQ_TICKER => lq_ticker_driver(character, item),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
                 IDR_XMASMAKER => xmasmaker_driver(character, item),
@@ -2173,6 +2178,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
         IDR_RANDOMSHRINE | IDR_TRAPDOOR | IDR_JUNKPILE | IDR_GASTRAP => Some(14),
         IDR_FORESTCHEST => Some(16),
+        IDR_LQ_TICKER => Some(20),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_CALIGAR => Some(36),
@@ -2181,6 +2187,17 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONCANNON | IDR_FDEMONGATE
         | IDR_FDEMONWAYPOINT | IDR_FDEMONFARM | IDR_FDEMONBLOOD | IDR_FDEMONLAVA => Some(8),
         _ => None,
+    }
+}
+
+fn lq_ticker_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    ItemDriverOutcome::LqTicker {
+        item_id: item.id,
+        schedule_after_ticks: TICKS_PER_SECOND,
     }
 }
 
@@ -8101,6 +8118,86 @@ mod tests {
         assert_eq!(IDR_LAB5_ITEM, 190);
         assert_eq!(IDR_LABTORCH, 199);
         assert_eq!(IDR_SKELETON_KEY, 201);
+    }
+
+    #[test]
+    fn lq_ticker_timer_call_reschedules_every_second() {
+        let mut actor = character(0);
+        let mut ticker = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LQ_TICKER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LQ_TICKER,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut ticker,
+                request,
+                20,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::LqTicker {
+                item_id: ItemId(7),
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }
+        );
+    }
+
+    #[test]
+    fn lq_ticker_character_call_is_handled_noop() {
+        let mut actor = character(1);
+        let mut ticker = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LQ_TICKER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LQ_TICKER,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut ticker,
+                request,
+                20,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::Noop,
+        );
+    }
+
+    #[test]
+    fn lq_ticker_is_area20_guarded_like_legacy_module() {
+        let mut actor = character(0);
+        let mut ticker = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LQ_TICKER);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LQ_TICKER,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut ticker,
+                request,
+                1,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_LQ_TICKER,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                required_area: 20,
+            }
+        );
     }
 
     #[test]

@@ -21548,6 +21548,10 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnTimer { .. } => {
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::LqTicker { item_id, schedule_after_ticks } => {
+                                            world.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { .. } => {
                                             // Legacy C returns without output when arena rankings are not loaded.
                                             executed += 1;
