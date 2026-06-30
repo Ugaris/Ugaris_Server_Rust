@@ -30,10 +30,10 @@ use crate::{
         EdemonGateSpawnContext, FdemonGateSpawnContext, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL, IDR_CALIGAR,
         IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DUNGEONDOOR, IDR_EDEMONBLOCK, IDR_EDEMONDOOR,
-        IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONFARM,
-        IDR_FDEMONGATE, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT,
-        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH,
-        IID_AREA14_SHRINEKEY,
+        IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONCANNON,
+        IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW,
+        IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP,
+        IDR_TORCH, IID_AREA14_SHRINEKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -78,6 +78,14 @@ const EDEMON_GATE_MODE0_POSITIONS: [(u16, u16); 7] = [
     (56, 174),
     (67, 174),
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FdemonCannonShot {
+    start_x: u16,
+    start_y: u16,
+    target_x: u16,
+    target_y: u16,
+}
 const EDEMON_GATE_MODE1_SLOT_BASE: usize = 404;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2878,7 +2886,7 @@ impl World {
                     item.driver_data.first().copied().unwrap_or(0),
                 )
             });
-        let fdemon_loader_power = (driver == Some(IDR_FDEMONLIGHT)
+        let fdemon_loader_power = (matches!(driver, Some(IDR_FDEMONLIGHT | IDR_FDEMONCANNON))
             && context.fdemon_loader_power.is_none())
         .then(|| fdemon_loader_power_for_light(&self.items, item_id))
         .flatten();
@@ -6059,7 +6067,9 @@ impl World {
         if driver == IDR_FDEMONGATE && effective_context.fdemon_gate_spawn.is_none() {
             effective_context.fdemon_gate_spawn = self.fdemon_gate_spawn_context(item_id);
         }
-        if driver == IDR_FDEMONLIGHT && effective_context.fdemon_loader_power.is_none() {
+        if matches!(driver, IDR_FDEMONLIGHT | IDR_FDEMONCANNON)
+            && effective_context.fdemon_loader_power.is_none()
+        {
             effective_context.fdemon_loader_power =
                 fdemon_loader_power_for_light(&self.items, item_id);
         }
@@ -6361,6 +6371,16 @@ impl World {
                 self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                 outcome
             }
+            ItemDriverOutcome::FdemonCannonPulse {
+                item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.pulse_fdemon_cannon(item_id);
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::FdemonCannonLifeless { .. } => outcome,
             ItemDriverOutcome::FreakDoorUse {
                 item_id,
                 character_id,
@@ -7498,6 +7518,210 @@ impl World {
             return;
         };
         self.mark_dirty_sector(x, y);
+    }
+
+    fn pulse_fdemon_cannon(&mut self, item_id: ItemId) -> bool {
+        let Some((loader_ids, power)) = fdemon_cannon_loaders_and_power(&self.items, item_id)
+        else {
+            return false;
+        };
+        let Some(cannon) = self.items.get(&item_id).cloned() else {
+            return false;
+        };
+
+        if power == 0 {
+            let mut dirty = None;
+            if let Some(cannon) = self.items.get_mut(&item_id) {
+                if cannon.sprite & 1 != 0 {
+                    cannon.sprite &= !1;
+                    dirty = Some((usize::from(cannon.x), usize::from(cannon.y)));
+                }
+            }
+            if let Some((x, y)) = dirty {
+                self.mark_dirty_sector(x, y);
+            }
+            return true;
+        }
+
+        if let Some(shot) = self.find_fdemon_cannon_target(&cannon) {
+            let shot_power = power / 50 + 1;
+            self.create_edemonball_effect(
+                shot.start_x,
+                shot.start_y,
+                shot.target_x,
+                shot.target_y,
+                i32::from(shot_power),
+                2,
+            );
+            self.drain_fdemon_cannon_loaders(&loader_ids, shot_power);
+        }
+
+        let mut dirty = None;
+        if let Some(cannon) = self.items.get_mut(&item_id) {
+            if cannon.sprite & 1 == 0 {
+                cannon.sprite |= 1;
+                dirty = Some((usize::from(cannon.x), usize::from(cannon.y)));
+            }
+        }
+        if let Some((x, y)) = dirty {
+            self.mark_dirty_sector(x, y);
+        }
+        true
+    }
+
+    fn drain_fdemon_cannon_loaders(&mut self, loader_ids: &[ItemId; 3], mut drain: u16) {
+        for loader_id in loader_ids {
+            if drain == 0 {
+                break;
+            }
+            let Some(loader) = self.items.get_mut(loader_id) else {
+                continue;
+            };
+            let power = read_driver_data_u16(&loader.driver_data, 1).unwrap_or_default();
+            let spent = power.min(drain);
+            write_driver_data_u16(&mut loader.driver_data, 1, power - spent);
+            drain -= spent;
+        }
+    }
+
+    fn find_fdemon_cannon_target(&self, cannon: &Item) -> Option<FdemonCannonShot> {
+        let (dx, dy) = Direction::try_from(cannon.driver_data.get(12).copied().unwrap_or_default())
+            .ok()
+            .map(|direction| direction.delta())
+            .unwrap_or((0, 0));
+        let mut best: Option<(u16, FdemonCannonShot)> = None;
+
+        for target in self.characters.values() {
+            if target
+                .flags
+                .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE)
+            {
+                continue;
+            }
+            if target.x.abs_diff(cannon.x) > 17 || target.y.abs_diff(cannon.y) > 17 {
+                continue;
+            }
+
+            let (ox, oy) = if target.x.abs_diff(cannon.x) > target.y.abs_diff(cannon.y) {
+                (
+                    i16::from(target.x > cannon.x) - i16::from(target.x < cannon.x),
+                    0,
+                )
+            } else {
+                (
+                    0,
+                    i16::from(target.y > cannon.y) - i16::from(target.y < cannon.y),
+                )
+            };
+            if dx != ox || dy != oy {
+                continue;
+            }
+
+            let Some(start_x) = offset_u16(cannon.x, ox) else {
+                continue;
+            };
+            let Some(start_y) = offset_u16(cannon.y, oy) else {
+                continue;
+            };
+            if !self.fdemon_cannon_can_hit(
+                cannon.id.0,
+                target.id,
+                start_x,
+                start_y,
+                target.x,
+                target.y,
+            ) {
+                continue;
+            }
+
+            let (target_x, target_y) = self.fdemon_cannon_predicted_target(cannon, target);
+            let distance = target.x.abs_diff(cannon.x) + target.y.abs_diff(cannon.y);
+            let shot = FdemonCannonShot {
+                start_x,
+                start_y,
+                target_x,
+                target_y,
+            };
+            if best
+                .as_ref()
+                .is_none_or(|(best_distance, _)| distance < *best_distance)
+            {
+                best = Some((distance, shot));
+            }
+        }
+
+        best.map(|(_, shot)| shot)
+    }
+
+    fn fdemon_cannon_predicted_target(&self, cannon: &Item, target: &Character) -> (u16, u16) {
+        if target.action != action::WALK {
+            return (target.x, target.y);
+        }
+        let Ok(direction) = Direction::try_from(target.dir) else {
+            return (target.x, target.y);
+        };
+        let (dx, dy) = direction.delta();
+        let dist = map_dist(cannon.x, cannon.y, target.x, target.y);
+        let mut eta = dist * 3 / 2;
+        eta -= target.duration - target.step;
+        if eta <= 0 {
+            return (target.tox, target.toy);
+        }
+        for step in 1..10i32 {
+            eta -= target.duration;
+            if eta <= 0 {
+                let x = i32::from(target.x) + i32::from(dx) * step;
+                let y = i32::from(target.y) + i32::from(dy) * step;
+                return (clamp_world_coordinate(x), clamp_world_coordinate(y));
+            }
+        }
+        (target.x, target.y)
+    }
+
+    fn fdemon_cannon_can_hit(
+        &self,
+        cannon_raw_id: u32,
+        target_id: CharacterId,
+        from_x: u16,
+        from_y: u16,
+        to_x: u16,
+        to_y: u16,
+    ) -> bool {
+        let mut x = i32::from(from_x) * 1024 + 512;
+        let mut y = i32::from(from_y) * 1024 + 512;
+        let raw_dx = i32::from(to_x) - i32::from(from_x);
+        let raw_dy = i32::from(to_y) - i32::from(from_y);
+        if raw_dx.abs() < 2 && raw_dy.abs() < 2 {
+            return false;
+        }
+        let (step_x, step_y) = if raw_dx.abs() > raw_dy.abs() {
+            (raw_dx * 256 / raw_dx.abs(), raw_dy * 256 / raw_dx.abs())
+        } else {
+            (raw_dx * 256 / raw_dy.abs(), raw_dy * 256 / raw_dy.abs())
+        };
+        for _ in 0..48 {
+            x += step_x;
+            y += step_y;
+            let tile_x = x / 1024;
+            let tile_y = y / 1024;
+            if tile_x == i32::from(to_x) && tile_y == i32::from(to_y) {
+                return true;
+            }
+            if self.edemonball_map_blocked(tile_x, tile_y) {
+                let Some(tile) = usize::try_from(tile_x)
+                    .ok()
+                    .zip(usize::try_from(tile_y).ok())
+                    .and_then(|(x, y)| self.map.tile(x, y))
+                else {
+                    return false;
+                };
+                if tile.item == cannon_raw_id || u32::from(tile.character) == target_id.0 {
+                    return true;
+                }
+                return false;
+            }
+        }
+        true
     }
 
     fn apply_enchant_cursor_item(
@@ -12761,6 +12985,51 @@ fn fdemon_loader_power_for_light(
     }
 
     found.then_some(max_power)
+}
+
+fn fdemon_cannon_loaders_and_power(
+    items: &HashMap<ItemId, Item>,
+    cannon_item_id: ItemId,
+) -> Option<([ItemId; 3], u16)> {
+    let cannon = items.get(&cannon_item_id)?;
+    let mut loader_ids = [ItemId(0); 3];
+    let mut max_power = 0u16;
+
+    for (index, loader_nr) in (1..=3u8).enumerate() {
+        let nearest = items
+            .values()
+            .filter(|item| {
+                item.driver == IDR_FDEMONLOADER && item.driver_data.first() == Some(&loader_nr)
+            })
+            .min_by_key(|item| {
+                i32::from(cannon.x).abs_diff(i32::from(item.x))
+                    + i32::from(cannon.y).abs_diff(i32::from(item.y))
+            })?;
+        loader_ids[index] = nearest.id;
+        max_power =
+            max_power.max(read_driver_data_u16(&nearest.driver_data, 1).unwrap_or_default());
+    }
+
+    Some((loader_ids, max_power))
+}
+
+fn read_driver_data_u16(driver_data: &[u8], offset: usize) -> Option<u16> {
+    let bytes = driver_data.get(offset..offset + 2)?;
+    Some(u16::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn write_driver_data_u16(driver_data: &mut Vec<u8>, offset: usize, value: u16) {
+    if driver_data.len() < offset + 2 {
+        driver_data.resize(offset + 2, 0);
+    }
+    driver_data[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn offset_u16(value: u16, delta: i16) -> Option<u16> {
+    let value = i32::from(value) + i32::from(delta);
+    (0..=u16::MAX as i32)
+        .contains(&value)
+        .then_some(value as u16)
 }
 
 fn edemon_section_power_for_light(
@@ -25275,6 +25544,108 @@ mod tests {
         let context = world.edemon_gate_spawn_context(ItemId(7)).unwrap();
         assert_eq!(context.slot, 0);
         assert_eq!((context.x, context.y), (62, 157));
+    }
+
+    #[test]
+    fn world_fdemon_cannon_pulse_shoots_target_and_drains_loader() {
+        let mut world = World::default();
+        let mut cannon = item(7, ItemFlags::USED);
+        cannon.driver = IDR_FDEMONCANNON;
+        cannon.x = 10;
+        cannon.y = 10;
+        cannon.sprite = 14210;
+        cannon.driver_data = vec![0; 13];
+        cannon.driver_data[12] = Direction::Right as u8;
+        world.add_item(cannon);
+
+        for (id, nr) in [(11, 1), (12, 2), (13, 3)] {
+            let mut loader = item(id, ItemFlags::USED);
+            loader.driver = IDR_FDEMONLOADER;
+            loader.x = 8 + nr;
+            loader.y = 12;
+            loader.driver_data = vec![nr as u8, 0, 0];
+            loader.driver_data[1..3].copy_from_slice(&300u16.to_le_bytes());
+            world.add_item(loader);
+        }
+
+        let target = character(1);
+        assert!(world.spawn_character(target, 15, 10));
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONCANNON,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            8,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::FdemonCannonPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }
+        );
+        let effect = world.effects.values().next().unwrap();
+        assert_eq!(effect.effect_type, EF_EDEMONBALL);
+        assert_eq!((effect.from_x, effect.from_y), (11, 10));
+        assert_eq!((effect.to_x, effect.to_y), (15, 10));
+        assert_eq!(effect.strength, 7);
+        assert_eq!(effect.base_sprite, 2);
+        assert_eq!(world.items[&ItemId(7)].sprite & 1, 1);
+        assert_eq!(
+            read_driver_data_u16(&world.items[&ItemId(11)].driver_data, 1),
+            Some(293)
+        );
+    }
+
+    #[test]
+    fn world_fdemon_cannon_zero_power_clears_active_sprite() {
+        let mut world = World::default();
+        let mut cannon = item(7, ItemFlags::USED);
+        cannon.driver = IDR_FDEMONCANNON;
+        cannon.x = 10;
+        cannon.y = 10;
+        cannon.sprite = 14211;
+        cannon.driver_data = vec![0; 13];
+        world.add_item(cannon);
+
+        for (id, nr) in [(11, 1), (12, 2), (13, 3)] {
+            let mut loader = item(id, ItemFlags::USED);
+            loader.driver = IDR_FDEMONLOADER;
+            loader.x = 8 + nr;
+            loader.y = 12;
+            loader.driver_data = vec![nr as u8, 0, 0];
+            world.add_item(loader);
+        }
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_FDEMONCANNON,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            8,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::FdemonCannonPulse { .. }
+        ));
+        assert_eq!(world.items[&ItemId(7)].sprite & 1, 0);
+        assert!(world.effects.is_empty());
     }
 
     fn character(id: u32) -> Character {

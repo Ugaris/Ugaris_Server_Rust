@@ -18142,6 +18142,16 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, text.to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonCannonLifeless {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "It seems lifeless.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderBlocked {
                                             character_id,
                                             reason,
@@ -18304,6 +18314,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::BallTrapProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EdemonBallProjectile { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonCannonPulse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FdemonGateSpawn { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
                                            | ugaris_core::item_driver::ItemDriverOutcome::FdemonWaypoint { .. }

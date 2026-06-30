@@ -733,6 +733,15 @@ pub enum ItemDriverOutcome {
         y: u16,
         schedule_after_ticks: u64,
     },
+    FdemonCannonPulse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        schedule_after_ticks: u64,
+    },
+    FdemonCannonLifeless {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     FreakDoorUse {
         item_id: ItemId,
         character_id: CharacterId,
@@ -1922,6 +1931,7 @@ pub fn execute_item_driver_with_context(
                 IDR_EDEMONTUBE => edemon_tube_driver(character, item, context),
                 IDR_FDEMONLIGHT => fdemon_light_driver(character, item, context),
                 IDR_FDEMONLOADER => fdemon_loader_driver(character, item, context),
+                IDR_FDEMONCANNON => fdemon_cannon_driver(character, item, context),
                 IDR_FDEMONGATE => fdemon_gate_driver(character, item, context),
                 IDR_FDEMONWAYPOINT => fdemon_waypoint_driver(character, item, context),
                 IDR_FDEMONFARM => fdemon_farm_driver(character, item, context),
@@ -6653,6 +6663,29 @@ fn fdemon_loader_driver(
         sound_type,
         schedule_after_ticks: (context.timer_call || character.id.0 == 0)
             .then_some(TICKS_PER_SECOND),
+    }
+}
+
+fn fdemon_cannon_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 && !context.timer_call {
+        return if context.fdemon_loader_power.unwrap_or_default() == 0 {
+            ItemDriverOutcome::FdemonCannonLifeless {
+                item_id: item.id,
+                character_id: character.id,
+            }
+        } else {
+            ItemDriverOutcome::Noop
+        };
+    }
+
+    ItemDriverOutcome::FdemonCannonPulse {
+        item_id: item.id,
+        character_id: character.id,
+        schedule_after_ticks: TICKS_PER_SECOND,
     }
 }
 
@@ -13317,6 +13350,84 @@ mod tests {
                 &ItemDriverContext::default(),
             ),
             ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn fdemon_cannon_dispatches_timer_and_lifeless_use() {
+        let mut timer_character = character(0);
+        let mut cannon = item(7, ItemFlags::USED, 0, IDR_FDEMONCANNON);
+        let timer_request = ItemDriverRequest::Driver {
+            driver: IDR_FDEMONCANNON,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_FDEMONCANNON, 46);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut cannon,
+                timer_request,
+                8,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonCannonPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }
+        );
+
+        let mut user = character(1);
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut user,
+                &mut cannon,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FDEMONCANNON,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                8,
+                false,
+                &ItemDriverContext {
+                    fdemon_loader_power: Some(0),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::FdemonCannonLifeless {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut user,
+                &mut cannon,
+                ItemDriverRequest::Driver {
+                    driver: IDR_FDEMONCANNON,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                6,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_FDEMONCANNON,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                required_area: 8,
+            }
         );
     }
 
