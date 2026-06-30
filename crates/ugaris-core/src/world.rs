@@ -6,7 +6,7 @@ use crate::{
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
-        NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
+        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
     },
     direction::Direction,
     do_action::{
@@ -32,9 +32,10 @@ use crate::{
         IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DUNGEONDOOR, IDR_EDEMONBALL, IDR_EDEMONBLOCK,
         IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONSWITCH,
         IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT,
-        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT, IDR_NIGHTLIGHT,
-        IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH,
-        IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
+        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT, IDR_LABTORCH,
+        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP,
+        IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY,
+        IID_AREA16_SKELLYKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -6841,6 +6842,22 @@ impl World {
             } => {
                 if let Some(after_ticks) = schedule_after_ticks {
                     self.schedule_item_driver_timer(item_id, character_id, after_ticks);
+                }
+                let labtorch_extinguished = self.items.get(&item_id).and_then(|item| {
+                    (item.driver == IDR_LABTORCH
+                        && character_id.0 != 0
+                        && item.driver_data.first().copied() == Some(0))
+                    .then_some((item.x, item.y))
+                });
+                if let Some((x, y)) = labtorch_extinguished {
+                    self.notify_area(
+                        x,
+                        y,
+                        NT_NPC,
+                        NTID_LABGNOMETORCH,
+                        item_id.0 as i32,
+                        character_id.0 as i32,
+                    );
                 }
                 outcome
             }
@@ -13952,8 +13969,8 @@ impl Default for Tick {
 mod tests {
     use crate::{
         character_driver::{
-            CharacterDriverState, SimpleBaddyDriverData, SimpleBaddyEnemy, NTID_GLADIATOR, NT_CHAR,
-            NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
+            CharacterDriverState, SimpleBaddyDriverData, SimpleBaddyEnemy, NTID_GLADIATOR,
+            NTID_LABGNOMETORCH, NT_CHAR, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
         },
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
@@ -13961,10 +13978,10 @@ mod tests {
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGAR,
             IDR_CALIGARFLAME, IDR_CHESTSPAWN, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT,
             IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW,
-            IDR_FLASK, IDR_LAB3_PLANT, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-            IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SKELRAISE,
-            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
-            IID_AREA18_BONE,
+            IDR_FLASK, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT,
+            IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION,
+            IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP,
+            IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -19502,6 +19519,50 @@ mod tests {
         assert_eq!(nightlight.modifier_value[0], 9);
         assert_eq!(nightlight.sprite, 1);
         assert_eq!(world.timers.used_timers(), 1);
+    }
+
+    #[test]
+    fn labtorch_extinguish_notifies_nearby_npcs() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.flags.remove(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(actor, 10, 10));
+        assert!(world.spawn_character(character(2), 12, 10));
+        assert!(world.spawn_character(character(3), 40, 40));
+
+        let mut torch = item(7, ItemFlags::USED | ItemFlags::USE);
+        torch.driver = IDR_LABTORCH;
+        torch.x = 10;
+        torch.y = 10;
+        torch.sprite = 200;
+        torch.driver_data = vec![1, 25];
+        torch.modifier_index[0] = 9;
+        torch.modifier_value[0] = 25;
+        world.add_item(torch);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_LABTORCH,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            22,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::LightChanged { .. }));
+        assert_eq!(world.items[&ItemId(7)].driver_data[0], 0);
+        assert_eq!(world.items[&ItemId(7)].modifier_value[0], 0);
+        assert_eq!(
+            world.characters[&CharacterId(2)].driver_messages,
+            vec![crate::character_driver::CharacterDriverMessage {
+                message_type: NT_NPC,
+                dat1: NTID_LABGNOMETORCH,
+                dat2: 7,
+                dat3: 1,
+            }]
+        );
+        assert!(world.characters[&CharacterId(3)].driver_messages.is_empty());
     }
 
     #[test]

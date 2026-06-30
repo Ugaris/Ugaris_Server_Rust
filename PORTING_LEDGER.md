@@ -637,3 +637,7 @@ Recommended next chest steps:
 ### Iteration 146 Additional Progress
 
 - `/iwilldie` confirmation now uses C `atoi`-style numeric-prefix parsing instead of strict Rust integer parsing, so inputs such as `/iwilldie 77abc` confirm character ID `77` like the legacy command path. Focused server coverage pins the accepted numeric-prefix behavior. Remaining PK command gaps are offline `lookup_name`/`lookup_ID` repository integration for names, reset-name/audit side effects, broader command/help parity, repository-backed clan/alliance policy, and exact realtime source persistence semantics.
+
+### Iteration 147 Additional Progress
+
+- Area 22 Lab 1 `IDR_LABTORCH` extinguish now mirrors the C `notify_area(it[in].x, it[in].y, NT_NPC, NTID_LABGNOMETORCH, in, cn)` side effect: when a character turns off a lit lab torch, the world queues the legacy NPC notification to nearby driver-message recipients with the torch item ID and actor ID while preserving timer storage, player-lighting no-op behavior, NPC lighting, and light mutation. Focused core coverage verifies the notification payload and range filtering. Remaining Lab 1 torch gaps are broader Lab 1 gnome/master character-driver behavior, exact dlog/audit side effects, and live area-22 data smoke coverage.
