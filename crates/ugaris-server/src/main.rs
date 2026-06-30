@@ -48,7 +48,7 @@ use ugaris_core::{
         CommandAlias, DemonShrineResult, IgnoreToggleResult, KeyringAddResult, PlayerActionCode,
         PlayerConnectionState, PlayerRuntime, QueuedAction, XmasTreeResult,
     },
-    quest::QuestReopenResult,
+    quest::{QuestReopenResult, QF_OPEN},
     spell::{
         is_one_carry_driver, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD,
         EF_EARTHRAIN, EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,
@@ -2751,6 +2751,63 @@ fn apply_admin_character_command(
                 area_id,
                 if was_set { "set" } else { "not set" }
             )],
+            ..Default::default()
+        });
+    }
+
+    if lower.len() >= 5 && "questlog".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let name = rest
+            .trim_start()
+            .split_whitespace()
+            .next()
+            .unwrap_or_default();
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Character {name} not found")],
+                ..Default::default()
+            });
+        };
+        let Some(target_name) = world
+            .characters
+            .get(&target_id)
+            .map(|character| character.name.clone())
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Character {name} not found")],
+                ..Default::default()
+            });
+        };
+        let Some(target_player) = runtime.player_for_character(target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Failed to get quest data for {target_name}")],
+                ..Default::default()
+            });
+        };
+
+        let mut messages = vec![format!("Quest log for {target_name}:")];
+        for (quest_id, entry) in target_player.quest_log.entries().iter().enumerate() {
+            if entry.flags != 0 {
+                messages.push(format!(
+                    "Quest #{}: {}, Done level: {}",
+                    quest_id,
+                    if (entry.flags & QF_OPEN) != 0 {
+                        "Open"
+                    } else {
+                        "Closed"
+                    },
+                    entry.done
+                ));
+            }
+        }
+        return Some(KeyringCommandResult {
+            messages,
             ..Default::default()
         });
     }
@@ -13898,6 +13955,110 @@ mod tests {
         )
         .expect("god resetgift missing player data should be handled");
         assert_eq!(no_runtime.messages, vec!["Could not retrieve player data."]);
+    }
+
+    #[test]
+    fn god_questlog_lists_flagged_quests_like_c() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        world.add_character(login_character(
+            target_id,
+            &login_block("Target"),
+            1,
+            11,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+        let mut target_player = PlayerRuntime::connected(80, 0);
+        target_player.character_id = Some(target_id);
+        target_player.quest_log.open(3);
+        target_player.quest_log.mark_done(4);
+        runtime.players.insert(80, target_player);
+
+        let result =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/quest Target", 1)
+                .expect("legacy cmdcmp accepts questlog prefix length five");
+
+        assert_eq!(
+            result.messages,
+            vec![
+                "Quest log for Target:",
+                "Quest #3: Open, Done level: 0",
+                "Quest #4: Closed, Done level: 1",
+            ]
+        );
+    }
+
+    #[test]
+    fn questlog_is_god_only_and_reports_missing_data_like_c() {
+        let mut world = World::default();
+        let caller_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        world.add_character(login_character(
+            caller_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        world.add_character(login_character(
+            target_id,
+            &login_block("Target"),
+            1,
+            11,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/questlog Target",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&caller_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        let no_runtime = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/questlog Target",
+            1,
+        )
+        .expect("god questlog should be handled");
+        assert_eq!(
+            no_runtime.messages,
+            vec!["Failed to get quest data for Target"]
+        );
+
+        let missing = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/questlog Missing",
+            1,
+        )
+        .expect("god questlog missing target should be handled");
+        assert_eq!(missing.messages, vec!["Character Missing not found"]);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            caller_id,
+            "/ques Target",
+            1,
+        )
+        .is_none());
     }
 
     #[test]

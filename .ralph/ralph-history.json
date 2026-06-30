@@ -5184,9 +5184,31 @@
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "- Area 15 `IDR_SWAMPWHISP = 74` now dispatches through the legacy area libload guard for C `swampwhisp`: zero-character timer-only execution, initial origin/direction `drdata[1..3]` setup, daylight da"
       ]
+    },
+    {
+      "iteration": 190,
+      "startedAt": "2026-06-30T15:50:40.575Z",
+      "endedAt": "2026-06-30T15:58:15.719Z",
+      "durationMs": 454998,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The tests are added. I’m running formatting and the focused server test subset first, then I’ll expand if anything nearby fails.",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 278 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 281 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+      ]
     }
   ],
-  "totalDurationMs": 108153761,
+  "totalDurationMs": 108608759,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -5205,13 +5227,13 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 48,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 5,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 71,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 72,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 5,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 3,
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 33,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 34,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 10,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -5756,7 +5778,10 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 837 filtered out; finished in 0.00s": 1,
       "test result: ok. 279 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 839 filtered out; finished in 0.00s": 1,
-      "test result: ok. 843 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 843 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "The tests are added. I’m running formatting and the focused server test subset first, then I’ll expa": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 278 filtered out; finished in 0.00s": 1,
+      "test result: ok. 281 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
