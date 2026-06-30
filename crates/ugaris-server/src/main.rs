@@ -22288,6 +22288,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::FlameThrowerExtinguished { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapTriggered { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::SpikeTrapReset { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SwampArmPulse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TriggerMapItem { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StepTrapDiscoverTarget { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderInsertRune { .. }

@@ -34,7 +34,7 @@ use crate::{
         IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT,
         IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT, IDR_LABTORCH,
         IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP,
-        IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY,
+        IDR_SWAMPARM, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY,
         IID_AREA16_SKELLYKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
@@ -2967,6 +2967,10 @@ impl World {
             && !context.has_area16_skelly_key)
             .then(|| self.character_has_template_id(character_id, IID_AREA16_SKELLYKEY))
             .unwrap_or(false);
+        let swamp_arm_triggered = (driver == Some(IDR_SWAMPARM)
+            && context.swamp_arm_triggered.is_none())
+        .then(|| self.swamp_arm_triggered(item_id))
+        .flatten();
         let Some(character) = self.characters.get_mut(&character_id) else {
             return ItemDriverOutcome::Noop;
         };
@@ -3002,6 +3006,9 @@ impl World {
         effective_context.has_area11_palace_key |= area11_palace_key_context;
         effective_context.has_area16_robber_key |= area16_robber_key_context;
         effective_context.has_area16_skelly_key |= area16_skelly_key_context;
+        if effective_context.swamp_arm_triggered.is_none() {
+            effective_context.swamp_arm_triggered = swamp_arm_triggered;
+        }
         if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
             cursor_context
         {
@@ -3059,6 +3066,58 @@ impl World {
             }
         }
         false
+    }
+
+    fn swamp_arm_triggered(&self, item_id: ItemId) -> Option<bool> {
+        let item = self.items.get(&item_id)?;
+        if item.driver_data.first().copied().unwrap_or_default() != 0 {
+            return Some(true);
+        }
+        let x = i32::from(item.x);
+        let y = i32::from(item.y);
+        let horizontal = [(-1, 0), (-2, 0), (1, 0), (2, 0)]
+            .iter()
+            .any(|(dx, dy)| self.map_character_at(x + dx, y + dy).is_some());
+        if horizontal {
+            return Some((self.tick.0 + u64::from(item.id.0)) % 5 == 0);
+        }
+        let adjacent_row = [
+            (-1, -1),
+            (-2, -1),
+            (1, -1),
+            (2, -1),
+            (-1, 1),
+            (-2, 1),
+            (1, 1),
+            (2, 1),
+        ]
+        .iter()
+        .any(|(dx, dy)| self.map_character_at(x + dx, y + dy).is_some());
+        if adjacent_row {
+            return Some((self.tick.0 + u64::from(item.id.0)) % 3 == 0);
+        }
+        Some(false)
+    }
+
+    fn swamp_arm_damage_targets(&self, item_id: ItemId) -> Vec<CharacterId> {
+        let Some(item) = self.items.get(&item_id) else {
+            return Vec::new();
+        };
+        let x = i32::from(item.x);
+        let y = i32::from(item.y);
+        [1, 2, -1, -2]
+            .into_iter()
+            .filter_map(|dx| self.map_character_at(x + dx, y))
+            .collect()
+    }
+
+    fn map_character_at(&self, x: i32, y: i32) -> Option<CharacterId> {
+        if x < 0 || y < 0 {
+            return None;
+        }
+        self.map.tile(x as usize, y as usize).and_then(|tile| {
+            (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+        })
     }
 
     pub fn process_simple_baddy_message_actions(
@@ -6693,6 +6752,20 @@ impl World {
                         33,
                     );
                 }
+                outcome
+            }
+            ItemDriverOutcome::SwampArmPulse {
+                item_id,
+                damage_now,
+                schedule_after_ticks,
+                ..
+            } => {
+                if damage_now {
+                    for target_id in self.swamp_arm_damage_targets(item_id) {
+                        self.apply_legacy_hurt(target_id, None, 10 * POWERSCALE, 1, 50, 90);
+                    }
+                }
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                 outcome
             }
             ItemDriverOutcome::BoneBridgePlace {
@@ -14020,7 +14093,7 @@ mod tests {
             IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_LIZARDFLOWER,
             IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY,
             IDR_POTION, IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
-            IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_STEPTRAP, IDR_SWAMPARM, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -26421,6 +26494,52 @@ mod tests {
         let target = world.characters.get(&CharacterId(3)).unwrap();
         assert_eq!(target.hp, 10 * POWERSCALE);
         assert!(!target.flags.contains(CharacterFlags::NODEATH));
+    }
+
+    #[test]
+    fn swamparm_timer_damages_horizontal_targets_on_frame_twelve() {
+        let mut world = World {
+            map: MapGrid::new(20, 20),
+            ..World::default()
+        };
+        world.add_character(character(0));
+        let mut target = character(3);
+        target.hp = 20 * POWERSCALE;
+        assert!(world.spawn_character(target, 11, 10));
+        let mut adjacent_row = character(4);
+        adjacent_row.hp = 20 * POWERSCALE;
+        assert!(world.spawn_character(adjacent_row, 11, 11));
+        let mut arm = item(8, ItemFlags::USED | ItemFlags::USE);
+        arm.driver = IDR_SWAMPARM;
+        arm.x = 10;
+        arm.y = 10;
+        arm.sprite = 21011;
+        arm.driver_data = vec![11];
+        world.add_item(arm);
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_SWAMPARM,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            15,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::SwampArmPulse {
+                damage_now: true,
+                ..
+            }
+        ));
+        assert_eq!(world.characters[&CharacterId(3)].hp, 10 * POWERSCALE);
+        assert_eq!(world.characters[&CharacterId(4)].hp, 20 * POWERSCALE);
     }
 
     fn character(id: u32) -> Character {

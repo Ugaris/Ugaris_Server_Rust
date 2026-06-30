@@ -389,6 +389,7 @@ pub struct ItemDriverContext {
     pub islena_resting: bool,
     pub has_area16_robber_key: bool,
     pub has_area16_skelly_key: bool,
+    pub swamp_arm_triggered: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1101,6 +1102,12 @@ pub enum ItemDriverOutcome {
         damage: i32,
         armor_percent: i32,
         schedule_after_ticks: Option<u64>,
+    },
+    SwampArmPulse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        damage_now: bool,
+        schedule_after_ticks: u64,
     },
     FdemonWaypoint {
         item_id: ItemId,
@@ -2097,6 +2104,7 @@ pub fn execute_item_driver_with_context(
                 IDR_TRAPDOOR => trapdoor_driver(character, item, context),
                 IDR_JUNKPILE => junkpile_driver(character, item, context),
                 IDR_GASTRAP => gastrap_driver(character, item, context),
+                IDR_SWAMPARM => swamparm_driver(character, item, context),
                 IDR_PALACEDOOR => palace_door_driver(character, item, context),
                 IDR_ISLENADOOR => islena_door_driver(character, item, context),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
@@ -2203,6 +2211,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
         IDR_RANDOMSHRINE | IDR_TRAPDOOR | IDR_JUNKPILE | IDR_GASTRAP => Some(14),
+        IDR_SWAMPARM | IDR_SWAMPWHISP | IDR_SWAMPSPAWN => Some(15),
         IDR_FORESTCHEST => Some(16),
         IDR_LQ_TICKER => Some(20),
         IDR_LAB2_WATER | IDR_LAB2_REGENERATE | IDR_LABTORCH => Some(22),
@@ -4794,6 +4803,43 @@ fn gastrap_driver(
         power: drdata(item, 0),
         schedule_initial_trigger,
         schedule_animation,
+    }
+}
+
+fn swamparm_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 || !context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if item.driver_data.first().copied().unwrap_or_default() == 0
+        && context.swamp_arm_triggered != Some(true)
+    {
+        return ItemDriverOutcome::SwampArmPulse {
+            item_id: item.id,
+            character_id: CharacterId(0),
+            damage_now: false,
+            schedule_after_ticks: 1,
+        };
+    }
+
+    item.driver_data.resize(1, 0);
+    item.driver_data[0] = item.driver_data[0].saturating_add(1);
+    item.sprite += 1;
+    let damage_now = item.driver_data[0] == 12;
+    if item.driver_data[0] > 15 {
+        item.driver_data[0] = 0;
+        item.sprite -= 16;
+    }
+
+    ItemDriverOutcome::SwampArmPulse {
+        item_id: item.id,
+        character_id: CharacterId(0),
+        damage_now,
+        schedule_after_ticks: 1,
     }
 }
 
@@ -8263,6 +8309,167 @@ mod tests {
                 item_id: ItemId(7),
                 schedule_after_ticks: TICKS_PER_SECOND,
             }
+        );
+    }
+
+    #[test]
+    fn swamparm_timer_animates_only_when_triggered() {
+        let mut actor = character(0);
+        let mut arm = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SWAMPARM);
+        arm.sprite = 21000;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPARM,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut arm,
+                request,
+                15,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    swamp_arm_triggered: Some(false),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::SwampArmPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                damage_now: false,
+                schedule_after_ticks: 1,
+            }
+        );
+        assert_eq!(arm.sprite, 21000);
+        assert_eq!(arm.driver_data.first().copied().unwrap_or_default(), 0);
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut arm,
+                request,
+                15,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    swamp_arm_triggered: Some(true),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::SwampArmPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                damage_now: false,
+                schedule_after_ticks: 1,
+            }
+        );
+        assert_eq!(arm.sprite, 21001);
+        assert_eq!(arm.driver_data[0], 1);
+    }
+
+    #[test]
+    fn swamparm_frame_twelve_reports_damage_and_frame_sixteen_resets() {
+        let mut actor = character(0);
+        let mut arm = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SWAMPARM);
+        arm.sprite = 21011;
+        arm.driver_data = vec![11];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPARM,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut arm,
+                request,
+                15,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::SwampArmPulse {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                damage_now: true,
+                schedule_after_ticks: 1,
+            }
+        );
+        assert_eq!(arm.driver_data[0], 12);
+
+        arm.driver_data[0] = 15;
+        arm.sprite = 21015;
+        execute_item_driver_with_context(
+            &mut actor,
+            &mut arm,
+            request,
+            15,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(arm.driver_data[0], 0);
+        assert_eq!(arm.sprite, 21000);
+    }
+
+    #[test]
+    fn swamparm_preserves_area15_and_timer_only_guards() {
+        let mut actor = character(0);
+        let mut arm = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SWAMPARM);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPARM,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut arm,
+                request,
+                1,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_SWAMPARM,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                required_area: 15,
+            }
+        );
+
+        let mut actor = character(1);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SWAMPARM,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut arm,
+                request,
+                15,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::Noop
         );
     }
 
