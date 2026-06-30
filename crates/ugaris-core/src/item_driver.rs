@@ -621,6 +621,34 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    TeufelDoor {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+    },
+    TeufelDoorNoHumans {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelDoorNoBeggars {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelDoorOnlyNobles {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelDoorBusy {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelDoorBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: i32,
+        y: i32,
+    },
     DungeonTeleport {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2247,6 +2275,7 @@ pub fn execute_item_driver_with_context(
                 IDR_XMASMAKER => xmasmaker_driver(character, item),
                 IDR_CALIGAR => caligar_driver(character, item, context),
                 IDR_ARKHATA => arkhata_driver(character, item, context),
+                IDR_TEUFELDOOR => teufel_door_driver(character, item),
                 IDR_TEUFELARENAEXIT => teufel_arena_exit_driver(character, item),
                 IDR_CALIGARFLAME => flamethrow_driver(character, item, context),
                 IDR_FREAKDOOR => freakdoor_driver(character, item),
@@ -2453,6 +2482,57 @@ fn teufel_arena_exit_driver(character: &Character, item: &Item) -> ItemDriverOut
         character_id: character.id,
         x: 206,
         y: 231,
+    }
+}
+
+fn teufel_door_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if !matches!(character.sprite, 27 | 157 | 39) {
+        return ItemDriverOutcome::TeufelDoorNoHumans {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let door_kind = item.driver_data.first().copied().unwrap_or_default();
+    if door_kind == 2 && character.sprite == 27 {
+        return ItemDriverOutcome::TeufelDoorNoBeggars {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if door_kind == 3 && character.sprite != 39 {
+        return ItemDriverOutcome::TeufelDoorOnlyNobles {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let dx = i32::from(character.x) - i32::from(item.x);
+    let dy = i32::from(character.y) - i32::from(item.y);
+    if dx != 0 && dy != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let x = i32::from(item.x) - dx;
+    let y = i32::from(item.y) - dy;
+    if x < 1 || x > MAX_MAP as i32 - 2 || y < 1 || y > MAX_MAP as i32 - 2 {
+        return ItemDriverOutcome::TeufelDoorBug {
+            item_id: item.id,
+            character_id: character.id,
+            x,
+            y,
+        };
+    }
+
+    ItemDriverOutcome::TeufelDoor {
+        item_id: item.id,
+        character_id: character.id,
+        x: x as u16,
+        y: y as u16,
     }
 }
 
@@ -18803,6 +18883,98 @@ mod tests {
                 x: 206,
                 y: 231,
             }
+        );
+    }
+
+    #[test]
+    fn teufel_door_enforces_legacy_sprite_class_gates() {
+        let mut actor = character(1);
+        actor.sprite = 1;
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TEUFELDOOR);
+        door.driver_data = vec![0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TEUFELDOOR,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut door, request, 34, false),
+            ItemDriverOutcome::TeufelDoorNoHumans {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.sprite = 27;
+        door.driver_data[0] = 2;
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut door, request, 34, false),
+            ItemDriverOutcome::TeufelDoorNoBeggars {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.sprite = 157;
+        door.driver_data[0] = 3;
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut door, request, 34, false),
+            ItemDriverOutcome::TeufelDoorOnlyNobles {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn teufel_door_targets_opposite_cardinal_tile() {
+        let mut actor = character(1);
+        actor.sprite = 39;
+        actor.x = 9;
+        actor.y = 10;
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TEUFELDOOR);
+        door.x = 10;
+        door.y = 10;
+        door.driver_data = vec![3];
+
+        assert_eq!(
+            execute_item_driver(
+                &mut actor,
+                &mut door,
+                ItemDriverRequest::Driver {
+                    driver: IDR_TEUFELDOOR,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                34,
+                false,
+            ),
+            ItemDriverOutcome::TeufelDoor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 11,
+                y: 10,
+            }
+        );
+
+        actor.y = 9;
+        assert_eq!(
+            execute_item_driver(
+                &mut actor,
+                &mut door,
+                ItemDriverRequest::Driver {
+                    driver: IDR_TEUFELDOOR,
+                    item_id: ItemId(8),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                34,
+                false,
+            ),
+            ItemDriverOutcome::Noop
         );
     }
 

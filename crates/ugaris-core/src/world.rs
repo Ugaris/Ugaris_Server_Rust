@@ -6844,6 +6844,30 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::TeufelDoor {
+                item_id,
+                character_id,
+                x,
+                y,
+            } => {
+                if self.teleport_character(character_id, x, y, true) {
+                    if let Some(character) = self.characters.get_mut(&character_id) {
+                        character.dir = match character.dir {
+                            1 => 5,
+                            5 => 1,
+                            7 => 3,
+                            3 => 7,
+                            other => other,
+                        };
+                    }
+                    outcome
+                } else {
+                    ItemDriverOutcome::TeufelDoorBusy {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             ItemDriverOutcome::DoorToggle {
                 item_id,
                 character_id,
@@ -23189,6 +23213,43 @@ mod tests {
         );
         let actor = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!((actor.x, actor.y), (206, 231));
+    }
+
+    #[test]
+    fn world_executes_teufel_door_and_reverses_cardinal_facing() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.sprite = 27;
+        actor.dir = Direction::Right as u8;
+        assert!(world.spawn_character(actor, 9, 10));
+        let mut door = item(8, ItemFlags::USED | ItemFlags::USE);
+        door.driver = crate::item_driver::IDR_TEUFELDOOR;
+        door.driver_data = vec![0];
+        world.map.set_item_map(&mut door, 10, 10);
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_TEUFELDOOR,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            34,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TeufelDoor {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 11,
+                y: 10,
+            }
+        );
+        let actor = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((actor.x, actor.y), (11, 10));
+        assert_eq!(actor.dir, Direction::Left as u8);
     }
 
     #[test]

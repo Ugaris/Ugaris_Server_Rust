@@ -22275,6 +22275,29 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You cannot leave with less than full health.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoor { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorNoHumans { character_id, .. } => {
+                                            feedback.push((character_id, "A demon looks through the view-hole in the door and shouts: \"No humans allowed!\"".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorNoBeggars { character_id, .. } => {
+                                            feedback.push((character_id, "A demon looks through the view-hole in the door and shouts: \"No beggars allowed!\"".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorOnlyNobles { character_id, .. } => {
+                                            feedback.push((character_id, "A demon looks through the view-hole in the door and shouts: \"Only nobles allowed!\"".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorBusy { character_id, .. } => {
+                                            feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorBug { character_id, x, y, .. } => {
+                                            feedback.push((character_id, format!("You touch a teleport object but nothing happens - BUG ({x},{y}).")));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseDust { character_id, .. } => {
                                             feedback.push((character_id, "The skeleton crumbles to dust as you touch it.".to_string()));
                                             executed += 1;
