@@ -16,7 +16,9 @@ use ugaris_core::{
         CharacterDriverState, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
     },
     direction::Direction,
-    do_action::{can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy},
+    do_action::{
+        can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy, ItemUseRequest,
+    },
     drvlib::char_dist,
     effect::Effect,
     entity::{
@@ -37,8 +39,8 @@ use ugaris_core::{
         IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
-        consume_item, give_item_to_character, replace_item_in_character, GiveItemFlags,
-        GiveItemResult,
+        can_use_inventory_slot, consume_item, give_item_to_character, replace_item_in_character,
+        GiveItemFlags, GiveItemResult,
     },
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
     legacy::{action, profession, worn_slot, INVENTORY_START_INVENTORY},
@@ -61,7 +63,7 @@ use ugaris_core::{
         COL_RESET,
     },
     tick::TICKS_PER_SECOND,
-    world::{LegacyHurtEvent, LookMapRequest},
+    world::{LegacyHurtEvent, LookMapRequest, WorldActionCompletion},
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
 };
@@ -840,6 +842,14 @@ enum AccountDepotCommandResult {
     Blocked(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InventoryCommandResult {
+    Ignored,
+    Changed,
+    ContainerOpened { account_depot: bool },
+    Look(String),
+}
+
 const LEGACY_CONTAINER_SIZE: usize = ugaris_core::entity::INVENTORY_SIZE - 2;
 const IID_AREA19_WOLFSSKIN: u32 = 0x0100008A;
 const IID_AREA19_SALT: u32 = 0x0100008B;
@@ -931,7 +941,7 @@ const TORCH_UNDERWATER_MESSAGE: &str = "Obviously, thou canst not light thy torc
 const TORCH_HISS_MESSAGE: &str = "Your hear your torch hiss.";
 const MAP_BOOTSTRAP_CHUNK_TARGET: usize = MAX_LEGACY_TICK_PAYLOAD - 512;
 const MAX_CLIENT_EFFECTS: usize = 64;
-const DEFAULT_PLAYER_TEMPLATE: &str = "new_warrior_m";
+const DEFAULT_PLAYER_TEMPLATE: &str = "seyan_m";
 const IID_KEY_RING: u32 = (59 << 24) | 0x000002;
 const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
 const IID_PLACEHOLDER_KEY: u32 = (59 << 24) | 0x000004;
@@ -1454,6 +1464,11 @@ fn login_character_from_template(
     character
         .flags
         .insert(CharacterFlags::USED | CharacterFlags::PLAYER | CharacterFlags::ALIVE);
+    if DEFAULT_PLAYER_TEMPLATE.starts_with("seyan") {
+        character
+            .flags
+            .insert(CharacterFlags::WARRIOR | CharacterFlags::MAGE);
+    }
     character.rest_area = area_id;
     character.rest_x = spawn_x as u16;
     character.rest_y = spawn_y as u16;
@@ -10443,6 +10458,158 @@ fn check_current_container(world: &mut World, character_id: CharacterId) -> bool
     valid
 }
 
+fn apply_inventory_client_action(
+    world: &mut World,
+    player: Option<&PlayerRuntime>,
+    character_id: CharacterId,
+    action: &ClientAction,
+    area_id: u16,
+) -> InventoryCommandResult {
+    match *action {
+        ClientAction::Swap { slot } => inventory_swap_slot(world, character_id, usize::from(slot)),
+        ClientAction::LookInventory { slot } => {
+            inventory_look_slot(world, character_id, usize::from(slot))
+        }
+        ClientAction::UseInventory { slot } => {
+            inventory_use_slot(world, player, character_id, usize::from(slot), area_id)
+        }
+        _ => InventoryCommandResult::Ignored,
+    }
+}
+
+fn inventory_swap_slot(
+    world: &mut World,
+    character_id: CharacterId,
+    slot: usize,
+) -> InventoryCommandResult {
+    if !can_use_inventory_slot(slot) {
+        return InventoryCommandResult::Ignored;
+    }
+
+    let Some((cursor_id, slot_id)) = world.characters.get(&character_id).map(|character| {
+        let cursor_id = character
+            .cursor_item
+            .filter(|item_id| world.items.contains_key(item_id));
+        let slot_id = character
+            .inventory
+            .get(slot)
+            .copied()
+            .flatten()
+            .filter(|item_id| world.items.contains_key(item_id));
+        (cursor_id, slot_id)
+    }) else {
+        return InventoryCommandResult::Ignored;
+    };
+    if cursor_id.is_none() && slot_id.is_none() {
+        return InventoryCommandResult::Ignored;
+    }
+
+    if let Some(item_id) = cursor_id {
+        if let Some(item) = world.items.get_mut(&item_id) {
+            item.carried_by = Some(character_id);
+            item.contained_in = None;
+            item.x = 0;
+            item.y = 0;
+        }
+    }
+    if let Some(item_id) = slot_id {
+        if let Some(item) = world.items.get_mut(&item_id) {
+            item.carried_by = Some(character_id);
+            item.contained_in = None;
+            item.x = 0;
+            item.y = 0;
+        }
+    }
+
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return InventoryCommandResult::Ignored;
+    };
+    character.cursor_item = slot_id;
+    character.inventory[slot] = cursor_id;
+    character.flags.insert(CharacterFlags::ITEMS);
+    InventoryCommandResult::Changed
+}
+
+fn inventory_look_slot(
+    world: &World,
+    character_id: CharacterId,
+    slot: usize,
+) -> InventoryCommandResult {
+    if !can_use_inventory_slot(slot) {
+        return InventoryCommandResult::Ignored;
+    }
+    let Some(character) = world.characters.get(&character_id) else {
+        return InventoryCommandResult::Ignored;
+    };
+    character
+        .inventory
+        .get(slot)
+        .copied()
+        .flatten()
+        .and_then(|item_id| world.items.get(&item_id))
+        .map(|item| legacy_item_look_text(item, character))
+        .filter(|text| !text.is_empty())
+        .map(InventoryCommandResult::Look)
+        .unwrap_or(InventoryCommandResult::Ignored)
+}
+
+fn inventory_use_slot(
+    world: &mut World,
+    player: Option<&PlayerRuntime>,
+    character_id: CharacterId,
+    slot: usize,
+    area_id: u16,
+) -> InventoryCommandResult {
+    if !can_use_inventory_slot(slot) {
+        return InventoryCommandResult::Ignored;
+    }
+    let Some(item_id) = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.inventory.get(slot).copied().flatten())
+    else {
+        return InventoryCommandResult::Ignored;
+    };
+    if world
+        .items
+        .get(&item_id)
+        .is_none_or(|item| !item.flags.contains(ItemFlags::USE))
+    {
+        return InventoryCommandResult::Ignored;
+    }
+
+    let request = ItemUseRequest {
+        character_id,
+        item_id,
+        spec: 0,
+    };
+    match world.use_item_request(request, true) {
+        Ok(ugaris_core::item_driver::UseItemOutcome::OpenContainer { .. })
+        | Ok(ugaris_core::item_driver::UseItemOutcome::OpenDepot { .. }) => {
+            InventoryCommandResult::ContainerOpened {
+                account_depot: false,
+            }
+        }
+        Ok(ugaris_core::item_driver::UseItemOutcome::OpenAccountDepot { .. }) => {
+            InventoryCommandResult::ContainerOpened {
+                account_depot: true,
+            }
+        }
+        Ok(ugaris_core::item_driver::UseItemOutcome::Dispatch(request)) => {
+            let context = item_driver_context_for_request(world, player, &request);
+            let outcome =
+                world.execute_item_driver_request_with_context(request, area_id, &context);
+            match outcome {
+                ugaris_core::item_driver::ItemDriverOutcome::Unsupported { .. } => {
+                    InventoryCommandResult::Ignored
+                }
+                _ => InventoryCommandResult::Changed,
+            }
+        }
+        Err(_) => InventoryCommandResult::Ignored,
+    }
+}
+
 fn apply_account_depot_command(
     world: &mut World,
     depot: &mut AccountDepotState,
@@ -11918,6 +12085,23 @@ fn action_to_queued(action: &ClientAction) -> Option<QueuedAction> {
         _ => return None,
     };
     Some(queued)
+}
+
+fn clear_completed_use_actions(
+    runtime: &mut ServerRuntime,
+    completed_actions: &[WorldActionCompletion],
+) {
+    for completion in completed_actions {
+        if completion.action_id != action::USE {
+            continue;
+        }
+        let Some(player) = runtime.player_for_character_mut(completion.character_id) else {
+            continue;
+        };
+        if player.action.action == PlayerActionCode::Use {
+            player.driver_halt();
+        }
+    }
 }
 
 fn spell_to_player_action(spell: SpellAction, character_target: bool) -> PlayerActionCode {
@@ -16772,6 +16956,129 @@ mod tests {
         assert_eq!(world.characters[&character_id].current_container, None);
     }
 
+    #[test]
+    fn inventory_swap_moves_cursor_and_slot_items() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.cursor_item = Some(ItemId(10));
+        character.inventory[30] = Some(ItemId(11));
+        world.add_character(character);
+        world.add_item(test_item(
+            ItemId(10),
+            100,
+            ItemFlags::USED | ItemFlags::TAKE,
+        ));
+        world.add_item(test_item(
+            ItemId(11),
+            200,
+            ItemFlags::USED | ItemFlags::TAKE,
+        ));
+
+        let result = apply_inventory_client_action(
+            &mut world,
+            None,
+            character_id,
+            &ClientAction::Swap { slot: 30 },
+            1,
+        );
+
+        assert_eq!(result, InventoryCommandResult::Changed);
+        let character = &world.characters[&character_id];
+        assert_eq!(character.cursor_item, Some(ItemId(11)));
+        assert_eq!(character.inventory[30], Some(ItemId(10)));
+        assert_eq!(world.items[&ItemId(10)].carried_by, Some(character_id));
+        assert_eq!(world.items[&ItemId(11)].carried_by, Some(character_id));
+    }
+
+    #[test]
+    fn inventory_look_uses_legacy_item_text() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(10));
+        world.add_character(character);
+        let mut item = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::TAKE);
+        item.name = "Fine Sword".to_string();
+        item.description = "A carefully balanced blade.".to_string();
+        world.add_item(item);
+
+        let result = apply_inventory_client_action(
+            &mut world,
+            None,
+            character_id,
+            &ClientAction::LookInventory { slot: 30 },
+            1,
+        );
+
+        assert_eq!(
+            result,
+            InventoryCommandResult::Look("Fine Sword:\nA carefully balanced blade.".to_string())
+        );
+    }
+
+    #[test]
+    fn inventory_use_opens_carried_container() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[30] = Some(ItemId(10));
+        world.add_character(character);
+        let mut container = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        container.content_id = 1;
+        container.carried_by = Some(character_id);
+        world.add_item(container);
+
+        let result = apply_inventory_client_action(
+            &mut world,
+            None,
+            character_id,
+            &ClientAction::UseInventory { slot: 30 },
+            1,
+        );
+
+        assert_eq!(
+            result,
+            InventoryCommandResult::ContainerOpened {
+                account_depot: false
+            }
+        );
+        assert_eq!(
+            world.characters[&character_id].current_container,
+            Some(ItemId(10))
+        );
+    }
+
+    #[test]
+    fn completed_map_use_clears_pending_use_action() {
+        let mut runtime = ServerRuntime::default();
+        let character_id = CharacterId(7);
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        let player = runtime.players.get_mut(&1).unwrap();
+        player.character_id = Some(character_id);
+        player.set_pending_action(QueuedAction {
+            action: PlayerActionCode::Use,
+            arg1: 10,
+            arg2: 10,
+        });
+        let completions = [WorldActionCompletion {
+            character_id,
+            action_id: action::USE,
+            action_item_id: Some(ItemId(10)),
+            ok: true,
+            legacy_return_code: 1,
+            item_use: None,
+            old_x: 10,
+            old_y: 10,
+            new_x: 10,
+            new_y: 10,
+        }];
+
+        clear_completed_use_actions(&mut runtime, &completions);
+
+        assert_eq!(runtime.players[&1].action.action, PlayerActionCode::Idle);
+    }
+
     fn test_item(
         id: ugaris_core::ids::ItemId,
         sprite: i32,
@@ -20352,7 +20659,7 @@ mod tests {
         loader
             .load_character_templates_str(
                 r#"
-                new_warrior_m:
+                seyan_m:
                     name="Newbie"
                     sprite=2
                     flag=CF_PLAYER
@@ -20382,6 +20689,8 @@ mod tests {
         assert_eq!(character.id, CharacterId(77));
         assert_eq!(character.name, "Tester");
         assert_eq!(character.sprite, 2);
+        assert!(character.flags.contains(CharacterFlags::WARRIOR));
+        assert!(character.flags.contains(CharacterFlags::MAGE));
         assert_eq!(
             (character.rest_area, character.rest_x, character.rest_y),
             (12, 42, 43)
@@ -22571,6 +22880,33 @@ async fn main() -> anyhow::Result<()> {
                                     command_feedback.push((character_id, message));
                                 }
                                 AccountDepotCommandResult::Ignored => {}
+                            }
+                        }
+                        ClientAction::Swap { .. }
+                        | ClientAction::UseInventory { .. }
+                        | ClientAction::LookInventory { .. } => {
+                            let result = apply_inventory_client_action(
+                                &mut world,
+                                runtime.player_for_character(character_id),
+                                character_id,
+                                &action,
+                                config.area_id,
+                            );
+                            match result {
+                                InventoryCommandResult::Changed => {
+                                    command_inventory_refresh.push(character_id);
+                                }
+                                InventoryCommandResult::ContainerOpened { account_depot } => {
+                                    if account_depot {
+                                        runtime.ensure_account_depot(character_id);
+                                    }
+                                    command_inventory_refresh.push(character_id);
+                                    command_container_refresh.push(character_id);
+                                }
+                                InventoryCommandResult::Look(message) => {
+                                    command_feedback.push((character_id, message));
+                                }
+                                InventoryCommandResult::Ignored => {}
                             }
                         }
                         ClientAction::TakeGold { .. } | ClientAction::DropGold => {
@@ -25569,6 +25905,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                         info!(opened, executed, unsupported, deferred_templates, blocked, failed, feedback_sessions, container_sessions, tick = world.tick.0, "processed item-use requests");
                     }
+                    clear_completed_use_actions(&mut runtime, &completed_actions);
                     let mut refreshed_sessions = 0;
                     for completion in &completed_actions {
                         let Some(character) = world.characters.get(&completion.character_id) else {
