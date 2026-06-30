@@ -7485,6 +7485,67 @@ fn grant_money_to_cursor(
     true
 }
 
+fn deposit_cursor_money_to_gold(world: &mut World, character_id: CharacterId) -> bool {
+    let Some(item_id) = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.cursor_item)
+    else {
+        return false;
+    };
+    let Some(item) = world.items.get(&item_id) else {
+        return false;
+    };
+    if !item.flags.contains(ItemFlags::MONEY) {
+        return false;
+    }
+
+    let amount = item.value;
+    world.items.remove(&item_id);
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.cursor_item = None;
+        character.gold = character.gold.saturating_add(amount);
+        character.flags.insert(CharacterFlags::ITEMS);
+    }
+    true
+}
+
+fn apply_gold_client_action(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    action: &ClientAction,
+) -> bool {
+    match action {
+        ClientAction::TakeGold { amount } => {
+            if world
+                .characters
+                .get(&character_id)
+                .and_then(|character| character.cursor_item)
+                .is_some()
+                && !deposit_cursor_money_to_gold(world, character_id)
+            {
+                return false;
+            }
+            let Some(character) = world.characters.get(&character_id) else {
+                return false;
+            };
+            if *amount < 1 || *amount > character.gold {
+                return true;
+            }
+            if grant_money_to_cursor(world, loader, character_id, *amount) {
+                if let Some(character) = world.characters.get_mut(&character_id) {
+                    character.gold = character.gold.saturating_sub(*amount);
+                    character.flags.insert(CharacterFlags::ITEMS);
+                }
+            }
+            true
+        }
+        ClientAction::DropGold => deposit_cursor_money_to_gold(world, character_id),
+        _ => false,
+    }
+}
+
 fn resolve_zone_root(configured: Option<&Path>) -> Option<PathBuf> {
     if let Some(path) = configured {
         return path.exists().then(|| path.to_path_buf());
@@ -10834,6 +10895,82 @@ mod tests {
         let character = world.characters.get(&character_id).unwrap();
         assert_eq!(character.gold, 1_700);
         assert!(character.flags.contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
+    fn client_take_gold_deposits_cursor_money_before_taking_requested_amount() {
+        let mut world = World::default();
+        let mut loader = ZoneLoader::new();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.gold = 500;
+        character.cursor_item = Some(ItemId(99));
+        world.add_character(character);
+        let mut money = test_item(ItemId(99), 100, ItemFlags::MONEY | ItemFlags::TAKE);
+        money.value = 700;
+        money.carried_by = Some(character_id);
+        world.add_item(money);
+
+        assert!(apply_gold_client_action(
+            &mut world,
+            &mut loader,
+            character_id,
+            &ClientAction::TakeGold { amount: 600 }
+        ));
+
+        assert!(!world.items.contains_key(&ItemId(99)));
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.gold, 600);
+        let cursor_id = character
+            .cursor_item
+            .expect("new money item should be on cursor");
+        let cursor = world.items.get(&cursor_id).unwrap();
+        assert!(cursor.flags.contains(ItemFlags::MONEY));
+        assert_eq!(cursor.value, 600);
+    }
+
+    #[test]
+    fn client_drop_gold_only_deposits_money_cursor_items() {
+        let mut world = World::default();
+        let mut loader = ZoneLoader::new();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.gold = 500;
+        character.cursor_item = Some(ItemId(99));
+        world.add_character(character);
+        let cursor_item = test_item(ItemId(99), 100, ItemFlags::TAKE);
+        world.add_item(cursor_item);
+
+        assert!(!apply_gold_client_action(
+            &mut world,
+            &mut loader,
+            character_id,
+            &ClientAction::DropGold
+        ));
+        assert_eq!(world.characters.get(&character_id).unwrap().gold, 500);
+        assert_eq!(
+            world.characters.get(&character_id).unwrap().cursor_item,
+            Some(ItemId(99))
+        );
+
+        world
+            .items
+            .get_mut(&ItemId(99))
+            .unwrap()
+            .flags
+            .insert(ItemFlags::MONEY);
+        world.items.get_mut(&ItemId(99)).unwrap().value = 250;
+
+        assert!(apply_gold_client_action(
+            &mut world,
+            &mut loader,
+            character_id,
+            &ClientAction::DropGold
+        ));
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.gold, 750);
+        assert_eq!(character.cursor_item, None);
+        assert!(!world.items.contains_key(&ItemId(99)));
     }
 
     #[test]
@@ -18486,6 +18623,16 @@ async fn main() -> anyhow::Result<()> {
                                     command_feedback.push((character_id, message));
                                 }
                                 AccountDepotCommandResult::Ignored => {}
+                            }
+                        }
+                        ClientAction::TakeGold { .. } | ClientAction::DropGold => {
+                            if apply_gold_client_action(
+                                &mut world,
+                                &mut zone_loader,
+                                character_id,
+                                &action,
+                            ) {
+                                command_inventory_refresh.push(character_id);
                             }
                         }
                         ClientAction::GetQuestLog => {
