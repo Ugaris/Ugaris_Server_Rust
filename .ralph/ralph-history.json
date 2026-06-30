@@ -3163,9 +3163,36 @@
         "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
         "test result: ok. 229 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
       ]
+    },
+    {
+      "iteration": 116,
+      "startedAt": "2026-06-30T03:39:49.029Z",
+      "endedAt": "2026-06-30T03:44:14.112Z",
+      "durationMs": 264893,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The failing test setup used rest coordinates but the C guard checks current `x/y`; I corrected the test to set current position and will rerun formatting plus the focused tests.",
+        "test tests::noexp_and_nolevel_cannot_be_enabled_in_gatekeeper_room ... FAILED",
+        "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 64528324,
+  "totalDurationMs": 64793217,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -3173,11 +3200,11 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 15,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 15,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 96,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 94,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 82,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 86,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 67,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 97,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 95,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 83,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 87,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 68,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 41,
@@ -3192,7 +3219,7 @@
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 19,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
-      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 5,
+      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 6,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 14,
@@ -3544,7 +3571,11 @@
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 227 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 227 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s": 1,
-      "test result: ok. 229 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 229 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "The failing test setup used rest coordinates but the C guard checks current `x/y`; I corrected the t": 1,
+      "test tests::noexp_and_nolevel_cannot_be_enabled_in_gatekeeper_room ... FAILED": 1,
+      "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

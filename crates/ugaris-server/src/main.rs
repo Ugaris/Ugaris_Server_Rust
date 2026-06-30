@@ -2303,6 +2303,14 @@ fn apply_admin_character_command(
         || (area_id == 20 && character.flags.contains(CharacterFlags::LQMASTER));
 
     if lower == "noexp" {
+        if !character.flags.contains(CharacterFlags::NOEXP)
+            && is_gatekeeper_room(area_id, character)
+        {
+            return Some(KeyringCommandResult {
+                messages: vec!["Cannot turn NoExp mode on while in Gatekeeper room.".to_string()],
+                ..Default::default()
+            });
+        }
         character.flags.toggle(CharacterFlags::NOEXP);
         return Some(KeyringCommandResult {
             messages: vec![format!(
@@ -2319,6 +2327,14 @@ fn apply_admin_character_command(
     }
 
     if lower == "nolevel" {
+        if !character.flags.contains(CharacterFlags::NOLEVEL)
+            && is_gatekeeper_room(area_id, character)
+        {
+            return Some(KeyringCommandResult {
+                messages: vec!["Cannot turn NoLevel mode on while in Gatekeeper room.".to_string()],
+                ..Default::default()
+            });
+        }
         character.flags.toggle(CharacterFlags::NOLEVEL);
         let enabled = character.flags.contains(CharacterFlags::NOLEVEL);
         return Some(KeyringCommandResult {
@@ -2557,6 +2573,10 @@ fn apply_admin_character_command(
     }
 
     None
+}
+
+fn is_gatekeeper_room(area_id: u32, character: &Character) -> bool {
+    area_id == 3 && (178..=210).contains(&character.x) && (196..=228).contains(&character.y)
 }
 
 fn apply_shutup_command(
@@ -11497,6 +11517,99 @@ mod tests {
             1,
         )
         .is_none());
+    }
+
+    #[test]
+    fn noexp_and_nolevel_cannot_be_enabled_in_gatekeeper_room() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 178, 196);
+        character.x = 178;
+        character.y = 196;
+        world.add_character(character);
+        let mut runtime = ServerRuntime::default();
+
+        let noexp =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 3)
+                .expect("noexp should be recognized");
+        assert_eq!(
+            noexp.messages,
+            vec!["Cannot turn NoExp mode on while in Gatekeeper room."]
+        );
+        assert!(!noexp.inventory_changed);
+        assert!(!world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::NOEXP));
+
+        let nolevel =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/nolevel", 3)
+                .expect("nolevel should be recognized");
+        assert_eq!(
+            nolevel.messages,
+            vec!["Cannot turn NoLevel mode on while in Gatekeeper room."]
+        );
+        assert!(!nolevel.inventory_changed);
+        assert!(!world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::NOLEVEL));
+
+        let character = world.characters.get_mut(&character_id).unwrap();
+        character
+            .flags
+            .insert(CharacterFlags::NOEXP | CharacterFlags::NOLEVEL);
+
+        let noexp_off =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 3)
+                .expect("enabled noexp can be disabled in gatekeeper room");
+        assert_eq!(noexp_off.messages, vec!["Turned NoExp mode off."]);
+        assert!(!world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::NOEXP));
+
+        let nolevel_off =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/nolevel", 3)
+                .expect("enabled nolevel can be disabled in gatekeeper room");
+        assert_eq!(
+            nolevel_off.messages,
+            vec!["NoLevel mode disabled. You will now gain levels normally."]
+        );
+        assert!(!world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::NOLEVEL));
+    }
+
+    #[test]
+    fn noexp_gatekeeper_room_guard_is_area_specific() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 178, 196);
+        character.x = 178;
+        character.y = 196;
+        world.add_character(character);
+        let mut runtime = ServerRuntime::default();
+
+        let result =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 1)
+                .expect("noexp outside area 3 should be recognized");
+        assert_eq!(result.messages, vec!["Turned NoExp mode on."]);
+        assert!(world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .flags
+            .contains(CharacterFlags::NOEXP));
     }
 
     #[test]
