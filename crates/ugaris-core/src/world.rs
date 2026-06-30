@@ -6888,6 +6888,43 @@ impl World {
                     }
                 }
             }
+            ItemDriverOutcome::PentagramActivate { item_id, color, .. } => {
+                if let Some(before) = self.items.get(&item_id).cloned() {
+                    if let Some(item) = self.items.get_mut(&item_id) {
+                        if item.driver_data.len() <= 1 {
+                            item.driver_data.resize(2, 0);
+                        }
+                        item.driver_data[1] = 1;
+                        item.sprite += i32::from(color);
+                        item.modifier_value[0] = 100;
+                    }
+                    self.refresh_item_light_after_mutation(&before, item_id);
+                    if let Some(item) = self.items.get(&item_id) {
+                        self.queue_sound_area(usize::from(item.x), usize::from(item.y), 42);
+                    }
+                }
+                outcome
+            }
+            ItemDriverOutcome::PentagramTimer {
+                item_id, status, ..
+            } => {
+                if status != 0 {
+                    if let Some(before) = self.items.get(&item_id).cloned() {
+                        let color = before.driver_data.get(2).copied().unwrap_or_default();
+                        if let Some(item) = self.items.get_mut(&item_id) {
+                            if item.driver_data.len() <= 4 {
+                                item.driver_data.resize(5, 0);
+                            }
+                            item.driver_data[1] = 0;
+                            item.driver_data[4] = 0;
+                            item.sprite -= i32::from(color);
+                            item.modifier_value[0] = 10;
+                        }
+                        self.refresh_item_light_after_mutation(&before, item_id);
+                    }
+                }
+                outcome
+            }
             ItemDriverOutcome::DungeonDoorSolved { character_id, .. } => {
                 if [(245, 250), (240, 250), (235, 250), (230, 250)]
                     .into_iter()
@@ -14924,7 +14961,7 @@ mod tests {
             IDR_CALIGARFLAME, IDR_CHESTSPAWN, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT,
             IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW,
             IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_LIZARDFLOWER,
-            IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY,
+            IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_PENT,
             IDR_POTION, IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
             IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP,
             IID_AREA18_BONE,
@@ -23189,6 +23226,67 @@ mod tests {
         assert_eq!(character.dir, Direction::Left as u8);
         assert_eq!(world.map.tile(11, 10).unwrap().character, 0);
         assert_eq!(world.map.tile(9, 10).unwrap().character, 1);
+    }
+
+    #[test]
+    fn world_applies_pentagram_activate_and_timer_deactivate() {
+        let mut world = World::default();
+        let mut listener = character(1);
+        listener.flags.insert(CharacterFlags::PLAYER);
+        listener.x = 10;
+        listener.y = 10;
+        world.map.tile_mut(10, 10).unwrap().character = 1;
+        world.add_character(listener);
+
+        let mut pent = item(7, ItemFlags::USED | ItemFlags::USE);
+        pent.driver = IDR_PENT;
+        pent.x = 10;
+        pent.y = 10;
+        pent.sprite = 1000;
+        pent.modifier_index[0] = CharacterValue::Light as i16;
+        pent.modifier_value[0] = 10;
+        pent.driver_data = vec![3, 0, 4, 0, 9];
+        world.add_item(pent);
+
+        let outcome = world.apply_item_driver_outcome(
+            ItemDriverOutcome::PentagramActivate {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                level: 3,
+                color: 4,
+            },
+            4,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::PentagramActivate { .. }
+        ));
+        let pent = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(pent.driver_data[1], 1);
+        assert_eq!(pent.sprite, 1004);
+        assert_eq!(pent.modifier_value[0], 100);
+        assert_eq!(
+            world.drain_pending_sound_specials()[0].special.special_type,
+            42
+        );
+
+        let outcome = world.apply_item_driver_outcome(
+            ItemDriverOutcome::PentagramTimer {
+                item_id: ItemId(7),
+                level: 3,
+                status: 1,
+                area_status: 9,
+            },
+            4,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::PentagramTimer { .. }));
+        let pent = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(pent.driver_data[1], 0);
+        assert_eq!(pent.driver_data[4], 0);
+        assert_eq!(pent.sprite, 1000);
+        assert_eq!(pent.modifier_value[0], 10);
     }
 
     #[test]
