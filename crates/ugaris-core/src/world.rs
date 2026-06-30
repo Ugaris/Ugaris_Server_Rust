@@ -4617,19 +4617,21 @@ impl World {
                 value: self.simple_baddy_regenerate_task_value(attacker),
             });
         }
-        let distance3 = self.simple_baddy_distance3_task_value(attacker, target);
-        if distance3 > 0 {
-            tasks.push(FightDriverTask {
-                kind: FightDriverTaskKind::Distance3,
-                value: distance3,
-            });
-        }
-        let distance7 = self.simple_baddy_distance7_task_value(attacker, target);
-        if distance7 > 0 {
-            tasks.push(FightDriverTask {
-                kind: FightDriverTaskKind::Distance7,
-                value: distance7,
-            });
+        if !nomove {
+            let distance3 = self.simple_baddy_distance3_task_value(attacker, target);
+            if distance3 > 0 {
+                tasks.push(FightDriverTask {
+                    kind: FightDriverTaskKind::Distance3,
+                    value: distance3,
+                });
+            }
+            let distance7 = self.simple_baddy_distance7_task_value(attacker, target);
+            if distance7 > 0 {
+                tasks.push(FightDriverTask {
+                    kind: FightDriverTaskKind::Distance7,
+                    value: distance7,
+                });
+            }
         }
         let pulse = self.simple_baddy_pulse_value(character_id);
         if pulse > 0 {
@@ -4638,7 +4640,7 @@ impl World {
                 value: FIGHT_DRIVER_HIGH_PRIO + pulse,
             });
         }
-        if self.simple_baddy_attackback_value(character_id, target) > 0 {
+        if !nomove && self.simple_baddy_attackback_value(character_id, target) > 0 {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::AttackBack,
                 value: FIGHT_DRIVER_HIGH_PRIO,
@@ -15301,6 +15303,39 @@ mod tests {
         assert!(tasks
             .iter()
             .any(|task| task.kind == FightDriverTaskKind::Attack));
+    }
+
+    #[test]
+    fn simple_baddy_fight_tasks_suppress_movement_spacing_when_nomove_like_c() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let mut target = character(2);
+        target.dir = Direction::Right as u8;
+        target.action = action::IDLE;
+        target.regen_ticker = 0;
+        let blocker = character(3);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 12, 10);
+        world.spawn_character(blocker, 13, 10);
+
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        let moving_tasks = world.simple_baddy_fight_tasks(CharacterId(1), target, 1, false);
+        let no_move_tasks = world.simple_baddy_fight_tasks(CharacterId(1), target, 1, true);
+
+        assert!(moving_tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::AttackBack));
+        assert!(!no_move_tasks.iter().any(|task| matches!(
+            task.kind,
+            FightDriverTaskKind::Distance3
+                | FightDriverTaskKind::Distance7
+                | FightDriverTaskKind::AttackBack
+        )));
     }
 
     #[test]
