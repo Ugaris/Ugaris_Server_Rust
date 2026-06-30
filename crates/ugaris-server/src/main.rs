@@ -2683,6 +2683,54 @@ fn apply_admin_character_command(
         });
     }
 
+    if lower.len() >= 5 && "listchars".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let mut character_ids: Vec<_> = world.characters.keys().copied().collect();
+        character_ids.sort_by_key(|id| id.0);
+
+        let mut count = 0;
+        let mut players = 0;
+        let mut npcs = 0;
+        let mut messages = vec!["Active characters:".to_string()];
+        for id in character_ids {
+            let Some(character) = world.characters.get(&id) else {
+                continue;
+            };
+            if character.flags.is_empty() {
+                continue;
+            }
+            count += 1;
+            if character.flags.contains(CharacterFlags::PLAYER) {
+                players += 1;
+                messages.push(format!(
+                    "Player: {:3} - {} (L{})",
+                    id.0, character.name, character.level
+                ));
+            } else {
+                npcs += 1;
+                if count < 50 {
+                    messages.push(format!(
+                        "NPC:    {:3} - {} (L{}, D:{})",
+                        id.0, character.name, character.level, character.driver
+                    ));
+                }
+            }
+        }
+        messages.push(format!(
+            "Total: {count} characters ({players} players, {npcs} NPCs)"
+        ));
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
     if lower == "setskill" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -13187,6 +13235,75 @@ mod tests {
             1,
         )
         .is_none());
+    }
+
+    #[test]
+    fn god_listchars_reports_active_players_and_npcs_like_c() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        god.level = 12;
+        world.add_character(god);
+
+        let mut player = login_character(CharacterId(8), &login_block("Player"), 1, 11, 10);
+        player.level = 3;
+        world.add_character(player);
+
+        let mut npc = login_character(CharacterId(9), &login_block("Rat"), 1, 12, 10);
+        npc.flags.remove(CharacterFlags::PLAYER);
+        npc.level = 2;
+        npc.driver = 17;
+        world.add_character(npc);
+
+        let mut runtime = ServerRuntime::default();
+        let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/listc", 1)
+            .expect("legacy cmdcmp accepts listchars prefix length five");
+
+        assert_eq!(
+            result.messages,
+            vec![
+                "Active characters:",
+                "Player:   7 - Godmode (L12)",
+                "Player:   8 - Player (L3)",
+                "NPC:      9 - Rat (L2, D:17)",
+                "Total: 3 characters (2 players, 1 NPCs)",
+            ]
+        );
+    }
+
+    #[test]
+    fn listchars_is_god_only_and_rejects_too_short_prefix() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/listchars",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/list", 1,)
+                .is_none()
+        );
     }
 
     #[test]
