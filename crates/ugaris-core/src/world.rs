@@ -29,13 +29,13 @@ use crate::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item,
         EdemonGateSpawnContext, FdemonGateSpawnContext, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL, IDR_CALIGAR,
-        IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DUNGEONDOOR, IDR_EDEMONBALL, IDR_EDEMONBLOCK,
-        IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONSWITCH,
-        IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT,
-        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT, IDR_LABTORCH,
-        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP,
-        IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY,
-        IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
+        IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DOOR, IDR_DUNGEONDOOR, IDR_EDEMONBALL,
+        IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
+        IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE,
+        IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT,
+        IDR_LABTORCH, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE,
+        IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH,
+        IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -89,6 +89,8 @@ struct FdemonCannonShot {
     target_y: u16,
 }
 const EDEMON_GATE_MODE1_SLOT_BASE: usize = 404;
+const MAX_LQ_DOORS: usize = 256;
+const DEV_ID_LQ: u32 = 0x05;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorldActionCompletion {
@@ -123,6 +125,14 @@ pub struct WorldSoundSpecial {
 pub struct WorldSystemText {
     pub character_id: CharacterId,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LqDoorState {
+    pub slot: usize,
+    pub item_id: ItemId,
+    pub nick: String,
+    pub key_id: u32,
 }
 
 const ITEM_DRIVER_TIMER: &str = "item_driver";
@@ -213,6 +223,14 @@ fn legacy_random_below_from_seed(seed: &mut u32, below: u32) -> u32 {
     *seed % below
 }
 
+fn write_lq_door_key_id(item: &mut Item, key_id: u32) {
+    if item.driver_data.len() < 5 {
+        item.driver_data.resize(5, 0);
+    }
+    let legacy_item_id = (DEV_ID_LQ << 24) | (key_id & 0x00ff_ffff);
+    item.driver_data[1..5].copy_from_slice(&legacy_item_id.to_le_bytes());
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 fn order_fight_driver_tasks(
     tasks: &mut [FightDriverTask],
@@ -297,6 +315,8 @@ pub struct World {
     pub effects: HashMap<u32, Effect>,
     pub area3_palace_lamps: Area3PalaceLampState,
     pub legacy_random_seed: u32,
+    pub lq_doors_initialized: bool,
+    pub lq_doors: Vec<LqDoorState>,
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,
     pending_system_texts: Vec<WorldSystemText>,
@@ -6512,6 +6532,10 @@ impl World {
         current_area_id: u16,
     ) -> ItemDriverOutcome {
         match outcome {
+            ItemDriverOutcome::LqTicker { .. } => {
+                self.discover_lq_doors_once();
+                outcome
+            }
             ItemDriverOutcome::Teleport {
                 character_id,
                 x,
@@ -8015,6 +8039,39 @@ impl World {
                 }
             }
             _ => outcome,
+        }
+    }
+
+    fn discover_lq_doors_once(&mut self) {
+        if self.lq_doors_initialized {
+            return;
+        }
+        self.lq_doors_initialized = true;
+
+        let mut item_ids: Vec<ItemId> = self
+            .items
+            .iter()
+            .filter_map(|(item_id, item)| {
+                (item.driver == IDR_DOOR
+                    && item.driver_data.get(10).copied().unwrap_or_default() != 0)
+                    .then_some(*item_id)
+            })
+            .collect();
+        item_ids.sort_by_key(|item_id| item_id.0);
+
+        for (offset, item_id) in item_ids.into_iter().take(MAX_LQ_DOORS - 1).enumerate() {
+            let slot = offset + 1;
+            let Some(item) = self.items.get_mut(&item_id) else {
+                continue;
+            };
+            let nick = item.name.chars().take(39).collect::<String>();
+            write_lq_door_key_id(item, 0);
+            self.lq_doors.push(LqDoorState {
+                slot,
+                item_id,
+                nick,
+                key_id: 0,
+            });
         }
     }
 
@@ -26930,6 +26987,68 @@ mod tests {
         ));
         assert_eq!(world.characters[&CharacterId(3)].hp, 10 * POWERSCALE);
         assert_eq!(world.characters[&CharacterId(4)].hp, 20 * POWERSCALE);
+    }
+
+    #[test]
+    fn lq_ticker_discovers_legacy_doors_once_and_writes_key_id() {
+        let mut world = World::default();
+        world.add_character(character(0));
+
+        let mut ticker = item(7, ItemFlags::USED | ItemFlags::USE);
+        ticker.driver = crate::item_driver::IDR_LQ_TICKER;
+        world.add_item(ticker);
+
+        let mut door = item(10, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_DOOR;
+        door.name = "north-gate".to_string();
+        door.driver_data = vec![0; 11];
+        door.driver_data[10] = 1;
+        world.add_item(door);
+
+        let mut ordinary_door = item(11, ItemFlags::USED | ItemFlags::USE);
+        ordinary_door.driver = IDR_DOOR;
+        ordinary_door.driver_data = vec![0; 11];
+        world.add_item(ordinary_door);
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_LQ_TICKER,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            20,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::LqTicker { .. }));
+        assert!(world.lq_doors_initialized);
+        assert_eq!(world.lq_doors.len(), 1);
+        assert_eq!(world.lq_doors[0].slot, 1);
+        assert_eq!(world.lq_doors[0].item_id, ItemId(10));
+        assert_eq!(world.lq_doors[0].nick, "north-gate");
+        assert_eq!(&world.items[&ItemId(10)].driver_data[1..5], &[0, 0, 0, 5]);
+        assert_eq!(&world.items[&ItemId(11)].driver_data[1..5], &[0, 0, 0, 0]);
+
+        world.items.get_mut(&ItemId(10)).unwrap().driver_data[1] = 77;
+        let _ = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_LQ_TICKER,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            20,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(world.lq_doors.len(), 1);
+        assert_eq!(world.items[&ItemId(10)].driver_data[1], 77);
     }
 
     #[test]
