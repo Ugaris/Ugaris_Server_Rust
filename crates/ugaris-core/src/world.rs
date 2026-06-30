@@ -6,8 +6,8 @@ use crate::{
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
-        CDR_SWAMPMONSTER, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC,
-        NT_SEEHIT, NT_SPELL,
+        CDR_SWAMPMONSTER, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT,
+        NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -35,8 +35,8 @@ use crate::{
         IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE,
         IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT,
         IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-        IDR_PALACEBOMB, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM,
-        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
+        IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN,
+        IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
         IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
@@ -6865,6 +6865,22 @@ impl World {
                     }
                 }
                 self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::Lab2StepActionDaemonCheck {
+                item_id,
+                character_id,
+            } => {
+                if let Some(item) = self.items.get(&item_id) {
+                    self.notify_area(
+                        item.x,
+                        item.y,
+                        NT_NPC,
+                        NTID_LAB2_DEAMONCHECK,
+                        character_id.0 as i32,
+                        0,
+                    );
+                }
                 outcome
             }
             ItemDriverOutcome::MeltingKeyTick {
@@ -15050,7 +15066,8 @@ mod tests {
     use crate::{
         character_driver::{
             CharacterDriverState, SimpleBaddyDriverData, SimpleBaddyEnemy, NTID_GLADIATOR,
-            NTID_LABGNOMETORCH, NT_CHAR, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
+            NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NT_CHAR, NT_DIDHIT, NT_GOTHIT, NT_NPC,
+            NT_SEEHIT,
         },
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
@@ -15058,11 +15075,11 @@ mod tests {
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGAR,
             IDR_CALIGARFLAME, IDR_CHESTSPAWN, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT,
             IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW,
-            IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_LIZARDFLOWER,
-            IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_PENT,
-            IDR_POTION, IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2,
-            IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP,
-            IID_AREA18_BONE,
+            IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB2_STEPACTION, IDR_LAB3_PLANT, IDR_LABTORCH,
+            IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEBOMB,
+            IDR_PALACEGATE, IDR_PALACEKEY, IDR_PENT, IDR_POTION, IDR_SKELRAISE, IDR_SPECIAL_POTION,
+            IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN,
+            IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -28282,6 +28299,53 @@ mod tests {
         let target = world.characters.get(&CharacterId(3)).unwrap();
         assert_eq!(target.hp, 10 * POWERSCALE);
         assert!(!target.flags.contains(CharacterFlags::NODEATH));
+    }
+
+    #[test]
+    fn world_lab2_stepaction_daemon_check_notifies_nearby_drivers() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        world.add_character(actor);
+
+        let mut nearby = character(2);
+        nearby.x = 110;
+        nearby.y = 110;
+        world.add_character(nearby);
+
+        let mut far = character(3);
+        far.x = 200;
+        far.y = 200;
+        world.add_character(far);
+
+        let mut step = item(8, ItemFlags::USED | ItemFlags::USE);
+        step.driver = IDR_LAB2_STEPACTION;
+        step.x = 100;
+        step.y = 100;
+        step.driver_data = vec![2];
+        world.add_item(step);
+
+        let outcome = world.execute_item_driver_timer_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_LAB2_STEPACTION,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            22,
+            &ItemDriverContext::default(),
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::Lab2StepActionDaemonCheck { .. }
+        ));
+        let nearby_messages = &world.characters[&CharacterId(2)].driver_messages;
+        assert_eq!(nearby_messages.len(), 1);
+        assert_eq!(nearby_messages[0].message_type, NT_NPC);
+        assert_eq!(nearby_messages[0].dat1, NTID_LAB2_DEAMONCHECK);
+        assert_eq!(nearby_messages[0].dat2, 1);
+        assert!(world.characters[&CharacterId(3)].driver_messages.is_empty());
     }
 
     #[test]

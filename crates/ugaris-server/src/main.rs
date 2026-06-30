@@ -25944,6 +25944,28 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You won't throw this into the water, will you?".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionClear { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionDaemonCheck { .. } => {
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionDaemonWarning { x, y, .. } => {
+                                            let character_id = runtime.allocate_character_id();
+                                            match zone_loader.instantiate_character_template("lab2_daemon", character_id) {
+                                                Ok((daemon, inventory_items)) => {
+                                                    if world.spawn_character(daemon, usize::from(x), usize::from(y)) {
+                                                        for item in inventory_items {
+                                                            world.items.insert(item.id, item);
+                                                        }
+                                                        executed += 1;
+                                                    } else {
+                                                        failed += 1;
+                                                    }
+                                                }
+                                                _ => {
+                                                    failed += 1;
+                                                }
+                                            }
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { character_id, .. } => {
                                             feedback.push((
                                                 character_id,

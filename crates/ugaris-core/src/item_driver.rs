@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    direction::Direction,
     do_action::ItemUseRequest,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, CHARACTER_VALUE_COUNT,
@@ -1896,6 +1897,19 @@ pub enum ItemDriverOutcome {
         regen_percent: u8,
         schedule_after_ticks: u64,
     },
+    Lab2StepActionClear {
+        item_id: ItemId,
+    },
+    Lab2StepActionDaemonWarning {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+    },
+    Lab2StepActionDaemonCheck {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     ParkShrine {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2403,6 +2417,7 @@ pub fn execute_item_driver_with_context(
                 IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
                 IDR_LAB3_PLANT => lab3_plant_driver(character, item, context),
                 IDR_LAB2_WATER => lab2_water_driver(character, item),
+                IDR_LAB2_STEPACTION => lab2_stepaction_driver(character, item),
                 IDR_LAB2_REGENERATE => lab2_regenerate_driver(character, item, context),
                 IDR_LABTORCH => labtorch_driver(character, item),
                 IDR_LABEXIT => labexit_driver(character, item, context),
@@ -2452,7 +2467,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_SWAMPARM | IDR_SWAMPWHISP | IDR_SWAMPSPAWN => Some(15),
         IDR_FORESTCHEST => Some(16),
         IDR_LQ_TICKER | IDR_LQ_ENTRANCE => Some(20),
-        IDR_LAB2_WATER | IDR_LAB2_REGENERATE | IDR_LABTORCH => Some(22),
+        IDR_LAB2_WATER | IDR_LAB2_STEPACTION | IDR_LAB2_REGENERATE | IDR_LABTORCH => Some(22),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_TEUFELDOOR | IDR_TEUFELARENA | IDR_TEUFELRATNEST | IDR_TEUFELARENAEXIT => Some(34),
@@ -2665,6 +2680,38 @@ fn lab2_water_driver(character: &Character, item: &mut Item) -> ItemDriverOutcom
             character_id: character.id,
         },
         4 | 5 => ItemDriverOutcome::Lab2WaterDrink {
+            item_id: item.id,
+            character_id: character.id,
+        },
+        _ => ItemDriverOutcome::Noop,
+    }
+}
+
+fn lab2_stepaction_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
+    let step_kind = item.driver_data.first().copied().unwrap_or_default();
+    if !matches!(step_kind, 1 | 2) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if character.id.0 == 0 {
+        item.sprite = 0;
+        return ItemDriverOutcome::Lab2StepActionClear { item_id: item.id };
+    }
+
+    if !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    match step_kind {
+        1 if character.dir == Direction::Up as u8 => {
+            ItemDriverOutcome::Lab2StepActionDaemonWarning {
+                item_id: item.id,
+                character_id: character.id,
+                x: item.x,
+                y: item.y.saturating_sub(5),
+            }
+        }
+        2 => ItemDriverOutcome::Lab2StepActionDaemonCheck {
             item_id: item.id,
             character_id: character.id,
         },
@@ -19809,6 +19856,93 @@ mod tests {
             ),
             ItemDriverOutcome::Lab2WaterAltar {
                 item_id: ItemId(9),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn lab2_stepaction_timer_clears_marker_sprite() {
+        let mut timer = character(0);
+        let mut step = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_STEPACTION);
+        step.sprite = 500;
+        step.driver_data = vec![1];
+
+        let outcome = execute_item_driver(
+            &mut timer,
+            &mut step,
+            ItemDriverRequest::Driver {
+                driver: IDR_LAB2_STEPACTION,
+                item_id: ItemId(8),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            22,
+            false,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::Lab2StepActionClear { item_id: ItemId(8) }
+        );
+        assert_eq!(step.sprite, 0);
+    }
+
+    #[test]
+    fn lab2_stepaction_daemon_warning_requires_player_facing_up() {
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        actor.dir = Direction::Left as u8;
+        let mut step = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_STEPACTION);
+        step.x = 100;
+        step.y = 120;
+        step.driver_data = vec![1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LAB2_STEPACTION,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut step, request, 22, false),
+            ItemDriverOutcome::Noop
+        );
+
+        actor.dir = Direction::Up as u8;
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut step, request, 22, false),
+            ItemDriverOutcome::Lab2StepActionDaemonWarning {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 100,
+                y: 115,
+            }
+        );
+    }
+
+    #[test]
+    fn lab2_stepaction_daemon_check_requires_player() {
+        let mut actor = character(1);
+        let mut step = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB2_STEPACTION);
+        step.driver_data = vec![2];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_LAB2_STEPACTION,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut step, request, 22, false),
+            ItemDriverOutcome::Noop
+        );
+
+        actor.flags.insert(CharacterFlags::PLAYER);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut step, request, 22, false),
+            ItemDriverOutcome::Lab2StepActionDaemonCheck {
+                item_id: ItemId(8),
                 character_id: CharacterId(1),
             }
         );
