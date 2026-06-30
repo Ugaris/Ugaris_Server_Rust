@@ -3681,9 +3681,38 @@
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
         "test result: ok. 777 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
       ]
+    },
+    {
+      "iteration": 135,
+      "startedAt": "2026-06-30T07:21:38.757Z",
+      "endedAt": "2026-06-30T07:37:58.368Z",
+      "durationMs": 979425,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Targeted core test passed. The server context test failed because my helper character constructor call didn’t place characters at the intended coordinates; I’m checking the constructor signature and f",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/item_driver.rs:",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 777 filtered out; finished in 0.00s",
+        "test tests::islena_door_context_scans_legacy_room_state ... FAILED",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 252 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 252 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 77781108,
+  "totalDurationMs": 78760533,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -3691,10 +3720,10 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 18,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 18,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 113,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 114,
       "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 112,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 100,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 104,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 105,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 83,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
@@ -3702,7 +3731,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 30,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 4,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 51,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 53,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 3,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 0.00s": 1,
@@ -3710,7 +3739,7 @@
       "test tests::lag_command_blocks_enabling_in_arena_or_with_hate ... FAILED": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 23,
       "test result: FAILED. 183 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
-      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 8,
+      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 9,
       "test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "The failed return-home test exposed a real porting issue: if no timer had initialized the block’s ho": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 15,
@@ -4113,7 +4142,12 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 775 filtered out; finished in 0.00s": 1,
       "test result: ok. 776 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 776 filtered out; finished in 0.00s": 1,
-      "test result: ok. 777 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 777 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "Targeted core test passed. The server context test failed because my helper character constructor ca": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 777 filtered out; finished in 0.00s": 1,
+      "test tests::islena_door_context_scans_legacy_room_state ... FAILED": 1,
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 252 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 252 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

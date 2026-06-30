@@ -384,6 +384,9 @@ pub struct ItemDriverContext {
     pub clanspawn_random_seconds: Option<u32>,
     pub has_curse_spell: bool,
     pub has_area11_palace_key: bool,
+    pub islena_room_has_player: bool,
+    pub islena_present: bool,
+    pub islena_resting: bool,
     pub has_area16_robber_key: bool,
     pub has_area16_skelly_key: bool,
 }
@@ -1161,6 +1164,18 @@ pub enum ItemDriverOutcome {
         blocked: bool,
     },
     PalaceDoorKeyRequired {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    IslenaDoorBusy {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    IslenaDoorRespawning {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    IslenaDoorResting {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -2055,6 +2070,7 @@ pub fn execute_item_driver_with_context(
                 IDR_JUNKPILE => junkpile_driver(character, item, context),
                 IDR_GASTRAP => gastrap_driver(character, item, context),
                 IDR_PALACEDOOR => palace_door_driver(character, item, context),
+                IDR_ISLENADOOR => islena_door_driver(character, item, context),
                 IDR_FORESTSPADE => forest_spade_driver(character, item, area_id),
                 IDR_FORESTCHEST => forest_chest_driver(character, item, context),
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
@@ -2151,6 +2167,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_NOMADDICE => Some(19),
         IDR_CLANSPAWN | IDR_CLANVAULT | IDR_CLANSPAWNEXIT => Some(30),
         IDR_EDEMONGATE | IDR_EDEMONDOOR | IDR_EDEMONBLOCK | IDR_EDEMONTUBE => Some(6),
+        IDR_ISLENADOOR => Some(11),
         IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
         IDR_RANDOMSHRINE | IDR_TRAPDOOR | IDR_JUNKPILE | IDR_GASTRAP => Some(14),
@@ -7526,6 +7543,53 @@ fn palace_door_driver(
     }
 }
 
+fn islena_door_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 || context.timer_call {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if character.x == 144 && character.y == 56 {
+        return ItemDriverOutcome::TeleportDoor {
+            item_id: item.id,
+            character_id: character.id,
+            x: 144,
+            y: 58,
+        };
+    }
+
+    if context.islena_room_has_player {
+        return ItemDriverOutcome::IslenaDoorBusy {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    if !context.islena_present {
+        return ItemDriverOutcome::IslenaDoorRespawning {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    if context.islena_resting {
+        return ItemDriverOutcome::IslenaDoorResting {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::TeleportDoor {
+        item_id: item.id,
+        character_id: character.id,
+        x: 143,
+        y: 55,
+    }
+}
+
 fn food_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutcome {
     if item.carried_by != Some(character.id) {
         return ItemDriverOutcome::Noop;
@@ -8028,6 +8092,7 @@ mod tests {
         assert_eq!(IDR_WARPKEYDOOR, 116);
         assert_eq!(IDR_STAFFER, 121);
         assert_eq!(IDR_MINEGATEWAY, 127);
+        assert_eq!(IDR_ISLENADOOR, 138);
         assert_eq!(IDR_TEUFELARENAEXIT, 141);
         assert_eq!(IDR_SALTMINE_ITEM, 188);
         assert_eq!(IDR_LAB5_ITEM, 190);
@@ -8135,6 +8200,103 @@ mod tests {
                 schedule_after_ticks: None,
             }
         );
+    }
+
+    #[test]
+    fn islena_door_ports_room_gates_and_teleports() {
+        let mut actor = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_ISLENADOOR);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_ISLENADOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        actor.x = 144;
+        actor.y = 56;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut door,
+                request,
+                11,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::TeleportDoor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 144,
+                y: 58,
+            }
+        );
+
+        actor.x = 144;
+        actor.y = 58;
+        let busy = ItemDriverContext {
+            islena_room_has_player: true,
+            islena_present: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut door, request, 11, false, &busy),
+            ItemDriverOutcome::IslenaDoorBusy {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut door,
+                request,
+                11,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::IslenaDoorRespawning {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let resting = ItemDriverContext {
+            islena_present: true,
+            islena_resting: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut door, request, 11, false, &resting),
+            ItemDriverOutcome::IslenaDoorResting {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let ready = ItemDriverContext {
+            islena_present: true,
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut door, request, 11, false, &ready),
+            ItemDriverOutcome::TeleportDoor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 143,
+                y: 55,
+            }
+        );
+
+        assert!(matches!(
+            execute_item_driver_with_context(&mut actor, &mut door, request, 1, false, &ready),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_ISLENADOOR,
+                required_area: 11,
+                ..
+            }
+        ));
     }
 
     #[test]

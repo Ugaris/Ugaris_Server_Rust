@@ -18,6 +18,7 @@ pub const CDT_SPECIAL: u16 = 4;
 
 pub const CDR_SIMPLEBADDY: u16 = 7;
 pub const CDR_MACRO: u16 = 37;
+pub const CDR_PALACEISLENA: u16 = 57;
 pub const CDR_TRADER: u16 = 72;
 pub const CDR_JANITOR: u16 = 85;
 
@@ -660,6 +661,7 @@ mod tests {
     fn base_character_driver_ids_match_c_drvlib() {
         assert_eq!(CDR_SIMPLEBADDY, 7);
         assert_eq!(CDR_MACRO, 37);
+        assert_eq!(CDR_PALACEISLENA, 57);
         assert_eq!(CDR_TRADER, 72);
         assert_eq!(CDR_JANITOR, 85);
         assert_eq!(DRD_SIMPLEBADDYDRIVER, 0x0100_0013);

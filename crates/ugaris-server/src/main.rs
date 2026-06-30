@@ -12,7 +12,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
-    character_driver::{CharacterDriverState, CDR_SIMPLEBADDY},
+    character_driver::{CharacterDriverState, CDR_PALACEISLENA, CDR_SIMPLEBADDY},
     do_action::{can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy},
     drvlib::char_dist,
     effect::Effect,
@@ -28,10 +28,10 @@ use ugaris_core::{
     ids::{CharacterId, ItemId},
     item_driver::{
         legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
-        IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_KEY_RING,
-        IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE,
-        IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2,
-        IID_AREA2_ZOMBIESKULL3,
+        IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_ISLENADOOR,
+        IDR_KEY_RING, IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_SPECIAL_POTION, IDR_TORCH,
+        IDR_WARMFIRE, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK, IID_AREA2_ZOMBIESKULL1,
+        IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
         consume_item, give_item_to_character, replace_item_in_character, GiveItemFlags,
@@ -5845,6 +5845,16 @@ fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
+    if *driver == IDR_ISLENADOOR {
+        let (islena_room_has_player, islena_present, islena_resting) =
+            islena_door_room_context(world);
+        return ugaris_core::item_driver::ItemDriverContext {
+            islena_room_has_player,
+            islena_present,
+            islena_resting,
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
     if *driver == IDR_WARMFIRE {
         let has_curse_spell = world
             .characters
@@ -5891,6 +5901,43 @@ fn item_driver_context_for_request(
         cursor_template_id: None,
         ..ugaris_core::item_driver::ItemDriverContext::default()
     }
+}
+
+fn islena_door_room_context(world: &World) -> (bool, bool, bool) {
+    let mut room_has_player = false;
+    let mut islena_present = false;
+    let mut islena_resting = false;
+
+    for character in world.characters.values() {
+        if !(138..147).contains(&character.x) || !(49..58).contains(&character.y) {
+            continue;
+        }
+        if character.flags.contains(CharacterFlags::PLAYER) {
+            room_has_player = true;
+        }
+        if character.driver == CDR_PALACEISLENA {
+            islena_present = true;
+            let max_hp = character
+                .values
+                .first()
+                .and_then(|values| values.get(CharacterValue::Hp as usize))
+                .copied()
+                .unwrap_or_default() as i32
+                * POWERSCALE;
+            let max_mana = character
+                .values
+                .first()
+                .and_then(|values| values.get(CharacterValue::Mana as usize))
+                .copied()
+                .unwrap_or_default() as i32
+                * POWERSCALE;
+            if character.hp < max_hp || character.mana < max_mana {
+                islena_resting = true;
+            }
+        }
+    }
+
+    (room_has_player, islena_present, islena_resting)
 }
 
 fn infinite_chest_key_access(
@@ -10695,6 +10742,37 @@ mod tests {
         assert_eq!(&payload[109..113], &1u32.to_le_bytes());
         assert!(payload[105..109].iter().all(|byte| *byte == 0));
         assert!(payload[113..].iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn islena_door_context_scans_legacy_room_state() {
+        let mut world = World::default();
+        let mut islena = login_character(CharacterId(57), &login_block("Islena"), 11, 143, 55);
+        islena.driver = CDR_PALACEISLENA;
+        islena.flags.remove(CharacterFlags::PLAYER);
+        islena.x = 143;
+        islena.y = 55;
+        islena.values[0][CharacterValue::Hp as usize] = 100;
+        islena.values[0][CharacterValue::Mana as usize] = 80;
+        islena.hp = 100 * POWERSCALE;
+        islena.mana = 79 * POWERSCALE;
+        world.characters.insert(islena.id, islena);
+
+        let mut other_player = login_character(CharacterId(8), &login_block("Ralph"), 11, 140, 50);
+        other_player.flags.insert(CharacterFlags::PLAYER);
+        other_player.x = 140;
+        other_player.y = 50;
+        world.characters.insert(other_player.id, other_player);
+
+        assert_eq!(islena_door_room_context(&world), (true, true, true));
+
+        let player = world.characters.get_mut(&CharacterId(8)).unwrap();
+        player.x = 130;
+        player.y = 50;
+        let islena = world.characters.get_mut(&CharacterId(57)).unwrap();
+        islena.mana = 80 * POWERSCALE;
+
+        assert_eq!(islena_door_room_context(&world), (false, true, false));
     }
 
     #[test]
@@ -20248,6 +20326,27 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PalaceDoorKeyRequired { character_id, .. } => {
                                             feedback.push((character_id, "You need a key to open this gate.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::IslenaDoorBusy { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You hear fighting behind the door. It seems Islena is killing somebody else at the moment. Please come back later so she can take care of you, too.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::IslenaDoorRespawning { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Islena is being re-incarnated. Please try again soon.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::IslenaDoorResting { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Islena is resting after killing your predecessor. Being well mannered, you wait for her.".to_string(),
+                                            ));
                                             blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PalaceDoorTick { .. } => {
