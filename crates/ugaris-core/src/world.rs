@@ -8646,7 +8646,8 @@ impl World {
         }
         let still_alive = raised_id.0 != 0
             && self.characters.get(&raised_id).is_some_and(|character| {
-                (raised_serial == 0 || character.id.0 == raised_id.0) && !character.flags.is_empty()
+                (raised_serial == 0 || character.serial == raised_serial)
+                    && !character.flags.is_empty()
             });
         if still_alive {
             self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
@@ -13927,8 +13928,9 @@ mod tests {
             IDR_CALIGARFLAME, IDR_CHESTSPAWN, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT,
             IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW,
             IDR_FLASK, IDR_LAB3_PLANT, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-            IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SPECIAL_POTION,
-            IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_OXYPOTION, IDR_PALACEGATE, IDR_PALACEKEY, IDR_POTION, IDR_SKELRAISE,
+            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_TORCH, IDR_USETRAP,
+            IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -14030,6 +14032,40 @@ mod tests {
         let spawner = &world.items[&ItemId(8)];
         assert_eq!(spawner.sprite, 1234);
         assert_eq!(spawner.driver_data[1], 0);
+    }
+
+    #[test]
+    fn skelraise_timer_uses_spawned_character_serial_guard() {
+        let mut world = World::default();
+        world.characters.insert(CharacterId(1), character(1));
+        let mut raised = character(2);
+        raised.serial = 77;
+        world.characters.insert(CharacterId(2), raised);
+        world.items.insert(ItemId(9), item(9, ItemFlags::empty()));
+        let mut chair = item(8, ItemFlags::USE);
+        chair.driver = IDR_SKELRAISE;
+        chair.sprite = 500;
+        world.items.insert(ItemId(8), chair);
+
+        assert!(world.apply_skelraise_raise(
+            ItemId(8),
+            CharacterId(1),
+            ItemId(9),
+            CharacterId(2),
+            77,
+        ));
+        assert_eq!(
+            &world.items[&ItemId(8)].driver_data[8..12],
+            &77_u32.to_le_bytes()
+        );
+        assert_eq!(world.items[&ItemId(8)].sprite, 501);
+
+        world.characters.get_mut(&CharacterId(2)).unwrap().serial = 78;
+        assert!(world.apply_skelraise_timer(ItemId(8)));
+
+        let chair = &world.items[&ItemId(8)];
+        assert_eq!(chair.driver_data[2], 0);
+        assert_eq!(chair.sprite, 500);
     }
 
     #[test]

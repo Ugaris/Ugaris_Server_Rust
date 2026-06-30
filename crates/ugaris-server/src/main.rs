@@ -6849,13 +6849,20 @@ fn raise_skeleton_from_template(
     else {
         return false;
     };
+    let raised_serial = raised.serial;
     if !world.spawn_character(raised, x, y) {
         return false;
     }
     for item in inventory_items {
         world.items.insert(item.id, item);
     }
-    world.apply_skelraise_raise(item_id, character_id, cursor_item_id, raised_id, 0)
+    world.apply_skelraise_raise(
+        item_id,
+        character_id,
+        cursor_item_id,
+        raised_id,
+        raised_serial,
+    )
 }
 
 fn spawn_edemon_gate_character(
