@@ -359,6 +359,7 @@ pub struct ItemDriverContext {
     pub equinox: bool,
     pub character_underwater: bool,
     pub current_tick: u32,
+    pub edemon_fire_enabled: Option<bool>,
     pub edemon_section_power: Option<u8>,
     pub edemon_tube_target: Option<(u16, u16)>,
     pub edemon_gate_spawn: Option<EdemonGateSpawnContext>,
@@ -784,6 +785,11 @@ pub enum ItemDriverOutcome {
         target_y: u16,
         strength: i32,
         base_sprite: i32,
+        schedule_after_ticks: u64,
+    },
+    EdemonBallInactive {
+        item_id: ItemId,
+        character_id: CharacterId,
         schedule_after_ticks: u64,
     },
     CaligarGunProjectile {
@@ -4219,6 +4225,33 @@ fn edemonball_driver(
     let item_y = i32::from(item.y);
     let strength = i32::from(drdata(item, 2));
     let base_sprite = i32::from(drdata(item, 1));
+
+    match drdata(item, 0) {
+        0 if !context.edemon_fire_enabled.unwrap_or(true) => {
+            item.sprite = 14160;
+            return ItemDriverOutcome::EdemonBallInactive {
+                item_id: item.id,
+                character_id: character.id,
+                schedule_after_ticks: TICKS_PER_SECOND,
+            };
+        }
+        0 => {
+            item.sprite = 14159;
+        }
+        2..=9 if !matches!(context.edemon_section_power, Some(1..=248)) => {
+            item.sprite = 14160;
+            return ItemDriverOutcome::EdemonBallInactive {
+                item_id: item.id,
+                character_id: character.id,
+                schedule_after_ticks: TICKS_PER_SECOND,
+            };
+        }
+        2..=9 => {
+            item.sprite = 14161;
+        }
+        _ => {}
+    }
+
     let shot = match drdata(item, 3) {
         0 => Some((item_x, item_y + 1, item_x, item_y + 10)),
         1 => Some((item_x, item_y + 1, item_x + 1, item_y + 10)),
@@ -13545,6 +13578,110 @@ mod tests {
                 schedule_after_ticks: Some(TICKS_PER_SECOND * 5),
             }
         );
+    }
+
+    #[test]
+    fn edemonball_timer_waits_while_global_fire_is_disabled() {
+        let mut timer_character = character(0);
+        let mut launcher = item(7, ItemFlags::USED, 0, IDR_EDEMONBALL);
+        launcher.sprite = 14159;
+        launcher.x = 10;
+        launcher.y = 10;
+        launcher.driver_data = vec![0, 1, 7, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONBALL,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut launcher,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    edemon_fire_enabled: Some(false),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::EdemonBallInactive {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }
+        );
+        assert_eq!(launcher.sprite, 14160);
+        assert_eq!(launcher.driver_data[3], 0);
+    }
+
+    #[test]
+    fn edemonball_timer_uses_section_power_gate_for_part_five() {
+        let mut timer_character = character(0);
+        let mut launcher = item(7, ItemFlags::USED, 0, IDR_EDEMONBALL);
+        launcher.sprite = 14160;
+        launcher.x = 10;
+        launcher.y = 10;
+        launcher.driver_data = vec![2, 1, 7, 0];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_EDEMONBALL,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut launcher,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    edemon_section_power: Some(0),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::EdemonBallInactive {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }
+        );
+        assert_eq!(launcher.sprite, 14160);
+        assert_eq!(launcher.driver_data[3], 0);
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut timer_character,
+                &mut launcher,
+                request,
+                6,
+                false,
+                &ItemDriverContext {
+                    timer_call: true,
+                    edemon_section_power: Some(42),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::EdemonBallProjectile {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                start_x: 10,
+                start_y: 11,
+                target_x: 10,
+                target_y: 20,
+                strength: 7,
+                base_sprite: 1,
+                schedule_after_ticks: TICKS_PER_SECOND * 16,
+            }
+        );
+        assert_eq!(launcher.sprite, 14161);
+        assert_eq!(launcher.driver_data[3], 1);
     }
 
     #[test]

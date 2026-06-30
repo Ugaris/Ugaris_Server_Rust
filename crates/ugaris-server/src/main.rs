@@ -20148,6 +20148,9 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::GasTrapPulse { .. } => {
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonBallInactive { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::TrapdoorBusy { character_id, .. } => {
                                             feedback.push((
                                                 character_id,

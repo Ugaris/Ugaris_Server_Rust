@@ -29,11 +29,11 @@ use crate::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item,
         EdemonGateSpawnContext, FdemonGateSpawnContext, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL, IDR_CALIGAR,
-        IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DUNGEONDOOR, IDR_EDEMONBLOCK, IDR_EDEMONDOOR,
-        IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONTUBE, IDR_FDEMONCANNON,
-        IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW,
-        IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP,
-        IDR_TORCH, IID_AREA14_SHRINEKEY,
+        IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DUNGEONDOOR, IDR_EDEMONBALL, IDR_EDEMONBLOCK,
+        IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONSWITCH,
+        IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT,
+        IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_LAB3_PLANT, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
+        IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_TORCH, IID_AREA14_SHRINEKEY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP},
@@ -6049,8 +6049,13 @@ impl World {
         }
 
         let mut effective_context = context.clone();
-        if matches!(driver, IDR_EDEMONLIGHT | IDR_EDEMONDOOR | IDR_EDEMONTUBE)
-            && effective_context.edemon_section_power.is_none()
+        if driver == IDR_EDEMONBALL && effective_context.edemon_fire_enabled.is_none() {
+            effective_context.edemon_fire_enabled = Some(edemon_fire_enabled(&self.items));
+        }
+        if matches!(
+            driver,
+            IDR_EDEMONBALL | IDR_EDEMONLIGHT | IDR_EDEMONDOOR | IDR_EDEMONTUBE
+        ) && effective_context.edemon_section_power.is_none()
         {
             effective_context.edemon_section_power =
                 edemon_section_power_for_light(&self.items, item_id);
@@ -6644,6 +6649,17 @@ impl World {
                     u64::from(schedule_after_ticks),
                 );
                 applied
+            }
+            ItemDriverOutcome::EdemonBallInactive {
+                item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                if let Some(item) = self.items.get(&item_id) {
+                    self.mark_dirty_sector(usize::from(item.x), usize::from(item.y));
+                }
+                outcome
             }
             ItemDriverOutcome::CaligarGunProjectile {
                 item_id,
@@ -13086,6 +13102,20 @@ fn edemon_section_power_for_light(
     found.then_some(max_power)
 }
 
+fn edemon_fire_enabled(items: &HashMap<ItemId, Item>) -> bool {
+    let mut saw_switch = false;
+    for switch in items
+        .values()
+        .filter(|item| item.driver == IDR_EDEMONSWITCH)
+    {
+        saw_switch = true;
+        if switch.driver_data.first().copied().unwrap_or_default() != 0 {
+            return true;
+        }
+    }
+    !saw_switch
+}
+
 fn edemon_tube_target(
     items: &HashMap<ItemId, Item>,
     map: &MapGrid,
@@ -19335,6 +19365,40 @@ mod tests {
         assert_eq!((effect.to_x, effect.to_y), (10, 30));
         assert_eq!((effect.x, effect.y), (10 * 1024 + 512, 21 * 1024 + 512));
         assert_eq!(effect.stop_tick, 1 + (TICKS_PER_SECOND * 4) as i32);
+    }
+
+    #[test]
+    fn world_edemonball_timer_waits_when_area_fire_switch_is_disabled() {
+        let mut world = World::default();
+        let mut cannon = item(7, ItemFlags::USED | ItemFlags::USE);
+        cannon.driver = IDR_EDEMONBALL;
+        cannon.sprite = 14159;
+        cannon.x = 10;
+        cannon.y = 20;
+        cannon.driver_data = vec![0, 2, 42, 0];
+        world.add_item(cannon);
+
+        let mut switch = item(8, ItemFlags::USED | ItemFlags::USE);
+        switch.driver = IDR_EDEMONSWITCH;
+        switch.driver_data = vec![0, 0, 0, 0, 0];
+        world.items.insert(ItemId(8), switch);
+        assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));
+
+        world.advance();
+        let outcomes = world.process_due_timers(6);
+
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::EdemonBallInactive {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                schedule_after_ticks: TICKS_PER_SECOND,
+            }]
+        );
+        assert!(world.effects.is_empty());
+        assert_eq!(world.items[&ItemId(7)].sprite, 14160);
+        assert_eq!(world.items[&ItemId(7)].driver_data[3], 0);
+        assert_eq!(world.timers.used_timers(), 1);
     }
 
     #[test]
