@@ -2553,10 +2553,38 @@ fn apply_notells_command(
 }
 
 fn chat_command_verb(command: &str) -> (&str, &str) {
+    if !command.starts_with('/') && !command.starts_with('#') {
+        return ("say", command);
+    }
     let (verb, rest) = command
         .split_once(char::is_whitespace)
         .unwrap_or((command, ""));
     (verb.trim_start_matches('/').trim_start_matches('#'), rest)
+}
+
+fn apply_demon_ritual_speech(world: &mut World, sender_id: CharacterId, text: &str) -> Vec<String> {
+    let Some(sender) = world.characters.get_mut(&sender_id) else {
+        return Vec::new();
+    };
+    let spoken = text.trim();
+    for ritual in 0..5 {
+        if ugaris_core::item_driver::demon_ritual_words(sender.id.0, ritual)
+            .eq_ignore_ascii_case(spoken)
+        {
+            let cap = i16::try_from((ritual + 1) * 5).unwrap_or(i16::MAX);
+            let effective = sender.values[1][CharacterValue::Demon as usize];
+            sender.values[0][CharacterValue::Demon as usize] = cap.min(effective);
+            sender.flags.insert(CharacterFlags::UPDATE);
+            let mut messages = vec!["You intone the protective ritual.".to_string()];
+            if cap < effective {
+                messages.push(
+                    "You sense that this ritual cannot utilize your full knowledge.".to_string(),
+                );
+            }
+            return messages;
+        }
+    }
+    Vec::new()
 }
 
 fn legacy_chat_channel(number: u8) -> Option<ChatChannelInfo> {
@@ -2686,6 +2714,7 @@ fn apply_local_speech_command(
 ) -> Option<ChatCommandResult> {
     let (verb, raw_text) = chat_command_verb(command);
     let kind = LocalSpeechKind::from_verb(verb)?;
+    let is_plain_speech = !command.starts_with('/') && !command.starts_with('#');
     let settings = GameSettings::default();
 
     let sender = world.characters.get(&sender_id)?;
@@ -2735,6 +2764,12 @@ fn apply_local_speech_command(
         }
     }
 
+    let sender_messages = if is_plain_speech && !underwater {
+        apply_demon_ritual_speech(world, sender_id, text)
+    } else {
+        Vec::new()
+    };
+
     let mut delivered_message_bytes = Vec::new();
     for player in runtime.players.values() {
         let Some(target_id) = player.character_id else {
@@ -2758,7 +2793,7 @@ fn apply_local_speech_command(
     }
 
     Some(ChatCommandResult {
-        sender_messages: Vec::new(),
+        sender_messages,
         delivered_message_bytes,
     })
 }
@@ -11367,6 +11402,94 @@ mod tests {
                 (sender_id, "Alice says: \"Hello \"quoted\"\"".to_string()),
                 (nearby_id, "Alice says: \"Hello \"quoted\"\"".to_string()),
             ]
+        );
+    }
+
+    #[test]
+    fn plain_local_speech_delivers_legacy_say() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.x = 10;
+        sender.y = 10;
+        world.add_character(sender);
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+
+        let result = apply_local_speech_command(&mut world, &runtime, sender_id, "Hello", 123)
+            .expect("plain text should be treated as local say");
+
+        assert!(result.sender_messages.is_empty());
+        assert_eq!(result.delivered_message_bytes.len(), 1);
+        assert_eq!(
+            String::from_utf8_lossy(&result.delivered_message_bytes[0].1),
+            "Alice says: \"Hello\""
+        );
+    }
+
+    #[test]
+    fn plain_speech_matching_demon_ritual_updates_protection() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.values[1][CharacterValue::Demon as usize] = 17;
+        sender.values[0][CharacterValue::Demon as usize] = 0;
+        sender.x = 10;
+        sender.y = 10;
+        let ritual = ugaris_core::item_driver::demon_ritual_words(sender.id.0, 1);
+        world.add_character(sender);
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+
+        let result = apply_local_speech_command(&mut world, &runtime, sender_id, &ritual, 123)
+            .expect("plain ritual speech should still be local say");
+
+        assert_eq!(
+            result.sender_messages,
+            vec![
+                "You intone the protective ritual.",
+                "You sense that this ritual cannot utilize your full knowledge."
+            ]
+        );
+        let sender = world.characters.get(&sender_id).unwrap();
+        assert_eq!(sender.values[0][CharacterValue::Demon as usize], 10);
+        assert!(sender.flags.contains(CharacterFlags::UPDATE));
+        assert_eq!(result.delivered_message_bytes.len(), 1);
+    }
+
+    #[test]
+    fn underwater_plain_speech_skips_demon_ritual() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.values[1][CharacterValue::Demon as usize] = 17;
+        sender.x = 10;
+        sender.y = 10;
+        let ritual = ugaris_core::item_driver::demon_ritual_words(sender.id.0, 1);
+        world.add_character(sender);
+        world
+            .map
+            .tile_mut(10, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::UNDERWATER);
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+
+        let result = apply_local_speech_command(&mut world, &runtime, sender_id, &ritual, 123)
+            .expect("plain underwater speech should still be handled");
+
+        assert!(result.sender_messages.is_empty());
+        assert_eq!(
+            world.characters.get(&sender_id).unwrap().values[0][CharacterValue::Demon as usize],
+            0
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&result.delivered_message_bytes[0].1),
+            "Alice says: \"Blub.\""
         );
     }
 

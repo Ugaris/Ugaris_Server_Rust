@@ -3886,7 +3886,7 @@ pub fn book_text_line_bytes_for_reader_id(
 }
 
 fn demon_book_line_bytes(kind: u8, reader_id: u32) -> Vec<Vec<u8>> {
-    let ritual = demonspeak(reader_id, u32::from(kind - 13));
+    let ritual = demon_ritual_words(reader_id, u32::from(kind - 13));
     let line = match kind {
         13 => format!(
             "I have seen in written in fiery letters upon the sky: Those who have the knowledge can invoke protection against demonic might by uttering the words: '{ritual}'"
@@ -3900,7 +3900,7 @@ fn demon_book_line_bytes(kind: u8, reader_id: u32) -> Vec<Vec<u8>> {
     vec![plain_book_line_bytes(&line)]
 }
 
-fn demonspeak(reader_id: u32, nr: u32) -> String {
+pub fn demon_ritual_words(reader_id: u32, nr: u32) -> String {
     const SYLLABLES: [&str; 10] = [
         "shir", "ka", "dor", "lagh", "kir", "dul", "arl", "sli", "dlu", "usga",
     ];
@@ -10309,7 +10309,7 @@ mod tests {
 
     #[test]
     fn demon_books_generate_legacy_character_specific_ritual_words() {
-        assert_eq!(demonspeak(6, 2), "shirsli sausgadul");
+        assert_eq!(demon_ritual_words(6, 2), "shirsli sausgadul");
         assert_eq!(
             book_text_line_bytes_for_reader_id(15, 0, 6),
             vec![b"'shirsli sausgadul' will give thee even better protection.".to_vec()]
