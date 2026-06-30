@@ -20,6 +20,7 @@ pub const CDR_SIMPLEBADDY: u16 = 7;
 pub const CDR_MACRO: u16 = 37;
 pub const CDR_PALACEISLENA: u16 = 57;
 pub const CDR_TRADER: u16 = 72;
+pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
@@ -540,6 +541,7 @@ pub enum CharacterDriverKind {
     Macro,
     PalaceIslena,
     Trader,
+    LqNpc,
     Janitor,
 }
 
@@ -550,6 +552,7 @@ impl CharacterDriverKind {
             CDR_MACRO => Some(Self::Macro),
             CDR_PALACEISLENA => Some(Self::PalaceIslena),
             CDR_TRADER => Some(Self::Trader),
+            CDR_LQNPC => Some(Self::LqNpc),
             CDR_JANITOR => Some(Self::Janitor),
             _ => None,
         }
@@ -561,6 +564,7 @@ impl CharacterDriverKind {
             Self::Macro => CDR_MACRO,
             Self::PalaceIslena => CDR_PALACEISLENA,
             Self::Trader => CDR_TRADER,
+            Self::LqNpc => CDR_LQNPC,
             Self::Janitor => CDR_JANITOR,
         }
     }
@@ -666,6 +670,7 @@ mod tests {
         assert_eq!(CDR_MACRO, 37);
         assert_eq!(CDR_PALACEISLENA, 57);
         assert_eq!(CDR_TRADER, 72);
+        assert_eq!(CDR_LQNPC, 74);
         assert_eq!(CDR_JANITOR, 85);
         assert_eq!(DRD_SIMPLEBADDYDRIVER, 0x0100_0013);
         assert_eq!(
@@ -678,6 +683,7 @@ mod tests {
             CDR_PALACEISLENA
         );
         assert_eq!(CharacterDriverKind::Trader.legacy_id(), CDR_TRADER);
+        assert_eq!(CharacterDriverKind::LqNpc.legacy_id(), CDR_LQNPC);
         assert_eq!(CharacterDriverKind::Janitor.legacy_id(), CDR_JANITOR);
     }
 
@@ -688,6 +694,7 @@ mod tests {
             (CDR_MACRO, CharacterDriverKind::Macro),
             (CDR_PALACEISLENA, CharacterDriverKind::PalaceIslena),
             (CDR_TRADER, CharacterDriverKind::Trader),
+            (CDR_LQNPC, CharacterDriverKind::LqNpc),
             (CDR_JANITOR, CharacterDriverKind::Janitor),
         ] {
             let outcome = execute_character_driver(driver, 7, 11);

@@ -630,6 +630,20 @@ impl World {
         std::mem::take(&mut self.pending_lq_npc_spawns)
     }
 
+    pub fn apply_lq_npc_spawn_result(
+        &mut self,
+        slot: usize,
+        character_id: CharacterId,
+        serial: u32,
+    ) -> bool {
+        let Some(npc) = self.lq_npcs.iter_mut().find(|npc| npc.slot == slot) else {
+            return false;
+        };
+        npc.character_id = Some(character_id);
+        npc.character_serial = serial;
+        true
+    }
+
     pub fn notify_twocity_pick_from_character(&mut self, character_id: CharacterId) {
         let Some(character) = self.characters.get(&character_id) else {
             return;
@@ -27312,6 +27326,32 @@ mod tests {
 
         assert_eq!(world.lq_npc_respawns, vec![(2, 201)]);
         assert!(world.drain_pending_lq_npc_spawns().is_empty());
+    }
+
+    #[test]
+    fn lq_spawn_result_records_live_character_identity() {
+        let mut world = World::default();
+        assert!(world.configure_lq_npc(LqNpcState {
+            slot: 4,
+            basename: "guard".to_string(),
+            x: 10,
+            y: 11,
+            dir: Direction::RightDown as u8,
+            level: 12,
+            mode: b'f',
+            respawn_seconds: 30,
+            name: String::new(),
+            description: String::new(),
+            nick: [String::new(), String::new()],
+            character_id: None,
+            character_serial: 0,
+        }));
+
+        assert!(world.apply_lq_npc_spawn_result(4, CharacterId(77), 12345));
+        let npc = world.lq_npcs.iter().find(|npc| npc.slot == 4).unwrap();
+        assert_eq!(npc.character_id, Some(CharacterId(77)));
+        assert_eq!(npc.character_serial, 12345);
+        assert!(!world.apply_lq_npc_spawn_result(5, CharacterId(78), 1));
     }
 
     #[test]

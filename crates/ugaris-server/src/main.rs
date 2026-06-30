@@ -12,7 +12,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
-    character_driver::{CharacterDriverState, CDR_PALACEISLENA, CDR_SIMPLEBADDY},
+    character_driver::{CharacterDriverState, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY},
     do_action::{can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy},
     drvlib::char_dist,
     effect::Effect,
@@ -7612,6 +7612,49 @@ fn spawn_fdemon_gate_character(
     world.apply_fdemon_gate_spawn_result(item_id, slot, character_id, serial)
 }
 
+fn spawn_lq_npc_character(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    request: &ugaris_core::world::LqNpcSpawnRequest,
+) -> bool {
+    let character_id = runtime.allocate_character_id();
+    let template = format!("lq_{}", request.basename);
+    let Ok((mut character, inventory_items)) =
+        loader.instantiate_character_template(&template, character_id)
+    else {
+        return false;
+    };
+    character.driver = CDR_LQNPC;
+    character.rest_x = request.x;
+    character.rest_y = request.y;
+    character.dir = ugaris_core::direction::Direction::RightDown as u8;
+    character.level = u32::from(request.level);
+    if request.mode == b'n' {
+        character
+            .flags
+            .insert(CharacterFlags::IMMORTAL | CharacterFlags::NOATTACK);
+    }
+    if !request.name.is_empty() {
+        character.name = request.name.clone();
+    }
+    if !request.description.is_empty() {
+        character.description = request.description.clone();
+    }
+    character.hp = i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
+    character.endurance =
+        i32::from(character.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
+    character.mana = i32::from(character.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+    let serial = character.serial;
+    if !world.spawn_character(character, usize::from(request.x), usize::from(request.y)) {
+        return false;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+    world.apply_lq_npc_spawn_result(request.slot, character_id, serial)
+}
+
 fn apply_xmasmaker(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) -> bool {
     grant_template_item_smart(world, loader, character_id, "xmaspop").is_some()
 }
@@ -11329,6 +11372,76 @@ mod tests {
 
         assert_eq!(queued.action, PlayerActionCode::FireballCharacter);
         assert_eq!((queued.arg1, queued.arg2), (42, 0));
+    }
+
+    #[test]
+    fn lq_npc_spawn_request_instantiates_template_and_records_slot_identity() {
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_character_templates_str(
+                r#"
+                lq_guard:
+                  name="Template Guard"
+                  description="Template description"
+                  V_HP=10
+                  V_ENDURANCE=8
+                  V_MANA=6
+                ;
+            "#,
+            )
+            .unwrap();
+        let mut world = World::default();
+        assert!(world.configure_lq_npc(ugaris_core::world::LqNpcState {
+            slot: 2,
+            basename: "guard".to_string(),
+            x: 12,
+            y: 13,
+            dir: ugaris_core::direction::Direction::Left as u8,
+            level: 17,
+            mode: b'n',
+            respawn_seconds: 60,
+            name: "Quest Guard".to_string(),
+            description: "A live quest guard.".to_string(),
+            nick: [String::new(), String::new()],
+            character_id: None,
+            character_serial: 0,
+        }));
+        let request = ugaris_core::world::LqNpcSpawnRequest {
+            slot: 2,
+            basename: "guard".to_string(),
+            x: 12,
+            y: 13,
+            dir: ugaris_core::direction::Direction::Left as u8,
+            level: 17,
+            mode: b'n',
+            name: "Quest Guard".to_string(),
+            description: "A live quest guard.".to_string(),
+            nick: [String::new(), String::new()],
+        };
+        let mut runtime = ServerRuntime::default();
+        runtime.set_next_character_id(200);
+
+        assert!(spawn_lq_npc_character(
+            &mut world,
+            &mut loader,
+            &mut runtime,
+            &request,
+        ));
+
+        let character = world.characters.get(&CharacterId(200)).unwrap();
+        assert_eq!(character.name, "Quest Guard");
+        assert_eq!(character.description, "A live quest guard.");
+        assert_eq!(character.driver, CDR_LQNPC);
+        assert_eq!((character.x, character.y), (12, 13));
+        assert_eq!((character.rest_x, character.rest_y), (12, 13));
+        assert_eq!(character.level, 17);
+        assert_eq!(character.hp, 10 * POWERSCALE);
+        assert!(character
+            .flags
+            .contains(CharacterFlags::IMMORTAL | CharacterFlags::NOATTACK));
+        let npc = world.lq_npcs.iter().find(|npc| npc.slot == 2).unwrap();
+        assert_eq!(npc.character_id, Some(CharacterId(200)));
+        assert_eq!(npc.character_serial, character.serial);
     }
 
     #[test]
@@ -21034,6 +21147,23 @@ async fn main() -> anyhow::Result<()> {
                 }
                 if fdemon_gate_spawns != 0 {
                     info!(count = fdemon_gate_spawns, tick = world.tick.0, "spawned fdemon gate characters");
+                }
+                let lq_spawn_requests = world.drain_pending_lq_npc_spawns();
+                if !lq_spawn_requests.is_empty() {
+                    let mut lq_spawns = 0;
+                    for request in &lq_spawn_requests {
+                        if spawn_lq_npc_character(
+                            &mut world,
+                            &mut zone_loader,
+                            &mut runtime,
+                            request,
+                        ) {
+                            lq_spawns += 1;
+                        }
+                    }
+                    if lq_spawns != 0 {
+                        info!(count = lq_spawns, tick = world.tick.0, "spawned LQ NPC characters");
+                    }
                 }
                 let timer_feedback = timer_outcome_feedback(&timer_outcomes);
                 if !timer_feedback.is_empty() {
