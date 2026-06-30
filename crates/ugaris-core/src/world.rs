@@ -205,6 +205,14 @@ const FIGHT_DRIVER_HIGH_PRIO: i32 = 750;
 #[cfg_attr(not(test), allow(dead_code))]
 const FIGHT_DRIVER_FLEE_TASK_ENABLED: bool = false;
 
+fn legacy_random_below_from_seed(seed: &mut u32, below: u32) -> u32 {
+    if below == 0 {
+        return 0;
+    }
+    *seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+    *seed % below
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 fn order_fight_driver_tasks(
     tasks: &mut [FightDriverTask],
@@ -288,6 +296,7 @@ pub struct World {
     pub items: HashMap<ItemId, Item>,
     pub effects: HashMap<u32, Effect>,
     pub area3_palace_lamps: Area3PalaceLampState,
+    pub legacy_random_seed: u32,
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,
     pending_system_texts: Vec<WorldSystemText>,
@@ -3441,7 +3450,13 @@ impl World {
         character_id: CharacterId,
         area_id: u16,
     ) -> bool {
-        self.process_simple_baddy_attack_action_with_random(character_id, area_id, |_| 1)
+        let mut seed = self.legacy_random_seed;
+        let processed =
+            self.process_simple_baddy_attack_action_with_random(character_id, area_id, |below| {
+                legacy_random_below_from_seed(&mut seed, below)
+            });
+        self.legacy_random_seed = seed;
+        processed
     }
 
     pub fn process_simple_baddy_attack_action_with_random(
@@ -5738,7 +5753,12 @@ impl World {
     }
 
     pub fn process_simple_baddy_attack_actions(&mut self, area_id: u16) -> usize {
-        self.process_simple_baddy_attack_actions_with_random(area_id, |_| 1)
+        let mut seed = self.legacy_random_seed;
+        let count = self.process_simple_baddy_attack_actions_with_random(area_id, |below| {
+            legacy_random_below_from_seed(&mut seed, below)
+        });
+        self.legacy_random_seed = seed;
+        count
     }
 
     pub fn process_simple_baddy_attack_actions_with_random(
@@ -16625,7 +16645,7 @@ mod tests {
         let npc = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!(npc.action, action::BALL1);
         assert_eq!(npc.act1, 16);
-        assert_eq!(npc.act2, 10);
+        assert_eq!(npc.act2, 9);
         assert_eq!(npc.mana, 0);
         let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
             panic!("simple baddy state missing");
@@ -16743,6 +16763,49 @@ mod tests {
         assert_eq!(npc.action, action::BALL1);
         assert_eq!(npc.act1, 15);
         assert_eq!(npc.act2, 11);
+    }
+
+    #[test]
+    fn legacy_random_below_advances_seed_like_c_style_lcg() {
+        let mut seed = 0_u32;
+
+        assert_eq!(legacy_random_below_from_seed(&mut seed, 10), 5);
+        assert_eq!(seed, 12_345);
+        assert_eq!(legacy_random_below_from_seed(&mut seed, 10), 4);
+        assert_eq!(legacy_random_below_from_seed(&mut seed, 0), 0);
+    }
+
+    #[test]
+    fn simple_baddy_default_attack_action_consumes_world_rng_seed() {
+        let mut world = World::default();
+        world.tick = Tick(461);
+        world.legacy_random_seed = 7;
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.mana = FLASH_COST;
+        npc.values[0][CharacterValue::Flash as usize] = 20;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 16,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 16, 10);
+        world.map.tile_mut(16, 10).unwrap().light = 255;
+
+        assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+        assert_ne!(world.legacy_random_seed, 7);
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::BALL1);
     }
 
     #[test]

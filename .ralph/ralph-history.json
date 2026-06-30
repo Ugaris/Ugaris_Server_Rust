@@ -4525,9 +4525,36 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 165,
+      "startedAt": "2026-06-30T11:43:04.474Z",
+      "endedAt": "2026-06-30T11:51:18.117Z",
+      "durationMs": 493467,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: unexpected argument 'simple_baddy_default_attack_action_consumes_world_rng_seed' found",
+        "test world::tests::legacy_random_below_advances_seed_like_c_style_lcg ... FAILED",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.01s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_attack_action_uses_ball_against_distant_recorded_enemy ... FAILED",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 93372664,
+  "totalDurationMs": 93866131,
   "struggleIndicators": {
     "repeatedErrors": {
       "test item_driver::tests::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok": 11,
@@ -4535,10 +4562,10 @@
       "test item_driver::tests::execute_palace_key_driver_reports_legacy_failures ... ok": 19,
       "test item_driver::tests::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 20,
       "test item_driver::tests::staffer2_animation_book_grants_legacy_exp_and_teleports ... FAILED": 1,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 138,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 137,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 139,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 138,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 125,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 129,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 130,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 104,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 585 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
@@ -4561,7 +4588,7 @@
       "error: could not compile `ugaris-core` (lib test) due to 6 previous errors": 1,
       "test world::tests::staffer2_block_move_pushes_block_and_timer_returns_home ... FAILED": 1,
       "test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 24,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 25,
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.00s": 1,
       "test player::tests::pk_hate_helpers_preserve_legacy_front_priority_and_eviction ... FAILED": 1,
       "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.00s": 1,
@@ -5028,7 +5055,13 @@
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 806 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 2,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 810 filtered out; finished in 0.00s": 1,
-      "test result: ok. 813 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 813 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "error: unexpected argument 'simple_baddy_default_attack_action_consumes_world_rng_seed' found": 1,
+      "test world::tests::legacy_random_below_advances_seed_like_c_style_lcg ... FAILED": 1,
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.01s": 1,
+      "test world::tests::simple_baddy_attack_action_uses_ball_against_distant_recorded_enemy ... FAILED": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
