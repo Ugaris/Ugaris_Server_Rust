@@ -200,6 +200,8 @@ const FIGHT_DRIVER_LOW_PRIO: i32 = 1;
 const FIGHT_DRIVER_MED_PRIO: i32 = 500;
 #[cfg_attr(not(test), allow(dead_code))]
 const FIGHT_DRIVER_HIGH_PRIO: i32 = 750;
+#[cfg_attr(not(test), allow(dead_code))]
+const FIGHT_DRIVER_FLEE_TASK_ENABLED: bool = false;
 
 #[cfg_attr(not(test), allow(dead_code))]
 fn order_fight_driver_tasks(
@@ -4622,6 +4624,14 @@ impl World {
         if self.simple_baddy_attackback_value(character_id, target) > 0 {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::AttackBack,
+                value: FIGHT_DRIVER_HIGH_PRIO,
+            });
+        }
+        if FIGHT_DRIVER_FLEE_TASK_ENABLED
+            && attacker.hp < character_value(attacker, CharacterValue::Hp) * POWERSCALE / 2
+        {
+            tasks.push(FightDriverTask {
+                kind: FightDriverTaskKind::Flee,
                 value: FIGHT_DRIVER_HIGH_PRIO,
             });
         }
@@ -15452,6 +15462,33 @@ mod tests {
         assert!(tasks
             .iter()
             .any(|task| task.kind == FightDriverTaskKind::EarthMud));
+    }
+
+    #[test]
+    fn simple_baddy_fight_tasks_keep_c_disabled_flee_branch_disabled() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.hp = POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        let tasks = world.simple_baddy_fight_tasks(
+            CharacterId(1),
+            world.characters.get(&CharacterId(2)).unwrap(),
+            1,
+            false,
+        );
+
+        assert!(!tasks
+            .iter()
+            .any(|task| task.kind == FightDriverTaskKind::Flee));
     }
 
     #[test]
