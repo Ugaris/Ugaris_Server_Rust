@@ -6835,6 +6835,28 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::TeufelArena {
+                item_id,
+                character_id,
+                x,
+                y,
+            } => {
+                if let Some(blocked) = self.teufel_arena_equipment_block(item_id, character_id) {
+                    blocked
+                } else if self.teleport_character(character_id, x, y, true) {
+                    self.clear_character_spell_slots_and_effects(character_id);
+                    self.pending_system_texts.push(WorldSystemText {
+                        character_id,
+                        message: "All your spells have been removed.".to_string(),
+                    });
+                    outcome
+                } else {
+                    ItemDriverOutcome::TeufelArenaBusy {
+                        item_id,
+                        character_id,
+                    }
+                }
+            }
             ItemDriverOutcome::TeufelArenaExit {
                 character_id, x, y, ..
             } => {
@@ -9221,6 +9243,61 @@ impl World {
             self.remove_effect_from_map(effect_id);
             self.effects.remove(&effect_id);
         }
+    }
+
+    fn teufel_arena_equipment_block(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+    ) -> Option<ItemDriverOutcome> {
+        let equipment = self
+            .characters
+            .get(&character_id)?
+            .inventory
+            .iter()
+            .take(12)
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+
+        for worn_item_id in equipment {
+            let Some(worn) = self.items.get(&worn_item_id) else {
+                continue;
+            };
+            if (53001..=53006).contains(&worn.sprite) {
+                continue;
+            }
+            if counted_enhancement_modifiers(worn) > 1 {
+                self.pending_system_texts.push(WorldSystemText {
+                    character_id,
+                    message: format!(
+                        "You cannot enter while wearing your {}. It has more than one enhancement.",
+                        worn.name
+                    ),
+                });
+                return Some(ItemDriverOutcome::TeufelArenaEquipmentEnhanced {
+                    item_id,
+                    character_id,
+                });
+            }
+            if worn
+                .flags
+                .intersects(ItemFlags::QUEST | ItemFlags::BONDTAKE | ItemFlags::BONDWEAR)
+            {
+                self.pending_system_texts.push(WorldSystemText {
+                    character_id,
+                    message: format!(
+                        "You cannot enter while wearing your {}. It is a quest or a bound item.",
+                        worn.name
+                    ),
+                });
+                return Some(ItemDriverOutcome::TeufelArenaEquipmentBound {
+                    item_id,
+                    character_id,
+                });
+            }
+        }
+        None
     }
 
     pub fn apply_skelraise_raise(
@@ -23213,6 +23290,122 @@ mod tests {
         );
         let actor = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!((actor.x, actor.y), (206, 231));
+    }
+
+    #[test]
+    fn world_blocks_teufel_arena_entry_with_overenhanced_equipment() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.sprite = 27;
+        actor.level = 38;
+        actor.inventory[0] = Some(ItemId(20));
+        assert!(world.spawn_character(actor, 150, 220));
+
+        let mut arena = item(8, ItemFlags::USED | ItemFlags::USE);
+        arena.driver = crate::item_driver::IDR_TEUFELARENA;
+        arena.driver_data = vec![1];
+        world.add_item(arena);
+
+        let mut worn = item(20, ItemFlags::WNHEAD);
+        worn.name = "helmet".to_string();
+        worn.carried_by = Some(CharacterId(1));
+        worn.modifier_index[0] = CharacterValue::Attack as i16;
+        worn.modifier_value[0] = 1;
+        worn.modifier_index[1] = CharacterValue::Parry as i16;
+        worn.modifier_value[1] = 1;
+        world.add_item(worn);
+
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_TEUFELARENA,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            34,
+            &ItemDriverContext {
+                teufel_arena_roll: Some(0),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TeufelArenaEquipmentEnhanced {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+        let actor = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((actor.x, actor.y), (150, 220));
+        assert_eq!(
+            world.drain_pending_system_texts(),
+            vec![WorldSystemText {
+                character_id: CharacterId(1),
+                message:
+                    "You cannot enter while wearing your helmet. It has more than one enhancement."
+                        .to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn world_executes_teufel_arena_entry_and_clears_spells() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.sprite = 27;
+        actor.level = 38;
+        actor.inventory[0] = Some(ItemId(20));
+        actor.inventory[12] = Some(ItemId(21));
+        assert!(world.spawn_character(actor, 150, 220));
+
+        let mut arena = item(8, ItemFlags::USED | ItemFlags::USE);
+        arena.driver = crate::item_driver::IDR_TEUFELARENA;
+        arena.driver_data = vec![1];
+        world.add_item(arena);
+
+        let mut suit = item(20, ItemFlags::WNHEAD);
+        suit.sprite = 53001;
+        suit.carried_by = Some(CharacterId(1));
+        world.add_item(suit);
+        let mut spell = item(21, ItemFlags::USED);
+        spell.carried_by = Some(CharacterId(1));
+        world.add_item(spell);
+
+        let outcome = world.execute_item_driver_request_with_context(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_TEUFELARENA,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            34,
+            &ItemDriverContext {
+                teufel_arena_roll: Some(1),
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::TeufelArena {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 134,
+                y: 220,
+            }
+        );
+        let actor = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((actor.x, actor.y), (134, 220));
+        assert_eq!(actor.inventory[12], None);
+        assert!(!world.items.contains_key(&ItemId(21)));
+        assert_eq!(
+            world.drain_pending_system_texts(),
+            vec![WorldSystemText {
+                character_id: CharacterId(1),
+                message: "All your spells have been removed.".to_string(),
+            }]
+        );
     }
 
     #[test]

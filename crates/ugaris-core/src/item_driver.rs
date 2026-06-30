@@ -402,6 +402,7 @@ pub struct ItemDriverContext {
     pub lq_max_level: u16,
     pub lq_entrance: Option<(u16, u16)>,
     pub lq_death_penalty_seconds: Option<u32>,
+    pub teufel_arena_roll: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -618,6 +619,32 @@ pub enum ItemDriverOutcome {
         y: u16,
     },
     TeufelArenaExitLowHealth {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelArena {
+        item_id: ItemId,
+        character_id: CharacterId,
+        x: u16,
+        y: u16,
+    },
+    TeufelArenaNeedsSuit {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelArenaLevelTooHigh {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelArenaEquipmentEnhanced {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelArenaEquipmentBound {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    TeufelArenaBusy {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -2276,6 +2303,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CALIGAR => caligar_driver(character, item, context),
                 IDR_ARKHATA => arkhata_driver(character, item, context),
                 IDR_TEUFELDOOR => teufel_door_driver(character, item),
+                IDR_TEUFELARENA => teufel_arena_driver(character, item, context),
                 IDR_TEUFELARENAEXIT => teufel_arena_exit_driver(character, item),
                 IDR_CALIGARFLAME => flamethrow_driver(character, item, context),
                 IDR_FREAKDOOR => freakdoor_driver(character, item),
@@ -2482,6 +2510,60 @@ fn teufel_arena_exit_driver(character: &Character, item: &Item) -> ItemDriverOut
         character_id: character.id,
         x: 206,
         y: 231,
+    }
+}
+
+fn teufel_arena_destination(kind: u8, roll: u8) -> Option<(u16, u16)> {
+    if kind != 1 {
+        return None;
+    }
+    Some(match roll % 8 {
+        0 => (154, 215),
+        1 => (134, 220),
+        2 => (167, 196),
+        3 => (186, 221),
+        4 => (212, 223),
+        5 => (228, 224),
+        6 => (247, 220),
+        7 => (237, 198),
+        _ => unreachable!(),
+    })
+}
+
+fn teufel_arena_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let kind = item.driver_data.first().copied().unwrap_or_default();
+    let Some((x, y)) =
+        teufel_arena_destination(kind, context.teufel_arena_roll.unwrap_or_default())
+    else {
+        return ItemDriverOutcome::Noop;
+    };
+
+    if kind == 1 && character.sprite != 27 {
+        return ItemDriverOutcome::TeufelArenaNeedsSuit {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+    if kind == 1 && character.level > 38 {
+        return ItemDriverOutcome::TeufelArenaLevelTooHigh {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::TeufelArena {
+        item_id: item.id,
+        character_id: character.id,
+        x,
+        y,
     }
 }
 
@@ -18882,6 +18964,80 @@ mod tests {
                 character_id: CharacterId(1),
                 x: 206,
                 y: 231,
+            }
+        );
+    }
+
+    #[test]
+    fn teufel_arena_selects_legacy_destination_and_gates_suit_and_level() {
+        let mut actor = character(1);
+        actor.sprite = 1;
+        actor.level = 38;
+        let mut arena = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_TEUFELARENA);
+        arena.driver_data = vec![1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_TEUFELARENA,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut arena,
+                request,
+                34,
+                false,
+                &ItemDriverContext {
+                    teufel_arena_roll: Some(7),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::TeufelArenaNeedsSuit {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.sprite = 27;
+        actor.level = 39;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut arena,
+                request,
+                34,
+                false,
+                &ItemDriverContext {
+                    teufel_arena_roll: Some(7),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::TeufelArenaLevelTooHigh {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+            }
+        );
+
+        actor.level = 38;
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut arena,
+                request,
+                34,
+                false,
+                &ItemDriverContext {
+                    teufel_arena_roll: Some(7),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::TeufelArena {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                x: 237,
+                y: 198,
             }
         );
     }

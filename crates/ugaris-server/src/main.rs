@@ -6281,6 +6281,12 @@ fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
+    if *driver == ugaris_core::item_driver::IDR_TEUFELARENA {
+        return ugaris_core::item_driver::ItemDriverContext {
+            teufel_arena_roll: Some(runtime_random_below(8).max(0) as u8),
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
     if *driver == IDR_WARMFIRE {
         let has_curse_spell = world
             .characters
@@ -22268,8 +22274,25 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. } => {
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExit { .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArena { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExit { .. } => {
                                             executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaNeedsSuit { character_id, .. } => {
+                                            feedback.push((character_id, "You need to wear an earth demon suit.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaLevelTooHigh { character_id, .. } => {
+                                            feedback.push((character_id, "Max Level 38, sorry.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaEquipmentEnhanced { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaEquipmentBound { .. } => {
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaBusy { character_id, .. } => {
+                                            feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExitLowHealth { character_id, .. } => {
                                             feedback.push((character_id, "You cannot leave with less than full health.".to_string()));
