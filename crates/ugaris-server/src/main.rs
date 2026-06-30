@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     net::SocketAddr,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -33,7 +33,7 @@ use ugaris_core::{
     },
     ids::{CharacterId, ItemId},
     item_driver::{
-        legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_BOOKCASE,
+        legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_ARKHATA, IDR_BOOKCASE,
         IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_ISLENADOOR,
         IDR_KEY_RING, IDR_LAB2_GRAVE, IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_RATCHEST,
         IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
@@ -1074,6 +1074,48 @@ fn character_snapshot_items(world: &World, character: &Character) -> Vec<Item> {
         .collect()
 }
 
+fn is_logout_vanishing_item(item: &Item) -> bool {
+    item.driver == IDR_ARKHATA && item.driver_data.first().copied().unwrap_or_default() == 1
+}
+
+fn character_logout_snapshot(world: &World, character: &Character) -> (Character, Vec<Item>) {
+    let mut snapshot_character = character.clone();
+    let mut vanished_items = HashSet::new();
+    let items: Vec<Item> = character_snapshot_items(world, character)
+        .into_iter()
+        .filter(|item| {
+            if is_logout_vanishing_item(item) {
+                vanished_items.insert(item.id);
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    if !vanished_items.is_empty() {
+        if snapshot_character
+            .cursor_item
+            .is_some_and(|item_id| vanished_items.contains(&item_id))
+        {
+            snapshot_character.cursor_item = None;
+        }
+        for slot in &mut snapshot_character.inventory {
+            if slot.is_some_and(|item_id| vanished_items.contains(&item_id)) {
+                *slot = None;
+            }
+        }
+        if snapshot_character
+            .current_container
+            .is_some_and(|item_id| vanished_items.contains(&item_id))
+        {
+            snapshot_character.current_container = None;
+        }
+    }
+
+    (snapshot_character, items)
+}
+
 fn character_save_request(
     world: &World,
     player: &PlayerRuntime,
@@ -1087,9 +1129,10 @@ fn character_save_request(
     } else {
         player.current_mirror_id
     };
+    let (snapshot_character, snapshot_items) = character_logout_snapshot(world, character);
     CharacterSaveRequest {
-        character: character.clone(),
-        items: character_snapshot_items(world, character),
+        character: snapshot_character,
+        items: snapshot_items,
         ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
         subscriber_blob: encode_legacy_account_depot_subscriber_blob(
             &player.subscriber_blob,
@@ -17948,6 +17991,67 @@ mod tests {
         clear_completed_use_actions(&mut runtime, &completions);
 
         assert_eq!(runtime.players[&1].action.action, PlayerActionCode::Idle);
+    }
+
+    #[test]
+    fn logout_save_omits_arkhata_stopwatch_from_inventory_snapshot() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 37, 10, 10);
+        character.inventory[30] = Some(ItemId(10));
+        character.inventory[31] = Some(ItemId(11));
+        world.add_character(character.clone());
+
+        let mut stopwatch = test_item_with_driver(ItemId(10), IDR_ARKHATA);
+        stopwatch.carried_by = Some(character_id);
+        stopwatch.driver_data = vec![1];
+        world.add_item(stopwatch);
+        let mut key_part = test_item_with_driver(ItemId(11), IDR_ARKHATA);
+        key_part.carried_by = Some(character_id);
+        key_part.driver_data = vec![2];
+        world.add_item(key_part);
+
+        let request = character_save_request(
+            &world,
+            &PlayerRuntime::connected(1, 0),
+            &character,
+            None,
+            37,
+            0,
+        );
+
+        assert_eq!(request.character.inventory[30], None);
+        assert_eq!(request.character.inventory[31], Some(ItemId(11)));
+        assert!(!request.items.iter().any(|item| item.id == ItemId(10)));
+        assert!(request.items.iter().any(|item| item.id == ItemId(11)));
+    }
+
+    #[test]
+    fn logout_save_omits_arkhata_stopwatch_from_cursor_snapshot() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 37, 10, 10);
+        character.cursor_item = Some(ItemId(10));
+        character.current_container = Some(ItemId(10));
+        world.add_character(character.clone());
+
+        let mut stopwatch = test_item_with_driver(ItemId(10), IDR_ARKHATA);
+        stopwatch.carried_by = Some(character_id);
+        stopwatch.driver_data = vec![1];
+        world.add_item(stopwatch);
+
+        let request = character_save_request(
+            &world,
+            &PlayerRuntime::connected(1, 0),
+            &character,
+            None,
+            37,
+            0,
+        );
+
+        assert_eq!(request.character.cursor_item, None);
+        assert_eq!(request.character.current_container, None);
+        assert!(request.items.is_empty());
     }
 
     fn test_item(
