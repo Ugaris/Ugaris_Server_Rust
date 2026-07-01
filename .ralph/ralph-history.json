@@ -1855,9 +1855,37 @@
         "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 951 filtered out; finished in 0.00s",
         "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 73,
+      "startedAt": "2026-07-01T09:25:52.726Z",
+      "endedAt": "2026-07-01T09:33:00.785Z",
+      "durationMs": 427756,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "One focused test passed. The parallel Cargo run raced on the same test binary and failed before execution, so I’m rerunning that test serially.",
+        "error: unexpected argument 'simple_baddy_message_actions_remove_dead_enemy' found",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 958 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 959 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s"
+      ]
     }
   ],
-  "totalDurationMs": 47260890,
+  "totalDurationMs": 47688646,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1866,18 +1894,18 @@
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 12,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 13,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 46,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 48,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 47,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 49,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 10,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 48,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 44,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 40,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 49,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 45,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 41,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
       "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAIL": 1,
       "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,": 1,
@@ -2120,7 +2148,11 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 955 filtered out; finished in 0.00s": 1,
       "test result: ok. 957 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 951 filtered out; finished in 0.00s": 1,
-      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s": 1
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s": 1,
+      "One focused test passed. The parallel Cargo run raced on the same test binary and failed before exec": 1,
+      "error: unexpected argument 'simple_baddy_message_actions_remove_dead_enemy' found": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 958 filtered out; finished in 0.00s": 1,
+      "test result: ok. 959 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

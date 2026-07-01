@@ -249,6 +249,9 @@ pub enum SimpleBaddyMessageOutcome {
         caller_id: CharacterId,
         target_id: CharacterId,
     },
+    RemoveEnemy {
+        target_id: CharacterId,
+    },
     StandardAggro {
         target_id: CharacterId,
         priority: i32,
@@ -542,6 +545,12 @@ pub fn process_simple_baddy_messages(
             outcomes.push(SimpleBaddyMessageOutcome::AddEnemy {
                 caller_id: CharacterId(message.dat2 as u32),
                 target_id: CharacterId(message.dat3.max(0) as u32),
+            });
+        }
+
+        if message.message_type == NT_DEAD && message.dat1 > 0 {
+            outcomes.push(SimpleBaddyMessageOutcome::RemoveEnemy {
+                target_id: CharacterId(message.dat1 as u32),
             });
         }
     }
@@ -1682,6 +1691,26 @@ mod tests {
             vec![SimpleBaddyMessageOutcome::AddEnemy {
                 caller_id: crate::ids::CharacterId(2),
                 target_id: crate::ids::CharacterId(0),
+            }]
+        );
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_dead_message_emits_remove_enemy_outcome() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        character.push_driver_message(NT_DEAD, 42, 7, 0);
+        character.push_driver_message(NT_DEAD, 0, 7, 0);
+
+        let outcomes = process_simple_baddy_messages(&mut character, &[]);
+
+        assert_eq!(
+            outcomes,
+            vec![SimpleBaddyMessageOutcome::RemoveEnemy {
+                target_id: crate::ids::CharacterId(42),
             }]
         );
         assert!(character.driver_messages.is_empty());

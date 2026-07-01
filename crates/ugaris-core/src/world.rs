@@ -3765,6 +3765,10 @@ impl World {
                     }
                     applied.push(ItemDriverOutcome::Noop);
                 }
+                SimpleBaddyMessageOutcome::RemoveEnemy { target_id } => {
+                    self.remove_simple_baddy_enemy(character_id, target_id);
+                    applied.push(ItemDriverOutcome::Noop);
+                }
                 SimpleBaddyMessageOutcome::StandardAggro {
                     target_id,
                     priority,
@@ -17378,6 +17382,46 @@ mod tests {
                 last_y: 10,
             }]
         );
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_remove_dead_enemy() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![
+                SimpleBaddyEnemy {
+                    target_id: CharacterId(2),
+                    priority: 1,
+                    last_seen_tick: 10,
+                    visible: true,
+                    last_x: 11,
+                    last_y: 10,
+                },
+                SimpleBaddyEnemy {
+                    target_id: CharacterId(3),
+                    priority: 0,
+                    last_seen_tick: 11,
+                    visible: true,
+                    last_x: 12,
+                    last_y: 10,
+                },
+            ],
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_DEAD, 2, 99, 0);
+        world.add_character(npc);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.enemies.len(), 1);
+        assert_eq!(data.enemies[0].target_id, CharacterId(3));
     }
 
     #[test]
