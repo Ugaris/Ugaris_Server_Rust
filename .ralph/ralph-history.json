@@ -2242,9 +2242,36 @@
         "error: unexpected argument 'tick_tuning_commands_are_god_only_and_preserve_minimum_lengths' found",
         "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 88,
+      "startedAt": "2026-07-01T11:46:35.037Z",
+      "endedAt": "2026-07-01T11:58:15.820Z",
+      "durationMs": 700300,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "I’ll place the new speech-runtime tests next to existing local speech coverage so failures are easy to diagnose.",
+        "error: unexpected argument 'local_speech_uses_runtime_communication_settings' found",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 324 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 323 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 325 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 55653016,
+  "totalDurationMs": 56353316,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -2255,14 +2282,14 @@
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 16,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 57,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 59,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 58,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 60,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 12,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 13,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 59,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 60,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 55,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 50,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
@@ -2282,7 +2309,7 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 289 filtered out; finished in 0.00s": 1,
       "test result: ok. 291 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 860 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 7,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 8,
       "test result: ok. 864 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 865 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.00s": 1,
@@ -2548,7 +2575,12 @@
       "test result: ok. 965 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 961 filtered out; finished in 0.00s": 1,
       "test result: ok. 968 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "error: unexpected argument 'tick_tuning_commands_are_god_only_and_preserve_minimum_lengths' found": 1
+      "error: unexpected argument 'tick_tuning_commands_are_god_only_and_preserve_minimum_lengths' found": 1,
+      "I’ll place the new speech-runtime tests next to existing local speech coverage so failures are easy ": 1,
+      "error: unexpected argument 'local_speech_uses_runtime_communication_settings' found": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 324 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 323 filtered out; finished in 0.00s": 1,
+      "test result: ok. 325 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

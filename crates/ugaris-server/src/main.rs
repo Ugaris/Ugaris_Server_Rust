@@ -45,7 +45,7 @@ use ugaris_core::{
         GiveItemFlags, GiveItemResult,
     },
     key_registry::{is_registered_key, REGISTERED_KEY_IDS},
-    legacy::{action, profession, worn_slot, INVENTORY_START_INVENTORY},
+    legacy::{action, profession, worn_slot, INVENTORY_START_INVENTORY, SAY_DIST},
     log_text::{
         emote_message, holler_message, sanitize_log_bytes, say_message, shout_message,
         whisper_message,
@@ -482,6 +482,14 @@ struct ServerRuntime {
     sewer_item_respawn_time: i32,
     lagout_time: i32,
     regen_time: i32,
+    holler_dist: i32,
+    shout_dist: i32,
+    say_dist: i32,
+    emote_dist: i32,
+    quietsay_dist: i32,
+    whisper_dist: i32,
+    holler_cost: i32,
+    shout_cost: i32,
     weather: WeatherState,
 }
 
@@ -512,6 +520,14 @@ impl Default for ServerRuntime {
             sewer_item_respawn_time: settings.sewer_item_respawn_time,
             lagout_time: settings.lagout_time,
             regen_time: settings.regen_time,
+            holler_dist: settings.holler_dist,
+            shout_dist: settings.shout_dist,
+            say_dist: settings.say_dist,
+            emote_dist: settings.emote_dist,
+            quietsay_dist: settings.quietsay_dist,
+            whisper_dist: settings.whisper_dist,
+            holler_cost: settings.holler_cost,
+            shout_cost: settings.shout_cost,
             weather: WeatherState::default(),
         }
     }
@@ -1681,20 +1697,21 @@ impl LocalSpeechKind {
         }
     }
 
-    fn max_distance(self, settings: &GameSettings) -> i32 {
+    fn max_distance(self, runtime: &ServerRuntime) -> i32 {
         match self {
-            Self::Emote => settings.emote_dist,
-            Self::Holler => settings.holler_dist,
-            Self::Shout => settings.shout_dist,
-            Self::Say => settings.say_dist,
-            Self::Murmur | Self::Whisper => settings.whisper_dist,
+            Self::Emote => runtime.emote_dist,
+            Self::Holler => runtime.holler_dist,
+            Self::Shout => runtime.shout_dist,
+            Self::Say => runtime.say_dist,
+            Self::Murmur => runtime.quietsay_dist,
+            Self::Whisper => runtime.whisper_dist,
         }
     }
 
-    fn endurance_cost(self, settings: &GameSettings) -> i32 {
+    fn endurance_cost(self, runtime: &ServerRuntime) -> i32 {
         match self {
-            Self::Holler => settings.holler_cost,
-            Self::Shout => settings.shout_cost,
+            Self::Holler => runtime.holler_cost,
+            Self::Shout => runtime.shout_cost,
             Self::Emote | Self::Say | Self::Murmur | Self::Whisper => 0,
         }
     }
@@ -3356,6 +3373,136 @@ fn apply_legacy_tick_tuning_command(
     None
 }
 
+fn apply_legacy_communication_tuning_command(
+    runtime: &mut ServerRuntime,
+    lower: &str,
+    rest: &str,
+) -> Option<KeyringCommandResult> {
+    struct CommunicationTuningSpec {
+        command: &'static str,
+        min_len: usize,
+        min: i32,
+        max: i32,
+        field: fn(&mut ServerRuntime) -> &mut i32,
+        success: &'static str,
+        invalid: &'static str,
+        display_divisor: i32,
+    }
+
+    let say_dist = SAY_DIST as i32;
+    let specs = [
+        CommunicationTuningSpec {
+            command: "sethollerdist",
+            min_len: 13,
+            min: say_dist,
+            max: say_dist * 5,
+            field: |runtime| &mut runtime.holler_dist,
+            success: "Holler distance changed from {old} to {new} tiles",
+            invalid: "Invalid value. Please specify a distance between {min} and {max} tiles",
+            display_divisor: 1,
+        },
+        CommunicationTuningSpec {
+            command: "setshoutdist",
+            min_len: 12,
+            min: say_dist,
+            max: say_dist * 4,
+            field: |runtime| &mut runtime.shout_dist,
+            success: "Shout distance changed from {old} to {new} tiles",
+            invalid: "Invalid value. Please specify a distance between {min} and {max} tiles",
+            display_divisor: 1,
+        },
+        CommunicationTuningSpec {
+            command: "setsaydist",
+            min_len: 10,
+            min: say_dist / 2,
+            max: say_dist * 2,
+            field: |runtime| &mut runtime.say_dist,
+            success: "Say distance changed from {old} to {new} tiles",
+            invalid: "Invalid value. Please specify a distance between {min} and {max} tiles",
+            display_divisor: 1,
+        },
+        CommunicationTuningSpec {
+            command: "setemotedist",
+            min_len: 12,
+            min: say_dist / 4,
+            max: say_dist,
+            field: |runtime| &mut runtime.emote_dist,
+            success: "Emote distance changed from {old} to {new} tiles",
+            invalid: "Invalid value. Please specify a distance between {min} and {max} tiles",
+            display_divisor: 1,
+        },
+        CommunicationTuningSpec {
+            command: "setquietsaydist",
+            min_len: 15,
+            min: say_dist / 6,
+            max: say_dist / 2,
+            field: |runtime| &mut runtime.quietsay_dist,
+            success: "Quiet say distance changed from {old} to {new} tiles",
+            invalid: "Invalid value. Please specify a distance between {min} and {max} tiles",
+            display_divisor: 1,
+        },
+        CommunicationTuningSpec {
+            command: "setwhisperdist",
+            min_len: 14,
+            min: 1,
+            max: say_dist / 2,
+            field: |runtime| &mut runtime.whisper_dist,
+            success: "Whisper distance changed from {old} to {new} tiles",
+            invalid: "Invalid value. Please specify a distance between {min} and {max} tiles",
+            display_divisor: 1,
+        },
+        CommunicationTuningSpec {
+            command: "sethollercost",
+            min_len: 13,
+            min: 5 * POWERSCALE,
+            max: 20 * POWERSCALE,
+            field: |runtime| &mut runtime.holler_cost,
+            success: "Holler cost changed from {old} to {new} endurance points",
+            invalid: "Invalid value. Please specify a cost between 5 and 20 endurance points",
+            display_divisor: POWERSCALE,
+        },
+        CommunicationTuningSpec {
+            command: "setshoutcost",
+            min_len: 12,
+            min: 2 * POWERSCALE,
+            max: 10 * POWERSCALE,
+            field: |runtime| &mut runtime.shout_cost,
+            success: "Shout cost changed from {old} to {new} endurance points",
+            invalid: "Invalid value. Please specify a cost between 2 and 10 endurance points",
+            display_divisor: POWERSCALE,
+        },
+    ];
+
+    for spec in specs {
+        if lower.len() < spec.min_len || !spec.command.starts_with(lower) {
+            continue;
+        }
+        let value = legacy_atoi_prefix(rest).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+        if (spec.min..=spec.max).contains(&value) {
+            let field = (spec.field)(runtime);
+            let old = *field;
+            *field = value;
+            return Some(KeyringCommandResult {
+                messages: vec![spec
+                    .success
+                    .replace("{old}", &(old / spec.display_divisor).to_string())
+                    .replace("{new}", &(value / spec.display_divisor).to_string())],
+                ..Default::default()
+            });
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec![spec
+                .invalid
+                .replace("{min}", &(spec.min / spec.display_divisor).to_string())
+                .replace("{max}", &(spec.max / spec.display_divisor).to_string())],
+            ..Default::default()
+        });
+    }
+
+    None
+}
+
 fn apply_admin_character_command(
     world: &mut World,
     runtime: &mut ServerRuntime,
@@ -3375,6 +3522,7 @@ fn apply_admin_character_command(
         .is_some_and(|caller| caller.flags.contains(CharacterFlags::GOD))
     {
         apply_legacy_tick_tuning_command(runtime, &lower, rest)
+            .or_else(|| apply_legacy_communication_tuning_command(runtime, &lower, rest))
     } else {
         None
     } {
@@ -3391,6 +3539,14 @@ fn apply_admin_character_command(
             | "setsewerrespawntime"
             | "setlagouttime"
             | "setregentime"
+            | "sethollerdist"
+            | "setshoutdist"
+            | "setsaydist"
+            | "setemotedist"
+            | "setquietsaydist"
+            | "setwhisperdist"
+            | "sethollercost"
+            | "setshoutcost"
     ) {
         return None;
     }
@@ -4707,7 +4863,6 @@ fn apply_local_speech_command(
 ) -> Option<ChatCommandResult> {
     let (verb, raw_text) = chat_command_verb(command);
     let is_plain_speech = !command.starts_with('/') && !command.starts_with('#');
-    let settings = GameSettings::default();
 
     let sender = world.characters.get(&sender_id)?;
     if sender.flags.contains(CharacterFlags::SHUTUP) {
@@ -4759,7 +4914,7 @@ fn apply_local_speech_command(
         }
     }
 
-    let cost = actual_kind.endurance_cost(&settings);
+    let cost = actual_kind.endurance_cost(runtime);
     if cost > 0 && sender.endurance < cost {
         let message = match actual_kind {
             LocalSpeechKind::Holler => "You're too exhausted to holler.",
@@ -4775,7 +4930,7 @@ fn apply_local_speech_command(
     let Some(payload) = local_speech_payload(actual_kind, &sender.name, text) else {
         return Some(ChatCommandResult::default());
     };
-    let max_distance = actual_kind.max_distance(&settings);
+    let max_distance = actual_kind.max_distance(runtime);
     let sender_x = i32::from(sender.x);
     let sender_y = i32::from(sender.y);
 
@@ -13841,6 +13996,14 @@ mod tests {
         let mut runtime = ServerRuntime {
             players: runtime.players.clone(),
             staff_codes: runtime.staff_codes.clone(),
+            holler_dist: runtime.holler_dist,
+            shout_dist: runtime.shout_dist,
+            say_dist: runtime.say_dist,
+            emote_dist: runtime.emote_dist,
+            quietsay_dist: runtime.quietsay_dist,
+            whisper_dist: runtime.whisper_dist,
+            holler_cost: runtime.holler_cost,
+            shout_cost: runtime.shout_cost,
             ..ServerRuntime::default()
         };
         super::apply_local_speech_command(
@@ -17213,6 +17376,107 @@ mod tests {
     }
 
     #[test]
+    fn god_communication_tuning_commands_match_legacy_ranges_and_feedback() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let mut runtime = ServerRuntime::default();
+
+        let holler = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/sethollerdist 75tail",
+            1,
+        )
+        .expect("god sethollerdist should be recognized");
+        assert_eq!(runtime.holler_dist, 75);
+        assert_eq!(
+            holler.messages,
+            vec!["Holler distance changed from 75 to 75 tiles"]
+        );
+
+        let quiet = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setquietsaydist 4",
+            1,
+        )
+        .expect("god setquietsaydist should be recognized");
+        assert_eq!(runtime.quietsay_dist, 4);
+        assert_eq!(
+            quiet.messages,
+            vec!["Quiet say distance changed from 8 to 4 tiles"]
+        );
+
+        let shout_cost = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setshoutcost 2000",
+            1,
+        )
+        .expect("god setshoutcost should be recognized");
+        assert_eq!(runtime.shout_cost, 2000);
+        assert_eq!(
+            shout_cost.messages,
+            vec!["Shout cost changed from 6 to 2 endurance points"]
+        );
+
+        let invalid_whisper =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/setwhisperdist 0", 1)
+                .expect("invalid setwhisperdist should still be handled");
+        assert_eq!(runtime.whisper_dist, GameSettings::default().whisper_dist);
+        assert_eq!(
+            invalid_whisper.messages,
+            vec!["Invalid value. Please specify a distance between 1 and 12 tiles"]
+        );
+    }
+
+    #[test]
+    fn communication_tuning_commands_are_god_only_and_preserve_minimum_lengths() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setshoutdist 50",
+            1,
+        )
+        .is_none());
+        assert_eq!(runtime.shout_dist, GameSettings::default().shout_dist);
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setshoutdis 50",
+            1,
+        )
+        .is_none());
+        assert_eq!(runtime.shout_dist, GameSettings::default().shout_dist);
+    }
+
+    #[test]
     fn god_listchars_reports_active_players_and_npcs_like_c() {
         let mut world = World::default();
         let god_id = CharacterId(7);
@@ -18836,6 +19100,69 @@ mod tests {
             vec!["You're too exhausted to holler."]
         );
         assert!(tired.delivered_message_bytes.is_empty());
+    }
+
+    #[test]
+    fn local_speech_uses_runtime_communication_settings() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let near_id = CharacterId(8);
+        let far_id = CharacterId(9);
+        let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+        sender.endurance = 2 * POWERSCALE;
+        sender.x = 10;
+        sender.y = 10;
+        world.add_character(sender);
+        let mut near = login_character(near_id, &login_block("Bob"), 1, 14, 10);
+        near.x = 14;
+        near.y = 10;
+        world.add_character(near);
+        let mut far = login_character(far_id, &login_block("Cara"), 1, 16, 10);
+        far.x = 16;
+        far.y = 10;
+        world.add_character(far);
+
+        let mut runtime = ServerRuntime::default();
+        runtime.shout_dist = 4;
+        runtime.quietsay_dist = 4;
+        runtime.shout_cost = 2 * POWERSCALE;
+        for (session, id) in [(1, sender_id), (2, near_id), (3, far_id)] {
+            runtime
+                .players
+                .insert(session, PlayerRuntime::connected(session, 0));
+            runtime.players.get_mut(&session).unwrap().character_id = Some(id);
+        }
+
+        let shouted = apply_local_speech_command(&mut world, &runtime, sender_id, "/shout Hi", 91)
+            .expect("shout should be recognized");
+        let mut shout_targets = shouted
+            .delivered_message_bytes
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>();
+        shout_targets.sort_by_key(|id| id.0);
+        assert_eq!(shout_targets, vec![sender_id, near_id]);
+        assert_eq!(world.characters.get(&sender_id).unwrap().endurance, 0);
+
+        world.characters.get_mut(&sender_id).unwrap().endurance = 0;
+        let tired = apply_local_speech_command(&mut world, &runtime, sender_id, "/shout Again", 92)
+            .expect("shout should be recognized");
+        assert_eq!(
+            tired.sender_messages,
+            vec!["You're too exhausted to shout."]
+        );
+        assert!(tired.delivered_message_bytes.is_empty());
+
+        let murmured =
+            apply_local_speech_command(&mut world, &runtime, sender_id, "/murmur hush", 93)
+                .expect("murmur should be recognized");
+        let mut murmur_targets = murmured
+            .delivered_message_bytes
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>();
+        murmur_targets.sort_by_key(|id| id.0);
+        assert_eq!(murmur_targets, vec![sender_id, near_id]);
     }
 
     #[test]
