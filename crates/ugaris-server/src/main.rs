@@ -36,8 +36,9 @@ use ugaris_core::{
         legacy_lucky_die_from_rolls, ForestSpadeFind, IDR_ACCOUNT_DEPOT, IDR_ARKHATA, IDR_BOOKCASE,
         IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_ISLENADOOR,
         IDR_KEY_RING, IDR_LAB2_GRAVE, IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_RATCHEST,
-        IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
-        IID_AREA25_DOORKEY, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
+        IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE, IDR_WARPBONUS, IID_AREA17_LIBRARYKEY,
+        IID_AREA17_LOCKPICK, IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_AREA2_ZOMBIESKULL1,
+        IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
         can_use_inventory_slot, consume_item, give_item_to_character, replace_item_in_character,
@@ -7312,6 +7313,43 @@ fn item_driver_context_for_request(
         });
         return ugaris_core::item_driver::ItemDriverContext {
             area25_door_key,
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
+    if *driver == IDR_WARPBONUS {
+        let cursor_item = world
+            .characters
+            .get(character_id)
+            .and_then(|character| character.cursor_item)
+            .and_then(|cursor_item_id| world.items.get(&cursor_item_id));
+        let location_id = world
+            .items
+            .get(item_id)
+            .map(|item| i32::from(item.x) + (i32::from(item.y) << 8) + (25_i32 << 16));
+        let (warp_bonus_base, warp_bonus_points, warp_bonus_used_at_base) = player
+            .map(|player| {
+                let base = if player.warp_base > 0 {
+                    player.warp_base as u32
+                } else {
+                    40
+                };
+                let used = location_id.and_then(|location_id| {
+                    player
+                        .warp_bonus_ids
+                        .iter()
+                        .position(|stored| *stored == location_id)
+                        .and_then(|index| player.warp_bonus_last_used.get(index).copied())
+                        .map(|used| used.max(0) as u32)
+                });
+                (Some(base), player.warp_points.max(0) as u32, used)
+            })
+            .unwrap_or((Some(40), 0, None));
+        return ugaris_core::item_driver::ItemDriverContext {
+            cursor_template_id: cursor_item.map(|item| item.template_id),
+            cursor_drdata0: cursor_item.and_then(|item| item.driver_data.first().copied()),
+            warp_bonus_base,
+            warp_bonus_points,
+            warp_bonus_used_at_base,
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
@@ -27135,6 +27173,176 @@ async fn main() -> anyhow::Result<()> {
                                         } => {
                                             feedback.push((character_id, "Your spheres vanished.".to_string()));
                                             executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpBonusFinished {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You're done. Finished. It's over. You're there. You've solved the final level."
+                                                    .to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpBonusAlreadyUsed {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "Nothing happened.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpBonusNeedsSphere {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Nothing happened. You sense that you'll need one of the spheres this time."
+                                                    .to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpBonus {
+                                            character_id,
+                                            location_id,
+                                            base,
+                                            next_points,
+                                            advanced,
+                                            reward_sphere_kind,
+                                            reward_level,
+                                            ..
+                                        } => {
+                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                if player.warp_base <= 0 {
+                                                    player.warp_base = 40;
+                                                }
+                                                let slot = player
+                                                    .warp_bonus_ids
+                                                    .iter()
+                                                    .position(|stored| *stored == location_id as i32)
+                                                    .or_else(|| {
+                                                        player
+                                                            .warp_bonus_last_used
+                                                            .iter()
+                                                            .enumerate()
+                                                            .min_by_key(|(_, used)| **used)
+                                                            .map(|(index, _)| index)
+                                                    });
+                                                if let Some(slot) = slot {
+                                                    if slot >= player.warp_bonus_ids.len() {
+                                                        player.warp_bonus_ids.resize(slot + 1, 0);
+                                                    }
+                                                    if slot >= player.warp_bonus_last_used.len() {
+                                                        player.warp_bonus_last_used.resize(slot + 1, 0);
+                                                    }
+                                                    player.warp_bonus_ids[slot] = location_id as i32;
+                                                    player.warp_bonus_last_used[slot] = base as i32;
+                                                }
+                                                player.warp_points = next_points as i32;
+                                                if advanced {
+                                                    player.warp_base = base as i32 + 5;
+                                                    player.warp_nostepexp = 0;
+                                                    if player.warp_base > 139 {
+                                                        feedback.push((
+                                                            character_id,
+                                                            "You've finished the final level.".to_string(),
+                                                        ));
+                                                    } else if player.warp_base > 134 {
+                                                        feedback.push((
+                                                            character_id,
+                                                            "You've reached the final level.".to_string(),
+                                                        ));
+                                                    } else {
+                                                        feedback.push((
+                                                            character_id,
+                                                            "You advanced a level! Take care!".to_string(),
+                                                        ));
+                                                    }
+                                                }
+                                                let current_base = player.warp_base.max(40) as u32;
+                                                let current_points = player.warp_points.max(0) as u32;
+                                                let no_step_exp = player.warp_nostepexp != 0;
+                                                if advanced {
+                                                    if let Some(character) = world.characters.get_mut(&character_id) {
+                                                        match reward_sphere_kind {
+                                                            Some(1) => {
+                                                                character.exp = character.exp.saturating_add(
+                                                                    legacy_level_value(reward_level) / 7,
+                                                                );
+                                                                feedback.push((
+                                                                    character_id,
+                                                                    "You received experience.".to_string(),
+                                                                ));
+                                                            }
+                                                            Some(2)
+                                                                if character.saves < 10
+                                                                    && !character
+                                                                        .flags
+                                                                        .contains(CharacterFlags::HARDCORE) =>
+                                                            {
+                                                                character.saves += 1;
+                                                                feedback.push((
+                                                                    character_id,
+                                                                    "You received a save.".to_string(),
+                                                                ));
+                                                            }
+                                                            Some(3) => {
+                                                                character.military_points = character
+                                                                    .military_points
+                                                                    .saturating_add(reward_level as i32);
+                                                                feedback.push((
+                                                                    character_id,
+                                                                    "You received military rank.".to_string(),
+                                                                ));
+                                                            }
+                                                            Some(4) => {
+                                                                character.gold = character.gold.saturating_add(
+                                                                    reward_level
+                                                                        .saturating_mul(reward_level)
+                                                                        .saturating_mul(10),
+                                                                );
+                                                            }
+                                                            Some(5) => {
+                                                                if grant_template_item_smart(
+                                                                    &mut world,
+                                                                    &mut zone_loader,
+                                                                    character_id,
+                                                                    "lollipop",
+                                                                )
+                                                                .is_some()
+                                                                {
+                                                                    feedback.push((
+                                                                        character_id,
+                                                                        "You received a lollipop.".to_string(),
+                                                                    ));
+                                                                }
+                                                            }
+                                                            _ => {}
+                                                        }
+                                                    }
+                                                } else if !no_step_exp {
+                                                    if let Some(character) = world.characters.get_mut(&character_id) {
+                                                        character.exp = character.exp.saturating_add(
+                                                            legacy_level_value(reward_level) / 70,
+                                                        );
+                                                    }
+                                                }
+                                                if current_base <= 139 {
+                                                    feedback.push((
+                                                        character_id,
+                                                        format!(
+                                                            "You are at level {}, and you have {} of {} points.",
+                                                            (current_base - 35) / 5,
+                                                            current_points,
+                                                            current_base / 4
+                                                        ),
+                                                    ));
+                                                }
+                                                executed += 1;
+                                            } else {
+                                                failed += 1;
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::WarpKeySpawnCursorOccupied {
                                             character_id,

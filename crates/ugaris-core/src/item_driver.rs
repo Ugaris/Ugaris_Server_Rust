@@ -375,6 +375,9 @@ pub struct ItemDriverContext {
     pub has_area17_lockpick: bool,
     pub has_area17_cursor_lockpick: bool,
     pub area25_door_key: Option<(ItemId, String)>,
+    pub warp_bonus_base: Option<u32>,
+    pub warp_bonus_points: u32,
+    pub warp_bonus_used_at_base: Option<u32>,
     pub has_dungeon_door_key1: bool,
     pub has_dungeon_door_key2: bool,
     pub dungeon_defender_count: Option<u16>,
@@ -631,6 +634,28 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
     },
     WarpKeyDoorBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    WarpBonus {
+        item_id: ItemId,
+        character_id: CharacterId,
+        location_id: u32,
+        base: u32,
+        next_points: u32,
+        advanced: bool,
+        reward_sphere_kind: Option<u8>,
+        reward_level: u32,
+    },
+    WarpBonusFinished {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    WarpBonusAlreadyUsed {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    WarpBonusNeedsSphere {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -2477,6 +2502,7 @@ pub fn execute_item_driver_with_context(
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_MINEGATEWAY => mine_gateway_driver(character, item, context),
                 IDR_WARPTELEPORT => warpteleport_driver(character, item, context),
+                IDR_WARPBONUS => warpbonus_driver(character, item, context, area_id),
                 IDR_WARPKEYSPAWN => warpkeyspawn_driver(character, item),
                 IDR_WARPKEYDOOR => warpkeydoor_driver(character, item, context),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
@@ -6999,6 +7025,67 @@ fn warpteleport_driver(
     }
 }
 
+fn warpbonus_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+    area_id: u16,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let base = context.warp_bonus_base.unwrap_or(40);
+    if base > 139 {
+        return ItemDriverOutcome::WarpBonusFinished {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    if context
+        .warp_bonus_used_at_base
+        .is_some_and(|used| used >= base)
+    {
+        return ItemDriverOutcome::WarpBonusAlreadyUsed {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let needed_points = base / 4;
+    let reward_sphere_kind = if context.warp_bonus_points + 1 >= needed_points {
+        if context.cursor_template_id != Some(IID_AREA25_TELEKEY) {
+            return ItemDriverOutcome::WarpBonusNeedsSphere {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+        context.cursor_drdata0
+    } else {
+        None
+    };
+
+    let next_points = if context.warp_bonus_points + 1 >= needed_points {
+        0
+    } else {
+        context.warp_bonus_points + 1
+    };
+    let advanced = next_points == 0;
+    let reward_level = character.level.min((base * 80) / 100);
+
+    ItemDriverOutcome::WarpBonus {
+        item_id: item.id,
+        character_id: character.id,
+        location_id: u32::from(item.x) + (u32::from(item.y) << 8) + (u32::from(area_id) << 16),
+        base,
+        next_points,
+        advanced,
+        reward_sphere_kind,
+        reward_level,
+    }
+}
+
 fn warpkeyspawn_template(kind: u8) -> &'static str {
     match kind {
         1 => "warped_teleport_key1",
@@ -9647,6 +9734,8 @@ mod tests {
         assert_eq!(IDR_LQ_KEY, 100);
         assert_eq!(IDR_STR_DEPOT, 108);
         assert_eq!(IDR_RATCHEST, 111);
+        assert_eq!(IDR_WARPTRIALDOOR, 113);
+        assert_eq!(IDR_WARPBONUS, 114);
         assert_eq!(IDR_WARPKEYDOOR, 116);
         assert_eq!(IDR_STAFFER, 121);
         assert_eq!(IDR_MINEGATEWAY, 127);
@@ -9795,6 +9884,151 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
                 required_area: 25,
+            }
+        );
+    }
+
+    #[test]
+    fn warpbonus_dispatch_ports_level_and_location_state() {
+        let mut actor = character(1);
+        actor.level = 70;
+        let mut bonus = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPBONUS);
+        bonus.x = 12;
+        bonus.y = 34;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPBONUS,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            warp_bonus_base: Some(50),
+            warp_bonus_points: 3,
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut bonus, request, 25, false, &context),
+            ItemDriverOutcome::WarpBonus {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                location_id: 12 + (34 << 8) + (25 << 16),
+                base: 50,
+                next_points: 4,
+                advanced: false,
+                reward_sphere_kind: None,
+                reward_level: 40,
+            }
+        );
+    }
+
+    #[test]
+    fn warpbonus_requires_sphere_on_advancing_touch() {
+        let mut actor = character(1);
+        actor.level = 50;
+        actor.cursor_item = Some(ItemId(9));
+        let mut bonus = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPBONUS);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPBONUS,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let missing_sphere = ItemDriverContext {
+            warp_bonus_base: Some(40),
+            warp_bonus_points: 9,
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bonus,
+                request,
+                25,
+                false,
+                &missing_sphere
+            ),
+            ItemDriverOutcome::WarpBonusNeedsSphere {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        let with_sphere = ItemDriverContext {
+            warp_bonus_base: Some(40),
+            warp_bonus_points: 9,
+            cursor_template_id: Some(IID_AREA25_TELEKEY),
+            cursor_drdata0: Some(4),
+            ..ItemDriverContext::default()
+        };
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bonus,
+                request,
+                25,
+                false,
+                &with_sphere
+            ),
+            ItemDriverOutcome::WarpBonus {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                location_id: 25 << 16,
+                base: 40,
+                next_points: 0,
+                advanced: true,
+                reward_sphere_kind: Some(4),
+                reward_level: 32,
+            }
+        );
+    }
+
+    #[test]
+    fn warpbonus_blocks_finished_and_already_used_state() {
+        let mut actor = character(1);
+        let mut bonus = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPBONUS);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPBONUS,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bonus,
+                request,
+                25,
+                false,
+                &ItemDriverContext {
+                    warp_bonus_base: Some(140),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::WarpBonusFinished {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut actor,
+                &mut bonus,
+                request,
+                25,
+                false,
+                &ItemDriverContext {
+                    warp_bonus_base: Some(40),
+                    warp_bonus_used_at_base: Some(40),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::WarpBonusAlreadyUsed {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
             }
         );
     }
