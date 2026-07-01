@@ -3686,14 +3686,13 @@ impl World {
         character_id: CharacterId,
         area_id: u16,
     ) -> Vec<ItemDriverOutcome> {
-        let tick = self.tick.0;
-        self.process_simple_baddy_message_actions_with_random(character_id, area_id, |limit| {
-            if limit <= 0 {
-                0
-            } else {
-                ((tick + u64::from(character_id.0)) % limit as u64) as i32
-            }
-        })
+        let mut seed = self.legacy_random_seed;
+        let outcomes =
+            self.process_simple_baddy_message_actions_with_random(character_id, area_id, |limit| {
+                legacy_random_below_from_seed(&mut seed, limit.max(0) as u32) as i32
+            });
+        self.legacy_random_seed = seed;
+        outcomes
     }
 
     pub fn process_simple_baddy_message_actions_with_random(
@@ -17233,6 +17232,34 @@ mod tests {
         assert_eq!(poison.driver, IDR_POISON0 + 2);
         assert!(target.flags.contains(CharacterFlags::UPDATE));
         assert!(world.characters[&CharacterId(1)].driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_default_path_uses_legacy_rng_seed_for_poison() {
+        let mut world = World::default();
+        world.tick = Tick(1_000);
+        world.legacy_random_seed = 0;
+        let mut npc = character(1);
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            poison_power: 6,
+            poison_type: 1,
+            poison_chance: 50,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_DIDHIT, 2, 10, 0);
+        let mut target = character(2);
+        target.values[1][CharacterValue::Hp as usize] = 100;
+        target.hp = 100 * POWERSCALE;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        assert_eq!(world.legacy_random_seed, 12_345);
+        let target = world.characters.get(&CharacterId(2)).unwrap();
+        let poison_id = target.inventory[29].expect("poison spell item");
+        assert_eq!(world.items.get(&poison_id).unwrap().driver, IDR_POISON0 + 1);
     }
 
     #[test]
