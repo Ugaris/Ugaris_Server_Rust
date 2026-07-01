@@ -38,9 +38,9 @@ use crate::{
         IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB2_WATER,
         IDR_LAB3_PLANT, IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT,
         IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM,
-        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_WARPKEYDOOR, IDR_WARPTRIALDOOR,
-        IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
-        IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_MINEGATEWAY,
+        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_WARPKEYDOOR, IDR_WARPTELEPORT,
+        IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY,
+        IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
@@ -7310,6 +7310,7 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::Teleport {
+                item_id,
                 character_id,
                 x,
                 y,
@@ -7319,8 +7320,22 @@ impl World {
                 if area_id != 0 && area_id != current_area_id {
                     return outcome;
                 }
-                if self.teleport_character(character_id, x, y, true) {
+                let is_warp_teleport = self
+                    .items
+                    .get(&item_id)
+                    .is_some_and(|item| item.driver == IDR_WARPTELEPORT);
+                let teleported = if is_warp_teleport {
+                    self.teleport_character_exact(character_id, usize::from(x), usize::from(y))
+                } else {
+                    self.teleport_character(character_id, x, y, true)
+                };
+                if teleported {
                     outcome
+                } else if is_warp_teleport {
+                    ItemDriverOutcome::WarpTeleportBusy {
+                        item_id,
+                        character_id,
+                    }
                 } else {
                     ItemDriverOutcome::Noop
                 }
@@ -30187,6 +30202,41 @@ mod tests {
         assert!(!world.items.contains_key(&ItemId(9)));
         assert!(!world.items.contains_key(&ItemId(10)));
         assert!(world.items.contains_key(&ItemId(11)));
+    }
+
+    #[test]
+    fn world_warpteleport_plain_busy_preserves_legacy_feedback_boundary() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(actor, 10, 10));
+        let blocker = character(2);
+        assert!(world.spawn_character(blocker, 242, 252));
+
+        let mut portal = item(7, ItemFlags::USED | ItemFlags::USE);
+        portal.driver = crate::item_driver::IDR_WARPTELEPORT;
+        portal.driver_data = vec![0, 1];
+        world.add_item(portal);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_WARPTELEPORT,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            25,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::WarpTeleportBusy {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        let actor = &world.characters[&CharacterId(1)];
+        assert_eq!((actor.x, actor.y), (10, 10));
     }
 
     #[test]

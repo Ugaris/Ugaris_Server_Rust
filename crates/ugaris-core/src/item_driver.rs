@@ -628,6 +628,10 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    WarpTeleportBusy {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     WarpKeySpawn {
         item_id: ItemId,
         character_id: CharacterId,
