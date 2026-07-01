@@ -9,6 +9,7 @@ pub mod do_action;
 pub mod drvlib;
 pub mod effect;
 pub mod entity;
+pub mod error;
 pub mod game_settings;
 pub mod game_time;
 pub mod ids;
