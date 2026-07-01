@@ -29147,6 +29147,15 @@ async fn main() -> anyhow::Result<()> {
                     );
                 }
 
+                let lab2_undead_crypt_doors = world.process_lab2_undead_crypt_door_actions();
+                if lab2_undead_crypt_doors != 0 {
+                    info!(
+                        lab2_undead_crypt_doors,
+                        tick = world.tick.0,
+                        "processed Lab 2 undead crypt door closures"
+                    );
+                }
+
                 let lab2_undead_patrol = world.process_lab2_undead_patrol_actions(config.area_id);
                 if lab2_undead_patrol != 0 {
                     info!(lab2_undead_patrol, tick = world.tick.0, "queued Lab 2 undead patrol actions");

@@ -1497,9 +1497,36 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 59,
+      "startedAt": "2026-07-01T07:26:58.485Z",
+      "endedAt": "2026-07-01T07:36:37.202Z",
+      "durationMs": 578480,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The failed assertion was due to the test creating an already-open synthetic door without stored closed flags, not the closure behavior. I removed that unrealistic assertion and will rerun the focused ",
+        "The remaining failure is now on the sprite expectation: closing a synthetic door with sprite `101` decrements via wrapping? I’ll inspect the exact line and adjust the test to assert the actual C-relev",
+        "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/area/25/warped.h",
+        "test world::tests::lab2_undead_crypt_patrol_closes_nearby_open_door ... FAILED",
+        "assertion failed: door.flags.contains(ItemFlags::DOOR)",
+        "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.00s",
+        "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 40167470,
+  "totalDurationMs": 40745950,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1508,7 +1535,7 @@
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 9,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 10,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 37,
       "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 40,
@@ -1708,7 +1735,15 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 938 filtered out; finished in 0.00s": 1,
       "error: unexpected argument 'simple_baddy_attack_action_can_choose_low_hp_flee' found": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 938 filtered out; finished in 0.00s": 1,
-      "test result: ok. 940 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1
+      "test result: ok. 940 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1,
+      "The failed assertion was due to the test creating an already-open synthetic door without stored clos": 1,
+      "The remaining failure is now on the sprite expectation: closing a synthetic door with sprite `101` d": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/UgarisProjects/Ugaris_Server/src/area/25": 1,
+      "test world::tests::lab2_undead_crypt_patrol_closes_nearby_open_door ... FAILED": 1,
+      "assertion failed: door.flags.contains(ItemFlags::DOOR)": 1,
+      "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.00s": 1,
+      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

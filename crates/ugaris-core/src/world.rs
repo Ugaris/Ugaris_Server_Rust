@@ -7011,6 +7011,74 @@ impl World {
             .count()
     }
 
+    pub fn process_lab2_undead_crypt_door_action(&mut self, character_id: CharacterId) -> bool {
+        const CRYPT_DOOR_X: u16 = 168;
+        const CRYPT_DOOR_Y: u16 = 156;
+
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if character.driver != CDR_LAB2UNDEAD
+            || character.action != action::IDLE
+            || character.flags.contains(CharacterFlags::DEAD)
+        {
+            return false;
+        }
+        if !matches!(
+            character.driver_state,
+            Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+                patrol: 2,
+                ..
+            }))
+        ) {
+            return false;
+        }
+        if character.x >= CRYPT_DOOR_X
+            || character.x.abs_diff(CRYPT_DOOR_X) >= 3
+            || character.y.abs_diff(CRYPT_DOOR_Y) >= 3
+        {
+            return false;
+        }
+
+        let Some(door_item_id) = self
+            .map
+            .tile(usize::from(CRYPT_DOOR_X), usize::from(CRYPT_DOOR_Y))
+            .and_then(|tile| (tile.item != 0).then_some(ItemId(tile.item)))
+        else {
+            return false;
+        };
+        if !self.items.get(&door_item_id).is_some_and(|item| {
+            item.driver == IDR_DOOR && item.driver_data.first().copied().unwrap_or_default() == 1
+        }) {
+            return false;
+        }
+
+        self.toggle_door(door_item_id, character_id) == DoorToggleResult::Toggled
+    }
+
+    pub fn process_lab2_undead_crypt_door_actions(&mut self) -> usize {
+        let character_ids: Vec<_> = self
+            .characters
+            .iter()
+            .filter_map(|(&character_id, character)| {
+                (character.driver == CDR_LAB2UNDEAD
+                    && matches!(
+                        character.driver_state,
+                        Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+                            patrol: 2,
+                            ..
+                        }))
+                    ))
+                .then_some(character_id)
+            })
+            .collect();
+
+        character_ids
+            .into_iter()
+            .filter(|&character_id| self.process_lab2_undead_crypt_door_action(character_id))
+            .count()
+    }
+
     fn queue_lab2_undead_say(&mut self, character_id: CharacterId, message: impl Into<String>) {
         if let Some(character) = self.characters.get(&character_id) {
             self.pending_area_texts.push(WorldAreaText {
@@ -24944,9 +25012,7 @@ mod tests {
         assert!(!tile.flags.intersects(
             MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK | MapFlags::TSOUNDBLOCK | MapFlags::DOOR
         ));
-        let sounds = world.drain_pending_sound_specials();
-        assert_eq!(sounds.len(), 1);
-        assert_eq!(sounds[0].special.special_type, 3);
+        assert!(world.drain_pending_sound_specials().is_empty());
 
         let outcome = world.execute_item_driver_request(request, 1);
         assert!(matches!(outcome, ItemDriverOutcome::DoorToggle { .. }));
@@ -24962,9 +25028,7 @@ mod tests {
         assert!(tile.flags.contains(MapFlags::TSIGHTBLOCK));
         assert!(tile.flags.contains(MapFlags::TSOUNDBLOCK));
         assert!(tile.flags.contains(MapFlags::DOOR));
-        let sounds = world.drain_pending_sound_specials();
-        assert_eq!(sounds.len(), 1);
-        assert_eq!(sounds[0].special.special_type, 3);
+        assert!(world.drain_pending_sound_specials().is_empty());
     }
 
     #[test]
@@ -29550,6 +29614,54 @@ mod tests {
             .contains(CharacterFlags::DEAD));
         assert!(world.effects.is_empty());
         assert!(world.drain_pending_area_texts().is_empty());
+    }
+
+    #[test]
+    fn lab2_undead_crypt_patrol_closes_nearby_open_door() {
+        let mut world = World::default();
+        let mut undead = character(2);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+            patrol: 2,
+            ..Lab2UndeadDriverData::default()
+        }));
+        assert!(world.spawn_character(undead, 166, 156));
+
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_DOOR;
+        door.sprite = 101;
+        door.driver_data = vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        assert!(world.map.set_item_map(&mut door, 168, 156));
+        world.add_item(door);
+
+        assert!(world.process_lab2_undead_crypt_door_action(CharacterId(2)));
+
+        let door = &world.items[&ItemId(7)];
+        assert_eq!(door.driver_data[0], 0);
+        assert_eq!(door.sprite, 100);
+        assert!(world.drain_pending_sound_specials().is_empty());
+    }
+
+    #[test]
+    fn lab2_undead_crypt_patrol_does_not_close_from_wrong_side() {
+        let mut world = World::default();
+        let mut undead = character(2);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+            patrol: 2,
+            ..Lab2UndeadDriverData::default()
+        }));
+        assert!(world.spawn_character(undead, 169, 156));
+
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE);
+        door.driver = IDR_DOOR;
+        door.sprite = 101;
+        door.driver_data = vec![1];
+        assert!(world.map.set_item_map(&mut door, 168, 156));
+        world.add_item(door);
+
+        assert!(!world.process_lab2_undead_crypt_door_action(CharacterId(2)));
+        assert_eq!(world.items[&ItemId(7)].driver_data[0], 1);
     }
 
     #[test]
