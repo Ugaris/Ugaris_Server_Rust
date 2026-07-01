@@ -354,6 +354,7 @@ pub struct ItemDriverContext {
     pub cursor_driver: Option<u16>,
     pub cursor_sprite: Option<i32>,
     pub cursor_drdata0: Option<u8>,
+    pub cursor_drdata1_u32: Option<u32>,
     pub timer_call: bool,
     pub daylight: u8,
     pub hour: u8,
@@ -898,6 +899,20 @@ pub enum ItemDriverOutcome {
     },
     MineDoorTimer {
         item_id: ItemId,
+    },
+    MineKeyDoor {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        golem_nr: u8,
+    },
+    MineKeyDoorNeedsGold {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    MineKeyDoorBusy {
+        item_id: ItemId,
+        character_id: CharacterId,
     },
     StafferSpecDoorToggle {
         item_id: ItemId,
@@ -2500,6 +2515,7 @@ pub fn execute_item_driver_with_context(
                 IDR_PICKDOOR => pick_door_driver(character, item, context),
                 IDR_PICKCHEST => pick_chest_driver(character, item, context),
                 IDR_MINEDOOR => mine_door_driver(character, item, context, area_id),
+                IDR_MINEKEYDOOR => mine_key_door_driver(character, item, context),
                 IDR_PENT => pentagram_driver(character, item, context),
                 IDR_PENTBOSSDOOR => pent_boss_door_driver(character, item, context),
                 IDR_BURNDOWN => burndown_driver(character, item, context),
@@ -2615,7 +2631,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_ISLENADOOR => Some(11),
         IDR_PENT | IDR_PENTBOSSDOOR => Some(4),
         IDR_PICKDOOR | IDR_PICKCHEST | IDR_BURNDOWN | IDR_COLORTILE | IDR_SKELRAISE => Some(17),
-        IDR_MINEWALL | IDR_MINEDOOR | IDR_MINEGATEWAY => Some(12),
+        IDR_MINEWALL | IDR_MINEDOOR | IDR_MINEKEYDOOR | IDR_MINEGATEWAY => Some(12),
         IDR_RANDOMSHRINE | IDR_TRAPDOOR | IDR_JUNKPILE | IDR_GASTRAP => Some(14),
         IDR_SWAMPARM | IDR_SWAMPWHISP | IDR_SWAMPSPAWN => Some(15),
         IDR_FORESTCHEST => Some(16),
@@ -7007,6 +7023,39 @@ fn mine_gateway_key_driver(
         character_id: character.id,
         cursor_item_id,
         combined_bits,
+    }
+}
+
+fn mine_key_door_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(cursor_item_id) = character.cursor_item.filter(|cursor| *cursor != item.id) else {
+        return ItemDriverOutcome::MineKeyDoorNeedsGold {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    if context.cursor_driver != Some(IDR_ENHANCE)
+        || context.cursor_drdata0 != Some(2)
+        || context.cursor_drdata1_u32 != Some(2000)
+    {
+        return ItemDriverOutcome::MineKeyDoorNeedsGold {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::MineKeyDoor {
+        item_id: item.id,
+        character_id: character.id,
+        cursor_item_id,
+        golem_nr: drdata(item, 0),
     }
 }
 
@@ -16384,6 +16433,90 @@ mod tests {
                 x: 0,
                 y: 43,
                 area_id: 12,
+            }
+        );
+    }
+
+    #[test]
+    fn execute_mine_key_door_requires_2000_gold_cursor() {
+        let mut character = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_MINEKEYDOOR);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_MINEKEYDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut door,
+                request,
+                12,
+                false,
+                &ItemDriverContext::default(),
+            ),
+            ItemDriverOutcome::MineKeyDoorNeedsGold {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+
+        character.cursor_item = Some(ItemId(8));
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut door,
+                request,
+                12,
+                false,
+                &ItemDriverContext {
+                    cursor_driver: Some(IDR_ENHANCE),
+                    cursor_drdata0: Some(2),
+                    cursor_drdata1_u32: Some(1999),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::MineKeyDoorNeedsGold {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn execute_mine_key_door_decodes_golem_number() {
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(8));
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_MINEKEYDOOR);
+        set_drdata(&mut door, 0, 4);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_MINEKEYDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(
+                &mut character,
+                &mut door,
+                request,
+                12,
+                false,
+                &ItemDriverContext {
+                    cursor_driver: Some(IDR_ENHANCE),
+                    cursor_drdata0: Some(2),
+                    cursor_drdata1_u32: Some(2000),
+                    ..ItemDriverContext::default()
+                },
+            ),
+            ItemDriverOutcome::MineKeyDoor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(8),
+                golem_nr: 4,
             }
         );
     }

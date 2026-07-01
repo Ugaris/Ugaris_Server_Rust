@@ -27700,6 +27700,7 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
+                                         | ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoor { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyAssemble { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble { final_key: false, .. }
                                             | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
@@ -28224,6 +28225,20 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((
                                                 character_id,
                                                 format!("{name} touches a teleport object but nothing happens - BUG ({x},{y},{area_id})."),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoorNeedsGold { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You'll need to use 2000 gold units as a key to open the door.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoorBusy { character_id, .. } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You hear fighting noises from behind the door. It won't open while the fight lasts.".to_string(),
                                             ));
                                             blocked += 1;
                                         }

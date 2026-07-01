@@ -3319,11 +3319,18 @@ impl World {
             .and_then(|character| character.cursor_item)
             .and_then(|cursor_item_id| self.items.get(&cursor_item_id))
             .map(|item| {
+                let cursor_drdata1_u32 = item
+                    .driver_data
+                    .get(1..5)
+                    .and_then(|bytes| bytes.try_into().ok())
+                    .map(u32::from_le_bytes)
+                    .unwrap_or(0);
                 (
                     item.template_id,
                     item.driver,
                     item.sprite,
                     item.driver_data.first().copied().unwrap_or(0),
+                    cursor_drdata1_u32,
                 )
             });
         let fdemon_loader_power = (matches!(driver, Some(IDR_FDEMONLIGHT | IDR_FDEMONCANNON))
@@ -3464,8 +3471,13 @@ impl World {
         if effective_context.swamp_spawn_ground_sprite.is_none() {
             effective_context.swamp_spawn_ground_sprite = swamp_spawn_ground_sprite;
         }
-        if let Some((cursor_template_id, cursor_driver, cursor_sprite, cursor_drdata0)) =
-            cursor_context
+        if let Some((
+            cursor_template_id,
+            cursor_driver,
+            cursor_sprite,
+            cursor_drdata0,
+            cursor_drdata1_u32,
+        )) = cursor_context
         {
             effective_context.cursor_template_id = effective_context
                 .cursor_template_id
@@ -3476,6 +3488,9 @@ impl World {
                 effective_context.cursor_sprite.or(Some(cursor_sprite));
             effective_context.cursor_drdata0 =
                 effective_context.cursor_drdata0.or(Some(cursor_drdata0));
+            effective_context.cursor_drdata1_u32 = effective_context
+                .cursor_drdata1_u32
+                .or(Some(cursor_drdata1_u32));
         }
         effective_context.character_underwater |=
             character_tile_flags.contains(MapFlags::UNDERWATER);
@@ -7603,6 +7618,25 @@ impl World {
                 self.apply_mine_door_timer(item_id);
                 outcome
             }
+            ItemDriverOutcome::MineKeyDoor {
+                item_id,
+                character_id,
+                cursor_item_id,
+                ..
+            } => match self.first_free_mine_keyholder_room() {
+                Some((target_x, target_y))
+                    if self.teleport_character(character_id, target_x, target_y, false) =>
+                {
+                    if self.character_holds_cursor_item(character_id, cursor_item_id) {
+                        self.destroy_item(cursor_item_id);
+                    }
+                    outcome
+                }
+                _ => ItemDriverOutcome::MineKeyDoorBusy {
+                    item_id,
+                    character_id,
+                },
+            },
             ItemDriverOutcome::BackToFire {
                 item_id,
                 character_id,
@@ -9787,6 +9821,39 @@ impl World {
             _ => item.sprite,
         };
         self.destroy_item(cursor_item_id)
+    }
+
+    fn first_free_mine_keyholder_room(&self) -> Option<(u16, u16)> {
+        for room in 0..9u16 {
+            let base_x = 2 + (room % 3) * 8;
+            let base_y = 231 + (room / 3) * 8;
+            let mut occupied = false;
+            'tiles: for x in base_x..base_x + 7 {
+                for y in base_y..base_y + 7 {
+                    let Some(tile) = self.map.tile(usize::from(x), usize::from(y)) else {
+                        occupied = true;
+                        break 'tiles;
+                    };
+                    if tile.character != 0 {
+                        occupied = true;
+                        break 'tiles;
+                    }
+                    if tile.item != 0
+                        && self
+                            .items
+                            .get(&ItemId(tile.item))
+                            .is_some_and(|item| item.flags.contains(ItemFlags::TAKE))
+                    {
+                        occupied = true;
+                        break 'tiles;
+                    }
+                }
+            }
+            if !occupied {
+                return Some((base_x + 1, base_y + 3));
+            }
+        }
+        None
     }
 
     fn apply_arkhata_key_assemble(
@@ -25022,7 +25089,12 @@ mod tests {
         assert!(!tile.flags.intersects(
             MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK | MapFlags::TSOUNDBLOCK | MapFlags::DOOR
         ));
-        assert!(world.drain_pending_sound_specials().is_empty());
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].character_id, CharacterId(1));
+        assert_eq!(sounds[0].special.special_type, 3);
+        assert_eq!(sounds[0].special.opt1, 0);
+        assert_eq!(sounds[0].special.opt2, 0);
 
         let outcome = world.execute_item_driver_request(request, 1);
         assert!(matches!(outcome, ItemDriverOutcome::DoorToggle { .. }));
@@ -25038,7 +25110,10 @@ mod tests {
         assert!(tile.flags.contains(MapFlags::TSIGHTBLOCK));
         assert!(tile.flags.contains(MapFlags::TSOUNDBLOCK));
         assert!(tile.flags.contains(MapFlags::DOOR));
-        assert!(world.drain_pending_sound_specials().is_empty());
+        let sounds = world.drain_pending_sound_specials();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].character_id, CharacterId(1));
+        assert_eq!(sounds[0].special.special_type, 3);
     }
 
     #[test]
@@ -25945,6 +26020,44 @@ mod tests {
         assert!(matches!(outcome, ItemDriverOutcome::MineGateway { .. }));
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!((character.x, character.y), (20, 21));
+    }
+
+    #[test]
+    fn world_mine_key_door_consumes_gold_and_teleports_to_first_free_room() {
+        let mut world = World::default();
+        let mut character = character(1);
+        character.cursor_item = Some(ItemId(8));
+        world.spawn_character(character, 10, 10);
+
+        let mut gold = item(8, ItemFlags::USED | ItemFlags::TAKE);
+        gold.driver = crate::item_driver::IDR_ENHANCE;
+        gold.carried_by = Some(CharacterId(1));
+        gold.driver_data = vec![2, 0xD0, 0x07, 0, 0];
+        world.add_item(gold);
+
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE);
+        door.driver = crate::item_driver::IDR_MINEKEYDOOR;
+        door.driver_data = vec![3];
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_MINEKEYDOOR,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            12,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::MineKeyDoor { golem_nr: 3, .. }
+        ));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!((character.x, character.y), (3, 234));
+        assert_eq!(character.cursor_item, None);
+        assert!(!world.items.contains_key(&ItemId(8)));
     }
 
     #[test]
