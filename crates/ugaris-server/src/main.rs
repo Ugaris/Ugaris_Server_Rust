@@ -9114,6 +9114,37 @@ fn spawn_chestspawn_character(
     world.apply_chestspawn_spawn_result(item_id, character_id, 0)
 }
 
+fn spawn_warp_trial_fighter(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    template: &str,
+    x: u16,
+    y: u16,
+) -> bool {
+    let character_id = runtime.allocate_character_id();
+    let Ok((mut fighter, inventory_items)) =
+        loader.instantiate_character_template(template, character_id)
+    else {
+        return false;
+    };
+    fighter.dir = Direction::RightDown as u8;
+    fighter.hp = i32::from(fighter.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
+    fighter.endurance =
+        i32::from(fighter.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
+    fighter.mana = i32::from(fighter.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+    fighter.lifeshield =
+        i32::from(fighter.values[0][CharacterValue::MagicShield as usize]) * POWERSCALE;
+
+    if !world.spawn_character(fighter, usize::from(x), usize::from(y)) {
+        return false;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+    true
+}
+
 fn spawn_swampspawn_character(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -14144,6 +14175,49 @@ mod tests {
         );
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert_eq!((character.x, character.y), (139, 75));
+    }
+
+    #[test]
+    fn warp_trial_door_spawn_helper_instantiates_fighter_at_room_center() {
+        let mut world = World::default();
+        world.map = ugaris_core::map::MapGrid::new(20, 20);
+        let mut loader = ZoneLoader::new();
+        loader
+            .load_character_templates_str(
+                r#"
+                warped_fighter:
+                  name="Hrus-tak-lan"
+                  description="A weird looking creature."
+                  sprite=36
+                  flag=CF_ALIVE
+                  V_HP=10
+                  V_ENDURANCE=8
+                  V_MANA=0
+                  V_MAGICSHIELD=3
+                  driver=83
+                ;
+                "#,
+            )
+            .unwrap();
+        let mut runtime = ServerRuntime::default();
+        runtime.set_next_character_id(50);
+
+        assert!(spawn_warp_trial_fighter(
+            &mut world,
+            &mut loader,
+            &mut runtime,
+            "warped_fighter",
+            7,
+            8,
+        ));
+
+        let fighter = world.characters.get(&CharacterId(50)).unwrap();
+        assert_eq!((fighter.x, fighter.y), (7, 8));
+        assert_eq!(fighter.name, "Hrus-tak-lan");
+        assert_eq!(fighter.dir, Direction::RightDown as u8);
+        assert_eq!(fighter.hp, 10 * POWERSCALE);
+        assert_eq!(fighter.endurance, 8 * POWERSCALE);
+        assert_eq!(fighter.lifeshield, 3 * POWERSCALE);
     }
 
     #[test]
@@ -27691,8 +27765,29 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::WarpTrialDoor { .. } => {
-                                            executed += 1;
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpTrialDoor {
+                                            character_id,
+                                            spawn_x,
+                                            spawn_y,
+                                            template,
+                                            ..
+                                        } => {
+                                            if spawn_warp_trial_fighter(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                &mut runtime,
+                                                template,
+                                                spawn_x,
+                                                spawn_y,
+                                            ) {
+                                                executed += 1;
+                                            } else {
+                                                feedback.push((
+                                                    character_id,
+                                                    "Bug #319i, sorry.".to_string(),
+                                                ));
+                                                failed += 1;
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }

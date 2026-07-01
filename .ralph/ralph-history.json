@@ -1783,9 +1783,36 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
       ]
+    },
+    {
+      "iteration": 70,
+      "startedAt": "2026-07-01T09:08:18.062Z",
+      "endedAt": "2026-07-01T09:15:29.370Z",
+      "durationMs": 431113,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/Ugaris_Data/zones/25/warped.chr",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 312 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 956 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 46214804,
+  "totalDurationMs": 46645917,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1796,16 +1823,16 @@
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 12,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 44,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 46,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 45,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 47,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 10,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 46,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 42,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 38,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 47,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 43,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 39,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
       "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAIL": 1,
       "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,": 1,
@@ -1819,7 +1846,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 859 filtered out; finished in 0.00s": 1,
       "test result: ok. 860 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 2,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 20,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 21,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 289 filtered out; finished in 0.00s": 1,
       "test result: ok. 291 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 860 filtered out; finished in 0.00s": 1,
@@ -1831,7 +1858,7 @@
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 866 filtered out; finished in 0.00s": 1,
       "test result: ok. 868 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 867 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 869 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 292 filtered out; finished in 0.00s": 1,
@@ -2040,7 +2067,10 @@
       "test item_driver::tests::saltmine_saltbag_returns_player_runtime_outcome ... FAILED": 1,
       "test item_driver::tests::saltmine_ladder_returns_player_runtime_outcome ... FAILED": 1,
       "test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 952 filtered out; finished in 0.00s": 1,
-      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 952 filtered out; finished in 0.00s": 1
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 952 filtered out; finished in 0.00s": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mFile not found: /home/eddow/Development/Ugaris_Data/zones/25/warped.chr": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 312 filtered out; finished in 0.00s": 1,
+      "test result: ok. 956 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
