@@ -3110,7 +3110,7 @@ impl World {
         })
     }
 
-    fn warp_trial_door_context(&self, item_id: ItemId) -> Option<WarpTrialDoorContext> {
+    fn warp_trial_door_context(&mut self, item_id: ItemId) -> Option<WarpTrialDoorContext> {
         let item = self.items.get(&item_id)?;
         let cached = item.driver_data.get(2).copied().unwrap_or(0) != 0;
         let (xs, ys, xe, ye, partner_id) = if cached {
@@ -3122,7 +3122,17 @@ impl World {
                 | (u16::from(item.driver_data.get(7).copied().unwrap_or(0)) << 8);
             (xs, ys, xe, ye, partner_id)
         } else {
-            self.discover_warp_trial_door_bounds(item_id)?
+            let discovered = self.discover_warp_trial_door_bounds(item_id)?;
+            if let Some(item) = self.items.get_mut(&item_id) {
+                item.driver_data.resize(8, 0);
+                item.driver_data[2] = discovered.0 as u8;
+                item.driver_data[3] = discovered.1 as u8;
+                item.driver_data[4] = discovered.2 as u8;
+                item.driver_data[5] = discovered.3 as u8;
+                item.driver_data[6] = (discovered.4 & 0xff) as u8;
+                item.driver_data[7] = (discovered.4 >> 8) as u8;
+            }
+            discovered
         };
         let partner = self.items.get(&ItemId(u32::from(partner_id)))?;
         let mut room_has_non_simple_baddy = false;
@@ -30668,6 +30678,10 @@ mod tests {
         ));
         let actor = &world.characters[&CharacterId(1)];
         assert_eq!((actor.x, actor.y), (11, 12));
+        assert_eq!(
+            &world.items[&ItemId(7)].driver_data[2..8],
+            &[10, 10, 20, 20, 8, 0]
+        );
     }
 
     fn character(id: u32) -> Character {

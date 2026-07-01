@@ -1524,28 +1524,55 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.00s",
         "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 60,
+      "startedAt": "2026-07-01T07:36:40.220Z",
+      "endedAt": "2026-07-01T07:43:35.101Z",
+      "durationMs": 414715,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The touched focused test still passed, but the full `ugaris-core` run exposed an existing unrelated flaky/ordering failure in `world_executes_door_driver_open_and_close` around pending sound specials.",
+        "The door test fails deterministically by itself and is not in the touched warped-trial path; I’m inspecting the local diff to confirm the current changes are limited to the intended files.",
+        "The diff is limited to `world.rs` and `PORTING_LEDGER.md` (plus existing loop state). Since the full core test failure is deterministic and nearby to legacy door sound behavior, I’m going to inspect i",
+        "The failing door assertion expects no queued door sounds, while current code now queues sound-area specials for door toggles; that appears to be an existing test expectation drift, not caused by the w",
+        "- `cargo test -p ugaris-core`: failed on existing unrelated `world_executes_door_driver_open_and_close` assertion expecting no queued door sound specials. The touched warped-trial test passes.",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 941 filtered out; finished in 0.00s",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/PORTING_LEDGER.md:",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 40745950,
+  "totalDurationMs": 41160665,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 22,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 23,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 3,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 10,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 37,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 38,
       "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 40,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 10,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 39,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 35,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 40,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 36,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 33,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
       "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAIL": 1,
@@ -1743,7 +1770,13 @@
       "assertion failed: door.flags.contains(ItemFlags::DOOR)": 1,
       "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.00s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.00s": 1,
-      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.00s": 1
+      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.00s": 1,
+      "The touched focused test still passed, but the full `ugaris-core` run exposed an existing unrelated ": 1,
+      "The door test fails deterministically by itself and is not in the touched warped-trial path; I’m ins": 1,
+      "The diff is limited to `world.rs` and `PORTING_LEDGER.md` (plus existing loop state). Since the full": 1,
+      "The failing door assertion expects no queued door sounds, while current code now queues sound-area s": 1,
+      "- `cargo test -p ugaris-core`: failed on existing unrelated `world_executes_door_driver_open_and_clo": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 941 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
