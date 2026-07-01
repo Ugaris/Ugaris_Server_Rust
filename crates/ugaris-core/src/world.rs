@@ -260,9 +260,6 @@ const FIGHT_DRIVER_LOW_PRIO: i32 = 1;
 const FIGHT_DRIVER_MED_PRIO: i32 = 500;
 #[cfg_attr(not(test), allow(dead_code))]
 const FIGHT_DRIVER_HIGH_PRIO: i32 = 750;
-#[cfg_attr(not(test), allow(dead_code))]
-const FIGHT_DRIVER_FLEE_TASK_ENABLED: bool = false;
-
 fn legacy_random_below_from_seed(seed: &mut u32, below: u32) -> u32 {
     if below == 0 {
         return 0;
@@ -5078,7 +5075,10 @@ impl World {
                 FightDriverTaskKind::MoveDown => {
                     self.setup_simple_baddy_lane_walk(character_id, Direction::Down, area_id)
                 }
-                FightDriverTaskKind::Flee | FightDriverTaskKind::EarthRain => false,
+                FightDriverTaskKind::Flee => {
+                    self.setup_simple_baddy_flee_action(character_id, area_id)
+                }
+                FightDriverTaskKind::EarthRain => false,
             };
             if ret {
                 return true;
@@ -5269,9 +5269,7 @@ impl World {
                 value: FIGHT_DRIVER_HIGH_PRIO,
             });
         }
-        if FIGHT_DRIVER_FLEE_TASK_ENABLED
-            && attacker.hp < character_value(attacker, CharacterValue::Hp) * POWERSCALE / 2
-        {
+        if attacker.hp < character_value(attacker, CharacterValue::Hp) * POWERSCALE / 2 {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::Flee,
                 value: FIGHT_DRIVER_HIGH_PRIO,
@@ -18003,7 +18001,7 @@ mod tests {
     }
 
     #[test]
-    fn simple_baddy_fight_tasks_keep_c_disabled_flee_branch_disabled() {
+    fn simple_baddy_fight_tasks_add_c_low_hp_flee_branch() {
         let mut world = World::default();
         let mut npc = character(1);
         npc.driver = CDR_SIMPLEBADDY;
@@ -18024,9 +18022,41 @@ mod tests {
             false,
         );
 
-        assert!(!tasks
+        assert!(tasks
             .iter()
             .any(|task| task.kind == FightDriverTaskKind::Flee));
+    }
+
+    #[test]
+    fn simple_baddy_attack_action_can_choose_low_hp_flee() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.hp = POWERSCALE;
+        npc.endurance = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(2),
+                priority: 1,
+                last_seen_tick: 123,
+                visible: true,
+                last_x: 11,
+                last_y: 10,
+            }],
+            ..SimpleBaddyDriverData::default()
+        }));
+        let target = character(2);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(target, 11, 10);
+
+        assert!(world.process_simple_baddy_attack_action_with_random(CharacterId(1), 1, |_| 0));
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!(npc.speed_mode, SpeedMode::Fast);
+        assert_ne!(npc.dir, Direction::Right as u8);
     }
 
     #[test]
