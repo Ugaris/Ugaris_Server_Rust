@@ -12428,6 +12428,35 @@ fn account_depot_sort(depot: &mut AccountDepotState) {
     });
 }
 
+fn account_depot_sort_if_open(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+) -> bool {
+    if !check_current_container(world, character_id) {
+        return false;
+    }
+    let Some(container_id) = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.current_container)
+    else {
+        return false;
+    };
+    if world
+        .items
+        .get(&container_id)
+        .is_none_or(|item| item.driver != IDR_ACCOUNT_DEPOT)
+    {
+        return false;
+    }
+    let Some(depot) = runtime.account_depots.get_mut(&character_id) else {
+        return false;
+    };
+    account_depot_sort(depot);
+    true
+}
+
 fn inventory_sort(world: &mut World, character_id: CharacterId) -> bool {
     let Some(inventory) = world
         .characters
@@ -21053,6 +21082,54 @@ mod tests {
     }
 
     #[test]
+    fn account_depot_sort_command_requires_open_account_depot() {
+        let character_id = CharacterId(7);
+        let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        let mut world = World::default();
+        world.add_character(character);
+        let mut runtime = ServerRuntime::default();
+        let depot = runtime.ensure_account_depot(character_id);
+        depot.slots[0] = Some(test_item(ItemId(20), 100, ItemFlags::USED));
+        depot.slots[1] = Some(test_item(ItemId(21), 200, ItemFlags::USED));
+
+        assert!(!account_depot_sort_if_open(
+            &mut world,
+            &mut runtime,
+            character_id
+        ));
+
+        let depot = runtime.account_depots.get(&character_id).unwrap();
+        assert_eq!(depot.slots[0].as_ref().unwrap().sprite, 100);
+        assert_eq!(depot.slots[1].as_ref().unwrap().sprite, 200);
+    }
+
+    #[test]
+    fn account_depot_sort_command_sorts_when_account_depot_is_open() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.current_container = Some(ItemId(10));
+        let mut world = World::default();
+        world.add_character(character);
+        let mut depot_item = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::USE);
+        depot_item.driver = IDR_ACCOUNT_DEPOT;
+        world.add_item(depot_item);
+        let mut runtime = ServerRuntime::default();
+        let depot = runtime.ensure_account_depot(character_id);
+        depot.slots[0] = Some(test_item(ItemId(20), 100, ItemFlags::USED));
+        depot.slots[1] = Some(test_item(ItemId(21), 200, ItemFlags::USED));
+
+        assert!(account_depot_sort_if_open(
+            &mut world,
+            &mut runtime,
+            character_id
+        ));
+
+        let depot = runtime.account_depots.get(&character_id).unwrap();
+        assert_eq!(depot.slots[0].as_ref().unwrap().sprite, 200);
+        assert_eq!(depot.slots[1].as_ref().unwrap().sprite, 100);
+    }
+
+    #[test]
     fn inventory_sort_matches_legacy_value_sprite_name_order() {
         let character_id = CharacterId(7);
         let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -25729,8 +25806,7 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             }
                             if command.eq_ignore_ascii_case("accountdepotsort") {
-                                if let Some(depot) = runtime.account_depots.get_mut(&character_id) {
-                                    account_depot_sort(depot);
+                                if account_depot_sort_if_open(&mut world, &mut runtime, character_id) {
                                     command_container_refresh.push(character_id);
                                     command_feedback.push((character_id, "Account depot sorted.".to_string()));
                                 } else {
