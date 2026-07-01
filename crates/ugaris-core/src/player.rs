@@ -47,6 +47,8 @@ pub const LEGACY_FARMY_PPD_SIZE: usize = 85 * 4;
 pub const LEGACY_TEUFELRAT_PPD_SIZE: usize = 2 * 4;
 pub const LEGACY_TWOCITY_PPD_SIZE: usize = 29 * 4;
 pub const LEGACY_LAB_PPD_SIZE: usize = 360;
+pub const LEGACY_SALTMINE_PPD_SIZE: usize = 4 + SALTMINE_LADDER_COUNT * 4 + 4;
+pub const LEGACY_SALTMINE_PPD_VERSION: u8 = 1;
 pub const LEGACY_LAB2_GRAVE_VERSION: u8 = 2;
 pub const LEGACY_LAB2_GRAVEVERSION_OFFSET: usize = 43;
 pub const LEGACY_LAB2_GRAVEINDEX_OFFSET: usize = 44;
@@ -122,6 +124,7 @@ pub const LEGACY_WARP_PPD_SIZE: usize = 4 + 4 + WARP_BONUS_COUNT * 4 + WARP_BONU
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
+pub const DEV_ID_MR: u32 = 2;
 pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
 pub const DRD_AREA3_PPD: u32 = make_drd(DEV_ID_DB, 40 | PERSISTENT_PLAYER_DATA);
@@ -154,6 +157,7 @@ pub const DRD_TWOCITY_PPD: u32 = make_drd(DEV_ID_DB, 97 | PERSISTENT_PLAYER_DATA
 pub const DRD_LAB_PPD: u32 = make_drd(DEV_ID_DB, 116 | PERSISTENT_PLAYER_DATA);
 pub const DRD_WARP_PPD: u32 = make_drd(DEV_ID_DB, 127 | PERSISTENT_PLAYER_DATA);
 pub const SALTMINE_LADDER_COUNT: usize = 20;
+pub const DRD_SALTMINE_PPD: u32 = make_drd(DEV_ID_MR, 13 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
 
@@ -639,6 +643,37 @@ impl PlayerRuntime {
             return false;
         };
         *last_used = realtime_seconds;
+        true
+    }
+
+    pub fn encode_legacy_saltmine_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_SALTMINE_PPD_SIZE];
+        bytes[0] = LEGACY_SALTMINE_PPD_VERSION;
+        for (idx, seconds) in self.saltmine_ladder_last_seconds.iter().enumerate() {
+            let value = (*seconds).min(i32::MAX as u64) as i32;
+            write_i32(&mut bytes, 4 + idx * 4, value);
+        }
+        write_i32(
+            &mut bytes,
+            4 + SALTMINE_LADDER_COUNT * 4,
+            self.saltmine_pending_salt.min(i32::MAX as u32) as i32,
+        );
+        bytes
+    }
+
+    pub fn decode_legacy_saltmine_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_SALTMINE_PPD_SIZE {
+            return false;
+        }
+        if bytes[0] != LEGACY_SALTMINE_PPD_VERSION {
+            self.saltmine_ladder_last_seconds = [0; SALTMINE_LADDER_COUNT];
+            self.saltmine_pending_salt = 0;
+            return true;
+        }
+        for idx in 0..SALTMINE_LADDER_COUNT {
+            self.saltmine_ladder_last_seconds[idx] = read_i32(bytes, 4 + idx * 4).max(0) as u64;
+        }
+        self.saltmine_pending_salt = read_i32(bytes, 4 + SALTMINE_LADDER_COUNT * 4).max(0) as u32;
         true
     }
 
@@ -2214,6 +2249,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_SALTMINE_PPD => {
+                    if !self.decode_legacy_saltmine_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TREASURE_DIG_PPD => {
                     if !self.decode_legacy_treasure_dig_ppd(block.data) {
                         return false;
@@ -2272,6 +2312,7 @@ impl PlayerRuntime {
         let mut had_farmy = false;
         let mut had_teufelrat = false;
         let mut had_twocity = false;
+        let mut had_saltmine = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
         let mut had_rune = false;
@@ -2407,6 +2448,13 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_TWOCITY_PPD,
                     &self.encode_legacy_twocity_ppd(),
+                );
+            } else if block.id == DRD_SALTMINE_PPD {
+                had_saltmine = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_SALTMINE_PPD,
+                    &self.encode_legacy_saltmine_ppd(),
                 );
             } else if block.id == DRD_TREASURE_DIG_PPD {
                 had_treasure_dig = true;
@@ -2620,6 +2668,20 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_TWOCITY_PPD,
                     &self.encode_legacy_twocity_ppd(),
+                );
+            }
+        }
+        if !had_saltmine && (existing_was_valid || existing.is_empty()) {
+            if self
+                .saltmine_ladder_last_seconds
+                .iter()
+                .any(|seconds| *seconds != 0)
+                || self.saltmine_pending_salt != 0
+            {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_SALTMINE_PPD,
+                    &self.encode_legacy_saltmine_ppd(),
                 );
             }
         }
@@ -3394,6 +3456,93 @@ mod tests {
         assert!(!player.saltmine_ladder_ready(3, 1_000 + 60 * 60 * 24 - 1));
         assert!(player.saltmine_ladder_ready(3, 1_000 + 60 * 60 * 24));
         assert!(!player.mark_saltmine_ladder_used(20, 1_000));
+    }
+
+    #[test]
+    fn saltmine_ppd_layout_matches_c_struct() {
+        assert_eq!(DEV_ID_MR, 2);
+        assert_eq!(
+            DRD_SALTMINE_PPD,
+            make_drd(DEV_ID_MR, 13 | PERSISTENT_PLAYER_DATA)
+        );
+        assert_eq!(LEGACY_SALTMINE_PPD_SIZE, 88);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.saltmine_ladder_last_seconds[0] = 123;
+        player.saltmine_ladder_last_seconds[19] = 456;
+        player.saltmine_pending_salt = 7;
+
+        let bytes = player.encode_legacy_saltmine_ppd();
+        assert_eq!(bytes.len(), LEGACY_SALTMINE_PPD_SIZE);
+        assert_eq!(bytes[0], LEGACY_SALTMINE_PPD_VERSION);
+        assert_eq!(&bytes[1..4], &[0, 0, 0]);
+        assert_eq!(read_i32(&bytes, 4), 123);
+        assert_eq!(read_i32(&bytes, 4 + 19 * 4), 456);
+        assert_eq!(read_i32(&bytes, 4 + SALTMINE_LADDER_COUNT * 4), 7);
+
+        let mut decoded = PlayerRuntime::connected(1, 0);
+        assert!(decoded.decode_legacy_saltmine_ppd(&bytes));
+        assert_eq!(decoded.saltmine_ladder_last_seconds[0], 123);
+        assert_eq!(decoded.saltmine_ladder_last_seconds[19], 456);
+        assert_eq!(decoded.saltmine_pending_salt, 7);
+    }
+
+    #[test]
+    fn saltmine_ppd_version_mismatch_resets_like_c_set_data() {
+        let mut bytes = vec![0; LEGACY_SALTMINE_PPD_SIZE];
+        bytes[0] = LEGACY_SALTMINE_PPD_VERSION + 1;
+        write_i32(&mut bytes, 4, 123);
+        write_i32(&mut bytes, 4 + SALTMINE_LADDER_COUNT * 4, 7);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.saltmine_ladder_last_seconds[0] = 1;
+        player.saltmine_pending_salt = 1;
+        assert!(player.decode_legacy_saltmine_ppd(&bytes));
+
+        assert_eq!(
+            player.saltmine_ladder_last_seconds,
+            [0; SALTMINE_LADDER_COUNT]
+        );
+        assert_eq!(player.saltmine_pending_salt, 0);
+    }
+
+    #[test]
+    fn ppd_blob_replaces_and_appends_saltmine_block() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_saltmine = vec![0; LEGACY_SALTMINE_PPD_SIZE];
+        existing_saltmine[0] = LEGACY_SALTMINE_PPD_VERSION;
+        write_i32(&mut existing_saltmine, 4, 11);
+        write_i32(&mut existing_saltmine, 4 + SALTMINE_LADDER_COUNT * 4, 2);
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_SALTMINE_PPD, &existing_saltmine);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.decode_legacy_ppd_blob(&existing));
+        assert_eq!(player.saltmine_ladder_last_seconds[0], 11);
+        assert_eq!(player.saltmine_pending_salt, 2);
+        player.saltmine_ladder_last_seconds[0] = 99;
+        player.saltmine_pending_salt = 5;
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        let blocks: Vec<_> = LegacyPpdBlocks::parse(&encoded)
+            .map(|block| block.unwrap())
+            .collect();
+        assert_eq!(blocks[0].id, unknown_id);
+        assert_eq!(blocks[0].data, &[1, 2, 3, 4]);
+        assert_eq!(blocks[1].id, DRD_SALTMINE_PPD);
+        assert_eq!(read_i32(blocks[1].data, 4), 99);
+        assert_eq!(read_i32(blocks[1].data, 4 + SALTMINE_LADDER_COUNT * 4), 5);
+
+        let mut append_player = PlayerRuntime::connected(1, 0);
+        append_player.saltmine_ladder_last_seconds[3] = 77;
+        let appended = append_player.encode_legacy_ppd_blob(&[]);
+        let blocks: Vec<_> = LegacyPpdBlocks::parse(&appended)
+            .map(|block| block.unwrap())
+            .collect();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].id, DRD_SALTMINE_PPD);
+        assert_eq!(read_i32(blocks[0].data, 4 + 3 * 4), 77);
     }
 
     #[test]
