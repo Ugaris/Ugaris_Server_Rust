@@ -3565,7 +3565,9 @@ impl World {
                 } => {
                     let tick = self.tick.0 as i32;
                     if let Some(caller) = self.characters.get(&caller_id).cloned() {
-                        let tracking = self.simple_baddy_enemy_tracking(character_id, target_id);
+                        let tracking = self
+                            .simple_baddy_enemy_tracking(character_id, target_id)
+                            .map(|(_, x, y)| (false, x, y));
                         if let Some(character) = self.characters.get_mut(&character_id) {
                             let _ = add_simple_baddy_enemy(character, &caller, target_id, tick);
                             Self::apply_simple_baddy_enemy_tracking(character, target_id, tracking);
@@ -16596,6 +16598,46 @@ mod tests {
                 visible: false,
                 last_x: 0,
                 last_y: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn simple_baddy_npc_alert_enemy_is_recorded_hidden_like_c() {
+        let mut world = World::default();
+        world.tick = Tick(124);
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helpid: NTID_GLADIATOR,
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_NPC, NTID_GLADIATOR, 2, 3);
+        let mut caller = character(2);
+        caller.group = 7;
+        let target = character(3);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(caller, 10, 11);
+        world.spawn_character(target, 11, 10);
+        world.map.tile_mut(11, 10).unwrap().light = 255;
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(
+            data.enemies,
+            vec![SimpleBaddyEnemy {
+                target_id: CharacterId(3),
+                priority: 1,
+                last_seen_tick: 124,
+                visible: false,
+                last_x: 11,
+                last_y: 10,
             }]
         );
     }
