@@ -1317,9 +1317,31 @@
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s",
         "+- Area 37 `IDR_ARKHATA` subtype `0` now ports the C `pool_driver` item path: zero-character timer calls no-op, missing cursor and wrong-cursor uses emit the legacy feedback without consuming the curs"
       ]
+    },
+    {
+      "iteration": 52,
+      "startedAt": "2026-07-01T06:28:13.287Z",
+      "endedAt": "2026-07-01T06:37:35.968Z",
+      "durationMs": 562472,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The warped item drivers are also already mostly ported. I found a small parity issue in `IDR_WARPKEYSPAWN`: invalid sphere kinds are mapped to a Rust-only `warped_teleport_key0` template instead of pr",
+        "error: could not compile `ugaris-core` (lib test) due to 1 previous error",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 926 filtered out; finished in 0.00s",
+        "+- Area 25 `IDR_WARPKEYSPAWN` now preserves the C dynamic template name shape `warped_teleport_key%d` for all `drdata[0]` values instead of clamping unknown sphere kinds to a Rust-only `warped_telepor"
+      ]
     }
   ],
-  "totalDurationMs": 36662013,
+  "totalDurationMs": 37224485,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1425,7 +1447,7 @@
       "test result: ok. 888 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 888 filtered out; finished in 0.00s": 1,
       "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 872 filtered out; finished in 0.00s": 1,
-      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 2,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 889 filtered out; finished in 0.00s": 1,
       "test result: ok. 891 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 889 filtered out; finished in 0.00s": 1,
@@ -1502,7 +1524,10 @@
       "I’m going to extract the stopwatch feedback formatting into a small helper and test the active, fail": 1,
       "- Added test coverage for inactive, active countdown, and failed stopwatch feedback.": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s": 1,
-      "+- Area 37 `IDR_ARKHATA` subtype `0` now ports the C `pool_driver` item path: zero-character timer c": 1
+      "+- Area 37 `IDR_ARKHATA` subtype `0` now ports the C `pool_driver` item path: zero-character timer c": 1,
+      "The warped item drivers are also already mostly ported. I found a small parity issue in `IDR_WARPKEY": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 926 filtered out; finished in 0.00s": 1,
+      "+- Area 25 `IDR_WARPKEYSPAWN` now preserves the C dynamic template name shape `warped_teleport_key%d": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

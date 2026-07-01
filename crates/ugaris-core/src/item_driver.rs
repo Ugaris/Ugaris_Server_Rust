@@ -631,7 +631,7 @@ pub enum ItemDriverOutcome {
     WarpKeySpawn {
         item_id: ItemId,
         character_id: CharacterId,
-        template: &'static str,
+        sphere_kind: u8,
     },
     WarpKeySpawnCursorOccupied {
         item_id: ItemId,
@@ -7136,17 +7136,6 @@ fn warpbonus_driver(
     }
 }
 
-fn warpkeyspawn_template(kind: u8) -> &'static str {
-    match kind {
-        1 => "warped_teleport_key1",
-        2 => "warped_teleport_key2",
-        3 => "warped_teleport_key3",
-        4 => "warped_teleport_key4",
-        5 => "warped_teleport_key5",
-        _ => "warped_teleport_key0",
-    }
-}
-
 fn warpkeyspawn_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     if character.id.0 == 0 {
         return ItemDriverOutcome::Noop;
@@ -7161,7 +7150,7 @@ fn warpkeyspawn_driver(character: &Character, item: &Item) -> ItemDriverOutcome 
     ItemDriverOutcome::WarpKeySpawn {
         item_id: item.id,
         character_id: character.id,
-        template: warpkeyspawn_template(drdata(item, 0)),
+        sphere_kind: drdata(item, 0),
     }
 }
 
@@ -10218,7 +10207,29 @@ mod tests {
             ItemDriverOutcome::WarpKeySpawn {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
-                template: "warped_teleport_key4",
+                sphere_kind: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn warpkeyspawn_preserves_legacy_dynamic_template_name_for_invalid_kind() {
+        let mut actor = character(1);
+        let mut spawner = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPKEYSPAWN);
+        set_drdata(&mut spawner, 0, 6);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPKEYSPAWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut spawner, request, 25, false),
+            ItemDriverOutcome::WarpKeySpawn {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                sphere_kind: 6,
             }
         );
     }

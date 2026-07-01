@@ -27552,14 +27552,15 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::WarpKeySpawn {
                                             character_id,
-                                            template,
+                                            sphere_kind,
                                             ..
                                         } => {
+                                            let template = format!("warped_teleport_key{sphere_kind}");
                                             if grant_template_item_to_cursor(
                                                 &mut world,
                                                 &mut zone_loader,
                                                 character_id,
-                                                template,
+                                                &template,
                                             )
                                             .is_some()
                                             {
