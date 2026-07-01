@@ -10697,6 +10697,22 @@ impl World {
         true
     }
 
+    pub fn apply_skelraise_dust(&mut self, item_id: ItemId) -> bool {
+        let (x, y) = {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                return false;
+            };
+            item.driver_data.resize(12, 0);
+            item.driver_data[2] = 1;
+            item.driver_data[4..12].fill(0);
+            item.sprite += 1;
+            (usize::from(item.x), usize::from(item.y))
+        };
+        self.mark_dirty_sector(x, y);
+        self.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 10);
+        true
+    }
+
     fn apply_skelraise_timer(&mut self, item_id: ItemId) -> bool {
         let (raised_id, raised_serial, active, x, y) = {
             let Some(item) = self.items.get(&item_id) else {
@@ -16544,6 +16560,30 @@ mod tests {
         world.characters.get_mut(&CharacterId(2)).unwrap().serial = 78;
         assert!(world.apply_skelraise_timer(ItemId(8)));
 
+        let chair = &world.items[&ItemId(8)];
+        assert_eq!(chair.driver_data[2], 0);
+        assert_eq!(chair.sprite, 500);
+    }
+
+    #[test]
+    fn skelraise_dust_activates_empty_chair_until_timer_reset() {
+        let mut world = World::default();
+        let mut chair = item(8, ItemFlags::USE);
+        chair.driver = IDR_SKELRAISE;
+        chair.sprite = 500;
+        chair.driver_data = vec![0; 12];
+        chair.driver_data[4..8].copy_from_slice(&123_u32.to_le_bytes());
+        chair.driver_data[8..12].copy_from_slice(&456_u32.to_le_bytes());
+        world.items.insert(ItemId(8), chair);
+
+        assert!(world.apply_skelraise_dust(ItemId(8)));
+
+        let chair = &world.items[&ItemId(8)];
+        assert_eq!(chair.driver_data[2], 1);
+        assert_eq!(&chair.driver_data[4..12], &[0; 8]);
+        assert_eq!(chair.sprite, 501);
+
+        assert!(world.apply_skelraise_timer(ItemId(8)));
         let chair = &world.items[&ItemId(8)];
         assert_eq!(chair.driver_data[2], 0);
         assert_eq!(chair.sprite, 500);

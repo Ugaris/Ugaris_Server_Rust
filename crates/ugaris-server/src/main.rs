@@ -27018,7 +27018,8 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You need a moment of peace to destroy the nest. There is still a guard left, distracting you.".to_string()));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseDust { character_id, .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseDust { item_id, character_id } => {
+                                            world.apply_skelraise_dust(item_id);
                                             feedback.push((character_id, "The skeleton crumbles to dust as you touch it.".to_string()));
                                             executed += 1;
                                         }
