@@ -28620,27 +28620,71 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
 
-                let simple_baddy_message_characters: Vec<_> = world
+                let npc_message_characters: Vec<_> = world
                     .characters
                     .iter()
                     .filter_map(|(&character_id, character)| {
                         (!character.driver_messages.is_empty()
                             && (character.driver == CDR_SIMPLEBADDY
+                                || character.driver == CDR_LAB2UNDEAD
                                 || matches!(
                                     character.driver_state.as_ref(),
-                                    Some(CharacterDriverState::SimpleBaddy(_))
+                                    Some(
+                                        CharacterDriverState::SimpleBaddy(_)
+                                            | CharacterDriverState::Lab2Undead(_)
+                                    )
                                 )))
                         .then_some(character_id)
                     })
                     .collect();
-                if !simple_baddy_message_characters.is_empty() {
+                if !npc_message_characters.is_empty() {
                     let mut simple_baddy_outcomes = 0;
-                    for character_id in simple_baddy_message_characters {
-                        simple_baddy_outcomes += world
-                            .process_simple_baddy_message_actions(character_id, config.area_id)
-                            .len();
+                    let mut lab2_undead_outcomes = 0;
+                    for character_id in npc_message_characters {
+                        let driver_state = world
+                            .characters
+                            .get(&character_id)
+                            .and_then(|character| character.driver_state.as_ref())
+                            .cloned();
+                        match driver_state {
+                            Some(CharacterDriverState::SimpleBaddy(_)) => {
+                                simple_baddy_outcomes += world
+                                    .process_simple_baddy_message_actions(character_id, config.area_id)
+                                    .len();
+                            }
+                            Some(CharacterDriverState::Lab2Undead(_)) => {
+                                lab2_undead_outcomes +=
+                                    world.process_lab2_undead_message_actions(character_id);
+                            }
+                            _ => {
+                                if world
+                                    .characters
+                                    .get(&character_id)
+                                    .is_some_and(|character| character.driver == CDR_SIMPLEBADDY)
+                                {
+                                    simple_baddy_outcomes += world
+                                        .process_simple_baddy_message_actions(
+                                            character_id,
+                                            config.area_id,
+                                        )
+                                        .len();
+                                } else if world
+                                    .characters
+                                    .get(&character_id)
+                                    .is_some_and(|character| character.driver == CDR_LAB2UNDEAD)
+                                {
+                                    lab2_undead_outcomes +=
+                                        world.process_lab2_undead_message_actions(character_id);
+                                }
+                            }
+                        }
                     }
-                    info!(simple_baddy_outcomes, tick = world.tick.0, "processed simple-baddy driver messages");
+                    info!(
+                        simple_baddy_outcomes,
+                        lab2_undead_outcomes,
+                        tick = world.tick.0,
+                        "processed NPC driver messages"
+                    );
                 }
 
                 let simple_baddy_attacks = world.process_simple_baddy_attack_actions_with_random(

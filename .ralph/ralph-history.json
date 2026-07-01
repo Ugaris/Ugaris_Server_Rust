@@ -949,9 +949,37 @@
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 908 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
       ]
+    },
+    {
+      "iteration": 37,
+      "startedAt": "2026-07-01T02:18:39.989Z",
+      "endedAt": "2026-07-01T02:34:50.205Z",
+      "durationMs": 970055,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "I’m adding tests near the existing Lab 2/driver coverage so failures are localized and the new behavior is pinned against the C branch.",
+        "The focused tests exposed two test expectation issues, not core compile failures: give requires the giver to face the recipient, and Lab 2 uses `TICKS_PER_SECOND` for the 20-second regen delay. I’m co",
+        "test world::tests::give_completion_notifies_lab2_undead_receiver ... FAILED",
+        "test world::tests::lab2_undead_holy_water_damages_true_undead_and_delays_regen ... FAILED",
+        "test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 906 filtered out; finished in 0.00s",
+        "assertion failed: world.complete_give(CharacterId(1), CharacterId(2))",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 906 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 21732642,
+  "totalDurationMs": 22702697,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -960,16 +988,16 @@
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 4,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 5,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 27,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 27,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 28,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 9,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 26,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 27,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 25,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 25,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
@@ -1079,7 +1107,14 @@
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors; 1 warning emitted": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 904 filtered out; finished in 0.00s": 1,
       "test result: ok. 908 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
-      "test result: ok. 908 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
+      "test result: ok. 908 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
+      "I’m adding tests near the existing Lab 2/driver coverage so failures are localized and the new behav": 1,
+      "The focused tests exposed two test expectation issues, not core compile failures: give requires the ": 1,
+      "test world::tests::give_completion_notifies_lab2_undead_receiver ... FAILED": 1,
+      "test world::tests::lab2_undead_holy_water_damages_true_undead_and_delays_regen ... FAILED": 1,
+      "test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 906 filtered out; finished in 0.00s": 1,
+      "assertion failed: world.complete_give(CharacterId(1), CharacterId(2))": 1,
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 906 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

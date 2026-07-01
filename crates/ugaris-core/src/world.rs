@@ -7,8 +7,8 @@ use crate::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
         CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK,
-        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DEAD, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
-        NT_SPELL,
+        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_NPC,
+        NT_SEEHIT, NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -34,10 +34,10 @@ use crate::{
         IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DOOR, IDR_DUNGEONDOOR, IDR_EDEMONBALL,
         IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
         IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE,
-        IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB3_PLANT,
-        IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
-        IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN,
-        IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
+        IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB2_WATER,
+        IDR_LAB3_PLANT, IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT,
+        IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM,
+        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
         IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_AREA25_TELEKEY, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
@@ -6533,6 +6533,136 @@ impl World {
         }
     }
 
+    pub fn process_lab2_undead_message_actions(&mut self, character_id: CharacterId) -> usize {
+        let Some(character) = self.characters.get(&character_id) else {
+            return 0;
+        };
+        if character.action != action::IDLE || character.flags.contains(CharacterFlags::DEAD) {
+            return 0;
+        }
+        if !matches!(
+            character.driver_state,
+            Some(CharacterDriverState::Lab2Undead(_))
+        ) {
+            return 0;
+        }
+
+        let messages = self
+            .characters
+            .get_mut(&character_id)
+            .map(|character| std::mem::take(&mut character.driver_messages))
+            .unwrap_or_default();
+        let mut handled = 0;
+
+        for message in messages {
+            if message.message_type != NT_GIVE {
+                continue;
+            }
+            handled += 1;
+            let giver_id = CharacterId(message.dat1.max(0) as u32);
+            let Some(item_id) = self
+                .characters
+                .get(&character_id)
+                .and_then(|character| character.cursor_item)
+            else {
+                continue;
+            };
+            let Some(item) = self.items.get(&item_id).cloned() else {
+                continue;
+            };
+
+            let holy_water =
+                item.driver == IDR_LAB2_WATER && item.driver_data.first().copied() == Some(5);
+            self.destroy_item(item_id);
+            if !holy_water {
+                continue;
+            }
+
+            if let Some(giver) = self.characters.get(&giver_id) {
+                if giver.flags.bits() != 0 {
+                    let name = self
+                        .characters
+                        .get(&character_id)
+                        .map(|character| character.name.clone())
+                        .unwrap_or_default();
+                    self.queue_system_text(
+                        giver_id,
+                        format!("You spill the holy water all over the {name}."),
+                    );
+                }
+            }
+
+            let undead = self
+                .characters
+                .get(&character_id)
+                .and_then(|character| match character.driver_state.as_ref() {
+                    Some(CharacterDriverState::Lab2Undead(data)) => Some(data.undead != 0),
+                    _ => None,
+                })
+                .unwrap_or(false);
+            let protected_by_nomagic =
+                self.characters
+                    .get(&character_id)
+                    .and_then(|character| {
+                        self.map
+                            .tile(usize::from(character.x), usize::from(character.y))
+                            .map(|tile| (character, tile.flags.contains(MapFlags::NOMAGIC)))
+                    })
+                    .is_some_and(|(character, nomagic)| {
+                        nomagic
+                            && !self.characters.get(&giver_id).is_some_and(|giver| {
+                                giver.flags.contains(CharacterFlags::NONOMAGIC)
+                            })
+                            && character.flags.bits() != 0
+                    });
+
+            if protected_by_nomagic || !undead {
+                self.queue_lab2_undead_say(character_id, "Mwahahahaha...");
+                continue;
+            }
+
+            self.queue_lab2_undead_say(character_id, "Arrgh!");
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                character.flags.remove(CharacterFlags::NODEATH);
+            }
+            if let Some((x, y)) = self
+                .characters
+                .get(&character_id)
+                .map(|character| (character.x, character.y))
+            {
+                self.create_mist_effect(i32::from(x), i32::from(y));
+            }
+            if let Some(regen_item_id) = self.characters.get(&character_id).and_then(|character| {
+                match character.driver_state.as_ref() {
+                    Some(CharacterDriverState::Lab2Undead(data)) => data.regenerate_item_id,
+                    _ => None,
+                }
+            }) {
+                if let Some(regen_item) = self.items.get_mut(&regen_item_id) {
+                    if regen_item.driver_data.len() < 12 {
+                        regen_item.driver_data.resize(12, 0);
+                    }
+                    let start_tick = (self.tick.0 + TICKS_PER_SECOND * 20) as u32;
+                    regen_item.driver_data[8..12].copy_from_slice(&start_tick.to_le_bytes());
+                }
+            }
+            let _ = self.apply_legacy_hurt(character_id, Some(giver_id), 20 * POWERSCALE, 1, 0, 0);
+        }
+
+        handled
+    }
+
+    fn queue_lab2_undead_say(&mut self, character_id: CharacterId, message: impl Into<String>) {
+        if let Some(character) = self.characters.get(&character_id) {
+            self.pending_area_texts.push(WorldAreaText {
+                x: character.x,
+                y: character.y,
+                max_distance: SAY_DIST as u16,
+                message: message.into(),
+            });
+        }
+    }
+
     pub fn apply_simple_baddy_death_driver(
         &mut self,
         dead_id: CharacterId,
@@ -12208,6 +12338,9 @@ impl World {
             return false;
         };
         item.carried_by = Some(receiver_id);
+        if let Some(receiver) = self.characters.get_mut(&receiver_id) {
+            receiver.push_driver_message(NT_GIVE, giver_id.0 as i32, item_id.0 as i32, 0);
+        }
         true
     }
 
@@ -15496,9 +15629,9 @@ impl Default for Tick {
 mod tests {
     use crate::{
         character_driver::{
-            CharacterDriverState, SimpleBaddyDriverData, SimpleBaddyEnemy, FDEMON_MSG_WAYPOINT,
-            NTID_FDEMON, NTID_GLADIATOR, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NT_CHAR,
-            NT_DEAD, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
+            CharacterDriverState, Lab2UndeadDriverData, SimpleBaddyDriverData, SimpleBaddyEnemy,
+            FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_GLADIATOR, NTID_LAB2_DEAMONCHECK,
+            NTID_LABGNOMETORCH, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_NPC, NT_SEEHIT,
         },
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
@@ -15506,11 +15639,11 @@ mod tests {
             UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGAR,
             IDR_CALIGARFLAME, IDR_CHESTSPAWN, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT,
             IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW,
-            IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB2_STEPACTION, IDR_LAB3_PLANT, IDR_LABTORCH,
-            IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEBOMB,
-            IDR_PALACEGATE, IDR_PALACEKEY, IDR_PENT, IDR_POTION, IDR_SKELRAISE, IDR_SPECIAL_POTION,
-            IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN,
-            IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB2_STEPACTION, IDR_LAB2_WATER, IDR_LAB3_PLANT,
+            IDR_LABTORCH, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION,
+            IDR_PALACEBOMB, IDR_PALACEGATE, IDR_PALACEKEY, IDR_PENT, IDR_POTION, IDR_SKELRAISE,
+            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_SWAMPARM,
+            IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -28693,6 +28826,124 @@ mod tests {
         let context = world.edemon_gate_spawn_context(ItemId(7)).unwrap();
         assert_eq!(context.slot, 0);
         assert_eq!((context.x, context.y), (62, 157));
+    }
+
+    #[test]
+    fn give_completion_notifies_lab2_undead_receiver() {
+        let mut world = World::default();
+        let mut giver = character(1);
+        giver.cursor_item = Some(ItemId(9));
+        giver.dir = Direction::Right as u8;
+        assert!(world.spawn_character(giver, 10, 10));
+        let mut undead = character(2);
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(
+            Lab2UndeadDriverData::default(),
+        ));
+        assert!(world.spawn_character(undead, 11, 10));
+        let mut holy_water = item(9, ItemFlags::USED);
+        holy_water.carried_by = Some(CharacterId(1));
+        holy_water.driver = IDR_LAB2_WATER;
+        holy_water.driver_data = vec![5];
+        world.add_item(holy_water);
+
+        assert!(world.complete_give(CharacterId(1), CharacterId(2)));
+
+        let undead = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(undead.cursor_item, Some(ItemId(9)));
+        assert_eq!(undead.driver_messages.len(), 1);
+        assert_eq!(undead.driver_messages[0].message_type, NT_GIVE);
+        assert_eq!(undead.driver_messages[0].dat1, 1);
+    }
+
+    #[test]
+    fn lab2_undead_holy_water_damages_true_undead_and_delays_regen() {
+        let mut world = World::default();
+        world.tick = Tick(100);
+        let mut giver = character(1);
+        giver
+            .flags
+            .insert(CharacterFlags::PLAYER | CharacterFlags::NONOMAGIC);
+        assert!(world.spawn_character(giver, 10, 10));
+
+        let mut undead = character(2);
+        undead.name = "Restless Undead".to_string();
+        undead.flags.insert(CharacterFlags::NODEATH);
+        undead.hp = 25 * POWERSCALE;
+        undead.values[1][CharacterValue::Hp as usize] = 25;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+            undead: 1,
+            regenerate_item_id: Some(ItemId(10)),
+            ..Lab2UndeadDriverData::default()
+        }));
+        undead.cursor_item = Some(ItemId(9));
+        undead.push_driver_message(NT_GIVE, 1, 9, 0);
+        assert!(world.spawn_character(undead, 11, 10));
+
+        let mut holy_water = item(9, ItemFlags::USED);
+        holy_water.carried_by = Some(CharacterId(2));
+        holy_water.driver = IDR_LAB2_WATER;
+        holy_water.driver_data = vec![5];
+        world.add_item(holy_water);
+        let mut regen = item(10, ItemFlags::USED);
+        regen.carried_by = Some(CharacterId(2));
+        regen.driver = IDR_LAB2_REGENERATE;
+        regen.driver_data = vec![0; 12];
+        world.add_item(regen);
+
+        assert_eq!(world.process_lab2_undead_message_actions(CharacterId(2)), 1);
+
+        assert!(!world.items.contains_key(&ItemId(9)));
+        let undead = world.characters.get(&CharacterId(2)).unwrap();
+        assert!(!undead.flags.contains(CharacterFlags::NODEATH));
+        assert_eq!(undead.hp, 5 * POWERSCALE);
+        assert_eq!(world.effects.values().next().unwrap().effect_type, EF_MIST);
+        let regen = &world.items[&ItemId(10)];
+        assert_eq!(
+            u32::from_le_bytes(regen.driver_data[8..12].try_into().unwrap()),
+            100 + (TICKS_PER_SECOND * 20) as u32
+        );
+        assert_eq!(world.drain_pending_area_texts()[0].message, "Arrgh!");
+        assert_eq!(
+            world.drain_pending_system_texts()[0].message,
+            "You spill the holy water all over the Restless Undead."
+        );
+    }
+
+    #[test]
+    fn lab2_undead_holy_water_is_laughed_off_in_nomagic_without_nonomagic() {
+        let mut world = World::default();
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::NOMAGIC);
+        let mut giver = character(1);
+        giver.flags.insert(CharacterFlags::PLAYER);
+        assert!(world.spawn_character(giver, 10, 10));
+        let mut undead = character(2);
+        undead.hp = 25 * POWERSCALE;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+            undead: 1,
+            ..Lab2UndeadDriverData::default()
+        }));
+        undead.cursor_item = Some(ItemId(9));
+        undead.push_driver_message(NT_GIVE, 1, 9, 0);
+        assert!(world.spawn_character(undead, 11, 10));
+        let mut holy_water = item(9, ItemFlags::USED);
+        holy_water.carried_by = Some(CharacterId(2));
+        holy_water.driver = IDR_LAB2_WATER;
+        holy_water.driver_data = vec![5];
+        world.add_item(holy_water);
+
+        assert_eq!(world.process_lab2_undead_message_actions(CharacterId(2)), 1);
+
+        assert_eq!(world.characters[&CharacterId(2)].hp, 25 * POWERSCALE);
+        assert!(world.effects.is_empty());
+        assert_eq!(
+            world.drain_pending_area_texts()[0].message,
+            "Mwahahahaha..."
+        );
     }
 
     #[test]
