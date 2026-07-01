@@ -372,6 +372,9 @@ struct ServerRuntime {
     dlight_override: i32,
     show_attack: bool,
     exp_modifier: f64,
+    hardcore_exp_bonus: f64,
+    hardcore_military_exp_bonus: f64,
+    hardcore_kill_exp_bonus: f64,
     weather: WeatherState,
 }
 
@@ -388,7 +391,10 @@ impl Default for ServerRuntime {
             next_character_id: 0,
             dlight_override: 0,
             show_attack: false,
-            exp_modifier: 1.0,
+            exp_modifier: GameSettings::default().exp_modifier,
+            hardcore_exp_bonus: GameSettings::default().hardcore_exp_bonus,
+            hardcore_military_exp_bonus: GameSettings::default().hardcore_military_exp_bonus,
+            hardcore_kill_exp_bonus: GameSettings::default().hardcore_kill_exp_bonus,
             weather: WeatherState::default(),
         }
     }
@@ -3202,6 +3208,88 @@ fn apply_admin_character_command(
             messages: vec![
                 "Invalid value. Please specify a number between 0.1 and 1000.0".to_string(),
             ],
+            ..Default::default()
+        });
+    }
+
+    if lower == "sethardcoreexpbonus" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let value = legacy_atof_prefix(rest);
+        if (0.1..=1000.0).contains(&value) {
+            let old_value = runtime.hardcore_exp_bonus;
+            runtime.hardcore_exp_bonus = value;
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Hardcore experience bonus changed from {old_value:.2} to {value:.2}"
+                )],
+                ..Default::default()
+            });
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Invalid value. Please specify a number between 0.1 and 1000.0".to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+
+    if lower == "sethardcoremilexpbonus" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let value = legacy_atof_prefix(rest);
+        if (0.1..=1000.0).contains(&value) {
+            let old_value = runtime.hardcore_military_exp_bonus;
+            runtime.hardcore_military_exp_bonus = value;
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Hardcore military experience bonus changed from {old_value:.2} to {value:.2}"
+                )],
+                ..Default::default()
+            });
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Invalid value. Please specify a number between 0.1 and 1000.0".to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+
+    if lower == "sethardcorekillexpbonus" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let value = legacy_atof_prefix(rest);
+        if (1.0..=3.0).contains(&value) {
+            let old_value = runtime.hardcore_kill_exp_bonus;
+            runtime.hardcore_kill_exp_bonus = value;
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Hardcore kill experience bonus changed from {old_value:.2} to {value:.2}"
+                )],
+                ..Default::default()
+            });
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec!["Invalid value. Please specify a number between 1.0 and 3.0".to_string()],
             ..Default::default()
         });
     }
@@ -15630,6 +15718,124 @@ mod tests {
             &mut runtime,
             character_id,
             "/setexpmo 2",
+            1,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn god_sethardcore_bonus_commands_match_legacy_ranges_and_feedback() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let mut runtime = ServerRuntime::default();
+
+        let exp = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/sethardcoreexpbonus 2.25tail",
+            1,
+        )
+        .expect("god hardcore exp bonus command should be recognized");
+        assert_eq!(runtime.hardcore_exp_bonus, 2.25);
+        assert_eq!(
+            exp.messages,
+            vec!["Hardcore experience bonus changed from 1.00 to 2.25"]
+        );
+
+        let milexp = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/sethardcoremilexpbonus 1.5",
+            1,
+        )
+        .expect("god hardcore military exp bonus command should be recognized");
+        assert_eq!(runtime.hardcore_military_exp_bonus, 1.5);
+        assert_eq!(
+            milexp.messages,
+            vec!["Hardcore military experience bonus changed from 1.10 to 1.50"]
+        );
+
+        let kill = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/sethardcorekillexpbonus 3.0",
+            1,
+        )
+        .expect("god hardcore kill exp bonus command should be recognized");
+        assert_eq!(runtime.hardcore_kill_exp_bonus, 3.0);
+        assert_eq!(
+            kill.messages,
+            vec!["Hardcore kill experience bonus changed from 1.30 to 3.00"]
+        );
+
+        let invalid_kill = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/sethardcorekillexpbonus 3.01",
+            1,
+        )
+        .expect("invalid hardcore kill exp bonus should still be handled");
+        assert_eq!(runtime.hardcore_kill_exp_bonus, 3.0);
+        assert_eq!(
+            invalid_kill.messages,
+            vec!["Invalid value. Please specify a number between 1.0 and 3.0"]
+        );
+
+        let invalid_exp = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/sethardcoreexpbonus 0.09",
+            1,
+        )
+        .expect("invalid hardcore exp bonus should still be handled");
+        assert_eq!(runtime.hardcore_exp_bonus, 2.25);
+        assert_eq!(
+            invalid_exp.messages,
+            vec!["Invalid value. Please specify a number between 0.1 and 1000.0"]
+        );
+    }
+
+    #[test]
+    fn hardcore_bonus_commands_are_god_only_and_full_command_only() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/sethardcoreexpbonus 2",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/sethardcoreexpbonu 2",
             1,
         )
         .is_none());
