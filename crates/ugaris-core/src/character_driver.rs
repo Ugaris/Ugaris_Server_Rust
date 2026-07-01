@@ -958,6 +958,9 @@ pub enum CharacterDriverCall {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CharacterDriverOutcome {
+    /// `simple_baddy_dead`: earth demons create earth/rain retaliation effects
+    /// at the killer position when the dead NPC can see the killer.
+    SimpleBaddyDeath { killer_character_id: u32 },
     /// Legacy handler returned `1`; behavior is intentionally deferred to a
     /// future typed implementation for this concrete driver.
     HandledStub {
@@ -974,6 +977,7 @@ pub enum CharacterDriverOutcome {
 impl CharacterDriverOutcome {
     pub fn legacy_return_code(self) -> i32 {
         match self {
+            Self::SimpleBaddyDeath { .. } => 1,
             Self::HandledStub { .. } => 1,
             Self::Unsupported { .. } => 0,
         }
@@ -1003,6 +1007,17 @@ fn dispatch_known_character_driver(
     driver: u16,
     call: CharacterDriverCall,
 ) -> CharacterDriverOutcome {
+    if driver == CDR_SIMPLEBADDY {
+        if let CharacterDriverCall::Died {
+            killer_character_id,
+        } = call
+        {
+            return CharacterDriverOutcome::SimpleBaddyDeath {
+                killer_character_id,
+            };
+        }
+    }
+
     match CharacterDriverKind::from_legacy_id(driver) {
         Some(kind) => CharacterDriverOutcome::HandledStub { kind, call },
         None => CharacterDriverOutcome::Unsupported { driver, call },
@@ -1154,11 +1169,8 @@ mod tests {
         let simple_died = execute_character_died_driver(CDR_SIMPLEBADDY, 123);
         assert_eq!(
             simple_died,
-            CharacterDriverOutcome::HandledStub {
-                kind: CharacterDriverKind::SimpleBaddy,
-                call: CharacterDriverCall::Died {
-                    killer_character_id: 123,
-                },
+            CharacterDriverOutcome::SimpleBaddyDeath {
+                killer_character_id: 123,
             }
         );
         assert_eq!(simple_died.legacy_return_code(), 1);

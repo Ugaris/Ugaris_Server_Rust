@@ -4,12 +4,13 @@ use crate::{
     area_sound::AreaSoundSpecial,
     attack::{attack_skill, reduce_hurt_by_armor, spell_average},
     character_driver::{
-        add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
-        remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, CharacterDriverState,
-        Lab2UndeadDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_LAB2UNDEAD,
-        CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK,
-        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT,
-        NT_NPC, NT_SEEHIT, NT_SPELL,
+        add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, execute_character_died_driver,
+        process_simple_baddy_messages,
+        remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, CharacterDriverOutcome,
+        CharacterDriverState, Lab2UndeadDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome,
+        CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON,
+        NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT,
+        NT_GIVE, NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -583,7 +584,7 @@ impl World {
 
         if outcome.killed {
             if let Some(cause_id) = cause_id {
-                self.apply_simple_baddy_death_driver(target_id, cause_id);
+                self.apply_character_death_driver(target_id, cause_id);
             }
             for character in self.characters.values_mut() {
                 if character.x.abs_diff(target_x) <= 32 && character.y.abs_diff(target_y) <= 32 {
@@ -7209,6 +7210,28 @@ impl World {
             strength,
         ));
         effects
+    }
+
+    pub fn apply_character_death_driver(
+        &mut self,
+        dead_id: CharacterId,
+        killer_id: CharacterId,
+    ) -> Vec<u32> {
+        let Some(driver) = self
+            .characters
+            .get(&dead_id)
+            .map(|character| character.driver)
+        else {
+            return Vec::new();
+        };
+
+        match execute_character_died_driver(driver, killer_id.0) {
+            CharacterDriverOutcome::SimpleBaddyDeath {
+                killer_character_id,
+            } => self.apply_simple_baddy_death_driver(dead_id, CharacterId(killer_character_id)),
+            CharacterDriverOutcome::HandledStub { .. }
+            | CharacterDriverOutcome::Unsupported { .. } => Vec::new(),
+        }
     }
 
     fn apply_tabunga_text_notification(
@@ -20867,7 +20890,7 @@ mod tests {
         assert!(world.spawn_character(killer, 12, 10));
         world.map.tile_mut(12, 10).unwrap().light = 255;
 
-        let effect_ids = world.apply_simple_baddy_death_driver(CharacterId(1), CharacterId(2));
+        let effect_ids = world.apply_character_death_driver(CharacterId(1), CharacterId(2));
 
         assert_eq!(effect_ids.len(), 2);
         let mud = world.effects.get(&effect_ids[0]).unwrap();
