@@ -8529,7 +8529,7 @@ fn fdemon_waypoint_driver(
         character_id,
         spotted_enemy,
         target_character_id: spotted_enemy.then_some(character_id),
-        target_serial: spotted_enemy.then_some(character_id.0),
+        target_serial: spotted_enemy.then_some(character.serial),
         schedule_after_ticks: TICKS_PER_SECOND * 3,
     }
 }
@@ -17805,6 +17805,7 @@ mod tests {
     #[test]
     fn fdemon_waypoint_marks_player_or_fdemon_state_and_reschedules() {
         let mut user = character(1);
+        user.serial = 1234;
         let mut waypoint = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONWAYPOINT);
         let request = ItemDriverRequest::Driver {
             driver: IDR_FDEMONWAYPOINT,
@@ -17827,7 +17828,7 @@ mod tests {
                 character_id: CharacterId(1),
                 spotted_enemy: true,
                 target_character_id: Some(CharacterId(1)),
-                target_serial: Some(1),
+                target_serial: Some(1234),
                 schedule_after_ticks: TICKS_PER_SECOND * 3,
             }
         );

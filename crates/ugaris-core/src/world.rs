@@ -21320,6 +21320,7 @@ mod tests {
         let mut world = World::default();
         let mut player = character(1);
         player.flags.insert(CharacterFlags::PLAYER);
+        player.serial = 1234;
         world.add_character(player);
         let mut waypoint = item(7, ItemFlags::USED | ItemFlags::USE);
         waypoint.driver = crate::item_driver::IDR_FDEMONWAYPOINT;
@@ -21341,7 +21342,7 @@ mod tests {
             ItemDriverOutcome::FdemonWaypoint {
                 spotted_enemy: true,
                 target_character_id: Some(CharacterId(1)),
-                target_serial: Some(1),
+                target_serial: Some(1234),
                 ..
             }
         ));
@@ -21353,7 +21354,7 @@ mod tests {
         );
         assert_eq!(
             u32::from_le_bytes(waypoint.driver_data[8..12].try_into().unwrap()),
-            1
+            1234
         );
         assert_eq!(waypoint.sprite, 14200);
         assert_eq!(world.timers.used_timers(), 1);
