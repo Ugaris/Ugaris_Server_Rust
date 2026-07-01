@@ -210,6 +210,8 @@ const TEUFELRAT_PPD_KILLS_OFFSET: usize = 0;
 const TEUFELRAT_PPD_SCORE_OFFSET: usize = 4;
 const TWOCITY_PPD_GOODTILE_OFFSET: usize = 19 * 4;
 const TWOCITY_PPD_SOLVED_LIBRARY_OFFSET: usize = 24 * 4;
+const TWOCITY_PPD_THIEF_STATE_OFFSET: usize = 8 * 4;
+const TWOCITY_PPD_THIEF_KILLED_OFFSET: usize = 10 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const LOSTCON_PPD_AUTOTURN_OFFSET: usize = 16 * 4;
@@ -650,6 +652,44 @@ impl PlayerRuntime {
             }
         }
         self.twocity_goodtile
+    }
+
+    pub fn set_twocity_thief_state(&mut self, state: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(&mut self.twocity_ppd, TWOCITY_PPD_THIEF_STATE_OFFSET, state);
+    }
+
+    pub fn twocity_thief_state(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_THIEF_STATE_OFFSET)
+    }
+
+    pub fn twocity_thief_killed(&self, index: usize) -> i32 {
+        if index >= 6 || self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(
+            &self.twocity_ppd,
+            TWOCITY_PPD_THIEF_KILLED_OFFSET + index * 4,
+        )
+    }
+
+    pub fn mark_twocity_burndown_kill(&mut self) -> bool {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        let thief_state = read_i32(&self.twocity_ppd, TWOCITY_PPD_THIEF_STATE_OFFSET);
+        if thief_state != 13 && thief_state != 14 {
+            return false;
+        }
+        write_i32(&mut self.twocity_ppd, TWOCITY_PPD_THIEF_STATE_OFFSET, 14);
+        let killed = read_i32(&self.twocity_ppd, TWOCITY_PPD_THIEF_KILLED_OFFSET);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_THIEF_KILLED_OFFSET,
+            killed.saturating_add(1),
+        );
+        true
     }
 
     pub fn encode_legacy_twocity_ppd(&self) -> Vec<u8> {
@@ -5158,6 +5198,32 @@ mod tests {
         assert!(decoded.twocity_solved_library);
         assert_eq!(read_i32(&decoded.twocity_ppd, 0), 1234);
         assert!(!decoded.decode_legacy_twocity_ppd(&encoded[..LEGACY_TWOCITY_PPD_SIZE - 1]));
+    }
+
+    #[test]
+    fn twocity_burndown_kill_updates_legacy_thief_fields() {
+        assert_eq!(TWOCITY_PPD_THIEF_STATE_OFFSET, 32);
+        assert_eq!(TWOCITY_PPD_THIEF_KILLED_OFFSET, 40);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(!player.mark_twocity_burndown_kill());
+        assert_eq!(player.twocity_thief_state(), 0);
+        assert_eq!(player.twocity_thief_killed(0), 0);
+
+        player.set_twocity_thief_state(13);
+        assert!(player.mark_twocity_burndown_kill());
+        assert_eq!(player.twocity_thief_state(), 14);
+        assert_eq!(player.twocity_thief_killed(0), 1);
+
+        assert!(player.mark_twocity_burndown_kill());
+        assert_eq!(player.twocity_thief_state(), 14);
+        assert_eq!(player.twocity_thief_killed(0), 2);
+        assert_eq!(player.twocity_thief_killed(6), 0);
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_TWOCITY_PPD);
+        assert_eq!(read_i32(&encoded, 8 + TWOCITY_PPD_THIEF_STATE_OFFSET), 14);
+        assert_eq!(read_i32(&encoded, 8 + TWOCITY_PPD_THIEF_KILLED_OFFSET), 2);
     }
 
     #[test]

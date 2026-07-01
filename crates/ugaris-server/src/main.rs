@@ -26863,8 +26863,13 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You touch the barrel.".to_string()));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownIgnite { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownIgnite { character_id, .. } => {
+                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                player.mark_twocity_burndown_kill();
+                                            }
+                                            executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. } => {
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::TeufelArena { .. }
