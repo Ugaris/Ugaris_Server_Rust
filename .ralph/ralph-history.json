@@ -1448,9 +1448,31 @@
         "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
         "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
       ]
+    },
+    {
+      "iteration": 57,
+      "startedAt": "2026-07-01T07:11:51.655Z",
+      "endedAt": "2026-07-01T07:19:55.072Z",
+      "durationMs": 483242,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 937 filtered out; finished in 0.00s",
+        "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 928 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 312 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 938 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 39265866,
+  "totalDurationMs": 39749108,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1652,7 +1674,11 @@
       "test world::tests::world_warpteleport_plain_busy_preserves_legacy_feedback_boundary ... FAILED": 1,
       "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 935 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 935 filtered out; finished in 0.00s": 1,
-      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.00s": 1
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 937 filtered out; finished in 0.00s": 1,
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 928 filtered out; finished in 0.00s": 1,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 312 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 938 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

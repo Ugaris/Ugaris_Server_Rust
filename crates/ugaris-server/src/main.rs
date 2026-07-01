@@ -29138,6 +29138,15 @@ async fn main() -> anyhow::Result<()> {
                     info!(simple_baddy_noncombat, tick = world.tick.0, "queued simple-baddy noncombat actions");
                 }
 
+                let lab2_undead_cathedral = world.process_lab2_undead_cathedral_self_destructions();
+                if lab2_undead_cathedral != 0 {
+                    info!(
+                        lab2_undead_cathedral,
+                        tick = world.tick.0,
+                        "processed Lab 2 undead cathedral self-destruction"
+                    );
+                }
+
                 let lab2_undead_patrol = world.process_lab2_undead_patrol_actions(config.area_id);
                 if lab2_undead_patrol != 0 {
                     info!(lab2_undead_patrol, tick = world.tick.0, "queued Lab 2 undead patrol actions");

@@ -6949,6 +6949,70 @@ impl World {
             .count()
     }
 
+    pub fn process_lab2_undead_cathedral_self_destruction(
+        &mut self,
+        character_id: CharacterId,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if character.driver != CDR_LAB2UNDEAD
+            || character.action != action::IDLE
+            || character.flags.contains(CharacterFlags::DEAD)
+            || !matches!(
+                character.driver_state,
+                Some(CharacterDriverState::Lab2Undead(_))
+            )
+        {
+            return false;
+        }
+
+        let cathedral_ground = self
+            .map
+            .tile(usize::from(character.x), usize::from(character.y))
+            .map(|tile| matches!(tile.ground_sprite & 0xffff, 20456 | 17062))
+            .unwrap_or(false);
+        if !cathedral_ground {
+            return false;
+        }
+
+        self.queue_lab2_undead_say(character_id, "Arrgh!");
+        self.create_mist_effect(i32::from(character.x), i32::from(character.y));
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character
+                .flags
+                .insert(CharacterFlags::DEAD | CharacterFlags::UPDATE);
+            character
+                .flags
+                .remove(CharacterFlags::ALIVE | CharacterFlags::NODEATH);
+            character.hp = 0;
+            character.deaths = character.deaths.saturating_add(1);
+        }
+        true
+    }
+
+    pub fn process_lab2_undead_cathedral_self_destructions(&mut self) -> usize {
+        let character_ids: Vec<_> = self
+            .characters
+            .iter()
+            .filter_map(|(&character_id, character)| {
+                (character.driver == CDR_LAB2UNDEAD
+                    && matches!(
+                        character.driver_state,
+                        Some(CharacterDriverState::Lab2Undead(_))
+                    ))
+                .then_some(character_id)
+            })
+            .collect();
+
+        character_ids
+            .into_iter()
+            .filter(|&character_id| {
+                self.process_lab2_undead_cathedral_self_destruction(character_id)
+            })
+            .count()
+    }
+
     fn queue_lab2_undead_say(&mut self, character_id: CharacterId, message: impl Into<String>) {
         if let Some(character) = self.characters.get(&character_id) {
             self.pending_area_texts.push(WorldAreaText {
@@ -29394,6 +29458,68 @@ mod tests {
             panic!("lab2 undead state missing");
         };
         assert_eq!(data.pat, 0);
+    }
+
+    #[test]
+    fn lab2_undead_dies_on_cathedral_ground_sprite() {
+        let mut world = World::default();
+        world.map.tile_mut(10, 10).unwrap().ground_sprite = 20456;
+        let mut undead = character(2);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead
+            .flags
+            .insert(CharacterFlags::ALIVE | CharacterFlags::NODEATH);
+        undead.hp = 20 * POWERSCALE;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(
+            Lab2UndeadDriverData::default(),
+        ));
+        assert!(world.spawn_character(undead, 10, 10));
+
+        assert!(world.process_lab2_undead_cathedral_self_destruction(CharacterId(2)));
+
+        let undead = world.characters.get(&CharacterId(2)).unwrap();
+        assert!(undead.flags.contains(CharacterFlags::DEAD));
+        assert!(!undead.flags.contains(CharacterFlags::NODEATH));
+        assert_eq!(undead.hp, 0);
+        assert_eq!(undead.deaths, 1);
+        assert_eq!(world.effects.values().next().unwrap().effect_type, EF_MIST);
+        assert_eq!(world.drain_pending_area_texts()[0].message, "Arrgh!");
+    }
+
+    #[test]
+    fn lab2_undead_cathedral_self_destruction_accepts_second_legacy_sprite() {
+        let mut world = World::default();
+        world.map.tile_mut(10, 10).unwrap().ground_sprite = 17062;
+        let mut undead = character(2);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(
+            Lab2UndeadDriverData::default(),
+        ));
+        assert!(world.spawn_character(undead, 10, 10));
+
+        assert_eq!(world.process_lab2_undead_cathedral_self_destructions(), 1);
+        assert!(world.characters[&CharacterId(2)]
+            .flags
+            .contains(CharacterFlags::DEAD));
+    }
+
+    #[test]
+    fn lab2_undead_cathedral_self_destruction_ignores_other_tiles() {
+        let mut world = World::default();
+        world.map.tile_mut(10, 10).unwrap().ground_sprite = 20455;
+        let mut undead = character(2);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(
+            Lab2UndeadDriverData::default(),
+        ));
+        assert!(world.spawn_character(undead, 10, 10));
+
+        assert!(!world.process_lab2_undead_cathedral_self_destruction(CharacterId(2)));
+        assert!(!world.characters[&CharacterId(2)]
+            .flags
+            .contains(CharacterFlags::DEAD));
+        assert!(world.effects.is_empty());
+        assert!(world.drain_pending_area_texts().is_empty());
     }
 
     #[test]
