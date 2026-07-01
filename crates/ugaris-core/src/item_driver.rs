@@ -2314,6 +2314,15 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    SaltmineLadderUse {
+        item_id: ItemId,
+        character_id: CharacterId,
+        ladder_index: u8,
+    },
+    SaltmineSaltbagUse {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     MineWallInitialized {
         item_id: ItemId,
         sprite: i32,
@@ -3829,6 +3838,19 @@ fn bonehint_driver(
 
 fn saltmine_item_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     match drdata(item, 0) {
+        1 if character.flags.contains(CharacterFlags::PLAYER) => {
+            ItemDriverOutcome::SaltmineLadderUse {
+                item_id: item.id,
+                character_id: character.id,
+                ladder_index: drdata(item, 1),
+            }
+        }
+        2 if character.flags.contains(CharacterFlags::PLAYER) => {
+            ItemDriverOutcome::SaltmineSaltbagUse {
+                item_id: item.id,
+                character_id: character.id,
+            }
+        }
         // C saltmine door: monk workers are removed; every other user is rejected.
         // Worker state is still deferred until the saltmine character driver is ported.
         3 => ItemDriverOutcome::SaltmineDoorBlocked {
@@ -10151,10 +10173,12 @@ mod tests {
     }
 
     #[test]
-    fn saltmine_non_door_items_remain_deferred_noops() {
+    fn saltmine_ladder_returns_player_runtime_outcome() {
         let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
         let mut ladder = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SALTMINE_ITEM);
         set_drdata(&mut ladder, 0, 1);
+        set_drdata(&mut ladder, 1, 4);
         let request = ItemDriverRequest::Driver {
             driver: IDR_SALTMINE_ITEM,
             item_id: ItemId(7),
@@ -10164,7 +10188,33 @@ mod tests {
 
         assert_eq!(
             execute_item_driver(&mut actor, &mut ladder, request, 1, false),
-            ItemDriverOutcome::Noop
+            ItemDriverOutcome::SaltmineLadderUse {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                ladder_index: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn saltmine_saltbag_returns_player_runtime_outcome() {
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        let mut saltbag = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SALTMINE_ITEM);
+        set_drdata(&mut saltbag, 0, 2);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SALTMINE_ITEM,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut saltbag, request, 1, false),
+            ItemDriverOutcome::SaltmineSaltbagUse {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
         );
     }
 

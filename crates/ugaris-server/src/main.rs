@@ -8636,6 +8636,51 @@ fn grant_template_item_to_cursor(
     Some(item_name)
 }
 
+fn grant_salt_to_cursor(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    units: u32,
+) -> bool {
+    if units == 0
+        || world
+            .characters
+            .get(&character_id)
+            .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return false;
+    }
+    let Ok(mut item) = loader.instantiate_item_template("salt", Some(character_id)) else {
+        return false;
+    };
+    let item_id = item.id;
+    item.value = item.value.saturating_mul(units);
+    item.driver_data.resize(item.driver_data.len().max(4), 0);
+    item.driver_data[0..4].copy_from_slice(&units.to_le_bytes());
+    item.sprite = if units >= 10_000 {
+        13212
+    } else if units >= 1_000 {
+        13211
+    } else if units >= 100 {
+        13210
+    } else if units >= 10 {
+        13209
+    } else {
+        13208
+    };
+    item.description = format!("{units} ounces of {}.", item.name);
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return false;
+    };
+    if character.cursor_item.is_some() {
+        return false;
+    }
+    character.cursor_item = Some(item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(item);
+    true
+}
+
 fn apply_lab2_water_altar(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -28013,6 +28058,51 @@ async fn main() -> anyhow::Result<()> {
                                         } => {
                                             feedback.push((character_id, "Thou canst not enter there.".to_string()));
                                             blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SaltmineLadderUse {
+                                            character_id,
+                                            ladder_index,
+                                            ..
+                                        } => {
+                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                if player.saltmine_ladder_ready(ladder_index, realtime_seconds) {
+                                                    player.mark_saltmine_ladder_used(ladder_index, realtime_seconds);
+                                                    feedback.push((character_id, "Thou signalst the monks to gather salt from this ladder.".to_string()));
+                                                    executed += 1;
+                                                } else {
+                                                    feedback.push((character_id, "Thou already got all the Salt out of this, so thou have to wait until it is refilled again.".to_string()));
+                                                    blocked += 1;
+                                                }
+                                            }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SaltmineSaltbagUse {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            if world
+                                                .characters
+                                                .get(&character_id)
+                                                .is_some_and(|character| character.cursor_item.is_some())
+                                            {
+                                                blocked += 1;
+                                                continue;
+                                            }
+                                            let units = runtime
+                                                .player_for_character(character_id)
+                                                .map(|player| player.saltmine_pending_salt.saturating_mul(1000))
+                                                .unwrap_or(0);
+                                            if units == 0 {
+                                                feedback.push((character_id, "Thou feelst thou should bring salt to the monastery, before rewarding thinself.".to_string()));
+                                                blocked += 1;
+                                            } else if grant_salt_to_cursor(&mut world, &mut zone_loader, character_id, units) {
+                                                if let Some(player) = runtime.player_for_character_mut(character_id) {
+                                                    player.saltmine_pending_salt = 0;
+                                                }
+                                                feedback.push((character_id, format!("Thou took {units} units of salt, feeling thou have earned it.")));
+                                                executed += 1;
+                                            } else {
+                                                blocked += 1;
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BoneHint {
                                             character_id,

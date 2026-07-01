@@ -153,6 +153,7 @@ pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_D
 pub const DRD_TWOCITY_PPD: u32 = make_drd(DEV_ID_DB, 97 | PERSISTENT_PLAYER_DATA);
 pub const DRD_LAB_PPD: u32 = make_drd(DEV_ID_DB, 116 | PERSISTENT_PLAYER_DATA);
 pub const DRD_WARP_PPD: u32 = make_drd(DEV_ID_DB, 127 | PERSISTENT_PLAYER_DATA);
+pub const SALTMINE_LADDER_COUNT: usize = 20;
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
 
@@ -513,6 +514,10 @@ pub struct PlayerRuntime {
     pub twocity_goodtile: [u8; 5],
     #[serde(default)]
     pub twocity_solved_library: bool,
+    #[serde(default)]
+    pub saltmine_ladder_last_seconds: [u64; SALTMINE_LADDER_COUNT],
+    #[serde(default)]
+    pub saltmine_pending_salt: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -606,7 +611,30 @@ impl PlayerRuntime {
             quest_log: QuestLog::default(),
             twocity_goodtile: [0; 5],
             twocity_solved_library: false,
+            saltmine_ladder_last_seconds: [0; SALTMINE_LADDER_COUNT],
+            saltmine_pending_salt: 0,
         }
+    }
+
+    pub fn saltmine_ladder_ready(&self, ladder_index: u8, realtime_seconds: u64) -> bool {
+        let Some(last_used) = self
+            .saltmine_ladder_last_seconds
+            .get(usize::from(ladder_index))
+        else {
+            return false;
+        };
+        *last_used == 0 || last_used.saturating_add(60 * 60 * 24) <= realtime_seconds
+    }
+
+    pub fn mark_saltmine_ladder_used(&mut self, ladder_index: u8, realtime_seconds: u64) -> bool {
+        let Some(last_used) = self
+            .saltmine_ladder_last_seconds
+            .get_mut(usize::from(ladder_index))
+        else {
+            return false;
+        };
+        *last_used = realtime_seconds;
+        true
     }
 
     pub fn ensure_twocity_goodtile_with<F>(&mut self, mut roll_color: F) -> [u8; 5]
@@ -3307,6 +3335,18 @@ mod tests {
         assert_eq!(LEGACY_SWEAR_PPD_SIZE, 932);
         assert_eq!(LEGACY_STAFFER_PPD_SIZE, 100);
         assert_eq!(LEGACY_FARMY_PPD_SIZE, 340);
+        assert_eq!(SALTMINE_LADDER_COUNT, 20);
+    }
+
+    #[test]
+    fn saltmine_ladder_cooldown_tracks_legacy_reuse_window() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert!(player.saltmine_ladder_ready(3, 1_000));
+        assert!(player.mark_saltmine_ladder_used(3, 1_000));
+        assert!(!player.saltmine_ladder_ready(3, 1_000 + 60 * 60 * 24 - 1));
+        assert!(player.saltmine_ladder_ready(3, 1_000 + 60 * 60 * 24));
+        assert!(!player.mark_saltmine_ladder_used(20, 1_000));
     }
 
     #[test]
