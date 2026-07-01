@@ -27,7 +27,57 @@ pub const IDR_RECALL: u16 = 13;
 pub const IDR_SHRINE: u16 = 14;
 pub const IDR_FIREBALL: u16 = 15;
 pub const IDR_BOOK: u16 = 16;
+pub const BOOK_LOISAN1: u8 = 0;
+pub const BOOK_LOISAN2: u8 = 1;
+pub const BOOK_SUPERIOR1: u8 = 2;
+pub const BOOK_SUPERIOR2: u8 = 3;
+pub const BOOK_SUPERIOR3: u8 = 4;
+pub const BOOK_SUPERIOR4: u8 = 5;
+pub const BOOK_SUPERIOR5: u8 = 6;
+pub const BOOK_SUPERIOR6: u8 = 7;
+pub const BOOK_VAMPIRE1: u8 = 8;
+pub const BOOK_VAMPIRE2: u8 = 9;
+pub const BOOK_VAMPIRE3: u8 = 10;
+pub const BOOK_VAMPIRE4: u8 = 11;
+pub const BOOK_VAMPIRE5: u8 = 12;
+pub const BOOK_DEMON1: u8 = 13;
+pub const BOOK_DEMON2: u8 = 14;
+pub const BOOK_DEMON3: u8 = 15;
+pub const BOOK_DEMON4: u8 = 16;
+pub const BOOK_DEMON5: u8 = 17;
+pub const SIGN_EDEMON1: u8 = 18;
+pub const SIGN_EDEMON2: u8 = 19;
+pub const BOOK_EDEMON1: u8 = 20;
+pub const BOOK_EDEMON2: u8 = 21;
+pub const BOOK_EDEMON3: u8 = 22;
+pub const BOOK_EDEMON4: u8 = 23;
+pub const BOOK_IDEMON1: u8 = 24;
+pub const BOOK_IDEMON2: u8 = 25;
+pub const BOOK_IDEMON3: u8 = 26;
+pub const BOOK_SWAMP: u8 = 27;
+pub const BOOK_PALACE1: u8 = 28;
+pub const BOOK_PALACE2: u8 = 29;
+pub const BOOK_PALACE3: u8 = 30;
+pub const BOOK_RUNES1: u8 = 31;
+pub const BOOK_RUNES2: u8 = 32;
+pub const BOOK_RUNES3: u8 = 33;
+pub const BOOK_RUNES4: u8 = 34;
+pub const BOOK_RUNES5: u8 = 35;
+pub const BOOK_RUNES6: u8 = 36;
+pub const BOOK_RUNES7: u8 = 37;
+pub const BOOK_RUNES8: u8 = 38;
+pub const BOOK_BONES1: u8 = 39;
+pub const BOOK_BONES2: u8 = 40;
+pub const BOOK_EVILKIR: u8 = 41;
+pub const BOOK_SHRIKE: u8 = 42;
+pub const BOOK_GWENDYLON: u8 = 43;
+pub const BOOK_MADMAGES_BOOK1: u8 = 44;
+pub const BOOK_MADMAGES_BOOK2: u8 = 45;
+pub const SIGN_FOREST_ARENA: u8 = 46;
+pub const SIGN_ARENA: u8 = 47;
 pub const BOOK_NOOK_JOKES: u8 = 48;
+pub const BOOK_LAB2_DIARY: u8 = 100;
+pub const BOOK_LAB2_DIARY_PAGE: u8 = 101;
 pub const IDR_ONOFFLIGHT: u16 = 17;
 pub const IDR_TRANSPORT: u16 = 18;
 pub const IDR_STATSCROLL: u16 = 19;
@@ -5083,13 +5133,13 @@ pub fn book_text_line_bytes_for_reader_id(
     reader_id: u32,
 ) -> Vec<Vec<u8>> {
     match kind {
-        13..=17 => demon_book_line_bytes(kind, reader_id),
-        18 => edemon_sign_line_bytes(demon_value, &["Defense Systems Control Room"]),
-        19 => edemon_sign_line_bytes(
+        BOOK_DEMON1..=BOOK_DEMON5 => demon_book_line_bytes(kind, reader_id),
+        SIGN_EDEMON1 => edemon_sign_line_bytes(demon_value, &["Defense Systems Control Room"]),
+        SIGN_EDEMON2 => edemon_sign_line_bytes(
             demon_value,
             &["Research Laboratorium", "Caution, live demons!"],
         ),
-        31 => vec![
+        BOOK_RUNES1 => vec![
             plain_book_line_bytes("Personal Diary of Korzam, Magical Advisor of Scarcewind."),
             dark_gray_book_line_bytes("The line above has been nearly scratched out, and replaced by:", false),
             plain_book_line_bytes("Personal Diary of Korzam, Governor of Exkordon."),
@@ -5106,15 +5156,15 @@ pub fn book_text_line_bytes_for_reader_id(
             dark_gray_book_line_bytes("Here, the writing changes back to the style used in the beginning.", false),
             plain_book_line_bytes("What have I done? What came over me? And why are the dead rising, and walking my halls? They are dead! Dead! I killed them!"),
         ],
-        39 => vec![
+        BOOK_BONES1 => vec![
             plain_book_line_bytes("Day 12, year 45. Personal diary of Sluiran of the Caremar."),
             plain_book_line_bytes("The battles raging outside are closer to our hiding place. We must find some means to defend ourselves. I have started to study the forbidden art of necromancy, based on the rune magic. The undead shall fight where the living cannot."),
             dark_gray_book_line_bytes("You skip some pages.", false),
             plain_book_line_bytes("Day 37, year 47. Personal diary of Sluiran of the Caremar."),
             plain_book_line_bytes("The towers have fallen, but the undead have held our halls against the first wave of attackers. I have many, many bodies for my work now. More and more undead shall defend us. We might survive, after all."),
         ],
-        43 => vec![dark_gray_book_line_bytes("Thou canst comprehend the intricate handwriting fully, something about an incantation of transportation. It sounds like folly and you choose not to decipher more of the scribbles.", false)],
-        44 => vec![
+        BOOK_GWENDYLON => vec![dark_gray_book_line_bytes("Thou canst comprehend the intricate handwriting fully, something about an incantation of transportation. It sounds like folly and you choose not to decipher more of the scribbles.", false)],
+        BOOK_MADMAGES_BOOK1 => vec![
             plain_book_line_bytes("It is a long list of names, the masters and teachers of the mages order. With deep respect, the great past masters of the mages order, are here honoured."),
             plain_book_line_bytes("Wijn, the old one. Gree-Dli, master of summoning spells, Leerea, the empat, Djurna bridgecaller, Friize the recluse, Loisan creator. "),
             dark_gray_book_line_bytes("At the bottom of the following page you find a list of the current teachers of the mages order: ", true),
@@ -5130,13 +5180,13 @@ pub fn book_text_line_bytes_for_reader_id(
 fn demon_book_line_bytes(kind: u8, reader_id: u32) -> Vec<Vec<u8>> {
     let ritual = demon_ritual_words(reader_id, u32::from(kind - 13));
     let line = match kind {
-        13 => format!(
+        BOOK_DEMON1 => format!(
             "I have seen in written in fiery letters upon the sky: Those who have the knowledge can invoke protection against demonic might by uttering the words: '{ritual}'"
         ),
-        14 => format!(
+        BOOK_DEMON2 => format!(
             "Those who need better protection against earth demons, those who have the knowledge, use these words: '{ritual}'"
         ),
-        15..=17 => format!("'{ritual}' will give thee even better protection."),
+        BOOK_DEMON3..=BOOK_DEMON5 => format!("'{ritual}' will give thee even better protection."),
         _ => return Vec::new(),
     };
     vec![plain_book_line_bytes(&line)]
@@ -5224,8 +5274,8 @@ pub fn book_nook_joke_line_bytes(roll: u32) -> Vec<Vec<u8>> {
 
 pub fn book_special_effect(kind: u8) -> Option<u32> {
     match kind {
-        22 => Some(50287),
-        23 => Some(50305),
+        BOOK_EDEMON3 => Some(50287),
+        BOOK_EDEMON4 => Some(50305),
         _ => None,
     }
 }
@@ -14690,21 +14740,44 @@ mod tests {
     }
 
     #[test]
+    fn book_header_constants_match_legacy_values() {
+        assert_eq!(BOOK_LOISAN1, 0);
+        assert_eq!(BOOK_VAMPIRE5, 12);
+        assert_eq!(BOOK_DEMON1, 13);
+        assert_eq!(BOOK_DEMON5, 17);
+        assert_eq!(SIGN_EDEMON1, 18);
+        assert_eq!(SIGN_EDEMON2, 19);
+        assert_eq!(BOOK_EDEMON3, 22);
+        assert_eq!(BOOK_IDEMON1, 24);
+        assert_eq!(BOOK_RUNES1, 31);
+        assert_eq!(BOOK_RUNES8, 38);
+        assert_eq!(BOOK_BONES1, 39);
+        assert_eq!(BOOK_SHRIKE, 42);
+        assert_eq!(BOOK_GWENDYLON, 43);
+        assert_eq!(BOOK_MADMAGES_BOOK1, 44);
+        assert_eq!(SIGN_FOREST_ARENA, 46);
+        assert_eq!(SIGN_ARENA, 47);
+        assert_eq!(BOOK_NOOK_JOKES, 48);
+        assert_eq!(BOOK_LAB2_DIARY, 100);
+        assert_eq!(BOOK_LAB2_DIARY_PAGE, 101);
+    }
+
+    #[test]
     fn book_text_lines_include_static_later_legacy_books() {
         assert_eq!(
-            book_text_lines(24)[0],
+            book_text_lines(BOOK_IDEMON1)[0],
             "Day 155, year 103. Personal diary of Kamaleon of the Isara."
         );
         assert_eq!(
-            book_text_lines(30)[5],
+            book_text_lines(BOOK_PALACE3)[5],
             "The cold is slowly killing all of us. All attempts to control the demon lords have failed. Now all of us must die. But I shall die happily if I can take Ishtar with me into the cold."
         );
         assert_eq!(
-            book_text_lines(38),
+            book_text_lines(BOOK_RUNES8),
             &["Berkano, Ehwaz, Ansuz will decrease magic damage."][..]
         );
         assert_eq!(
-            book_text_lines(100)[2],
+            book_text_lines(BOOK_LAB2_DIARY)[2],
             "The last fight with the undeads was hard. But even though I am bleeding from many wounds, today is the day I will kill my brother. I will take the amulet and go into the family vault and face him now!"
         );
     }
@@ -14712,24 +14785,24 @@ mod tests {
     #[test]
     fn book_text_lines_include_raw_color_marker_book_cases() {
         assert_eq!(
-            book_text_lines(31)[0],
+            book_text_lines(BOOK_RUNES1)[0],
             "Personal Diary of Korzam, Magical Advisor of Scarcewind."
         );
-        assert_eq!(book_text_lines(39)[2], "You skip some pages.");
+        assert_eq!(book_text_lines(BOOK_BONES1)[2], "You skip some pages.");
         assert_eq!(
-            book_text_lines(43),
+            book_text_lines(BOOK_GWENDYLON),
             &["Thou canst comprehend the intricate handwriting fully, something about an incantation of transportation. It sounds like folly and you choose not to decipher more of the scribbles."][..]
         );
         assert_eq!(
-            book_text_lines(44)[2],
+            book_text_lines(BOOK_MADMAGES_BOOK1)[2],
             "At the bottom of the following page you find a list of the current teachers of the mages order: Bretl, Anna-Sofia, Leaner, Crem, Guiwynn."
         );
 
-        let runes = book_text_line_bytes(31);
+        let runes = book_text_line_bytes(BOOK_RUNES1);
         assert_eq!(&runes[1][..3], crate::text::COL_DARK_GRAY);
         assert!(runes[1].ends_with(b"replaced by:"));
 
-        let mad_mages = book_text_line_bytes(44);
+        let mad_mages = book_text_line_bytes(BOOK_MADMAGES_BOOK1);
         assert_eq!(&mad_mages[2][..3], crate::text::COL_DARK_GRAY);
         assert!(mad_mages[2]
             .windows(3)
@@ -14820,19 +14893,19 @@ mod tests {
     #[test]
     fn earth_demon_sign_books_use_reader_demon_knowledge() {
         assert_eq!(
-            book_text_line_bytes_for_reader(18, 0),
+            book_text_line_bytes_for_reader(SIGN_EDEMON1, 0),
             vec![b"It's written in strange letters you cannot read.".to_vec()]
         );
         assert_eq!(
-            book_text_line_bytes_for_reader(19, 1),
+            book_text_line_bytes_for_reader(SIGN_EDEMON2, 1),
             vec![b"You recognice some of the letters used in this sign from your studies of the ancient knowledge, but you cannot tell what the sign means.".to_vec()]
         );
         assert_eq!(
-            book_text_line_bytes_for_reader(18, 2),
+            book_text_line_bytes_for_reader(SIGN_EDEMON1, 2),
             vec![b"Defense Systems Control Room".to_vec()]
         );
         assert_eq!(
-            book_text_line_bytes_for_reader(19, 2),
+            book_text_line_bytes_for_reader(SIGN_EDEMON2, 2),
             vec![
                 b"Research Laboratorium".to_vec(),
                 b"Caution, live demons!".to_vec(),
@@ -14844,16 +14917,16 @@ mod tests {
     fn demon_books_generate_legacy_character_specific_ritual_words() {
         assert_eq!(demon_ritual_words(6, 2), "shirsli sausgadul");
         assert_eq!(
-            book_text_line_bytes_for_reader_id(15, 0, 6),
+            book_text_line_bytes_for_reader_id(BOOK_DEMON3, 0, 6),
             vec![b"'shirsli sausgadul' will give thee even better protection.".to_vec()]
         );
         assert_eq!(
-            book_text_line_bytes_for_reader_id(13, 0, 6),
+            book_text_line_bytes_for_reader_id(BOOK_DEMON1, 0, 6),
             vec![b"I have seen in written in fiery letters upon the sky: Those who have the knowledge can invoke protection against demonic might by uttering the words: 'dorsli kilaghshir'".to_vec()]
         );
         assert_ne!(
-            book_text_line_bytes_for_reader_id(13, 0, 6),
-            book_text_line_bytes_for_reader_id(13, 0, 7)
+            book_text_line_bytes_for_reader_id(BOOK_DEMON1, 0, 6),
+            book_text_line_bytes_for_reader_id(BOOK_DEMON1, 0, 7)
         );
     }
 
@@ -14878,10 +14951,10 @@ mod tests {
 
     #[test]
     fn book_special_effects_match_legacy_earth_demon_diaries() {
-        assert_eq!(book_special_effect(22), Some(50287));
-        assert_eq!(book_special_effect(23), Some(50305));
-        assert_eq!(book_special_effect(20), None);
-        assert_eq!(book_special_effect(24), None);
+        assert_eq!(book_special_effect(BOOK_EDEMON3), Some(50287));
+        assert_eq!(book_special_effect(BOOK_EDEMON4), Some(50305));
+        assert_eq!(book_special_effect(BOOK_EDEMON1), None);
+        assert_eq!(book_special_effect(BOOK_IDEMON1), None);
     }
 
     #[test]
