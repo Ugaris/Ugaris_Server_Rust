@@ -2394,6 +2394,12 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
                     | Some(IDR_PALACEBOMB)
                     | Some(IDR_PALACECAP)
                     | Some(IDR_LAB2_GRAVE)
+                    | Some(IDR_STR_MINE)
+                    | Some(IDR_STR_STORAGE)
+                    | Some(IDR_STR_SPAWNER)
+                    | Some(IDR_STR_DEPOT)
+                    | Some(IDR_STR_TICKER)
+                    | Some(IDR_NOSNOW)
                     | Some(IDR_WARPKEYDOOR)
             ) =>
         {
@@ -2647,6 +2653,8 @@ pub fn execute_item_driver_with_context(
                 IDR_LABENTRANCE => labentrance_driver(character, item, context),
                 IDR_LQ_TICKER => lq_ticker_driver(character, item),
                 IDR_LQ_ENTRANCE => lq_entrance_driver(character, item, context),
+                IDR_STR_MINE | IDR_STR_STORAGE | IDR_STR_SPAWNER | IDR_STR_DEPOT
+                | IDR_STR_TICKER | IDR_NOSNOW => ItemDriverOutcome::Noop,
                 IDR_SALTMINE_ITEM => saltmine_item_driver(character, item),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
@@ -14982,6 +14990,19 @@ mod tests {
             legacy_item_driver_return_code(Some(IDR_CLANVAULT), &ItemDriverOutcome::Noop),
             1
         );
+        for driver in [
+            IDR_STR_MINE,
+            IDR_STR_STORAGE,
+            IDR_STR_SPAWNER,
+            IDR_STR_DEPOT,
+            IDR_STR_TICKER,
+            IDR_NOSNOW,
+        ] {
+            assert_eq!(
+                legacy_item_driver_return_code(Some(driver), &ItemDriverOutcome::Noop),
+                1
+            );
+        }
         assert_eq!(
             legacy_item_driver_return_code(
                 Some(IDR_DOOR),
@@ -15045,6 +15066,33 @@ mod tests {
             legacy_item_driver_return_code(Some(IDR_CLANVAULT), &outcome),
             1
         );
+    }
+
+    #[test]
+    fn strategy_item_dispatch_boundary_is_legacy_handled_noop() {
+        for driver in [
+            IDR_STR_MINE,
+            IDR_STR_STORAGE,
+            IDR_STR_SPAWNER,
+            IDR_STR_DEPOT,
+            IDR_STR_TICKER,
+            IDR_NOSNOW,
+        ] {
+            let mut character = character(1);
+            let mut strategy_item = item(7, ItemFlags::USED | ItemFlags::USE, 0, driver);
+            let request = ItemDriverRequest::Driver {
+                driver,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            };
+
+            let outcome =
+                execute_item_driver(&mut character, &mut strategy_item, request, 23, false);
+
+            assert_eq!(outcome, ItemDriverOutcome::Noop);
+            assert_eq!(legacy_item_driver_return_code(Some(driver), &outcome), 1);
+        }
     }
 
     #[test]
