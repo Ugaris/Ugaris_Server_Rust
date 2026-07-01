@@ -448,12 +448,13 @@ pub fn process_simple_baddy_messages(
         _ => 0,
     };
     let mut outcomes = Vec::new();
-    let mut bless_friend = None;
 
     let messages = std::mem::take(&mut character.driver_messages);
     for message in messages {
         if message.message_type == NT_CHAR && helper != 0 && message.dat1 > 0 {
-            bless_friend = Some(crate::ids::CharacterId(message.dat1 as u32));
+            outcomes.push(SimpleBaddyMessageOutcome::BlessFriend {
+                target_id: crate::ids::CharacterId(message.dat1 as u32),
+            });
         }
 
         if message.message_type == NT_CHAR && aggressive != 0 && message.dat1 > 0 {
@@ -543,10 +544,6 @@ pub fn process_simple_baddy_messages(
                 target_id: CharacterId(message.dat3.max(0) as u32),
             });
         }
-    }
-
-    if let Some(target_id) = bless_friend {
-        outcomes.push(SimpleBaddyMessageOutcome::BlessFriend { target_id });
     }
 
     outcomes
@@ -1485,7 +1482,7 @@ mod tests {
     }
 
     #[test]
-    fn simple_baddy_char_message_selects_last_helper_bless_target() {
+    fn simple_baddy_char_messages_emit_ordered_helper_bless_candidates() {
         let mut character = test_character();
         character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
             helper: 1,
@@ -1498,9 +1495,14 @@ mod tests {
 
         assert_eq!(
             outcomes,
-            vec![SimpleBaddyMessageOutcome::BlessFriend {
-                target_id: crate::ids::CharacterId(3),
-            }]
+            vec![
+                SimpleBaddyMessageOutcome::BlessFriend {
+                    target_id: crate::ids::CharacterId(2),
+                },
+                SimpleBaddyMessageOutcome::BlessFriend {
+                    target_id: crate::ids::CharacterId(3),
+                },
+            ]
         );
         assert!(character.driver_messages.is_empty());
     }
@@ -1534,6 +1536,9 @@ mod tests {
         assert_eq!(
             outcomes,
             vec![
+                SimpleBaddyMessageOutcome::BlessFriend {
+                    target_id: crate::ids::CharacterId(2),
+                },
                 SimpleBaddyMessageOutcome::StandardAggro {
                     target_id: crate::ids::CharacterId(2),
                     priority: 0,
@@ -1550,9 +1555,6 @@ mod tests {
                     priority: 1,
                     require_visible: false,
                     hurtme: true,
-                },
-                SimpleBaddyMessageOutcome::BlessFriend {
-                    target_id: crate::ids::CharacterId(2),
                 },
             ]
         );

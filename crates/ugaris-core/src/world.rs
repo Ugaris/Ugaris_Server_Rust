@@ -3703,12 +3703,16 @@ impl World {
         mut random_below: impl FnMut(i32) -> i32,
     ) -> Vec<ItemDriverOutcome> {
         let carried_items: Vec<Item> = self.items.values().cloned().collect();
-        let Some(character) = self.characters.get_mut(&character_id) else {
+        let Some(character) = self.characters.get(&character_id) else {
             return Vec::new();
         };
         if character.action != action::IDLE || character.flags.contains(CharacterFlags::DEAD) {
             return Vec::new();
         }
+        self.clear_simple_baddy_bless_friend(character_id);
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return Vec::new();
+        };
         let message_outcomes = process_simple_baddy_messages(character, &carried_items);
 
         let mut applied = Vec::new();
@@ -3729,8 +3733,6 @@ impl World {
                 SimpleBaddyMessageOutcome::BlessFriend { target_id } => {
                     if self.simple_baddy_can_bless_friend(character_id, target_id) {
                         self.remember_simple_baddy_bless_friend(character_id, target_id);
-                    } else {
-                        self.clear_simple_baddy_bless_friend(character_id);
                     }
                     applied.push(ItemDriverOutcome::Noop);
                 }
@@ -17166,6 +17168,41 @@ mod tests {
         };
         assert_eq!(data.pending_bless_friend, None);
         assert!(npc.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_message_actions_keep_last_valid_helper_bless_candidate() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.mana = 10 * POWERSCALE;
+        npc.values[0][CharacterValue::Bless as usize] = 40;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            helper: 1,
+            pending_bless_friend: Some(CharacterId(99)),
+            ..SimpleBaddyDriverData::default()
+        }));
+        npc.push_driver_message(NT_CHAR, 2, 0, 0);
+        npc.push_driver_message(NT_CHAR, 3, 0, 0);
+        let mut friend = character(2);
+        friend.group = 7;
+        let mut enemy = character(3);
+        enemy.group = 8;
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(friend, 11, 10);
+        world.spawn_character(enemy, 12, 10);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(
+            outcomes,
+            vec![ItemDriverOutcome::Noop, ItemDriverOutcome::Noop]
+        );
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.pending_bless_friend, Some(CharacterId(2)));
     }
 
     #[test]
