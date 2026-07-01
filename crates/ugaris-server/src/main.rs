@@ -53,7 +53,7 @@ use ugaris_core::{
     player::{
         CaligarSkellyDeathResult, CommandAlias, DemonShrineResult, IgnoreToggleResult,
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
-        XmasTreeResult,
+        XmasTreeResult, LEGACY_SWEAR_PPD_SIZE, SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
     },
     quest::{QuestReopenResult, QF_OPEN},
     spell::{
@@ -1369,6 +1369,198 @@ fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {
     bytes.extend_from_slice(message.as_bytes());
     bytes.extend_from_slice(COL_RESET);
     bytes
+}
+
+const SWEAR_LASTTALK_OFFSET: usize = 0;
+const SWEAR_BAD_OFFSET: usize = SWEAR_LASTTALK_OFFSET + 10 * 4;
+const SWEAR_SENTENCES_OFFSET: usize = SWEAR_BAD_OFFSET + 4;
+const SWEAR_LAST_TIME_OFFSET: usize =
+    SWEAR_SENTENCES_OFFSET + SWEAR_SENTENCE_COUNT * SWEAR_SENTENCE_LEN;
+const SWEAR_LAST_CNT_OFFSET: usize = SWEAR_LAST_TIME_OFFSET + 10 * 4;
+const SWEAR_LAST_POS_OFFSET: usize = SWEAR_LAST_CNT_OFFSET + 10 * 4;
+const SWEAR_BANNED_TILL_OFFSET: usize = LEGACY_SWEAR_PPD_SIZE - 4;
+
+fn read_swear_i32(bytes: &[u8], offset: usize) -> i32 {
+    i32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
+}
+
+fn write_swear_i32(bytes: &mut [u8], offset: usize, value: i32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn ensure_swear_ppd(player: &mut PlayerRuntime) -> &mut Vec<u8> {
+    if player.swear_ppd.len() < LEGACY_SWEAR_PPD_SIZE {
+        player.swear_ppd.resize(LEGACY_SWEAR_PPD_SIZE, 0);
+    }
+    &mut player.swear_ppd
+}
+
+fn legacy_all_upper(text: &str) -> bool {
+    let mut alpha_count = 0;
+    for byte in text.bytes() {
+        if byte.is_ascii_lowercase() {
+            return false;
+        }
+        if byte.is_ascii_alphabetic() {
+            alpha_count += 1;
+        }
+    }
+    alpha_count > 3
+}
+
+fn legacy_swear_block(
+    player: &mut PlayerRuntime,
+    realtime_seconds: u64,
+    messages: &[&str],
+) -> Vec<Vec<u8>> {
+    let realtime = realtime_seconds.min(i32::MAX as u64) as i32;
+    let ppd = ensure_swear_ppd(player);
+    write_swear_i32(ppd, SWEAR_BAD_OFFSET, realtime);
+    messages
+        .iter()
+        .map(|message| legacy_light_red_text_bytes(message))
+        .collect()
+}
+
+fn legacy_swearing_feedback(
+    player: &mut PlayerRuntime,
+    is_player: bool,
+    is_god: bool,
+    text: &str,
+    realtime_seconds: u64,
+) -> Option<Vec<Vec<u8>>> {
+    if !is_player {
+        return None;
+    }
+
+    let realtime = realtime_seconds.min(i32::MAX as u64) as i32;
+    let ppd = ensure_swear_ppd(player);
+    let banned_till = read_swear_i32(ppd, SWEAR_BANNED_TILL_OFFSET);
+    if banned_till > realtime {
+        let minutes = f64::from(banned_till - realtime) / 60.0;
+        return Some(vec![legacy_light_red_text_bytes(&format!(
+            "Chat is blocked for {minutes:.2} minutes."
+        ))]);
+    }
+
+    if is_god {
+        return None;
+    }
+
+    let bad = read_swear_i32(ppd, SWEAR_BAD_OFFSET);
+    if realtime - bad < 30 {
+        return Some(vec![legacy_light_red_text_bytes("Chat is blocked.")]);
+    }
+    if realtime - read_swear_i32(ppd, SWEAR_LASTTALK_OFFSET + 4) < 1 {
+        return Some(legacy_swear_block(
+            player,
+            realtime_seconds,
+            &["Chat has been blocked for 30 seconds for excessive usage (1)."],
+        ));
+    }
+    if realtime - read_swear_i32(ppd, SWEAR_LASTTALK_OFFSET + 4 * 4) < 10 {
+        return Some(legacy_swear_block(
+            player,
+            realtime_seconds,
+            &["Chat has been blocked for 30 seconds for excessive usage (2)."],
+        ));
+    }
+    if realtime - read_swear_i32(ppd, SWEAR_LASTTALK_OFFSET + 9 * 4) < 30 {
+        return Some(legacy_swear_block(
+            player,
+            realtime_seconds,
+            &["Chat has been blocked for 30 seconds for excessive usage (3)."],
+        ));
+    }
+
+    let lower = text.to_ascii_lowercase();
+    if ["fuck", "cunt", "faggot", "korwa", "nigga"]
+        .iter()
+        .any(|word| lower.contains(word))
+    {
+        return Some(legacy_swear_block(
+            player,
+            realtime_seconds,
+            &[
+                "Swearing is illegal in this game. While only a few words are blocked by the system, you will get punished and eventually banned if you swear using non-blocked words.",
+                "Chat has been blocked for 30 seconds.",
+            ],
+        ));
+    }
+
+    if text.len() > 3 && legacy_all_upper(text) {
+        return Some(legacy_swear_block(
+            player,
+            realtime_seconds,
+            &[
+                "Using capitalized letters only is impolite. Trying to get around the block by using mostly caps will get you punished and eventually banned.",
+                "Chat has been blocked for 30 seconds.",
+            ],
+        ));
+    }
+
+    if text.len() > 20 {
+        let mut found = false;
+        let compare_len = text.len().min(78);
+        for index in 0..SWEAR_SENTENCE_COUNT {
+            let sentence_offset = SWEAR_SENTENCES_OFFSET + index * SWEAR_SENTENCE_LEN;
+            let stored = &ppd[sentence_offset..sentence_offset + compare_len];
+            if stored == &text.as_bytes()[..compare_len]
+                && realtime - read_swear_i32(ppd, SWEAR_LAST_TIME_OFFSET + index * 4) < 30
+            {
+                if read_swear_i32(ppd, SWEAR_LAST_CNT_OFFSET + index * 4) > 2
+                    || realtime - read_swear_i32(ppd, SWEAR_LAST_TIME_OFFSET + index * 4) < 4
+                {
+                    return Some(legacy_swear_block(
+                        player,
+                        realtime_seconds,
+                        &[
+                            "Repeating the same sentence is impolite. Repeating variants of the same sentence will get you punished and eventually banned.",
+                            "Chat has been blocked for 30 seconds.",
+                        ],
+                    ));
+                }
+                let count_offset = SWEAR_LAST_CNT_OFFSET + index * 4;
+                let count = read_swear_i32(ppd, count_offset).saturating_add(1);
+                write_swear_i32(ppd, count_offset, count);
+                let last_pos = read_swear_i32(ppd, SWEAR_LAST_POS_OFFSET);
+                if (0..10).contains(&last_pos) {
+                    write_swear_i32(
+                        ppd,
+                        SWEAR_LAST_TIME_OFFSET + last_pos as usize * 4,
+                        realtime,
+                    );
+                }
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            let mut last_pos = read_swear_i32(ppd, SWEAR_LAST_POS_OFFSET);
+            if !(0..=9).contains(&last_pos) {
+                last_pos = 0;
+            }
+            let sentence_offset = SWEAR_SENTENCES_OFFSET + last_pos as usize * SWEAR_SENTENCE_LEN;
+            ppd[sentence_offset..sentence_offset + SWEAR_SENTENCE_LEN].fill(0);
+            let copy_len = text.len().min(78);
+            ppd[sentence_offset..sentence_offset + copy_len]
+                .copy_from_slice(&text.as_bytes()[..copy_len]);
+            write_swear_i32(
+                ppd,
+                SWEAR_LAST_TIME_OFFSET + last_pos as usize * 4,
+                realtime,
+            );
+            write_swear_i32(ppd, SWEAR_LAST_CNT_OFFSET + last_pos as usize * 4, 1);
+            write_swear_i32(ppd, SWEAR_LAST_POS_OFFSET, last_pos + 1);
+        }
+    }
+
+    for index in (1..10).rev() {
+        let previous = read_swear_i32(ppd, SWEAR_LASTTALK_OFFSET + (index - 1) * 4);
+        write_swear_i32(ppd, SWEAR_LASTTALK_OFFSET + index * 4, previous);
+    }
+    write_swear_i32(ppd, SWEAR_LASTTALK_OFFSET, realtime);
+    None
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -4371,10 +4563,11 @@ fn local_speech_payload(kind: LocalSpeechKind, name: &str, text: &str) -> Option
 
 fn apply_local_speech_command(
     world: &mut World,
-    runtime: &ServerRuntime,
+    runtime: &mut ServerRuntime,
     sender_id: CharacterId,
     command: &str,
     current_tick: u64,
+    realtime_seconds: u64,
 ) -> Option<ChatCommandResult> {
     let (verb, raw_text) = chat_command_verb(command);
     let is_plain_speech = !command.starts_with('/') && !command.starts_with('#');
@@ -4411,6 +4604,24 @@ fn apply_local_speech_command(
     } else {
         kind
     };
+
+    if let Some(player) = runtime.player_for_character_mut(sender_id) {
+        if let Some(messages) = legacy_swearing_feedback(
+            player,
+            sender.flags.contains(CharacterFlags::PLAYER),
+            sender.flags.contains(CharacterFlags::GOD),
+            text,
+            realtime_seconds,
+        ) {
+            return Some(ChatCommandResult {
+                sender_messages: Vec::new(),
+                delivered_message_bytes: messages
+                    .into_iter()
+                    .map(|message| (sender_id, message))
+                    .collect(),
+            });
+        }
+    }
 
     let cost = actual_kind.endurance_cost(&settings);
     if cost > 0 && sender.endurance < cost {
@@ -4479,6 +4690,7 @@ fn apply_chat_command(
     sender_id: CharacterId,
     command: &str,
     area_id: u16,
+    realtime_seconds: u64,
 ) -> Option<ChatCommandResult> {
     let (channel_nr, raw_text) = legacy_chat_command_channel(command)?;
     let Some(channel) = legacy_chat_channel(channel_nr) else {
@@ -4499,6 +4711,24 @@ fn apply_chat_command(
             sender_messages: vec!["This chat message is too long.".to_string()],
             delivered_message_bytes: Vec::new(),
         });
+    }
+
+    if let Some(player) = runtime.player_for_character_mut(sender_id) {
+        if let Some(messages) = legacy_swearing_feedback(
+            player,
+            sender.flags.contains(CharacterFlags::PLAYER),
+            sender.flags.contains(CharacterFlags::GOD),
+            text,
+            realtime_seconds,
+        ) {
+            return Some(ChatCommandResult {
+                sender_messages: Vec::new(),
+                delivered_message_bytes: messages
+                    .into_iter()
+                    .map(|message| (sender_id, message))
+                    .collect(),
+            });
+        }
     }
 
     if sender.flags.contains(CharacterFlags::PLAYER)
@@ -4890,6 +5120,7 @@ fn apply_tell_command(
     sender_id: CharacterId,
     command: &str,
     current_tick: u64,
+    realtime_seconds: u64,
 ) -> Option<TellCommandResult> {
     let (verb, rest) = command
         .split_once(char::is_whitespace)
@@ -4922,6 +5153,25 @@ fn apply_tell_command(
             delivered_messages: Vec::new(),
             delivered_message_bytes: Vec::new(),
         });
+    }
+
+    if let Some(player) = runtime.player_for_character_mut(sender_id) {
+        if let Some(messages) = legacy_swearing_feedback(
+            player,
+            sender.flags.contains(CharacterFlags::PLAYER),
+            sender.flags.contains(CharacterFlags::GOD),
+            message,
+            realtime_seconds,
+        ) {
+            return Some(TellCommandResult {
+                sender_messages: Vec::new(),
+                delivered_messages: Vec::new(),
+                delivered_message_bytes: messages
+                    .into_iter()
+                    .map(|message| (sender_id, message))
+                    .collect(),
+            });
+        }
     }
 
     let staffmode = sender
@@ -13158,6 +13408,48 @@ mod tests {
 
     use super::*;
 
+    fn apply_tell_command(
+        world: &World,
+        runtime: &mut ServerRuntime,
+        sender_id: CharacterId,
+        command: &str,
+        current_tick: u64,
+    ) -> Option<TellCommandResult> {
+        super::apply_tell_command(world, runtime, sender_id, command, current_tick, 1_000)
+    }
+
+    fn apply_chat_command(
+        world: &World,
+        runtime: &mut ServerRuntime,
+        sender_id: CharacterId,
+        command: &str,
+        area_id: u16,
+    ) -> Option<ChatCommandResult> {
+        super::apply_chat_command(world, runtime, sender_id, command, area_id, 1_000)
+    }
+
+    fn apply_local_speech_command(
+        world: &mut World,
+        runtime: &ServerRuntime,
+        sender_id: CharacterId,
+        command: &str,
+        current_tick: u64,
+    ) -> Option<ChatCommandResult> {
+        let mut runtime = ServerRuntime {
+            players: runtime.players.clone(),
+            staff_codes: runtime.staff_codes.clone(),
+            ..ServerRuntime::default()
+        };
+        super::apply_local_speech_command(
+            world,
+            &mut runtime,
+            sender_id,
+            command,
+            current_tick,
+            1_000,
+        )
+    }
+
     #[test]
     fn character_fireball_command_queues_character_target_action() {
         let queued = action_to_queued(&ClientAction::CharacterSpell {
@@ -17443,6 +17735,56 @@ mod tests {
         assert_eq!(
             self_tell.sender_messages,
             vec!["Told Alice: \"Hi\"", "Do you like talking to yourself?"]
+        );
+    }
+
+    #[test]
+    fn swearing_filter_blocks_bad_words_and_followup_chat_like_c() {
+        let mut world = World::default();
+        let sender_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        world.add_character(login_character(sender_id, &login_block("Alice"), 1, 10, 10));
+        world.add_character(login_character(target_id, &login_block("Bob"), 1, 11, 10));
+
+        let mut runtime = ServerRuntime::default();
+        runtime.players.insert(1, PlayerRuntime::connected(1, 0));
+        runtime.players.insert(2, PlayerRuntime::connected(2, 0));
+        runtime.players.get_mut(&1).unwrap().character_id = Some(sender_id);
+        runtime.players.get_mut(&2).unwrap().character_id = Some(target_id);
+
+        let blocked = super::apply_tell_command(
+            &world,
+            &mut runtime,
+            sender_id,
+            "/tell Bob fuck",
+            100,
+            1_000,
+        )
+        .expect("tell command should be recognized");
+        assert!(blocked.sender_messages.is_empty());
+        assert!(blocked.delivered_messages.is_empty());
+        assert_eq!(blocked.delivered_message_bytes.len(), 2);
+        assert_eq!(blocked.delivered_message_bytes[0].0, sender_id);
+        assert!(
+            String::from_utf8_lossy(&blocked.delivered_message_bytes[0].1)
+                .contains("Swearing is illegal in this game.")
+        );
+
+        let followup = super::apply_tell_command(
+            &world,
+            &mut runtime,
+            sender_id,
+            "/tell Bob hello",
+            101,
+            1_001,
+        )
+        .expect("tell command should be recognized");
+        assert!(followup.sender_messages.is_empty());
+        assert!(followup.delivered_messages.is_empty());
+        assert_eq!(followup.delivered_message_bytes.len(), 1);
+        assert!(
+            String::from_utf8_lossy(&followup.delivered_message_bytes[0].1)
+                .contains("Chat is blocked.")
         );
     }
 
@@ -24799,6 +25141,7 @@ async fn main() -> anyhow::Result<()> {
                                 character_id,
                                 &command,
                                 world.tick.0,
+                                u64::from(current_realtime_seconds()),
                             ) {
                                 for message in result.sender_messages {
                                     command_feedback.push((character_id, message));
@@ -24814,10 +25157,11 @@ async fn main() -> anyhow::Result<()> {
                             let current_tick = world.tick.0;
                             if let Some(result) = apply_local_speech_command(
                                 &mut world,
-                                &runtime,
+                                &mut runtime,
                                 character_id,
                                 &command,
                                 current_tick,
+                                u64::from(current_realtime_seconds()),
                             ) {
                                 for message in result.sender_messages {
                                     command_feedback.push((character_id, message));
@@ -24833,6 +25177,7 @@ async fn main() -> anyhow::Result<()> {
                                 character_id,
                                 &command,
                                 config.area_id,
+                                u64::from(current_realtime_seconds()),
                             ) {
                                 for message in result.sender_messages {
                                     command_feedback.push((character_id, message));
