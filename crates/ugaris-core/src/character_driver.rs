@@ -34,6 +34,7 @@ pub const CDR_LAB2UNDEAD: u16 = 198;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
+pub const DRD_LAB2_UNDEAD: u32 = 0x0200_0001;
 
 pub const NT_CHAR: i32 = 1;
 pub const NT_ITEM: i32 = 2;
@@ -79,12 +80,50 @@ pub struct CharacterDriverMessage {
 pub enum CharacterDriverState {
     SimpleBaddy(SimpleBaddyDriverData),
     Clara(ClaraDriverData),
+    Lab2Undead(Lab2UndeadDriverData),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClaraDriverData {
     pub last_talk_tick: i32,
     pub current_victim: Option<CharacterId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Lab2UndeadDriverData {
+    pub aggressive: i32,
+    pub helper: i32,
+    pub undead: i32,
+    pub patrol: i32,
+    pub pat: u8,
+    pub patstep: u8,
+    pub patx: [u8; 8],
+    pub paty: [u8; 8],
+    pub grave_item_id: Option<ItemId>,
+    pub regenerate_item_id: Option<ItemId>,
+    pub opened_by_character_id: Option<CharacterId>,
+    pub opened_by_serial: u32,
+    pub next_wait_tick: i32,
+}
+
+impl Default for Lab2UndeadDriverData {
+    fn default() -> Self {
+        Self {
+            aggressive: 0,
+            helper: 0,
+            undead: 0,
+            patrol: 0,
+            pat: 0,
+            patstep: 0,
+            patx: [0; 8],
+            paty: [0; 8],
+            grave_item_id: None,
+            regenerate_item_id: None,
+            opened_by_character_id: None,
+            opened_by_serial: 0,
+            next_wait_tick: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -276,7 +315,9 @@ pub fn apply_simple_baddy_create_message(
 ) -> Vec<UnknownSimpleBaddyArgument> {
     let mut data = match character.driver_state.take() {
         Some(CharacterDriverState::SimpleBaddy(data)) => data,
-        Some(CharacterDriverState::Clara(_)) => SimpleBaddyDriverData::default(),
+        Some(CharacterDriverState::Clara(_) | CharacterDriverState::Lab2Undead(_)) => {
+            SimpleBaddyDriverData::default()
+        }
         None => SimpleBaddyDriverData::default(),
     };
 
@@ -302,6 +343,74 @@ pub fn apply_simple_baddy_create_message(
     }
 
     unknown
+}
+
+pub fn parse_lab2_undead_driver_args(
+    args: &str,
+) -> (Lab2UndeadDriverData, Vec<UnknownSimpleBaddyArgument>) {
+    let mut data = Lab2UndeadDriverData::default();
+    let mut unknown = Vec::new();
+    let mut rest = args;
+
+    while let Some((name, value, next)) = next_legacy_name_value(rest) {
+        let parsed = value.parse::<i32>().unwrap_or(0);
+        match name {
+            "aggressive" => data.aggressive = parsed,
+            "helper" => data.helper = parsed,
+            "patrol" => data.patrol = parsed,
+            "undead" => data.undead = parsed,
+            _ => unknown.push(UnknownSimpleBaddyArgument {
+                name: name.to_string(),
+                value: value.to_string(),
+            }),
+        }
+        rest = next;
+    }
+
+    (data, unknown)
+}
+
+pub fn apply_lab2_undead_create_message(
+    character: &mut Character,
+    args: Option<&str>,
+) -> Vec<UnknownSimpleBaddyArgument> {
+    let mut data = match character.driver_state.take() {
+        Some(CharacterDriverState::Lab2Undead(data)) => data,
+        _ => Lab2UndeadDriverData::default(),
+    };
+
+    let unknown = if let Some(args) = args.filter(|args| !args.is_empty()) {
+        let parsed = parse_lab2_undead_driver_args(args);
+        data = parsed.0;
+        parsed.1
+    } else {
+        Vec::new()
+    };
+
+    apply_lab2_undead_patrol_defaults(&mut data);
+    character.driver_state = Some(CharacterDriverState::Lab2Undead(data));
+    character
+        .driver_messages
+        .retain(|message| message.message_type != NT_CREATE);
+    unknown
+}
+
+fn apply_lab2_undead_patrol_defaults(data: &mut Lab2UndeadDriverData) {
+    match data.patrol {
+        1 => {
+            data.patx = [168, 168, 204, 204, 0, 0, 0, 0];
+            data.paty = [178, 218, 218, 178, 0, 0, 0, 0];
+            data.patstep = 4;
+            data.helper = 0;
+        }
+        2 => {
+            data.patx = [171, 138, 138, 165, 167, 138, 138, 171];
+            data.paty = [164, 164, 146, 146, 146, 146, 164, 164];
+            data.patstep = 8;
+            data.helper = 0;
+        }
+        _ => {}
+    }
 }
 
 pub fn process_simple_baddy_messages(
@@ -773,6 +882,7 @@ pub enum CharacterDriverKind {
     TeufelQuest,
     TeufelRat,
     CaligarSkelly,
+    Lab2Undead,
 }
 
 impl CharacterDriverKind {
@@ -791,6 +901,7 @@ impl CharacterDriverKind {
             CDR_TEUFELQUEST => Some(Self::TeufelQuest),
             CDR_TEUFELRAT => Some(Self::TeufelRat),
             CDR_CALIGARSKELLY => Some(Self::CaligarSkelly),
+            CDR_LAB2UNDEAD => Some(Self::Lab2Undead),
             _ => None,
         }
     }
@@ -810,6 +921,7 @@ impl CharacterDriverKind {
             Self::TeufelQuest => CDR_TEUFELQUEST,
             Self::TeufelRat => CDR_TEUFELRAT,
             Self::CaligarSkelly => CDR_CALIGARSKELLY,
+            Self::Lab2Undead => CDR_LAB2UNDEAD,
         }
     }
 }
@@ -924,6 +1036,7 @@ mod tests {
         assert_eq!(CDR_TEUFELQUEST, 116);
         assert_eq!(CDR_TEUFELRAT, 117);
         assert_eq!(CDR_CALIGARSKELLY, 124);
+        assert_eq!(CDR_LAB2UNDEAD, 198);
         assert_eq!(DRD_SIMPLEBADDYDRIVER, 0x0100_0013);
         assert_eq!(
             CharacterDriverKind::SimpleBaddy.legacy_id(),
@@ -959,7 +1072,9 @@ mod tests {
             CharacterDriverKind::CaligarSkelly.legacy_id(),
             CDR_CALIGARSKELLY
         );
+        assert_eq!(CharacterDriverKind::Lab2Undead.legacy_id(), CDR_LAB2UNDEAD);
         assert_eq!(DRD_CLARADRIVER, 0x0100_0059);
+        assert_eq!(DRD_LAB2_UNDEAD, 0x0200_0001);
     }
 
     #[test]
@@ -994,6 +1109,7 @@ mod tests {
             (CDR_TEUFELGAMBLER, CharacterDriverKind::TeufelGambler),
             (CDR_TEUFELQUEST, CharacterDriverKind::TeufelQuest),
             (CDR_TEUFELRAT, CharacterDriverKind::TeufelRat),
+            (CDR_LAB2UNDEAD, CharacterDriverKind::Lab2Undead),
         ] {
             let outcome = execute_character_driver(driver, 7, 11);
             assert_eq!(
@@ -1121,6 +1237,28 @@ mod tests {
             }
         );
         assert_eq!(swamp_monster_respawn.legacy_return_code(), 1);
+
+        let lab2_undead_died = execute_character_died_driver(CDR_LAB2UNDEAD, 123);
+        assert_eq!(
+            lab2_undead_died,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::Lab2Undead,
+                call: CharacterDriverCall::Died {
+                    killer_character_id: 123,
+                },
+            }
+        );
+        assert_eq!(lab2_undead_died.legacy_return_code(), 1);
+
+        let lab2_undead_respawn = execute_character_respawn_driver(CDR_LAB2UNDEAD);
+        assert_eq!(
+            lab2_undead_respawn,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::Lab2Undead,
+                call: CharacterDriverCall::Respawn,
+            }
+        );
+        assert_eq!(lab2_undead_respawn.legacy_return_code(), 1);
     }
 
     #[test]
@@ -1215,6 +1353,51 @@ mod tests {
         assert_eq!(data.startdist, 9);
         assert_eq!(data.drink_inventory_potions, 1);
         assert_eq!(data.creation_time, 1234);
+    }
+
+    #[test]
+    fn lab2_undead_create_parses_legacy_args_and_graveyard_patrol() {
+        let mut character = test_character();
+        character.push_driver_message(NT_CREATE, 0, 0, 0);
+
+        let unknown = apply_lab2_undead_create_message(
+            &mut character,
+            Some("aggressive=1; helper=1; patrol=1; undead=1; strange=7;"),
+        );
+
+        assert_eq!(
+            unknown,
+            vec![UnknownSimpleBaddyArgument {
+                name: "strange".to_string(),
+                value: "7".to_string(),
+            }]
+        );
+        assert!(character.driver_messages.is_empty());
+        let Some(CharacterDriverState::Lab2Undead(data)) = character.driver_state else {
+            panic!("lab2 undead state missing");
+        };
+        assert_eq!(data.aggressive, 1);
+        assert_eq!(data.helper, 0);
+        assert_eq!(data.undead, 1);
+        assert_eq!(data.patrol, 1);
+        assert_eq!(data.patstep, 4);
+        assert_eq!(&data.patx[..4], &[168, 168, 204, 204]);
+        assert_eq!(&data.paty[..4], &[178, 218, 218, 178]);
+    }
+
+    #[test]
+    fn lab2_undead_crypt_patrol_matches_c_coordinate_table() {
+        let mut character = test_character();
+
+        apply_lab2_undead_create_message(&mut character, Some("helper=1; patrol=2;"));
+
+        let Some(CharacterDriverState::Lab2Undead(data)) = character.driver_state else {
+            panic!("lab2 undead state missing");
+        };
+        assert_eq!(data.helper, 0);
+        assert_eq!(data.patstep, 8);
+        assert_eq!(data.patx, [171, 138, 138, 165, 167, 138, 138, 171]);
+        assert_eq!(data.paty, [164, 164, 146, 146, 146, 146, 164, 164]);
     }
 
     #[test]

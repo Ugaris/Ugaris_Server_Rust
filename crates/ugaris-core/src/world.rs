@@ -4014,7 +4014,7 @@ impl World {
         let character = self.characters.get(&character_id)?;
         match character.driver_state.as_ref()? {
             CharacterDriverState::SimpleBaddy(data) => Some(data.lastfight),
-            CharacterDriverState::Clara(_) => None,
+            CharacterDriverState::Clara(_) | CharacterDriverState::Lab2Undead(_) => None,
         }
     }
 
@@ -5560,7 +5560,7 @@ impl World {
                         .map(|enemy| enemy.target_id)
                         .collect::<Vec<_>>(),
                 ),
-                CharacterDriverState::Clara(_) => None,
+                CharacterDriverState::Clara(_) | CharacterDriverState::Lab2Undead(_) => None,
             })
             .unwrap_or_default()
     }
@@ -6475,7 +6475,7 @@ impl World {
             .and_then(|character| character.driver_state.as_ref())
             .and_then(|state| match state {
                 CharacterDriverState::SimpleBaddy(data) => data.pending_bless_friend,
-                CharacterDriverState::Clara(_) => None,
+                CharacterDriverState::Clara(_) | CharacterDriverState::Lab2Undead(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;
