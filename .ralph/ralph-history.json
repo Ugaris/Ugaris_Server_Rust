@@ -1836,13 +1836,32 @@
         "test result: ok. 957 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 72,
+      "startedAt": "2026-07-01T09:20:53.991Z",
+      "endedAt": "2026-07-01T09:25:50.563Z",
+      "durationMs": 296328,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/PORTING_LEDGER.md:",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 951 filtered out; finished in 0.00s",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 46964562,
+  "totalDurationMs": 47260890,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 25,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 26,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 3,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
@@ -2099,7 +2118,9 @@
       "test result: ok. 956 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 956 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 955 filtered out; finished in 0.00s": 1,
-      "test result: ok. 957 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 957 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 951 filtered out; finished in 0.00s": 1,
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
