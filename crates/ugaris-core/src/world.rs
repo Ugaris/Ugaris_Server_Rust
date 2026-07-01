@@ -6287,6 +6287,28 @@ impl World {
         area_id: u16,
         completions: &[WorldActionCompletion],
     ) -> usize {
+        let mut seed = self.legacy_random_seed;
+        let count = self.process_simple_baddy_noncombat_actions_with_random_and_completions(
+            area_id,
+            completions,
+            |below| {
+                if below <= 0 {
+                    0
+                } else {
+                    legacy_random_below_from_seed(&mut seed, below as u32) as i32
+                }
+            },
+        );
+        self.legacy_random_seed = seed;
+        count
+    }
+
+    pub fn process_simple_baddy_noncombat_actions_with_random_and_completions(
+        &mut self,
+        area_id: u16,
+        completions: &[WorldActionCompletion],
+        mut random_below: impl FnMut(i32) -> i32,
+    ) -> usize {
         let character_ids: Vec<_> = self
             .characters
             .iter()
@@ -6309,11 +6331,12 @@ impl World {
                     .find(|completion| completion.character_id == character_id)
                     .map(|completion| (completion.legacy_return_code, completion.action_id))
                     .unwrap_or((0, 0));
-                self.process_simple_baddy_noncombat_action_with_context(
+                self.process_simple_baddy_noncombat_action_with_random_and_context(
                     character_id,
                     area_id,
                     ret,
                     last_action,
+                    &mut random_below,
                 )
             })
             .count()
@@ -19747,6 +19770,32 @@ mod tests {
         };
         assert_eq!(data.dir, Direction::Right as i32);
         assert_eq!((data.home_x, data.home_y), (10, 10));
+    }
+
+    #[test]
+    fn simple_baddy_bulk_noncombat_uses_legacy_rng_seed_for_wander() {
+        let mut world = World::default();
+        world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+        world.legacy_random_seed = 0;
+        let mut npc = character(1);
+        npc.driver = CDR_SIMPLEBADDY;
+        npc.rest_x = 10;
+        npc.rest_y = 10;
+        npc.values[0][CharacterValue::Speed as usize] = 50;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            scavenger: 4,
+            dir: 0,
+            ..SimpleBaddyDriverData::default()
+        }));
+        world.spawn_character(npc, 10, 10);
+
+        assert_eq!(world.process_simple_baddy_noncombat_actions(1), 1);
+
+        let npc = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(npc.action, action::WALK);
+        assert_eq!((npc.tox, npc.toy), (10, 9));
+        assert_eq!(npc.dir, Direction::Up as u8);
+        assert_ne!(world.legacy_random_seed, 0);
     }
 
     #[test]
