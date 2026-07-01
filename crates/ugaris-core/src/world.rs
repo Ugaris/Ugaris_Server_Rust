@@ -8,8 +8,8 @@ use crate::{
         remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, CharacterDriverState,
         Lab2UndeadDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_LAB2UNDEAD,
         CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK,
-        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_NPC,
-        NT_SEEHIT, NT_SPELL,
+        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT,
+        NT_NPC, NT_SEEHIT, NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -6767,6 +6767,13 @@ impl World {
         let mut handled = 0;
 
         for message in messages {
+            if message.message_type == NT_CHAR {
+                handled += usize::from(self.remove_lab2_undead_crypt_corridor_enemy(
+                    character_id,
+                    CharacterId(message.dat1.max(0) as u32),
+                ));
+                continue;
+            }
             if message.message_type != NT_GIVE {
                 continue;
             }
@@ -6862,6 +6869,55 @@ impl World {
         }
 
         handled
+    }
+
+    fn remove_lab2_undead_crypt_corridor_enemy(
+        &mut self,
+        character_id: CharacterId,
+        target_id: CharacterId,
+    ) -> bool {
+        const SECOND_CORRIDOR_MIN_X: u16 = 169;
+        const SECOND_CORRIDOR_MIN_Y: u16 = 154;
+        const SECOND_CORRIDOR_MAX_X: u16 = 188;
+        const SECOND_CORRIDOR_MAX_Y: u16 = 158;
+
+        if character_id == target_id {
+            return false;
+        }
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if !matches!(
+            character.driver_state,
+            Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+                patrol: 2,
+                ..
+            }))
+        ) {
+            return false;
+        }
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        if target.x < SECOND_CORRIDOR_MIN_X
+            || target.y < SECOND_CORRIDOR_MIN_Y
+            || target.x > SECOND_CORRIDOR_MAX_X
+            || target.y > SECOND_CORRIDOR_MAX_Y
+            || !char_see_char(&character, &target, &self.map, self.date.daylight)
+        {
+            return false;
+        }
+
+        let Some(CharacterDriverState::Lab2Undead(data)) = self
+            .characters
+            .get_mut(&character_id)
+            .and_then(|character| character.driver_state.as_mut())
+        else {
+            return false;
+        };
+        let previous_len = data.enemies.len();
+        data.enemies.retain(|enemy| enemy.target_id != target_id);
+        data.enemies.len() != previous_len
     }
 
     pub fn process_lab2_undead_patrol_action(
@@ -29620,6 +29676,66 @@ mod tests {
             world.drain_pending_area_texts()[0].message,
             "Mwahahahaha..."
         );
+    }
+
+    #[test]
+    fn lab2_undead_crypt_patrol_removes_visible_second_corridor_enemy() {
+        let mut world = World::default();
+        let mut undead = character(2);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+            patrol: 2,
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(1),
+                priority: 1,
+                last_seen_tick: 90,
+                visible: true,
+                last_x: 170,
+                last_y: 155,
+            }],
+            ..Lab2UndeadDriverData::default()
+        }));
+        undead.push_driver_message(NT_CHAR, 1, 0, 0);
+        assert!(world.spawn_character(undead, 171, 156));
+        assert!(world.spawn_character(character(1), 170, 155));
+
+        assert_eq!(world.process_lab2_undead_message_actions(CharacterId(2)), 1);
+
+        let undead = world.characters.get(&CharacterId(2)).unwrap();
+        let Some(CharacterDriverState::Lab2Undead(data)) = undead.driver_state.as_ref() else {
+            panic!("lab2 undead state missing");
+        };
+        assert!(data.enemies.is_empty());
+    }
+
+    #[test]
+    fn lab2_undead_crypt_patrol_keeps_enemy_outside_second_corridor() {
+        let mut world = World::default();
+        let mut undead = character(2);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+            patrol: 2,
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: CharacterId(1),
+                priority: 1,
+                last_seen_tick: 90,
+                visible: true,
+                last_x: 170,
+                last_y: 159,
+            }],
+            ..Lab2UndeadDriverData::default()
+        }));
+        undead.push_driver_message(NT_CHAR, 1, 0, 0);
+        assert!(world.spawn_character(undead, 171, 156));
+        assert!(world.spawn_character(character(1), 170, 159));
+
+        assert_eq!(world.process_lab2_undead_message_actions(CharacterId(2)), 0);
+
+        let undead = world.characters.get(&CharacterId(2)).unwrap();
+        let Some(CharacterDriverState::Lab2Undead(data)) = undead.driver_state.as_ref() else {
+            panic!("lab2 undead state missing");
+        };
+        assert_eq!(data.enemies.len(), 1);
     }
 
     #[test]

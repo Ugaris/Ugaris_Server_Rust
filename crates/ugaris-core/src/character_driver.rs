@@ -106,6 +106,8 @@ pub struct Lab2UndeadDriverData {
     pub opened_by_character_id: Option<CharacterId>,
     pub opened_by_serial: u32,
     pub next_wait_tick: i32,
+    #[serde(default)]
+    pub enemies: Vec<SimpleBaddyEnemy>,
 }
 
 impl Default for Lab2UndeadDriverData {
@@ -124,6 +126,7 @@ impl Default for Lab2UndeadDriverData {
             opened_by_character_id: None,
             opened_by_serial: 0,
             next_wait_tick: 0,
+            enemies: Vec::new(),
         }
     }
 }
