@@ -1090,9 +1090,30 @@
         "test result: ok. 915 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 43,
+      "startedAt": "2026-07-01T05:20:19.283Z",
+      "endedAt": "2026-07-01T05:25:28.221Z",
+      "durationMs": 308767,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error; 1 warning emitted",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 309 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 310 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 32615135,
+  "totalDurationMs": 32923902,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1108,7 +1129,7 @@
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 9,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 10,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 29,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 27,
@@ -1241,7 +1262,10 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 911 filtered out; finished in 0.00s": 1,
       "test result: ok. 914 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 914 filtered out; finished in 0.00s": 1,
-      "test result: ok. 915 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1
+      "test result: ok. 915 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error; 1 warni": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 309 filtered out; finished in 0.00s": 1,
+      "test result: ok. 310 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

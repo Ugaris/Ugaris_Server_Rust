@@ -37,8 +37,8 @@ use ugaris_core::{
         IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_ISLENADOOR,
         IDR_KEY_RING, IDR_LAB2_GRAVE, IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_RATCHEST,
         IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE, IDR_WARPBONUS, IID_AREA17_LIBRARYKEY,
-        IID_AREA17_LOCKPICK, IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_AREA2_ZOMBIESKULL1,
-        IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
+        IID_AREA17_LOCKPICK, IID_AREA25_DOORKEY, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2,
+        IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
         can_use_inventory_slot, consume_item, give_item_to_character, replace_item_in_character,
@@ -12160,6 +12160,47 @@ fn account_depot_sort(depot: &mut AccountDepotState) {
     });
 }
 
+fn inventory_sort(world: &mut World, character_id: CharacterId) -> bool {
+    let Some(inventory) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.inventory.clone())
+    else {
+        return false;
+    };
+
+    let mut sorted = inventory;
+    sorted[INVENTORY_START_INVENTORY..].sort_by(|left, right| match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (Some(left), Some(right)) => {
+            let left = world.items.get(left);
+            let right = world.items.get(right);
+            match (left, right) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (Some(left), Some(right)) => right
+                    .value
+                    .cmp(&left.value)
+                    .then_with(|| right.sprite.cmp(&left.sprite))
+                    .then_with(|| {
+                        left.name[..left.name.len().min(35)]
+                            .cmp(&right.name[..right.name.len().min(35)])
+                    }),
+            }
+        }
+    });
+
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return false;
+    };
+    character.inventory = sorted;
+    character.flags.insert(CharacterFlags::ITEMS);
+    true
+}
+
 const IDR_FLASK: u16 = 32;
 const IDR_BEYONDPOTION: u16 = 133;
 const IID_HARDKILL: u32 = (1 << 24) | 0x00005D;
@@ -20385,6 +20426,48 @@ mod tests {
     }
 
     #[test]
+    fn inventory_sort_matches_legacy_value_sprite_name_order() {
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.inventory[0] = Some(ItemId(99));
+        character.inventory[30] = Some(ItemId(1));
+        character.inventory[31] = None;
+        character.inventory[32] = Some(ItemId(2));
+        character.inventory[33] = Some(ItemId(3));
+        character.inventory[34] = Some(ItemId(4));
+        let mut world = World::default();
+        world.add_character(character);
+
+        let mut low_value = test_item(ItemId(1), 500, ItemFlags::USED);
+        low_value.name = "Low".to_string();
+        low_value.value = 10;
+        world.add_item(low_value);
+        let mut same_value_high_sprite = test_item(ItemId(2), 700, ItemFlags::USED);
+        same_value_high_sprite.name = "Zulu".to_string();
+        same_value_high_sprite.value = 50;
+        world.add_item(same_value_high_sprite);
+        let mut same_value_low_sprite_a = test_item(ItemId(3), 600, ItemFlags::USED);
+        same_value_low_sprite_a.name = "Alpha".to_string();
+        same_value_low_sprite_a.value = 50;
+        world.add_item(same_value_low_sprite_a);
+        let mut same_value_low_sprite_b = test_item(ItemId(4), 600, ItemFlags::USED);
+        same_value_low_sprite_b.name = "Beta".to_string();
+        same_value_low_sprite_b.value = 50;
+        world.add_item(same_value_low_sprite_b);
+
+        assert!(inventory_sort(&mut world, character_id));
+
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.inventory[0], Some(ItemId(99)));
+        assert_eq!(character.inventory[30], Some(ItemId(2)));
+        assert_eq!(character.inventory[31], Some(ItemId(3)));
+        assert_eq!(character.inventory[32], Some(ItemId(4)));
+        assert_eq!(character.inventory[33], Some(ItemId(1)));
+        assert_eq!(character.inventory[34], None);
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+    }
+
+    #[test]
     fn account_depot_blob_encodes_c_struct_item_layout() {
         let mut depot = AccountDepotState::default();
         let mut item = test_item(
@@ -25012,6 +25095,11 @@ async fn main() -> anyhow::Result<()> {
                                     continue;
                                 }
                                 command = player.expand_aliases(&command);
+                            }
+                            if command.eq_ignore_ascii_case("sort") {
+                                inventory_sort(&mut world, character_id);
+                                command_inventory_refresh.push(character_id);
+                                continue;
                             }
                             if command.eq_ignore_ascii_case("accountdepotsort") {
                                 if let Some(depot) = runtime.account_depots.get_mut(&character_id) {

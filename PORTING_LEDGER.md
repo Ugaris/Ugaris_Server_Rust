@@ -137,6 +137,7 @@ Last verified after the `IDR_FREAKDOOR` paired-door slice:
 - Movement stutter was caused by sending a full visible diamond after every completed walk. One-tile walks now send `SV_SCROLL_*`, `SV_ORIGIN`, old-position character clear, center character update, and newly visible fringe tile/character packets.
 - Full visible-diamond refresh is still used for non-walk actions until a proper cached map-diff system is ported.
 - `PAC_LOOK_MAP` no longer drops pending output in the server loop. It now sends legacy `SV_TEXT` feedback for hidden targets (`Too far away or hidden.`), area 1 `show_section`-style section names and level-difficulty text, coordinate fallback for areas without ported section tables, and the exact rest/clan/arena/peace zone flag messages.
+- The runtime text command loop now handles legacy `/sort`, sorting only inventory slots 30+ with the C ordering (empty slots last, value descending, sprite descending, then first-35-byte name ascending) and refreshing inventory after the command.
 
 ### Chest Driver State
 
