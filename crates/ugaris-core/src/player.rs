@@ -117,6 +117,8 @@ pub const ALIAS_MAX_ENTRIES: usize = 32;
 pub const ALIAS_FROM_LEN: usize = 8;
 pub const ALIAS_TO_LEN: usize = 56;
 pub const LEGACY_ALIAS_PPD_SIZE: usize = ALIAS_MAX_ENTRIES * (ALIAS_FROM_LEN + ALIAS_TO_LEN);
+pub const WARP_BONUS_COUNT: usize = 50;
+pub const LEGACY_WARP_PPD_SIZE: usize = 4 + 4 + WARP_BONUS_COUNT * 4 + WARP_BONUS_COUNT * 4 + 4;
 pub const PERSISTENT_PLAYER_DATA: u32 = 1 << 31;
 pub const PERSISTENT_SUBSCRIBER_DATA: u32 = 1 << 30;
 pub const DEV_ID_DB: u32 = 1;
@@ -150,8 +152,15 @@ pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TWOCITY_PPD: u32 = make_drd(DEV_ID_DB, 97 | PERSISTENT_PLAYER_DATA);
 pub const DRD_LAB_PPD: u32 = make_drd(DEV_ID_DB, 116 | PERSISTENT_PLAYER_DATA);
+pub const DRD_WARP_PPD: u32 = make_drd(DEV_ID_DB, 127 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
 pub const SPECIAL_SHRINE_CONFIRM_WINDOW_SECONDS: u64 = 10;
+
+const WARP_PPD_BASE_OFFSET: usize = 0;
+const WARP_PPD_POINTS_OFFSET: usize = WARP_PPD_BASE_OFFSET + 4;
+const WARP_PPD_BONUS_ID_OFFSET: usize = WARP_PPD_POINTS_OFFSET + 4;
+const WARP_PPD_BONUS_LAST_USED_OFFSET: usize = WARP_PPD_BONUS_ID_OFFSET + WARP_BONUS_COUNT * 4;
+const WARP_PPD_NOSTEPEXP_OFFSET: usize = WARP_PPD_BONUS_LAST_USED_OFFSET + WARP_BONUS_COUNT * 4;
 
 pub const fn make_drd(dev_id: u32, nr: u32) -> u32 {
     (dev_id << 24) | nr
@@ -440,6 +449,18 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub lab_ppd: Vec<u8>,
     #[serde(default)]
+    pub warp_ppd: Vec<u8>,
+    #[serde(default)]
+    pub warp_base: i32,
+    #[serde(default)]
+    pub warp_points: i32,
+    #[serde(default)]
+    pub warp_bonus_ids: Vec<i32>,
+    #[serde(default)]
+    pub warp_bonus_last_used: Vec<i32>,
+    #[serde(default)]
+    pub warp_nostepexp: i32,
+    #[serde(default)]
     pub lab_solved_bits: u64,
     #[serde(default)]
     pub lab2_grave_bits: Vec<u8>,
@@ -552,6 +573,12 @@ impl PlayerRuntime {
             teufel_rat_score: 0,
             twocity_ppd: Vec::new(),
             lab_ppd: Vec::new(),
+            warp_ppd: Vec::new(),
+            warp_base: 0,
+            warp_points: 0,
+            warp_bonus_ids: vec![0; WARP_BONUS_COUNT],
+            warp_bonus_last_used: vec![0; WARP_BONUS_COUNT],
+            warp_nostepexp: 0,
             lab_solved_bits: 0,
             lab2_grave_bits: Vec::new(),
             pk_kills: 0,
@@ -977,6 +1004,51 @@ impl PlayerRuntime {
         }
         self.lab_ppd = bytes.to_vec();
         self.lab_solved_bits = read_u64(bytes, 0);
+        true
+    }
+
+    pub fn encode_legacy_warp_ppd(&self) -> Vec<u8> {
+        let mut bytes = self.warp_ppd.clone();
+        bytes.resize(LEGACY_WARP_PPD_SIZE, 0);
+        write_i32(&mut bytes, WARP_PPD_BASE_OFFSET, self.warp_base);
+        write_i32(&mut bytes, WARP_PPD_POINTS_OFFSET, self.warp_points);
+        for index in 0..WARP_BONUS_COUNT {
+            write_i32(
+                &mut bytes,
+                WARP_PPD_BONUS_ID_OFFSET + index * 4,
+                self.warp_bonus_ids.get(index).copied().unwrap_or_default(),
+            );
+        }
+        for index in 0..WARP_BONUS_COUNT {
+            write_i32(
+                &mut bytes,
+                WARP_PPD_BONUS_LAST_USED_OFFSET + index * 4,
+                self.warp_bonus_last_used
+                    .get(index)
+                    .copied()
+                    .unwrap_or_default(),
+            );
+        }
+        write_i32(&mut bytes, WARP_PPD_NOSTEPEXP_OFFSET, self.warp_nostepexp);
+        bytes
+    }
+
+    pub fn decode_legacy_warp_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_WARP_PPD_SIZE {
+            return false;
+        }
+        self.warp_ppd = bytes[..LEGACY_WARP_PPD_SIZE].to_vec();
+        self.warp_base = read_i32(&self.warp_ppd, WARP_PPD_BASE_OFFSET);
+        self.warp_points = read_i32(&self.warp_ppd, WARP_PPD_POINTS_OFFSET);
+        self.warp_bonus_ids.resize(WARP_BONUS_COUNT, 0);
+        self.warp_bonus_last_used.resize(WARP_BONUS_COUNT, 0);
+        for index in 0..WARP_BONUS_COUNT {
+            self.warp_bonus_ids[index] =
+                read_i32(&self.warp_ppd, WARP_PPD_BONUS_ID_OFFSET + index * 4);
+            self.warp_bonus_last_used[index] =
+                read_i32(&self.warp_ppd, WARP_PPD_BONUS_LAST_USED_OFFSET + index * 4);
+        }
+        self.warp_nostepexp = read_i32(&self.warp_ppd, WARP_PPD_NOSTEPEXP_OFFSET);
         true
     }
 
@@ -1989,6 +2061,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_WARP_PPD => {
+                    if !self.decode_legacy_warp_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_PK_PPD => {
                     if !self.decode_legacy_pk_ppd(block.data) {
                         return false;
@@ -2106,6 +2183,7 @@ impl PlayerRuntime {
         let mut had_treasure_chest = false;
         let mut had_transport = false;
         let mut had_lab = false;
+        let mut had_warp = false;
         let mut had_pk = false;
         let mut had_randchest = false;
         let mut had_ratchest = false;
@@ -2161,6 +2239,9 @@ impl PlayerRuntime {
             } else if block.id == DRD_LAB_PPD {
                 had_lab = true;
                 write_ppd_block(&mut encoded, DRD_LAB_PPD, &self.encode_legacy_lab_ppd());
+            } else if block.id == DRD_WARP_PPD {
+                had_warp = true;
+                write_ppd_block(&mut encoded, DRD_WARP_PPD, &self.encode_legacy_warp_ppd());
             } else if block.id == DRD_PK_PPD {
                 had_pk = true;
                 write_ppd_block(&mut encoded, DRD_PK_PPD, &self.encode_legacy_pk_ppd());
@@ -2322,6 +2403,17 @@ impl PlayerRuntime {
             && (self.lab_solved_bits != 0 || !self.lab_ppd.is_empty())
         {
             write_ppd_block(&mut encoded, DRD_LAB_PPD, &self.encode_legacy_lab_ppd());
+        }
+        if !had_warp && (existing_was_valid || existing.is_empty()) {
+            if self.warp_base != 0
+                || self.warp_points != 0
+                || self.warp_nostepexp != 0
+                || self.warp_bonus_ids.iter().any(|value| *value != 0)
+                || self.warp_bonus_last_used.iter().any(|value| *value != 0)
+                || !self.warp_ppd.is_empty()
+            {
+                write_ppd_block(&mut encoded, DRD_WARP_PPD, &self.encode_legacy_warp_ppd());
+            }
         }
         if !had_pk && (existing_was_valid || existing.is_empty()) {
             if self.pk_kills != 0
@@ -4283,6 +4375,96 @@ mod tests {
         assert_eq!(read_u32(&encoded, 0), DRD_TRANSPORT_PPD);
         assert_eq!(read_u32(&encoded, 4), LEGACY_TRANSPORT_PPD_SIZE as u32);
         assert_eq!(read_u64(&encoded, 8), 1_u64 << 5);
+    }
+
+    #[test]
+    fn warp_ppd_fixed_layout_round_trips() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.warp_base = 55;
+        player.warp_points = 7;
+        player.warp_bonus_ids[0] = 0x0019_0203;
+        player.warp_bonus_ids[49] = 0x0019_0405;
+        player.warp_bonus_last_used[0] = 40;
+        player.warp_bonus_last_used[49] = 50;
+        player.warp_nostepexp = 1;
+
+        let encoded = player.encode_legacy_warp_ppd();
+        assert_eq!(encoded.len(), LEGACY_WARP_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, WARP_PPD_BASE_OFFSET), 55);
+        assert_eq!(read_i32(&encoded, WARP_PPD_POINTS_OFFSET), 7);
+        assert_eq!(read_i32(&encoded, WARP_PPD_BONUS_ID_OFFSET), 0x0019_0203);
+        assert_eq!(
+            read_i32(&encoded, WARP_PPD_BONUS_ID_OFFSET + 49 * 4),
+            0x0019_0405
+        );
+        assert_eq!(read_i32(&encoded, WARP_PPD_BONUS_LAST_USED_OFFSET), 40);
+        assert_eq!(
+            read_i32(&encoded, WARP_PPD_BONUS_LAST_USED_OFFSET + 49 * 4),
+            50
+        );
+        assert_eq!(read_i32(&encoded, WARP_PPD_NOSTEPEXP_OFFSET), 1);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_warp_ppd(&encoded));
+        assert_eq!(decoded.warp_base, 55);
+        assert_eq!(decoded.warp_points, 7);
+        assert_eq!(decoded.warp_bonus_ids[0], 0x0019_0203);
+        assert_eq!(decoded.warp_bonus_ids[49], 0x0019_0405);
+        assert_eq!(decoded.warp_bonus_last_used[0], 40);
+        assert_eq!(decoded.warp_bonus_last_used[49], 50);
+        assert_eq!(decoded.warp_nostepexp, 1);
+    }
+
+    #[test]
+    fn warp_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_warp = vec![0; LEGACY_WARP_PPD_SIZE];
+        write_i32(&mut existing_warp, WARP_PPD_BASE_OFFSET, 40);
+        write_i32(&mut existing_warp, WARP_PPD_BONUS_ID_OFFSET, 0x0019_0101);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_WARP_PPD, &existing_warp);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.warp_base = 60;
+        player.warp_points = 3;
+        player.warp_bonus_ids[1] = 0x0019_0203;
+        player.warp_bonus_last_used[1] = 55;
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_WARP_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_WARP_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20 + WARP_PPD_BASE_OFFSET), 60);
+        assert_eq!(read_i32(&encoded, 20 + WARP_PPD_POINTS_OFFSET), 3);
+        assert_eq!(read_i32(&encoded, 20 + WARP_PPD_BONUS_ID_OFFSET), 0);
+        assert_eq!(
+            read_i32(&encoded, 20 + WARP_PPD_BONUS_ID_OFFSET + 4),
+            0x0019_0203
+        );
+        assert_eq!(
+            read_i32(&encoded, 20 + WARP_PPD_BONUS_LAST_USED_OFFSET + 4),
+            55
+        );
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.warp_base, 60);
+        assert_eq!(decoded.warp_points, 3);
+        assert_eq!(decoded.warp_bonus_ids[1], 0x0019_0203);
+        assert_eq!(decoded.warp_bonus_last_used[1], 55);
+    }
+
+    #[test]
+    fn ppd_blob_appends_warp_without_existing_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.warp_base = 40;
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_WARP_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_WARP_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 8 + WARP_PPD_BASE_OFFSET), 40);
     }
 
     #[test]
