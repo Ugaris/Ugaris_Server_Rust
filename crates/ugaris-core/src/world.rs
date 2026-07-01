@@ -38,9 +38,9 @@ use crate::{
         IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB2_WATER,
         IDR_LAB3_PLANT, IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT,
         IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM,
-        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY,
-        IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_AREA25_TELEKEY,
-        IID_MINEGATEWAY,
+        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_WARPKEYDOOR, IDR_WARPTRIALDOOR,
+        IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
+        IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
@@ -3101,6 +3101,18 @@ impl World {
             })
     }
 
+    fn character_inventory_item_by_template(
+        &self,
+        character_id: CharacterId,
+        template_id: u32,
+    ) -> Option<(ItemId, String)> {
+        let character = self.characters.get(&character_id)?;
+        character.inventory.iter().flatten().find_map(|item_id| {
+            let item = self.items.get(item_id)?;
+            (item.template_id == template_id).then(|| (*item_id, item.name.clone()))
+        })
+    }
+
     fn warp_trial_door_context(&self, item_id: ItemId) -> Option<WarpTrialDoorContext> {
         let item = self.items.get(&item_id)?;
         let cached = item.driver_data.get(2).copied().unwrap_or(0) != 0;
@@ -3358,6 +3370,10 @@ impl World {
             && context.warp_trial_door.is_none())
         .then(|| self.warp_trial_door_context(item_id))
         .flatten();
+        let area25_door_key = (driver == Some(IDR_WARPKEYDOOR)
+            && context.area25_door_key.is_none())
+        .then(|| self.character_inventory_item_by_template(character_id, IID_AREA25_DOORKEY))
+        .flatten();
         let mine_door_target = (driver == Some(IDR_MINEDOOR) && context.mine_door_target.is_none())
             .then(|| self.mine_door_target(item_id))
             .flatten();
@@ -3419,6 +3435,9 @@ impl World {
         effective_context.has_mine_gateway_key |= mine_gateway_key_context;
         if effective_context.warp_trial_door.is_none() {
             effective_context.warp_trial_door = warp_trial_door_context;
+        }
+        if effective_context.area25_door_key.is_none() {
+            effective_context.area25_door_key = area25_door_key;
         }
         if effective_context.mine_door_target.is_none() {
             effective_context.mine_door_target = mine_door_target;
@@ -30202,6 +30221,86 @@ mod tests {
         assert_eq!(actor.dir, Direction::Left as u8);
         assert_eq!(actor.inventory[30], None);
         assert!(!world.items.contains_key(&ItemId(9)));
+    }
+
+    #[test]
+    fn world_warpkeydoor_direct_request_finds_inventory_key_not_cursor_key() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        actor.dir = Direction::Right as u8;
+        actor.inventory[30] = Some(ItemId(9));
+        assert!(world.spawn_character(actor, 10, 20));
+
+        let mut key = item(9, ItemFlags::USED);
+        key.template_id = crate::item_driver::IID_AREA25_DOORKEY;
+        key.name = "Warper Key".into();
+        key.carried_by = Some(CharacterId(1));
+        world.add_item(key);
+
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE);
+        door.driver = crate::item_driver::IDR_WARPKEYDOOR;
+        door.x = 11;
+        door.y = 20;
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_WARPKEYDOOR,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            25,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::WarpKeyDoor { .. }));
+        let actor = &world.characters[&CharacterId(1)];
+        assert_eq!((actor.x, actor.y), (12, 20));
+        assert_eq!(actor.inventory[30], None);
+        assert!(!world.items.contains_key(&ItemId(9)));
+    }
+
+    #[test]
+    fn world_warpkeydoor_direct_request_ignores_cursor_key_like_c_has_item() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        actor.cursor_item = Some(ItemId(9));
+        assert!(world.spawn_character(actor, 10, 20));
+
+        let mut key = item(9, ItemFlags::USED);
+        key.template_id = crate::item_driver::IID_AREA25_DOORKEY;
+        key.carried_by = Some(CharacterId(1));
+        world.add_item(key);
+
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE);
+        door.driver = crate::item_driver::IDR_WARPKEYDOOR;
+        door.x = 11;
+        door.y = 20;
+        world.add_item(door);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_WARPKEYDOOR,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            25,
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::WarpKeyDoorMissingKey {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        let actor = &world.characters[&CharacterId(1)];
+        assert_eq!((actor.x, actor.y), (10, 20));
+        assert_eq!(actor.cursor_item, Some(ItemId(9)));
+        assert!(world.items.contains_key(&ItemId(9)));
     }
 
     #[test]
