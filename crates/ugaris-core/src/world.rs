@@ -7362,6 +7362,13 @@ impl World {
         let Some(target) = self.characters.get(&target_id) else {
             return false;
         };
+        if target.x < 1
+            || target.y < 1
+            || target.x as usize >= MAX_MAP
+            || target.y as usize >= MAX_MAP
+        {
+            return false;
+        }
         if character.group == target.group || !can_attack(character, target, &self.map) {
             return false;
         }
@@ -17712,6 +17719,35 @@ mod tests {
     }
 
     #[test]
+    fn simple_baddy_message_actions_rejects_legacy_out_of_map_enemy_coordinate() {
+        let mut world = World::default();
+        world.tick = Tick(326);
+        let mut npc = character(1);
+        npc.group = 7;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        npc.push_driver_message(NT_GOTHIT, 2, 10, 0);
+        let mut attacker = character(2);
+        attacker.group = 8;
+        attacker.x = 0;
+        attacker.y = 10;
+        world.spawn_character(npc, 10, 10);
+        world.add_character(attacker);
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let Some(CharacterDriverState::SimpleBaddy(data)) =
+            world.characters[&CharacterId(1)].driver_state.as_ref()
+        else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.last_hit, 326);
+        assert!(data.enemies.is_empty());
+    }
+
+    #[test]
     fn simple_baddy_attack_keeps_hidden_enemy_beyond_stopdist_like_c() {
         let mut world = World::default();
         world.tick = Tick(326);
@@ -17804,8 +17840,14 @@ mod tests {
         npc.push_driver_message(NT_GOTHIT, 2, 10, 0);
         let mut attacker = character(2);
         attacker.group = 8;
-        world.add_character(npc);
-        world.add_character(attacker);
+        world.spawn_character(npc, 10, 10);
+        world.spawn_character(attacker, 12, 10);
+        world
+            .map
+            .tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::SIGHTBLOCK);
 
         let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
@@ -17822,9 +17864,9 @@ mod tests {
                 target_id: CharacterId(2),
                 priority: 1,
                 last_seen_tick: 322,
-                visible: true,
-                last_x: 0,
-                last_y: 0,
+                visible: false,
+                last_x: 12,
+                last_y: 10,
             }]
         );
     }
