@@ -93,6 +93,14 @@ pub const LAB2_DESCRIBED_GRAVES: [((u16, u16), &str); 40] = [
     ((214, 191), "%s is buried in the fourth grave of the last row in the northeastern part of the northeast section of the graveyard."),
     ((212, 191), "%s is buried at the left side of her husband John."),
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaligarSkellyDeathResult {
+    Unmapped { x: u16, y: u16 },
+    AlreadyUnlocked { door_index: u8, bit: u8 },
+    PartiallyUnlocked { door_index: u8, bit: u8 },
+    FullyUnlocked { door_index: u8, bit: u8 },
+}
 pub const LEGACY_LOSTCON_PPD_SIZE: usize = 19 * 4;
 pub const RUNE_USED_WORDS: usize = 1024 / 32;
 pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
@@ -2569,6 +2577,56 @@ impl PlayerRuntime {
             && self.caligar_ppd[CALIGAR_PPD_DOOR_FLAG_OFFSET + idx] & 0x07 == 0x07
     }
 
+    pub fn mark_caligar_skelly_death(
+        &mut self,
+        home_x: u16,
+        home_y: u16,
+    ) -> CaligarSkellyDeathResult {
+        let (door_index, lock_number) = match (home_x, home_y) {
+            (103, 224) => (0, 0),
+            (103, 211) => (0, 1),
+            (103, 198) => (0, 2),
+            (145, 225) => (1, 0),
+            (145, 212) => (1, 1),
+            (145, 186) => (1, 2),
+            (226 | 227, 158) => (2, 0),
+            (226 | 227, 145) => (2, 1),
+            (226 | 227, 132) => (2, 2),
+            _ => {
+                return CaligarSkellyDeathResult::Unmapped {
+                    x: home_x,
+                    y: home_y,
+                };
+            }
+        };
+
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            self.caligar_ppd.resize(LEGACY_CALIGAR_PPD_SIZE, 0);
+        }
+
+        let bit = 1u8 << lock_number;
+        let offset = CALIGAR_PPD_DOOR_FLAG_OFFSET + door_index;
+        if self.caligar_ppd[offset] & bit != 0 {
+            return CaligarSkellyDeathResult::AlreadyUnlocked {
+                door_index: door_index as u8,
+                bit,
+            };
+        }
+
+        self.caligar_ppd[offset] |= bit;
+        if self.caligar_ppd[offset] & 0x07 == 0x07 {
+            CaligarSkellyDeathResult::FullyUnlocked {
+                door_index: door_index as u8,
+                bit,
+            }
+        } else {
+            CaligarSkellyDeathResult::PartiallyUnlocked {
+                door_index: door_index as u8,
+                bit,
+            }
+        }
+    }
+
     pub fn unmark_xmas_tree(&mut self, area_id: u16) {
         if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
             return;
@@ -4727,6 +4785,69 @@ mod tests {
         player.caligar_ppd[CALIGAR_PPD_DOOR_FLAG_OFFSET + 2] = 0x07;
         assert!(player.caligar_skelly_door_unlocked(2));
         assert!(!player.caligar_skelly_door_unlocked(4));
+    }
+
+    #[test]
+    fn caligar_ppd_marks_skelly_death_lock_bits_from_legacy_home_positions() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(
+            player.mark_caligar_skelly_death(103, 224),
+            CaligarSkellyDeathResult::PartiallyUnlocked {
+                door_index: 0,
+                bit: 1,
+            }
+        );
+        assert_eq!(
+            player.mark_caligar_skelly_death(103, 211),
+            CaligarSkellyDeathResult::PartiallyUnlocked {
+                door_index: 0,
+                bit: 2,
+            }
+        );
+        assert_eq!(
+            player.mark_caligar_skelly_death(103, 198),
+            CaligarSkellyDeathResult::FullyUnlocked {
+                door_index: 0,
+                bit: 4,
+            }
+        );
+        assert!(player.caligar_skelly_door_unlocked(0));
+
+        assert_eq!(
+            player.mark_caligar_skelly_death(103, 198),
+            CaligarSkellyDeathResult::AlreadyUnlocked {
+                door_index: 0,
+                bit: 4,
+            }
+        );
+        assert_eq!(
+            player.mark_caligar_skelly_death(200, 200),
+            CaligarSkellyDeathResult::Unmapped { x: 200, y: 200 }
+        );
+    }
+
+    #[test]
+    fn caligar_ppd_marks_skelly_death_third_door_dual_x_positions() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(
+            player.mark_caligar_skelly_death(226, 158),
+            CaligarSkellyDeathResult::PartiallyUnlocked {
+                door_index: 2,
+                bit: 1,
+            }
+        );
+        assert_eq!(
+            player.mark_caligar_skelly_death(227, 145),
+            CaligarSkellyDeathResult::PartiallyUnlocked {
+                door_index: 2,
+                bit: 2,
+            }
+        );
+
+        let encoded = player.encode_legacy_caligar_ppd();
+        assert_eq!(encoded[CALIGAR_PPD_DOOR_FLAG_OFFSET + 2], 0x03);
     }
 
     #[test]
