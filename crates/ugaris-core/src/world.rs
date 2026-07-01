@@ -7087,7 +7087,8 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
-            ItemDriverOutcome::WarpTeleportMissingSphere { .. } => outcome,
+            ItemDriverOutcome::WarpTeleportMissingSphere { .. }
+            | ItemDriverOutcome::WarpTeleportBug { .. } => outcome,
             ItemDriverOutcome::WarpKeyDoor {
                 character_id,
                 key_item_id,

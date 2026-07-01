@@ -27255,6 +27255,14 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Nothing happened.".to_string()));
                                             blocked += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpTeleportBug {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "You found BUG #31as5.".to_string()));
+                                            feedback.push((character_id, "Target is busy, please try again soon.".to_string()));
+                                            blocked += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::WarpTeleportSpheres {
                                             character_id,
                                             ..

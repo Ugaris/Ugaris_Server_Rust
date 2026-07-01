@@ -612,6 +612,10 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    WarpTeleportBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     WarpKeySpawn {
         item_id: ItemId,
         character_id: CharacterId,
@@ -7007,8 +7011,7 @@ fn warpteleport_driver(
         5 => Some((183, 250)),
         _ => None,
     }) else {
-        return ItemDriverOutcome::Unsupported {
-            driver: IDR_WARPTELEPORT,
+        return ItemDriverOutcome::WarpTeleportBug {
             item_id: item.id,
             character_id: character.id,
         };
@@ -9859,6 +9862,27 @@ mod tests {
         assert_eq!(
             execute_item_driver(&mut actor, &mut portal, request, 25, false),
             ItemDriverOutcome::WarpTeleportMissingSphere {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn warpteleport_invalid_plain_portal_reports_legacy_bug() {
+        let mut actor = character(1);
+        let mut portal = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPTELEPORT);
+        set_drdata(&mut portal, 1, 9);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPTELEPORT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut portal, request, 25, false),
+            ItemDriverOutcome::WarpTeleportBug {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }
