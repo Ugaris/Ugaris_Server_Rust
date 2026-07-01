@@ -375,11 +375,19 @@ struct ServerRuntime {
     hardcore_exp_bonus: f64,
     hardcore_military_exp_bonus: f64,
     hardcore_kill_exp_bonus: f64,
+    item_decay_time: i32,
+    player_body_decay_time: i32,
+    npc_body_decay_time: i32,
+    npc_body_decay_time_area32: i32,
+    npc_respawn_timer: i32,
+    lagout_time: i32,
+    regen_time: i32,
     weather: WeatherState,
 }
 
 impl Default for ServerRuntime {
     fn default() -> Self {
+        let settings = GameSettings::default();
         Self {
             players: HashMap::new(),
             sessions: HashMap::new(),
@@ -391,10 +399,17 @@ impl Default for ServerRuntime {
             next_character_id: 0,
             dlight_override: 0,
             show_attack: false,
-            exp_modifier: GameSettings::default().exp_modifier,
-            hardcore_exp_bonus: GameSettings::default().hardcore_exp_bonus,
-            hardcore_military_exp_bonus: GameSettings::default().hardcore_military_exp_bonus,
-            hardcore_kill_exp_bonus: GameSettings::default().hardcore_kill_exp_bonus,
+            exp_modifier: settings.exp_modifier,
+            hardcore_exp_bonus: settings.hardcore_exp_bonus,
+            hardcore_military_exp_bonus: settings.hardcore_military_exp_bonus,
+            hardcore_kill_exp_bonus: settings.hardcore_kill_exp_bonus,
+            item_decay_time: settings.item_decay_time,
+            player_body_decay_time: settings.player_body_decay_time,
+            npc_body_decay_time: settings.npc_body_decay_time,
+            npc_body_decay_time_area32: settings.npc_body_decay_time_area32,
+            npc_respawn_timer: settings.npc_respawn_timer,
+            lagout_time: settings.lagout_time,
+            regen_time: settings.regen_time,
             weather: WeatherState::default(),
         }
     }
@@ -2860,6 +2875,121 @@ fn apply_status_command(
     })
 }
 
+fn apply_legacy_tick_tuning_command(
+    runtime: &mut ServerRuntime,
+    lower: &str,
+    rest: &str,
+) -> Option<KeyringCommandResult> {
+    struct TickTuningSpec {
+        command: &'static str,
+        min_len: usize,
+        min: i32,
+        max: i32,
+        field: fn(&mut ServerRuntime) -> &mut i32,
+        success: &'static str,
+        invalid: &'static str,
+    }
+
+    let ticks = TICKS_PER_SECOND as i32;
+    let specs = [
+        TickTuningSpec {
+            command: "setdecaytime",
+            min_len: 12,
+            min: 60 * ticks,
+            max: 60 * 60 * ticks,
+            field: |runtime| &mut runtime.item_decay_time,
+            success: "Item decay time changed from {old} to {new} ticks ({old_minutes} to {new_minutes} minutes)",
+            invalid: "Invalid value. Please specify a time between {min} and {max} ticks (1-60 minutes)",
+        },
+        TickTuningSpec {
+            command: "setplayerbodytime",
+            min_len: 17,
+            min: 5 * 60 * ticks,
+            max: 60 * 60 * ticks,
+            field: |runtime| &mut runtime.player_body_decay_time,
+            success: "Player body decay time changed from {old} to {new} ticks ({old_minutes} to {new_minutes} minutes)",
+            invalid: "Invalid value. Please specify a time between {min} and {max} ticks (5-60 minutes)",
+        },
+        TickTuningSpec {
+            command: "setnpcbodytime",
+            min_len: 14,
+            min: 30 * ticks,
+            max: 30 * 60 * ticks,
+            field: |runtime| &mut runtime.npc_body_decay_time,
+            success: "NPC body decay time changed from {old} to {new} ticks ({old_minutes} to {new_minutes} minutes)",
+            invalid: "Invalid value. Please specify a time between {min} and {max} ticks (0.5-30 minutes)",
+        },
+        TickTuningSpec {
+            command: "setnpcbodytimearea32",
+            min_len: 20,
+            min: 5 * 60 * ticks,
+            max: 60 * 60 * ticks,
+            field: |runtime| &mut runtime.npc_body_decay_time_area32,
+            success: "NPC body decay time for area 32 changed from {old} to {new} ticks ({old_minutes} to {new_minutes} minutes)",
+            invalid: "Invalid value. Please specify a time between {min} and {max} ticks (5-60 minutes)",
+        },
+        TickTuningSpec {
+            command: "setrespawntime",
+            min_len: 14,
+            min: 30 * ticks,
+            max: 10 * 60 * ticks,
+            field: |runtime| &mut runtime.npc_respawn_timer,
+            success: "NPC respawn time changed from {old} to {new} ticks ({old_minutes} to {new_minutes} minutes)",
+            invalid: "Invalid value. Please specify a time between {min} and {max} ticks (0.5-10 minutes)",
+        },
+        TickTuningSpec {
+            command: "setlagouttime",
+            min_len: 13,
+            min: 60 * ticks,
+            max: 30 * 60 * ticks,
+            field: |runtime| &mut runtime.lagout_time,
+            success: "Lagout time changed from {old} to {new} ticks ({old_minutes} to {new_minutes} minutes)",
+            invalid: "Invalid value. Please specify a time between {min} and {max} ticks (1-30 minutes)",
+        },
+        TickTuningSpec {
+            command: "setregentime",
+            min_len: 12,
+            min: 1,
+            max: 24,
+            field: |runtime| &mut runtime.regen_time,
+            success: "Regeneration time changed from {old} to {new} ticks",
+            invalid: "Invalid value. Please specify a time between 1 and 24 ticks",
+        },
+    ];
+
+    for spec in specs {
+        if lower.len() < spec.min_len || !spec.command.starts_with(lower) {
+            continue;
+        }
+
+        let value = legacy_atoi_prefix(rest).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+        if (spec.min..=spec.max).contains(&value) {
+            let field = (spec.field)(runtime);
+            let old = *field;
+            *field = value;
+            return Some(KeyringCommandResult {
+                messages: vec![spec
+                    .success
+                    .replace("{old}", &old.to_string())
+                    .replace("{new}", &value.to_string())
+                    .replace("{old_minutes}", &(old / (60 * ticks)).to_string())
+                    .replace("{new_minutes}", &(value / (60 * ticks)).to_string())],
+                ..Default::default()
+            });
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec![spec
+                .invalid
+                .replace("{min}", &spec.min.to_string())
+                .replace("{max}", &spec.max.to_string())],
+            ..Default::default()
+        });
+    }
+
+    None
+}
+
 fn apply_admin_character_command(
     world: &mut World,
     runtime: &mut ServerRuntime,
@@ -2872,6 +3002,31 @@ fn apply_admin_character_command(
         .unwrap_or((command, ""));
     let verb = verb.trim_start_matches('/').trim_start_matches('#');
     let lower = verb.to_ascii_lowercase();
+
+    if let Some(result) = if world
+        .characters
+        .get(&character_id)
+        .is_some_and(|caller| caller.flags.contains(CharacterFlags::GOD))
+    {
+        apply_legacy_tick_tuning_command(runtime, &lower, rest)
+    } else {
+        None
+    } {
+        return Some(result);
+    }
+
+    if matches!(
+        lower.as_str(),
+        "setdecaytime"
+            | "setplayerbodytime"
+            | "setnpcbodytime"
+            | "setnpcbodytimearea32"
+            | "setrespawntime"
+            | "setlagouttime"
+            | "setregentime"
+    ) {
+        return None;
+    }
 
     if lower.len() >= 4 && "prof".starts_with(&lower) {
         let Some(caller) = world.characters.get(&character_id) else {
@@ -15839,6 +15994,187 @@ mod tests {
             1,
         )
         .is_none());
+    }
+
+    #[test]
+    fn god_tick_tuning_commands_match_legacy_ranges_and_feedback() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+        let mut runtime = ServerRuntime::default();
+        let ticks = TICKS_PER_SECOND as i32;
+
+        let decay = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setdecaytime 1440tail",
+            1,
+        )
+        .expect("god setdecaytime should be recognized");
+        assert_eq!(runtime.item_decay_time, 1440);
+        assert_eq!(
+            decay.messages,
+            vec!["Item decay time changed from 7200 to 1440 ticks (5 to 1 minutes)"]
+        );
+
+        let player_body = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setplayerbodytime 7200",
+            1,
+        )
+        .expect("god setplayerbodytime should be recognized");
+        assert_eq!(runtime.player_body_decay_time, 7200);
+        assert_eq!(
+            player_body.messages,
+            vec!["Player body decay time changed from 43200 to 7200 ticks (30 to 5 minutes)"]
+        );
+
+        let npc_body = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setnpcbodytime 720",
+            1,
+        )
+        .expect("god setnpcbodytime should be recognized");
+        assert_eq!(runtime.npc_body_decay_time, 720);
+        assert_eq!(
+            npc_body.messages,
+            vec!["NPC body decay time changed from 2880 to 720 ticks (2 to 0 minutes)"]
+        );
+
+        let area32_body = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setnpcbodytimearea32 7200",
+            1,
+        )
+        .expect("god setnpcbodytimearea32 should be recognized");
+        assert_eq!(runtime.npc_body_decay_time_area32, 7200);
+        assert_eq!(
+            area32_body.messages,
+            vec!["NPC body decay time for area 32 changed from 21600 to 7200 ticks (15 to 5 minutes)"]
+        );
+
+        let respawn = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setrespawntime 720",
+            1,
+        )
+        .expect("god setrespawntime should be recognized");
+        assert_eq!(runtime.npc_respawn_timer, 720);
+        assert_eq!(
+            respawn.messages,
+            vec!["NPC respawn time changed from 2880 to 720 ticks (2 to 0 minutes)"]
+        );
+
+        let lagout = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setlagouttime 1440",
+            1,
+        )
+        .expect("god setlagouttime should be recognized");
+        assert_eq!(runtime.lagout_time, 1440);
+        assert_eq!(
+            lagout.messages,
+            vec!["Lagout time changed from 7200 to 1440 ticks (5 to 1 minutes)"]
+        );
+
+        let regen =
+            apply_admin_character_command(&mut world, &mut runtime, god_id, "/setregentime 12", 1)
+                .expect("god setregentime should be recognized");
+        assert_eq!(runtime.regen_time, 12);
+        assert_eq!(
+            regen.messages,
+            vec!["Regeneration time changed from 96 to 12 ticks"]
+        );
+
+        let invalid = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setrespawntime 719",
+            1,
+        )
+        .expect("invalid setrespawntime should still be handled");
+        assert_eq!(runtime.npc_respawn_timer, 720);
+        assert_eq!(
+            invalid.messages,
+            vec![format!(
+                "Invalid value. Please specify a time between {} and {} ticks (0.5-10 minutes)",
+                30 * ticks,
+                10 * 60 * ticks
+            )]
+        );
+    }
+
+    #[test]
+    fn tick_tuning_commands_are_god_only_and_preserve_minimum_lengths() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        world.add_character(login_character(
+            character_id,
+            &login_block("Tester"),
+            1,
+            10,
+            10,
+        ));
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setdecaytime 1440",
+            1,
+        )
+        .is_none());
+        assert_eq!(
+            runtime.item_decay_time,
+            GameSettings::default().item_decay_time
+        );
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setdecaytim 1440",
+            1,
+        )
+        .is_none());
+        assert_eq!(
+            runtime.item_decay_time,
+            GameSettings::default().item_decay_time
+        );
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setnpcbodytim 720",
+            1,
+        )
+        .is_none());
+        assert_eq!(
+            runtime.npc_body_decay_time,
+            GameSettings::default().npc_body_decay_time
+        );
     }
 
     #[test]
