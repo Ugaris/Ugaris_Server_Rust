@@ -1911,9 +1911,32 @@
         "test result: ok. 959 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 75,
+      "startedAt": "2026-07-01T09:39:40.479Z",
+      "endedAt": "2026-07-01T09:46:31.570Z",
+      "durationMs": 410827,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test tests::area_leave_cleanup_removes_arkhata_stopwatch_from_live_cursor ... FAILED",
+        "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 315 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 48083332,
+  "totalDurationMs": 48494159,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1929,7 +1952,7 @@
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 10,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 11,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 50,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 46,
@@ -1992,7 +2015,7 @@
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 873 filtered out; finished in 0.00s": 1,
       "test result: ok. 884 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "error: unexpected argument 'arkhata' found": 1,
-      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 2,
+      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 3,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 298 filtered out; finished in 0.00s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 296 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 884 filtered out; finished in 0.00s": 1,
@@ -2182,7 +2205,11 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 958 filtered out; finished in 0.00s": 2,
       "test result: ok. 959 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "error: unexpected argument 'simple_baddy_death_driver_creates_earth_demon_effects_at_killer' found": 1,
-      "test result: ok. 959 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 959 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "test tests::area_leave_cleanup_removes_arkhata_stopwatch_from_live_cursor ... FAILED": 1,
+      "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s": 1,
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s": 1,
+      "test result: ok. 315 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

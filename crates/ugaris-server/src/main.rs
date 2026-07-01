@@ -1228,6 +1228,31 @@ fn is_logout_vanishing_item(item: &Item) -> bool {
     item.driver == IDR_ARKHATA && item.driver_data.first().copied().unwrap_or_default() == 1
 }
 
+#[allow(dead_code)]
+fn remove_area_leave_vanishing_items(world: &mut World, character_id: CharacterId) -> Vec<ItemId> {
+    let item_ids: Vec<ItemId> = world
+        .items
+        .values()
+        .filter(|item| item.carried_by == Some(character_id) && is_logout_vanishing_item(item))
+        .map(|item| item.id)
+        .collect();
+
+    for item_id in &item_ids {
+        world.destroy_item(*item_id);
+    }
+
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        if character
+            .current_container
+            .is_some_and(|item_id| item_ids.contains(&item_id))
+        {
+            character.current_container = None;
+        }
+    }
+
+    item_ids
+}
+
 fn character_logout_snapshot(world: &World, character: &Character) -> (Character, Vec<Item>) {
     let mut snapshot_character = character.clone();
     let mut vanished_items = HashSet::new();
@@ -19383,6 +19408,57 @@ mod tests {
         assert_eq!(request.character.cursor_item, None);
         assert_eq!(request.character.current_container, None);
         assert!(request.items.is_empty());
+    }
+
+    #[test]
+    fn area_leave_cleanup_removes_arkhata_stopwatch_from_live_inventory() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 37, 10, 10);
+        character.inventory[30] = Some(ItemId(10));
+        character.inventory[31] = Some(ItemId(11));
+        world.add_character(character);
+
+        let mut stopwatch = test_item_with_driver(ItemId(10), IDR_ARKHATA);
+        stopwatch.carried_by = Some(character_id);
+        stopwatch.driver_data = vec![1];
+        world.add_item(stopwatch);
+        let mut key_part = test_item_with_driver(ItemId(11), IDR_ARKHATA);
+        key_part.carried_by = Some(character_id);
+        key_part.driver_data = vec![2];
+        world.add_item(key_part);
+
+        let removed = remove_area_leave_vanishing_items(&mut world, character_id);
+
+        assert_eq!(removed, vec![ItemId(10)]);
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.inventory[30], None);
+        assert_eq!(character.inventory[31], Some(ItemId(11)));
+        assert!(!world.items.contains_key(&ItemId(10)));
+        assert!(world.items.contains_key(&ItemId(11)));
+    }
+
+    #[test]
+    fn area_leave_cleanup_removes_arkhata_stopwatch_from_live_cursor() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 37, 10, 10);
+        character.cursor_item = Some(ItemId(10));
+        character.current_container = Some(ItemId(10));
+        world.add_character(character);
+
+        let mut stopwatch = test_item_with_driver(ItemId(10), IDR_ARKHATA);
+        stopwatch.carried_by = Some(character_id);
+        stopwatch.driver_data = vec![1];
+        world.add_item(stopwatch);
+
+        let removed = remove_area_leave_vanishing_items(&mut world, character_id);
+
+        assert_eq!(removed, vec![ItemId(10)]);
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.cursor_item, None);
+        assert_eq!(character.current_container, None);
+        assert!(!world.items.contains_key(&ItemId(10)));
     }
 
     fn test_item(
