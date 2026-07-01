@@ -85,6 +85,20 @@ struct PkRelationSnapshot {
 
 const ARKHATA_CLERK_TIME_SECONDS: i32 = 60 * 15;
 
+fn arkhata_stopwatch_feedback(player: &PlayerRuntime, realtime_seconds: u64) -> String {
+    if player.arkhata_clerk_state() != 5 {
+        return "#92 ".to_string();
+    }
+
+    let diff = ARKHATA_CLERK_TIME_SECONDS - realtime_seconds.min(i32::MAX as u64) as i32
+        + player.arkhata_clerk_time_seconds();
+    if diff > 0 {
+        format!("#91 Time: {} Astonian Minutes", diff / 5)
+    } else {
+        "#92 YOU FAILED!".to_string()
+    }
+}
+
 impl PkRelationSnapshot {
     fn from_runtime(runtime: &ServerRuntime) -> Self {
         let hate_by_character = runtime
@@ -19801,6 +19815,23 @@ mod tests {
     }
 
     #[test]
+    fn arkhata_stopwatch_feedback_matches_clerk_timer_state() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(arkhata_stopwatch_feedback(&player, 100), "#92 ");
+
+        player.set_arkhata_clerk_timer(5, 100);
+        assert_eq!(
+            arkhata_stopwatch_feedback(&player, 550),
+            "#91 Time: 90 Astonian Minutes"
+        );
+        assert_eq!(
+            arkhata_stopwatch_feedback(&player, 1_001),
+            "#92 YOU FAILED!"
+        );
+    }
+
+    #[test]
     fn apply_zombie_shrine_consumes_skull_and_grants_experience() {
         let character_id = CharacterId(7);
         let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -28237,18 +28268,7 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::ArkhataStopwatch { character_id, .. } => {
                                             if character_id.0 != 0 {
                                                 if let Some(player) = runtime.player_for_character(character_id) {
-                                                    let text = if player.arkhata_clerk_state() == 5 {
-                                                        let diff = ARKHATA_CLERK_TIME_SECONDS
-                                                            - realtime_seconds.min(i32::MAX as u64) as i32
-                                                            + player.arkhata_clerk_time_seconds();
-                                                        if diff > 0 {
-                                                            format!("#91 Time: {} Astonian Minutes", diff / 5)
-                                                        } else {
-                                                            "#92 YOU FAILED!".to_string()
-                                                        }
-                                                    } else {
-                                                        "#92 ".to_string()
-                                                    };
+                                                    let text = arkhata_stopwatch_feedback(player, realtime_seconds);
                                                     feedback.push((character_id, text));
                                                     executed += 1;
                                                 }

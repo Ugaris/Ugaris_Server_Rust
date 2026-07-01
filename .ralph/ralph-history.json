@@ -1295,13 +1295,35 @@
         "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.00s",
         "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 309 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 51,
+      "startedAt": "2026-07-01T06:22:49.132Z",
+      "endedAt": "2026-07-01T06:28:10.527Z",
+      "durationMs": 321214,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "I’m going to extract the stopwatch feedback formatting into a small helper and test the active, failed, and inactive PPD cases. This keeps behavior unchanged but pins the C-compatible output.",
+        "- Added test coverage for inactive, active countdown, and failed stopwatch feedback.",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s",
+        "+- Area 37 `IDR_ARKHATA` subtype `0` now ports the C `pool_driver` item path: zero-character timer calls no-op, missing cursor and wrong-cursor uses emit the legacy feedback without consuming the curs"
+      ]
     }
   ],
-  "totalDurationMs": 36340799,
+  "totalDurationMs": 36662013,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 20,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 21,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 3,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
@@ -1476,7 +1498,11 @@
       "test world::tests::lab2_undead_patrol_advances_waypoint_and_waits_like_c ... FAILED": 1,
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.00s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 921 filtered out; finished in 0.00s": 1,
-      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 309 filtered out; finished in 0.00s": 1
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 309 filtered out; finished in 0.00s": 1,
+      "I’m going to extract the stopwatch feedback formatting into a small helper and test the active, fail": 1,
+      "- Added test coverage for inactive, active countdown, and failed stopwatch feedback.": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s": 1,
+      "+- Area 37 `IDR_ARKHATA` subtype `0` now ports the C `pool_driver` item path: zero-character timer c": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
