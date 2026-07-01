@@ -821,3 +821,7 @@ Recommended next chest steps:
 ### Ralph Loop Iteration 62 Additional Progress
 
 - Area 22 `CDR_LAB2UNDEAD` crypt patrol second-corridor enemy removal now mirrors the C `lab2_undead_driver` `NT_CHAR` slice: Lab 2 undead driver state carries a serde-defaulted enemy table, patrol-2 undead consume `NT_CHAR` messages, visible non-self targets inside the C second-corridor rectangle `(169..=188,154..=158)` are removed from that table, and targets outside the corridor remain tracked. Focused core tests cover removal and rejection. Remaining Lab 2 undead gaps include standard-message/fight-driver reuse, death reward/PPD grave-bit updates, Arathas wake-all behavior, exact dlog/audit integration, and live area-data smoke coverage.
+
+### Ralph Loop Iteration 78 Additional Progress
+
+- Area 22 `CDR_LAB2UNDEAD` grave-spawn death bookkeeping now preserves the C opener/serial guard: template-backed grave spawns install/retain `Lab2UndeadDriverData`, store the source grave item, opener character id, and opener serial, and lethal hurt events for the matching player opener mark the matching Lab 2 grave bit in `PlayerRuntime`. Focused server tests cover spawn metadata and serial-gated grave-bit marking. Remaining Lab 2 undead death gaps include the C crypt/yard completion counters, gold reward thresholds, Arathas wake-all behavior, exact dlog/audit integration, and live area-data smoke coverage.

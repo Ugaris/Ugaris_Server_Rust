@@ -164,6 +164,7 @@ fn apply_pk_hate_from_hurt_events(
         apply_swamp_monster_death_from_hurt_event(runtime, world, event);
         apply_teufel_rat_death_from_hurt_event(runtime, world, event);
         apply_caligar_skelly_death_from_hurt_event(runtime, world, event);
+        apply_lab2_undead_death_from_hurt_event(runtime, world, event);
 
         let eligible = match (
             world.characters.get(&event.target_id),
@@ -203,6 +204,44 @@ fn apply_pk_hate_from_hurt_events(
         }
     }
     applied
+}
+
+fn apply_lab2_undead_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some((grave_item_id, opened_by, opened_by_serial, killer_serial)) = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .and_then(|(target, killer)| {
+            let Some(CharacterDriverState::Lab2Undead(data)) = target.driver_state.as_ref() else {
+                return None;
+            };
+            (target.driver == CDR_LAB2UNDEAD && killer.flags.contains(CharacterFlags::PLAYER))
+                .then_some((
+                    data.grave_item_id?,
+                    data.opened_by_character_id?,
+                    data.opened_by_serial,
+                    killer.serial,
+                ))
+        })
+    else {
+        return false;
+    };
+    if opened_by != event.cause_id || opened_by_serial != killer_serial {
+        return false;
+    }
+    let Some(grave_number) = lab2_grave_number(world, grave_item_id) else {
+        return false;
+    };
+    runtime
+        .player_for_character_mut(event.cause_id)
+        .is_some_and(|player| player.mark_legacy_lab2_grave_cleared(grave_number))
 }
 
 fn apply_caligar_skelly_death_from_hurt_event(
@@ -8883,6 +8922,11 @@ fn apply_lab2_grave_open(
     }
 
     let character_id_new = runtime.allocate_character_id();
+    let opener_serial = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.serial)
+        .unwrap_or_default();
     let spawn_template =
         if special_item == 5 || (special_item == 0 && runtime_random_below(100) > 66) {
             "lab2_skeleton"
@@ -8898,6 +8942,17 @@ fn apply_lab2_grave_open(
     undead.dir = Direction::Down as u8;
     undead.flags.remove(CharacterFlags::RESPAWN);
     undead.driver = CDR_LAB2UNDEAD;
+    if !matches!(
+        undead.driver_state,
+        Some(CharacterDriverState::Lab2Undead(_))
+    ) {
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(Default::default()));
+    }
+    if let Some(CharacterDriverState::Lab2Undead(data)) = undead.driver_state.as_mut() {
+        data.grave_item_id = Some(item_id);
+        data.opened_by_character_id = Some(character_id);
+        data.opened_by_serial = opener_serial;
+    }
 
     if special_item == 5 {
         undead.name = "Elias Skeleton".to_string();
@@ -19686,8 +19741,73 @@ mod tests {
         assert_eq!(undead.name, "Undead");
         assert_eq!(undead.driver, CDR_LAB2UNDEAD);
         assert_eq!((undead.x, undead.y), (194, 183));
+        let CharacterDriverState::Lab2Undead(data) = undead.driver_state.as_ref().unwrap() else {
+            panic!("Lab 2 grave spawn must retain undead driver state");
+        };
+        assert_eq!(data.grave_item_id, Some(ItemId(8)));
+        assert_eq!(data.opened_by_character_id, Some(actor_id));
+        assert_eq!(data.opened_by_serial, 1);
         let hat_id = undead.inventory[INVENTORY_START_INVENTORY].unwrap();
         assert_eq!(world.items.get(&hat_id).unwrap().name, "Elias Hat");
+    }
+
+    #[test]
+    fn lab2_undead_death_marks_opener_grave_cleared_with_serial_guard() {
+        let mut world = World::default();
+        let actor_id = CharacterId(1);
+        let login = LoginBlock {
+            name: "Tester".to_string(),
+            password: String::new(),
+            vendor: 0,
+            client_version: None,
+            his_ip: 0,
+            our_ip: 0,
+            unique: 0,
+        };
+        let mut actor = login_character(actor_id, &login, 22, 10, 10);
+        actor.serial = 77;
+        assert!(world.spawn_character(actor, 10, 10));
+
+        let mut first_grave =
+            test_item_with_driver(ItemId(7), ugaris_core::item_driver::IDR_LAB2_GRAVE);
+        first_grave.x = 10;
+        first_grave.y = 10;
+        first_grave.driver_data = vec![0; 16];
+        world.add_item(first_grave);
+        let mut grave = test_item_with_driver(ItemId(8), ugaris_core::item_driver::IDR_LAB2_GRAVE);
+        grave.x = 11;
+        grave.y = 10;
+        grave.driver_data = vec![0; 16];
+        world.add_item(grave);
+
+        let mut undead = login_character(CharacterId(20), &login, 22, 11, 10);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead.hp = 1;
+        undead.flags.insert(CharacterFlags::ALIVE);
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(
+            ugaris_core::character_driver::Lab2UndeadDriverData {
+                grave_item_id: Some(ItemId(8)),
+                opened_by_character_id: Some(actor_id),
+                opened_by_serial: 77,
+                ..Default::default()
+            },
+        ));
+        assert!(world.spawn_character(undead, 11, 10));
+
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(actor_id);
+        runtime.players.insert(1, player);
+
+        world.apply_legacy_hurt(CharacterId(20), Some(actor_id), 1000, 1, 0, 0);
+        assert_eq!(
+            apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0),
+            0
+        );
+        assert!(runtime
+            .player_for_character_mut(actor_id)
+            .unwrap()
+            .legacy_lab2_grave_cleared(1));
     }
 
     #[test]

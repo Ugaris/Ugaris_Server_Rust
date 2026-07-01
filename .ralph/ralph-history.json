@@ -1991,9 +1991,36 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 78,
+      "startedAt": "2026-07-01T10:28:40.789Z",
+      "endedAt": "2026-07-01T10:38:05.196Z",
+      "durationMs": 564111,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The ledger is updated. I’ll run the full workspace tests now; if they take too long or fail, I’ll report the exact result.",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s",
+        "test tests::lab2_grave_open_spawns_undead_and_attaches_described_grave_item ... FAILED",
+        "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 316 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 316 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 51015030,
+  "totalDurationMs": 51579141,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -2004,15 +2031,15 @@
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 15,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 50,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 52,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 51,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 53,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 11,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 52,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 48,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 53,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 49,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 44,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
       "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAIL": 1,
@@ -2072,7 +2099,7 @@
       "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 873 filtered out; finished in 0.00s": 1,
       "test result: ok. 884 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "error: unexpected argument 'arkhata' found": 1,
-      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 3,
+      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 4,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 298 filtered out; finished in 0.00s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 296 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 884 filtered out; finished in 0.00s": 1,
@@ -2272,7 +2299,12 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 959 filtered out; finished in 0.00s": 1,
       "test result: ok. 961 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 960 filtered out; finished in 0.00s": 1,
-      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.00s": 1,
+      "The ledger is updated. I’ll run the full workspace tests now; if they take too long or fail, I’ll re": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
+      "test tests::lab2_grave_open_spawns_undead_and_attaches_described_grave_item ... FAILED": 1,
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 316 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 316 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
