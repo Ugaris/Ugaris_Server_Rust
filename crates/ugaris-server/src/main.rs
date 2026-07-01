@@ -459,6 +459,38 @@ impl Default for ServerRuntime {
     }
 }
 
+fn give_exp_with_runtime_modifiers(
+    character: &mut Character,
+    base_exp: i64,
+    runtime: &ServerRuntime,
+    area_id: u32,
+) {
+    let mut added = base_exp as f64;
+    if character.flags.contains(CharacterFlags::HARDCORE) {
+        added *= runtime.hardcore_exp_bonus;
+    }
+    added *= runtime.exp_modifier;
+    let added = added as i64;
+
+    if character.flags.contains(CharacterFlags::NOEXP) || area_id == 21 {
+        return;
+    }
+
+    let mut new_exp = i64::from(character.exp).saturating_add(added);
+    if character.flags.contains(CharacterFlags::NOLEVEL) {
+        let current_level_exp = i64::from(legacy_level_exp(character.level));
+        let next_level_exp = i64::from(legacy_level_exp(character.level.saturating_add(1)));
+        if new_exp >= next_level_exp {
+            new_exp = next_level_exp.saturating_sub(1);
+        } else if new_exp < current_level_exp {
+            new_exp = current_level_exp;
+        }
+    }
+
+    character.exp = new_exp.clamp(0, i64::from(u32::MAX)) as u32;
+    character.flags.insert(CharacterFlags::UPDATE);
+}
+
 fn staff_code_for<'a>(
     runtime: Option<&'a ServerRuntime>,
     world: &'a World,
@@ -3669,14 +3701,7 @@ fn apply_admin_character_command(
             });
         };
         if exp != 0 {
-            if exp.is_positive() {
-                let gain = (exp as u64).min(u64::from(u32::MAX)) as u32;
-                target.exp = target.exp.saturating_add(gain);
-            } else {
-                let loss = exp.unsigned_abs().min(u64::from(u32::MAX)) as u32;
-                target.exp = target.exp.saturating_sub(loss);
-            }
-            target.flags.insert(CharacterFlags::UPDATE);
+            give_exp_with_runtime_modifiers(target, exp, runtime, area_id);
             return Some(KeyringCommandResult {
                 messages: vec![format!("Gave {} {} exp.", target.name, exp)],
                 inventory_changed: true,
@@ -16444,6 +16469,54 @@ mod tests {
             apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Target", 1)
                 .expect("god exp target report should be recognized");
         assert_eq!(target_report.messages, vec!["Target has 250 exp."]);
+    }
+
+    #[test]
+    fn god_exp_command_uses_runtime_exp_modifiers_and_legacy_gates() {
+        let mut world = World::default();
+        let god_id = CharacterId(7);
+        let target_id = CharacterId(8);
+        let blocked_id = CharacterId(9);
+        let capped_id = CharacterId(10);
+
+        let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+        god.flags.insert(CharacterFlags::GOD);
+        world.add_character(god);
+
+        let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
+        target.exp = 100;
+        target.flags.insert(CharacterFlags::HARDCORE);
+        world.add_character(target);
+
+        let mut blocked = login_character(blocked_id, &login_block("Blocked"), 1, 12, 10);
+        blocked.exp = 100;
+        blocked.flags.insert(CharacterFlags::NOEXP);
+        world.add_character(blocked);
+
+        let mut capped = login_character(capped_id, &login_block("Capped"), 1, 13, 10);
+        capped.level = 10;
+        capped.exp = legacy_level_exp(10);
+        capped.flags.insert(CharacterFlags::NOLEVEL);
+        world.add_character(capped);
+
+        let mut runtime = ServerRuntime::default();
+        runtime.exp_modifier = 2.0;
+        runtime.hardcore_exp_bonus = 1.5;
+
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Target 10", 1)
+            .expect("god exp target grant should be recognized");
+        assert_eq!(world.characters.get(&target_id).unwrap().exp, 130);
+
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Blocked 10", 1)
+            .expect("god exp noexp target should be recognized");
+        assert_eq!(world.characters.get(&blocked_id).unwrap().exp, 100);
+
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Capped 100000", 1)
+            .expect("god exp nolevel target should be recognized");
+        assert_eq!(
+            world.characters.get(&capped_id).unwrap().exp,
+            legacy_level_exp(11) - 1
+        );
     }
 
     #[test]

@@ -752,3 +752,7 @@ Recommended next chest steps:
 ### Iteration 21 Additional Progress
 
 - Area 34 `CDR_TEUFELRAT` death scoring now mirrors the C `teufelrat_dead` slice: the Teufel character-driver IDs are represented at the Rust registry edge, player killers receive fixed-layout `DRD_TEUFELRAT_PPD` `kills`/`score` updates, score uses `level * level / 100` with C lag/lost-connection reduction to `1`, the outer PPD blob load/save replaces or appends the rat block, and the server queues the legacy `#90 ... Rat Kills` / `#80 ... Rat Points` feedback after lethal hurt events. Focused core/server tests cover PPD layout, block framing, score calculation, and runtime hurt-event wiring. Remaining Teufel rat-nest gaps are exact global RNG stream parity, dlog/audit side effects, reward dialogue payout/special rewards, and live area-34 data smoke coverage.
+
+### Iteration 27 Additional Progress
+
+- C `give_exp` runtime modifiers are now applied to the god `/exp` command path: grants pass through a reusable server helper that applies hardcore EXP bonus, global `/setexpmod`, `/noexp` and area-21 suppression, and `/nolevel` next-level capping before updating the represented character EXP state. Focused server tests cover modifier stacking, hardcore bonus, no-exp blocking, and no-level capping. Remaining EXP-modifier gaps are wiring the helper into every non-admin EXP grant path, exact level-up/check-level side effects, macro-daemon tracking, audit/xlog side effects, and signed negative EXP parity beyond the current unsigned Rust character EXP storage.
