@@ -2170,9 +2170,35 @@
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
         "test result: ok. 965 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s"
       ]
+    },
+    {
+      "iteration": 85,
+      "startedAt": "2026-07-01T11:26:45.347Z",
+      "endedAt": "2026-07-01T11:31:18.550Z",
+      "durationMs": 273024,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 946 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 965 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 54473648,
+  "totalDurationMs": 54746672,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -2183,16 +2209,16 @@
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 16,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 55,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 57,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 56,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 58,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 12,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 57,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 53,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 48,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 58,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 54,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 49,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
       "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAIL": 1,
       "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,": 1,
@@ -2206,7 +2232,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 859 filtered out; finished in 0.00s": 1,
       "test result: ok. 860 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 2,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 289 filtered out; finished in 0.00s": 1,
       "test result: ok. 291 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 860 filtered out; finished in 0.00s": 1,
@@ -2218,7 +2244,7 @@
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 866 filtered out; finished in 0.00s": 1,
       "test result: ok. 868 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 14,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 15,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 867 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 869 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 292 filtered out; finished in 0.00s": 1,
@@ -2239,7 +2265,7 @@
       "test result: ok. 880 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 872 filtered out; finished in 0.00s": 1,
       "test result: ok. 881 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
-      "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
+      "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 881 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 295 filtered out; finished in 0.00s": 1,
       "test result: ok. 882 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
@@ -2471,7 +2497,9 @@
       "- Area 37 `IDR_ARKHATA` subtype `0` now ports the C `pool_driver` item path: zero-character timer ca": 1,
       "`cargo test --workspace` exceeded the default 120s timeout while compiling, not because of a test fa": 1,
       "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 930 filtered out; finished in 0.00s": 1,
-      "test result: ok. 965 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1
+      "test result: ok. 965 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1,
+      "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 946 filtered out; finished in 0.00s": 1,
+      "test result: ok. 965 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
