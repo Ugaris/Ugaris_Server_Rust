@@ -29,6 +29,7 @@ pub const CDR_TEUFELDEMON: u16 = 114;
 pub const CDR_TEUFELGAMBLER: u16 = 115;
 pub const CDR_TEUFELQUEST: u16 = 116;
 pub const CDR_TEUFELRAT: u16 = 117;
+pub const CDR_CALIGARSKELLY: u16 = 124;
 pub const CDR_LAB2UNDEAD: u16 = 198;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
@@ -771,6 +772,7 @@ pub enum CharacterDriverKind {
     TeufelGambler,
     TeufelQuest,
     TeufelRat,
+    CaligarSkelly,
 }
 
 impl CharacterDriverKind {
@@ -788,6 +790,7 @@ impl CharacterDriverKind {
             CDR_TEUFELGAMBLER => Some(Self::TeufelGambler),
             CDR_TEUFELQUEST => Some(Self::TeufelQuest),
             CDR_TEUFELRAT => Some(Self::TeufelRat),
+            CDR_CALIGARSKELLY => Some(Self::CaligarSkelly),
             _ => None,
         }
     }
@@ -806,6 +809,7 @@ impl CharacterDriverKind {
             Self::TeufelGambler => CDR_TEUFELGAMBLER,
             Self::TeufelQuest => CDR_TEUFELQUEST,
             Self::TeufelRat => CDR_TEUFELRAT,
+            Self::CaligarSkelly => CDR_CALIGARSKELLY,
         }
     }
 }
@@ -919,6 +923,7 @@ mod tests {
         assert_eq!(CDR_TEUFELGAMBLER, 115);
         assert_eq!(CDR_TEUFELQUEST, 116);
         assert_eq!(CDR_TEUFELRAT, 117);
+        assert_eq!(CDR_CALIGARSKELLY, 124);
         assert_eq!(DRD_SIMPLEBADDYDRIVER, 0x0100_0013);
         assert_eq!(
             CharacterDriverKind::SimpleBaddy.legacy_id(),
@@ -950,6 +955,10 @@ mod tests {
             CDR_TEUFELQUEST
         );
         assert_eq!(CharacterDriverKind::TeufelRat.legacy_id(), CDR_TEUFELRAT);
+        assert_eq!(
+            CharacterDriverKind::CaligarSkelly.legacy_id(),
+            CDR_CALIGARSKELLY
+        );
         assert_eq!(DRD_CLARADRIVER, 0x0100_0059);
     }
 

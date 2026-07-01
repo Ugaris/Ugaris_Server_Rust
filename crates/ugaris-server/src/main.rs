@@ -13,8 +13,8 @@ use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{
-        CharacterDriverState, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC, CDR_PALACEISLENA,
-        CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT,
+        CharacterDriverState, CDR_CALIGARSKELLY, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC,
+        CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT,
     },
     direction::Direction,
     do_action::{
@@ -51,8 +51,9 @@ use ugaris_core::{
     },
     map::{MapFlags, MapTile},
     player::{
-        CommandAlias, DemonShrineResult, IgnoreToggleResult, KeyringAddResult, PlayerActionCode,
-        PlayerConnectionState, PlayerRuntime, QueuedAction, XmasTreeResult,
+        CaligarSkellyDeathResult, CommandAlias, DemonShrineResult, IgnoreToggleResult,
+        KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
+        XmasTreeResult,
     },
     quest::{QuestReopenResult, QF_OPEN},
     spell::{
@@ -147,6 +148,7 @@ fn apply_pk_hate_from_hurt_events(
     for event in events {
         apply_swamp_monster_death_from_hurt_event(runtime, world, event);
         apply_teufel_rat_death_from_hurt_event(runtime, world, event);
+        apply_caligar_skelly_death_from_hurt_event(runtime, world, event);
 
         let eligible = match (
             world.characters.get(&event.target_id),
@@ -186,6 +188,48 @@ fn apply_pk_hate_from_hurt_events(
         }
     }
     applied
+}
+
+fn apply_caligar_skelly_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some((home_x, home_y)) = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .and_then(|(target, killer)| {
+            (target.driver == CDR_CALIGARSKELLY && killer.flags.contains(CharacterFlags::PLAYER))
+                .then_some((target.rest_x, target.rest_y))
+        })
+    else {
+        return false;
+    };
+
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    let message = match player.mark_caligar_skelly_death(home_x, home_y) {
+        CaligarSkellyDeathResult::AlreadyUnlocked { .. } => {
+            "You expect to hear a click, but nothing happens. Maybe you've been here before?"
+                .to_string()
+        }
+        CaligarSkellyDeathResult::PartiallyUnlocked { .. } => {
+            "You hear a faint sound in the distance, as if a lock was partially opened.".to_string()
+        }
+        CaligarSkellyDeathResult::FullyUnlocked { .. } => {
+            "You hear a \"click\" in the distance, as if a lock had opened.".to_string()
+        }
+        CaligarSkellyDeathResult::Unmapped { x, y } => {
+            format!("You have found bug #9824w at {x},{y}. Please report it.")
+        }
+    };
+    world.queue_system_text(event.cause_id, message);
+    true
 }
 
 fn apply_swamp_monster_death_from_hurt_event(
@@ -23894,6 +23938,96 @@ mod tests {
         let texts = world.drain_pending_system_texts();
         assert!(texts.iter().any(|text| text.message == "#90 1 Rat Kills"));
         assert!(texts.iter().any(|text| text.message == "#80 1 Rat Points"));
+    }
+
+    #[test]
+    fn lethal_caligar_skelly_hurt_marks_killer_door_lock_ppd() {
+        let mut world = World::default();
+        let mut skelly = login_character(CharacterId(1), &login_block("Skelly"), 36, 10, 10);
+        skelly.flags.remove(CharacterFlags::PLAYER);
+        skelly.driver = CDR_CALIGARSKELLY;
+        skelly.rest_x = 103;
+        skelly.rest_y = 224;
+        skelly.hp = POWERSCALE;
+        let killer = login_character(CharacterId(2), &login_block("Killer"), 36, 11, 10);
+        world.add_character(skelly);
+        world.add_character(killer);
+
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(2));
+        runtime.players.insert(1, player);
+
+        world.apply_legacy_hurt(
+            CharacterId(1),
+            Some(CharacterId(2)),
+            POWERSCALE * 2,
+            1,
+            0,
+            0,
+        );
+        assert_eq!(
+            apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0),
+            0
+        );
+
+        assert!(!runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .caligar_skelly_door_unlocked(0));
+        let texts = world.drain_pending_system_texts();
+        assert!(texts.iter().any(|text| {
+            text.character_id == CharacterId(2)
+                && text.message
+                    == "You hear a faint sound in the distance, as if a lock was partially opened."
+        }));
+    }
+
+    #[test]
+    fn lethal_caligar_skelly_hurt_reports_completed_and_repeated_locks() {
+        let mut world = World::default();
+        let mut killer = login_character(CharacterId(2), &login_block("Killer"), 36, 11, 10);
+        killer.hp = POWERSCALE * 10;
+        world.add_character(killer);
+
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(2));
+        player.mark_caligar_skelly_death(103, 224);
+        player.mark_caligar_skelly_death(103, 211);
+        runtime.players.insert(1, player);
+
+        for (id, y) in [(1, 198), (3, 198)] {
+            let mut skelly = login_character(CharacterId(id), &login_block("Skelly"), 36, 10, 10);
+            skelly.flags.remove(CharacterFlags::PLAYER);
+            skelly.driver = CDR_CALIGARSKELLY;
+            skelly.rest_x = 103;
+            skelly.rest_y = y;
+            skelly.hp = POWERSCALE;
+            world.add_character(skelly);
+            world.apply_legacy_hurt(
+                CharacterId(id),
+                Some(CharacterId(2)),
+                POWERSCALE * 2,
+                1,
+                0,
+                0,
+            );
+            apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0);
+        }
+
+        assert!(runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .caligar_skelly_door_unlocked(0));
+        let texts = world.drain_pending_system_texts();
+        assert!(texts.iter().any(|text| {
+            text.message == "You hear a \"click\" in the distance, as if a lock had opened."
+        }));
+        assert!(texts.iter().any(|text| {
+            text.message
+                == "You expect to hear a click, but nothing happens. Maybe you've been here before?"
+        }));
     }
 
     #[test]
