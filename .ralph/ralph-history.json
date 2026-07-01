@@ -995,9 +995,30 @@
         "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 909 filtered out; finished in 0.00s",
         "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 305 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 39,
+      "startedAt": "2026-07-01T02:37:18.199Z",
+      "endedAt": "2026-07-01T02:39:46.632Z",
+      "durationMs": 148242,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "The scheduling is already handled by the world outcome applier. I’m going to make the ledger reflect the implemented Area 15 swampspawn slice and run focused tests, unless I find a failing parity edge",
+        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 897 filtered out; finished in 0.00s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 907 filtered out; finished in 0.00s",
+        "-- Area 15 `IDR_SWAMPWHISP = 74` now dispatches through the legacy area libload guard for C `swampwhisp`: zero-character timer-only execution, initial origin/direction `drdata[1..3]` setup, daylight d",
+        "+- Area 15 `IDR_SWAMPWHISP = 74` now dispatches through the legacy area libload guard for C `swampwhisp`: zero-character timer-only execution, initial origin/direction `drdata[1..3]` setup, daylight d"
+      ]
     }
   ],
-  "totalDurationMs": 22845567,
+  "totalDurationMs": 22993809,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1134,7 +1155,12 @@
       "assertion failed: world.complete_give(CharacterId(1), CharacterId(2))": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 906 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 909 filtered out; finished in 0.00s": 1,
-      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 305 filtered out; finished in 0.00s": 1
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 305 filtered out; finished in 0.00s": 1,
+      "The scheduling is already handled by the world outcome applier. I’m going to make the ledger reflect": 1,
+      "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 897 filtered out; finished in 0.00s": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 907 filtered out; finished in 0.00s": 1,
+      "-- Area 15 `IDR_SWAMPWHISP = 74` now dispatches through the legacy area libload guard for C `swampwh": 1,
+      "+- Area 15 `IDR_SWAMPWHISP = 74` now dispatches through the legacy area libload guard for C `swampwh": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
