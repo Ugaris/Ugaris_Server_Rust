@@ -9118,6 +9118,23 @@ impl World {
                     installed,
                 }
             }
+            ItemDriverOutcome::BranningtonUnderwaterBerry {
+                item_id,
+                character_id,
+                duration_ticks,
+                ..
+            } => {
+                let installed = self.install_oxygen_spell_for_ticks(character_id, duration_ticks);
+                if installed {
+                    self.destroy_item(item_id);
+                }
+                ItemDriverOutcome::BranningtonUnderwaterBerry {
+                    item_id,
+                    character_id,
+                    duration_ticks,
+                    installed,
+                }
+            }
             ItemDriverOutcome::Lab3YellowBerry {
                 item_id,
                 character_id,
@@ -16340,14 +16357,15 @@ mod tests {
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
         item_driver::{
-            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE, IDR_CALIGAR,
-            IDR_CALIGARFLAME, IDR_CHESTSPAWN, IDR_DOOR, IDR_EDEMONBALL, IDR_EDEMONLIGHT,
-            IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW,
-            IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB2_STEPACTION, IDR_LAB2_WATER, IDR_LAB3_PLANT,
-            IDR_LABTORCH, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION,
-            IDR_PALACEBOMB, IDR_PALACECAP, IDR_PALACEGATE, IDR_PALACEKEY, IDR_PENT, IDR_POTION,
-            IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP,
-            IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            UseItemOutcome, IDR_ANTIENCHANTITEM, IDR_BALLTRAP, IDR_BONEBRIDGE,
+            IDR_BRANNINGTONFOREST, IDR_CALIGAR, IDR_CALIGARFLAME, IDR_CHESTSPAWN, IDR_DOOR,
+            IDR_EDEMONBALL, IDR_EDEMONLIGHT, IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA,
+            IDR_FIREBALL, IDR_FLAMETHROW, IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB2_STEPACTION,
+            IDR_LAB2_WATER, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT,
+            IDR_ONOFFLIGHT, IDR_OXYPOTION, IDR_PALACEBOMB, IDR_PALACECAP, IDR_PALACEGATE,
+            IDR_PALACEKEY, IDR_PENT, IDR_POTION, IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP,
+            IDR_STAFFER2, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH,
+            IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -28346,6 +28364,52 @@ mod tests {
         let character = world.characters.get(&CharacterId(1)).unwrap();
         assert!(!character.flags.contains(CharacterFlags::OXYGEN));
         assert!(character.flags.contains(CharacterFlags::UPDATE));
+    }
+
+    #[test]
+    fn brannington_underwater_berry_installs_thirty_second_oxygen_spell_and_consumes_item() {
+        let mut world = World::default();
+        world.tick = Tick(200);
+        let mut character = character(1);
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.inventory[30] = Some(ItemId(10));
+        world.add_character(character);
+
+        let mut berry = item(10, ItemFlags::USED | ItemFlags::USE);
+        berry.carried_by = Some(CharacterId(1));
+        berry.driver = IDR_BRANNINGTONFOREST;
+        berry.driver_data = vec![1];
+        world.items.insert(ItemId(10), berry);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_BRANNINGTONFOREST,
+                item_id: ItemId(10),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            28,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::BranningtonUnderwaterBerry {
+                duration_ticks,
+                installed: true,
+                ..
+            } if duration_ticks == 30 * TICKS_PER_SECOND
+        ));
+        assert!(!world.items.contains_key(&ItemId(10)));
+        let character = world.characters.get(&CharacterId(1)).unwrap();
+        assert_eq!(character.inventory[30], None);
+        let spell_id = character.inventory[29].unwrap();
+        let spell = world.items.get(&spell_id).unwrap();
+        assert_eq!(spell.driver, IDR_OXYGEN);
+        assert_eq!(
+            read_spell_expire_tick(&spell.driver_data),
+            Some(200 + (30 * TICKS_PER_SECOND) as u32)
+        );
+        assert!(character.flags.contains(CharacterFlags::OXYGEN));
     }
 
     #[test]

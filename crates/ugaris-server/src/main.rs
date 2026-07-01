@@ -27912,7 +27912,7 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::BeyondPotion { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AlchemyFlaskPotion { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::OxygenPotion { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
+                                          | ugaris_core::item_driver::ItemDriverOutcome::EnchantCursorItem { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::AntiEnchantCursorItem { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmuletAssemble { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
@@ -28844,6 +28844,13 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerDoesNotFit { character_id, .. } => {
                                             feedback.push((character_id, "This cannot be used together. Try something else.".to_string()));
                                             blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::BranningtonUnderwaterBerry { installed, .. } => {
+                                            if installed {
+                                                executed += 1;
+                                            } else {
+                                                blocked += 1;
+                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::Lab3YellowBerry { character_id, installed, .. } => {
                                             if installed {

@@ -1952,6 +1952,12 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         installed: bool,
     },
+    BranningtonUnderwaterBerry {
+        item_id: ItemId,
+        character_id: CharacterId,
+        duration_ticks: u64,
+        installed: bool,
+    },
     PickBerry {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2647,6 +2653,7 @@ pub fn execute_item_driver_with_context(
                 IDR_WARPKEYSPAWN => warpkeyspawn_driver(character, item),
                 IDR_WARPKEYDOOR => warpkeydoor_driver(character, item, context),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
+                IDR_BRANNINGTONFOREST => brannington_forest_driver(character, item),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
                 IDR_FLOWER => alchemy_flower_driver(character, item, area_id),
@@ -2710,6 +2717,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_LQ_TICKER | IDR_LQ_ENTRANCE => Some(20),
         IDR_WARPTELEPORT | IDR_WARPTRIALDOOR | IDR_WARPBONUS | IDR_WARPKEYSPAWN
         | IDR_WARPKEYDOOR => Some(25),
+        IDR_BRANNINGTONFOREST => Some(28),
         IDR_STAFFER => Some(26),
         IDR_LAB2_WATER | IDR_LAB2_STEPACTION | IDR_LAB2_REGENERATE | IDR_LAB2_GRAVE
         | IDR_LABTORCH => Some(22),
@@ -4242,6 +4250,22 @@ fn oxy_potion_driver(character: &Character, item: &Item, area_id: u16) -> ItemDr
         item_id: item.id,
         character_id: character.id,
         installed: false,
+    }
+}
+
+fn brannington_forest_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+
+    match drdata(item, 0) {
+        1 => ItemDriverOutcome::BranningtonUnderwaterBerry {
+            item_id: item.id,
+            character_id: character.id,
+            duration_ticks: TICKS_PER_SECOND * 30,
+            installed: false,
+        },
+        _ => ItemDriverOutcome::Noop,
     }
 }
 
@@ -12929,6 +12953,51 @@ mod tests {
             ItemDriverOutcome::OxygenPotion {
                 item_id: ItemId(8),
                 character_id: CharacterId(1),
+                installed: false,
+            }
+        );
+    }
+
+    #[test]
+    fn brannington_underwater_berry_requires_area28_and_player() {
+        let mut actor = character(1);
+        let mut berry = item(
+            8,
+            ItemFlags::USED | ItemFlags::USE,
+            0,
+            IDR_BRANNINGTONFOREST,
+        );
+        berry.driver_data = vec![1];
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_BRANNINGTONFOREST,
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(IDR_BRANNINGTONFOREST, 123);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut berry, request, 1, false),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_BRANNINGTONFOREST,
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                required_area: 28,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut berry, request, 28, false),
+            ItemDriverOutcome::Noop
+        );
+
+        actor.flags.insert(CharacterFlags::PLAYER);
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut berry, request, 28, false),
+            ItemDriverOutcome::BranningtonUnderwaterBerry {
+                item_id: ItemId(8),
+                character_id: CharacterId(1),
+                duration_ticks: TICKS_PER_SECOND * 30,
                 installed: false,
             }
         );

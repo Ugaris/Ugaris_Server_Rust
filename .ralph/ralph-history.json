@@ -1934,9 +1934,38 @@
         "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
         "test result: ok. 315 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
       ]
+    },
+    {
+      "iteration": 76,
+      "startedAt": "2026-07-01T09:46:34.250Z",
+      "endedAt": "2026-07-01T10:02:22.796Z",
+      "durationMs": 948374,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test world::tests::brannington_underwater_berry_installs_thirty_second_oxygen_spell_and_consumes_item ... FAILED",
+        "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 959 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 959 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 961 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
+      ]
     }
   ],
-  "totalDurationMs": 48494159,
+  "totalDurationMs": 49442533,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1945,18 +1974,18 @@
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 14,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 15,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 48,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 50,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 49,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 51,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 11,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 50,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 46,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 42,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 51,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 47,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 43,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
       "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAIL": 1,
       "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,": 1,
@@ -2209,7 +2238,11 @@
       "test tests::area_leave_cleanup_removes_arkhata_stopwatch_from_live_cursor ... FAILED": 1,
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s": 1,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 308 filtered out; finished in 0.00s": 1,
-      "test result: ok. 315 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 315 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test world::tests::brannington_underwater_berry_installs_thirty_second_oxygen_spell_and_consumes_ite": 1,
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 959 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 959 filtered out; finished in 0.00s": 1,
+      "test result: ok. 961 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
