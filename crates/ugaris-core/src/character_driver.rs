@@ -22,6 +22,7 @@ pub const CDR_MACRO: u16 = 37;
 pub const CDR_SWAMPCLARA: u16 = 54;
 pub const CDR_SWAMPMONSTER: u16 = 56;
 pub const CDR_PALACEISLENA: u16 = 57;
+pub const CDR_TWOSKELLY: u16 = 70;
 pub const CDR_TRADER: u16 = 72;
 pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
@@ -34,6 +35,7 @@ pub const CDR_LAB2UNDEAD: u16 = 198;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
+pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
 pub const DRD_LAB2_UNDEAD: u32 = 0x0200_0001;
 
 pub const NT_CHAR: i32 = 1;
@@ -82,7 +84,15 @@ pub struct CharacterDriverMessage {
 pub enum CharacterDriverState {
     SimpleBaddy(SimpleBaddyDriverData),
     Clara(ClaraDriverData),
+    TwoSkelly(TwoSkellyDriverData),
     Lab2Undead(Lab2UndeadDriverData),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TwoSkellyDriverData {
+    pub last_talk_tick: i32,
+    pub current_victim: Option<CharacterId>,
+    pub alive_tick: i32,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -324,9 +334,11 @@ pub fn apply_simple_baddy_create_message(
 ) -> Vec<UnknownSimpleBaddyArgument> {
     let mut data = match character.driver_state.take() {
         Some(CharacterDriverState::SimpleBaddy(data)) => data,
-        Some(CharacterDriverState::Clara(_) | CharacterDriverState::Lab2Undead(_)) => {
-            SimpleBaddyDriverData::default()
-        }
+        Some(
+            CharacterDriverState::Clara(_)
+            | CharacterDriverState::TwoSkelly(_)
+            | CharacterDriverState::Lab2Undead(_),
+        ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
 
@@ -897,6 +909,7 @@ pub enum CharacterDriverKind {
     SwampClara,
     SwampMonster,
     PalaceIslena,
+    TwoSkelly,
     Trader,
     LqNpc,
     Janitor,
@@ -916,6 +929,7 @@ impl CharacterDriverKind {
             CDR_SWAMPCLARA => Some(Self::SwampClara),
             CDR_SWAMPMONSTER => Some(Self::SwampMonster),
             CDR_PALACEISLENA => Some(Self::PalaceIslena),
+            CDR_TWOSKELLY => Some(Self::TwoSkelly),
             CDR_TRADER => Some(Self::Trader),
             CDR_LQNPC => Some(Self::LqNpc),
             CDR_JANITOR => Some(Self::Janitor),
@@ -936,6 +950,7 @@ impl CharacterDriverKind {
             Self::SwampClara => CDR_SWAMPCLARA,
             Self::SwampMonster => CDR_SWAMPMONSTER,
             Self::PalaceIslena => CDR_PALACEISLENA,
+            Self::TwoSkelly => CDR_TWOSKELLY,
             Self::Trader => CDR_TRADER,
             Self::LqNpc => CDR_LQNPC,
             Self::Janitor => CDR_JANITOR,
@@ -1066,6 +1081,7 @@ mod tests {
         assert_eq!(CDR_SWAMPCLARA, 54);
         assert_eq!(CDR_SWAMPMONSTER, 56);
         assert_eq!(CDR_PALACEISLENA, 57);
+        assert_eq!(CDR_TWOSKELLY, 70);
         assert_eq!(CDR_TRADER, 72);
         assert_eq!(CDR_LQNPC, 74);
         assert_eq!(CDR_JANITOR, 85);
@@ -1090,6 +1106,7 @@ mod tests {
             CharacterDriverKind::PalaceIslena.legacy_id(),
             CDR_PALACEISLENA
         );
+        assert_eq!(CharacterDriverKind::TwoSkelly.legacy_id(), CDR_TWOSKELLY);
         assert_eq!(CharacterDriverKind::Trader.legacy_id(), CDR_TRADER);
         assert_eq!(CharacterDriverKind::LqNpc.legacy_id(), CDR_LQNPC);
         assert_eq!(CharacterDriverKind::Janitor.legacy_id(), CDR_JANITOR);
@@ -1112,7 +1129,28 @@ mod tests {
         );
         assert_eq!(CharacterDriverKind::Lab2Undead.legacy_id(), CDR_LAB2UNDEAD);
         assert_eq!(DRD_CLARADRIVER, 0x0100_0059);
+        assert_eq!(DRD_SKELLYDRIVER, 0x0100_006a);
         assert_eq!(DRD_LAB2_UNDEAD, 0x0200_0001);
+    }
+
+    #[test]
+    fn two_skelly_driver_state_matches_legacy_runtime_data_shape() {
+        let mut data = TwoSkellyDriverData::default();
+        assert_eq!(data.last_talk_tick, 0);
+        assert_eq!(data.current_victim, None);
+        assert_eq!(data.alive_tick, 0);
+
+        data.last_talk_tick = 111;
+        data.current_victim = Some(CharacterId(12));
+        data.alive_tick = 222;
+        assert_eq!(
+            CharacterDriverState::TwoSkelly(data),
+            CharacterDriverState::TwoSkelly(TwoSkellyDriverData {
+                last_talk_tick: 111,
+                current_victim: Some(CharacterId(12)),
+                alive_tick: 222,
+            })
+        );
     }
 
     #[test]
@@ -1140,6 +1178,7 @@ mod tests {
             (CDR_SWAMPCLARA, CharacterDriverKind::SwampClara),
             (CDR_SWAMPMONSTER, CharacterDriverKind::SwampMonster),
             (CDR_PALACEISLENA, CharacterDriverKind::PalaceIslena),
+            (CDR_TWOSKELLY, CharacterDriverKind::TwoSkelly),
             (CDR_TRADER, CharacterDriverKind::Trader),
             (CDR_LQNPC, CharacterDriverKind::LqNpc),
             (CDR_JANITOR, CharacterDriverKind::Janitor),
@@ -1211,6 +1250,18 @@ mod tests {
         );
         assert_eq!(clara_died.legacy_return_code(), 1);
 
+        let two_skelly_died = execute_character_died_driver(CDR_TWOSKELLY, 123);
+        assert_eq!(
+            two_skelly_died,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::TwoSkelly,
+                call: CharacterDriverCall::Died {
+                    killer_character_id: 123,
+                },
+            }
+        );
+        assert_eq!(two_skelly_died.legacy_return_code(), 1);
+
         let swamp_monster_died = execute_character_died_driver(CDR_SWAMPMONSTER, 123);
         assert_eq!(
             swamp_monster_died,
@@ -1262,6 +1313,16 @@ mod tests {
             }
         );
         assert_eq!(clara_respawn.legacy_return_code(), 1);
+
+        let two_skelly_respawn = execute_character_respawn_driver(CDR_TWOSKELLY);
+        assert_eq!(
+            two_skelly_respawn,
+            CharacterDriverOutcome::HandledStub {
+                kind: CharacterDriverKind::TwoSkelly,
+                call: CharacterDriverCall::Respawn,
+            }
+        );
+        assert_eq!(two_skelly_respawn.legacy_return_code(), 1);
 
         let swamp_monster_respawn = execute_character_respawn_driver(CDR_SWAMPMONSTER);
         assert_eq!(
