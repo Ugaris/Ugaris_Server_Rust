@@ -63,7 +63,7 @@ use crate::{
         add_same_spell_slot, fireball_damage, freeze_speed_modifier, is_timed_spell_driver,
         may_add_spell, pulse_damage, pulse_spend, read_spell_expire_tick, spell_power,
         strike_damage, warcry_damage, warcry_speed_modifier, BLESS_COST, BLESS_DURATION, EF_BALL,
-        EF_BLESS, EF_BUBBLE, EF_BURN, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN, EF_EDEMONBALL,
+        EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD, EF_EARTHRAIN, EF_EDEMONBALL,
         EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE, EF_HEAL, EF_MAGICSHIELD,
         EF_MIST, EF_POTION, EF_PULSE, EF_PULSEBACK, EF_STRIKE, EF_WARCRY, FIREBALL_COST,
         FLASH_COST, FLASH_DURATION, FREEZE_COST, FREEZE_DURATION, IDR_ARMOR, IDR_BLESS, IDR_CURSE,
@@ -8463,6 +8463,14 @@ impl World {
                 self.apply_palace_bomb_explosion(item_id, owner_id, x, y);
                 outcome
             }
+            ItemDriverOutcome::PalaceCapTimer {
+                item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                self.apply_palace_cap_timer(item_id, schedule_after_ticks);
+                outcome
+            }
             ItemDriverOutcome::Extinguish {
                 item_id,
                 character_id,
@@ -10408,6 +10416,83 @@ impl World {
             self.create_palace_bomb_burn_effect(character_id);
         }
         self.destroy_item(item_id);
+    }
+
+    fn apply_palace_cap_timer(&mut self, item_id: ItemId, schedule_after_ticks: u64) {
+        self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+
+        let Some(character_id) = self.items.get(&item_id).and_then(|item| item.carried_by) else {
+            return;
+        };
+        let Some(character) = self.characters.get(&character_id) else {
+            return;
+        };
+        if character.inventory[worn_slot::HEAD] != Some(item_id) {
+            return;
+        }
+
+        let regen_end = u64::from(character.regen_ticker).saturating_add(TICKS_PER_SECOND * 4);
+        let should_deactivate = self
+            .items
+            .get(&item_id)
+            .is_some_and(|item| item.driver_data.first().copied().unwrap_or_default() != 0)
+            && self.tick.0 < regen_end;
+        let should_activate = self.tick.0 > regen_end && character.action == action::IDLE;
+
+        if should_deactivate {
+            if let Some(item) = self.items.get_mut(&item_id) {
+                if item.driver_data.is_empty() {
+                    item.driver_data.resize(1, 0);
+                }
+                item.driver_data[0] = 0;
+                item.sprite = item.sprite.saturating_sub(1);
+            }
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                character.flags.insert(CharacterFlags::ITEMS);
+            }
+            return;
+        }
+
+        if !should_activate {
+            return;
+        }
+
+        let mut changed = false;
+        if let Some(item) = self.items.get_mut(&item_id) {
+            if item.driver_data.is_empty() {
+                item.driver_data.resize(1, 0);
+            }
+            if item.driver_data[0] == 0 {
+                item.driver_data[0] = 1;
+                item.sprite += 1;
+                changed = true;
+            }
+        }
+        if changed {
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                character.flags.insert(CharacterFlags::ITEMS);
+            }
+        }
+        self.create_or_refresh_cap_effect(character_id);
+    }
+
+    fn create_or_refresh_cap_effect(&mut self, character_id: CharacterId) {
+        let stop_tick = self.tick.0.saturating_add(TICKS_PER_SECOND / 4 + 1) as i32;
+        if let Some(effect) = self.effects.values_mut().find(|effect| {
+            effect.effect_type == EF_CAP && effect.target_character == Some(character_id)
+        }) {
+            effect.stop_tick = stop_tick;
+            return;
+        }
+
+        self.create_show_effect(
+            EF_CAP,
+            character_id,
+            self.tick.0 as u32,
+            stop_tick as u32,
+            0,
+            1,
+        );
     }
 
     pub fn remove_character_burn_effect(&mut self, character_id: CharacterId) -> bool {
@@ -16232,9 +16317,9 @@ mod tests {
             IDR_ENCHANTITEM, IDR_FDEMONBLOOD, IDR_FDEMONLAVA, IDR_FIREBALL, IDR_FLAMETHROW,
             IDR_FLASK, IDR_LAB2_REGENERATE, IDR_LAB2_STEPACTION, IDR_LAB2_WATER, IDR_LAB3_PLANT,
             IDR_LABTORCH, IDR_LIZARDFLOWER, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_OXYPOTION,
-            IDR_PALACEBOMB, IDR_PALACEGATE, IDR_PALACEKEY, IDR_PENT, IDR_POTION, IDR_SKELRAISE,
-            IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_SWAMPARM,
-            IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
+            IDR_PALACEBOMB, IDR_PALACECAP, IDR_PALACEGATE, IDR_PALACEKEY, IDR_PENT, IDR_POTION,
+            IDR_SKELRAISE, IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP,
+            IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
         },
         legacy::action,
         map::{MapFlags, MapGrid},
@@ -23086,6 +23171,91 @@ mod tests {
         let sounds = world.drain_pending_sound_specials();
         assert!(!sounds.is_empty());
         assert!(sounds.iter().all(|sound| sound.special.special_type == 6));
+    }
+
+    #[test]
+    fn palace_cap_timer_activates_idle_head_cap_and_refreshes_effect() {
+        let mut world = World::default();
+        world.tick = Tick(TICKS_PER_SECOND * 5);
+        world.add_character(character(0));
+        let mut wearer = character(1);
+        wearer.inventory[worn_slot::HEAD] = Some(ItemId(7));
+        wearer.regen_ticker = 0;
+        world.spawn_character(wearer, 10, 10);
+        let mut cap = item(7, ItemFlags::USED);
+        cap.driver = IDR_PALACECAP;
+        cap.carried_by = Some(CharacterId(1));
+        cap.driver_data = vec![0];
+        cap.sprite = 12_345;
+        world.items.insert(ItemId(7), cap);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_PALACECAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            11,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::PalaceCapTimer { .. }));
+        let cap = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(cap.driver_data[0], 1);
+        assert_eq!(cap.sprite, 12_346);
+        assert!(world.characters[&CharacterId(1)]
+            .flags
+            .contains(CharacterFlags::ITEMS));
+        let cap_effect = world
+            .effects
+            .values()
+            .find(|effect| effect.effect_type == EF_CAP)
+            .unwrap();
+        assert_eq!(cap_effect.target_character, Some(CharacterId(1)));
+        assert_eq!(
+            cap_effect.stop_tick,
+            (TICKS_PER_SECOND * 5 + TICKS_PER_SECOND / 4 + 1) as i32
+        );
+        assert_eq!(cap_effect.strength, 1);
+    }
+
+    #[test]
+    fn palace_cap_timer_deactivates_when_regeneration_resets() {
+        let mut world = World::default();
+        world.tick = Tick(60);
+        world.add_character(character(0));
+        let mut wearer = character(1);
+        wearer.inventory[worn_slot::HEAD] = Some(ItemId(7));
+        wearer.regen_ticker = 50;
+        world.spawn_character(wearer, 10, 10);
+        let mut cap = item(7, ItemFlags::USED);
+        cap.driver = IDR_PALACECAP;
+        cap.carried_by = Some(CharacterId(1));
+        cap.driver_data = vec![1];
+        cap.sprite = 12_346;
+        world.items.insert(ItemId(7), cap);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_PALACECAP,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            11,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::PalaceCapTimer { .. }));
+        let cap = world.items.get(&ItemId(7)).unwrap();
+        assert_eq!(cap.driver_data[0], 0);
+        assert_eq!(cap.sprite, 12_345);
+        assert!(world.characters[&CharacterId(1)]
+            .flags
+            .contains(CharacterFlags::ITEMS));
+        assert!(world
+            .effects
+            .values()
+            .all(|effect| effect.effect_type != EF_CAP));
     }
 
     #[test]
