@@ -2544,6 +2544,7 @@ pub fn execute_item_driver_with_context(
                     special_potion_driver(character, item, area_id, in_arena, context.current_tick)
                 }
                 IDR_SPECIAL_SHRINE => special_shrine_driver(character, item),
+                IDR_STAFFER => staffer_driver(character, item, context),
                 IDR_NOMADDICE => nomad_dice_driver(character, item),
                 IDR_NOMADSTACK => nomad_stack_driver(character, item),
                 IDR_DEMONCHIP => nomad_stack_driver(character, item),
@@ -2617,6 +2618,7 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_LQ_TICKER | IDR_LQ_ENTRANCE => Some(20),
         IDR_WARPTELEPORT | IDR_WARPTRIALDOOR | IDR_WARPBONUS | IDR_WARPKEYSPAWN
         | IDR_WARPKEYDOOR => Some(25),
+        IDR_STAFFER => Some(26),
         IDR_LAB2_WATER | IDR_LAB2_STEPACTION | IDR_LAB2_REGENERATE | IDR_LAB2_GRAVE
         | IDR_LABTORCH => Some(22),
         IDR_STAFFER2 => Some(29),
@@ -3900,6 +3902,75 @@ fn staffer2_driver(character: &mut Character, item: &mut Item) -> ItemDriverOutc
             item_id: item.id,
             character_id: character.id,
         },
+    }
+}
+
+fn staffer_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    match drdata(item, 0) {
+        1 => staffer_spiketrap_driver(character, item),
+        2 => staffer_fireball_machine_driver(character, item, context),
+        3 => staffer_block_driver(character, item),
+        // Vault skull/shelf quest PPD and template rewards are intentionally left for a later slice.
+        4 | 5 => ItemDriverOutcome::Noop,
+        _ => ItemDriverOutcome::Unsupported {
+            driver: IDR_STAFFER,
+            item_id: item.id,
+            character_id: character.id,
+        },
+    }
+}
+
+fn staffer_spiketrap_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
+    if character.id.0 != 0 && drdata(item, 1) == 0 {
+        item.sprite += 1;
+        set_drdata(item, 1, 1);
+        return ItemDriverOutcome::SpikeTrapTriggered {
+            item_id: item.id,
+            character_id: character.id,
+            damage: i32::from(drdata(item, 2)) * POWERSCALE,
+            reset_after_ticks: TICKS_PER_SECOND,
+        };
+    }
+
+    if character.id.0 == 0 && drdata(item, 1) != 0 {
+        item.sprite -= 1;
+        set_drdata(item, 1, 0);
+        return ItemDriverOutcome::SpikeTrapReset { item_id: item.id };
+    }
+
+    ItemDriverOutcome::Noop
+}
+
+fn staffer_fireball_machine_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 != 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let dx = i16::from(drdata(item, 1)) - 128;
+    let dy = i16::from(drdata(item, 2)) - 128;
+    let dxs = dx.signum();
+    let dys = dy.signum();
+    let item_x = i32::from(item.x);
+    let item_y = i32::from(item.y);
+    let frequency = u64::from(drdata(item, 4));
+
+    ItemDriverOutcome::FireballMachineProjectile {
+        item_id: item.id,
+        character_id: character.id,
+        start_x: clamp_legacy_coordinate(item_x + i32::from(dxs)),
+        start_y: clamp_legacy_coordinate(item_y + i32::from(dys)),
+        target_x: clamp_legacy_coordinate(item_x + i32::from(dx)),
+        target_y: clamp_legacy_coordinate(item_y + i32::from(dy)),
+        power: drdata(item, 3),
+        schedule_after_ticks: (context.timer_call && frequency != 0).then_some(frequency),
     }
 }
 
@@ -19162,6 +19233,160 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn staffer_spiketrap_uses_area26_drdata_layout() {
+        let mut player = character(1);
+        let mut trap = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER);
+        trap.sprite = 100;
+        trap.driver_data = vec![1, 0, 6];
+
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_STAFFER,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let outcome = execute_item_driver(&mut player, &mut trap, request, 26, false);
+
+        assert_eq!(trap.sprite, 101);
+        assert_eq!(trap.driver_data[1], 1);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SpikeTrapTriggered {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                damage: 6 * POWERSCALE,
+                reset_after_ticks: TICKS_PER_SECOND,
+            }
+        );
+
+        let mut timer_character = character(0);
+        let outcome = execute_item_driver(
+            &mut timer_character,
+            &mut trap,
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            26,
+            false,
+        );
+
+        assert_eq!(trap.sprite, 100);
+        assert_eq!(trap.driver_data[1], 0);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SpikeTrapReset { item_id: ItemId(7) }
+        );
+    }
+
+    #[test]
+    fn staffer_fireball_machine_is_timer_only_and_uses_shifted_drdata_layout() {
+        let mut timer_character = character(0);
+        let mut machine = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER);
+        machine.x = 100;
+        machine.y = 100;
+        machine.driver_data = vec![2, 131, 126, 42, 9];
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer_character,
+            &mut machine,
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            26,
+            false,
+            &ItemDriverContext {
+                timer_call: true,
+                ..ItemDriverContext::default()
+            },
+        );
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::FireballMachineProjectile {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                start_x: 101,
+                start_y: 99,
+                target_x: 103,
+                target_y: 98,
+                power: 42,
+                schedule_after_ticks: Some(9),
+            }
+        );
+
+        let mut player = character(1);
+        assert_eq!(
+            execute_item_driver(
+                &mut player,
+                &mut machine,
+                ItemDriverRequest::Driver {
+                    driver: IDR_STAFFER,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                26,
+                false,
+            ),
+            ItemDriverOutcome::Noop
+        );
+    }
+
+    #[test]
+    fn staffer_block_delegates_to_existing_block_move_and_area_guard() {
+        let mut player = character(1);
+        player.flags.insert(CharacterFlags::PLAYER);
+        let mut block = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER);
+        block.driver_data = vec![3];
+
+        assert_eq!(
+            execute_item_driver(
+                &mut player,
+                &mut block,
+                ItemDriverRequest::Driver {
+                    driver: IDR_STAFFER,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                1,
+                false,
+            ),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_STAFFER,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                required_area: 26,
+            }
+        );
+
+        assert_eq!(
+            execute_item_driver(
+                &mut player,
+                &mut block,
+                ItemDriverRequest::Driver {
+                    driver: IDR_STAFFER,
+                    item_id: ItemId(7),
+                    character_id: CharacterId(1),
+                    spec: 0,
+                },
+                26,
+                false,
+            ),
+            ItemDriverOutcome::StafferBlockMove {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
     }
 
     #[test]
