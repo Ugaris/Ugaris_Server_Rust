@@ -42,7 +42,8 @@ use crate::{
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
-        action, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP, SAY_DIST,
+        action, profession, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP,
+        SAY_DIST,
     },
     light::{
         add_character_light, add_effect_light, add_item_light, compute_dlight, compute_groundlight,
@@ -3617,9 +3618,12 @@ impl World {
                     }
                     applied.push(ItemDriverOutcome::Noop);
                 }
-                SimpleBaddyMessageOutcome::TextNotification { .. } => {
-                    // Legacy `tabunga` receives a raw text pointer. The Rust message carrier
-                    // preserves the notification for now, but cannot reconstruct text yet.
+                SimpleBaddyMessageOutcome::TextNotification {
+                    speaker_id, text, ..
+                } => {
+                    if let Some(text) = text.as_deref() {
+                        self.apply_tabunga_text_notification(character_id, speaker_id, text);
+                    }
                     applied.push(ItemDriverOutcome::Noop);
                 }
                 SimpleBaddyMessageOutcome::NoteHit => {
@@ -6562,6 +6566,36 @@ impl World {
             strength,
         ));
         effects
+    }
+
+    fn apply_tabunga_text_notification(
+        &mut self,
+        character_id: CharacterId,
+        speaker_id: CharacterId,
+        text: &str,
+    ) -> bool {
+        if !text.to_ascii_lowercase().contains("tabunga") {
+            return false;
+        }
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let Some(speaker) = self.characters.get(&speaker_id) else {
+            return false;
+        };
+        if !speaker.flags.contains(CharacterFlags::GOD) || char_dist(&character, speaker) >= 3 {
+            return false;
+        }
+
+        for message in tabunga_lines(&character) {
+            self.pending_area_texts.push(WorldAreaText {
+                x: character.x,
+                y: character.y,
+                max_distance: SAY_DIST as u16,
+                message,
+            });
+        }
+        true
     }
 
     pub fn apply_swamp_monster_death_driver(
@@ -15190,6 +15224,212 @@ fn write_u32_le_prefix(bytes: &mut Vec<u8>, value: u32) {
     bytes[..4].copy_from_slice(&value.to_le_bytes());
 }
 
+fn character_value_base(character: &Character, value: CharacterValue) -> i32 {
+    character
+        .values
+        .first()
+        .and_then(|values| values.get(value as usize))
+        .copied()
+        .unwrap_or_default() as i32
+}
+
+fn character_profession(character: &Character, index: usize) -> i32 {
+    character
+        .professions
+        .get(index)
+        .copied()
+        .unwrap_or_default() as i32
+}
+
+fn tabunga_lines(character: &Character) -> Vec<String> {
+    let present = |value| character_value_present(character, value);
+    let base = |value| character_value_base(character, value);
+    vec![
+        format!("{} ({}):", character.name, character.level),
+        format!(
+            "HP:        {:3}/{:3} ({})",
+            present(CharacterValue::Hp),
+            base(CharacterValue::Hp),
+            character.hp / POWERSCALE
+        ),
+        format!(
+            "Endurance: {:3}/{:3} ({})",
+            present(CharacterValue::Endurance),
+            base(CharacterValue::Endurance),
+            character.endurance / POWERSCALE
+        ),
+        format!(
+            "Mana:      {:3}/{:3} ({})",
+            present(CharacterValue::Mana),
+            base(CharacterValue::Mana),
+            character.mana / POWERSCALE
+        ),
+        format!(
+            "Wisdom:    {:3}/{:3}",
+            present(CharacterValue::Wisdom),
+            base(CharacterValue::Wisdom)
+        ),
+        format!(
+            "Intuition: {:3}/{:3}",
+            present(CharacterValue::Intelligence),
+            base(CharacterValue::Intelligence)
+        ),
+        format!(
+            "Agility:   {:3}/{:3}",
+            present(CharacterValue::Agility),
+            base(CharacterValue::Agility)
+        ),
+        format!(
+            "Strength:  {:3}/{:3}",
+            present(CharacterValue::Strength),
+            base(CharacterValue::Strength)
+        ),
+        format!(
+            "Hand2Hand: {:3}/{:3}",
+            present(CharacterValue::Hand),
+            base(CharacterValue::Hand)
+        ),
+        format!(
+            "Sword:     {:3}/{:3}",
+            present(CharacterValue::Sword),
+            base(CharacterValue::Sword)
+        ),
+        format!(
+            "Twohanded: {:3}/{:3}",
+            present(CharacterValue::TwoHand),
+            base(CharacterValue::TwoHand)
+        ),
+        format!(
+            "Attack:    {:3}/{:3}",
+            present(CharacterValue::Attack),
+            base(CharacterValue::Attack)
+        ),
+        format!(
+            "Parry:     {:3}/{:3}",
+            present(CharacterValue::Parry),
+            base(CharacterValue::Parry)
+        ),
+        format!(
+            "Tactics:   {:3}/{:3}",
+            present(CharacterValue::Tactics),
+            base(CharacterValue::Tactics)
+        ),
+        format!(
+            "Immunity:  {:3}/{:3}",
+            present(CharacterValue::Immunity),
+            base(CharacterValue::Immunity)
+        ),
+        format!(
+            "Bless:     {:3}/{:3}",
+            present(CharacterValue::Bless),
+            base(CharacterValue::Bless)
+        ),
+        format!(
+            "M-Shield:  {:3}/{:3}  ({})",
+            present(CharacterValue::MagicShield),
+            base(CharacterValue::MagicShield),
+            character.lifeshield / POWERSCALE
+        ),
+        format!(
+            "Flash:     {:3}/{:3}",
+            present(CharacterValue::Flash),
+            base(CharacterValue::Flash)
+        ),
+        format!(
+            "Freeze:    {:3}/{:3}",
+            present(CharacterValue::Freeze),
+            base(CharacterValue::Freeze)
+        ),
+        format!(
+            "Speed:     {:3}/{:3}",
+            present(CharacterValue::Speed),
+            base(CharacterValue::Speed)
+        ),
+        format!(
+            "F-Ball:    {:3}/{:3}",
+            present(CharacterValue::Fireball),
+            base(CharacterValue::Fireball)
+        ),
+        format!(
+            "Percept:   {:3}/{:3}",
+            present(CharacterValue::Percept),
+            base(CharacterValue::Percept)
+        ),
+        format!(
+            "Stealth:   {:3}/{:3}",
+            present(CharacterValue::Stealth),
+            base(CharacterValue::Stealth)
+        ),
+        format!(
+            "Warcry:    {:3}/{:3}",
+            present(CharacterValue::Warcry),
+            base(CharacterValue::Warcry)
+        ),
+        format!(
+            "P_DEMON:   {:3}",
+            character_profession(character, profession::DEMON)
+        ),
+        format!(
+            "P_CLAN:    {:3}",
+            character_profession(character, profession::CLAN)
+        ),
+        format!(
+            "P_LIGHT:   {:3}",
+            character_profession(character, profession::LIGHT)
+        ),
+        format!(
+            "P_DARK:    {:3}",
+            character_profession(character, profession::DARK)
+        ),
+        format!(
+            "Offensive Value: {}, WV: {}",
+            attack_skill(
+                base(CharacterValue::Attack) > 0,
+                base(CharacterValue::Sword)
+                    .max(base(CharacterValue::Hand))
+                    .max(base(CharacterValue::TwoHand)),
+                base(CharacterValue::Attack),
+                base(CharacterValue::Tactics),
+                character_value(character, CharacterValue::Rage),
+                character.flags.contains(CharacterFlags::EDEMON),
+                character.level as i32,
+                spell_average(
+                    base(CharacterValue::Bless),
+                    base(CharacterValue::Heal),
+                    base(CharacterValue::Freeze),
+                    base(CharacterValue::MagicShield),
+                    base(CharacterValue::Flash),
+                    base(CharacterValue::Fireball),
+                    base(CharacterValue::Pulse),
+                ),
+            ),
+            base(CharacterValue::Weapon)
+        ),
+        format!(
+            "Defensive Value: {}, AV: {}",
+            base(CharacterValue::Parry),
+            base(CharacterValue::Armor) / 20
+        ),
+        format!(
+            "x={}, y={}, speedmode={}",
+            character.rest_x, character.rest_y, character.speed_mode as u8
+        ),
+        format!(
+            "undead={}, alive={}",
+            if character.flags.contains(CharacterFlags::UNDEAD) {
+                "yes"
+            } else {
+                "no"
+            },
+            if character.flags.contains(CharacterFlags::ALIVE) {
+                "yes"
+            } else {
+                "no"
+            }
+        ),
+    ]
+}
+
 fn timer_callback_character() -> Character {
     Character {
         id: CharacterId(0),
@@ -15915,6 +16155,71 @@ mod tests {
         assert_eq!(npc.hp, 40 * POWERSCALE);
         assert_eq!(npc.inventory[30], Some(ItemId(7)));
         assert_eq!(npc.driver_messages.len(), 1);
+    }
+
+    #[test]
+    fn simple_baddy_text_tabunga_emits_god_diagnostic_area_text() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.name = "Ratling".to_string();
+        npc.level = 12;
+        npc.hp = 7 * POWERSCALE;
+        npc.mana = 3 * POWERSCALE;
+        npc.endurance = 4 * POWERSCALE;
+        npc.lifeshield = 2 * POWERSCALE;
+        npc.values[0][CharacterValue::Hp as usize] = 10;
+        npc.values[1][CharacterValue::Hp as usize] = 9;
+        npc.values[0][CharacterValue::Wisdom as usize] = 5;
+        npc.values[1][CharacterValue::Wisdom as usize] = 6;
+        npc.professions[profession::DEMON] = 4;
+        npc.flags |= CharacterFlags::ALIVE;
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        npc.push_driver_text_message(CharacterId(2), "tabunga");
+        assert!(world.spawn_character(npc, 10, 10));
+
+        let mut god = character(2);
+        god.flags |= CharacterFlags::GOD;
+        assert!(world.spawn_character(god, 11, 10));
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+        let texts = world.drain_pending_area_texts();
+        assert!(texts.iter().any(|text| text.message == "Ratling (12):"));
+        assert!(texts
+            .iter()
+            .any(|text| text.message == "HP:          9/ 10 (7)"));
+        assert!(texts
+            .iter()
+            .any(|text| text.message == "Wisdom:      6/  5"));
+        assert!(texts.iter().any(|text| text.message == "P_DEMON:     4"));
+        assert!(texts
+            .iter()
+            .all(|text| text.x == 10 && text.y == 10 && text.max_distance == SAY_DIST as u16));
+    }
+
+    #[test]
+    fn simple_baddy_text_tabunga_requires_nearby_god_and_keyword() {
+        let mut world = World::default();
+        let mut npc = character(1);
+        npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        npc.push_driver_text_message(CharacterId(2), "hello");
+        npc.push_driver_text_message(CharacterId(3), "tabunga");
+        npc.push_driver_text_message(CharacterId(4), "tabunga");
+        assert!(world.spawn_character(npc, 10, 10));
+        let mut god_far = character(3);
+        god_far.flags |= CharacterFlags::GOD;
+        assert!(world.spawn_character(god_far, 20, 20));
+        assert!(world.spawn_character(character(4), 11, 10));
+
+        let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+        assert_eq!(outcomes, vec![ItemDriverOutcome::Noop; 3]);
+        assert!(world.drain_pending_area_texts().is_empty());
     }
 
     #[test]
@@ -21247,6 +21552,7 @@ mod tests {
                 dat1: NTID_LABGNOMETORCH,
                 dat2: 7,
                 dat3: 1,
+                text: None,
             }]
         );
         assert!(world.characters[&CharacterId(3)].driver_messages.is_empty());
@@ -21421,6 +21727,7 @@ mod tests {
                 dat1: 0,
                 dat2: V_FIREBALL,
                 dat3: effect.serial,
+                text: None,
             }]
         );
         assert!(world.characters[&CharacterId(2)].driver_messages.is_empty());

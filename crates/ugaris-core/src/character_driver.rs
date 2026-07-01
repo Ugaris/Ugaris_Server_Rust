@@ -74,6 +74,8 @@ pub struct CharacterDriverMessage {
     pub dat1: i32,
     pub dat2: i32,
     pub dat3: i32,
+    #[serde(default)]
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -257,6 +259,7 @@ pub enum SimpleBaddyMessageOutcome {
     TextNotification {
         speaker_id: CharacterId,
         text_token: i32,
+        text: Option<String>,
     },
     NoteHit,
 }
@@ -471,6 +474,7 @@ pub fn process_simple_baddy_messages(
             outcomes.push(SimpleBaddyMessageOutcome::TextNotification {
                 speaker_id: CharacterId(message.dat3 as u32),
                 text_token: message.dat2,
+                text: message.text.clone(),
             });
         }
 
@@ -1557,6 +1561,28 @@ mod tests {
             vec![SimpleBaddyMessageOutcome::TextNotification {
                 speaker_id: crate::ids::CharacterId(7),
                 text_token: 12345,
+                text: None,
+            }]
+        );
+        assert!(character.driver_messages.is_empty());
+    }
+
+    #[test]
+    fn simple_baddy_text_message_preserves_optional_text_payload() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        character.push_driver_text_message(crate::ids::CharacterId(7), "Tabunga please");
+
+        let outcomes = process_simple_baddy_messages(&mut character, &[]);
+
+        assert_eq!(
+            outcomes,
+            vec![SimpleBaddyMessageOutcome::TextNotification {
+                speaker_id: crate::ids::CharacterId(7),
+                text_token: 0,
+                text: Some("Tabunga please".to_string()),
             }]
         );
         assert!(character.driver_messages.is_empty());

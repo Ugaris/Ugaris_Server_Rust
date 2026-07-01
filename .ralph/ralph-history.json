@@ -920,9 +920,38 @@
         "test result: ok. 905 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 36,
+      "startedAt": "2026-07-01T02:07:13.636Z",
+      "endedAt": "2026-07-01T02:18:37.028Z",
+      "durationMs": 682298,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/entity.rs",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "error: could not compile `ugaris-core` (lib test) due to 2 previous errors; 1 warning emitted",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 904 filtered out; finished in 0.00s",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok",
+        "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
+        "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok",
+        "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
+        "test result: ok. 908 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 908 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
+      ]
     }
   ],
-  "totalDurationMs": 21050344,
+  "totalDurationMs": 21732642,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -933,16 +962,16 @@
       "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 4,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
-      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 26,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 26,
+      "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 27,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 27,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 9,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 25,
-      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 24,
-      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 24,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 26,
+      "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 25,
+      "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 25,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
       "test do_action::tests::can_attack_admitted_player_vs_player_returns_before_same_group_check ... FAIL": 1,
       "assertion failed: can_attack_in_area_with_clan_policy(&attacker, &defender, &map, 2,": 1,
@@ -955,7 +984,7 @@
       "test result: ok. 289 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 859 filtered out; finished in 0.00s": 1,
       "test result: ok. 860 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 2,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 289 filtered out; finished in 0.00s": 1,
       "test result: ok. 291 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
@@ -1046,7 +1075,11 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 901 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 902 filtered out; finished in 0.00s": 1,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 875 filtered out; finished in 0.00s": 1,
-      "test result: ok. 905 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 905 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors; 1 warning emitted": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 904 filtered out; finished in 0.00s": 1,
+      "test result: ok. 908 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "test result: ok. 908 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -406,6 +406,17 @@ impl Character {
             dat1,
             dat2,
             dat3,
+            text: None,
+        });
+    }
+
+    pub fn push_driver_text_message(&mut self, speaker_id: CharacterId, text: impl Into<String>) {
+        self.driver_messages.push(CharacterDriverMessage {
+            message_type: crate::character_driver::NT_TEXT,
+            dat1: 0,
+            dat2: 0,
+            dat3: speaker_id.0 as i32,
+            text: Some(text.into()),
         });
     }
 
