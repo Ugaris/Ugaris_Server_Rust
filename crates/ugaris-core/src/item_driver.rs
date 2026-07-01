@@ -2436,6 +2436,7 @@ pub fn execute_item_driver_with_context(
                 IDR_SHRIKEAMULET => shrike_amulet_driver(character, item, context),
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_MINEGATEWAY => mine_gateway_driver(character, item, context),
+                IDR_WARPTELEPORT => warpteleport_driver(character, item),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
@@ -2495,6 +2496,8 @@ fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_SWAMPARM | IDR_SWAMPWHISP | IDR_SWAMPSPAWN => Some(15),
         IDR_FORESTCHEST => Some(16),
         IDR_LQ_TICKER | IDR_LQ_ENTRANCE => Some(20),
+        IDR_WARPTELEPORT | IDR_WARPTRIALDOOR | IDR_WARPBONUS | IDR_WARPKEYSPAWN
+        | IDR_WARPKEYDOOR => Some(25),
         IDR_LAB2_WATER | IDR_LAB2_STEPACTION | IDR_LAB2_REGENERATE | IDR_LAB2_GRAVE
         | IDR_LABTORCH => Some(22),
         IDR_STAFFER2 => Some(29),
@@ -6850,6 +6853,45 @@ fn mine_gateway_driver(
     }
 }
 
+fn warpteleport_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    if drdata(item, 0) != 0 {
+        return ItemDriverOutcome::Unsupported {
+            driver: IDR_WARPTELEPORT,
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let Some((x, y)) = (match drdata(item, 1) {
+        1 => Some((242, 252)),
+        2 => Some((247, 66)),
+        3 => Some((251, 16)),
+        4 => Some((152, 7)),
+        5 => Some((183, 250)),
+        _ => None,
+    }) else {
+        return ItemDriverOutcome::Unsupported {
+            driver: IDR_WARPTELEPORT,
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::Teleport {
+        item_id: item.id,
+        character_id: character.id,
+        x,
+        y,
+        area_id: 25,
+        stop_driver: true,
+        quiet: true,
+    }
+}
+
 const DEV_ID_DB: u32 = 0x01;
 const DEV_ID_WARR: u32 = 0x06;
 
@@ -9473,6 +9515,55 @@ mod tests {
             ItemDriverOutcome::BlockedByRequirements {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
+            }
+        );
+    }
+
+    #[test]
+    fn warpteleport_non_keyed_destinations_match_legacy_table() {
+        let mut actor = character(1);
+        let mut portal = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPTELEPORT);
+        set_drdata(&mut portal, 1, 3);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPTELEPORT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut portal, request, 25, false),
+            ItemDriverOutcome::Teleport {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                x: 251,
+                y: 16,
+                area_id: 25,
+                stop_driver: true,
+                quiet: true,
+            }
+        );
+    }
+
+    #[test]
+    fn warpteleport_is_area25_libload_gated() {
+        let mut actor = character(1);
+        let mut portal = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPTELEPORT);
+        set_drdata(&mut portal, 1, 1);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPTELEPORT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut portal, request, 1, false),
+            ItemDriverOutcome::LibloadAreaBlocked {
+                driver: IDR_WARPTELEPORT,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                required_area: 25,
             }
         );
     }
