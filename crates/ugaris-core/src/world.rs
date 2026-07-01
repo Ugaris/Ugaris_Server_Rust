@@ -5,10 +5,10 @@ use crate::{
     attack::{attack_skill, reduce_hurt_by_armor, spell_average},
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
-        CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
-        CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK,
-        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_NPC,
-        NT_SEEHIT, NT_SPELL,
+        remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, CharacterDriverState,
+        SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
+        FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH,
+        NTID_TWOCITY_PICK, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -5955,9 +5955,7 @@ impl World {
 
     fn remove_simple_baddy_enemy(&mut self, character_id: CharacterId, target_id: CharacterId) {
         if let Some(character) = self.characters.get_mut(&character_id) {
-            if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
-                data.enemies.retain(|enemy| enemy.target_id != target_id);
-            }
+            let _ = remove_simple_baddy_enemy_state(character, target_id);
         }
     }
 

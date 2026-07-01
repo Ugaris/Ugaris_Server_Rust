@@ -599,6 +599,16 @@ pub fn add_simple_baddy_enemy_unchecked(
     true
 }
 
+pub fn remove_simple_baddy_enemy(character: &mut Character, target_id: CharacterId) -> bool {
+    let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() else {
+        return false;
+    };
+
+    let previous_len = data.enemies.len();
+    data.enemies.retain(|enemy| enemy.target_id != target_id);
+    data.enemies.len() != previous_len
+}
+
 fn find_simple_baddy_inventory_potion(
     character: &Character,
     carried_items: &[Item],
@@ -1802,6 +1812,57 @@ mod tests {
         };
         assert_eq!(data.enemies[0].priority, 0);
         assert_eq!(data.enemies[0].last_seen_tick, 11);
+    }
+
+    #[test]
+    fn remove_simple_baddy_enemy_matches_fight_driver_remove_boundary() {
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+            enemies: vec![
+                SimpleBaddyEnemy {
+                    target_id: crate::ids::CharacterId(2),
+                    priority: 0,
+                    last_seen_tick: 10,
+                    visible: true,
+                    last_x: 20,
+                    last_y: 21,
+                },
+                SimpleBaddyEnemy {
+                    target_id: crate::ids::CharacterId(3),
+                    priority: 1,
+                    last_seen_tick: 11,
+                    visible: false,
+                    last_x: 30,
+                    last_y: 31,
+                },
+            ],
+            ..SimpleBaddyDriverData::default()
+        }));
+
+        assert!(remove_simple_baddy_enemy(
+            &mut character,
+            crate::ids::CharacterId(2),
+        ));
+        assert!(!remove_simple_baddy_enemy(
+            &mut character,
+            crate::ids::CharacterId(99),
+        ));
+
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.enemies.len(), 1);
+        assert_eq!(data.enemies[0].target_id, crate::ids::CharacterId(3));
+    }
+
+    #[test]
+    fn remove_simple_baddy_enemy_ignores_non_simple_baddy_state() {
+        let mut character = test_character();
+
+        assert!(!remove_simple_baddy_enemy(
+            &mut character,
+            crate::ids::CharacterId(2),
+        ));
     }
 
     #[test]
