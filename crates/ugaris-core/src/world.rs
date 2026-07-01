@@ -7,7 +7,8 @@ use crate::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
         CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK,
-        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL,
+        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DEAD, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
+        NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -583,6 +584,16 @@ impl World {
         if outcome.killed {
             if let Some(cause_id) = cause_id {
                 self.apply_simple_baddy_death_driver(target_id, cause_id);
+            }
+            for character in self.characters.values_mut() {
+                if character.x.abs_diff(target_x) <= 32 && character.y.abs_diff(target_y) <= 32 {
+                    character.push_driver_message(
+                        NT_DEAD,
+                        target_id.0 as i32,
+                        cause_id.map(|id| id.0 as i32).unwrap_or_default(),
+                        0,
+                    );
+                }
             }
         }
 
@@ -15185,7 +15196,7 @@ mod tests {
         character_driver::{
             CharacterDriverState, SimpleBaddyDriverData, SimpleBaddyEnemy, FDEMON_MSG_WAYPOINT,
             NTID_FDEMON, NTID_GLADIATOR, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NT_CHAR,
-            NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
+            NT_DEAD, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
         },
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
@@ -15529,6 +15540,38 @@ mod tests {
         assert_eq!(sounds[1].special.special_type, 32);
         assert_eq!(sounds[2].special.special_type, 33);
         assert_eq!(sounds[3].special.special_type, 33);
+    }
+
+    #[test]
+    fn legacy_hurt_notifies_nearby_characters_on_death() {
+        let mut world = World::default();
+        let mut target = character(1);
+        target.hp = POWERSCALE;
+        assert!(world.spawn_character(target, 10, 10));
+        assert!(world.spawn_character(character(2), 11, 10));
+        assert!(world.spawn_character(character(3), 42, 10));
+        assert!(world.spawn_character(character(4), 43, 10));
+
+        let outcome = world
+            .apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), POWERSCALE, 1, 0, 0)
+            .unwrap();
+
+        assert!(outcome.killed);
+        for id in [1, 2, 3] {
+            let character = world.characters.get(&CharacterId(id)).unwrap();
+            let death_message = character
+                .driver_messages
+                .iter()
+                .find(|message| message.message_type == NT_DEAD)
+                .expect("nearby character should receive NT_DEAD");
+            assert_eq!(death_message.dat1, 1);
+            assert_eq!(death_message.dat2, 2);
+            assert_eq!(death_message.dat3, 0);
+        }
+        assert!(world.characters[&CharacterId(4)]
+            .driver_messages
+            .iter()
+            .all(|message| message.message_type != NT_DEAD));
     }
 
     #[test]

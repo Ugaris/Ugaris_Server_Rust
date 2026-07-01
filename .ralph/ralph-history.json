@@ -705,9 +705,28 @@
         "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok",
         "test result: ok. 888 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
       ]
+    },
+    {
+      "iteration": 28,
+      "startedAt": "2026-07-01T00:52:27.462Z",
+      "endedAt": "2026-07-01T00:58:08.943Z",
+      "durationMs": 341314,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/world.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 888 filtered out; finished in 0.00s",
+        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 872 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 16586349,
+  "totalDurationMs": 16927663,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -810,7 +829,9 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 305 filtered out; finished in 0.00s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 306 filtered out; finished in 0.00s": 1,
       "test result: ok. 308 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 888 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 888 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 888 filtered out; finished in 0.00s": 1,
+      "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 872 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
