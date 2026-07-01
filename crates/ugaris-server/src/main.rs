@@ -479,6 +479,7 @@ struct ServerRuntime {
     npc_body_decay_time: i32,
     npc_body_decay_time_area32: i32,
     npc_respawn_timer: i32,
+    sewer_item_respawn_time: i32,
     lagout_time: i32,
     regen_time: i32,
     weather: WeatherState,
@@ -508,6 +509,7 @@ impl Default for ServerRuntime {
             npc_body_decay_time: settings.npc_body_decay_time,
             npc_body_decay_time_area32: settings.npc_body_decay_time_area32,
             npc_respawn_timer: settings.npc_respawn_timer,
+            sewer_item_respawn_time: settings.sewer_item_respawn_time,
             lagout_time: settings.lagout_time,
             regen_time: settings.regen_time,
             weather: WeatherState::default(),
@@ -3291,6 +3293,15 @@ fn apply_legacy_tick_tuning_command(
             invalid: "Invalid value. Please specify a time between {min} and {max} ticks (0.5-10 minutes)",
         },
         TickTuningSpec {
+            command: "setsewerrespawntime",
+            min_len: 19,
+            min: 60 * 60,
+            max: 60 * 60 * 24 * 7,
+            field: |runtime| &mut runtime.sewer_item_respawn_time,
+            success: "Sewer item respawn time changed from {old} to {new} seconds ({old_hours} to {new_hours} hours)",
+            invalid: "Invalid value. Please specify a time between 3600 and 604800 seconds (1 hour to 7 days)",
+        },
+        TickTuningSpec {
             command: "setlagouttime",
             min_len: 13,
             min: 60 * ticks,
@@ -3326,7 +3337,9 @@ fn apply_legacy_tick_tuning_command(
                     .replace("{old}", &old.to_string())
                     .replace("{new}", &value.to_string())
                     .replace("{old_minutes}", &(old / (60 * ticks)).to_string())
-                    .replace("{new_minutes}", &(value / (60 * ticks)).to_string())],
+                    .replace("{new_minutes}", &(value / (60 * ticks)).to_string())
+                    .replace("{old_hours}", &(old / (60 * 60)).to_string())
+                    .replace("{new_hours}", &(value / (60 * 60)).to_string())],
                 ..Default::default()
             });
         }
@@ -3375,6 +3388,7 @@ fn apply_admin_character_command(
             | "setnpcbodytime"
             | "setnpcbodytimearea32"
             | "setrespawntime"
+            | "setsewerrespawntime"
             | "setlagouttime"
             | "setregentime"
     ) {
@@ -17052,6 +17066,20 @@ mod tests {
             vec!["NPC respawn time changed from 2880 to 720 ticks (2 to 0 minutes)"]
         );
 
+        let sewer_respawn = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setsewerrespawntime 3600tail",
+            1,
+        )
+        .expect("god setsewerrespawntime should be recognized");
+        assert_eq!(runtime.sewer_item_respawn_time, 3600);
+        assert_eq!(
+            sewer_respawn.messages,
+            vec!["Sewer item respawn time changed from 86400 to 3600 seconds (24 to 1 hours)"]
+        );
+
         let lagout = apply_admin_character_command(
             &mut world,
             &mut runtime,
@@ -17092,6 +17120,20 @@ mod tests {
                 10 * 60 * ticks
             )]
         );
+
+        let invalid_sewer = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            "/setsewerrespawntime 3599",
+            1,
+        )
+        .expect("invalid setsewerrespawntime should still be handled");
+        assert_eq!(runtime.sewer_item_respawn_time, 3600);
+        assert_eq!(
+            invalid_sewer.messages,
+            vec!["Invalid value. Please specify a time between 3600 and 604800 seconds (1 hour to 7 days)"]
+        );
     }
 
     #[test]
@@ -17118,6 +17160,10 @@ mod tests {
         assert_eq!(
             runtime.item_decay_time,
             GameSettings::default().item_decay_time
+        );
+        assert_eq!(
+            runtime.sewer_item_respawn_time,
+            GameSettings::default().sewer_item_respawn_time
         );
 
         world
@@ -17150,6 +17196,19 @@ mod tests {
         assert_eq!(
             runtime.npc_body_decay_time,
             GameSettings::default().npc_body_decay_time
+        );
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setsewerrespawntim 3600",
+            1,
+        )
+        .is_none());
+        assert_eq!(
+            runtime.sewer_item_respawn_time,
+            GameSettings::default().sewer_item_respawn_time
         );
     }
 
