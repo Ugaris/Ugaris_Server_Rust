@@ -374,6 +374,7 @@ pub struct ItemDriverContext {
     pub has_area17_library_key: bool,
     pub has_area17_lockpick: bool,
     pub has_area17_cursor_lockpick: bool,
+    pub area25_door_key: Option<(ItemId, String)>,
     pub has_dungeon_door_key1: bool,
     pub has_dungeon_door_key2: bool,
     pub dungeon_defender_count: Option<u16>,
@@ -614,6 +615,22 @@ pub enum ItemDriverOutcome {
         template: &'static str,
     },
     WarpKeySpawnCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    WarpKeyDoor {
+        item_id: ItemId,
+        character_id: CharacterId,
+        key_item_id: ItemId,
+        key_name: [u8; OUTCOME_ITEM_NAME_BYTES],
+        x: u16,
+        y: u16,
+    },
+    WarpKeyDoorMissingKey {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    WarpKeyDoorBug {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -2220,7 +2237,9 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::CaligarSkellyDoorLocked { .. }
         | ItemDriverOutcome::CaligarSkellyDoorBusy { .. }
         | ItemDriverOutcome::PentBossDoorLocked { .. }
-        | ItemDriverOutcome::PentBossDoorBusy { .. } => 2,
+        | ItemDriverOutcome::PentBossDoorBusy { .. }
+        | ItemDriverOutcome::WarpKeyDoorMissingKey { .. }
+        | ItemDriverOutcome::WarpKeyDoorBug { .. } => 2,
         ItemDriverOutcome::EdemonBlockMove { .. }
         | ItemDriverOutcome::EdemonBlockBlocked { .. }
         | ItemDriverOutcome::EdemonTubePulse { .. } => 1,
@@ -2231,6 +2250,7 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
                     | Some(IDR_PALACEBOMB)
                     | Some(IDR_PALACECAP)
                     | Some(IDR_LAB2_GRAVE)
+                    | Some(IDR_WARPKEYDOOR)
             ) =>
         {
             1
@@ -2458,6 +2478,7 @@ pub fn execute_item_driver_with_context(
                 IDR_MINEGATEWAY => mine_gateway_driver(character, item, context),
                 IDR_WARPTELEPORT => warpteleport_driver(character, item, context),
                 IDR_WARPKEYSPAWN => warpkeyspawn_driver(character, item),
+                IDR_WARPKEYDOOR => warpkeydoor_driver(character, item, context),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
@@ -6875,6 +6896,7 @@ fn mine_gateway_driver(
 }
 
 pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
+pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);
 
 fn warpteleport_keyed_destination(portal_kind: u8, sphere_kind: u8) -> Option<(u16, u16)> {
     const TARGETS: [(u16, u16); 25] = [
@@ -7003,6 +7025,50 @@ fn warpkeyspawn_driver(character: &Character, item: &Item) -> ItemDriverOutcome 
         item_id: item.id,
         character_id: character.id,
         template: warpkeyspawn_template(drdata(item, 0)),
+    }
+}
+
+fn warpkeydoor_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let dx = i32::from(item.x) - i32::from(character.x);
+    let dy = i32::from(item.y) - i32::from(character.y);
+    if dx == 0 && dy == 0 {
+        return ItemDriverOutcome::WarpKeyDoorBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let Some((key_item_id, key_name)) = context.area25_door_key.clone() else {
+        return ItemDriverOutcome::WarpKeyDoorMissingKey {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    let target_x = i32::from(item.x) + dx;
+    let target_y = i32::from(item.y) + dy;
+    if !(0..=u16::MAX as i32).contains(&target_x) || !(0..=u16::MAX as i32).contains(&target_y) {
+        return ItemDriverOutcome::WarpKeyDoorBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::WarpKeyDoor {
+        item_id: item.id,
+        character_id: character.id,
+        key_item_id,
+        key_name: outcome_item_name(&key_name),
+        x: target_x as u16,
+        y: target_y as u16,
     }
 }
 
@@ -9773,6 +9839,88 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }
+        );
+    }
+
+    #[test]
+    fn warpkeydoor_requires_exact_carried_key() {
+        let mut actor = character(1);
+        actor.x = 10;
+        actor.y = 20;
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPKEYDOOR);
+        door.x = 11;
+        door.y = 20;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPKEYDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver(&mut actor, &mut door, request, 25, false);
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::WarpKeyDoorMissingKey {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_WARPKEYDOOR), &outcome),
+            2
+        );
+    }
+
+    #[test]
+    fn warpkeydoor_teleports_through_door_and_consumes_key() {
+        let mut actor = character(1);
+        actor.x = 10;
+        actor.y = 20;
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPKEYDOOR);
+        door.x = 11;
+        door.y = 20;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPKEYDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            area25_door_key: Some((ItemId(9), "Warper Key".to_string())),
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut door, request, 25, false, &context),
+            ItemDriverOutcome::WarpKeyDoor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                key_item_id: ItemId(9),
+                key_name: outcome_item_name("Warper Key"),
+                x: 12,
+                y: 20,
+            }
+        );
+    }
+
+    #[test]
+    fn warpkeydoor_zero_character_call_is_c_handled_noop() {
+        let mut actor = character(0);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPKEYDOOR);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPKEYDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver(&mut actor, &mut door, request, 25, false);
+
+        assert_eq!(outcome, ItemDriverOutcome::Noop);
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_WARPKEYDOOR), &outcome),
+            1
         );
     }
 

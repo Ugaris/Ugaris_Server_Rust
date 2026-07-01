@@ -37,7 +37,7 @@ use ugaris_core::{
         IDR_DECAYITEM, IDR_DEMONCHIP, IDR_DEMONSHRINE, IDR_ENHANCE, IDR_FOOD, IDR_ISLENADOOR,
         IDR_KEY_RING, IDR_LAB2_GRAVE, IDR_MELTINGKEY, IDR_PICKCHEST, IDR_PICKDOOR, IDR_RATCHEST,
         IDR_SPECIAL_POTION, IDR_TORCH, IDR_WARMFIRE, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
-        IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
+        IID_AREA25_DOORKEY, IID_AREA2_ZOMBIESKULL1, IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
     },
     item_ops::{
         can_use_inventory_slot, consume_item, give_item_to_character, replace_item_in_character,
@@ -7299,6 +7299,19 @@ fn item_driver_context_for_request(
             lab_solved_bits: player
                 .map(|player| player.lab_solved_bits)
                 .unwrap_or_default(),
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
+    if *driver == ugaris_core::item_driver::IDR_WARPKEYDOOR {
+        let area25_door_key = world.characters.get(character_id).and_then(|character| {
+            character.inventory.iter().flatten().find_map(|item_id| {
+                world.items.get(item_id).and_then(|item| {
+                    (item.template_id == IID_AREA25_DOORKEY).then(|| (*item_id, item.name.clone()))
+                })
+            })
+        });
+        return ugaris_core::item_driver::ItemDriverContext {
+            area25_door_key,
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
@@ -27158,6 +27171,38 @@ async fn main() -> anyhow::Result<()> {
                                                 ));
                                                 blocked += 1;
                                             }
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpKeyDoorMissingKey {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "The door is locked and you do not have the right key.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpKeyDoorBug {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Bug #329i, sorry.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpKeyDoor {
+                                            character_id,
+                                            key_name,
+                                            ..
+                                        } => {
+                                            let key_name = outcome_item_name_text(&key_name);
+                                            feedback.push((
+                                                character_id,
+                                                format!("A {key_name} vanished."),
+                                            ));
+                                            executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }

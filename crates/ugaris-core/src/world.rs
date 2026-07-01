@@ -6899,6 +6899,31 @@ impl World {
                 }
             }
             ItemDriverOutcome::WarpTeleportMissingSphere { .. } => outcome,
+            ItemDriverOutcome::WarpKeyDoor {
+                character_id,
+                key_item_id,
+                x,
+                y,
+                ..
+            } => {
+                if self.teleport_character(character_id, x, y, true) {
+                    self.destroy_item(key_item_id);
+                    if let Some(character) = self.characters.get_mut(&character_id) {
+                        character.dir = match Direction::try_from(character.dir).ok() {
+                            Some(Direction::Right) => Direction::Left as u8,
+                            Some(Direction::Left) => Direction::Right as u8,
+                            Some(Direction::Up) => Direction::Down as u8,
+                            Some(Direction::Down) => Direction::Up as u8,
+                            _ => character.dir,
+                        };
+                    }
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::WarpKeyDoorMissingKey { .. }
+            | ItemDriverOutcome::WarpKeyDoorBug { .. } => outcome,
             ItemDriverOutcome::WarpKeySpawn { .. }
             | ItemDriverOutcome::WarpKeySpawnCursorOccupied { .. } => outcome,
             ItemDriverOutcome::TeleportDoor {
@@ -29169,6 +29194,40 @@ mod tests {
         assert!(!world.items.contains_key(&ItemId(9)));
         assert!(!world.items.contains_key(&ItemId(10)));
         assert!(world.items.contains_key(&ItemId(11)));
+    }
+
+    #[test]
+    fn world_warpkeydoor_teleports_consumes_key_and_flips_cardinal_direction() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        actor.dir = Direction::Right as u8;
+        actor.inventory[30] = Some(ItemId(9));
+        assert!(world.spawn_character(actor, 10, 20));
+
+        let mut key = item(9, ItemFlags::USED);
+        key.template_id = crate::item_driver::IID_AREA25_DOORKEY;
+        key.carried_by = Some(CharacterId(1));
+        world.add_item(key);
+
+        let outcome = world.apply_item_driver_outcome(
+            ItemDriverOutcome::WarpKeyDoor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                key_item_id: ItemId(9),
+                key_name: crate::item_driver::outcome_item_name("Warper Key"),
+                x: 12,
+                y: 20,
+            },
+            25,
+        );
+
+        assert!(matches!(outcome, ItemDriverOutcome::WarpKeyDoor { .. }));
+        let actor = &world.characters[&CharacterId(1)];
+        assert_eq!((actor.x, actor.y), (12, 20));
+        assert_eq!(actor.dir, Direction::Left as u8);
+        assert_eq!(actor.inventory[30], None);
+        assert!(!world.items.contains_key(&ItemId(9)));
     }
 
     fn character(id: u32) -> Character {
