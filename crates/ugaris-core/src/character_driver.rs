@@ -62,6 +62,9 @@ pub const NTID_LABGNOMETORCH: i32 = 13;
 pub const NTID_LAB2_DEAMONCHECK: i32 = 14;
 pub const NTID_SALTMINE_USEITEM: i32 = 15;
 pub const NTID_GLADIATOR: i32 = 16;
+pub const NTID_FDEMON: i32 = 17;
+
+pub const FDEMON_MSG_WAYPOINT: i32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CharacterDriverMessage {

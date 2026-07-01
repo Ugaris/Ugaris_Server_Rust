@@ -6,8 +6,8 @@ use crate::{
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         CharacterDriverState, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY,
-        CDR_SWAMPMONSTER, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT,
-        NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL,
+        CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK,
+        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -7914,6 +7914,16 @@ impl World {
                     target_character_id,
                     target_serial,
                 );
+                if let Some(item) = self.items.get(&item_id) {
+                    self.notify_area(
+                        item.x,
+                        item.y,
+                        NT_NPC,
+                        NTID_FDEMON,
+                        FDEMON_MSG_WAYPOINT,
+                        item_id.0 as i32,
+                    );
+                }
                 self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                 outcome
             }
@@ -15173,9 +15183,9 @@ impl Default for Tick {
 mod tests {
     use crate::{
         character_driver::{
-            CharacterDriverState, SimpleBaddyDriverData, SimpleBaddyEnemy, NTID_GLADIATOR,
-            NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NT_CHAR, NT_DIDHIT, NT_GOTHIT, NT_NPC,
-            NT_SEEHIT,
+            CharacterDriverState, SimpleBaddyDriverData, SimpleBaddyEnemy, FDEMON_MSG_WAYPOINT,
+            NTID_FDEMON, NTID_GLADIATOR, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NT_CHAR,
+            NT_DIDHIT, NT_GOTHIT, NT_NPC, NT_SEEHIT,
         },
         direction::Direction,
         entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
@@ -20804,9 +20814,25 @@ mod tests {
         );
         assert_eq!(waypoint.sprite, 14200);
         assert_eq!(world.timers.used_timers(), 1);
+        assert_eq!(world.characters[&CharacterId(1)].driver_messages.len(), 1);
+        assert_eq!(
+            world.characters[&CharacterId(1)].driver_messages[0].message_type,
+            NT_NPC
+        );
+        assert_eq!(
+            world.characters[&CharacterId(1)].driver_messages[0].dat1,
+            NTID_FDEMON
+        );
+        assert_eq!(
+            world.characters[&CharacterId(1)].driver_messages[0].dat2,
+            FDEMON_MSG_WAYPOINT
+        );
+        assert_eq!(world.characters[&CharacterId(1)].driver_messages[0].dat3, 7);
 
         let mut demon = character(2);
         demon.flags.insert(CharacterFlags::FDEMON);
+        demon.x = 9;
+        demon.y = 10;
         world.add_character(demon);
         let outcome = world.execute_item_driver_request(
             ItemDriverRequest::Driver {
@@ -20836,6 +20862,20 @@ mod tests {
             0
         );
         assert_eq!(waypoint.sprite, 14202);
+        assert_eq!(world.characters[&CharacterId(2)].driver_messages.len(), 1);
+        assert_eq!(
+            world.characters[&CharacterId(2)].driver_messages[0].message_type,
+            NT_NPC
+        );
+        assert_eq!(
+            world.characters[&CharacterId(2)].driver_messages[0].dat1,
+            NTID_FDEMON
+        );
+        assert_eq!(
+            world.characters[&CharacterId(2)].driver_messages[0].dat2,
+            FDEMON_MSG_WAYPOINT
+        );
+        assert_eq!(world.characters[&CharacterId(2)].driver_messages[0].dat3, 7);
     }
 
     #[test]
