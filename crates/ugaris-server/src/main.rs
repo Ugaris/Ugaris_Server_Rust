@@ -29110,6 +29110,11 @@ async fn main() -> anyhow::Result<()> {
                     info!(simple_baddy_noncombat, tick = world.tick.0, "queued simple-baddy noncombat actions");
                 }
 
+                let lab2_undead_patrol = world.process_lab2_undead_patrol_actions(config.area_id);
+                if lab2_undead_patrol != 0 {
+                    info!(lab2_undead_patrol, tick = world.tick.0, "queued Lab 2 undead patrol actions");
+                }
+
                 let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
                 let pk_hate_updates =
                     apply_pk_hate_from_hurt_events(&mut runtime, &mut world, realtime_seconds);

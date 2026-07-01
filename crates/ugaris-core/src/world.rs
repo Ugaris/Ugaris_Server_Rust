@@ -6,9 +6,10 @@ use crate::{
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, process_simple_baddy_messages,
         remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, CharacterDriverState,
-        SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
-        FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH,
-        NTID_TWOCITY_PICK, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL,
+        Lab2UndeadDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_LAB2UNDEAD,
+        CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK,
+        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_NPC,
+        NT_SEEHIT, NT_SPELL,
     },
     direction::Direction,
     do_action::{
@@ -6819,6 +6820,114 @@ impl World {
         }
 
         handled
+    }
+
+    pub fn process_lab2_undead_patrol_action(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if character.driver != CDR_LAB2UNDEAD
+            || character.action != action::IDLE
+            || character.flags.contains(CharacterFlags::DEAD)
+        {
+            return false;
+        }
+        let Some(CharacterDriverState::Lab2Undead(data)) = character.driver_state.as_ref() else {
+            return false;
+        };
+        if data.patrol == 0 || data.patstep == 0 {
+            return false;
+        }
+
+        let waypoint_index = usize::from(data.pat.min(data.patstep.saturating_sub(1)));
+        let target_x = u16::from(data.patx[waypoint_index]);
+        let target_y = u16::from(data.paty[waypoint_index]);
+        if target_x == 0 || target_y == 0 {
+            return false;
+        }
+
+        if self.setup_walk_toward(
+            character_id,
+            usize::from(target_x),
+            usize::from(target_y),
+            0,
+            area_id,
+            false,
+        ) || self.setup_walk_toward(
+            character_id,
+            usize::from(target_x),
+            usize::from(target_y),
+            0,
+            area_id,
+            true,
+        ) {
+            return true;
+        }
+
+        if character.x.abs_diff(target_x) >= 3 || character.y.abs_diff(target_y) >= 3 {
+            return false;
+        }
+
+        let mut idle_ticks = 0;
+        let mut say: Option<&'static str> = None;
+        if let Some(CharacterDriverState::Lab2Undead(data)) = self
+            .characters
+            .get_mut(&character_id)
+            .and_then(|character| character.driver_state.as_mut())
+        {
+            let old_pat = data.pat;
+            data.pat = (data.pat + 1) % data.patstep.max(1);
+            if data.patrol == 2 {
+                match old_pat {
+                    0 => idle_ticks = (TICKS_PER_SECOND * 2) as i32,
+                    3 => {
+                        idle_ticks = (TICKS_PER_SECOND * 2) as i32;
+                        say = Some("A gust of wind?");
+                    }
+                    4 => {
+                        idle_ticks = (TICKS_PER_SECOND * 2) as i32;
+                        say = Some("Strange.");
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if let Some(message) = say {
+            self.queue_lab2_undead_say(character_id, message);
+        }
+        if idle_ticks > 0 {
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                let _ = do_idle(character, idle_ticks);
+            }
+        }
+        true
+    }
+
+    pub fn process_lab2_undead_patrol_actions(&mut self, area_id: u16) -> usize {
+        let character_ids: Vec<_> = self
+            .characters
+            .iter()
+            .filter_map(|(&character_id, character)| {
+                (character.driver == CDR_LAB2UNDEAD
+                    && matches!(
+                        character.driver_state,
+                        Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+                            patrol: 1..,
+                            ..
+                        }))
+                    ))
+                .then_some(character_id)
+            })
+            .collect();
+
+        character_ids
+            .into_iter()
+            .filter(|&character_id| self.process_lab2_undead_patrol_action(character_id, area_id))
+            .count()
     }
 
     fn queue_lab2_undead_say(&mut self, character_id: CharacterId, message: impl Into<String>) {
@@ -29196,6 +29305,61 @@ mod tests {
             world.drain_pending_area_texts()[0].message,
             "Mwahahahaha..."
         );
+    }
+
+    #[test]
+    fn lab2_undead_patrol_advances_waypoint_and_waits_like_c() {
+        let mut world = World::default();
+        let mut undead = character(2);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+            patrol: 2,
+            pat: 3,
+            patstep: 8,
+            patx: [171, 138, 138, 165, 167, 138, 138, 171],
+            paty: [164, 164, 146, 146, 146, 146, 164, 164],
+            ..Lab2UndeadDriverData::default()
+        }));
+        assert!(world.spawn_character(undead, 165, 146));
+
+        assert!(world.process_lab2_undead_patrol_action(CharacterId(2), 22));
+
+        let undead = world.characters.get(&CharacterId(2)).unwrap();
+        let Some(CharacterDriverState::Lab2Undead(data)) = undead.driver_state.as_ref() else {
+            panic!("lab2 undead state missing");
+        };
+        assert_eq!(data.pat, 4);
+        assert_eq!(undead.duration, (TICKS_PER_SECOND * 2) as i32);
+        assert_eq!(
+            world.drain_pending_area_texts()[0].message,
+            "A gust of wind?"
+        );
+    }
+
+    #[test]
+    fn lab2_undead_patrol_walks_toward_current_waypoint() {
+        let mut world = World::default();
+        let mut undead = character(2);
+        undead.driver = CDR_LAB2UNDEAD;
+        undead.driver_state = Some(CharacterDriverState::Lab2Undead(Lab2UndeadDriverData {
+            patrol: 1,
+            pat: 0,
+            patstep: 4,
+            patx: [168, 168, 204, 204, 0, 0, 0, 0],
+            paty: [178, 218, 218, 178, 0, 0, 0, 0],
+            ..Lab2UndeadDriverData::default()
+        }));
+        assert!(world.spawn_character(undead, 166, 178));
+
+        assert!(world.process_lab2_undead_patrol_action(CharacterId(2), 22));
+
+        let undead = world.characters.get(&CharacterId(2)).unwrap();
+        assert_eq!(undead.action, action::WALK);
+        assert_eq!(undead.dir, Direction::Right as u8);
+        let Some(CharacterDriverState::Lab2Undead(data)) = undead.driver_state.as_ref() else {
+            panic!("lab2 undead state missing");
+        };
+        assert_eq!(data.pat, 0);
     }
 
     #[test]
