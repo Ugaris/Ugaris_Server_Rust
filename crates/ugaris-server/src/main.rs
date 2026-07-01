@@ -8100,6 +8100,13 @@ enum RandomShrineVitalityApplyResult {
     Capped,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RandomShrineContinuityApplyResult {
+    Used { exp: u32, opens_gate: bool },
+    AlreadyVisited { opens_gate: bool },
+    NeedYoungerBrother,
+}
+
 fn legacy_level_value(level: u32) -> u32 {
     let level = u64::from(level);
     let next = level.saturating_add(1);
@@ -8296,6 +8303,38 @@ fn apply_random_shrine_vitality(
         value,
         amount,
         cost,
+    }
+}
+
+fn apply_random_shrine_continuity(
+    player: &mut PlayerRuntime,
+    character: &mut Character,
+    shrine_level: u8,
+) -> RandomShrineContinuityApplyResult {
+    if player.random_shrine_continuity < 10 {
+        player.random_shrine_continuity = 10;
+    }
+
+    if shrine_level < player.random_shrine_continuity {
+        return RandomShrineContinuityApplyResult::AlreadyVisited {
+            opens_gate: shrine_level == 99,
+        };
+    }
+    if shrine_level > player.random_shrine_continuity {
+        return RandomShrineContinuityApplyResult::NeedYoungerBrother;
+    }
+
+    player.random_shrine_continuity = shrine_level.saturating_add(1);
+    let level = character
+        .level
+        .saturating_add(5)
+        .min(u32::from(shrine_level));
+    let exp = legacy_level_value(level) / 6;
+    character.exp = character.exp.saturating_add(exp);
+    character.flags.insert(CharacterFlags::UPDATE);
+    RandomShrineContinuityApplyResult::Used {
+        exp,
+        opens_gate: shrine_level == 99,
     }
 }
 
@@ -14176,6 +14215,71 @@ mod tests {
 
         assert_eq!(result, RandomShrineVitalityApplyResult::Capped);
         assert!(!player.has_used_random_shrine(50));
+    }
+
+    #[test]
+    fn random_shrine_continuity_enforces_sequence_and_grants_legacy_exp() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        character.level = 12;
+
+        let result = apply_random_shrine_continuity(&mut player, &mut character, 11);
+
+        assert_eq!(
+            result,
+            RandomShrineContinuityApplyResult::NeedYoungerBrother
+        );
+        assert_eq!(player.random_shrine_continuity, 10);
+        assert_eq!(character.exp, 0);
+
+        let result = apply_random_shrine_continuity(&mut player, &mut character, 10);
+
+        let expected = legacy_level_value(10) / 6;
+        assert_eq!(
+            result,
+            RandomShrineContinuityApplyResult::Used {
+                exp: expected,
+                opens_gate: false,
+            }
+        );
+        assert_eq!(player.random_shrine_continuity, 11);
+        assert_eq!(character.exp, expected);
+        assert!(character.flags.contains(CharacterFlags::UPDATE));
+
+        let result = apply_random_shrine_continuity(&mut player, &mut character, 10);
+
+        assert_eq!(
+            result,
+            RandomShrineContinuityApplyResult::AlreadyVisited { opens_gate: false }
+        );
+        assert_eq!(player.random_shrine_continuity, 11);
+        assert_eq!(character.exp, expected);
+    }
+
+    #[test]
+    fn random_shrine_continuity_level_99_opens_gate_for_new_or_repeat_use() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+        character.level = 200;
+        player.random_shrine_continuity = 99;
+
+        let result = apply_random_shrine_continuity(&mut player, &mut character, 99);
+
+        assert!(matches!(
+            result,
+            RandomShrineContinuityApplyResult::Used {
+                opens_gate: true,
+                ..
+            }
+        ));
+        assert_eq!(player.random_shrine_continuity, 100);
+
+        let result = apply_random_shrine_continuity(&mut player, &mut character, 99);
+
+        assert_eq!(
+            result,
+            RandomShrineContinuityApplyResult::AlreadyVisited { opens_gate: true }
+        );
     }
 
     #[test]
@@ -27115,6 +27219,47 @@ async fn main() -> anyhow::Result<()> {
                                                         }
                                                         RandomShrineBravenessApplyResult::Coward => {
                                                             feedback.push((character_id, "An insulting voice says: 'Thou art a coward, bother me not!".to_string()));
+                                                            blocked += 1;
+                                                        }
+                                                    }
+                                                }
+                                                ugaris_core::item_driver::RandomShrineKind::Continuity => {
+                                                    let result = match (
+                                                        runtime.player_for_character_mut(character_id),
+                                                        world.characters.get_mut(&character_id),
+                                                    ) {
+                                                        (Some(player), Some(character)) => apply_random_shrine_continuity(player, character, level),
+                                                        _ => {
+                                                            failed += 1;
+                                                            continue;
+                                                        }
+                                                    };
+                                                    match result {
+                                                        RandomShrineContinuityApplyResult::Used { opens_gate, .. } => {
+                                                            feedback.push((character_id, "A steady voice says: 'Continuity is power.'".to_string()));
+                                                            if opens_gate {
+                                                                if world.teleport_character_same_area(character_id, 41, 250, false) {
+                                                                    feedback.push((character_id, "Thy continuity has opened a gate...".to_string()));
+                                                                } else {
+                                                                    feedback.push((character_id, "Target is busy, please try again soon.".to_string()));
+                                                                }
+                                                            }
+                                                            executed += 1;
+                                                        }
+                                                        RandomShrineContinuityApplyResult::AlreadyVisited { opens_gate } => {
+                                                            if opens_gate {
+                                                                if world.teleport_character_same_area(character_id, 41, 250, false) {
+                                                                    feedback.push((character_id, "Thy continuity has opened a gate...".to_string()));
+                                                                } else {
+                                                                    feedback.push((character_id, "Target is busy, please try again soon.".to_string()));
+                                                                }
+                                                            } else {
+                                                                feedback.push((character_id, "A steady voice says: 'Thou hast visited me already.'".to_string()));
+                                                            }
+                                                            blocked += 1;
+                                                        }
+                                                        RandomShrineContinuityApplyResult::NeedYoungerBrother => {
+                                                            feedback.push((character_id, "A steady voice says: 'Thou must visit mine younger brother first.'".to_string()));
                                                             blocked += 1;
                                                         }
                                                     }

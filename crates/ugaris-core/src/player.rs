@@ -35,7 +35,7 @@ pub const LEGACY_FLOWER_PPD_SIZE: usize = FLOWER_MAX_ENTRIES * 4 * 2;
 pub const DEMONSHRINE_MAX_ENTRIES: usize = 100;
 pub const LEGACY_DEMONSHRINE_PPD_SIZE: usize = DEMONSHRINE_MAX_ENTRIES * 4;
 pub const RANDOMSHRINE_USED_WORDS: usize = 256 / 32;
-pub const LEGACY_RANDOMSHRINE_PPD_SIZE: usize = RANDOMSHRINE_USED_WORDS * 4;
+pub const LEGACY_RANDOMSHRINE_PPD_SIZE: usize = RANDOMSHRINE_USED_WORDS * 4 + 1;
 pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
@@ -428,6 +428,8 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub random_shrine_used_words: [u32; RANDOMSHRINE_USED_WORDS],
     #[serde(default)]
+    pub random_shrine_continuity: u8,
+    #[serde(default)]
     pub treasure_dig_last_seconds: [u64; TREASURE_DIG_PPD_ENTRIES],
     #[serde(default)]
     pub misc_ppd: Vec<u8>,
@@ -567,6 +569,7 @@ impl PlayerRuntime {
             flowers: Vec::new(),
             demonshrines: Vec::new(),
             random_shrine_used_words: [0; RANDOMSHRINE_USED_WORDS],
+            random_shrine_continuity: 0,
             treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
             area3_ppd: Vec::new(),
@@ -1649,6 +1652,7 @@ impl PlayerRuntime {
         for (index, word) in self.random_shrine_used_words.iter().copied().enumerate() {
             write_u32(&mut bytes, index * 4, word);
         }
+        bytes[RANDOMSHRINE_USED_WORDS * 4] = self.random_shrine_continuity;
         bytes
     }
 
@@ -1659,6 +1663,7 @@ impl PlayerRuntime {
         for index in 0..RANDOMSHRINE_USED_WORDS {
             self.random_shrine_used_words[index] = read_u32(bytes, index * 4);
         }
+        self.random_shrine_continuity = bytes[RANDOMSHRINE_USED_WORDS * 4];
         true
     }
 
@@ -2485,7 +2490,9 @@ impl PlayerRuntime {
             }
         }
         if !had_randomshrine && (existing_was_valid || existing.is_empty()) {
-            if self.random_shrine_used_words.iter().any(|word| *word != 0) {
+            if self.random_shrine_used_words.iter().any(|word| *word != 0)
+                || self.random_shrine_continuity != 0
+            {
                 write_ppd_block(
                     &mut encoded,
                     DRD_RANDOMSHRINE_PPD,
@@ -3329,7 +3336,7 @@ mod tests {
         assert_eq!(LEGACY_TREASURE_CHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_RANDCHEST_PPD_SIZE, 800);
         assert_eq!(LEGACY_DEMONSHRINE_PPD_SIZE, 400);
-        assert_eq!(LEGACY_RANDOMSHRINE_PPD_SIZE, 32);
+        assert_eq!(LEGACY_RANDOMSHRINE_PPD_SIZE, 33);
         assert_eq!(LEGACY_MISC_PPD_SIZE, 36);
         assert_eq!(LEGACY_IGNORE_PPD_SIZE, 400);
         assert_eq!(LEGACY_SWEAR_PPD_SIZE, 932);
@@ -4661,6 +4668,7 @@ mod tests {
         let mut existing_randomshrine = vec![0; LEGACY_RANDOMSHRINE_PPD_SIZE];
         write_u32(&mut existing_randomshrine, 0, 1 << 3);
         write_u32(&mut existing_randomshrine, 28, 1 << 31);
+        existing_randomshrine[32] = 17;
 
         let mut existing = Vec::new();
         write_ppd_block(&mut existing, DRD_RANDOMSHRINE_PPD, &existing_randomshrine);
@@ -4670,14 +4678,17 @@ mod tests {
         assert!(player.has_used_random_shrine(3));
         assert!(player.has_used_random_shrine(255));
         assert!(!player.has_used_random_shrine(4));
+        assert_eq!(player.random_shrine_continuity, 17);
 
         player.mark_random_shrine_used(64);
+        player.random_shrine_continuity = 18;
         let encoded = player.encode_legacy_ppd_blob(&existing);
         assert_eq!(read_u32(&encoded, 0), DRD_RANDOMSHRINE_PPD);
         assert_eq!(read_u32(&encoded, 4), LEGACY_RANDOMSHRINE_PPD_SIZE as u32);
         assert_eq!(read_u32(&encoded, 8), 1 << 3);
         assert_eq!(read_u32(&encoded, 16), 1);
         assert_eq!(read_u32(&encoded, 36), 1 << 31);
+        assert_eq!(encoded[40], 18);
     }
 
     #[test]
