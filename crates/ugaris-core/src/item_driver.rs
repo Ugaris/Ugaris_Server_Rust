@@ -597,6 +597,17 @@ pub enum ItemDriverOutcome {
         stop_driver: bool,
         quiet: bool,
     },
+    WarpTeleportSpheres {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        x: u16,
+        y: u16,
+    },
+    WarpTeleportMissingSphere {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     TeleportDoor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2436,7 +2447,7 @@ pub fn execute_item_driver_with_context(
                 IDR_SHRIKEAMULET => shrike_amulet_driver(character, item, context),
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_MINEGATEWAY => mine_gateway_driver(character, item, context),
-                IDR_WARPTELEPORT => warpteleport_driver(character, item),
+                IDR_WARPTELEPORT => warpteleport_driver(character, item, context),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
@@ -6853,16 +6864,80 @@ fn mine_gateway_driver(
     }
 }
 
-fn warpteleport_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
+
+fn warpteleport_keyed_destination(portal_kind: u8, sphere_kind: u8) -> Option<(u16, u16)> {
+    const TARGETS: [(u16, u16); 25] = [
+        (247, 243),
+        (226, 91),
+        (215, 41),
+        (197, 41),
+        (191, 41),
+        (247, 243),
+        (179, 41),
+        (251, 41),
+        (173, 41),
+        (161, 41),
+        (247, 243),
+        (111, 48),
+        (161, 49),
+        (207, 7),
+        (206, 250),
+        (247, 243),
+        (207, 227),
+        (201, 149),
+        (176, 250),
+        (167, 192),
+        (247, 243),
+        (169, 251),
+        (145, 251),
+        (127, 251),
+        (151, 251),
+    ];
+    if !(1..=5).contains(&portal_kind) || !(1..=5).contains(&sphere_kind) {
+        return None;
+    }
+    let index = usize::from(portal_kind - 1) * 5 + usize::from(sphere_kind - 1);
+    Some(TARGETS[index])
+}
+
+fn warpteleport_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
     if character.id.0 == 0 {
         return ItemDriverOutcome::Noop;
     }
 
     if drdata(item, 0) != 0 {
-        return ItemDriverOutcome::Unsupported {
-            driver: IDR_WARPTELEPORT,
+        let Some(cursor_item_id) = character.cursor_item else {
+            return ItemDriverOutcome::WarpTeleportMissingSphere {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        };
+        if context.cursor_template_id != Some(IID_AREA25_TELEKEY) {
+            return ItemDriverOutcome::WarpTeleportMissingSphere {
+                item_id: item.id,
+                character_id: character.id,
+            };
+        }
+        let Some((x, y)) =
+            warpteleport_keyed_destination(drdata(item, 0), context.cursor_drdata0.unwrap_or(0))
+        else {
+            return ItemDriverOutcome::Unsupported {
+                driver: IDR_WARPTELEPORT,
+                item_id: item.id,
+                character_id: character.id,
+            };
+        };
+        return ItemDriverOutcome::WarpTeleportSpheres {
             item_id: item.id,
             character_id: character.id,
+            cursor_item_id,
+            x,
+            y,
         };
     }
 
@@ -9541,6 +9616,57 @@ mod tests {
                 area_id: 25,
                 stop_driver: true,
                 quiet: true,
+            }
+        );
+    }
+
+    #[test]
+    fn warpteleport_keyed_sphere_destinations_match_legacy_table() {
+        let mut actor = character(1);
+        actor.cursor_item = Some(ItemId(9));
+        let mut portal = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPTELEPORT);
+        set_drdata(&mut portal, 0, 4);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPTELEPORT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            cursor_template_id: Some(IID_AREA25_TELEKEY),
+            cursor_drdata0: Some(2),
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut portal, request, 25, false, &context),
+            ItemDriverOutcome::WarpTeleportSpheres {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                cursor_item_id: ItemId(9),
+                x: 207,
+                y: 227,
+            }
+        );
+    }
+
+    #[test]
+    fn warpteleport_keyed_requires_cursor_sphere() {
+        let mut actor = character(1);
+        let mut portal = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPTELEPORT);
+        set_drdata(&mut portal, 0, 1);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPTELEPORT,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut portal, request, 25, false),
+            ItemDriverOutcome::WarpTeleportMissingSphere {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
             }
         );
     }

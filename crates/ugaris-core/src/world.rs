@@ -38,7 +38,7 @@ use crate::{
         IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT,
         IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN,
         IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
-        IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_MINEGATEWAY,
+        IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_AREA25_TELEKEY, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
@@ -6864,6 +6864,41 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::WarpTeleportSpheres {
+                character_id,
+                cursor_item_id,
+                x,
+                y,
+                ..
+            } => {
+                if self.teleport_character(character_id, x, y, true) {
+                    self.destroy_item(cursor_item_id);
+                    let inventory_spheres = self
+                        .characters
+                        .get(&character_id)
+                        .map(|character| {
+                            character
+                                .inventory
+                                .iter()
+                                .flatten()
+                                .copied()
+                                .filter(|item_id| {
+                                    self.items
+                                        .get(item_id)
+                                        .is_some_and(|item| item.template_id == IID_AREA25_TELEKEY)
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    for item_id in inventory_spheres {
+                        self.destroy_item(item_id);
+                    }
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::WarpTeleportMissingSphere { .. } => outcome,
             ItemDriverOutcome::TeleportDoor {
                 character_id, x, y, ..
             } => {
@@ -29076,6 +29111,62 @@ mod tests {
         assert_eq!(wall.driver_data[3], 0);
         assert!(wall.flags.contains(ItemFlags::USE | ItemFlags::SIGHTBLOCK));
         assert!(!wall.flags.contains(ItemFlags::VOID));
+    }
+
+    #[test]
+    fn world_warpteleport_spheres_teleports_and_consumes_all_spheres() {
+        let mut world = World::default();
+        let mut actor = character(1);
+        actor.flags.insert(CharacterFlags::PLAYER);
+        actor.cursor_item = Some(ItemId(9));
+        actor.inventory[30] = Some(ItemId(10));
+        actor.inventory[31] = Some(ItemId(11));
+        assert!(world.spawn_character(actor, 10, 10));
+
+        let mut portal = item(7, ItemFlags::USED | ItemFlags::USE);
+        portal.driver = crate::item_driver::IDR_WARPTELEPORT;
+        portal.driver_data = vec![2];
+        world.add_item(portal);
+
+        let mut cursor_sphere = item(9, ItemFlags::USED);
+        cursor_sphere.template_id = IID_AREA25_TELEKEY;
+        cursor_sphere.carried_by = Some(CharacterId(1));
+        cursor_sphere.driver_data = vec![3];
+        world.add_item(cursor_sphere);
+
+        let mut inventory_sphere = item(10, ItemFlags::USED);
+        inventory_sphere.template_id = IID_AREA25_TELEKEY;
+        inventory_sphere.carried_by = Some(CharacterId(1));
+        inventory_sphere.driver_data = vec![1];
+        world.add_item(inventory_sphere);
+
+        let mut other_item = item(11, ItemFlags::USED);
+        other_item.template_id = 123;
+        other_item.carried_by = Some(CharacterId(1));
+        world.add_item(other_item);
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_WARPTELEPORT,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            25,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::WarpTeleportSpheres { .. }
+        ));
+        let actor = &world.characters[&CharacterId(1)];
+        assert_eq!((actor.x, actor.y), (251, 41));
+        assert_eq!(actor.cursor_item, None);
+        assert_eq!(actor.inventory[30], None);
+        assert_eq!(actor.inventory[31], Some(ItemId(11)));
+        assert!(!world.items.contains_key(&ItemId(9)));
+        assert!(!world.items.contains_key(&ItemId(10)));
+        assert!(world.items.contains_key(&ItemId(11)));
     }
 
     fn character(id: u32) -> Character {

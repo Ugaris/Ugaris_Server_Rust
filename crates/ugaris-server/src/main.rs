@@ -26764,6 +26764,20 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpTeleportMissingSphere {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "Nothing happened.".to_string()));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpTeleportSpheres {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "Your spheres vanished.".to_string()));
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
