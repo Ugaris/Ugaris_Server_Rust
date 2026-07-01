@@ -420,6 +420,7 @@ struct ServerRuntime {
     hardcore_exp_bonus: f64,
     hardcore_military_exp_bonus: f64,
     hardcore_kill_exp_bonus: f64,
+    xmas_special_override: Option<i32>,
     item_decay_time: i32,
     player_body_decay_time: i32,
     npc_body_decay_time: i32,
@@ -448,6 +449,7 @@ impl Default for ServerRuntime {
             hardcore_exp_bonus: settings.hardcore_exp_bonus,
             hardcore_military_exp_bonus: settings.hardcore_military_exp_bonus,
             hardcore_kill_exp_bonus: settings.hardcore_kill_exp_bonus,
+            xmas_special_override: None,
             item_decay_time: settings.item_decay_time,
             player_body_decay_time: settings.player_body_decay_time,
             npc_body_decay_time: settings.npc_body_decay_time,
@@ -4195,6 +4197,21 @@ fn apply_admin_character_command(
                 "Turned spy mode {}. You will {} see all tells, clan, alliance, club, area, and mirror chat.",
                 if enabled { "on" } else { "off" },
                 if enabled { "now" } else { "no longer" }
+            )],
+            ..Default::default()
+        });
+    }
+
+    if lower == "setxmas" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let flag = legacy_atoi_prefix(rest.trim_start()) as i32;
+        let old_value = runtime_effective_xmas_flag(runtime);
+        runtime.xmas_special_override = Some(flag);
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Setting christmas special to {flag}, old value was {old_value}."
             )],
             ..Default::default()
         });
@@ -10017,6 +10034,22 @@ fn current_xmas_event() -> (bool, i32) {
     xmas_event_from_ymd(year, month, day)
 }
 
+fn runtime_effective_xmas_event(runtime: &ServerRuntime) -> (bool, i32) {
+    let (date_active, event_year) = current_xmas_event();
+    match runtime.xmas_special_override {
+        Some(flag) => (flag != 0, event_year),
+        None => (date_active, event_year),
+    }
+}
+
+fn runtime_effective_xmas_flag(runtime: &ServerRuntime) -> i32 {
+    if runtime_effective_xmas_event(runtime).0 {
+        1
+    } else {
+        0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum XmasTreeApplyResult {
     Dormant,
@@ -15497,6 +15530,42 @@ mod tests {
             .expect("god showattack command should toggle back off");
         assert!(!runtime.show_attack);
         assert!(!world.show_attack_debug);
+    }
+
+    #[test]
+    fn god_setxmas_command_sets_runtime_christmas_override() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::GOD);
+        world.add_character(character);
+        let mut runtime = ServerRuntime::default();
+        runtime.xmas_special_override = Some(0);
+
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/setxmas 1abc",
+            1,
+        )
+        .expect("god setxmas command should be recognized");
+        assert_eq!(
+            result.messages,
+            vec!["Setting christmas special to 1, old value was 0."]
+        );
+        assert_eq!(runtime.xmas_special_override, Some(1));
+        assert_eq!(runtime_effective_xmas_event(&runtime).0, true);
+
+        let result =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/setxmas 0", 1)
+                .expect("god setxmas command should accept zero");
+        assert_eq!(
+            result.messages,
+            vec!["Setting christmas special to 0, old value was 1."]
+        );
+        assert_eq!(runtime.xmas_special_override, Some(0));
+        assert_eq!(runtime_effective_xmas_event(&runtime).0, false);
     }
 
     #[test]
@@ -26935,7 +27004,7 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::SwampSpawnPulse { .. } => {}
                                         ugaris_core::item_driver::ItemDriverOutcome::XmasTree { character_id, .. } => {
-                                            let (is_xmas, event_year) = current_xmas_event();
+                                            let (is_xmas, event_year) = runtime_effective_xmas_event(&runtime);
                                             let gift_seed = world.tick.0;
                                             let result = match runtime.player_for_character_mut(character_id) {
                                                 Some(player) => apply_xmastree(
