@@ -30,15 +30,16 @@ use crate::{
     item_driver::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item,
         EdemonGateSpawnContext, FdemonGateSpawnContext, ItemDriverContext, ItemDriverOutcome,
-        ItemDriverRequest, UseItemError, UseItemOutcome, IDR_BONEWALL, IDR_CALIGAR,
-        IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DOOR, IDR_DUNGEONDOOR, IDR_EDEMONBALL,
+        ItemDriverRequest, UseItemError, UseItemOutcome, WarpTrialDoorContext, IDR_BONEWALL,
+        IDR_CALIGAR, IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DOOR, IDR_DUNGEONDOOR, IDR_EDEMONBALL,
         IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
         IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE,
         IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB2_WATER,
         IDR_LAB3_PLANT, IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT,
         IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM,
-        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
-        IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_AREA25_TELEKEY, IID_MINEGATEWAY,
+        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY,
+        IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_AREA25_TELEKEY,
+        IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
@@ -3099,6 +3100,144 @@ impl World {
             })
     }
 
+    fn warp_trial_door_context(&self, item_id: ItemId) -> Option<WarpTrialDoorContext> {
+        let item = self.items.get(&item_id)?;
+        let cached = item.driver_data.get(2).copied().unwrap_or(0) != 0;
+        let (xs, ys, xe, ye, partner_id) = if cached {
+            let xs = u16::from(item.driver_data.get(2).copied().unwrap_or(0));
+            let ys = u16::from(item.driver_data.get(3).copied().unwrap_or(0));
+            let xe = u16::from(item.driver_data.get(4).copied().unwrap_or(0));
+            let ye = u16::from(item.driver_data.get(5).copied().unwrap_or(0));
+            let partner_id = u16::from(item.driver_data.get(6).copied().unwrap_or(0))
+                | (u16::from(item.driver_data.get(7).copied().unwrap_or(0)) << 8);
+            (xs, ys, xe, ye, partner_id)
+        } else {
+            self.discover_warp_trial_door_bounds(item_id)?
+        };
+        let partner = self.items.get(&ItemId(u32::from(partner_id)))?;
+        let mut room_has_non_simple_baddy = false;
+        for y in ys.saturating_add(1)..ye {
+            for x in xs.saturating_add(1)..xe {
+                let Some(tile) = self.map.tile(usize::from(x), usize::from(y)) else {
+                    continue;
+                };
+                if tile.character == 0 {
+                    continue;
+                }
+                let character_id = CharacterId(u32::from(tile.character));
+                if self
+                    .characters
+                    .get(&character_id)
+                    .is_some_and(|character| character.driver != CDR_SIMPLEBADDY)
+                {
+                    room_has_non_simple_baddy = true;
+                    break;
+                }
+            }
+            if room_has_non_simple_baddy {
+                break;
+            }
+        }
+
+        Some(WarpTrialDoorContext {
+            xs,
+            ys,
+            xe,
+            ye,
+            partner_x: partner.x,
+            partner_y: partner.y,
+            room_has_non_simple_baddy,
+        })
+    }
+
+    fn discover_warp_trial_door_bounds(
+        &self,
+        item_id: ItemId,
+    ) -> Option<(u16, u16, u16, u16, u16)> {
+        let item = self.items.get(&item_id)?;
+        let ix = i32::from(item.x);
+        let iy = i32::from(item.y);
+        let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+        for (dx, dy) in dirs {
+            for step in 1..15 {
+                let x = ix + dx * step;
+                let y = iy + dy * step;
+                if x < 0 || y < 0 {
+                    break;
+                }
+                let Some(tile) = self.map.tile(x as usize, y as usize) else {
+                    break;
+                };
+                if tile.item != 0 {
+                    let partner_id = ItemId(tile.item);
+                    if self
+                        .items
+                        .get(&partner_id)
+                        .is_some_and(|partner| partner.driver == IDR_WARPTRIALDOOR)
+                    {
+                        return self.warp_trial_bounds_for_pair(item, partner_id, dx, dy);
+                    }
+                }
+                if tile
+                    .flags
+                    .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)
+                {
+                    break;
+                }
+            }
+        }
+        None
+    }
+
+    fn warp_trial_bounds_for_pair(
+        &self,
+        item: &Item,
+        partner_id: ItemId,
+        dx: i32,
+        dy: i32,
+    ) -> Option<(u16, u16, u16, u16, u16)> {
+        let partner = self.items.get(&partner_id)?;
+        let ix = i32::from(item.x);
+        let iy = i32::from(item.y);
+        let (xs, xe, ys, ye) = if dx != 0 {
+            let xs = item.x.min(partner.x);
+            let xe = item.x.max(partner.x);
+            let scan_x = ix + dx;
+            let ye = self.scan_warp_trial_wall(scan_x, iy, 0, 1)?;
+            let ys = self.scan_warp_trial_wall(scan_x, iy, 0, -1)?;
+            (xs, xe, ys, ye)
+        } else if dy != 0 {
+            let ys = item.y.min(partner.y);
+            let ye = item.y.max(partner.y);
+            let scan_y = iy + dy;
+            let xe = self.scan_warp_trial_wall(ix, scan_y, 1, 0)?;
+            let xs = self.scan_warp_trial_wall(ix, scan_y, -1, 0)?;
+            (xs, xe, ys, ye)
+        } else {
+            return None;
+        };
+        Some((xs, ys, xe, ye, partner_id.0 as u16))
+    }
+
+    fn scan_warp_trial_wall(&self, x: i32, y: i32, dx: i32, dy: i32) -> Option<u16> {
+        for step in 0..15 {
+            let sx = x + dx * step;
+            let sy = y + dy * step;
+            if sx < 0 || sy < 0 {
+                return None;
+            }
+            let tile = self.map.tile(sx as usize, sy as usize)?;
+            if tile.flags.contains(MapFlags::MOVEBLOCK) {
+                return if dx != 0 {
+                    u16::try_from(sx).ok()
+                } else {
+                    u16::try_from(sy).ok()
+                };
+            }
+        }
+        None
+    }
+
     fn has_matching_random_shrine_key(
         &self,
         character_id: CharacterId,
@@ -3214,6 +3353,10 @@ impl World {
             && !context.has_mine_gateway_key)
             .then(|| self.character_has_template_id(character_id, IID_MINEGATEWAY))
             .unwrap_or(false);
+        let warp_trial_door_context = (driver == Some(IDR_WARPTRIALDOOR)
+            && context.warp_trial_door.is_none())
+        .then(|| self.warp_trial_door_context(item_id))
+        .flatten();
         let mine_door_target = (driver == Some(IDR_MINEDOOR) && context.mine_door_target.is_none())
             .then(|| self.mine_door_target(item_id))
             .flatten();
@@ -3273,6 +3416,9 @@ impl World {
         effective_context.has_area16_robber_key |= area16_robber_key_context;
         effective_context.has_area16_skelly_key |= area16_skelly_key_context;
         effective_context.has_mine_gateway_key |= mine_gateway_key_context;
+        if effective_context.warp_trial_door.is_none() {
+            effective_context.warp_trial_door = warp_trial_door_context;
+        }
         if effective_context.mine_door_target.is_none() {
             effective_context.mine_door_target = mine_door_target;
         }
@@ -7112,6 +7258,21 @@ impl World {
             }
             ItemDriverOutcome::WarpKeyDoorMissingKey { .. }
             | ItemDriverOutcome::WarpKeyDoorBug { .. } => outcome,
+            ItemDriverOutcome::WarpTrialDoor {
+                character_id,
+                player_x,
+                player_y,
+                ..
+            } => {
+                if self.teleport_character(character_id, player_x, player_y, true) {
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::WarpTrialDoorWrongSide { .. }
+            | ItemDriverOutcome::WarpTrialDoorBusy { .. }
+            | ItemDriverOutcome::WarpTrialDoorBug { .. } => outcome,
             ItemDriverOutcome::WarpKeySpawn { .. }
             | ItemDriverOutcome::WarpKeySpawnCursorOccupied { .. } => outcome,
             ItemDriverOutcome::TeleportDoor {
@@ -29877,6 +30038,55 @@ mod tests {
         assert_eq!(actor.dir, Direction::Left as u8);
         assert_eq!(actor.inventory[30], None);
         assert!(!world.items.contains_key(&ItemId(9)));
+    }
+
+    #[test]
+    fn world_warptrialdoor_discovers_room_and_teleports_player() {
+        let mut world = World {
+            map: MapGrid::new(32, 32),
+            ..World::default()
+        };
+        let mut actor = character(1);
+        actor.x = 9;
+        actor.y = 12;
+        assert!(world.spawn_character(actor, 9, 12));
+
+        let mut left = item(7, ItemFlags::USED | ItemFlags::USE);
+        left.driver = crate::item_driver::IDR_WARPTRIALDOOR;
+        assert!(world.map.set_item_map(&mut left, 10, 12));
+        world.add_item(left);
+        let mut right = item(8, ItemFlags::USED | ItemFlags::USE);
+        right.driver = crate::item_driver::IDR_WARPTRIALDOOR;
+        assert!(world.map.set_item_map(&mut right, 20, 12));
+        world.add_item(right);
+
+        for x in 11..20 {
+            world.map.set_flags(x, 10, MapFlags::MOVEBLOCK);
+            world.map.set_flags(x, 20, MapFlags::MOVEBLOCK);
+        }
+
+        let outcome = world.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: crate::item_driver::IDR_WARPTRIALDOOR,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            25,
+        );
+
+        assert!(matches!(
+            outcome,
+            ItemDriverOutcome::WarpTrialDoor {
+                spawn_x: 15,
+                spawn_y: 15,
+                fighter_target_x: 21,
+                fighter_target_y: 12,
+                ..
+            }
+        ));
+        let actor = &world.characters[&CharacterId(1)];
+        assert_eq!((actor.x, actor.y), (11, 12));
     }
 
     fn character(id: u32) -> Character {

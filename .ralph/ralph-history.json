@@ -1243,13 +1243,42 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 49,
+      "startedAt": "2026-07-01T05:55:56.847Z",
+      "endedAt": "2026-07-01T06:12:40.183Z",
+      "durationMs": 1003156,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-core/src/item_driver.rs",
+        "crates/ugaris-core/src/world.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- `cargo test -p ugaris-core warptrialdoor --no-fail-fast`",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/world.rs:",
+        "\u001b[0m$ \u001b[0mcargo test -p ugaris-core warptrialdoor --no-fail-fast",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 922 filtered out; finished in 0.00s",
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/item_driver.rs:",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 922 filtered out; finished in 0.00s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 922 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error",
+        "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
+        "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 34734740,
+  "totalDurationMs": 35737896,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 18,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 20,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 3,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
@@ -1257,13 +1286,13 @@
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 6,
       "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok": 33,
-      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 34,
+      "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok": 35,
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
       "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 10,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 33,
+      "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 34,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 31,
       "test world::tests::world_removes_stale_pk_hate_when_pvp_level_check_fails ... ok": 30,
       "The first fixture patch hit a similarly shaped earlier test instead of the failing one. I’m applying": 1,
@@ -1414,7 +1443,13 @@
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 920 filtered out; finished in 0.00s": 1,
       "test result: ok. 922 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 310 filtered out; finished in 0.00s": 1,
-      "test result: ok. 922 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
+      "test result: ok. 922 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
+      "- `cargo test -p ugaris-core warptrialdoor --no-fail-fast`": 1,
+      "\u001b[0m$ \u001b[0mcargo test -p ugaris-core warptrialdoor --no-fail-fast": 1,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 922 filtered out; finished in 0.00s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 922 filtered out; finished in 0.00s": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 922 filtered out; finished in 0.00s": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

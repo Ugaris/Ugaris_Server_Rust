@@ -375,6 +375,7 @@ pub struct ItemDriverContext {
     pub has_area17_lockpick: bool,
     pub has_area17_cursor_lockpick: bool,
     pub area25_door_key: Option<(ItemId, String)>,
+    pub warp_trial_door: Option<WarpTrialDoorContext>,
     pub warp_bonus_base: Option<u32>,
     pub warp_bonus_points: u32,
     pub warp_bonus_used_at_base: Option<u32>,
@@ -412,6 +413,17 @@ pub struct ItemDriverContext {
     pub lq_death_penalty_seconds: Option<u32>,
     pub teufel_arena_roll: Option<u8>,
     pub teufel_ratnest_guard_active: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WarpTrialDoorContext {
+    pub xs: u16,
+    pub ys: u16,
+    pub xe: u16,
+    pub ye: u16,
+    pub partner_x: u16,
+    pub partner_y: u16,
+    pub room_has_non_simple_baddy: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -638,6 +650,33 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
     },
     WarpKeyDoorBug {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    WarpTrialDoor {
+        item_id: ItemId,
+        character_id: CharacterId,
+        spawn_x: u16,
+        spawn_y: u16,
+        player_x: u16,
+        player_y: u16,
+        fighter_target_x: u16,
+        fighter_target_y: u16,
+        xs: u16,
+        ys: u16,
+        xe: u16,
+        ye: u16,
+        template: &'static str,
+    },
+    WarpTrialDoorWrongSide {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    WarpTrialDoorBusy {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    WarpTrialDoorBug {
         item_id: ItemId,
         character_id: CharacterId,
     },
@@ -2268,7 +2307,10 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         | ItemDriverOutcome::PentBossDoorLocked { .. }
         | ItemDriverOutcome::PentBossDoorBusy { .. }
         | ItemDriverOutcome::WarpKeyDoorMissingKey { .. }
-        | ItemDriverOutcome::WarpKeyDoorBug { .. } => 2,
+        | ItemDriverOutcome::WarpKeyDoorBug { .. }
+        | ItemDriverOutcome::WarpTrialDoorWrongSide { .. }
+        | ItemDriverOutcome::WarpTrialDoorBusy { .. }
+        | ItemDriverOutcome::WarpTrialDoorBug { .. } => 2,
         ItemDriverOutcome::EdemonBlockMove { .. }
         | ItemDriverOutcome::EdemonBlockBlocked { .. }
         | ItemDriverOutcome::EdemonTubePulse { .. } => 1,
@@ -2287,7 +2329,11 @@ pub fn legacy_item_driver_return_code(driver: Option<u16>, outcome: &ItemDriverO
         ItemDriverOutcome::Noop
             if matches!(
                 driver,
-                Some(IDR_DOOR) | Some(IDR_DOUBLE_DOOR) | Some(IDR_STAFFER2) | Some(IDR_CALIGAR)
+                Some(IDR_DOOR)
+                    | Some(IDR_DOUBLE_DOOR)
+                    | Some(IDR_STAFFER2)
+                    | Some(IDR_CALIGAR)
+                    | Some(IDR_WARPTRIALDOOR)
             ) =>
         {
             2
@@ -2506,6 +2552,7 @@ pub fn execute_item_driver_with_context(
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_MINEGATEWAY => mine_gateway_driver(character, item, context),
                 IDR_WARPTELEPORT => warpteleport_driver(character, item, context),
+                IDR_WARPTRIALDOOR => warptrialdoor_driver(character, item, context),
                 IDR_WARPBONUS => warpbonus_driver(character, item, context, area_id),
                 IDR_WARPKEYSPAWN => warpkeyspawn_driver(character, item),
                 IDR_WARPKEYDOOR => warpkeydoor_driver(character, item, context),
@@ -7118,6 +7165,103 @@ fn warpkeyspawn_driver(character: &Character, item: &Item) -> ItemDriverOutcome 
     }
 }
 
+fn warptrialdoor_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    let Some(trial) = context.warp_trial_door else {
+        return ItemDriverOutcome::WarpTrialDoorBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    if character.x >= trial.xs
+        && character.x <= trial.xe
+        && character.y >= trial.ys
+        && character.y <= trial.ye
+    {
+        return ItemDriverOutcome::WarpTrialDoorWrongSide {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    if trial.room_has_non_simple_baddy {
+        return ItemDriverOutcome::WarpTrialDoorBusy {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let dx = (i32::from(trial.partner_x) - i32::from(item.x)).signum();
+    let dy = (i32::from(trial.partner_y) - i32::from(item.y)).signum();
+    if (dx == 0 && dy == 0) || (dx != 0 && dy != 0) {
+        return ItemDriverOutcome::WarpTrialDoorBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    let Some(player_x) = i32::from(item.x)
+        .checked_add(dx)
+        .and_then(|x| u16::try_from(x).ok())
+    else {
+        return ItemDriverOutcome::WarpTrialDoorBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    let Some(player_y) = i32::from(item.y)
+        .checked_add(dy)
+        .and_then(|y| u16::try_from(y).ok())
+    else {
+        return ItemDriverOutcome::WarpTrialDoorBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    let Some(fighter_target_x) = i32::from(trial.partner_x)
+        .checked_add(dx)
+        .and_then(|x| u16::try_from(x).ok())
+    else {
+        return ItemDriverOutcome::WarpTrialDoorBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+    let Some(fighter_target_y) = i32::from(trial.partner_y)
+        .checked_add(dy)
+        .and_then(|y| u16::try_from(y).ok())
+    else {
+        return ItemDriverOutcome::WarpTrialDoorBug {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    };
+
+    ItemDriverOutcome::WarpTrialDoor {
+        item_id: item.id,
+        character_id: character.id,
+        spawn_x: (trial.xs + trial.xe) / 2,
+        spawn_y: (trial.ys + trial.ye) / 2,
+        player_x,
+        player_y,
+        fighter_target_x,
+        fighter_target_y,
+        xs: trial.xs,
+        ys: trial.ys,
+        xe: trial.xe,
+        ye: trial.ye,
+        template: "warped_fighter",
+    }
+}
+
 fn warpkeydoor_driver(
     character: &Character,
     item: &Item,
@@ -10097,6 +10241,152 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }
+        );
+    }
+
+    #[test]
+    fn warptrialdoor_returns_spawn_and_player_teleport_boundary() {
+        let mut actor = character(1);
+        actor.x = 9;
+        actor.y = 12;
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPTRIALDOOR);
+        door.x = 10;
+        door.y = 12;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPTRIALDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let context = ItemDriverContext {
+            warp_trial_door: Some(WarpTrialDoorContext {
+                xs: 10,
+                ys: 10,
+                xe: 20,
+                ye: 20,
+                partner_x: 20,
+                partner_y: 12,
+                room_has_non_simple_baddy: false,
+            }),
+            ..ItemDriverContext::default()
+        };
+
+        assert_eq!(
+            execute_item_driver_with_context(&mut actor, &mut door, request, 25, false, &context),
+            ItemDriverOutcome::WarpTrialDoor {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spawn_x: 15,
+                spawn_y: 15,
+                player_x: 11,
+                player_y: 12,
+                fighter_target_x: 21,
+                fighter_target_y: 12,
+                xs: 10,
+                ys: 10,
+                xe: 20,
+                ye: 20,
+                template: "warped_fighter",
+            }
+        );
+    }
+
+    #[test]
+    fn warptrialdoor_blocks_inside_and_busy_rooms() {
+        let mut actor = character(1);
+        actor.x = 15;
+        actor.y = 15;
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPTRIALDOOR);
+        door.x = 10;
+        door.y = 12;
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPTRIALDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+        let trial = WarpTrialDoorContext {
+            xs: 10,
+            ys: 10,
+            xe: 20,
+            ye: 20,
+            partner_x: 20,
+            partner_y: 12,
+            room_has_non_simple_baddy: false,
+        };
+        let context = ItemDriverContext {
+            warp_trial_door: Some(trial),
+            ..ItemDriverContext::default()
+        };
+
+        let wrong_side =
+            execute_item_driver_with_context(&mut actor, &mut door, request, 25, false, &context);
+        assert_eq!(
+            wrong_side,
+            ItemDriverOutcome::WarpTrialDoorWrongSide {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_WARPTRIALDOOR), &wrong_side),
+            2
+        );
+
+        actor.x = 9;
+        actor.y = 12;
+        let busy_context = ItemDriverContext {
+            warp_trial_door: Some(WarpTrialDoorContext {
+                room_has_non_simple_baddy: true,
+                ..trial
+            }),
+            ..ItemDriverContext::default()
+        };
+        let busy = execute_item_driver_with_context(
+            &mut actor,
+            &mut door,
+            request,
+            25,
+            false,
+            &busy_context,
+        );
+        assert_eq!(
+            busy,
+            ItemDriverOutcome::WarpTrialDoorBusy {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_WARPTRIALDOOR), &busy),
+            2
+        );
+    }
+
+    #[test]
+    fn warptrialdoor_zero_character_call_matches_c_noop_return_code() {
+        let mut timer = character(0);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPTRIALDOOR);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPTRIALDOOR,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver_with_context(
+            &mut timer,
+            &mut door,
+            request,
+            25,
+            false,
+            &ItemDriverContext::default(),
+        );
+
+        assert_eq!(outcome, ItemDriverOutcome::Noop);
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_WARPTRIALDOOR), &outcome),
+            2
         );
     }
 

@@ -27577,6 +27577,39 @@ async fn main() -> anyhow::Result<()> {
                                             ));
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpTrialDoorWrongSide {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You cannot open the door from this side.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpTrialDoorBusy {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "You hear fighting noises and the door won't open.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpTrialDoorBug {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Bug #319i, sorry.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpTrialDoor { .. } => {
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
