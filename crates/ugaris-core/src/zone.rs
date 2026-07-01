@@ -3,12 +3,16 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::{
-    character_driver::{apply_simple_baddy_create_message, CDR_SIMPLEBADDY, NT_CREATE},
+    character_driver::{
+        apply_lab2_undead_create_message, apply_simple_baddy_create_message, CharacterDriverState,
+        CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, NT_CREATE,
+    },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
         MAX_MODIFIERS, POWERSCALE, PROFESSION_COUNT,
     },
     ids::{CharacterId, ItemId},
+    item_driver::IDR_LAB2_REGENERATE,
     legacy::{INVENTORY_START_INVENTORY, INVENTORY_START_SPELLS},
     map::{MapFlags, MapTile},
     world::World,
@@ -430,8 +434,59 @@ impl ZoneLoader {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }
+        if template.driver == CDR_LAB2UNDEAD {
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_lab2_undead_create_message(&mut character, Some(&template.args));
+            self.add_lab2_undead_regenerate_spell(&mut character, &mut inventory_items);
+        }
 
         Ok((character, inventory_items))
+    }
+
+    fn add_lab2_undead_regenerate_spell(
+        &mut self,
+        character: &mut Character,
+        inventory_items: &mut Vec<Item>,
+    ) {
+        let Some(CharacterDriverState::Lab2Undead(data)) = character.driver_state.as_ref() else {
+            return;
+        };
+        if data.undead == 0 || data.regenerate_item_id.is_some() {
+            return;
+        }
+        if character.inventory.iter().flatten().any(|item_id| {
+            inventory_items
+                .iter()
+                .any(|item| item.id == *item_id && item.driver == IDR_LAB2_REGENERATE)
+        }) {
+            return;
+        }
+
+        let mut free_slot = None;
+        for slot in INVENTORY_START_SPELLS..INVENTORY_START_INVENTORY {
+            if character.inventory[slot].is_none() {
+                free_slot = Some(slot);
+            }
+        }
+        let Some(slot) = free_slot else {
+            return;
+        };
+        let Ok(mut spell) = self.create_item("lab2_regenerate_spell", Some(character.id)) else {
+            return;
+        };
+        if spell.driver_data.len() < 12 {
+            spell.driver_data.resize(12, 0);
+        }
+        spell.driver_data[4..8].copy_from_slice(&character.id.0.to_le_bytes());
+        let spell_id = spell.id;
+        character.inventory[slot] = Some(spell_id);
+        character
+            .flags
+            .insert(CharacterFlags::NODEATH | CharacterFlags::ITEMS);
+        if let Some(CharacterDriverState::Lab2Undead(data)) = character.driver_state.as_mut() {
+            data.regenerate_item_id = Some(spell_id);
+        }
+        inventory_items.push(spell);
     }
 }
 
@@ -1401,5 +1456,50 @@ mod tests {
             world.items.get(&ItemId(2)).unwrap().carried_by,
             Some(CharacterId(1))
         );
+    }
+
+    #[test]
+    fn lab2_undead_template_installs_regenerate_spell_for_undead() {
+        let items = r#"
+            lab2_regenerate_spell:
+              name="lab2_regenerate_spell"
+              driver=194
+              arg="180800000000000000000000"
+            ;
+        "#;
+        let chars = r#"
+            Undead:
+              name="Lab Undead"
+              driver=198
+              arg="undead=1; patrol=1;"
+              V_HP=10
+            ;
+        "#;
+
+        let mut loader = ZoneLoader::new();
+        loader.load_item_templates_str(items).unwrap();
+        loader.load_character_templates_str(chars).unwrap();
+
+        let (character, inventory_items) = loader
+            .instantiate_character_template("Undead", CharacterId(7))
+            .unwrap();
+
+        assert!(character.flags.contains(CharacterFlags::NODEATH));
+        assert!(character.flags.contains(CharacterFlags::ITEMS));
+        let Some(CharacterDriverState::Lab2Undead(data)) = &character.driver_state else {
+            panic!("lab2 undead state missing");
+        };
+        let regen_item_id = data.regenerate_item_id.expect("regenerate item id");
+        assert_eq!(character.inventory[29], Some(regen_item_id));
+
+        let regen = inventory_items
+            .iter()
+            .find(|item| item.id == regen_item_id)
+            .expect("regenerate item");
+        assert_eq!(regen.driver, IDR_LAB2_REGENERATE);
+        assert_eq!(regen.carried_by, Some(CharacterId(7)));
+        assert_eq!(&regen.driver_data[4..8], &7_u32.to_le_bytes());
+        assert_eq!(data.undead, 1);
+        assert_eq!(data.patstep, 4);
     }
 }
