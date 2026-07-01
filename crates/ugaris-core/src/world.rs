@@ -6899,6 +6899,8 @@ impl World {
                 }
             }
             ItemDriverOutcome::WarpTeleportMissingSphere { .. } => outcome,
+            ItemDriverOutcome::WarpKeySpawn { .. }
+            | ItemDriverOutcome::WarpKeySpawnCursorOccupied { .. } => outcome,
             ItemDriverOutcome::TeleportDoor {
                 character_id, x, y, ..
             } => {

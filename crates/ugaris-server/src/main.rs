@@ -27123,6 +27123,42 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Your spheres vanished.".to_string()));
                                             executed += 1;
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpKeySpawnCursorOccupied {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((
+                                                character_id,
+                                                "Please empty your hand (mouse cursor) first.".to_string(),
+                                            ));
+                                            blocked += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::WarpKeySpawn {
+                                            character_id,
+                                            template,
+                                            ..
+                                        } => {
+                                            if grant_template_item_to_cursor(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                character_id,
+                                                template,
+                                            )
+                                            .is_some()
+                                            {
+                                                feedback.push((
+                                                    character_id,
+                                                    "You got a glowing half sphere.".to_string(),
+                                                ));
+                                                executed += 1;
+                                            } else {
+                                                feedback.push((
+                                                    character_id,
+                                                    "It won't come off.".to_string(),
+                                                ));
+                                                blocked += 1;
+                                            }
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }

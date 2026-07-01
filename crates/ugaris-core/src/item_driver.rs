@@ -608,6 +608,15 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    WarpKeySpawn {
+        item_id: ItemId,
+        character_id: CharacterId,
+        template: &'static str,
+    },
+    WarpKeySpawnCursorOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     TeleportDoor {
         item_id: ItemId,
         character_id: CharacterId,
@@ -2448,6 +2457,7 @@ pub fn execute_item_driver_with_context(
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_MINEGATEWAY => mine_gateway_driver(character, item, context),
                 IDR_WARPTELEPORT => warpteleport_driver(character, item, context),
+                IDR_WARPKEYSPAWN => warpkeyspawn_driver(character, item),
                 IDR_TOYLIGHT => toylight_driver(character, item, context),
                 IDR_DECAYITEM => decaying_item_driver(character, item, context),
                 IDR_OXYPOTION => oxy_potion_driver(character, item, area_id),
@@ -6967,6 +6977,35 @@ fn warpteleport_driver(
     }
 }
 
+fn warpkeyspawn_template(kind: u8) -> &'static str {
+    match kind {
+        1 => "warped_teleport_key1",
+        2 => "warped_teleport_key2",
+        3 => "warped_teleport_key3",
+        4 => "warped_teleport_key4",
+        5 => "warped_teleport_key5",
+        _ => "warped_teleport_key0",
+    }
+}
+
+fn warpkeyspawn_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::WarpKeySpawnCursorOccupied {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    ItemDriverOutcome::WarpKeySpawn {
+        item_id: item.id,
+        character_id: character.id,
+        template: warpkeyspawn_template(drdata(item, 0)),
+    }
+}
+
 const DEV_ID_DB: u32 = 0x01;
 const DEV_ID_WARR: u32 = 0x06;
 
@@ -9690,6 +9729,49 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
                 required_area: 25,
+            }
+        );
+    }
+
+    #[test]
+    fn warpkeyspawn_creates_typed_template_outcome() {
+        let mut actor = character(1);
+        let mut spawner = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPKEYSPAWN);
+        set_drdata(&mut spawner, 0, 4);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPKEYSPAWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut spawner, request, 25, false),
+            ItemDriverOutcome::WarpKeySpawn {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                template: "warped_teleport_key4",
+            }
+        );
+    }
+
+    #[test]
+    fn warpkeyspawn_requires_empty_cursor() {
+        let mut actor = character(1);
+        actor.cursor_item = Some(ItemId(99));
+        let mut spawner = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_WARPKEYSPAWN);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_WARPKEYSPAWN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut spawner, request, 25, false),
+            ItemDriverOutcome::WarpKeySpawnCursorOccupied {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
             }
         );
     }
