@@ -28004,8 +28004,15 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoor { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightTimer { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::CaligarGunProjectile { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorToggle { .. } => {
+                                          | ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorToggle { .. } => {
                                             executed += 1;
+                                        }
+                                        ugaris_core::item_driver::ItemDriverOutcome::SaltmineDoorBlocked {
+                                            character_id,
+                                            ..
+                                        } => {
+                                            feedback.push((character_id, "Thou canst not enter there.".to_string()));
+                                            blocked += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BoneHint {
                                             character_id,

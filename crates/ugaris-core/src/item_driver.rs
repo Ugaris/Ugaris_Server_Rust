@@ -2260,6 +2260,10 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    SaltmineDoorBlocked {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     MineWallInitialized {
         item_id: ItemId,
         sprite: i32,
@@ -2593,6 +2597,7 @@ pub fn execute_item_driver_with_context(
                 IDR_LABENTRANCE => labentrance_driver(character, item, context),
                 IDR_LQ_TICKER => lq_ticker_driver(character, item),
                 IDR_LQ_ENTRANCE => lq_entrance_driver(character, item, context),
+                IDR_SALTMINE_ITEM => saltmine_item_driver(character, item),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),
                 IDR_XMASMAKER => xmasmaker_driver(character, item),
@@ -3761,6 +3766,18 @@ fn bonehint_driver(
         level: drdata(item, 0),
         nr: drdata(item, 2),
         pos: drdata(item, 3),
+    }
+}
+
+fn saltmine_item_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    match drdata(item, 0) {
+        // C saltmine door: monk workers are removed; every other user is rejected.
+        // Worker state is still deferred until the saltmine character driver is ported.
+        3 => ItemDriverOutcome::SaltmineDoorBlocked {
+            item_id: item.id,
+            character_id: character.id,
+        },
+        _ => ItemDriverOutcome::Noop,
     }
 }
 
@@ -10045,6 +10062,51 @@ mod tests {
                 item_id: ItemId(7),
                 character_id: CharacterId(1),
             }
+        );
+    }
+
+    #[test]
+    fn saltmine_door_blocks_non_worker_users_with_legacy_outcome() {
+        let mut actor = character(1);
+        let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SALTMINE_ITEM);
+        set_drdata(&mut door, 0, 3);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SALTMINE_ITEM,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        let outcome = execute_item_driver(&mut actor, &mut door, request, 1, false);
+
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::SaltmineDoorBlocked {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            }
+        );
+        assert_eq!(
+            legacy_item_driver_return_code(Some(IDR_SALTMINE_ITEM), &outcome),
+            1
+        );
+    }
+
+    #[test]
+    fn saltmine_non_door_items_remain_deferred_noops() {
+        let mut actor = character(1);
+        let mut ladder = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_SALTMINE_ITEM);
+        set_drdata(&mut ladder, 0, 1);
+        let request = ItemDriverRequest::Driver {
+            driver: IDR_SALTMINE_ITEM,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        };
+
+        assert_eq!(
+            execute_item_driver(&mut actor, &mut ladder, request, 1, false),
+            ItemDriverOutcome::Noop
         );
     }
 
