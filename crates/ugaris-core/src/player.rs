@@ -44,6 +44,7 @@ pub const LEGACY_CALIGAR_PPD_SIZE: usize = 14 * 4 + 4;
 pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_STAFFER_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_FARMY_PPD_SIZE: usize = 85 * 4;
+pub const LEGACY_TEUFELRAT_PPD_SIZE: usize = 2 * 4;
 pub const LEGACY_TWOCITY_PPD_SIZE: usize = 29 * 4;
 pub const LEGACY_LAB_PPD_SIZE: usize = 360;
 pub const LEGACY_LAB2_GRAVE_VERSION: u8 = 2;
@@ -138,6 +139,7 @@ pub const DRD_CALIGAR_PPD: u32 = make_drd(DEV_ID_DB, 159 | PERSISTENT_PLAYER_DAT
 pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DATA);
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
+pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TWOCITY_PPD: u32 = make_drd(DEV_ID_DB, 97 | PERSISTENT_PLAYER_DATA);
 pub const DRD_LAB_PPD: u32 = make_drd(DEV_ID_DB, 116 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
@@ -186,6 +188,8 @@ pub const ARKHATA_PPD_CLERK_STATE_OFFSET: usize = 16 * 4;
 pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 const STAFFER_PPD_SHANRA_STATE_OFFSET: usize = 16 * 4;
 const FARMY_PPD_BOSS_STAGE_OFFSET: usize = 0;
+const TEUFELRAT_PPD_KILLS_OFFSET: usize = 0;
+const TEUFELRAT_PPD_SCORE_OFFSET: usize = 4;
 const TWOCITY_PPD_GOODTILE_OFFSET: usize = 19 * 4;
 const TWOCITY_PPD_SOLVED_LIBRARY_OFFSET: usize = 24 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
@@ -420,6 +424,10 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub farmy_ppd: Vec<u8>,
     #[serde(default)]
+    pub teufel_rat_kills: u32,
+    #[serde(default)]
+    pub teufel_rat_score: u32,
+    #[serde(default)]
     pub twocity_ppd: Vec<u8>,
     #[serde(default)]
     pub lab_ppd: Vec<u8>,
@@ -532,6 +540,8 @@ impl PlayerRuntime {
             arkhata_ppd: Vec::new(),
             staffer_ppd: Vec::new(),
             farmy_ppd: Vec::new(),
+            teufel_rat_kills: 0,
+            teufel_rat_score: 0,
             twocity_ppd: Vec::new(),
             lab_ppd: Vec::new(),
             lab_solved_bits: 0,
@@ -1863,6 +1873,41 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_teufelrat_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_TEUFELRAT_PPD_SIZE];
+        write_i32(
+            &mut bytes,
+            TEUFELRAT_PPD_KILLS_OFFSET,
+            self.teufel_rat_kills.min(i32::MAX as u32) as i32,
+        );
+        write_i32(
+            &mut bytes,
+            TEUFELRAT_PPD_SCORE_OFFSET,
+            self.teufel_rat_score.min(i32::MAX as u32) as i32,
+        );
+        bytes
+    }
+
+    pub fn decode_legacy_teufelrat_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_TEUFELRAT_PPD_SIZE {
+            return false;
+        }
+        self.teufel_rat_kills = read_i32(bytes, TEUFELRAT_PPD_KILLS_OFFSET).max(0) as u32;
+        self.teufel_rat_score = read_i32(bytes, TEUFELRAT_PPD_SCORE_OFFSET).max(0) as u32;
+        true
+    }
+
+    pub fn add_teufel_rat_kill(&mut self, rat_level: u32, reduced_score: bool) -> (u32, u32) {
+        let score = if reduced_score {
+            1
+        } else {
+            rat_level.saturating_mul(rat_level) / 100
+        };
+        self.teufel_rat_kills = self.teufel_rat_kills.saturating_add(1);
+        self.teufel_rat_score = self.teufel_rat_score.saturating_add(score);
+        (self.teufel_rat_kills, self.teufel_rat_score)
+    }
+
     pub fn arkhata_clerk_state(&self) -> i32 {
         if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
             return 0;
@@ -2001,6 +2046,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_TEUFELRAT_PPD => {
+                    if !self.decode_legacy_teufelrat_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TWOCITY_PPD => {
                     if !self.decode_legacy_twocity_ppd(block.data) {
                         return false;
@@ -2061,6 +2111,7 @@ impl PlayerRuntime {
         let mut had_arkhata = false;
         let mut had_staffer = false;
         let mut had_farmy = false;
+        let mut had_teufelrat = false;
         let mut had_twocity = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
@@ -2181,6 +2232,13 @@ impl PlayerRuntime {
             } else if block.id == DRD_FARMY_PPD {
                 had_farmy = true;
                 write_ppd_block(&mut encoded, DRD_FARMY_PPD, &self.encode_legacy_farmy_ppd());
+            } else if block.id == DRD_TEUFELRAT_PPD {
+                had_teufelrat = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TEUFELRAT_PPD,
+                    &self.encode_legacy_teufelrat_ppd(),
+                );
             } else if block.id == DRD_TWOCITY_PPD {
                 had_twocity = true;
                 write_ppd_block(
@@ -2368,6 +2426,15 @@ impl PlayerRuntime {
         }
         if !had_farmy && (existing_was_valid || existing.is_empty()) && !self.farmy_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_FARMY_PPD, &self.encode_legacy_farmy_ppd());
+        }
+        if !had_teufelrat && (existing_was_valid || existing.is_empty()) {
+            if self.teufel_rat_kills != 0 || self.teufel_rat_score != 0 {
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TEUFELRAT_PPD,
+                    &self.encode_legacy_teufelrat_ppd(),
+                );
+            }
         }
         if !had_twocity && (existing_was_valid || existing.is_empty()) {
             if !self.twocity_ppd.is_empty()
@@ -3896,6 +3963,60 @@ mod tests {
         let mut decoded = PlayerRuntime::connected(2, 0);
         assert!(decoded.decode_legacy_ppd_blob(&encoded));
         assert_eq!(decoded.lab_solved_bits, (1_u64 << 15) | (1_u64 << 20));
+    }
+
+    #[test]
+    fn teufelrat_ppd_codec_matches_legacy_rat_data_layout() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.add_teufel_rat_kill(80, false), (1, 64));
+        assert_eq!(player.add_teufel_rat_kill(90, true), (2, 65));
+
+        let encoded = player.encode_legacy_teufelrat_ppd();
+        assert_eq!(encoded.len(), LEGACY_TEUFELRAT_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, TEUFELRAT_PPD_KILLS_OFFSET), 2);
+        assert_eq!(read_i32(&encoded, TEUFELRAT_PPD_SCORE_OFFSET), 65);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_teufelrat_ppd(&encoded));
+        assert_eq!(decoded.teufel_rat_kills, 2);
+        assert_eq!(decoded.teufel_rat_score, 65);
+        assert!(!decoded.decode_legacy_teufelrat_ppd(&encoded[..LEGACY_TEUFELRAT_PPD_SIZE - 1]));
+    }
+
+    #[test]
+    fn teufelrat_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_rat = vec![0; LEGACY_TEUFELRAT_PPD_SIZE];
+        write_i32(&mut existing_rat, TEUFELRAT_PPD_KILLS_OFFSET, 5);
+        write_i32(&mut existing_rat, TEUFELRAT_PPD_SCORE_OFFSET, 55);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_TEUFELRAT_PPD, &existing_rat);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.teufel_rat_kills = 7;
+        player.teufel_rat_score = 99;
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_TEUFELRAT_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_TEUFELRAT_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20 + TEUFELRAT_PPD_KILLS_OFFSET), 7);
+        assert_eq!(read_i32(&encoded, 20 + TEUFELRAT_PPD_SCORE_OFFSET), 99);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.teufel_rat_kills, 7);
+        assert_eq!(decoded.teufel_rat_score, 99);
+
+        let mut appended = PlayerRuntime::connected(3, 0);
+        appended.teufel_rat_kills = 1;
+        appended.teufel_rat_score = 1;
+        let appended_blob = appended.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended_blob, 0), DRD_TEUFELRAT_PPD);
+        assert_eq!(read_i32(&appended_blob, 8), 1);
+        assert_eq!(read_i32(&appended_blob, 12), 1);
     }
 
     #[test]

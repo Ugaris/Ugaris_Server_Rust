@@ -16,6 +16,7 @@ pub const CDT_DEAD: u16 = 2;
 pub const CDT_RESPAWN: u16 = 3;
 pub const CDT_SPECIAL: u16 = 4;
 
+pub const CDR_LOSTCON: u16 = 5;
 pub const CDR_SIMPLEBADDY: u16 = 7;
 pub const CDR_MACRO: u16 = 37;
 pub const CDR_SWAMPCLARA: u16 = 54;
@@ -24,6 +25,10 @@ pub const CDR_PALACEISLENA: u16 = 57;
 pub const CDR_TRADER: u16 = 72;
 pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
+pub const CDR_TEUFELDEMON: u16 = 114;
+pub const CDR_TEUFELGAMBLER: u16 = 115;
+pub const CDR_TEUFELQUEST: u16 = 116;
+pub const CDR_TEUFELRAT: u16 = 117;
 pub const CDR_LAB2UNDEAD: u16 = 198;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
@@ -759,6 +764,10 @@ pub enum CharacterDriverKind {
     Trader,
     LqNpc,
     Janitor,
+    TeufelDemon,
+    TeufelGambler,
+    TeufelQuest,
+    TeufelRat,
 }
 
 impl CharacterDriverKind {
@@ -772,6 +781,10 @@ impl CharacterDriverKind {
             CDR_TRADER => Some(Self::Trader),
             CDR_LQNPC => Some(Self::LqNpc),
             CDR_JANITOR => Some(Self::Janitor),
+            CDR_TEUFELDEMON => Some(Self::TeufelDemon),
+            CDR_TEUFELGAMBLER => Some(Self::TeufelGambler),
+            CDR_TEUFELQUEST => Some(Self::TeufelQuest),
+            CDR_TEUFELRAT => Some(Self::TeufelRat),
             _ => None,
         }
     }
@@ -786,6 +799,10 @@ impl CharacterDriverKind {
             Self::Trader => CDR_TRADER,
             Self::LqNpc => CDR_LQNPC,
             Self::Janitor => CDR_JANITOR,
+            Self::TeufelDemon => CDR_TEUFELDEMON,
+            Self::TeufelGambler => CDR_TEUFELGAMBLER,
+            Self::TeufelQuest => CDR_TEUFELQUEST,
+            Self::TeufelRat => CDR_TEUFELRAT,
         }
     }
 }
@@ -886,6 +903,7 @@ mod tests {
 
     #[test]
     fn base_character_driver_ids_match_c_drvlib() {
+        assert_eq!(CDR_LOSTCON, 5);
         assert_eq!(CDR_SIMPLEBADDY, 7);
         assert_eq!(CDR_MACRO, 37);
         assert_eq!(CDR_SWAMPCLARA, 54);
@@ -894,6 +912,10 @@ mod tests {
         assert_eq!(CDR_TRADER, 72);
         assert_eq!(CDR_LQNPC, 74);
         assert_eq!(CDR_JANITOR, 85);
+        assert_eq!(CDR_TEUFELDEMON, 114);
+        assert_eq!(CDR_TEUFELGAMBLER, 115);
+        assert_eq!(CDR_TEUFELQUEST, 116);
+        assert_eq!(CDR_TEUFELRAT, 117);
         assert_eq!(DRD_SIMPLEBADDYDRIVER, 0x0100_0013);
         assert_eq!(
             CharacterDriverKind::SimpleBaddy.legacy_id(),
@@ -912,6 +934,19 @@ mod tests {
         assert_eq!(CharacterDriverKind::Trader.legacy_id(), CDR_TRADER);
         assert_eq!(CharacterDriverKind::LqNpc.legacy_id(), CDR_LQNPC);
         assert_eq!(CharacterDriverKind::Janitor.legacy_id(), CDR_JANITOR);
+        assert_eq!(
+            CharacterDriverKind::TeufelDemon.legacy_id(),
+            CDR_TEUFELDEMON
+        );
+        assert_eq!(
+            CharacterDriverKind::TeufelGambler.legacy_id(),
+            CDR_TEUFELGAMBLER
+        );
+        assert_eq!(
+            CharacterDriverKind::TeufelQuest.legacy_id(),
+            CDR_TEUFELQUEST
+        );
+        assert_eq!(CharacterDriverKind::TeufelRat.legacy_id(), CDR_TEUFELRAT);
         assert_eq!(DRD_CLARADRIVER, 0x0100_0059);
     }
 
@@ -943,6 +978,10 @@ mod tests {
             (CDR_TRADER, CharacterDriverKind::Trader),
             (CDR_LQNPC, CharacterDriverKind::LqNpc),
             (CDR_JANITOR, CharacterDriverKind::Janitor),
+            (CDR_TEUFELDEMON, CharacterDriverKind::TeufelDemon),
+            (CDR_TEUFELGAMBLER, CharacterDriverKind::TeufelGambler),
+            (CDR_TEUFELQUEST, CharacterDriverKind::TeufelQuest),
+            (CDR_TEUFELRAT, CharacterDriverKind::TeufelRat),
         ] {
             let outcome = execute_character_driver(driver, 7, 11);
             assert_eq!(

@@ -13,8 +13,8 @@ use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{
-        CharacterDriverState, CDR_LAB2UNDEAD, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY,
-        CDR_SWAMPMONSTER,
+        CharacterDriverState, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC, CDR_PALACEISLENA,
+        CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT,
     },
     direction::Direction,
     do_action::{
@@ -146,6 +146,7 @@ fn apply_pk_hate_from_hurt_events(
     }
     for event in events {
         apply_swamp_monster_death_from_hurt_event(runtime, world, event);
+        apply_teufel_rat_death_from_hurt_event(runtime, world, event);
 
         let eligible = match (
             world.characters.get(&event.target_id),
@@ -218,6 +219,41 @@ fn apply_swamp_monster_death_from_hurt_event(
 
     let upgraded_weapon = world.apply_swamp_monster_death_driver(event.target_id, event.cause_id);
     progressed_clara || upgraded_weapon
+}
+
+fn apply_teufel_rat_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some((rat_level, reduced_score)) = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .and_then(|(target, killer)| {
+            if target.driver == CDR_TEUFELRAT && killer.flags.contains(CharacterFlags::PLAYER) {
+                Some((
+                    target.level,
+                    killer.flags.contains(CharacterFlags::LAG) || killer.driver == CDR_LOSTCON,
+                ))
+            } else {
+                None
+            }
+        })
+    else {
+        return false;
+    };
+
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    let (kills, score) = player.add_teufel_rat_kill(rat_level, reduced_score);
+    world.queue_system_text(event.cause_id, format!("#90 {kills} Rat Kills"));
+    world.queue_system_text(event.cause_id, format!("#80 {score} Rat Points"));
+    true
 }
 
 fn apply_player_fightback_from_hurt_event(
@@ -23277,6 +23313,45 @@ mod tests {
             .unwrap()
             .flags
             .contains(CharacterFlags::LAG));
+    }
+
+    #[test]
+    fn lethal_teufel_rat_hurt_updates_legacy_rat_ppd_score() {
+        let mut world = World::default();
+        let mut rat = login_character(CharacterId(1), &login_block("Rat"), 34, 10, 10);
+        rat.flags.remove(CharacterFlags::PLAYER);
+        rat.driver = CDR_TEUFELRAT;
+        rat.level = 80;
+        rat.hp = POWERSCALE;
+        let mut killer = login_character(CharacterId(2), &login_block("Killer"), 34, 11, 10);
+        killer.flags.insert(CharacterFlags::LAG);
+        world.add_character(rat);
+        world.add_character(killer);
+
+        let mut runtime = ServerRuntime::default();
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(2));
+        runtime.players.insert(1, player);
+
+        world.apply_legacy_hurt(
+            CharacterId(1),
+            Some(CharacterId(2)),
+            POWERSCALE * 2,
+            1,
+            0,
+            0,
+        );
+        assert_eq!(
+            apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0),
+            0
+        );
+
+        let player = runtime.player_for_character(CharacterId(2)).unwrap();
+        assert_eq!(player.teufel_rat_kills, 1);
+        assert_eq!(player.teufel_rat_score, 1);
+        let texts = world.drain_pending_system_texts();
+        assert!(texts.iter().any(|text| text.message == "#90 1 Rat Kills"));
+        assert!(texts.iter().any(|text| text.message == "#80 1 Rat Points"));
     }
 
     #[test]
