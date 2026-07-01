@@ -977,9 +977,27 @@
         "test world::tests::simple_baddy_attack_action_uses_adjacent_blocker_when_path_fails ... ok",
         "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok"
       ]
+    },
+    {
+      "iteration": 38,
+      "startedAt": "2026-07-01T02:34:52.419Z",
+      "endedAt": "2026-07-01T02:37:15.525Z",
+      "durationMs": 142870,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 909 filtered out; finished in 0.00s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 305 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 22702697,
+  "totalDurationMs": 22845567,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
@@ -1114,7 +1132,9 @@
       "test world::tests::lab2_undead_holy_water_damages_true_undead_and_delays_regen ... FAILED": 1,
       "test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 906 filtered out; finished in 0.00s": 1,
       "assertion failed: world.complete_give(CharacterId(1), CharacterId(2))": 1,
-      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 906 filtered out; finished in 0.00s": 1
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 906 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 909 filtered out; finished in 0.00s": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 305 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
