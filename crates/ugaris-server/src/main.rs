@@ -1705,6 +1705,10 @@ struct ChatChannelInfo {
     description: &'static str,
 }
 
+const LEGACY_MAX_CLAN: i64 = 32;
+const LEGACY_MAX_CLUB: i64 = 16_384;
+const LEGACY_CLUB_OFFSET: i64 = 1_024;
+
 const LEGACY_CHAT_CHANNELS: &[ChatChannelInfo] = &[
     ChatChannelInfo {
         number: 0,
@@ -4316,6 +4320,28 @@ fn apply_admin_character_command(
         runtime.show_attack = !runtime.show_attack;
         world.show_attack_debug = runtime.show_attack;
         return Some(KeyringCommandResult::default());
+    }
+
+    if lower == "joinclan" || lower == "joinclub" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let nr = legacy_atoi_prefix(rest.trim_start());
+        if lower == "joinclan" {
+            if (0..LEGACY_MAX_CLAN).contains(&nr) {
+                character.clan = nr as u16;
+                character.clan_rank = 4;
+                character.clan_serial = 0;
+            }
+        } else if (0..LEGACY_MAX_CLUB).contains(&nr) {
+            character.clan = (nr + LEGACY_CLUB_OFFSET) as u16;
+            character.clan_rank = 2;
+            character.clan_serial = 0;
+        }
+        return Some(KeyringCommandResult {
+            name_changed: true,
+            ..Default::default()
+        });
     }
 
     None
@@ -15847,6 +15873,88 @@ mod tests {
             .expect("god showattack command should toggle back off");
         assert!(!runtime.show_attack);
         assert!(!world.show_attack_debug);
+    }
+
+    #[test]
+    fn god_joinclan_and_joinclub_commands_mutate_identity_without_feedback() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        character.flags.insert(CharacterFlags::GOD);
+        world.add_character(character);
+        let mut runtime = ServerRuntime::default();
+
+        let joined_clan = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/joinclan 3abc",
+            1,
+        )
+        .expect("god joinclan command should be recognized");
+        assert!(joined_clan.messages.is_empty());
+        assert!(joined_clan.name_changed);
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.clan, 3);
+        assert_eq!(character.clan_rank, 4);
+        assert_eq!(character.clan_serial, 0);
+
+        let joined_club =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, "/joinclub 5", 1)
+                .expect("god joinclub command should be recognized");
+        assert!(joined_club.messages.is_empty());
+        assert!(joined_club.name_changed);
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.clan, 1029);
+        assert_eq!(character.clan_rank, 2);
+        assert_eq!(character.clan_serial, 0);
+
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/joinclan 32", 1)
+            .expect("out-of-range joinclan is still handled like C");
+        let character = world.characters.get(&character_id).unwrap();
+        assert_eq!(character.clan, 1029);
+        assert_eq!(character.clan_rank, 2);
+    }
+
+    #[test]
+    fn joinclan_and_joinclub_require_exact_god_commands() {
+        let mut world = World::default();
+        let character_id = CharacterId(7);
+        let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+        world.add_character(character);
+        let mut runtime = ServerRuntime::default();
+
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/joinclan 1",
+            1,
+        )
+        .is_none());
+
+        world
+            .characters
+            .get_mut(&character_id)
+            .unwrap()
+            .flags
+            .insert(CharacterFlags::GOD);
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/joincla 1",
+            1,
+        )
+        .is_none());
+        assert!(apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            character_id,
+            "/joinclu 1",
+            1,
+        )
+        .is_none());
     }
 
     #[test]

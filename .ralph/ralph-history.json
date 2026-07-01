@@ -2018,13 +2018,34 @@
         "test world::tests::simple_baddy_noncombat_threads_failed_use_into_secure_move ... ok",
         "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok"
       ]
+    },
+    {
+      "iteration": 79,
+      "startedAt": "2026-07-01T10:38:07.645Z",
+      "endedAt": "2026-07-01T10:45:06.777Z",
+      "durationMs": 418573,
+      "agent": "opencode",
+      "model": "",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src/main.rs:",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 318 filtered out; finished in 0.00s",
+        "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok",
+        "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 51579141,
+  "totalDurationMs": 51997714,
   "struggleIndicators": {
     "repeatedErrors": {
       "The failed assertion exposed existing semantics: `LibloadAreaBlocked` maps to the handled/default re": 1,
-      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 26,
+      "\u001b[91m\u001b[1mError: \u001b[0mapply_patch verification failed: Error: Failed to find expected lines in /home/e": 27,
       "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 3,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 852 filtered out; finished in 0.00s": 1,
       "test item_driver::tests::palace_bomb_and_cap_keep_area_11_libload_guard ... FAILED": 1,
@@ -2036,7 +2057,7 @@
       "Focused tests still pass after the handled-failure adjustment. I’m rerunning the full server test su": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 286 filtered out; finished in 0.00s": 1,
-      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 11,
+      "test tests::retained_effect_policy_removes_stale_pk_hate_when_level_gate_fails ... ok": 12,
       "test result: ok. 288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test world::tests::simple_baddy_noncombat_failed_use_without_retry_code_still_walks ... ok": 53,
       "test world::tests::simple_baddy_scavenger_clears_direction_when_walk_fails ... ok": 49,
@@ -2304,7 +2325,9 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 317 filtered out; finished in 0.00s": 1,
       "test tests::lab2_grave_open_spawns_undead_and_attaches_described_grave_item ... FAILED": 1,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 316 filtered out; finished in 0.00s": 1,
-      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 316 filtered out; finished in 0.00s": 1
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 316 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 318 filtered out; finished in 0.00s": 1,
+      "test result: ok. 320 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
