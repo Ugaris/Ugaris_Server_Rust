@@ -1285,6 +1285,19 @@ async fn main() -> anyhow::Result<()> {
                                 command_inventory_refresh.push(character_id);
                             }
                         }
+                        ClientAction::Speed { mode } => {
+                            // C `cl_speed` (`src/system/player.c`): silently
+                            // ignores invalid mode bytes and fast-mode
+                            // requests without enough endurance - no
+                            // feedback packet either way.
+                            world.set_speed_mode(character_id, mode);
+                        }
+                        ClientAction::FightMode { .. } => {
+                            // C `cl_fightmode` (`src/system/player.c`) is a
+                            // no-op stub (`return;`); `ch[cn].fight_mode` is
+                            // otherwise unused in the C tree. Consume the
+                            // packet without acting on it, matching C.
+                        }
                         ClientAction::Raise { value } => {
                             // C `cl_raise` (`src/system/player.c`) calls
                             // `raise_value` and discards the result - no

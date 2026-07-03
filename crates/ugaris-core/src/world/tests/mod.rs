@@ -21,6 +21,7 @@ mod npc_messages;
 mod regen;
 mod skills;
 mod spawn;
+mod speed;
 mod spells;
 mod teleport;
 mod text;

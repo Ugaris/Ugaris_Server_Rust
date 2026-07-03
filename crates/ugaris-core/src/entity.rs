@@ -287,6 +287,20 @@ impl Default for SpeedMode {
     }
 }
 
+impl SpeedMode {
+    /// C `cl_speed` (`src/system/player.c`): the raw client byte must equal
+    /// `SM_NORMAL`(0)/`SM_FAST`(1)/`SM_STEALTH`(2) exactly, else the packet
+    /// is ignored.
+    pub fn from_client_mode(mode: u8) -> Option<Self> {
+        match mode {
+            0 => Some(Self::Normal),
+            1 => Some(Self::Fast),
+            2 => Some(Self::Stealth),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Character {
     pub id: CharacterId,

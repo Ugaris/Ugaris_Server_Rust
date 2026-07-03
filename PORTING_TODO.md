@@ -146,15 +146,41 @@ order.
     `GetQuestLog`/`ReopenQuest`, which also have no server-crate tests) -
     the packet assembly only reuses already-tested `PacketBuilder` methods.
 
-- [ ] **Speed mode (`CL_SPEED`) and fight mode (`CL_FIGHTMODE`)** - both
+- [x] **Speed mode (`CL_SPEED`) and fight mode (`CL_FIGHTMODE`)** - both
   parsed, both ignored.
-  - C: `cl_speed`, `cl_fightmode` in `src/system/player.c` (speed sets
-    `ch[cn].speed_mode` 0/1/2 = stealth/normal/fast, fight mode stores
-    `ch[cn].gethit_bonus`-style fields; read the actual C body).
-  - Rust: `Character.speed_mode` already exists and drives
-    `speed_ticks`; just wire the actions in `main.rs`/`player_actions.rs`.
-  - Tests: setting speed changes action durations (`do_walk` duration);
-    fight mode round-trips its C side effects.
+  - C: `cl_speed` in `src/system/player.c` validates the mode byte against
+    `SM_NORMAL`/`SM_FAST`/`SM_STEALTH`, gates `SM_FAST` on
+    `endurance >= POWERSCALE`, then sets `ch[cn].speed_mode` (no feedback
+    packet either way). `cl_fightmode` is a genuine no-op stub
+    (`return;` - `ch[cn].fight_mode` is otherwise unused anywhere in the C
+    tree), confirmed by reading the full function body and grepping for
+    other `fight_mode` references. Also ported the sibling `check_endurance()`
+    (act.c:1838), called unconditionally right before `regenerate()` in the
+    same `tick_char()` loop: reverts `SM_FAST` to `SM_NORMAL` and logs
+    "You're exhausted." once endurance drops below `POWERSCALE`.
+  - Rust: `World::set_speed_mode` (`crates/ugaris-core/src/world/speed.rs`)
+    plus `SpeedMode::from_client_mode` (`entity.rs`); wired
+    `ClientAction::Speed`/`ClientAction::FightMode` in
+    `crates/ugaris-server/src/main.rs` (fight mode is an explicit
+    documented no-op match arm). `check_endurance` added to
+    `World::regenerate_characters` in `crates/ugaris-core/src/world/regen.rs`
+    (runs before the position-gated regen/idle-regen logic, matching C
+    ordering), using the existing `queue_system_text`/`drain_pending_system_texts`
+    plumbing (already consumed by `send_pending_world_system_texts` in
+    `ugaris-server/src/world_events.rs`).
+  - Tests: `world/tests/speed.rs` (6 tests: normal/stealth always succeed,
+    fast requires endurance >= POWERSCALE exactly, invalid mode byte
+    ignored, unknown character ignored) and 4 new tests in
+    `world/tests/regen.rs` for `check_endurance` (revert + message below
+    POWERSCALE, no revert at exactly POWERSCALE, non-fast modes untouched,
+    runs even outside map bounds). Fixed a pre-existing test
+    (`regenerate_endurance_blocked_in_fast_speed_mode`) that relied on
+    endurance=0 while asserting fast-mode regen block - that combination
+    now also triggers `check_endurance`'s revert per real C behavior, so
+    the fixture was changed to hold endurance at exactly `POWERSCALE` to
+    isolate the regen-block behavior it actually tests.
+  - REMAINING: nothing - task fully done as scoped (fight mode has no C
+    behavior to port).
 
 - [ ] **Player death saves** - `die_character` never consults `saves`.
   - C: `god_save_char` in `src/system/death.c` (lines ~850): if
@@ -553,3 +579,10 @@ Add one line per completed task: date, task, ledger section touched.
   to `crates/ugaris-core/src/world/skills.rs`; wired
   `ClientAction::Raise` in `crates/ugaris-server/src/main.rs`; ledger
   section "Ralph Loop - Skill Raising (CL_RAISE)".
+- 2026-07-03: Speed mode (`CL_SPEED`)/fight mode (`CL_FIGHTMODE`) (P0) -
+  ported `World::set_speed_mode` to
+  `crates/ugaris-core/src/world/speed.rs` and `check_endurance` fast-mode
+  revert to `crates/ugaris-core/src/world/regen.rs`; wired
+  `ClientAction::Speed`/`FightMode` in `crates/ugaris-server/src/main.rs`
+  (fight mode confirmed a no-op in C); ledger section "Ralph Loop - Speed
+  Mode (CL_SPEED) and Fight Mode (CL_FIGHTMODE)".

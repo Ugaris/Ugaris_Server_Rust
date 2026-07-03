@@ -21,13 +21,17 @@
 //! `val * 15` per individual tick). The steady-state rate matches C exactly;
 //! only the batching granularity differs.
 //!
+//! Also ports `check_endurance()` (act.c:1838), called unconditionally from
+//! the same `tick_char()` loop immediately before `regenerate()` (no
+//! position gate, unlike `regenerate()`/`act_idle()`): reverts `SM_FAST`
+//! speed mode to `SM_NORMAL` and logs "You're exhausted." when endurance
+//! drops below `POWERSCALE`.
+//!
 //! Not ported here (tracked separately):
 //! - `reduce_rage`/`increase_rage` - the C `rage` field does not exist on
 //!   the Rust `Character` yet.
 //! - The `NT_CHAR` notify-area call at the end of `act_idle()` - tracked by
 //!   the separate "NPC sighting messages" P0 task.
-//! - `check_endurance()` (fast-mode revert on low endurance) - tracked by
-//!   the "Speed mode" P0 task, which owns `speed_mode` side effects.
 
 use super::*;
 
@@ -48,6 +52,23 @@ impl World {
 
     fn regenerate_character(&mut self, character_id: CharacterId, regen_time: i32, area_id: u16) {
         let tick = self.tick.0;
+
+        // C `check_endurance()` (act.c:1838): runs unconditionally, before
+        // the position-gated `regenerate()`/`act_idle()` logic below.
+        let reverted_fast_mode = self
+            .characters
+            .get_mut(&character_id)
+            .is_some_and(|character| {
+                if character.endurance < POWERSCALE && character.speed_mode == SpeedMode::Fast {
+                    character.speed_mode = SpeedMode::Normal;
+                    true
+                } else {
+                    false
+                }
+            });
+        if reverted_fast_mode {
+            self.queue_system_text(character_id, "You're exhausted.");
+        }
 
         let Some(character) = self.characters.get(&character_id) else {
             return;

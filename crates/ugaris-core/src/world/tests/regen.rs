@@ -251,12 +251,19 @@ fn regenerate_endurance_blocked_in_fast_speed_mode() {
     npc.values[0][CharacterValue::Regenerate as usize] = 3;
     npc.values[1][CharacterValue::Regenerate as usize] = 5;
     npc.values[0][CharacterValue::Endurance as usize] = 100;
-    npc.endurance = 0;
+    // C `check_endurance()` reverts `SM_FAST` to `SM_NORMAL` when endurance
+    // drops below `POWERSCALE`; keep endurance at exactly `POWERSCALE` (not
+    // below) so the fast-mode block under test stays intact.
+    npc.endurance = POWERSCALE;
     assert!(world.spawn_character(npc, 10, 10));
 
     world.regenerate_characters(REGEN_TIME, 1);
 
-    assert_eq!(world.characters[&CharacterId(1)].endurance, 0);
+    assert_eq!(world.characters[&CharacterId(1)].endurance, POWERSCALE);
+    assert_eq!(
+        world.characters[&CharacterId(1)].speed_mode,
+        SpeedMode::Fast
+    );
 }
 
 #[test]
@@ -273,6 +280,99 @@ fn regenerate_forces_lifeshield_to_zero_in_area_33() {
     world.regenerate_characters(REGEN_TIME, 33);
 
     assert_eq!(world.characters[&CharacterId(1)].lifeshield, 0);
+}
+
+#[test]
+fn check_endurance_reverts_fast_mode_below_powerscale_and_logs_exhausted() {
+    let mut world = World::default();
+    world.tick = Tick(48);
+
+    let mut npc = character(1);
+    npc.speed_mode = SpeedMode::Fast;
+    npc.endurance = POWERSCALE - 1;
+    // Avoid also triggering `regenerate()`'s own effects this tick.
+    npc.last_regen = 48;
+    npc.regen_ticker = 1_000_000;
+    assert!(world.spawn_character(npc, 10, 10));
+
+    world.regenerate_characters(REGEN_TIME, 1);
+
+    assert_eq!(
+        world.characters[&CharacterId(1)].speed_mode,
+        SpeedMode::Normal
+    );
+    assert_eq!(
+        world.drain_pending_system_texts(),
+        vec![WorldSystemText {
+            character_id: CharacterId(1),
+            message: "You're exhausted.".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn check_endurance_keeps_fast_mode_at_or_above_powerscale() {
+    let mut world = World::default();
+    world.tick = Tick(48);
+
+    let mut npc = character(1);
+    npc.speed_mode = SpeedMode::Fast;
+    npc.endurance = POWERSCALE;
+    npc.last_regen = 48;
+    npc.regen_ticker = 1_000_000;
+    assert!(world.spawn_character(npc, 10, 10));
+
+    world.regenerate_characters(REGEN_TIME, 1);
+
+    assert_eq!(
+        world.characters[&CharacterId(1)].speed_mode,
+        SpeedMode::Fast
+    );
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+#[test]
+fn check_endurance_ignores_non_fast_speed_modes() {
+    let mut world = World::default();
+    world.tick = Tick(48);
+
+    let mut npc = character(1);
+    npc.speed_mode = SpeedMode::Stealth;
+    npc.endurance = 0;
+    npc.last_regen = 48;
+    npc.regen_ticker = 1_000_000;
+    assert!(world.spawn_character(npc, 10, 10));
+
+    world.regenerate_characters(REGEN_TIME, 1);
+
+    assert_eq!(
+        world.characters[&CharacterId(1)].speed_mode,
+        SpeedMode::Stealth
+    );
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+#[test]
+fn check_endurance_runs_even_outside_map_bounds() {
+    // C `check_endurance()` has no position gate, unlike `regenerate()`.
+    let mut world = World::default();
+    world.tick = Tick(48);
+
+    let mut npc = character(1);
+    npc.x = 0;
+    npc.y = 10;
+    npc.speed_mode = SpeedMode::Fast;
+    npc.endurance = 0;
+    npc.last_regen = 48;
+    npc.regen_ticker = 1_000_000;
+    world.add_character(npc);
+
+    world.regenerate_characters(REGEN_TIME, 1);
+
+    assert_eq!(
+        world.characters[&CharacterId(1)].speed_mode,
+        SpeedMode::Normal
+    );
 }
 
 #[test]
