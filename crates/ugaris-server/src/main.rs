@@ -597,6 +597,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut world = World::default();
+    world.area_id = config.area_id;
     let mut zone_loader = ZoneLoader::new();
     if let Some(zone_root) = resolve_zone_root(args.zone_root.as_deref()) {
         match load_area_zone(&mut world, &mut zone_loader, &zone_root, config.area_id) {

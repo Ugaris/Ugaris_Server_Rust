@@ -388,9 +388,6 @@ fn skill_base_attributes(
 /// Known gaps vs. the C original (documented, not silently dropped):
 /// - `ch.ef[]` area-effect light contributions are not modeled (Rust
 ///   effects are not attached to characters the same way).
-/// - The `P_CLAN` night-in-catacombs bonus only checks `MF_CLAN`; the
-///   `areaID == 13` special case is not available (`World` has no
-///   current-area id).
 /// - The `player_reset_map_cache` call on infravision toggle is not
 ///   ported (display-only side effect tracked separately). Sprite
 ///   reselection (demon suits, weapon-in-hand offsets) *is* ported, as
@@ -636,10 +633,14 @@ impl World {
         let old_light = character_value(character, CharacterValue::Light) as i16;
         let hour = self.date.hour;
         let (x, y) = (character.x, character.y);
-        let in_clan_area = self
-            .map
-            .tile(usize::from(x), usize::from(y))
-            .is_some_and(|tile| tile.flags.contains(MapFlags::CLAN));
+        // C `create.c:1856`: `areaID == 13 || (mmf & MF_CLAN)` - bonus
+        // for a clan master in the catacombs (area 13) or any
+        // clan-flagged tile.
+        let in_clan_area = self.area_id == 13
+            || self
+                .map
+                .tile(usize::from(x), usize::from(y))
+                .is_some_and(|tile| tile.flags.contains(MapFlags::CLAN));
 
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;

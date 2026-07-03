@@ -189,6 +189,15 @@ fn legacy_random_variant_below_from_seed(seed: &mut u32, below: u32) -> u32 {
 
 #[derive(Debug, Default)]
 pub struct World {
+    /// The C server's `areaID` (`src/server.c`, set from the area
+    /// server's launch config and constant for the process lifetime -
+    /// this Rust server is one process per area). Defaults to `0` (no
+    /// area loaded yet / test scaffolding); the runtime sets it once at
+    /// startup from `ServerConfig::area_id`. Used by
+    /// [`crate::world::character_values::recompute_character_values`]
+    /// for the `P_CLAN`/catacombs (`areaID == 13`) bonus check (C
+    /// `create.c:1856`).
+    pub area_id: u16,
     pub tick: Tick,
     pub date: GameDate,
     pub show_attack_debug: bool,

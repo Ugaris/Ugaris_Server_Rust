@@ -636,6 +636,32 @@ suggestion; dependencies are noted.
     `areaID == 13` (documented above; `area_id` is a real, already-
     threaded per-instance value but wiring it through `update_character`
     touches ~32 call sites, deferred as its own slice) are unchanged.
+  - Iteration 25: closed the `P_CLAN`/`areaID == 13` gap without the
+    feared ~32-call-site refactor. Since this Rust server is one process
+    per area for its entire lifetime (`ServerConfig::area_id` is set
+    once at startup and never changes), added a `pub area_id: u16` field
+    directly on `World` (`world/mod.rs`, defaults to `0` via `#[derive
+    (Default)]`) instead of threading `area_id` as a parameter through
+    `update_character` and its ~17 non-test call sites. `main.rs` sets
+    `world.area_id = config.area_id` once, immediately after
+    `World::default()`, before the zone map loads. `World::update_character`
+    (`world/character_values.rs`) now computes `in_clan_area` as
+    `self.area_id == 13 || tile.flags.contains(MapFlags::CLAN)`, matching
+    C `create.c:1856` exactly (`areaID == 13 || (mmf & MF_CLAN)`) - the
+    existing `P_CLAN` profession-bonus arithmetic
+    (`character_values.rs:511-514`, from an earlier iteration) was
+    already correct and only needed the real `areaID == 13` input.
+    New tests
+    (`clan_profession_bonus_applies_in_area_13_catacombs_without_clan_tile_flag`,
+    `clan_profession_bonus_does_not_apply_outside_area_13_or_clan_tile`)
+    in `world/tests/character_values.rs` cover both the area-13-without-
+    tile-flag case and the outside-area-13-and-no-tile-flag no-bonus
+    case. Boot-smoked: `entering Rust game loop area_id=1` confirms
+    `config.area_id` reaches `World::area_id` correctly.
+    STILL REMAINING (unchanged): only `ch.ef[]` area-effect light
+    contributions to `V_LIGHT` are undocumented/unported (Rust effects
+    are not attached to characters the way C's `ch.ef[]` array is); this
+    is a separate, larger effects-system gap outside this task's scope.
 
 - [ ] **Equipment slot rules on swap (`CL_SWAP` into worn slots)** - C
   `cl_swap`/`swap` checks `place_item_typed` rules: worn slot flag match
@@ -1258,3 +1284,18 @@ Add one line per completed task: date, task, ledger section touched.
   reward sites and `main.rs`'s ~4 inline quest/area reward grants still
   bypass `give_exp` - each just needs a mechanical `world.give_exp(...)`
   swap-in now that the infrastructure exists.
+- 2026-07-03: `update_char` stat recomputation (P1, partial, iteration 25) -
+  closed the `P_CLAN`/`areaID == 13` catacombs-bonus gap by adding a real
+  `pub area_id: u16` field to `World` (`world/mod.rs`), set once from
+  `ServerConfig::area_id` at startup (`main.rs`, right after
+  `World::default()`) since this server process is single-area for its
+  whole lifetime - avoided threading `area_id` as a parameter through
+  `update_character`'s ~17 non-test call sites. `World::update_character`
+  now computes `in_clan_area` as `self.area_id == 13 ||
+  tile.flags.contains(MapFlags::CLAN)`, matching C `create.c:1856`
+  exactly. 2 new tests in `world/tests/character_values.rs`; ledger
+  section "Ralph Loop - `update_char` Stat Recomputation" and the
+  `create.c` `update_char` row in the Ported table extended. Boot-smoked
+  (`entering Rust game loop area_id=1`). REMAINING for this task: only
+  `ch.ef[]` area-effect light contributions to `V_LIGHT` are unported -
+  a larger, separate effects-attachment gap.

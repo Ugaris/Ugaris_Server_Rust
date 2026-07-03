@@ -360,3 +360,46 @@ fn sprite_recompute_marks_dirty_sector_on_change() {
     assert!(world.update_character(CharacterId(1)));
     assert_eq!(world.skip_x_sector(50, 50, world.tick.0), 0);
 }
+
+/// C `create.c:1856`: `ch[cn].prof[P_CLAN] && n >= V_WIS && n <= V_STR &&
+/// (areaID == 13 || (mmf & MF_CLAN))` - a clan master's base-attribute
+/// bonus applies in the catacombs (area 13) even on a tile without the
+/// `MF_CLAN` map flag.
+#[test]
+fn clan_profession_bonus_applies_in_area_13_catacombs_without_clan_tile_flag() {
+    let mut world = World::default();
+    world.area_id = 13;
+    let mut actor = character(1);
+    actor.professions[profession::CLAN] = 4;
+    actor.values[1][CharacterValue::Wisdom as usize] = 50;
+    assert!(world.spawn_character(actor, 50, 50));
+
+    // The spawn tile has no `MF_CLAN` flag; only `world.area_id == 13`
+    // grants the bonus here.
+    assert!(!world
+        .map
+        .tile(50, 50)
+        .unwrap()
+        .flags
+        .contains(MapFlags::CLAN));
+
+    assert!(world.update_character(CharacterId(1)));
+    let actor = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(actor.values[0][CharacterValue::Wisdom as usize], 54);
+}
+
+/// Outside area 13 and off a clan-flagged tile, the same profession grants
+/// no bonus.
+#[test]
+fn clan_profession_bonus_does_not_apply_outside_area_13_or_clan_tile() {
+    let mut world = World::default();
+    world.area_id = 1;
+    let mut actor = character(1);
+    actor.professions[profession::CLAN] = 4;
+    actor.values[1][CharacterValue::Wisdom as usize] = 50;
+    assert!(world.spawn_character(actor, 50, 50));
+
+    assert!(world.update_character(CharacterId(1)));
+    let actor = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(actor.values[0][CharacterValue::Wisdom as usize], 50);
+}
