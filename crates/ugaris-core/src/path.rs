@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     direction::Direction,
-    map::{manhattan_distance, MapGrid},
+    map::{manhattan_distance, MapFlags, MapGrid},
 };
 
 pub const MAX_NODES: usize = 16_384;
@@ -264,9 +264,25 @@ fn can_step(grid: &MapGrid, x: usize, y: usize, dir: Direction, block_mode: Path
 }
 
 fn blocks_movement(grid: &MapGrid, x: usize, y: usize, block_mode: PathBlockMode) -> bool {
+    let Some(tile) = grid.tile(x, y) else {
+        return true;
+    };
+    if tile.flags.contains(MapFlags::MOVEBLOCK) {
+        return true;
+    }
+    // C `normal_check_target` / `ignorechar_check_target`: door tiles are
+    // pathable even while closed; `walk_or_use_driver` opens them when the
+    // walker bumps into the temporary block.
+    if tile.flags.contains(MapFlags::DOOR) {
+        return false;
+    }
     match block_mode {
-        PathBlockMode::Normal => grid.blocks_movement(x, y),
-        PathBlockMode::IgnoreCharacters => grid.blocks_movement_ignoring_characters(x, y),
+        PathBlockMode::Normal => tile.flags.contains(MapFlags::TMOVEBLOCK),
+        // C: temporary blocks only count when an item causes them, so
+        // character blockers are ignored.
+        PathBlockMode::IgnoreCharacters => {
+            tile.flags.contains(MapFlags::TMOVEBLOCK) && tile.item != 0
+        }
     }
 }
 
@@ -315,5 +331,51 @@ mod tests {
 
         assert_eq!(blocked.direction, None);
         assert_eq!(ignoring.direction, Some(Direction::Right));
+    }
+
+    #[test]
+    fn pathfinder_routes_through_closed_doors_like_c_check_target() {
+        let mut grid = MapGrid::default();
+        // Wall row with a closed door at (11,10): DOOR + TMOVEBLOCK.
+        for y in 5..15 {
+            if y != 10 {
+                grid.set_flags(11, y, MapFlags::MOVEBLOCK);
+            }
+        }
+        grid.tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::DOOR | MapFlags::TMOVEBLOCK);
+
+        let result = pathfinder(&grid, 10, 10, 12, 10, 0, None);
+        assert_eq!(
+            result.direction,
+            Some(Direction::Right),
+            "closed doors are pathable; the walker opens them on bump"
+        );
+
+        let ignoring = pathfinder_ignore_characters(&grid, 10, 10, 12, 10, 0, None);
+        assert_eq!(ignoring.direction, Some(Direction::Right));
+    }
+
+    #[test]
+    fn pathfinder_ignore_characters_still_blocks_item_tmoveblocks() {
+        let mut grid = MapGrid::default();
+        grid.tile_mut(11, 10)
+            .unwrap()
+            .flags
+            .insert(MapFlags::TMOVEBLOCK);
+        grid.tile_mut(11, 10).unwrap().item = 900;
+        for y in 0..crate::legacy::MAX_MAP {
+            if y != 10 {
+                grid.set_flags(11, y, MapFlags::MOVEBLOCK);
+            }
+        }
+
+        let result = pathfinder_ignore_characters(&grid, 10, 10, 12, 10, 0, None);
+        assert_eq!(
+            result.direction, None,
+            "C ignorechar_check_target keeps item-caused temporary blocks"
+        );
     }
 }

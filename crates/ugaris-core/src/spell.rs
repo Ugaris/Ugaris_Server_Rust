@@ -572,6 +572,9 @@ mod tests {
         let mut values = Character::empty_values();
         values[0][CharacterValue::Hp as usize] = 10;
         Character {
+            merchant: None,
+            template_key: String::new(),
+            respawn_ticks: 0,
             id: CharacterId(1),
             serial: 1,
             name: "tester".to_string(),
@@ -616,6 +619,7 @@ mod tests {
             saves: 0,
             deaths: 0,
             regen_ticker: 0,
+            last_regen: 0,
             cursor_item: None,
             current_container: None,
             values,

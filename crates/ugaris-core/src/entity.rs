@@ -350,6 +350,12 @@ pub struct Character {
     pub deaths: u32,
     #[serde(default)]
     pub regen_ticker: u32,
+    /// C `ch.last_regen`: last tick the skill-gated endurance/lifeshield
+    /// regen in `regenerate()` (act.c) applied. Distinct from
+    /// `regen_ticker`, which gates the idle HP/endurance/mana regen in
+    /// `act_idle()`.
+    #[serde(default)]
+    pub last_regen: u32,
     pub cursor_item: Option<ItemId>,
     pub current_container: Option<ItemId>,
     pub values: Vec<Vec<i16>>,
@@ -359,6 +365,17 @@ pub struct Character {
     pub driver_state: Option<CharacterDriverState>,
     #[serde(default)]
     pub driver_messages: Vec<CharacterDriverMessage>,
+    /// Zone template key this character was created from, the C `ch.tmp`
+    /// equivalent used by the respawn callback. Empty for players.
+    #[serde(default)]
+    pub template_key: String,
+    /// C `ch.respawn`: delay in ticks before the template respawns.
+    #[serde(default)]
+    pub respawn_ticks: u32,
+    /// C `ch.merchant`: the merchant whose store this character is
+    /// currently trading with.
+    #[serde(default)]
+    pub merchant: Option<CharacterId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -504,6 +521,9 @@ mod tests {
     #[test]
     fn driver_message_queue_preserves_legacy_payload_order() {
         let mut character = Character {
+            merchant: None,
+            template_key: String::new(),
+            respawn_ticks: 0,
             id: CharacterId(1),
             serial: 1,
             name: String::new(),
@@ -548,6 +568,7 @@ mod tests {
             saves: 0,
             deaths: 0,
             regen_ticker: 0,
+            last_regen: 0,
             cursor_item: None,
             current_container: None,
             values: Character::empty_values(),

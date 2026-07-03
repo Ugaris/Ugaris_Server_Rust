@@ -294,6 +294,38 @@ pub fn reduce_hurt_by_armor(
     damage.max(0)
 }
 
+/// C `kill_score_level(cnlev, cclev)` from `src/system/death.c`: base kill
+/// experience by victim level, tapered by the killer/victim level gap.
+pub fn kill_score_level(victim_level: u32, killer_level: u32) -> u32 {
+    let cnlev = victim_level.min(118);
+    let cclev = killer_level.min(118);
+
+    let val = cnlev.max(1);
+    if cclev == 0 {
+        return val;
+    }
+
+    let diff = cclev as i64 - cnlev as i64;
+    if diff <= -5 {
+        return val;
+    }
+
+    let scaled = |factor: f64| (f64::from(val) * factor).ceil() as u32;
+    match diff {
+        -4 => scaled(0.95),
+        -3 => scaled(0.90),
+        -2 => scaled(0.85),
+        -1 => scaled(0.80),
+        0 => scaled(0.75),
+        1 => scaled(0.70),
+        2 => scaled(0.65),
+        3 => scaled(0.60),
+        4 => scaled(0.40),
+        5 => scaled(0.20),
+        _ => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,509 @@
+use super::*;
+
+#[test]
+fn character_fireball_command_queues_character_target_action() {
+    let queued = action_to_queued(&ClientAction::CharacterSpell {
+        spell: SpellAction::Fireball,
+        character: 42,
+    })
+    .unwrap();
+
+    assert_eq!(queued.action, PlayerActionCode::FireballCharacter);
+    assert_eq!((queued.arg1, queued.arg2), (42, 0));
+}
+
+#[test]
+fn warp_trial_door_spawn_helper_instantiates_fighter_at_room_center() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_character_templates_str(
+            r#"
+                warped_fighter:
+                  name="Hrus-tak-lan"
+                  description="A weird looking creature."
+                  sprite=36
+                  flag=CF_ALIVE
+                  V_HP=10
+                  V_ENDURANCE=8
+                  V_MANA=0
+                  V_MAGICSHIELD=3
+                  driver=83
+                ;
+                "#,
+        )
+        .unwrap();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(50);
+
+    assert!(spawn_warp_trial_fighter(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        "warped_fighter",
+        7,
+        8,
+    ));
+
+    let fighter = world.characters.get(&CharacterId(50)).unwrap();
+    assert_eq!((fighter.x, fighter.y), (7, 8));
+    assert_eq!(fighter.name, "Hrus-tak-lan");
+    assert_eq!(fighter.dir, Direction::RightDown as u8);
+    assert_eq!(fighter.hp, 10 * POWERSCALE);
+    assert_eq!(fighter.endurance, 8 * POWERSCALE);
+    assert_eq!(fighter.lifeshield, 3 * POWERSCALE);
+}
+
+#[test]
+fn maxlag_command_matches_legacy_range_and_feedback() {
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    let invalid = apply_maxlag_command(&mut player, "/maxlag 2")
+        .expect("maxlag command should be recognized");
+    assert_eq!(
+        invalid.messages,
+        vec!["Number must be between 3 and 20.".to_string()]
+    );
+    assert_eq!(player.max_lag_seconds, 0);
+
+    let high = apply_maxlag_command(&mut player, "/maxlag 21")
+        .expect("maxlag command should be recognized");
+    assert_eq!(
+        high.messages,
+        vec!["Number must be between 3 and 20.".to_string()]
+    );
+    assert_eq!(player.max_lag_seconds, 0);
+
+    let result = apply_maxlag_command(&mut player, "/maxl 12abc")
+        .expect("legacy maxlag abbreviation should be recognized");
+    assert_eq!(player.max_lag_seconds, 12);
+    assert_eq!(
+        result.messages,
+        vec!["Set delay for lag control to kick in to 12 seconds.".to_string()]
+    );
+
+    assert!(apply_maxlag_command(&mut player, "/ma 12").is_none());
+}
+
+#[test]
+fn hints_command_toggles_lostcon_hint_flag_with_legacy_feedback() {
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    let off = apply_hints_command(&mut player, "/hint")
+        .expect("legacy hints abbreviation should be recognized");
+    assert!(player.hints_disabled);
+    assert_eq!(off.messages, vec!["Hints turned off.".to_string()]);
+
+    let on =
+        apply_hints_command(&mut player, "/hints").expect("hints command should be recognized");
+    assert!(!player.hints_disabled);
+    assert_eq!(on.messages, vec!["Hints turned on.".to_string()]);
+
+    assert!(apply_hints_command(&mut player, "/hin").is_none());
+    assert!(apply_hints_command(&mut player, "/hintsx").is_none());
+}
+
+#[test]
+fn wimp_command_emits_non_live_quest_fallback() {
+    let result = apply_wimp_command("/wimp").expect("wimp command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["You're not in the live quest area. You'll have to wimp out on your own here... That means: RUN!".to_string()]
+    );
+
+    assert!(apply_wimp_command("/wim").is_none());
+    assert!(apply_wimp_command("/wimpx").is_none());
+}
+
+#[test]
+fn autoturn_command_toggles_lostcon_flag_and_shows_status() {
+    let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    let enabled = apply_autoturn_command(&character, &mut player, "/autot")
+        .expect("legacy autoturn abbreviation should be recognized");
+    assert!(player.autoturn_enabled);
+    assert!(enabled
+        .messages
+        .contains(&"Automatic Turning [/AUTOTURN]: On.".to_string()));
+    assert_eq!(enabled.messages[0], "Lag Control Settings:");
+
+    let disabled = apply_autoturn_command(&character, &mut player, "/autoturn")
+        .expect("autoturn command should be recognized");
+    assert!(!player.autoturn_enabled);
+    assert!(disabled
+        .messages
+        .contains(&"Automatic Turning [/AUTOTURN]: Off.".to_string()));
+
+    assert!(apply_autoturn_command(&character, &mut player, "/auto").is_none());
+    assert!(apply_autoturn_command(&character, &mut player, "/autoturnx").is_none());
+}
+
+#[test]
+fn lag_command_toggles_artificial_lag_with_legacy_feedback() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.x = 10;
+    character.y = 10;
+    world.add_character(character);
+    let player = PlayerRuntime::connected(1, 0);
+
+    let enabled = apply_lag_command(&mut world, &player, character_id, "/lag")
+        .expect("lag command should be recognized");
+    assert!(world
+        .characters
+        .get(&character_id)
+        .unwrap()
+        .flags
+        .contains(CharacterFlags::LAG));
+    assert_eq!(
+        enabled.messages,
+        vec![
+            "Turned artificial lag on.".to_string(),
+            "PLEASE turn this option off (type /lag again) before you complain about lag!"
+                .to_string(),
+        ]
+    );
+
+    let disabled = apply_lag_command(&mut world, &player, character_id, "/lag")
+        .expect("lag command should be recognized");
+    assert!(!world
+        .characters
+        .get(&character_id)
+        .unwrap()
+        .flags
+        .contains(CharacterFlags::LAG));
+    assert_eq!(
+        disabled.messages,
+        vec!["Turned artificial lag off.".to_string()]
+    );
+    assert!(apply_lag_command(&mut world, &player, character_id, "/la").is_none());
+}
+
+#[test]
+fn lag_command_blocks_enabling_in_arena_or_with_hate() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.x = 10;
+    character.y = 10;
+    world.add_character(character);
+    world.map.set_flags(10, 10, MapFlags::ARENA);
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    let arena = apply_lag_command(&mut world, &player, character_id, "/lag")
+        .expect("lag command should be recognized");
+    assert_eq!(arena.messages, vec!["You cannot simulate lag in an arena."]);
+    assert!(!world
+        .characters
+        .get(&character_id)
+        .unwrap()
+        .flags
+        .contains(CharacterFlags::LAG));
+
+    world.map.set_flags(10, 10, MapFlags::empty());
+    assert!(player.add_pk_hate(99));
+    let hate = apply_lag_command(&mut world, &player, character_id, "/lag")
+        .expect("lag command should be recognized");
+    assert_eq!(
+        hate.messages,
+        vec!["You cannot simulate lag while your hate list is not empty."]
+    );
+}
+
+#[test]
+fn description_command_sanitizes_and_reports_legacy_text() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    world.add_character(login_character(
+        character_id,
+        &login_block("Tester"),
+        1,
+        10,
+        10,
+    ));
+
+    let result = apply_description_command(
+        &mut world,
+        character_id,
+        "/desc I am \"great\" and 100% ready",
+    )
+    .expect("description minlen prefix should be recognized");
+
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!(character.description, "I am 'great' and 100  ready");
+    assert_eq!(
+        result.messages,
+        vec!["Your description reads now: I am 'great' and 100  ready"]
+    );
+}
+
+#[test]
+fn description_command_preserves_empty_and_truncation_guards() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    world.add_character(login_character(
+        character_id,
+        &login_block("Tester"),
+        1,
+        10,
+        10,
+    ));
+
+    let empty = apply_description_command(&mut world, character_id, "/description   ")
+        .expect("description command should be recognized");
+    assert_eq!(empty.messages, vec!["Sorry, you need to enter some text."]);
+    assert!(world
+        .characters
+        .get(&character_id)
+        .unwrap()
+        .description
+        .is_empty());
+
+    let long_text = "x".repeat(200);
+    apply_description_command(
+        &mut world,
+        character_id,
+        &format!("/description {long_text}"),
+    )
+    .expect("description command should be recognized");
+    assert_eq!(
+        world
+            .characters
+            .get(&character_id)
+            .unwrap()
+            .description
+            .len(),
+        159
+    );
+    assert!(apply_description_command(&mut world, character_id, "/de Text").is_none());
+    assert!(apply_description_command(&mut world, character_id, "/descriptionx Text").is_none());
+}
+
+#[test]
+fn time_command_preserves_legacy_showtime_output_and_prefix_gate() {
+    let date = GameDate::calculate(ugaris_core::game_time::START_TIME, 1, None);
+
+    let result = apply_time_command(date, "/ti").expect("legacy cmdcmp accepts /ti");
+
+    assert_eq!(
+        result.messages,
+        vec![
+            "It's 00:00 on the 1/1/0. Sunrise is at 07:30, sunset at 16:30. Moonrise is at 06:00, moonset at 18:00.",
+            "Be careful, New Moon tonight!",
+            "It's a scary day, it's Winter Solstice today!",
+            "Next full moon is in 14 days.",
+            "Spring Equinox will be in 90 days.",
+        ]
+    );
+    assert!(apply_time_command(date, "/t").is_none());
+    assert!(apply_time_command(date, "/timex").is_none());
+}
+
+#[test]
+fn time_command_reports_legacy_moon_phase_and_next_events() {
+    let date = GameDate::calculate(
+        ugaris_core::game_time::START_TIME + ugaris_core::game_time::DAY_LEN * 7,
+        1,
+        None,
+    );
+
+    let result = apply_time_command(date, "/time").expect("time command should match");
+
+    assert!(result.messages.contains(&"Half Moon.".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Next full moon is in 7 days.".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Spring Equinox will be in 83 days.".to_string()));
+}
+
+#[test]
+fn alias_command_create_list_replace_delete_and_clear_match_legacy_feedback() {
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    let created = apply_alias_command(&mut player, "/alias thanks Thank you!")
+        .expect("alias command should be recognized");
+    let listed =
+        apply_alias_command(&mut player, "/alias").expect("alias list should be recognized");
+    let replaced = apply_alias_command(&mut player, "/alias thanks Thanks!")
+        .expect("alias replacement should be recognized");
+    let erased = apply_alias_command(&mut player, "/alias thanks")
+        .expect("alias deletion should be recognized");
+    let missing = apply_alias_command(&mut player, "/alias thanks")
+        .expect("missing alias deletion should be recognized");
+    let cleared = apply_alias_command(&mut player, "/clearaliases")
+        .expect("clearaliases should be recognized");
+
+    assert_eq!(created.messages, vec!["Created thanks -> Thank you!."]);
+    assert_eq!(listed.messages, vec!["thanks -> Thank you!"]);
+    assert_eq!(replaced.messages, vec!["Replaced thanks -> Thanks!."]);
+    assert_eq!(erased.messages, vec!["Erased thanks -> Thanks!."]);
+    assert_eq!(
+        missing.messages,
+        vec!["Alias thanks not found, could not delete."]
+    );
+    assert_eq!(cleared.messages, vec!["Done. All gone now."]);
+}
+
+#[test]
+fn alias_command_truncates_legacy_from_and_to_lengths() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    let result = apply_alias_command(
+        &mut player,
+        "/alias abcdefghijklmnopqrstuvwxyz 123456789012345678901234567890123456789012345678901234567890",
+    )
+    .expect("alias command should be recognized");
+
+    assert_eq!(player.aliases[0].from, "abcdefg");
+    assert_eq!(player.aliases[0].to.len(), 55);
+    assert_eq!(
+        result.messages[0],
+        format!("Created abcdefg -> {}.", player.aliases[0].to)
+    );
+    assert!(apply_alias_command(&mut player, "/al abc").is_some());
+    assert!(apply_alias_command(&mut player, "/a abc").is_none());
+}
+
+#[test]
+fn help_command_includes_legacy_pk_security_lines() {
+    let result = apply_help_command("/help", CharacterFlags::empty(), 1)
+        .expect("help command should be recognized");
+
+    assert_eq!(result.messages[0], "=== PLAYER COMMANDS ===");
+    assert_eq!(
+        result.message_bytes[0],
+        b"\xb0c3=== PLAYER COMMANDS ===\xb0c0".to_vec()
+    );
+    assert!(result
+        .messages
+        .contains(&"== Communication Commands ==".to_string()));
+    assert!(result.messages.contains(
+        &"/holler <text> - Say something with very long range (costs endurance points)".to_string()
+    ));
+    assert!(result
+        .messages
+        .contains(&"/playerkiller - Toggle player killing mode on/off".to_string()));
+    assert!(result
+        .messages
+        .contains(&"/iwilldie <id> - Confirm enabling player killer mode".to_string()));
+    assert!(result
+        .messages
+        .contains(&"/clearhate - Clear your entire PK list at once".to_string()));
+    assert!(result
+        .messages
+        .contains(&"== Miscellaneous Commands ==".to_string()));
+    assert!(result
+        .messages
+        .contains(&"/help - Display this help text".to_string()));
+    let help_line_index = result
+        .messages
+        .iter()
+        .position(|message| message == "/help - Display this help text")
+        .expect("help line should be present");
+    assert_eq!(
+        result.message_bytes[help_line_index],
+        b"\xb0c4/help\xb0c0 - Display this help text".to_vec()
+    );
+    assert!(result.messages.contains(
+        &"Type a command without parameters to get more information in some cases.".to_string()
+    ));
+    assert!(!result
+        .messages
+        .contains(&"=== STAFF COMMANDS ===".to_string()));
+    assert!(apply_help_command("/hel", CharacterFlags::empty(), 1).is_none());
+    assert!(!result.inventory_changed);
+}
+
+#[test]
+fn color_commands_pack_legacy_rgb_words_and_report_for_gods() {
+    let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+    let mut world = World::default();
+    world.add_character(character);
+
+    let changed = apply_color_command(&mut world, CharacterId(7), "/col1 1 2 3")
+        .expect("col1 should be recognized");
+    assert!(changed.name_changed);
+    let character = world.characters.get(&CharacterId(7)).unwrap();
+    assert_eq!(character.c1, (1 << 10) + (2 << 5) + 3);
+    assert_eq!(character.c2, 0);
+    assert_eq!(character.c3, 0);
+
+    assert!(apply_color_command(&mut world, CharacterId(7), "/color").is_none());
+    world
+        .characters
+        .get_mut(&CharacterId(7))
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+    let report = apply_color_command(&mut world, CharacterId(7), "/color")
+        .expect("god color command should be recognized");
+    assert_eq!(report.messages, vec!["c1=443, c2=0, c3=0"]);
+}
+
+#[test]
+fn color_commands_match_c_atoi_pointer_edges() {
+    let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+    let mut world = World::default();
+    world.add_character(character);
+
+    apply_color_command(&mut world, CharacterId(7), "/col2 -1 2 3")
+        .expect("col2 should be recognized");
+    let character = world.characters.get(&CharacterId(7)).unwrap();
+    assert_eq!(character.c2, ((-1_i64 << 10) + (-1_i64 << 5) - 1) as u16);
+
+    apply_color_command(&mut world, CharacterId(7), "/col3 12x34 5 6")
+        .expect("col3 should be recognized");
+    let character = world.characters.get(&CharacterId(7)).unwrap();
+    assert_eq!(character.c3, 12_u16 << 10);
+}
+
+#[test]
+fn runtime_refreshes_known_character_name_cache_after_color_change() {
+    let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+    let old_packet = character_name_packet(&character).to_vec();
+    let mut runtime = ServerRuntime::default();
+    runtime.map_caches.insert(
+        11,
+        VisibleMapCache {
+            center_x: 10,
+            center_y: 10,
+            view_distance: 8,
+            cells: HashMap::new(),
+            known_character_names: HashMap::from([(7, old_packet.clone())]),
+        },
+    );
+
+    character.c1 = 0x0443;
+    let pk_relations = PkRelationSnapshot::default();
+    let sessions =
+        runtime.refresh_known_character_name(&World::default(), &pk_relations, &character);
+
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].0, 11);
+    assert_ne!(
+        runtime
+            .map_caches
+            .get(&11)
+            .unwrap()
+            .known_character_names
+            .get(&7)
+            .unwrap(),
+        &old_packet
+    );
+}
+
+#[test]
+fn chest_helpers_decode_legacy_driver_data() {
+    let mut chest = test_item(ItemId(10), 700, ItemFlags::USE);
+    chest.driver_data = vec![9, 0x44, 0x33, 0x22, 0x11, 2, 0, 3];
+
+    assert_eq!(chest_required_key_id(&chest), 0x1122_3344);
+    assert_eq!(chest_timeout_seconds(&chest), 2 * 60 * 60);
+    assert_eq!(chest_required_deaths(&chest), 3);
+}

@@ -1,0 +1,535 @@
+use super::*;
+
+impl World {
+    pub fn process_simple_baddy_noncombat_action(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+    ) -> bool {
+        self.process_simple_baddy_noncombat_action_with_random_and_context(
+            character_id,
+            area_id,
+            0,
+            0,
+            |_| 0,
+        )
+    }
+
+    pub fn process_simple_baddy_noncombat_action_with_random(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        mut random_below: impl FnMut(i32) -> i32,
+    ) -> bool {
+        self.process_simple_baddy_noncombat_action_with_random_and_context(
+            character_id,
+            area_id,
+            0,
+            0,
+            &mut random_below,
+        )
+    }
+
+    pub fn process_simple_baddy_noncombat_action_with_context(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        ret: i32,
+        last_action: u16,
+    ) -> bool {
+        self.process_simple_baddy_noncombat_action_with_random_and_context(
+            character_id,
+            area_id,
+            ret,
+            last_action,
+            |_| 0,
+        )
+    }
+
+    pub fn process_simple_baddy_noncombat_action_with_random_and_context(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        ret: i32,
+        last_action: u16,
+        mut random_below: impl FnMut(i32) -> i32,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_ref() else {
+            return false;
+        };
+        if character.driver != CDR_SIMPLEBADDY
+            || character.action != 0
+            || character.flags.contains(CharacterFlags::DEAD)
+        {
+            return false;
+        }
+
+        let current_tick = self.tick.0 as i32;
+        if current_tick - data.creation_time < TICKS_PER_SECOND as i32 {
+            return self
+                .characters
+                .get_mut(&character_id)
+                .is_some_and(|character| {
+                    do_idle(character, (TICKS_PER_SECOND / 4) as i32).is_ok()
+                });
+        }
+
+        if data.scavenger != 0 {
+            let Some((target_x, target_y)) = character
+                .rest_x
+                .ne(&0)
+                .then_some((character.rest_x, character.rest_y))
+            else {
+                return self.idle_simple_baddy(character_id);
+            };
+            let scavenger_distance = data.scavenger.max(0) as u16;
+            if character.x.abs_diff(target_x) >= scavenger_distance
+                || character.y.abs_diff(target_y) >= scavenger_distance
+            {
+                self.clear_simple_baddy_scavenger_direction(character_id);
+                if data.notsecure == 0
+                    && current_tick - data.lastfight > (TICKS_PER_SECOND * 10) as i32
+                {
+                    if self.secure_move_driver(
+                        character_id,
+                        target_x,
+                        target_y,
+                        Direction::Down as u8,
+                        ret,
+                        last_action,
+                        area_id,
+                    ) {
+                        return true;
+                    }
+                } else {
+                    let min_dist = if data.notsecure != 0 {
+                        data.mindist.max(0) as usize
+                    } else {
+                        0
+                    };
+                    if self.setup_walk_toward(
+                        character_id,
+                        usize::from(target_x),
+                        usize::from(target_y),
+                        min_dist,
+                        area_id,
+                        false,
+                    ) || self.setup_walk_toward(
+                        character_id,
+                        usize::from(target_x),
+                        usize::from(target_y),
+                        min_dist,
+                        area_id,
+                        true,
+                    ) {
+                        return true;
+                    }
+                }
+            }
+            if self.regenerate_simple_baddy(character_id) {
+                return true;
+            }
+            if self.spell_self_simple_baddy(character_id) {
+                return true;
+            }
+            if self.setup_pending_simple_baddy_friend_bless(character_id) {
+                return true;
+            }
+            if random_below(2) == 0 {
+                return self.idle_simple_baddy(character_id);
+            }
+
+            let direction = if data.dir != 0 {
+                data.dir
+            } else {
+                random_below(8).clamp(0, 7) + 1
+            };
+            let Some(direction) = u8::try_from(direction)
+                .ok()
+                .and_then(|direction| Direction::try_from(direction).ok())
+            else {
+                self.clear_simple_baddy_scavenger_direction(character_id);
+                return self.idle_simple_baddy(character_id);
+            };
+            let (dx, dy) = direction.delta();
+            let next_x = i32::from(character.x) + i32::from(dx);
+            let next_y = i32::from(character.y) + i32::from(dy);
+            if (next_x - i32::from(target_x)).abs() < i32::from(scavenger_distance)
+                && (next_y - i32::from(target_y)).abs() < i32::from(scavenger_distance)
+                && self.setup_walk_direction(character_id, direction, area_id)
+            {
+                let _ = self.set_simple_baddy_home(character_id, character.x, character.y);
+                if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+                    .characters
+                    .get_mut(&character_id)
+                    .and_then(|character| character.driver_state.as_mut())
+                {
+                    data.dir = direction as i32;
+                }
+                return true;
+            }
+
+            self.clear_simple_baddy_scavenger_direction(character_id);
+            self.drink_special_poison_simple_baddy(character_id);
+            return self.regenerate_simple_baddy(character_id)
+                || self.spell_self_simple_baddy(character_id)
+                || self.setup_pending_simple_baddy_friend_bless(character_id)
+                || self.idle_simple_baddy(character_id);
+        }
+
+        let target = if data.dayx != 0 {
+            if self.date.hour > 19 || self.date.hour < 6 {
+                Some((data.nightx, data.nighty, data.nightdir))
+            } else {
+                Some((data.dayx, data.dayy, data.daydir))
+            }
+        } else if character.rest_x != 0 {
+            Some((i32::from(character.rest_x), i32::from(character.rest_y), 0))
+        } else {
+            None
+        };
+
+        let Some((target_x, target_y, target_dir)) = target.filter(|(x, y, _)| *x > 0 && *y > 0)
+        else {
+            self.drink_special_poison_simple_baddy(character_id);
+            return self.regenerate_simple_baddy(character_id)
+                || self.spell_self_simple_baddy(character_id)
+                || self.setup_pending_simple_baddy_friend_bless(character_id)
+                || self.idle_simple_baddy(character_id);
+        };
+        let target_x = target_x as u16;
+        let target_y = target_y as u16;
+        if character.x == target_x && character.y == target_y {
+            if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+                .characters
+                .get_mut(&character_id)
+                .and_then(|character| character.driver_state.as_mut())
+            {
+                data.home_x = target_x;
+                data.home_y = target_y;
+            }
+            if target_dir != 0 {
+                if let Some(character) = self.characters.get_mut(&character_id) {
+                    let _ = turn(character, target_dir as u8);
+                }
+            }
+            self.drink_special_poison_simple_baddy(character_id);
+            return self.regenerate_simple_baddy(character_id)
+                || self.spell_self_simple_baddy(character_id)
+                || self.setup_pending_simple_baddy_friend_bless(character_id)
+                || self.idle_simple_baddy(character_id);
+        }
+
+        if data.teleport != 0 && self.teleport_character(character_id, target_x, target_y, false) {
+            let _ = self.set_simple_baddy_home(character_id, target_x, target_y);
+            return true;
+        }
+
+        if data.notsecure == 0
+            && current_tick - data.lastfight > (TICKS_PER_SECOND * 10) as i32
+            && self.secure_move_driver(
+                character_id,
+                target_x,
+                target_y,
+                target_dir as u8,
+                ret,
+                last_action,
+                area_id,
+            )
+        {
+            return true;
+        }
+
+        let min_dist = if data.notsecure != 0 {
+            data.mindist.max(0) as usize
+        } else {
+            0
+        };
+        let (walk_x, walk_y) = if data.notsecure != 0 && character.rest_x != 0 {
+            (character.rest_x, character.rest_y)
+        } else {
+            (target_x, target_y)
+        };
+        if self.setup_walk_toward(
+            character_id,
+            usize::from(walk_x),
+            usize::from(walk_y),
+            min_dist,
+            area_id,
+            false,
+        ) || self.setup_walk_toward(
+            character_id,
+            usize::from(walk_x),
+            usize::from(walk_y),
+            min_dist,
+            area_id,
+            true,
+        ) {
+            return true;
+        }
+
+        let _ = self.set_simple_baddy_home(character_id, character.x, character.y);
+        self.drink_special_poison_simple_baddy(character_id);
+        self.regenerate_simple_baddy(character_id)
+            || self.spell_self_simple_baddy(character_id)
+            || self.setup_pending_simple_baddy_friend_bless(character_id)
+            || self.idle_simple_baddy(character_id)
+    }
+
+    pub fn process_simple_baddy_noncombat_actions(&mut self, area_id: u16) -> usize {
+        self.process_simple_baddy_noncombat_actions_with_completions(area_id, &[])
+    }
+
+    pub fn process_simple_baddy_noncombat_actions_with_completions(
+        &mut self,
+        area_id: u16,
+        completions: &[WorldActionCompletion],
+    ) -> usize {
+        let mut seed = self.legacy_random_seed;
+        let count = self.process_simple_baddy_noncombat_actions_with_random_and_completions(
+            area_id,
+            completions,
+            |below| {
+                if below <= 0 {
+                    0
+                } else {
+                    legacy_random_below_from_seed(&mut seed, below as u32) as i32
+                }
+            },
+        );
+        self.legacy_random_seed = seed;
+        count
+    }
+
+    pub fn process_simple_baddy_noncombat_actions_with_random_and_completions(
+        &mut self,
+        area_id: u16,
+        completions: &[WorldActionCompletion],
+        mut random_below: impl FnMut(i32) -> i32,
+    ) -> usize {
+        let character_ids: Vec<_> = self
+            .characters
+            .iter()
+            .filter_map(|(&character_id, character)| {
+                (character.driver == CDR_SIMPLEBADDY
+                    && matches!(
+                        character.driver_state,
+                        Some(CharacterDriverState::SimpleBaddy(_))
+                    ))
+                .then_some(character_id)
+            })
+            .collect();
+
+        character_ids
+            .into_iter()
+            .filter(|&character_id| {
+                let (ret, last_action) = completions
+                    .iter()
+                    .rev()
+                    .find(|completion| completion.character_id == character_id)
+                    .map(|completion| (completion.legacy_return_code, completion.action_id))
+                    .unwrap_or((0, 0));
+                self.process_simple_baddy_noncombat_action_with_random_and_context(
+                    character_id,
+                    area_id,
+                    ret,
+                    last_action,
+                    &mut random_below,
+                )
+            })
+            .count()
+    }
+
+    pub(crate) fn idle_simple_baddy(&mut self, character_id: CharacterId) -> bool {
+        self.characters
+            .get_mut(&character_id)
+            .is_some_and(|character| do_idle(character, TICKS_PER_SECOND as i32).is_ok())
+    }
+
+    pub(crate) fn regenerate_simple_baddy(&mut self, character_id: CharacterId) -> bool {
+        self.characters
+            .get_mut(&character_id)
+            .is_some_and(|character| {
+                let max_mana = character_value(character, CharacterValue::Mana) * POWERSCALE;
+                let max_hp = character_value(character, CharacterValue::Hp) * POWERSCALE;
+                if character.mana < max_mana || character.hp < max_hp {
+                    do_idle(character, TICKS_PER_SECOND as i32).is_ok()
+                } else {
+                    false
+                }
+            })
+    }
+
+    pub(crate) fn spell_self_simple_baddy(&mut self, character_id: CharacterId) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        let current_tick = self.tick.0 as u32;
+
+        if character_value(&character, CharacterValue::Bless) > 0
+            && character.mana >= BLESS_COST
+            && may_add_spell(&character, &self.items, IDR_BLESS, current_tick).is_some()
+        {
+            return self
+                .characters
+                .get_mut(&character_id)
+                .is_some_and(|caster| {
+                    do_bless(caster, &character, &self.items, current_tick, None).is_ok()
+                });
+        }
+
+        if character_value(&character, CharacterValue::MagicShield) * POWERSCALE
+            > character.lifeshield
+            && character.mana >= POWERSCALE * 3
+        {
+            return self
+                .characters
+                .get_mut(&character_id)
+                .is_some_and(|character| do_magicshield(character).is_ok());
+        }
+
+        if character_value(&character, CharacterValue::Heal) > 0
+            && character.hp < character_value(&character, CharacterValue::Hp) * POWERSCALE / 2
+            && character.mana >= POWERSCALE * 3
+        {
+            return self
+                .characters
+                .get_mut(&character_id)
+                .is_some_and(|caster| do_heal(caster, &character, None).is_ok());
+        }
+
+        false
+    }
+
+    pub(crate) fn remember_simple_baddy_bless_friend(
+        &mut self,
+        character_id: CharacterId,
+        target_id: CharacterId,
+    ) {
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+            .characters
+            .get_mut(&character_id)
+            .and_then(|character| character.driver_state.as_mut())
+        {
+            data.pending_bless_friend = Some(target_id);
+        }
+    }
+
+    pub(crate) fn clear_simple_baddy_bless_friend(&mut self, character_id: CharacterId) {
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+            .characters
+            .get_mut(&character_id)
+            .and_then(|character| character.driver_state.as_mut())
+        {
+            data.pending_bless_friend = None;
+        }
+    }
+
+    pub(crate) fn setup_pending_simple_baddy_friend_bless(
+        &mut self,
+        character_id: CharacterId,
+    ) -> bool {
+        let target_id = self
+            .characters
+            .get(&character_id)
+            .and_then(|character| character.driver_state.as_ref())
+            .and_then(|state| match state {
+                CharacterDriverState::SimpleBaddy(data) => data.pending_bless_friend,
+                CharacterDriverState::Clara(_)
+                | CharacterDriverState::TwoSkelly(_)
+                | CharacterDriverState::Lab2Undead(_)
+                | CharacterDriverState::Merchant(_) => None,
+            });
+        let Some(target_id) = target_id else {
+            return false;
+        };
+
+        self.clear_simple_baddy_bless_friend(character_id);
+        self.simple_baddy_can_bless_friend(character_id, target_id)
+            && self.setup_bless_spell(character_id, target_id)
+    }
+
+    pub(crate) fn drink_special_poison_simple_baddy(&mut self, character_id: CharacterId) {
+        let Some(character) = self.characters.get(&character_id) else {
+            return;
+        };
+        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_ref() else {
+            return;
+        };
+        if data.drinkspecial == 0 {
+            return;
+        }
+        let has_poison0 = character.inventory[SPELL_SLOT_START..SPELL_SLOT_END]
+            .iter()
+            .flatten()
+            .any(|item_id| {
+                self.items
+                    .get(item_id)
+                    .is_some_and(|item| item.driver == IDR_POISON0)
+            });
+        if has_poison0 {
+            if let Some(message) = emote_message(&character.name, "drinks a potion")
+                .and_then(|message| String::from_utf8(message).ok())
+            {
+                self.pending_area_texts.push(WorldAreaText {
+                    x: character.x,
+                    y: character.y,
+                    max_distance: (SAY_DIST / 2) as u16,
+                    message,
+                });
+            }
+            self.remove_all_poison(character_id);
+        }
+    }
+
+    pub(crate) fn clear_simple_baddy_scavenger_direction(&mut self, character_id: CharacterId) {
+        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+            .characters
+            .get_mut(&character_id)
+            .and_then(|character| character.driver_state.as_mut())
+        {
+            data.dir = 0;
+        }
+    }
+
+    pub fn secure_move_driver(
+        &mut self,
+        character_id: CharacterId,
+        target_x: u16,
+        target_y: u16,
+        direction: u8,
+        ret: i32,
+        last_action: u16,
+        area_id: u16,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+
+        if character.x != target_x || character.y != target_y {
+            if (last_action != action::USE || ret != 2)
+                && self.setup_walk_toward(
+                    character_id,
+                    usize::from(target_x),
+                    usize::from(target_y),
+                    0,
+                    area_id,
+                    false,
+                )
+            {
+                return true;
+            }
+            return self.teleport_character(character_id, target_x, target_y, false);
+        }
+
+        if character.dir != direction {
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                let _ = turn(character, direction);
+            }
+        }
+        false
+    }
+}

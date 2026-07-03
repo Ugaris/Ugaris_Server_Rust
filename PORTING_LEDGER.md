@@ -8,6 +8,42 @@ git ls-files "src/**/*.c" "src/**/*.h"
 
 Current tracked C/C header file count: 302.
 
+## Rust Module Architecture
+
+The former monolithic files were split into module directories in July 2026.
+New porting work must land in the matching domain module, not in a giant
+file:
+
+- `crates/ugaris-core/src/item_driver/` - item-driver registry. `dispatch.rs`
+  owns `use_item`/`execute_item_driver*`, `types.rs` owns the context/outcome
+  types, `ids.rs` owns `IDR_*`/`IID_*`/`BOOK_*` constants, and per-domain
+  files mirror the C sources (`doors.rs`, `chests.rs`, `potions.rs`,
+  `alchemy.rs`, `area6_edemon.rs`, `area25_warped.rs`, ...). Tests live in
+  `item_driver/tests/<domain>.rs`.
+- `crates/ugaris-core/src/world/` - live world state. `mod.rs` owns the
+  `World` struct; impl blocks are split by legacy system: `actions.rs`
+  (do.c/act.c), `combat.rs` + `hurt.rs` + `death.rs` (act.c/death.c),
+  `spells.rs` (spell paths + tool.c timers + poison.c), `effects.rs` +
+  `effect_tick.rs` (effect.c), `npc_fight.rs`/`npc_idle.rs`/`npc_messages.rs`
+  (drvlib.c fight driver + simple_baddy.c), `merchant.rs` (merchants),
+  `doors.rs`, `items.rs`, `light.rs`, `spawn.rs`, `text.rs`, `teleport.rs`,
+  `lq.rs`, `lab2_undead.rs`, `area_mech.rs`, `assembly.rs`,
+  `traps_hazards.rs`, `item_outcomes.rs` (driver outcome/timer application).
+  Tests live in `world/tests/<domain>.rs`.
+- `crates/ugaris-server/src/` - the binary. `main.rs` keeps `Args`,
+  `ServerRuntime`, and the tick loop; everything else is split by concern:
+  `login.rs`, `snapshots.rs`, `map_sync.rs`, `effects_sync.rs`,
+  `player_actions.rs`, `commands_admin.rs`, `commands_chat.rs`,
+  `commands_player.rs`, `item_apply.rs`, `area_apply.rs`, `chests.rs`,
+  `keyring.rs`, `stacks.rs`, `spawns.rs`, `merchants.rs`, `depot.rs`,
+  `containers.rs`, `inventory.rs`, `transport.rs`, `weather.rs`, `xmas.rs`,
+  `world_events.rs`, `zone.rs`, `rng.rs`, `constants.rs`. Tests live in
+  `src/tests/<domain>.rs`.
+
+Remaining oversized files worth splitting during future work:
+`crates/ugaris-core/src/player.rs` (PlayerRuntime + PPD codecs) and the
+`main.rs` tick loop itself (a single ~4.5K-line async fn).
+
 ## Coverage Rules
 
 - A file is `Ported` only when its externally observable behavior is represented in Rust and covered by tests or a documented integration check.
@@ -41,7 +77,7 @@ Current tracked C/C header file count: 302.
 | `src/system/sector.h` / `src/system/sector.c` | `crates/ugaris-core/src/sector.rs` | Dirty sector tick tracking, `skipx_sector`, 8x8 character sector head/links, sound sector flood fill, shout sector flood fill, temporary sound door traversal, and hearing checks ported with tests. Runtime character/map integration remains. |
 | `src/system/see.h` / `src/system/see.c` | `crates/ugaris-core/src/see.rs`, `crates/ugaris-core/src/entity.rs` | Character and item visibility rules ported with tests: invisible checks, light/daylight blending, infrared/infravision boosts, light/dark profession boosts, stealth/perception scoring, carried item hiding, takeable item light requirement, and front-wall item side checks. Uses current conservative Rust LOS helper. |
 | `src/system/date.h` / `src/system/date.c` | `crates/ugaris-core/src/game_time.rs` | Game date units, moon phases, solstice/equinox flags, sunrise/sunset, area light overrides, and daylight calculation ported with tests. |
-| `src/system/do.h` / `src/system/do.c` primitive actions, `src/system/act.c` primitive completions | `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/entity.rs`, `crates/ugaris-core/src/world.rs` | Error codes, duration constants, `speed`, `end_cost`, `do_idle`, deterministic `do_walk` movement checks/reservation, terrain/underwater movement costs, fast-mode endurance cost, timed `do_take`/`do_use`/`do_drop`/`do_attack` setup, `act_walk`, `act_take`, `act_drop`, `act_use` validation to typed item-driver request, `act_attack` deterministic-resolution bridge using ported attack formulas, action step readiness/reset, world-backed action completion helpers, minimal world action tick dispatcher including `AC_ATTACK1..3`, C `tile_special_check` slowdeath hazard damage, underwater drowning damage, oxygen bubble creation cadence, and pre-action tick-loop invocation, and `turn` ported with tests. Weather/effect movement modifiers, full central action dispatcher, exact legacy RNG parity, full `sub_attack` side effects, death/notify/rage/surround integration, actual use-item driver effects, exact tile-special sound fan-out/random underwater sound selection, and spells remain. |
+| `src/system/do.h` / `src/system/do.c` primitive actions, `src/system/act.c` primitive completions | `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/entity.rs`, `crates/ugaris-core/src/world/actions.rs`, `crates/ugaris-core/src/world/regen.rs` | Error codes, duration constants, `speed`, `end_cost`, `do_idle`, deterministic `do_walk` movement checks/reservation, terrain/underwater movement costs, fast-mode endurance cost, timed `do_take`/`do_use`/`do_drop`/`do_attack` setup, `act_walk`, `act_take`, `act_drop`, `act_use` validation to typed item-driver request, `act_attack` deterministic-resolution bridge using ported attack formulas, action step readiness/reset, world-backed action completion helpers, minimal world action tick dispatcher including `AC_ATTACK1..3`, C `tile_special_check` slowdeath hazard damage, underwater drowning damage, oxygen bubble creation cadence, and pre-action tick-loop invocation, `turn`, and `act()`'s `regen_ticker` non-idle-action stamp ported with tests. `World::regenerate_characters` (called once per tick from `main.rs`) now ports C `regenerate()` (skill-gated endurance/lifeshield regen throttled per real second via the new `Character.last_regen` field) and the HP/endurance/mana/lifeshield-leak regen from `act_idle()`, gated by `regen_ticker + regen_time` and the `MF_NOREGEN`/area-33 special cases, with focused tests in `world/tests/regen.rs`. Since Rust's tick loop skips characters with `action == 0` entirely (no per-batch idle completion event like C), the idle regen applies continuously once per real tick using the per-tick-equivalent amount instead of C's `act1`-scaled batch amount; the steady-state rate matches, only the batching granularity differs (documented in `regen.rs`). Not yet ported: `reduce_rage`/`increase_rage` (no `rage` field on `Character` yet), the `NT_CHAR` notify-area call at the end of `act_idle` (tracked by the separate P0 "NPC sighting messages" task), and `check_endurance` (tracked by the "Speed mode" P0 task). Weather/effect movement modifiers, full central action dispatcher, exact legacy RNG parity, full `sub_attack` side effects, death/notify/surround integration, actual use-item driver effects, exact tile-special sound fan-out/random underwater sound selection, and spells remain. |
 | `src/system/drvlib.c` distance helpers | `crates/ugaris-core/src/drvlib.rs`, `crates/ugaris-core/src/entity.rs` | `map_dist`, `char_dist`, `tile_char_dist`, and `step_char_dist` including `tox`/`toy` target-position handling ported with tests. Broader driver library remains. |
 | `src/system/error.h` / `src/system/error.c` | `crates/ugaris-core/src/error.rs` | Legacy `ERR_*` constants, exact error string table, and out-of-bounds fallback behavior ported with tests. |
 | `src/system/act.c` / `src/system/do.c` pure attack formulas | `crates/ugaris-core/src/attack.rs`, `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/world.rs` | Attack chance breakpoint table, strict roll comparison, attack/parry skill math, side/back/assassin bonuses, direct melee damage units, armor/lifeshield reduction helpers, `do_attack` setup/reachability checks, core `can_attack` guard subset, `act_attack` HP/lifeshield damage application, `PAC_KILL` adjacent/path-to-target setup, and timed `AC_ATTACK1..3` world completion ported with tests. Exact legacy RNG parity, full `sub_attack` side effects, rage/surround hits, death/hurt/notify integration, clan/hate/group policy, and player fightback state remain. |
@@ -56,6 +92,8 @@ Current tracked C/C header file count: 302.
 | `src/module/book.c` / `src/module/book.h` `IDR_BOOK` text driver | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-server/src/main.rs` | Book driver dispatch, zero-character no-op boundary, C `BOOK_*`/`SIGN_*` text cases, raw color marker preservation, character-specific demon ritual words via the legacy `id_rand`/`demonspeak` formula, Earth Demon sign readability gates using Ancient Knowledge, random Book Nook joke selection, earth-demon diary `player_special` effects, runtime `SV_TEXT`/`SV_SPECIAL` emission, and C-compatible item-driver return code behavior ported with focused tests. Exact global RNG parity for joke selection remains. |
 | `src/system/player_driver.h` / `src/system/player_driver.c` action setters and primitive runtime bridge, `src/system/area.c` look-section/walk-section slices | `crates/ugaris-core/src/player.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-core/src/area_section.rs`, `crates/ugaris-server/src/main.rs` | `player_driver_stop`, `halt`, direct action setters, serial-preserving item/character actions, teleport, spell queue insertion/last-slot overwrite behavior, server-side use of driver setters for direct/spell client actions, and primitive tick-loop setup/completion for idle, walk-dir including diagonal wall-slide fallback, `PAC_MOVE`, adjacent/path-to-item take, adjacent/path-to-target drop, adjacent/path-to-item use including front-wall pathing, `PAC_TELEPORT` as facing item-use with legacy `spec = teleport + 1`, immediate `PAC_LOOK_MAP` turn/LOS/request handling plus server `SV_TEXT` feedback for hidden targets, C `show_section` section-name/level difficulty text for all non-empty legacy area-sector tables, coordinate fallback, and rest/clan/arena/peace flags, C `walk_section_msg` per-player section tracking with dark-gray `Now entering`/`Now leaving` feedback after successful walks, `PAC_GIVE` adjacent/path-to-recipient setup plus `AC_GIVE` cursor-item transfer, and `PAC_KILL` adjacent/path-to-target setup plus timed attack completion ported with tests. Queued spell priority execution, actual item use effects beyond potion, full combat/death/fightback side effects, serial validation, wall-use/door interaction during movement, music/special sounds for section changes, and action error side effects remain. |
 | Zone template/map parser scaffolding from `src/system/create.c` / `src/system/map.c` | `crates/ugaris-core/src/zone.rs` | Legacy token parsing, `.itm`/`.chr` template record parsing including item `ID`, `.map` directive parsing with origin offsets, live item template ID retention, and tiny sample application into `World` ported with tests. Production zone validation, startup integration, full character template fields, item-driver creation side effects, and respawn/random-loot behavior remain. |
+| `src/system/death.c` `kill_char`/`die_char`/`respawn_callback`/`kill_score_level`/`death_loss`/`drop_grave` core, `src/system/respawn.c` boundary | `crates/ugaris-core/src/world/death.rs`, `crates/ugaris-core/src/world/hurt.rs`, `crates/ugaris-core/src/attack.rs`, `crates/ugaris-server/src/spawns.rs`, `crates/ugaris-server/src/main.rs` | Lethal hurt now runs the C `kill_char` follow-up: death-driver dispatch and NT_DEAD fan-out (already ported) plus respawn-timer registration keyed by template/spawn tile, killer kill-score experience with the exact C level-taper table, hardcore kill bonus, LAG caps, queued server-side `give_exp` routing through runtime EXP modifiers, and the timed `AC_DIE` action (duration 12, act1 = killer, act2 = ispk). `AC_DIE` completion ports `die_char`: map/effect removal, C body rules (`CF_NOBODY` given-item drops, `CF_ITEMDEATH` slot-30 drop, `dead_body` items with the legacy sprite formula/description/player color drdata), extended-drop grave placement, body decay expire timers via a generic `expire_item` timer, loot containers as `contained_in` items (inventory + cursor + gold money item with the C sprite ladder; worn equipment kept except two shuffle-selected pieces; spells destroyed), player exp loss with the C newbie/used-exp taper and hardcore quarter, PK no-loss branch, resource restore, rest-position return, and NPC destruction. `respawn_callback` re-instantiates the stored zone template server-side with resource init and ten-second blocked-tile retries. Characters now carry serde-defaulted `template_key`/`respawn_ticks`, zone characters stamp spawn tiles into `rest_x/rest_y` like C `tmpx/tmpy`, and dying players can no longer cancel `AC_DIE` with new actions. Focused core tests cover the kill metadata, kill-score table, body/loot/money drops, NOBODY/ITEMDEATH branches, respawn scheduling/retry, player exp/PK/rest behavior, body expiry, and money sprites. Remaining gaps: death-mode loot tables (`loot.c`, currently unreferenced by zone data), `CDR_LOSTCON` exp cap, cross-area rest transfers, first-kill/military/achievement kill hooks, and exact global RNG parity for equipment loss. |
+| `src/module/merchants/store.c`, `src/module/merchants/merchant.c` core, merchant view slices of `src/system/player.c` / `src/system/act.c` `check_merchant` | `crates/ugaris-core/src/world/merchant.rs`, `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-server/src/merchants.rs`, `crates/ugaris-server/src/commands_chat.rs`, `crates/ugaris-server/src/main.rs` | `CDR_MERCHANT = 6` now has a typed driver-state (`MerchantDriverData`) parsed from C `merchant_driver_parse` args at zone load. Merchant NPCs lazily create stores from carried inventory 30+ (beyond `ignore`) as `always` stock with `pricemulti` defaulting to 400, greet visible players once per legacy 12-hour memory window with the C greeting/say format and Fred's extended range, react to `"<name> ... trade"` NT_TEXT speech by setting the speaker's `ch.merchant`, and destroy given items. Plain player `say` speech now fans out as NT_TEXT driver messages to nearby NPC drivers. C `salesprice`/`buyprice` formulas (barter + trader profession + 400 divisor, money exemption) are ported with tests, `sell`/`buy` port cursor-based buying/selling with always-stock preservation, sold-out/gold-low/cursor guards, ware stacking via `store_items_equal`, quest/nodepot/bond/lab/money stocking exclusions, and store gold accounting. The server sends C `con_type 2` store views (`SV_CONNAME`, `SV_CONCNT`, `SV_CONTAINER` sprites, `SV_PRICE`, `SV_ITEMPRICE`, `SV_CPRICE`), routes `CL_CONTAINER`/`CL_LOOK_CONTAINER` merchant-first like `cl_container` with `check_merchant` validation, formats the legacy bought/sold/too-expensive feedback, supports fast-buy inventory storing (`store_citem`), pushes view updates when the active merchant changes, and closes the view with a `con_type 0` packet. Focused core tests cover prices, arg parsing, store creation, trade activation, buy/sell mutations, quest-item exclusion, busy/distance clearing, and greeting memory. Remaining gaps: PostgreSQL-backed store persistence (`database_merchant.c`), special-store item generation (`add_special_store`/`create_special_item`), aclerk auction NPC, day/night shop movement/door handling, idle merchant chatter, and exact global RNG parity. |
 | Area terrain startup loading from `ugaris_data/zones/<area>/*.map` | `crates/ugaris-server/src/main.rs`, `crates/ugaris-core/src/zone.rs` | Server startup resolves `UGARIS_ZONE_ROOT` or default `ugaris_data/zones` / `../ugaris_data/zones`, loads generic and area `.itm`/`.chr` templates best-effort, loads the first area `.map`, accepts signed legacy sprite IDs, tolerates missing item/character templates while preserving terrain, sanitizes `from/to` range copies so live item/character IDs and temporary item blockers are not duplicated across terrain ranges, reports load counts, keeps the loader alive for runtime template instantiation, and chooses an open spawn tile. Area 1 `above1.map` smoke-tested: 65,533 ground tiles, 16,969 blocked tiles, 1,780 item templates, 188 character templates, 2,236 placed items, and 446 placed characters. Process-level legacy login smoke confirmed map bootstrap payloads after loading real area data. Full `.pre` expansion/generator parity, complete template metadata, respawn/random loot, and all object driver side effects remain. |
 
 ## Partial
@@ -81,19 +119,19 @@ Use this section as the starting point for the next session.
 
 ### Current Runnable State
 
-- Rust workspace lives under `rust_server/` and is still untracked by git.
-- The legacy C server remains untouched; current rewrite is isolated to `rust_server/`.
-- The Rust server loads real area 1 data from `../ugaris_data/zones/1/above1.map` plus generic/area templates.
+- The Rust workspace lives at the repository root (`Ugaris_Server_Rust`); the legacy C oracle lives in the sibling `Ugaris_Server` repository.
+- The three former monolithic files (`world.rs`, `item_driver.rs`, `main.rs`) are split into module directories; see `Rust Module Architecture` at the top of this ledger before adding code.
+- The Rust server loads real area 1 data from `ugaris_data/zones/1/above1.map` plus generic/area templates via the `ugaris_data` symlink.
 - Latest real area 1 smoke counts: 65,533 ground tiles, 16,969 blocked tiles, 1,780 item templates, 188 character templates, 2,236 placed items, and 446 placed characters.
 - Default login scaffold uses `generic/player.chr` template `new_warrior_m`, then renames the character to the login name and sends starter equipment/inventory to the client.
-- Known unrelated dirty/untracked files outside the rewrite: `.gitignore` and `scripts/extract_npc_lore.py`; do not modify/revert them unless explicitly asked.
+- NPC deaths now run the full kill loop: death animation, lootable body containers, decay timers, kill experience, and template respawns.
+- `CDR_MERCHANT` NPCs create stores from carried stock, greet players, and trade through the legacy `con_type 2` store view after `"<name>, trade"`.
 
 ### How To Run
 
-Build and run the Rust area server:
+Build and run the Rust area server from the repository root:
 
 ```bash
-cd rust_server
 cargo build -p ugaris-server
 target/debug/ugaris-server --bind-addr 0.0.0.0:5556
 ```
@@ -118,7 +156,7 @@ login accepted by compatibility scaffold ... payload_count=5
 
 ### Verification Commands
 
-Run from `rust_server/`:
+Run from the repository root:
 
 ```bash
 cargo fmt --all
@@ -126,11 +164,15 @@ cargo test --workspace
 cargo build -p ugaris-server
 ```
 
-Last verified after the `IDR_FREAKDOOR` paired-door slice:
+Last verified after the playtest fix session (spell queue, one-frame-per-tick
+pacing, LoS blacking, door pathing):
 
-- `cargo test --workspace`: passed.
-- `cargo build -p ugaris-server`: passed.
-- Process-level area 1 login smoke: passed and received bootstrap payload bytes.
+- `cargo test --workspace`: passed (1,367 tests).
+- `cargo build -p ugaris-server`: passed with zero warnings.
+- Process-level area 1 boot smoke: passed with all legacy startup markers.
+
+Continue from `PORTING_TODO.md` (prioritized task list); this ledger stays
+the record of completed work.
 
 ### Recent Client-Facing Fixes
 
@@ -832,3 +874,25 @@ Recommended next chest steps:
 ### Ralph Loop Iteration 78 Additional Progress
 
 - Area 22 `CDR_LAB2UNDEAD` grave-spawn death bookkeeping now preserves the C opener/serial guard: template-backed grave spawns install/retain `Lab2UndeadDriverData`, store the source grave item, opener character id, and opener serial, and lethal hurt events for the matching player opener mark the matching Lab 2 grave bit in `PlayerRuntime`. Focused server tests cover spawn metadata and serial-gated grave-bit marking. Remaining Lab 2 undead death gaps include the C crypt/yard completion counters, gold reward thresholds, Arathas wake-all behavior, exact dlog/audit integration, and live area-data smoke coverage.
+
+### Module Re-Architecture And Kill Loop Session
+
+- The three monolithic Rust files were split into module directories with no behavior change: `crates/ugaris-core/src/item_driver.rs` (22.4K lines) became `item_driver/` with dispatch/types/ids plus per-C-source domain files and per-domain test files; `crates/ugaris-core/src/world.rs` (31.5K lines) became `world/` with the `World` struct in `mod.rs` and impl blocks split by legacy system; `crates/ugaris-server/src/main.rs` (30.5K lines) became ~30 concern modules plus `src/tests/`. Private items moved across module boundaries were re-scoped `pub(crate)`, glob re-exports keep the public crate surface identical, and the full workspace test count was preserved through the split before new work started.
+- `src/system/death.c` is now substantially ported: lethal `hurt` runs the C `kill_char` follow-up (respawn timer registration, kill-score experience with the exact taper table and hardcore/LAG handling, timed `AC_DIE`), `AC_DIE` completion ports `die_char` (bodies, loot containers, gold money items, player exp loss/rest return, NPC destruction), bodies decay through a generic `expire_item` timer, and `respawn_callback` re-instantiates zone templates server-side with blocked-tile retries. Characters gained serde-defaulted `template_key`/`respawn_ticks` fields and zone placement stamps `rest_x/rest_y` like C `tmpx/tmpy`. Eleven focused tests cover the kill loop; see the Ported table entry for remaining gaps (loot tables, cross-area rest transfer, first-kill/military/achievement hooks).
+- `src/module/merchants/store.c` and the core of `merchant.c` are now ported: `CDR_MERCHANT` driver state parses the C args, stores are created from carried stock, players open stores by saying `"<name> ... trade"` (plain say speech now fans out as NT_TEXT driver messages to nearby NPCs), C `salesprice`/`buyprice` formulas drive `con_type 2` store views with `SV_PRICE`/`SV_ITEMPRICE`/`SV_CPRICE`, and `CL_CONTAINER` routes merchant-first with `check_merchant` validation like `cl_container`. Eleven focused tests cover prices, store creation, trade activation, buy/sell, and greeting memory. Store persistence, special stores, the auction clerk, and day/night shop movement remain.
+- The death-mode loot system (`src/system/loot/loot.c`) was intentionally deferred: only the pents JSON tables exist and no zone `.chr` template currently references `loot_table`/`loot_table_death`, so porting it now would have no live effect.
+
+### Playtest Fix Session (spells, tick pacing, LoS, door pathing)
+
+- C `run_queue` from `src/system/player_driver.c` is now ported into `World::run_player_spell_queue` (`crates/ugaris-core/src/world/actions.rs`): queued spells were previously never dequeued, so no spell ever cast from the client. The three C priority passes (bless/heal/magicshield, freeze/flash/warcry/pulse, fireball/ball incl. character-target variants) run before the persistent player action, started tasks consume their queue slot and end the pass (C return 1), permanently failed tasks are dropped and scanning continues (C return 2 via `error_state`), and mana-low bless stays queued (C `error_state_mana`). Focused tests cover queued self-spell execution, bless waiting for mana, and invalid-spell discard.
+- The legacy lockstep tick pacing is now honored: the client advances its clock once per received tick frame (`prefetch_tick++` in the community client), but the Rust server sent every payload as its own frame, causing rubber-banding "lag" in walking and combat. `ServerRuntime` now buffers per-session payloads (`tick_out`) and `flush_tick_frames` sends exactly one greedily packed frame per session per tick (splitting only above `MAX_LEGACY_TICK_PAYLOAD`), with empty frames for idle logged-in sessions and no fake ticks from out-of-tick event flushes. Focused tests cover frame packing and empty-frame behavior.
+- C `plr_map_update` visibility is now ported: `tile_visibility` (`crates/ugaris-server/src/map_sync.rs`) combines tile light with scaled daylight (`check_light`), applies infrared/infravision boosts, keeps the 3x3 center visible, ports the exact `trans_light` quantization table, and gates by LOS; dark tiles send all-zero cells (client renders black), items are gated by `char_see_item`, characters by `char_see_char`. The visible-map cache now stores C `cmap`-style field values (`CellTile`/`CellCharacter`) instead of packet bytes, full refreshes stomp every cell (the client never clears its map on `SV_SETORIGIN`), and one-step walks send only scroll/origin/char packets while `VisibleMapCache::shift` replicates the client's flat memmove so the per-tick diff pass fills fringe tiles and corner-reveal LOS changes. Dark/light profession night sight (prof >= 30) is not ported yet.
+- C pathfinder door traversal is now ported: `normal_check_target`/`ignorechar_check_target` treat `MF_DOOR` tiles as pathable even while closed (and ignore-character mode only respects item-caused `MF_TMOVEBLOCK`), so clicking beyond a closed door paths through it and the existing `walk_or_use_driver` bump opens the door mid-route. Focused path and world tests cover door routing, item-blocker retention, and the end-to-end click-behind-door use action.
+- Forward-looking work now lives in `PORTING_TODO.md`: a prioritized, checkbox-based task list (P0 playability blockers through P4 area content) with per-task C references, Rust destinations, and acceptance criteria, written so follow-up sessions can execute tasks mechanically. Known immediate gaps documented there: no regeneration tick, `CL_RAISE`/`CL_SPEED`/`CL_FIGHTMODE`/`CL_LOOK_CHAR`/`CL_LOOK_ITEM` unhandled, player death ignores saves, and the game clock never advances.
+
+### Ralph Loop - Regeneration Tick
+
+- P0 "Regeneration tick" is now ported: `World::regenerate_characters` (new `crates/ugaris-core/src/world/regen.rs`, called once per tick from `main.rs` right after `world.advance()`) mirrors C `regenerate()` (act.c:2101, skill-gated endurance + magic-shield lifeshield regen, self-throttled to once per real second via a new `Character.last_regen` field mirroring C `ch.last_regen`) and C `act_idle()`'s (act.c:99) HP/endurance/mana regen plus the warcry-without-magicshield lifeshield leak, gated by `regen_ticker + regen_time` and the `MF_NOREGEN`/`CF_PLAYER`/area-33 special cases. `Character.regen_ticker` is now also stamped on every non-idle/non-passive action completion in `World::tick_basic_actions_with_attack_policy` (`world/actions.rs`), mirroring C `act()`'s `switch (ch[cn].action) { case AC_IDLE/AC_MAGICSHIELD/AC_BLESS_SELF/AC_HEAL_SELF: break; default: ch[cn].regen_ticker = ticker; }` - this is what makes the idle regen gate correctly hold off while a character is actively fighting/walking.
+  - Deliberate deviation from C, documented in `regen.rs`: Rust's tick loop treats `action == 0` (`action::IDLE`) as "nothing queued" and skips those characters entirely in `tick_basic_actions_with_attack_policy`, so there is no per-batch idle-completion event (C's `act1`-scaled batch) to hook into. The idle regen instead applies continuously once per real tick using the per-tick-equivalent amount (C's `act1 * val * 15` collapses to `val * 15` per tick). The steady-state rate matches C exactly; only the batching granularity differs.
+  - Not ported (tracked separately, out of scope for this task): `reduce_rage`/`increase_rage` (no `rage` field exists on `Character` yet - the todo item's "if the field exists" clause), the `NT_CHAR` notify-area emission at the end of `act_idle` (owned by the separate P0 "NPC sighting messages" task), and `check_endurance`'s fast-mode revert (owned by the "Speed mode" P0 task).
+  - 14 focused tests added: 13 in `world/tests/regen.rs` (idle HP/endurance/mana regen and caps, regen-time gate, NOREGEN tile player-vs-NPC distinction, area-33 HP skip, warcry/magicshield lifeshield leak, `regenerate()` endurance/lifeshield gating on bare skill and speed mode, per-second throttling via `last_regen`, area-33 lifeshield zeroing, out-of-bounds no-op) and 1 in `world/tests/actions.rs` (regen_ticker stamped on `AC_WALK` completion, not on `AC_MAGICSHIELD`). Full workspace suite (1011 ugaris-core tests + others), `cargo fmt --all`, `cargo build -p ugaris-server`, and a 10s boot smoke (`entering Rust game loop`, ticks advancing, no panics) all pass.

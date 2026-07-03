@@ -266,6 +266,11 @@ impl ZoneLoader {
                     if let Some(character) = world.characters.get_mut(&character_id) {
                         character.x = current_x as u16;
                         character.y = current_y as u16;
+                        // C `pop_create_char` stores the spawn tile in
+                        // `ch.tmpx/tmpy`; the Rust port reuses the rest
+                        // coordinates as the NPC home/respawn position.
+                        character.rest_x = current_x as u16;
+                        character.rest_y = current_y as u16;
                     }
                 }
                 MapDirective::Item(key) => {
@@ -421,6 +426,7 @@ impl ZoneLoader {
             saves: 0,
             deaths: 0,
             regen_ticker: 0,
+            last_regen: 0,
             cursor_item: None,
             current_container: None,
             values,
@@ -428,11 +434,24 @@ impl ZoneLoader {
             inventory,
             driver_state: None,
             driver_messages: Vec::new(),
+            // C `ch.tmp`/`ch.respawn`: remember the source template and its
+            // respawn delay so `respawn_callback` can recreate the NPC.
+            template_key: key.to_string(),
+            respawn_ticks: template
+                .respawn_seconds
+                .map(|seconds| seconds.saturating_mul(crate::tick::TICKS_PER_SECOND as u32))
+                .unwrap_or(crate::game_settings::GameSettings::default().npc_respawn_timer as u32),
+            merchant: None,
         };
 
         if template.driver == CDR_SIMPLEBADDY {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == crate::character_driver::CDR_MERCHANT {
+            character.driver_state = Some(crate::character_driver::CharacterDriverState::Merchant(
+                crate::character_driver::parse_merchant_driver_args(&template.args),
+            ));
         }
         if template.driver == CDR_LAB2UNDEAD {
             character.push_driver_message(NT_CREATE, 0, 0, 0);

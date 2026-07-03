@@ -474,6 +474,9 @@ mod tests {
 
     fn character(id: u32) -> Character {
         Character {
+            merchant: None,
+            template_key: String::new(),
+            respawn_ticks: 0,
             id: CharacterId(id),
             serial: id,
             name: String::new(),
@@ -518,6 +521,7 @@ mod tests {
             saves: 0,
             deaths: 0,
             regen_ticker: 0,
+            last_regen: 0,
             cursor_item: None,
             current_container: None,
             values: Character::empty_values(),
