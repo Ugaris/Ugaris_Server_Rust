@@ -19,6 +19,7 @@ mod npc_fight;
 mod npc_idle;
 mod npc_messages;
 mod regen;
+mod skills;
 mod spawn;
 mod spells;
 mod teleport;

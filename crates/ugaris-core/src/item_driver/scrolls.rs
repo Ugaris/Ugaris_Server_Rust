@@ -71,6 +71,45 @@ pub(crate) fn raise_value_exp(character: &mut Character, value: usize) -> Option
     Some(cost)
 }
 
+/// Raises the bare value of `value` by 1, spending already-earned exp
+/// (`exp_used` vs `exp`) without granting new exp.
+///
+/// Mirrors C `raise_value` (`src/system/skill.c`), which is what `cl_raise`
+/// (`src/system/player.c`) calls for `CL_RAISE`. Unlike `raise_value_exp`
+/// (used by scrolls/shrines), this does not add to `character.exp` and it
+/// checks `CF_NOEXP` itself (the scroll path checks it before calling
+/// `raise_value_exp`, but `cl_raise` has no such caller-side guard).
+pub(crate) fn raise_value(character: &mut Character, value: usize) -> Option<u32> {
+    if character.flags.contains(CharacterFlags::NOEXP) {
+        return None;
+    }
+    if value >= CHARACTER_VALUE_COUNT || skill_raise_cost_factor(value) == 0 {
+        return None;
+    }
+    let current = bare_value(character, value);
+    if current <= 0 || current >= skillmax(character) {
+        return None;
+    }
+    if value == CharacterValue::Profession as usize && current > 99 {
+        return None;
+    }
+
+    let seyan = character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE);
+    let cost = raise_cost(value, current, seyan);
+    // C: `if (ch[cn].exp_used + cost > ch[cn].exp) return 0;`
+    if character.exp_used.saturating_add(cost) > character.exp {
+        return None;
+    }
+
+    character.exp_used = character.exp_used.saturating_add(cost);
+    character.values[1][value] = character.values[1][value].saturating_add(1);
+    if character.values[0][value] < character.values[1][value] {
+        character.values[0][value] = character.values[1][value];
+    }
+    Some(cost)
+}
+
 pub(crate) fn lower_value(character: &mut Character, value: usize) -> Option<u32> {
     if character.flags.contains(CharacterFlags::NOEXP)
         || value >= CHARACTER_VALUE_COUNT

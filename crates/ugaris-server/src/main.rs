@@ -140,7 +140,7 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::{
         merchant_buy_price, merchant_sales_price, LegacyHurtEvent, LookMapRequest,
-        MerchantTradeResult, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        MerchantTradeResult, RaiseSkillOutcome, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -1283,6 +1283,28 @@ async fn main() -> anyhow::Result<()> {
                                 &action,
                             ) {
                                 command_inventory_refresh.push(character_id);
+                            }
+                        }
+                        ClientAction::Raise { value } => {
+                            // C `cl_raise` (`src/system/player.c`) calls
+                            // `raise_value` and discards the result - no
+                            // feedback packet on failure, only the updated
+                            // value/exp on success.
+                            if let RaiseSkillOutcome::Raised {
+                                value,
+                                bare,
+                                effective,
+                                exp,
+                                exp_used,
+                            } = world.raise_skill(character_id, value)
+                            {
+                                let mut builder = PacketBuilder::new();
+                                builder
+                                    .set_value0(value as u8, effective)
+                                    .set_value1(value as u8, bare)
+                                    .exp(exp)
+                                    .exp_used(exp_used);
+                                runtime.send_to_session(session_id, builder.into_payload());
                             }
                         }
                         ClientAction::GetQuestLog => {

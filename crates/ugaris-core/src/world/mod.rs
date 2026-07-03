@@ -30,6 +30,7 @@ mod npc_fight;
 mod npc_idle;
 mod npc_messages;
 mod regen;
+mod skills;
 mod spawn;
 mod spells;
 mod teleport;
@@ -64,6 +65,7 @@ pub(crate) use npc_idle::*;
 pub(crate) use npc_messages::*;
 #[allow(unused_imports)]
 pub(crate) use regen::*;
+pub use skills::*;
 #[allow(unused_imports)]
 pub(crate) use spawn::*;
 #[allow(unused_imports)]

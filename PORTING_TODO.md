@@ -114,20 +114,37 @@ order.
     the steady-state rate matches C, only the batching granularity differs -
     see the `regen.rs` module doc comment.
 
-- [ ] **Skill raising (`CL_RAISE`)** - parsed but ignored; players cannot
+- [x] **Skill raising (`CL_RAISE`)** - parsed but ignored; players cannot
   spend experience.
-  - C: `cl_raise` in `src/system/player.c` -> `raise_value` /
-    `raise_value_exp` in `src/system/skill.c`. The scroll path is already
-    ported in `crates/ugaris-core/src/item_driver/scrolls.rs`
-    (`raise_value_exp`, `raise_cost`, `skill_start`, `skillmax`) - reuse
-    those helpers, do not duplicate the math.
-  - Rust: handle `ClientAction::Raise { value }` in the `main.rs` action
-    match; apply through a small `World`/character helper; send updated
-    `SV_SETVAL0/1` + exp packets after success (see how login sends them in
-    `crates/ugaris-server/src/login.rs`).
-  - Tests: `tests/commands_player.rs` or a new `tests/raise.rs` - success
-    spends exp and bumps bare value, blocked cases (cost too high, at max,
-    `/noexp` flag) match C feedback text.
+  - C: `cl_raise` in `src/system/player.c` -> `raise_value` in
+    `src/system/skill.c` (not `raise_value_exp` - that one is scroll/shrine
+    only and also grants `exp`, `cl_raise` only spends already-unspent exp
+    via `exp_used` vs `exp`). Ported a new `raise_value` helper alongside
+    the existing scroll helpers in
+    `crates/ugaris-core/src/item_driver/scrolls.rs`, reusing `raise_cost`,
+    `skillmax`, `bare_value`, `skill_raise_cost_factor` - no duplicated
+    math.
+  - Rust: `World::raise_skill` (`crates/ugaris-core/src/world/skills.rs`)
+    wraps the helper and returns a `RaiseSkillOutcome`; `main.rs` handles
+    `ClientAction::Raise { value }` by calling it and, on success, sending a
+    small packet with `SV_SETVAL0/1` for the raised value plus `exp`/
+    `exp_used` (mirrors the fields `login.rs` sends, but only for the one
+    changed value instead of a full 43-value dump). C's `cl_raise` sends no
+    feedback packet at all on failure, so the Rust handler stays silent on
+    `RaiseSkillOutcome::Blocked` too.
+  - Tests: `crates/ugaris-core/src/world/tests/skills.rs` (9 tests) cover
+    success (bare/effective bump, exp_used spent, exp untouched, effective
+    never lowered to match bare), and blocked cases: insufficient unspent
+    exp, `CF_NOEXP`, skill not present (bare value 0), at `skillmax`,
+    unraisable skill (`cost == 0`, e.g. Armor), out-of-range value index,
+    unknown character.
+  - REMAINING: no `update_char` recompute, level-up, or achievement checks
+    fire on raise (matches the pre-existing gap already noted in the ledger
+    for the scroll path - those are separate unported P1 tasks). No
+    dedicated `ugaris-server`-crate test exists for the `main.rs` match arm
+    itself (same precedent as other simple inline actions like
+    `GetQuestLog`/`ReopenQuest`, which also have no server-crate tests) -
+    the packet assembly only reuses already-tested `PacketBuilder` methods.
 
 - [ ] **Speed mode (`CL_SPEED`) and fight mode (`CL_FIGHTMODE`)** - both
   parsed, both ignored.
@@ -531,3 +548,8 @@ Add one line per completed task: date, task, ledger section touched.
   regen to `crates/ugaris-core/src/world/regen.rs`; ledger section
   "Ralph Loop - Regeneration Tick" and the `do.h`/`do.c`/`act.c` primitive
   actions row in the Ported table.
+- 2026-07-03: Skill raising (`CL_RAISE`) (P0) - ported `raise_value` to
+  `crates/ugaris-core/src/item_driver/scrolls.rs` and `World::raise_skill`
+  to `crates/ugaris-core/src/world/skills.rs`; wired
+  `ClientAction::Raise` in `crates/ugaris-server/src/main.rs`; ledger
+  section "Ralph Loop - Skill Raising (CL_RAISE)".
