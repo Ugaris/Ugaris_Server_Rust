@@ -602,6 +602,40 @@ suggestion; dependencies are noted.
     Documented gaps in the recompute itself (`ch.ef[]` area-effect light,
     `P_CLAN`/`areaID == 13`, sprite reselection) are unchanged from the
     previous iteration's notes.
+  - Iteration 21: closed the sprite-reselection gap. Ported
+    `recompute_character_sprite` (`world/character_values.rs`, C
+    `create.c:1969-2120`) - class/gender/weapon-in-hand `sbase`/`off`
+    selection (all 12 warrior/mage/male/female/arch combinations) plus the
+    full six-slot (`head`/`arms`/`legs`/`body`/`cloak`/`feet`)
+    `IID_DEMONSKIN1/2/3` full-suit override (added those three item-ID
+    constants, absent from Rust before now), gated on C's
+    `CF_PLAYER && (!CF_GOD || sprite in admin-exempt ranges)` check.
+    `World::update_character` calls it after the value recompute and
+    marks the character's tile dirty (`mark_dirty_sector`) on an actual
+    sprite change, matching C's `set_sector` call. `reset_name(cn)`
+    (colored-name cache invalidation on demon-sprite transitions) is
+    documented as an intentional no-op: Rust has no server-side
+    name-color cache to invalidate. Tests in
+    `world/tests/character_values.rs` cover unarmed class/gender base
+    sprite, two-handed-weapon offset, full demon-skin-1 suit override,
+    the god-admin-sprite exemption, and the dirty-sector marking on
+    change. While porting this, found and fixed a real latent bug in the
+    already-shipped Body Control bare-handed Weapon-bonus check (same
+    file): `item.flags.contains(ItemFlags::WEAPON)` is wrong since
+    `IF_WEAPON` is a composite of several single-bit weapon-class flags
+    (`IF_AXE|IF_DAGGER|...`) and C's check is `flags & IF_WEAPON` (any
+    bit) - `.contains()` requires *every* bit simultaneously, which no
+    real weapon item ever has, so the bare-handed bonus was silently
+    never suppressed by a real weapon in hand. Fixed both this call site
+    and the new sprite one to use `.intersects()` (matching the correct
+    pattern already used in `world/npc_fight.rs:2381`), with a new
+    regression test
+    (`body_control_bare_handed_bonus_is_suppressed_by_a_real_weapon_in_hand`)
+    since the existing test only exercised the empty-hand path.
+    STILL REMAINING: `ch.ef[]` area-effect light and `P_CLAN`/
+    `areaID == 13` (documented above; `area_id` is a real, already-
+    threaded per-instance value but wiring it through `update_character`
+    touches ~32 call sites, deferred as its own slice) are unchanged.
 
 - [ ] **Equipment slot rules on swap (`CL_SWAP` into worn slots)** - C
   `cl_swap`/`swap` checks `place_item_typed` rules: worn slot flag match

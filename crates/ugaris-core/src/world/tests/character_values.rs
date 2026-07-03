@@ -188,6 +188,32 @@ fn body_control_boosts_armor_and_weapon_for_bare_handed_player() {
     assert_eq!(actor.values[0][CharacterValue::Weapon as usize], 15);
 }
 
+/// C `update_char`: with Body Control raised, a *real* weapon (not just
+/// `IF_HAND`) in the right hand suppresses the bare-handed Weapon bonus
+/// entirely - regression test for the `IF_WEAPON` composite-flag check
+/// (must be `intersects`, not `contains`; a real sword only sets
+/// `IF_SWORD`, never every weapon-class bit at once).
+#[test]
+fn body_control_bare_handed_bonus_is_suppressed_by_a_real_weapon_in_hand() {
+    let mut world = World::default();
+    let mut actor = character(1);
+    actor.flags.insert(CharacterFlags::PLAYER);
+    actor.values[1][CharacterValue::BodyControl as usize] = 20;
+    actor.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(10));
+    assert!(world.spawn_character(actor, 50, 50));
+
+    let sword = item(10, ItemFlags::WNRHAND | ItemFlags::SWORD | ItemFlags::USED);
+    world.add_item(sword);
+
+    assert!(world.update_character(CharacterId(1)));
+    let actor = world.characters.get(&CharacterId(1)).unwrap();
+    let body_control = actor.values[0][CharacterValue::BodyControl as usize];
+    assert_eq!(body_control, 20);
+    // Weapon = body_control/4 (=5) only; no bare-handed bonus since a real
+    // weapon (SWORD) is in the right hand.
+    assert_eq!(actor.values[0][CharacterValue::Weapon as usize], 5);
+}
+
 /// C `update_char`: caps the current HP/endurance/mana to the freshly
 /// recomputed max whenever gear loss (or any recompute) lowers the max
 /// below the current value.
@@ -215,4 +241,122 @@ fn recompute_always_sets_update_flag() {
     assert!(world.update_character(CharacterId(1)));
     let actor = world.characters.get(&CharacterId(1)).unwrap();
     assert!(actor.flags.contains(CharacterFlags::UPDATE));
+}
+
+/// C `update_char` (`create.c:1996-2039`): a bare-handed warrior male
+/// player gets sprite base 85 + off 0 (nothing in hand).
+#[test]
+fn sprite_recompute_selects_class_gender_base_when_unarmed() {
+    let mut world = World::default();
+    let mut actor = character(1);
+    actor
+        .flags
+        .insert(CharacterFlags::PLAYER | CharacterFlags::WARRIOR | CharacterFlags::MALE);
+    assert!(world.spawn_character(actor, 50, 50));
+
+    assert!(world.update_character(CharacterId(1)));
+    let actor = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(actor.sprite, 85);
+}
+
+/// C `update_char`: a two-handed weapon in the right hand adds `off = 2`
+/// on top of the class/gender base sprite.
+#[test]
+fn sprite_recompute_adds_two_handed_weapon_offset() {
+    let mut world = World::default();
+    let mut actor = character(1);
+    actor
+        .flags
+        .insert(CharacterFlags::PLAYER | CharacterFlags::WARRIOR | CharacterFlags::MALE);
+    actor.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(10));
+    assert!(world.spawn_character(actor, 50, 50));
+
+    let weapon = item(
+        10,
+        ItemFlags::WNRHAND | ItemFlags::SWORD | ItemFlags::WNTWOHANDED | ItemFlags::USED,
+    );
+    world.add_item(weapon);
+
+    assert!(world.update_character(CharacterId(1)));
+    let actor = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(actor.sprite, 85 + 2);
+}
+
+/// C `update_char` (`create.c:2097-2108`): a full six-slot demon-skin-1
+/// suit overrides the normal class/weapon sprite selection to 27 with a
+/// zero offset, regardless of what is otherwise worn/in-hand.
+#[test]
+fn sprite_recompute_overrides_to_demonskin_sprite_when_full_suit_worn() {
+    let mut world = World::default();
+    let mut actor = character(1);
+    actor
+        .flags
+        .insert(CharacterFlags::PLAYER | CharacterFlags::WARRIOR | CharacterFlags::MALE);
+    let slots = [
+        (worn_slot::HEAD, 11u32),
+        (worn_slot::ARMS, 12),
+        (worn_slot::LEGS, 13),
+        (worn_slot::BODY, 14),
+        (worn_slot::CLOAK, 15),
+        (worn_slot::FEET, 16),
+    ];
+    for &(slot, id) in &slots {
+        actor.inventory[slot] = Some(ItemId(id));
+    }
+    assert!(world.spawn_character(actor, 50, 50));
+
+    for &(_, id) in &slots {
+        let mut piece = item(id, ItemFlags::USED);
+        piece.template_id = (0x01 << 24) | 0x0000A8; // IID_DEMONSKIN1
+        world.add_item(piece);
+    }
+
+    assert!(world.update_character(CharacterId(1)));
+    let actor = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(actor.sprite, 27);
+}
+
+/// C `update_char` (`create.c:1970-1971`): gods keep their custom admin
+/// sprite untouched unless it already falls in the player sprite ranges
+/// (`60..120`, or the demon sprites 27/157/39).
+#[test]
+fn sprite_recompute_leaves_god_admin_sprite_untouched() {
+    let mut world = World::default();
+    let mut actor = character(1);
+    actor
+        .flags
+        .insert(CharacterFlags::PLAYER | CharacterFlags::GOD | CharacterFlags::WARRIOR);
+    actor.sprite = 999;
+    assert!(world.spawn_character(actor, 50, 50));
+
+    assert!(world.update_character(CharacterId(1)));
+    let actor = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(actor.sprite, 999);
+}
+
+/// A sprite change from equipping a weapon marks the character's tile
+/// dirty, matching C's `set_sector` call on sprite change.
+#[test]
+fn sprite_recompute_marks_dirty_sector_on_change() {
+    let mut world = World::default();
+    let mut actor = character(1);
+    actor
+        .flags
+        .insert(CharacterFlags::PLAYER | CharacterFlags::WARRIOR | CharacterFlags::MALE);
+    assert!(world.spawn_character(actor, 50, 50));
+    assert!(world.update_character(CharacterId(1)));
+
+    world.tick.0 = 5;
+    assert!(world.skip_x_sector(50, 50, world.tick.0) > 0);
+
+    let actor = world.characters.get_mut(&CharacterId(1)).unwrap();
+    actor.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(10));
+    let weapon = item(
+        10,
+        ItemFlags::WNRHAND | ItemFlags::SWORD | ItemFlags::WNTWOHANDED | ItemFlags::USED,
+    );
+    world.add_item(weapon);
+
+    assert!(world.update_character(CharacterId(1)));
+    assert_eq!(world.skip_x_sector(50, 50, world.tick.0), 0);
 }

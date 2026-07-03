@@ -112,7 +112,7 @@ Remaining oversized files worth splitting during future work:
 | `src/area/22/lab3.c` `lab3_plant` carried yellow/brown berry use paths | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_LAB3_PLANT` dispatch is ported for carried yellow berries and brown berries: yellow berries decode legacy freshness/count oxygen durations, remove existing oxygen spell items before installing the refreshed `IDR_OXYGEN` timed spell, consume only on successful install, and brown berries install the 10-second `IDR_UWTALK` timed spell with duplicate-active blocking and legacy failure feedback. Whiteberry light emission, plant growth/picking/rot timers, area log fan-out, and exact dlog/audit integration remain. |
 | `src/area/18/bones.c` `bonebridge` / `boneladder` / `boneholder` / `bonewall` core paths | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_BONEBRIDGE` dispatch now ports the C full-bone cursor gate, area-18 libload guard, target tile fit checks, orientation-specific temporary bridge placement, cursor removal, dirty-sector marking, 60-second cleanup scheduling, timer retry while the bridge tile is temporarily blocked, bridge ageing sprite/drdata increments, and final removal while restoring permanent movement blocking with focused core tests. `IDR_BONELADDER` now ports the area-18 libload guard and paired same-area teleports using the C `drdata[0]` offset table. `IDR_BONEHOLDER` now ports the area-18 dispatch boundary for stand rune insertion gates, rune ID decoding for `rune1`..`rune9`, owner/tick metadata storage in `drdata[8..15]`, owner-only removal guards, 120-second timer expiry clearing, activation-holder classification, and legacy blocked feedback texts with focused core/server compilation coverage. `IDR_BONEWALL` now ports the area-18 libload guard, active/timer dispatch guards, adjacent dormant wall pulse scheduling, opening sprite/drdata progression, temporary map item removal with movement/sight unblock and void/use flag toggles, blocked restore retry, and final wall restoration with focused core/world tests. Partial-bridge add/remove inventory paths, template-backed `create_item("bone")`, exact `Hu?`/bug/does-not-fit feedback, boneholder cursor destruction/recreated-rune item placement/update-holder sprite/foreground application, activation scanning of adjacent holders, and `exec_rune` PPD reward/teleport behavior remain. |
 | `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_DUNGEONTELE`, `IDR_DUNGEONFAKE`, `IDR_DUNGEONKEY`, and `IDR_DUNGEONDOOR` now dispatch only under the legacy area-13 libload guard, decode C little-endian `drdata`, preserve player-only dungeon teleport behavior, consume fake/teleport source items through world item destruction, create `maze_key1`/`maze_key2` cursor keys with the decoded legacy key ID, mark first key take via `drdata[2]`, enforce dungeon-door exact key requirements through carried item IDs, enforce the legacy 20-defender catacomb gate, clear solved door key IDs, mark `drdata[12]`, and attempt the C fallback teleport destinations, with focused core tests plus workspace coverage. Clan jewel theft/state, dungeon master/fighter character drivers, server-chat raid protocol messages, solved-catacomb player/NPC notifications, and exact clan policy remain. |
-| `src/system/create.c` `update_char`/`armor_skill_req`/`armor_skill_bonus` | `crates/ugaris-core/src/world/character_values.rs` | `World::update_character(cn)`/`recompute_character_values` ports the full `value[0]` recompute: worn/spell item modifier sum with the seyan (72.5%) vs. single-class (50%) cap and non-warrior bless-item cap, `IF_BEYONDMAXMOD` uncapped bypass, skill-table base-attribute averaging (`skill[]` from `skill.c:27` hardcoded as `skill_base_attributes`), the `value[1]==0` skip for unraised skills, Cold/Demon special cases, Speed Skill/Athlete/Thief/Demon-profession bonuses, Body Control armor/weapon bonuses (with the bare-handed player weapon bonus) vs. the spell-average Armor bonus when Body Control is unraised, `armor_skill_bonus`'s body/head/legs/arms weighted requirement-vs-raised comparison, day/night/clan attribute profession bonuses, and the HP/endurance/mana current-value clamp to the new max. Wired into worn-slot equip/unequip (`crates/ugaris-server/src/inventory.rs::inventory_swap_slot`, `pos < 12` only, matching C `do.c:1294`). 11 focused tests in `crates/ugaris-core/src/world/tests/character_values.rs`. Documented gaps: `ch.ef[]` area-effect light contributions are not modeled; the `P_CLAN` bonus checks only the `MF_CLAN` map flag (`areaID == 13` catacombs special case unavailable, `World` has no current-area id); sprite reselection (demon suits, weapon-in-hand offsets) and `player_reset_map_cache` on infravision toggle are not ported (display-only). As of iteration 17/18 it is also wired into spell install/expiry (`world/spells.rs`), skill raising (`World::raise_skill`, stat-scroll `apply_item_driver_outcome`), player-death respawn (`World::die_character`), and login (`ugaris-server/src/snapshots.rs` + `main.rs`) - see the "Ralph Loop - `update_char` Stat Recomputation" sections below for the exact call-site history; this row's prose above predates that wiring and is kept for the original algorithm description. |
+| `src/system/create.c` `update_char`/`armor_skill_req`/`armor_skill_bonus` | `crates/ugaris-core/src/world/character_values.rs` | `World::update_character(cn)`/`recompute_character_values` ports the full `value[0]` recompute: worn/spell item modifier sum with the seyan (72.5%) vs. single-class (50%) cap and non-warrior bless-item cap, `IF_BEYONDMAXMOD` uncapped bypass, skill-table base-attribute averaging (`skill[]` from `skill.c:27` hardcoded as `skill_base_attributes`), the `value[1]==0` skip for unraised skills, Cold/Demon special cases, Speed Skill/Athlete/Thief/Demon-profession bonuses, Body Control armor/weapon bonuses (with the bare-handed player weapon bonus) vs. the spell-average Armor bonus when Body Control is unraised, `armor_skill_bonus`'s body/head/legs/arms weighted requirement-vs-raised comparison, day/night/clan attribute profession bonuses, and the HP/endurance/mana current-value clamp to the new max. Wired into worn-slot equip/unequip (`crates/ugaris-server/src/inventory.rs::inventory_swap_slot`, `pos < 12` only, matching C `do.c:1294`). 11 focused tests in `crates/ugaris-core/src/world/tests/character_values.rs`. Documented gaps: `ch.ef[]` area-effect light contributions are not modeled; the `P_CLAN` bonus checks only the `MF_CLAN` map flag (`areaID == 13` catacombs special case unavailable, `World` has no current-area id); `player_reset_map_cache` on infravision toggle is not ported (display-only). As of iteration 21, sprite reselection (demon suits, weapon-in-hand offsets) *is* ported as `recompute_character_sprite`, called by `World::update_character` right after the value recompute and marking the character's tile dirty (`mark_dirty_sector`) on an actual sprite change, matching C's `set_sector` call; `reset_name(cn)` (colored-name cache invalidation) remains an intentional no-op since Rust has no such cache. As of iteration 17/18 it is also wired into spell install/expiry (`world/spells.rs`), skill raising (`World::raise_skill`, stat-scroll `apply_item_driver_outcome`), player-death respawn (`World::die_character`), and login (`ugaris-server/src/snapshots.rs` + `main.rs`) - see the "Ralph Loop - `update_char` Stat Recomputation" sections below for the exact call-site history; this row's prose above predates that wiring and is kept for the original algorithm description. |
 | `src/system/tool.c` `exp2level`/`level2exp`/`level_value`/`check_levelup` | `crates/ugaris-core/src/world/exp.rs` | `exp2level`/`level2exp`/`level_value` (the `pow(level,4)`/`sqrt(sqrt(exp))` formulas) are now the single canonical copy, replacing three independent duplicates that had accreted in `ugaris-server/src/spawns.rs`, `ugaris-server/src/area_apply.rs`, and `ugaris-core/src/item_driver/helpers.rs` (the latter now delegates to this module; the two server-crate copies were deleted and all call sites repointed). `World::check_levelup(character_id)` ports the level-increment loop over `max(exp, exp_used)`, the "Thou gained a level!" text, save grant/reset (hardcore resets to 0, others +1 capped at 10) with feedback text, the level-20 profession unlock (`value[1][V_PROFESSION] = 1`, guarded on it not already being set), and the `set_sector` dirty-map refresh. Wired into the killer-exp and `/god exp` grant paths via `ugaris-server/src/commands_admin.rs::give_exp_with_runtime_modifiers` (kept in the server crate since its `exp_modifier`/`hardcore_exp_bonus` multipliers are live-tunable `ServerRuntime` fields), gated on `!NOLEVEL` exactly like C. 13 focused tests (`world/tests/exp.rs` + 2 server-crate assertions in `tests/commands_admin.rs`). Documented gaps: the level-10-multiple "Grats" server-wide broadcast (`server_chat`), `achievement_check_level`, and `reset_name(cn)` have no Rust equivalents; the stat-scroll `raise_value_exp` path (`item_driver/scrolls.rs`) still doesn't call `check_levelup` before its raise (needs the same `&mut Character`-only outcome-based pattern iteration 18 used for `update_character`); and roughly seven other direct-mutation exp grant sites (`area_apply.rs` shrines, `main.rs` inline quest rewards, `item_driver/food.rs`, `player.rs`, `/milexp`) still bypass `give_exp`/`check_levelup` entirely. |
 
 ## Continuation Handoff
@@ -1603,3 +1603,65 @@ Recommended next chest steps:
   crates, 0 failed), `cargo fmt --all`, and `cargo build -p ugaris-server`
   (zero warnings) all pass. This change does not touch the runtime loop,
   login, map sync, or protocol, so no boot smoke was required.
+
+## Ralph Loop - Iteration 21: `update_char` Sprite Reselection
+
+- Resumed the `update_char` stat recomputation P1 task (`- [~]`) and
+  closed one of its three remaining documented gaps: sprite reselection.
+  Ported C `create.c:1969-2120` as `recompute_character_sprite`
+  (`crates/ugaris-core/src/world/character_values.rs`): the
+  `CF_PLAYER && (!CF_GOD || sprite-in-admin-exempt-range)` gate; the
+  weapon-in-hand `off` selection (0 nothing / 1 one-hand weapon / 2
+  two-handed weapon / 3 torch only / 4 torch + one-hand weapon, from
+  `WN_RHAND`/`WN_LHAND` and the raw left-hand `drdata[0]` "lit" byte); the
+  full 12-arm `CF_WARRIOR|CF_MAGE|CF_MALE|CF_FEMALE|CF_ARCH` `sbase`
+  switch (60/65/75/70/85/80/95/90/105/100/115/110); and the six-slot
+  (`head`/`arms`/`legs`/`body`/`cloak`/`feet`) `IID_DEMONSKIN1/2/3`
+  full-suit override to sprite 27/157/39 with `off` forced to 0. Added
+  the three `IID_DEMONSKIN*` constants (`MAKE_ITEMID(DEV_ID_DB, 0xA8..0xAA)`),
+  which did not exist anywhere in the Rust tree before. `World::update_character`
+  now calls this right after the value recompute and, on an actual sprite
+  change, calls `mark_dirty_sector` on the character's tile - the Rust
+  equivalent of C's `set_sector(ch[cn].x, ch[cn].y)` call in the same
+  branch. `reset_name(cn)` (clearing a cached colored-name buffer on a
+  demon-sprite transition) is documented as an intentional no-op: Rust
+  has no server-side name-color cache to invalidate, confirmed by
+  grepping for one and finding none.
+- Added 5 focused tests to `world/tests/character_values.rs`: unarmed
+  class/gender base sprite selection, the two-handed-weapon `off`
+  offset, the full demon-skin-1-suit override (regardless of class or
+  weapon), the god-admin-sprite exemption (a `CF_GOD` character keeps an
+  out-of-range custom sprite untouched), and dirty-sector marking on an
+  actual sprite change (using `world.skip_x_sector` the same way the
+  existing light dirty-sector tests do).
+- While writing the two-handed-weapon test, found and fixed a real
+  latent bug in the already-shipped (iteration 16) Body Control
+  bare-handed Weapon-bonus check in the same file:
+  `item.flags.contains(ItemFlags::WEAPON)` is wrong, because `IF_WEAPON`
+  in C is a composite of several *single-bit* weapon-class flags
+  (`IF_AXE|IF_DAGGER|IF_HAND|IF_STAFF|IF_SWORD|IF_TWOHAND`) and C's own
+  check is `flags & IF_WEAPON` (true if *any* one bit is set) - but
+  bitflags' `.contains()` requires *every* bit in the argument to be set
+  simultaneously, which no real single-category weapon item ever has, so
+  the bare-handed Weapon bonus was silently never suppressed by an
+  actually-equipped weapon. Fixed both this call site and the new
+  sprite-recompute one to use `.intersects()` instead, matching the
+  already-correct pattern in `world/npc_fight.rs:2381`. The existing
+  `body_control_boosts_armor_and_weapon_for_bare_handed_player` test never
+  caught this because it only exercised the empty-right-hand path; added
+  `body_control_bare_handed_bonus_is_suppressed_by_a_real_weapon_in_hand`
+  to lock in the fix.
+- `PORTING_TODO.md`'s `update_char` task entry updated with an iteration
+  21 progress note; the task stays `- [~]` since the `ch.ef[]`
+  area-effect light and `P_CLAN`/`areaID == 13` gaps remain (the latter
+  is mechanically simple - `area_id` is a real, already-threaded
+  per-server-instance value - but touches roughly 32 existing
+  `update_character` call sites, deferred as its own slice rather than
+  batched into this one).
+- Full workspace suite (1096 + 9 + 3 + 33 + 340 = 1481 tests across all
+  crates, 0 failed), `cargo fmt --all`, and `cargo build -p ugaris-server`
+  (zero warnings) all pass. Boot-smoked
+  `target/debug/ugaris-server --bind-addr 127.0.0.1:5556` for 10+ seconds
+  (this change touches character recompute, which runs on login/equip):
+  "entering Rust game loop" appeared, ticked cleanly to tick 31, no
+  panics.

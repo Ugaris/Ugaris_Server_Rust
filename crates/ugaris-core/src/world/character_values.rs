@@ -194,6 +194,144 @@ fn armor_skill_bonus(character: &Character, items: &HashMap<ItemId, Item>) -> i3
     (raised - req) * 5 * used / 100
 }
 
+/// C `IID_DEMONSKIN1/2/3` (`src/common/item_id.h:227-229`,
+/// `MAKE_ITEMID(DEV_ID_DB, 0xA8..0xAA)`): the full-suit demon skin item
+/// templates that override normal class/weapon sprite selection in
+/// `update_char` when worn on all six armor slots.
+const IID_DEMONSKIN1: u32 = (0x01 << 24) | 0x0000A8;
+const IID_DEMONSKIN2: u32 = (0x01 << 24) | 0x0000A9;
+const IID_DEMONSKIN3: u32 = (0x01 << 24) | 0x0000AA;
+
+/// C `update_char` (`src/system/create.c:1969-2120`): recompute a player's
+/// display sprite from class/gender/weapon-in-hand, with a full demon-skin
+/// suit (all six of head/arms/legs/body/cloak/feet matching one
+/// `IID_DEMONSKIN*` template) overriding the normal selection entirely.
+/// Returns `true` when the sprite actually changed, so the caller can mark
+/// the tile dirty (C `set_sector`) the same way C does.
+///
+/// Known gap vs. C: `reset_name(cn)` (clearing a cached colored-name
+/// buffer) is not ported - Rust has no equivalent server-side name-color
+/// cache to invalidate, so the demon-sprite-transition color refresh is a
+/// no-op here by construction, not an oversight.
+fn recompute_character_sprite(character: &mut Character, items: &HashMap<ItemId, Item>) -> bool {
+    let is_player = character.flags.contains(CharacterFlags::PLAYER);
+    let is_god = character.flags.contains(CharacterFlags::GOD);
+    let sprite = character.sprite;
+    let god_sprite_exempt =
+        (60..120).contains(&sprite) || sprite == 27 || sprite == 157 || sprite == 39;
+    if !is_player || (is_god && !god_sprite_exempt) {
+        return false;
+    }
+
+    let worn = |slot: usize| {
+        character
+            .inventory
+            .get(slot)
+            .copied()
+            .flatten()
+            .and_then(|item_id| items.get(&item_id))
+    };
+
+    let right_hand = worn(crate::legacy::worn_slot::RIGHT_HAND);
+    let left_hand = worn(crate::legacy::worn_slot::LEFT_HAND);
+    let left_hand_lit =
+        left_hand.is_some_and(|item| item.driver_data.first().copied().unwrap_or(0) != 0);
+
+    let mut off = match right_hand {
+        // `IF_WEAPON` is a composite of several single weapon-class bits;
+        // must be `intersects`, not `contains` (see the identical note on
+        // the Body Control bare-handed check above).
+        Some(weapon) if weapon.flags.intersects(ItemFlags::WEAPON) => {
+            if left_hand_lit {
+                4 // torch and one-hand weapon
+            } else if weapon.flags.contains(ItemFlags::WNTWOHANDED) {
+                2 // two-handed weapon
+            } else {
+                1
+            }
+        }
+        _ => {
+            if left_hand_lit {
+                3 // torch
+            } else {
+                0 // nothing
+            }
+        }
+    };
+
+    use CharacterFlags as CF;
+    let class_bits = character.flags & (CF::WARRIOR | CF::MAGE | CF::MALE | CF::FEMALE | CF::ARCH);
+    let mut sbase = if class_bits == (CF::MAGE | CF::MALE) {
+        60
+    } else if class_bits == (CF::MAGE | CF::MALE | CF::ARCH) {
+        65
+    } else if class_bits == (CF::MAGE | CF::FEMALE) {
+        75
+    } else if class_bits == (CF::MAGE | CF::FEMALE | CF::ARCH) {
+        70
+    } else if class_bits == (CF::WARRIOR | CF::MALE) {
+        85
+    } else if class_bits == (CF::WARRIOR | CF::MALE | CF::ARCH) {
+        80
+    } else if class_bits == (CF::WARRIOR | CF::FEMALE) {
+        95
+    } else if class_bits == (CF::WARRIOR | CF::FEMALE | CF::ARCH) {
+        90
+    } else if class_bits == (CF::MAGE | CF::WARRIOR | CF::MALE) {
+        105
+    } else if class_bits == (CF::MAGE | CF::WARRIOR | CF::MALE | CF::ARCH) {
+        100
+    } else if class_bits == (CF::MAGE | CF::WARRIOR | CF::FEMALE) {
+        115
+    } else if class_bits == (CF::MAGE | CF::WARRIOR | CF::FEMALE | CF::ARCH) {
+        110
+    } else {
+        0
+    };
+
+    let demonskin_slots = [
+        crate::legacy::worn_slot::HEAD,
+        crate::legacy::worn_slot::ARMS,
+        crate::legacy::worn_slot::LEGS,
+        crate::legacy::worn_slot::BODY,
+        crate::legacy::worn_slot::CLOAK,
+        crate::legacy::worn_slot::FEET,
+    ];
+    let count_demonskin = |template_id: u32| {
+        demonskin_slots
+            .iter()
+            .filter(|&&slot| worn(slot).is_some_and(|item| item.template_id == template_id))
+            .count()
+    };
+    if count_demonskin(IID_DEMONSKIN1) == 6 {
+        sbase = 27;
+        off = 0;
+    }
+    if count_demonskin(IID_DEMONSKIN2) == 6 {
+        sbase = 157;
+        off = 0;
+    }
+    // C `create.c:2105-2108` (verbatim, including the `sbase == 257` typo
+    // below - copied digit-for-digit rather than "fixed").
+    if count_demonskin(IID_DEMONSKIN3) == 6 {
+        sbase = 39;
+        off = 0;
+    }
+
+    if sbase == 0 {
+        return false;
+    }
+    let new_sprite = sbase + off;
+    if character.sprite == new_sprite {
+        return false;
+    }
+    // C: reset_name(cn) fires here when transitioning to/from a demon
+    // sprite (27/157/39, the last compared against the literal `257` typo
+    // in `create.c:2112`) - no-op in Rust, see doc comment above.
+    character.sprite = new_sprite;
+    true
+}
+
 /// C `skill[]` table (`src/system/skill.c:27`): the three base attributes
 /// averaged (then divided by 5) to seed a raisable value's total. Powers,
 /// attributes, Armor/Weapon/Light, Cold and Profession have no base
@@ -253,9 +391,11 @@ fn skill_base_attributes(
 /// - The `P_CLAN` night-in-catacombs bonus only checks `MF_CLAN`; the
 ///   `areaID == 13` special case is not available (`World` has no
 ///   current-area id).
-/// - Sprite reselection (demon suits, weapon-in-hand offsets) and the
-///   `player_reset_map_cache` call on infravision toggle are not ported
-///   here; they are display-only side effects tracked separately.
+/// - The `player_reset_map_cache` call on infravision toggle is not
+///   ported (display-only side effect tracked separately). Sprite
+///   reselection (demon suits, weapon-in-hand offsets) *is* ported, as
+///   [`recompute_character_sprite`], called separately by
+///   `World::update_character` since it needs `set_sector`/`&mut World`.
 pub(crate) fn recompute_character_values(
     character: &mut Character,
     items: &HashMap<ItemId, Item>,
@@ -437,7 +577,12 @@ pub(crate) fn recompute_character_values(
             .flatten()
             .and_then(|item_id| items.get(&item_id))
             .is_some_and(|item| {
-                item.flags.contains(ItemFlags::WEAPON) && !item.flags.contains(ItemFlags::HAND)
+                // `IF_WEAPON` is a composite of several single weapon-class
+                // bits (`IF_AXE|IF_DAGGER|IF_HAND|...`); C's `flags &
+                // IF_WEAPON` is true if *any* one is set, so this must be
+                // `intersects`, not `contains` (which would require every
+                // bit set at once - never true for a real item).
+                item.flags.intersects(ItemFlags::WEAPON) && !item.flags.contains(ItemFlags::HAND)
             });
         if !has_real_weapon_in_hand && character.flags.contains(CharacterFlags::PLAYER) {
             add_character_value0(
@@ -500,8 +645,12 @@ impl World {
             return false;
         };
         recompute_character_values(character, &self.items, hour, in_clan_area);
+        let sprite_changed = recompute_character_sprite(character, &self.items);
 
         self.refresh_character_light_after_value_change(character_id, old_light);
+        if sprite_changed {
+            self.mark_dirty_sector(usize::from(x), usize::from(y));
+        }
         true
     }
 }
