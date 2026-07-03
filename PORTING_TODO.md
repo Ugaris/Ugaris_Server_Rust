@@ -1423,7 +1423,7 @@ suggestion; dependencies are noted.
 
 Unlocks every quest NPC. Do these before any P4 area work.
 
-- [~] **Generic NPC text analysis (`analyse_text_driver`)** - C
+- [x] **Generic NPC text analysis (`analyse_text_driver`)** - C
   `src/module/merchants/merchant.c::analyse_text_driver` and the richer
   copy in `src/area/1/gwendylon.c` (they share a pattern: lowercase the
   text, match name + keyword, respond via `quiet_say`). Port a reusable
@@ -1434,9 +1434,22 @@ Unlocks every quest NPC. Do these before any P4 area work.
   distance>12, visibility) are wired to a real driver
   (`world/merchant.rs::merchant_qa_reply`); the `gwendylon.c`/`bank.c`/
   `base.c`/`military.c`/`forest.c`/`area3.c`/`arkhata.c`/
-  `orb_bank_npc.c` copies still need their own `qa[]` tables ported and
-  fed through `analyse_text_qa`, plus the `mem_*` driver-memory system
-  (next task) to replace ad-hoc greet throttling.
+  `orb_bank_npc.c` copies each need their own `qa[]` table transcribed and
+  fed through `analyse_text_qa`, but every one of those files is a whole
+  unported NPC driver in its own right (`bank.c`/`orb_bank_npc.c` -> P2
+  "`CDR_BANK` banker NPC"; `gwendylon.c` -> P4 "Area 1"; `area3.c` -> P4
+  "Area 3"; `forest.c` -> P4 "Area 16"; `arkhata.c` -> P4 "Area 37";
+  `military.c` -> P3 "Military ranks"; `base.c`'s trader section -> P2
+  "`CDR_TRADER`"), so wiring each qa table is properly scoped as part of
+  porting that NPC's driver, not a standalone item here. The `mem_*`
+  driver-memory system this REMAINING note used to point at is now done
+  (see the "Driver memory" task above) and `world/merchant.rs`'s greet
+  throttling already uses it instead of the old ad-hoc
+  `MerchantDriverData::greeted` field. This task's actual deliverable -
+  the reusable `analyse_text_qa` matcher - is complete and exercised by
+  the merchant driver; leaving `[~]` only as a pointer for whoever ports
+  the remaining NPC drivers to reuse it rather than re-inventing a
+  tokenizer.
   Progress Log: added `TextQaEntry`/`TextAnalysisOutcome`/
   `tokenize_text_words`/`analyse_text_qa`/`format_qa_answer` to
   `character_driver.rs` (tokenizer matches C's delimiter set and
@@ -1455,12 +1468,51 @@ Unlocks every quest NPC. Do these before any P4 area work.
   and `cargo build -p ugaris-server` all clean; boot-smoked 10s with no
   panics.
 
-- [ ] **Driver memory (`mem_*`)** - C `src/system/mem.c`:
+- [x] **Driver memory (`mem_*`)** - C `src/system/mem.c`:
   `mem_add_driver/mem_check_driver/mem_erase_driver` per-(npc, player,
   slot) memory with timeouts. The merchant greeting already fakes slot 7
   with `MerchantDriverData::greeted` - replace with a proper
   `DriverMemory` structure on `CharacterDriverState` usable by all
   drivers. Tests: add/check/expiry parity.
+  Progress Log: the real C source is `src/system/drvlib.c` (declared in
+  `drvlib.h`) - `src/system/mem.c` is an unrelated `xmalloc`/`xfree`
+  allocator-tracking module the task description's reference was stale.
+  Ported `struct char_mem_data`'s 8-slot (`nr` 0..=7) per-character
+  membership list as `character_driver::DriverMemory` (an 8-element
+  `[Vec<u32>; 8]`, `Default`-constructed via `std::array::from_fn`) plus
+  free functions `mem_add_driver`/`mem_check_driver`/`mem_erase_driver`
+  mirroring C's semantics exactly: out-of-range slots (`nr < 0 || nr >
+  7`) are a no-op returning `false`/doing nothing, duplicate adds are
+  idempotent (no duplicate entry, still returns `true`), and erase only
+  clears the targeted slot. C dedupes membership by a stable identity
+  (`ch[co].ID | 0x80000000` for players, else `ch[co].serial &
+  0x7fffffff`) that survives character-table slot reuse; kept the
+  pre-existing merchant-greet port's simplification of using the raw
+  runtime `CharacterId` instead (documented in the new code), since
+  threading persistent player IDs through is a bigger change than this
+  task's scope and the existing merchant code already made the same
+  call. Added `driver_memory: DriverMemory` directly to `Character`
+  (`entity.rs`) rather than nesting it under `CharacterDriverState` (an
+  enum tagged per driver kind) since C's memory slots are addressed
+  per-character independent of which module owns the character - this
+  matches how `driver_state`/`driver_messages` already sit directly on
+  `Character`. Rewired `world/merchant.rs`'s greet-once tracking
+  (`greet_nearby_players`/`clear_expired_merchant_memory`) off the old
+  `MerchantDriverData::greeted: Vec<u32>` field onto
+  `mem_add_driver`/`mem_check_driver`/`mem_erase_driver` at slot 7
+  (matching C's literal `mem_add_driver(cn, co, 7)` call sites in
+  `merchant.c`), keeping `MerchantDriverData::memory_clear_tick` as the
+  driver's own timeout bookkeeping (C's `dat->memcleartimer` pattern,
+  which is caller-side, not part of `mem_*` itself). Tests: 6 new unit
+  tests in `character_driver.rs` (check-before-add, add-then-check,
+  duplicate-add idempotency, out-of-range slot rejection for both add and
+  check, erase-only-clears-requested-slot, erase-on-out-of-range-slot is
+  a silent no-op) plus updated the existing merchant greet/small-talk
+  tests' `merchant_npc_already_greeted` helper to seed slot 7 via
+  `mem_add_driver` instead of the removed field. `cargo fmt --all`,
+  `cargo test --workspace` (1153+27+3+33+374 passed), `cargo build -p
+  ugaris-server` all clean, and a 10s boot-smoke showed "entering Rust
+  game loop" with no panics.
 
 - [ ] **`quiet_say`/`say`/`emote` NPC speech helpers in core** - several
   drivers need to talk. There are queued area-text pieces already

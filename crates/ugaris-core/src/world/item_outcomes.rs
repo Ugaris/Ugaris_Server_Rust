@@ -2409,5 +2409,6 @@ pub(crate) fn timer_callback_character() -> Character {
         inventory: Character::empty_inventory(),
         driver_state: None,
         driver_messages: Vec::new(),
+        driver_memory: crate::character_driver::DriverMemory::default(),
     }
 }

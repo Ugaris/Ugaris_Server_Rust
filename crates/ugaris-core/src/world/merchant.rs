@@ -6,6 +6,7 @@
 //! day/night shop movement remain unported.
 
 use super::*;
+use crate::character_driver::{mem_add_driver, mem_check_driver, mem_erase_driver};
 
 /// C `STORESIZE` from `src/module/merchants/store.h`.
 pub const MERCHANT_STORE_SIZE: usize = INVENTORY_SIZE - 2;
@@ -13,6 +14,9 @@ pub const MERCHANT_STORE_SIZE: usize = INVENTORY_SIZE - 2;
 const MERCHANT_GREET_DISTANCE: i32 = 10;
 const FRED_GREET_DISTANCE: i32 = 25;
 const MERCHANT_MEMORY_CLEAR_TICKS: u64 = TICKS_PER_SECOND * 60 * 60 * 12;
+/// C `mem_add_driver(cn, co, 7)`/`mem_check_driver(cn, co, 7)` in
+/// `merchant.c`'s greeting/trade-request handlers.
+const MERCHANT_GREET_MEMORY_SLOT: usize = 7;
 
 #[derive(Debug, Clone)]
 pub struct StoreWare {
@@ -502,16 +506,16 @@ impl World {
         } else {
             MERCHANT_GREET_DISTANCE
         };
-        let already_greeted: Vec<u32> = match &merchant.driver_state {
-            Some(CharacterDriverState::Merchant(data)) => data.greeted.clone(),
-            _ => Vec::new(),
-        };
 
         let mut greetings: Vec<(CharacterId, String)> = Vec::new();
         for character in self.characters.values() {
             if character.id == merchant_id
                 || !character.flags.contains(CharacterFlags::PLAYER)
-                || already_greeted.contains(&character.id.0)
+                || mem_check_driver(
+                    &merchant.driver_memory,
+                    MERCHANT_GREET_MEMORY_SLOT,
+                    character.id.0,
+                )
             {
                 continue;
             }
@@ -539,9 +543,11 @@ impl World {
                 message: String::from_utf8_lossy(&say).into_owned(),
             });
             if let Some(merchant) = self.characters.get_mut(&merchant_id) {
-                if let Some(CharacterDriverState::Merchant(data)) = merchant.driver_state.as_mut() {
-                    data.greeted.push(player_id.0);
-                }
+                mem_add_driver(
+                    &mut merchant.driver_memory,
+                    MERCHANT_GREET_MEMORY_SLOT,
+                    player_id.0,
+                );
             }
         }
     }
@@ -549,9 +555,13 @@ impl World {
     fn clear_expired_merchant_memory(&mut self, merchant_id: CharacterId) {
         let tick = self.tick.0;
         if let Some(merchant) = self.characters.get_mut(&merchant_id) {
-            if let Some(CharacterDriverState::Merchant(data)) = merchant.driver_state.as_mut() {
-                if tick > data.memory_clear_tick {
-                    data.greeted.clear();
+            let memory_clear_tick = match merchant.driver_state.as_ref() {
+                Some(CharacterDriverState::Merchant(data)) => data.memory_clear_tick,
+                _ => return,
+            };
+            if tick > memory_clear_tick {
+                mem_erase_driver(&mut merchant.driver_memory, MERCHANT_GREET_MEMORY_SLOT);
+                if let Some(CharacterDriverState::Merchant(data)) = merchant.driver_state.as_mut() {
                     data.memory_clear_tick = tick + MERCHANT_MEMORY_CLEAR_TICKS;
                 }
             }

@@ -628,6 +628,7 @@ mod tests {
             inventory: vec![None; INVENTORY_SIZE],
             driver_state: None,
             driver_messages: Vec::new(),
+            driver_memory: crate::character_driver::DriverMemory::default(),
         }
     }
 

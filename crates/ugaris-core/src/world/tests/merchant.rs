@@ -1,5 +1,7 @@
 use super::*;
-use crate::character_driver::{parse_merchant_driver_args, MerchantDriverData, CDR_MERCHANT};
+use crate::character_driver::{
+    mem_add_driver, parse_merchant_driver_args, MerchantDriverData, CDR_MERCHANT,
+};
 
 fn merchant_npc(id: u32, pricemulti: i32) -> Character {
     let mut merchant = character(id);
@@ -267,9 +269,8 @@ fn merchant_greets_visible_players_once() {
 
 fn merchant_npc_already_greeted(id: u32, pricemulti: i32, greeted: u32) -> Character {
     let mut merchant = merchant_npc(id, pricemulti);
-    if let Some(CharacterDriverState::Merchant(data)) = merchant.driver_state.as_mut() {
-        data.greeted.push(greeted);
-    }
+    // C `mem_add_driver(cn, co, 7)`: slot 7 is the greet-once memory.
+    mem_add_driver(&mut merchant.driver_memory, 7, greeted);
     merchant
 }
 

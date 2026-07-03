@@ -443,6 +443,7 @@ impl ZoneLoader {
                 .map(|seconds| seconds.saturating_mul(crate::tick::TICKS_PER_SECOND as u32))
                 .unwrap_or(crate::game_settings::GameSettings::default().npc_respawn_timer as u32),
             merchant: None,
+            driver_memory: crate::character_driver::DriverMemory::default(),
         };
 
         if template.driver == CDR_SIMPLEBADDY {

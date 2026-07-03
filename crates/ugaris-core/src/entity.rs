@@ -382,6 +382,11 @@ pub struct Character {
     pub driver_state: Option<CharacterDriverState>,
     #[serde(default)]
     pub driver_messages: Vec<CharacterDriverMessage>,
+    /// C `mem_add_driver`/`mem_check_driver`/`mem_erase_driver`
+    /// (`src/system/drvlib.c`): 8 generic per-character memory slots
+    /// shared by every driver kind (e.g. merchant greet-once tracking).
+    #[serde(default)]
+    pub driver_memory: crate::character_driver::DriverMemory,
     /// Zone template key this character was created from, the C `ch.tmp`
     /// equivalent used by the respawn callback. Empty for players.
     #[serde(default)]
@@ -594,6 +599,7 @@ mod tests {
             inventory: Character::empty_inventory(),
             driver_state: None,
             driver_messages: Vec::new(),
+            driver_memory: crate::character_driver::DriverMemory::default(),
         };
 
         character.push_driver_message(crate::character_driver::NT_CREATE, 1, 2, 3);

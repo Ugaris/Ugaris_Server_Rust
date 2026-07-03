@@ -70,6 +70,7 @@ pub(crate) fn login_character(
         inventory: Character::empty_inventory(),
         driver_state: None,
         driver_messages: Vec::new(),
+        driver_memory: ugaris_core::character_driver::DriverMemory::default(),
     }
 }
 

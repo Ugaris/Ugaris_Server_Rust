@@ -122,9 +122,6 @@ pub struct MerchantDriverData {
     pub ignore: i32,
     pub special: i32,
     pub pricemulti: i32,
-    /// Characters already greeted, mirroring C `mem_add_driver(cn, co, 7)`.
-    #[serde(default)]
-    pub greeted: Vec<u32>,
     #[serde(default)]
     pub last_talk: u64,
     #[serde(default)]
@@ -386,6 +383,79 @@ pub const MERCHANT_QA: &[TextQaEntry] = &[
         answer_code: 1,
     },
 ];
+
+//-----------------------
+// Generic per-character driver memory.
+//
+// C `src/system/drvlib.c`'s `struct char_mem_data`/`mem_add_driver`/
+// `mem_check_driver`/`mem_erase_driver` (declared in `src/system/drvlib.h`,
+// *not* `src/system/mem.c`, which is an unrelated allocator-tracking
+// module despite the similar name). Every driver shares 8 memory slots
+// (`nr` 0..=7) per character, addressed via `set_data(cn, DRD_CHARMEM +
+// nr, ...)` in C; each slot holds a list of "remembered" character
+// identifiers with no membership limit besides `dat->max` growing by 8 at
+// a time. C dedupes slot membership by a stable identity (`ch[co].ID |
+// 0x80000000` for logged-in players, else `ch[co].serial & 0x7fffffff`)
+// that survives character-table slot reuse; the existing merchant-greet
+// port (`world/merchant.rs`) already simplified this to the raw runtime
+// `CharacterId`, so the generic port below keeps that same simplification
+// for consistency rather than threading persistent player IDs through.
+// Timeouts are *not* part of `mem_add_driver` itself in C - callers keep
+// their own "next clear" tick (e.g. merchant.c's `dat->memcleartimer`) and
+// call `mem_erase_driver` when it elapses; `MerchantDriverData` keeps that
+// per-driver timer field for the same reason.
+
+/// C `mem_add_driver`/`mem_check_driver`/`mem_erase_driver`'s `nr` range
+/// (`if (nr < 0 || nr > 7) return 0;`).
+pub const DRIVER_MEMORY_SLOTS: usize = 8;
+
+/// C `struct char_mem_data`, stored per-character (one instance covering
+/// all 8 slots, mirroring how C addresses each slot via `DRD_CHARMEM +
+/// nr` off the same character's driver-data list).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DriverMemory {
+    slots: [Vec<u32>; DRIVER_MEMORY_SLOTS],
+}
+
+impl Default for DriverMemory {
+    fn default() -> Self {
+        Self {
+            slots: std::array::from_fn(|_| Vec::new()),
+        }
+    }
+}
+
+/// C `mem_add_driver(cn, co, nr)`: remembers `target` in memory slot
+/// `slot`. A no-op duplicate add still returns `true` (C: `if
+/// (dat->xID[n] == xID) return 1;`); an out-of-range slot returns `false`
+/// (C: `return 0;`).
+pub fn mem_add_driver(memory: &mut DriverMemory, slot: usize, target: u32) -> bool {
+    let Some(bucket) = memory.slots.get_mut(slot) else {
+        return false;
+    };
+    if !bucket.contains(&target) {
+        bucket.push(target);
+    }
+    true
+}
+
+/// C `mem_check_driver(cn, co, nr)`: `true` if `target` is remembered in
+/// memory slot `slot`.
+pub fn mem_check_driver(memory: &DriverMemory, slot: usize, target: u32) -> bool {
+    memory
+        .slots
+        .get(slot)
+        .is_some_and(|bucket| bucket.contains(&target))
+}
+
+/// C `mem_erase_driver(cn, nr)`: clears memory slot `slot` (all other
+/// slots are left untouched, matching C only zeroing `dat->cnt` for the
+/// requested `nr`).
+pub fn mem_erase_driver(memory: &mut DriverMemory, slot: usize) {
+    if let Some(bucket) = memory.slots.get_mut(slot) {
+        bucket.clear();
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TwoSkellyDriverData {
@@ -1469,6 +1539,58 @@ mod tests {
     }
 
     #[test]
+    fn mem_check_driver_is_false_until_added() {
+        let memory = DriverMemory::default();
+        assert!(!mem_check_driver(&memory, 7, 42));
+    }
+
+    #[test]
+    fn mem_add_then_check_driver_remembers_target() {
+        let mut memory = DriverMemory::default();
+        assert!(mem_add_driver(&mut memory, 7, 42));
+        assert!(mem_check_driver(&memory, 7, 42));
+        // C: unrelated slots and unrelated targets stay untouched.
+        assert!(!mem_check_driver(&memory, 6, 42));
+        assert!(!mem_check_driver(&memory, 7, 99));
+    }
+
+    #[test]
+    fn mem_add_driver_is_idempotent_for_duplicate_targets() {
+        // C: `if (dat->xID[n] == xID) return 1;` - no duplicate entry, and
+        // erasing the slot removes the target in one shot either way.
+        let mut memory = DriverMemory::default();
+        assert!(mem_add_driver(&mut memory, 3, 7));
+        assert!(mem_add_driver(&mut memory, 3, 7));
+        assert_eq!(memory.slots[3].len(), 1);
+    }
+
+    #[test]
+    fn mem_add_and_check_driver_reject_out_of_range_slots() {
+        // C: `if (nr < 0 || nr > 7) return 0;`.
+        let mut memory = DriverMemory::default();
+        assert!(!mem_add_driver(&mut memory, DRIVER_MEMORY_SLOTS, 1));
+        assert!(!mem_check_driver(&memory, DRIVER_MEMORY_SLOTS, 1));
+    }
+
+    #[test]
+    fn mem_erase_driver_clears_only_the_requested_slot() {
+        let mut memory = DriverMemory::default();
+        mem_add_driver(&mut memory, 2, 1);
+        mem_add_driver(&mut memory, 7, 2);
+        mem_erase_driver(&mut memory, 7);
+        assert!(!mem_check_driver(&memory, 7, 2));
+        assert!(mem_check_driver(&memory, 2, 1));
+    }
+
+    #[test]
+    fn mem_erase_driver_out_of_range_slot_is_a_silent_no_op() {
+        let mut memory = DriverMemory::default();
+        mem_add_driver(&mut memory, 0, 1);
+        mem_erase_driver(&mut memory, DRIVER_MEMORY_SLOTS);
+        assert!(mem_check_driver(&memory, 0, 1));
+    }
+
+    #[test]
     fn base_character_driver_ids_match_c_drvlib() {
         assert_eq!(CDR_LOSTCON, 5);
         assert_eq!(CDR_SIMPLEBADDY, 7);
@@ -2530,6 +2652,7 @@ mod tests {
             inventory: Character::empty_inventory(),
             driver_state: None,
             driver_messages: Vec::new(),
+            driver_memory: DriverMemory::default(),
         }
     }
 

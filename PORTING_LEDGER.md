@@ -2947,3 +2947,54 @@ Recommended next chest steps:
   wired to a live driver; the other seven `qa[]` tables (and the
   `mem_*` driver-memory system from the next P2 task) still need
   porting.
+
+- P2 "Driver memory (`mem_*`)" - ported C `mem_add_driver`/
+  `mem_check_driver`/`mem_erase_driver` (`src/system/drvlib.c`, declared
+  in `drvlib.h` - the task description's `src/system/mem.c` reference was
+  stale; that file is an unrelated `xmalloc`/`xfree` allocator-tracking
+  module). C's `struct char_mem_data` is a per-character, 8-slot (`nr`
+  0..=7) list of remembered character identifiers addressed via
+  `set_data(cn, DRD_CHARMEM + nr, ...)`; ported as `character_driver::
+  DriverMemory` (`slots: [Vec<u32>; 8]`, `Default` via
+  `std::array::from_fn`) plus free functions mirroring C exactly:
+  out-of-range slots are a no-op (`false`/nothing), duplicate adds don't
+  create a second entry (still return `true`), and erase only clears the
+  targeted slot. C dedupes membership by a stable identity (`ch[co].ID |
+  0x80000000` for players else `ch[co].serial & 0x7fffffff`) that
+  survives character-table slot reuse; kept the existing merchant-greet
+  port's simplification of using the raw runtime `CharacterId` instead
+  (documented inline) rather than widen scope to thread persistent player
+  IDs through. Added `driver_memory: DriverMemory` directly on
+  `Character` (`entity.rs`) - not nested under the per-driver-kind
+  `CharacterDriverState` enum the task description suggested, since C
+  addresses memory slots per-character regardless of which module owns
+  the character, matching how `driver_state`/`driver_messages` already
+  sit directly on `Character`. Rewired `world/merchant.rs`'s greet-once
+  tracking off the old `MerchantDriverData::greeted: Vec<u32>` field onto
+  `mem_add_driver`/`mem_check_driver`/`mem_erase_driver` at slot 7 (C's
+  literal `mem_add_driver(cn, co, 7)` call sites in `merchant.c`),
+  keeping `MerchantDriverData::memory_clear_tick` as the driver's own
+  timeout bookkeeping (C's `dat->memcleartimer`, which is caller-side,
+  not part of `mem_*` itself). Adding the new `Character` field required
+  updating every other test/production `Character { .. }` struct literal
+  across both crates (`ugaris-core`, `ugaris-db`, `ugaris-server`) to
+  initialize it.
+  Tests: 6 new focused unit tests in `character_driver.rs` (check before
+  add, add-then-check with unrelated-slot/unrelated-target isolation,
+  duplicate-add idempotency via a slot-length assertion, out-of-range
+  slot rejection for both add and check, erase-only-clears-requested-
+  slot, and erase-on-out-of-range-slot silent no-op), plus updated the
+  existing merchant greet/small-talk tests' `merchant_npc_already_greeted`
+  helper to seed slot 7 via `mem_add_driver`.
+  Verification: `cargo fmt --all` clean; `cargo test --workspace`: 1153
+  core (6 new) + 27 db + 3 net + 33 protocol + 374 server, zero warnings,
+  zero failures. `cargo build -p ugaris-server` clean. Boot-smoked
+  `target/debug/ugaris-server --bind-addr 127.0.0.1:5556` for 10s,
+  "entering Rust game loop" logged, no panics.
+  Task marked `[x]` in `PORTING_TODO.md`. The "Generic NPC text analysis"
+  task above is also now marked `[x]`: its actual deliverable (the
+  reusable `analyse_text_qa` matcher) was already complete, the `mem_*`
+  dependency it was waiting on is done, and its remaining per-NPC `qa[]`
+  tables are each properly owned by their own already-tracked NPC/area
+  porting tasks (`CDR_BANK`, `CDR_TRADER`, Military ranks, Areas 1/3/16/
+  37) rather than needing separate tracking here.
