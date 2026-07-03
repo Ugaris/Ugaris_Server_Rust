@@ -1312,11 +1312,41 @@ suggestion; dependencies are noted.
   (it is also used by chests/loot), then enable the `special` merchant arg
   path already parsed in `MerchantDriverData`.
 
-- [ ] **Client command audit completion** - handle the remaining parsed
+- [x] **Client command audit completion** - handle the remaining parsed
   actions: `ClientInfo`, `Log`, `ModPacket` (mod protocol - can be a
   logged no-op initially, but check `src/common/mod_packet.c` for the
   handshake the community client expects), `Nop`. Anything still
   unhandled must at least be an explicit logged no-op, not silence.
+  Progress Log: audited C `cl_nop`/`cl_clientinfo`/`cl_log`/`cl_mod1..5`
+  (`src/system/player.c`) and `mod_packet.c`. `cl_nop` and `cl_clientinfo`
+  are genuine no-ops in C (the latter's body is entirely commented out),
+  so gave them explicit non-logging match arms (matching the existing
+  `FightMode` no-op precedent) instead of falling through the tick loop's
+  catch-all `_ => {}` in `crates/ugaris-server/src/main.rs`. `cl_log`
+  writes the client-supplied message to the server logfile via `charlog`
+  (`"<name> (<cn>): <message> [ID=<charID>,IP=...]"`); ported as a
+  `debug!` trace line using new helper
+  `player_actions::format_client_log_message` (IP suffix omitted -
+  `ServerRuntime` doesn't track per-session peer addresses). `cl_mod1`
+  currently blind-acks handshake subtypes 0x01-0x0F ("For now, just
+  acknowledge we received them") and routes 0x10-0x2F to an anti-cheat
+  handler not yet ported in C itself, so a `debug!` logged no-op for
+  `ModPacket` is a faithful port of the C oracle's own stub, not a gap
+  Rust introduced. Also updated `apply_player_action`'s immediate
+  dispatch (`player_actions.rs`) to explicitly no-op these four variants
+  instead of relying on the generic `action_to_queued` fallthrough. Tests:
+  `crates/ugaris-server/src/tests/player_actions.rs` -
+  `format_client_log_message_matches_legacy_charlog_shape` and
+  `apply_player_action_ignores_nop_client_info_log_and_mod_packet`.
+  REMAINING: `CL_MOD2`/`CL_MOD4`/`CL_MOD5` and unknown `CL_MOD1`/`CL_MOD3`
+  subtypes still hard-disconnect the session in the decoder
+  (`crates/ugaris-protocol/src/client.rs`) instead of C's "trash the
+  input, keep the connection" behavior, and several `CL_MOD1` handshake
+  packet sizes in `mod_packet_size()` don't match the current C
+  `mod_system.h`/`mod_anticheat.h` struct sizes - not observed in the
+  wild (no current client sends these), but should be fixed before the
+  mod/anti-cheat protocol is actually driven end to end; that is a
+  separate framing-layer task, not part of this dispatch-level audit.
 
 ---
 

@@ -78,7 +78,7 @@ use clap::Parser;
 
 use tokio::{sync::mpsc, time};
 
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -1511,6 +1511,54 @@ async fn main() -> anyhow::Result<()> {
                             let mut builder = PacketBuilder::new();
                             builder.ping(value);
                             runtime.send_to_session(session_id, builder.into_payload());
+                        }
+                        ClientAction::Nop => {
+                            // C `cl_nop` (`src/system/player.c`) is a
+                            // genuine no-op used only as a keep-alive
+                            // filler packet - no logging in C either.
+                        }
+                        ClientAction::ClientInfo(_) => {
+                            // C `cl_clientinfo` (`src/system/player.c`)
+                            // has its entire body commented out: the
+                            // `client_info` payload (skip/idle counters,
+                            // sysmem/vidmem, display surfaces) is parsed
+                            // off the wire and discarded. Matches C.
+                        }
+                        ClientAction::Log(bytes) => {
+                            // C `cl_log` (`src/system/player.c`) writes
+                            // the client-supplied message to the server
+                            // log via `charlog`. Port that as a `debug`
+                            // trace line instead of silently dropping it.
+                            let name = world
+                                .characters
+                                .get(&character_id)
+                                .map(|character| character.name.as_str())
+                                .unwrap_or("ILLEGAL CN");
+                            let message = String::from_utf8_lossy(&bytes);
+                            debug!(
+                                target: "client_log",
+                                "{}",
+                                format_client_log_message(name, character_id.0, &message)
+                            );
+                        }
+                        ClientAction::ModPacket {
+                            packet_type,
+                            subtype,
+                            ..
+                        } => {
+                            // C `cl_mod1`/`cl_mod3` (`src/system/player.c`)
+                            // route known handshake subtypes (0x01-0x0F:
+                            // mod version/ready/pong) to a blind
+                            // acknowledge ("For now, just acknowledge we
+                            // received them"); other subtypes get an
+                            // `SV_MOD1`/`SV_SYS_ERROR` reply via
+                            // `mod_send_error_by_slot`, not ported yet.
+                            // Log and no-op for now, matching the C
+                            // oracle's own "future work" stub.
+                            debug!(
+                                character_id = character_id.0,
+                                packet_type, subtype, "mod packet received (not yet implemented, logged no-op)"
+                            );
                         }
                         _ => {}
                     }

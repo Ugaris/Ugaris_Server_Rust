@@ -68,6 +68,16 @@ pub(crate) fn apply_player_action(
         ClientAction::Text(bytes) => player.command = bytes.clone(),
         ClientAction::Ticker { tick } => player.client_ticker = *tick,
         ClientAction::Stop => player.driver_stop(current_tick, false),
+        // `Nop`, `ClientInfo`, `Log` and `ModPacket` have no immediate,
+        // per-player-runtime effect in C either (`cl_nop`/`cl_clientinfo`
+        // are true no-ops, `cl_log` only writes to the server log,
+        // `cl_mod*` only replies over the wire) - they are handled at the
+        // per-tick dispatch in `main.rs` where session/world context is
+        // available for logging, not here.
+        ClientAction::Nop
+        | ClientAction::ClientInfo(_)
+        | ClientAction::Log(_)
+        | ClientAction::ModPacket { .. } => {}
         _ => {
             if let Some(queued) = action_to_queued(action) {
                 player.set_pending_action(queued);
@@ -167,4 +177,19 @@ pub(crate) fn queued0(action: PlayerActionCode) -> QueuedAction {
         arg1: 0,
         arg2: 0,
     }
+}
+
+/// C `charlog` (`src/system/logging/log.c`) formats a character-attributed
+/// server log line as `"<name> (<cn>): <message> [ID=<charID><,IP=...>]"`
+/// before writing it via `xlog`. `cl_log` (`src/system/player.c`) feeds the
+/// client-supplied `CL_LOG` payload straight into `charlog`. We reproduce
+/// the `name (cn): message [ID=id]` shape; the optional `,IP=a.b.c.d`
+/// suffix is omitted because `ServerRuntime` does not track each session's
+/// peer address alongside its character.
+pub(crate) fn format_client_log_message(
+    character_name: &str,
+    character_id: u32,
+    message: &str,
+) -> String {
+    format!("{character_name} ({character_id}): {message} [ID={character_id}]")
 }

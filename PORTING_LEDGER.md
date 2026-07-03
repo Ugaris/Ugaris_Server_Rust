@@ -104,7 +104,7 @@ Remaining oversized files worth splitting during future work:
 | `src/system/database/database_area.h` | `crates/ugaris-db/src/area.rs`, `migrations/0001_core_accounts_characters.sql` | Area server records and alive/down/get operations scaffolded. |
 | `src/system/database/database_character.h` / `database_character.c` login and snapshot paths, `src/system/player.c` `read_login`/`player_client_exit` reject path, `src/system/badip.c` | `crates/ugaris-db/src/character.rs`, `crates/ugaris-server/src/login.rs`, `crates/ugaris-server/src/constants.rs`, `crates/ugaris-server/src/main.rs`, `migrations/0001_core_accounts_characters.sql`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0003_character_snapshots.sql`, `migrations/0004_bad_passwords.sql` | Login status semantics, character target lookup, legacy plaintext subscriber-password comparison against `accounts.password_hash`, current-area update, login session insert, release semantics, guarded backup save, logout save, Rust character JSON snapshot load/save, character item snapshot rows, server-side optional snapshot load/logout-save integration for PostgreSQL, client-facing login rejection (every non-`Ready` `LoginOutcome`/DB error now sends the exact C `player_client_exit` `SV_EXIT` reject text and disconnects instead of spawning a scaffold character), IP-based bad-password rate limiting (`is_badpass_ip`/`add_badpass_ip`, `>3`/60s, `>8`/1h, `>25`/24h windows, backed by a new `bad_passwords` table) constructing `LoginOutcome::TooManyBadPasswords`, and same-account duplicate-online-character detection (`load_char_dup`) constructing `LoginOutcome::Duplicate` are scaffolded/ported. `clean_badpass_ips` confirmed dead code in C (declared, never called) and intentionally not ported. `begin_login_tx`'s full row-decision branching (unknown name, wrong password + bad-password recording, locked character/account, ip-locked, unfixed, not-paid, `allowed_area <= 0`, duplicate-login reject, `account_id == 1` duplicate exemption, `NewArea` routing, success `Ready` + `login_sessions` insert) now has a `DATABASE_URL`-gated live-Postgres test suite (`crates/ugaris-db/src/character.rs::tests::live_login`, 12 tests, `tokio` dev-dependency added to `ugaris-db`) - skips cleanly with no `DATABASE_URL` set, verified against a throwaway local `postgres:16-alpine` Docker container. Live DB migration verification (actually running `migrations/*.sql` against a fresh Postgres, done manually this iteration but not automated), cross-area `NewArea` redirect (`player_to_server`, deferred to the separate "Cross-area transfer" task), a true end-to-end reject test over a real TCP socket, and full legacy binary blob decode/encode remain. |
 | `src/system/database/database_anticheat.h` / `database_anticheat.c` session/event core | `crates/ugaris-db/src/anticheat.rs`, `migrations/0002_sessions_questlog_anticheat.sql` | Session/event schema, typed PostgreSQL repository boundary, session create/character/fingerprint/status/bot-score/counter/end operations, event logging, cleanup, and legacy result/action/risk text mappings ported with tests. Runtime anti-cheat packet integration, live migration verification, player-stat/admin query/signature/IP/hardware tables, and exact legacy MySQL report fan-out remain. |
-| `src/system/player.c` / `src/system/player.h` | `crates/ugaris-net`, `crates/ugaris-core`, `crates/ugaris-server` | Player states, `PAC_*`, command recognition, command payload parsing, login parse, runtime registry, session send channels, scaffold character spawn, direct action setters, action queue, and primitive world action bridge exist; full action execution, map cache/client sync, inventory delta sync, text logging, transfer, anti-cheat integration remain. |
+| `src/system/player.c` / `src/system/player.h` | `crates/ugaris-net`, `crates/ugaris-core`, `crates/ugaris-server` | Player states, `PAC_*`, command recognition, command payload parsing, login parse, runtime registry, session send channels, scaffold character spawn, direct action setters, action queue, and primitive world action bridge exist; full action execution, map cache/client sync, inventory delta sync, text logging, transfer, anti-cheat integration remain. As of iteration 38, the `ClientAction::Nop`/`ClientInfo`/`Log`/`ModPacket` dispatch audit is closed: `cl_nop`/`cl_clientinfo` (true C no-ops) get explicit non-logging match arms in `crates/ugaris-server/src/main.rs`'s per-tick dispatch and `player_actions.rs::apply_player_action`'s immediate dispatch instead of falling through a catch-all; `cl_log` is ported as a `debug!`-logged `charlog`-shaped message via new helper `player_actions::format_client_log_message`; `ModPacket` (`cl_mod1`/`cl_mod3`) is a `debug!`-logged no-op matching C's own "acknowledge for now" handshake stub. |
 | `src/system/tell.h` / `src/system/tell.c`, `/tell` slice from `src/system/command.c` / `src/system/chat/chat.c` | `crates/ugaris-core/src/tell.rs`, `crates/ugaris-server/src/main.rs` | C-compatible ten-slot sent-tell tracking, duplicate suppression, first-empty insertion, received-tell removal, strict one-second timeout expiry, `DRD_TELL_DATA` ID, legacy not-listening feedback text, runtime `/tell <name> <text>` parsing, online character lookup, sender acknowledgement/self-tell feedback, staff-name/staff-code formatting, no-tell and ignore blocking with delayed not-listening feedback, recipient received-tell clearing, and spy fan-out are ported with focused tests. Offline cross-server tell delivery, lookup-in-progress retry semantics, dlog/audit logging, and exact chat-service transport remain. |
 | `src/system/libload.c`, `src/system/drvlib.h`, module driver switch mapping | `DRIVER_PORTING_PLAN.md` | Static Rust driver registry architecture and prioritized character/item driver port order documented. Implementation remains. |
 | `src/module/base.c` `ch_driver` / `ch_died_driver` / `ch_respawn_driver` dispatch boundary, `src/system/libload.h` `CDT_*`, `src/system/drvlib.h` base `CDR_*` IDs | `crates/ugaris-core/src/character_driver.rs` | Legacy dispatch type constants, base `CDR_MACRO`/`CDR_TRADER`/`CDR_JANITOR` IDs, typed character-driver call/outcome shapes, C-compatible handled/unsupported return-code behavior for tick/death/respawn dispatch, and focused tests are scaffolded. Actual macro/trader/janitor behavior, character message queues, driver data storage, and runtime invocation remain. |
@@ -2750,3 +2750,74 @@ Recommended next chest steps:
   after a restock); (4) the incremental per-item task queue
   (`merchant_tasks.c`) itself is intentionally not ported, as explained
   above.
+
+## Ralph Loop - Client Command Audit Completion (Iteration 38)
+
+- Closed the P1 "Client command audit completion" task: `ClientAction::
+  Nop`, `ClientInfo`, `Log`, and `ModPacket` were parsed from the wire
+  (`crates/ugaris-protocol/src/command.rs`) but never explicitly matched
+  anywhere downstream - they silently fell through a catch-all `_ => {}`
+  in both `crates/ugaris-server/src/main.rs`'s per-tick dispatch and
+  `player_actions.rs::apply_player_action`'s immediate dispatch, with
+  only a generic raw-opcode `"action queued for gameplay port"` log line
+  ever touching them.
+- Read the C oracle in full: `cl_nop` (`src/system/player.c:681-683`) is a
+  literal `;` no-op used as a keep-alive filler packet, unlogged in C.
+  `cl_clientinfo` (`player.c:1339-1350`) has its *entire* body commented
+  out - the `client_info` payload (skip/idle counters, sysmem/vidmem,
+  display surfaces) is parsed and discarded, also unlogged in C. Both
+  therefore got explicit non-logging match arms (matching the existing
+  `FightMode` no-op precedent already in the tick-loop match) instead of
+  a log line, since C itself has no log call for either.
+- `cl_log` (`player.c:1218-1226`) forwards the client-supplied message to
+  `charlog` (`src/system/logging/log.c:122-146`), which formats
+  `"<name> (<cn>): <message> [ID=<charID><,IP=a.b.c.d>]"` and writes it
+  via `xlog`. Ported as a new pure helper,
+  `player_actions::format_client_log_message(name, id, message)`,
+  reproducing the `name (id): message [ID=id]` shape and called from a
+  `debug!` trace line in the tick-loop `Log` arm; the optional `,IP=...`
+  suffix is intentionally omitted since `ServerRuntime` doesn't currently
+  track each session's peer address alongside its character (noted as a
+  documented simplification, not silently dropped).
+- `cl_mod1`/`cl_mod3` (`player.c:1421-1504`, `mod_packet.c`) route
+  handshake subtypes `0x01-0x0F` (pong/mod-version/mod-ready) through a
+  blind acknowledge - the C comment literally reads "For now, just
+  acknowledge we received them / Future: track mod version, handle pong
+  responses, etc." - and route anti-cheat subtypes `0x10-0x2F` to
+  `ac_handle_packet`, not yet ported. A `debug!`-logged no-op for
+  `ClientAction::ModPacket { packet_type, subtype, .. }` is therefore a
+  faithful port of the C oracle's own present-day stub, not a Rust-side
+  gap. Checked both the community client and the fuller client repo:
+  neither currently sends any `CL_MOD1` traffic, confirming no live
+  client exercises this path yet.
+- Also updated `player_actions.rs::apply_player_action` (the immediate,
+  synchronous dispatch called from `ServerRuntime::queue_action`) to give
+  all four variants one explicit arm (`Nop | ClientInfo(_) | Log(_) |
+  ModPacket { .. } => {}`) instead of relying on the generic
+  `action_to_queued` fallthrough - behaviorally identical (none of the
+  four ever produced a queued driver action), but no longer silent by
+  omission.
+- Tests: `crates/ugaris-server/src/tests/player_actions.rs` - added
+  `format_client_log_message_matches_legacy_charlog_shape` (pins the
+  exact `charlog`-derived string shape) and
+  `apply_player_action_ignores_nop_client_info_log_and_mod_packet` (all
+  four variants round-trip `apply_player_action` and `action_to_queued`
+  without mutating `PlayerRuntime` or producing a queued action).
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1130
+  core + 27 db + 3 net + 33 protocol + 374 server (372 pre-existing + 2
+  new tests), zero warnings, zero failures. `cargo build -p ugaris-server`
+  clean, zero warnings. Boot-smoke: `target/debug/ugaris-server
+  --bind-addr 127.0.0.1:5557` logged `legacy TCP listener ready`,
+  `loaded area zone map ...`, then `entering Rust game loop` with no
+  panics.
+- Task marked `[x]` in `PORTING_TODO.md`. REMAINING (noted in both the
+  todo entry and the ledger table row above): `CL_MOD2`/`CL_MOD4`/
+  `CL_MOD5` and unknown `CL_MOD1`/`CL_MOD3` subtypes still hard-disconnect
+  the session at the decoder layer (`crates/ugaris-protocol/src/
+  client.rs`) instead of C's "trash the input bytes, keep the connection
+  alive" behavior, and several `CL_MOD1` handshake packet sizes in
+  `mod_packet_size()` don't match the current C `mod_system.h`/
+  `mod_anticheat.h` struct sizes. Neither is observed in practice today
+  (no current client sends these packet types), but both should be fixed
+  as a separate framing-layer task before the mod/anti-cheat protocol is
+  actually driven end to end.
