@@ -188,8 +188,19 @@ impl World {
         if !act_take(character, &mut self.map, item, can_carry) {
             return false;
         }
+        let (x, y, notify) = (
+            character.x,
+            character.y,
+            !character.flags.contains(CharacterFlags::NONOTIFY),
+        );
         remove_item_light(&mut self.map, &before);
         self.mark_item_light_area(&before);
+        // C `act_take` (`act.c:333-335`): `if (!(ch[cn].flags & CF_NONOTIFY))
+        // notify_area(ch[cn].x, ch[cn].y, NT_CHAR, cn, 0, 0);` right after the
+        // item lands on the cursor.
+        if notify {
+            self.notify_area(x, y, NT_CHAR, character_id.0 as i32, 0, 0);
+        }
         true
     }
 
@@ -203,9 +214,21 @@ impl World {
         if !act_drop(character, &mut self.map, item) {
             return false;
         }
+        let (x, y, notify) = (
+            character.x,
+            character.y,
+            !character.flags.contains(CharacterFlags::NONOTIFY),
+        );
         let after = item.clone();
         add_item_light(&mut self.map, item);
         self.mark_item_light_area(&after);
+        // C `act_drop` (`act.c:440-443`): `NT_CHAR` gated on `CF_NONOTIFY`,
+        // followed by an unconditional `NT_ITEM` broadcast for the item that
+        // just landed on the map.
+        if notify {
+            self.notify_area(x, y, NT_CHAR, character_id.0 as i32, 0, 0);
+        }
+        self.notify_area(x, y, NT_ITEM, item_id.0 as i32, 0, 0);
         true
     }
 
@@ -229,7 +252,19 @@ impl World {
         {
             return false;
         }
-        self.transfer_cursor_item(giver_id, receiver_id)
+        if !self.transfer_cursor_item(giver_id, receiver_id) {
+            return false;
+        }
+        // C `act_give` (`act.c:873-875`): `NT_CHAR` gated on `CF_NONOTIFY`,
+        // emitted after `notify_char(co, NT_GIVE, ...)` (already handled by
+        // `transfer_cursor_item`).
+        if let Some(giver) = self.characters.get(&giver_id) {
+            if !giver.flags.contains(CharacterFlags::NONOTIFY) {
+                let (x, y) = (giver.x, giver.y);
+                self.notify_area(x, y, NT_CHAR, giver_id.0 as i32, 0, 0);
+            }
+        }
+        true
     }
 
     pub fn complete_use(
@@ -239,7 +274,15 @@ impl World {
     ) -> Option<ItemUseRequest> {
         let character = self.characters.get_mut(&character_id)?;
         let item = self.items.get(&item_id)?;
-        act_use(character, &self.map, item)
+        let request = act_use(character, &self.map, item)?;
+        // C `act_use` (`act.c:376-379`): `NT_CHAR` gated on `CF_NONOTIFY`,
+        // emitted unconditionally once the target/item validation passes -
+        // even if the deeper item driver later declines the use.
+        if !character.flags.contains(CharacterFlags::NONOTIFY) {
+            let (x, y) = (character.x, character.y);
+            self.notify_area(x, y, NT_CHAR, character_id.0 as i32, 0, 0);
+        }
+        Some(request)
     }
 
     pub(crate) fn map_character_at(&self, x: i32, y: i32) -> Option<CharacterId> {

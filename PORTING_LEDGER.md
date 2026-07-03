@@ -1058,3 +1058,49 @@ Recommended next chest steps:
     `cargo build -p ugaris-server` (zero warnings), and a 10s boot smoke
     (`legacy TCP listener ready`, `loaded area zone map`,
     `entering Rust game loop`, ticks advancing, no panics) all pass.
+
+### Ralph Loop Iteration 13 Additional Progress
+
+- Continued the P0 "NPC sighting messages (`NT_CHAR` emission)" task by
+  wiring the remaining inventory/social `act_*` completions:
+  `World::complete_take`/`complete_drop`/`complete_use`/`complete_give`
+  (`crates/ugaris-core/src/world/actions.rs`) now each emit
+  `notify_area(.., NT_CHAR, ..)` matching their exact C call site -
+  `act_take` (act.c:333-335) and `act_drop` (act.c:440-441) gate on
+  `!CF_NONOTIFY` right after the item moves; `act_drop` additionally fires
+  an *unconditional* `NT_ITEM` (act.c:443) for the dropped item regardless
+  of `CF_NONOTIFY`; `act_use` (act.c:376-379) fires `NT_CHAR` once
+  target/item validation passes, before the deeper item-driver outcome is
+  known (so it still fires even if the eventual `use_item` driver later
+  declines); `act_give` (act.c:871-875) fires `NT_CHAR` from the giver's
+  position after `notify_char(co, NT_GIVE, ...)` (already wired via
+  `transfer_cursor_item`). Added `NT_ITEM` to the `world/mod.rs`
+  `character_driver::` re-export list (only `NT_CHAR`/`NT_GIVE`/etc. were
+  imported before).
+- Tests: `world/tests/actions.rs` gained one notify + one no-notify test per
+  call site (`complete_take_notifies_nearby_characters_with_nt_char`,
+  `complete_take_skips_notify_when_cf_nonotify_set`,
+  `complete_drop_notifies_nt_char_and_unconditional_nt_item`,
+  `complete_use_notifies_nt_char_once_validation_passes`,
+  `complete_use_skips_notify_when_validation_fails`,
+  `complete_give_notifies_nt_char_after_nt_give`,
+  `complete_give_skips_nt_char_when_cf_nonotify_set`). Updated the
+  pre-existing
+  `world/tests/lab2_undead.rs::give_completion_notifies_lab2_undead_receiver`
+  test, which now correctly observes 2 driver messages (`NT_GIVE` then
+  `NT_CHAR`) since the receiver sits inside its own notify box - this is
+  correct C behavior, not a regression.
+- REMAINING (unchanged scope for a future slice): `act_attack`
+  (act.c:792-794) still doesn't emit `NT_CHAR` in Rust
+  (`World::complete_attack_with_rolls_and_clash_roll` in
+  `world/combat.rs`). Every spell-cast `act_*` completion
+  (fireball/ball/earthrain/earthmud/flash/magicshield/bless/warcry/freeze/
+  pulse/heal) still doesn't emit `NT_CHAR`/`NT_SPELL` in Rust
+  (`world/item_outcomes.rs`'s spell-outcome handlers). `act_idle`
+  (`world/regen.rs`) remains intentionally deferred pending the idle-batch
+  granularity fix. The merchant greeting scan migration to consume
+  `NT_CHAR` via `process_merchant_messages` remains optional/undone.
+- Full workspace suite (1063 tests total across all crates, 0 failed),
+  `cargo fmt --all`, `cargo build -p ugaris-server` (zero warnings), and a
+  10s boot smoke (ticks advancing, NPC driver messages processed, no
+  panics) all pass.

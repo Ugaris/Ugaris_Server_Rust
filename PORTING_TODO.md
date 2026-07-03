@@ -399,16 +399,44 @@ order.
     character outside the box gets nothing. Fixed 3 pre-existing tests whose
     "far away" fixtures were inside the corrected 32-tile radius (see
     ledger).
-  - REMAINING: only the walk call site is wired. C's other `act_*`
-    completions (`act_idle`/`act_take`/`act_use`/`act_drop`/`act_attack`/
-    `act_give`/every spell cast) still don't emit `NT_CHAR` in Rust
-    (`world/actions.rs`'s `complete_take`/`complete_use`/`complete_drop`/
-    `complete_give`, and the spell-outcome handlers in
-    `world/item_outcomes.rs`). The `act_idle` equivalent
-    (`world/regen.rs`) is intentionally deferred: Rust's idle regen runs
-    every tick continuously rather than once per C's `act1`-sized batch, so
-    wiring `NT_CHAR` there now would emit far more often than C until that
-    batching gap is closed. Migrating the merchant greeting scan
+  - Rust (iteration 13): wired the remaining inventory/social `act_*`
+    completions in `World::complete_take`/`complete_drop`/`complete_use`/
+    `complete_give` (`crates/ugaris-core/src/world/actions.rs`). Each mirrors
+    its exact C call site: `act_take` (act.c:333-335) and `act_drop`
+    (act.c:440-441) fire `NT_CHAR` gated on `!CF_NONOTIFY` right after the
+    item moves; `act_drop` additionally fires an *unconditional*
+    `NT_ITEM` (act.c:443) for the dropped item regardless of `CF_NONOTIFY`;
+    `act_use` (act.c:376-379) fires `NT_CHAR` once target/item validation
+    passes, before the deeper item-driver outcome is known (so it fires even
+    if the eventual `use_item` driver declines); `act_give` (act.c:871-875)
+    fires `NT_CHAR` from the giver's position after `notify_char(co,
+    NT_GIVE, ...)` (already wired via `transfer_cursor_item`). Added
+    `NT_ITEM` to the `world/mod.rs` re-export list (only `NT_CHAR`/`NT_GIVE`
+    etc. were imported before).
+  - Tests: `world/tests/actions.rs` - one notify + one no-notify
+    (`CF_NONOTIFY` or failed validation) test per call site
+    (`complete_take_notifies_nearby_characters_with_nt_char`,
+    `complete_take_skips_notify_when_cf_nonotify_set`,
+    `complete_drop_notifies_nt_char_and_unconditional_nt_item`,
+    `complete_use_notifies_nt_char_once_validation_passes`,
+    `complete_use_skips_notify_when_validation_fails`,
+    `complete_give_notifies_nt_char_after_nt_give`,
+    `complete_give_skips_nt_char_when_cf_nonotify_set`). Updated the
+    pre-existing `world/tests/lab2_undead.rs::give_completion_notifies_lab2_undead_receiver`
+    test, which now correctly observes 2 driver messages (`NT_GIVE` then
+    `NT_CHAR`) since the receiver sits inside its own notify box - this is
+    correct C behavior, not a regression.
+  - REMAINING: `act_attack` (act.c:792-794) still doesn't emit `NT_CHAR` in
+    Rust (`World::complete_attack_with_rolls_and_clash_roll` in
+    `world/combat.rs`) - not touched this iteration. Every spell cast's
+    `act_*` completion (fireball/ball/earthrain/earthmud/flash/magicshield/
+    bless/warcry/freeze/pulse/heal, all in `act.c` past line 880) still
+    doesn't emit `NT_CHAR`/`NT_SPELL` in Rust (`world/item_outcomes.rs`'s
+    spell-outcome handlers). The `act_idle` equivalent (`world/regen.rs`) is
+    intentionally deferred: Rust's idle regen runs every tick continuously
+    rather than once per C's `act1`-sized batch, so wiring `NT_CHAR` there
+    now would emit far more often than C until that batching gap is closed.
+    Migrating the merchant greeting scan
     (`world/merchant.rs::greet_nearby_players`) to consume `NT_CHAR` via
     `process_merchant_messages` instead of its current per-tick brute-force
     scan is also not done (optional per this item's own wording).

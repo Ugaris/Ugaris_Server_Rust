@@ -93,7 +93,7 @@ use crate::{
         CharacterDriverState, Lab2UndeadDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome,
         CDR_LAB2UNDEAD, CDR_MERCHANT, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT,
         NTID_FDEMON, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR,
-        NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_NPC, NT_SEEHIT, NT_SPELL, NT_TEXT,
+        NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC, NT_SEEHIT, NT_SPELL, NT_TEXT,
     },
     direction::Direction,
     do_action::{

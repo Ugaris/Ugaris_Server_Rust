@@ -310,6 +310,222 @@ fn world_completes_take_and_drop_against_item_storage() {
 }
 
 #[test]
+fn complete_take_notifies_nearby_characters_with_nt_char() {
+    // C `act_take` (act.c:333-335): `if (!(ch[cn].flags & CF_NONOTIFY))
+    // notify_area(ch[cn].x, ch[cn].y, NT_CHAR, cn, 0, 0);` fires right after
+    // the item lands on the taker's cursor.
+    let mut world = World::default();
+    let mut taker = character(1);
+    taker.x = 10;
+    taker.y = 10;
+    taker.dir = Direction::Right as u8;
+    taker.act1 = 7;
+    world.add_character(taker);
+
+    let mut nearby = character(2);
+    nearby.x = 15;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    let mut item = item(7, ItemFlags::USED | ItemFlags::TAKE);
+    assert!(world.map.set_item_map(&mut item, 11, 10));
+    world.add_item(item);
+
+    assert!(world.complete_take(CharacterId(1), ItemId(7), true));
+
+    let nearby = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!(nearby.driver_messages.len(), 1);
+    assert_eq!(nearby.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(nearby.driver_messages[0].dat1, 1);
+}
+
+#[test]
+fn complete_take_skips_notify_when_cf_nonotify_set() {
+    let mut world = World::default();
+    let mut taker = character(1);
+    taker.x = 10;
+    taker.y = 10;
+    taker.dir = Direction::Right as u8;
+    taker.act1 = 7;
+    taker.flags.insert(CharacterFlags::NONOTIFY);
+    world.add_character(taker);
+
+    let mut nearby = character(2);
+    nearby.x = 15;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    let mut item = item(7, ItemFlags::USED | ItemFlags::TAKE);
+    assert!(world.map.set_item_map(&mut item, 11, 10));
+    world.add_item(item);
+
+    assert!(world.complete_take(CharacterId(1), ItemId(7), true));
+    let nearby = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(nearby.driver_messages.is_empty());
+}
+
+#[test]
+fn complete_drop_notifies_nt_char_and_unconditional_nt_item() {
+    // C `act_drop` (act.c:440-443): `NT_CHAR` gated on `CF_NONOTIFY`, then an
+    // unconditional `notify_area(ch[cn].x, ch[cn].y, NT_ITEM, in, 0, 0);`.
+    let mut world = World::default();
+    let mut dropper = character(1);
+    dropper.x = 10;
+    dropper.y = 10;
+    dropper.dir = Direction::Right as u8;
+    dropper.act1 = 7;
+    dropper.cursor_item = Some(ItemId(7));
+    dropper.flags.insert(CharacterFlags::NONOTIFY);
+    world.add_character(dropper);
+
+    let mut nearby = character(2);
+    nearby.x = 15;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    world.add_item(item(7, ItemFlags::USED | ItemFlags::TAKE));
+
+    assert!(world.complete_drop(CharacterId(1), ItemId(7)));
+
+    let nearby = world.characters.get(&CharacterId(2)).unwrap();
+    // NT_CHAR was suppressed by CF_NONOTIFY, but NT_ITEM always fires.
+    assert_eq!(nearby.driver_messages.len(), 1);
+    assert_eq!(nearby.driver_messages[0].message_type, NT_ITEM);
+    assert_eq!(nearby.driver_messages[0].dat1, 7);
+}
+
+#[test]
+fn complete_use_notifies_nt_char_once_validation_passes() {
+    // C `act_use` (act.c:376-379): notify fires once target/item validation
+    // passes, before the actual `use_item` outcome is known.
+    let mut world = World::default();
+    let mut user = character(1);
+    user.x = 10;
+    user.y = 10;
+    user.dir = Direction::Right as u8;
+    user.act1 = 7;
+    world.add_character(user);
+
+    let mut nearby = character(2);
+    nearby.x = 15;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    let mut item = item(7, ItemFlags::USED | ItemFlags::USE);
+    assert!(world.map.set_item_map(&mut item, 11, 10));
+    world.add_item(item);
+
+    assert!(world.complete_use(CharacterId(1), ItemId(7)).is_some());
+
+    let nearby = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!(nearby.driver_messages.len(), 1);
+    assert_eq!(nearby.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(nearby.driver_messages[0].dat1, 1);
+}
+
+#[test]
+fn complete_use_skips_notify_when_validation_fails() {
+    let mut world = World::default();
+    let mut user = character(1);
+    user.x = 10;
+    user.y = 10;
+    user.dir = Direction::Right as u8;
+    // act1 does not match the item id, so `act_use` returns `None`.
+    user.act1 = 99;
+    world.add_character(user);
+
+    let mut nearby = character(2);
+    nearby.x = 15;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    let mut item = item(7, ItemFlags::USED | ItemFlags::USE);
+    assert!(world.map.set_item_map(&mut item, 11, 10));
+    world.add_item(item);
+
+    assert!(world.complete_use(CharacterId(1), ItemId(7)).is_none());
+    let nearby = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(nearby.driver_messages.is_empty());
+}
+
+#[test]
+fn complete_give_notifies_nt_char_after_nt_give() {
+    // C `act_give` (act.c:871-875): `notify_char(co, NT_GIVE, cn, in, 0);`
+    // fires first (already handled by `transfer_cursor_item`), then
+    // `NT_CHAR` broadcasts to the area gated on `CF_NONOTIFY`.
+    let mut world = World::default();
+    let mut giver = character(1);
+    giver.x = 10;
+    giver.y = 10;
+    giver.dir = Direction::Right as u8;
+    giver.cursor_item = Some(ItemId(7));
+    world.add_character(giver);
+
+    let mut receiver = character(2);
+    receiver.flags.insert(CharacterFlags::PLAYER);
+    receiver.x = 11;
+    receiver.y = 10;
+    world.add_character(receiver);
+    world.map.tile_mut(11, 10).unwrap().character = 2;
+
+    let mut nearby = character(3);
+    nearby.x = 15;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    let mut item = item(7, ItemFlags::USED | ItemFlags::TAKE);
+    item.carried_by = Some(CharacterId(1));
+    world.add_item(item);
+
+    assert!(world.complete_give(CharacterId(1), CharacterId(2)));
+
+    // The receiver is inside the notify box too, so it gets both NT_GIVE
+    // (from `transfer_cursor_item`) and the area-wide NT_CHAR.
+    let receiver = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!(receiver.driver_messages.len(), 2);
+    assert_eq!(receiver.driver_messages[0].message_type, NT_GIVE);
+    assert_eq!(receiver.driver_messages[1].message_type, NT_CHAR);
+
+    let nearby = world.characters.get(&CharacterId(3)).unwrap();
+    assert_eq!(nearby.driver_messages.len(), 1);
+    assert_eq!(nearby.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(nearby.driver_messages[0].dat1, 1);
+}
+
+#[test]
+fn complete_give_skips_nt_char_when_cf_nonotify_set() {
+    let mut world = World::default();
+    let mut giver = character(1);
+    giver.x = 10;
+    giver.y = 10;
+    giver.dir = Direction::Right as u8;
+    giver.cursor_item = Some(ItemId(7));
+    giver.flags.insert(CharacterFlags::NONOTIFY);
+    world.add_character(giver);
+
+    let mut receiver = character(2);
+    receiver.flags.insert(CharacterFlags::PLAYER);
+    receiver.x = 11;
+    receiver.y = 10;
+    world.add_character(receiver);
+    world.map.tile_mut(11, 10).unwrap().character = 2;
+
+    let mut nearby = character(3);
+    nearby.x = 15;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    let mut item = item(7, ItemFlags::USED | ItemFlags::TAKE);
+    item.carried_by = Some(CharacterId(1));
+    world.add_item(item);
+
+    assert!(world.complete_give(CharacterId(1), CharacterId(2)));
+
+    let nearby = world.characters.get(&CharacterId(3)).unwrap();
+    assert!(nearby.driver_messages.is_empty());
+}
+
+#[test]
 fn world_applies_player_walkdir_setup_or_falls_back_to_idle() {
     let mut world = World::default();
     let mut character = character(1);

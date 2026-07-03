@@ -22,9 +22,14 @@ fn give_completion_notifies_lab2_undead_receiver() {
 
     let undead = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(undead.cursor_item, Some(ItemId(9)));
-    assert_eq!(undead.driver_messages.len(), 1);
+    // C `act_give` (act.c:871-875): `notify_char(co, NT_GIVE, ...)` fires
+    // first, then the area-wide `NT_CHAR` (the receiver is inside its own
+    // notify box, same as the giver in `complete_walk`).
+    assert_eq!(undead.driver_messages.len(), 2);
     assert_eq!(undead.driver_messages[0].message_type, NT_GIVE);
     assert_eq!(undead.driver_messages[0].dat1, 1);
+    assert_eq!(undead.driver_messages[1].message_type, NT_CHAR);
+    assert_eq!(undead.driver_messages[1].dat1, 1);
 }
 
 #[test]
