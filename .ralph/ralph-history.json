@@ -758,15 +758,43 @@
         "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 24,
+      "startedAt": "2026-07-03T18:07:10.244Z",
+      "endedAt": "2026-07-03T18:14:42.301Z",
+      "durationMs": 451547,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All green, no warnings/failures. This change doesn't touch runtime loop/login/protocol structurally (only internal exp routing), but let's do a quick boot smoke test to be safe since it's in main.rs.",
+        "All green: 1105+9+3+33+342 = 1492 tests pass, zero failures, build clean. Let's commit this iteration's work.",
+        "5. **Verified**: `cargo fmt --all`, `cargo test --workspace` (1492 tests, 0 failures), `cargo build -p ugaris-server` (zero warnings), and a 10-second boot-smoke all passed cleanly.",
+        "test result: ok. 342 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E 'warning|error|FAILED|test result'",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test result: ok. 1105 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
+      ]
     }
   ],
-  "totalDurationMs": 25727943,
+  "totalDurationMs": 26179490,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
@@ -775,10 +803,10 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 12,
-      "test error::tests::error_constants_match_legacy_header ... ok": 5,
-      "test error::tests::error_strings_match_legacy_table ... ok": 4,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 3,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 13,
+      "test error::tests::error_constants_match_legacy_header ... ok": 6,
+      "test error::tests::error_strings_match_legacy_table ... ok": 5,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 4,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 1,
@@ -885,7 +913,11 @@
       "All checks pass: `cargo fmt --all` clean, `cargo test --workspace` (1492 tests, 0 failures), `cargo ": 1,
       "test result: ok. 341 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 4 previous errors": 1,
-      "test result: ok. 1105 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 1105 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 2,
+      "All green, no warnings/failures. This change doesn't touch runtime loop/login/protocol structurally ": 1,
+      "All green: 1105+9+3+33+342 = 1492 tests pass, zero failures, build clean. Let's commit this iteratio": 1,
+      "5. **Verified**: `cargo fmt --all`, `cargo test --workspace` (1492 tests, 0 failures), `cargo build ": 1,
+      "test result: ok. 342 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
