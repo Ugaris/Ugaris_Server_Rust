@@ -13,6 +13,7 @@ mod item_apply;
 mod keyring;
 mod login;
 mod map_sync;
+mod merchants;
 mod player_actions;
 mod server_misc;
 mod snapshots;

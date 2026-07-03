@@ -162,6 +162,87 @@ pub(crate) fn apply_merchant_container_command(
     result
 }
 
+pub(crate) struct FastSellResult {
+    pub messages: Vec<String>,
+    /// Set whenever the cursor/slot swap happened, even if the merchant
+    /// sale itself didn't go through (matches C: `swap()` already moved the
+    /// item before the quest/no-merchant checks run).
+    pub inventory_changed: bool,
+    /// Set only when the item was actually sold, so the merchant store
+    /// view (prices, wares) is refreshed too.
+    pub sold: bool,
+}
+
+/// C `cl_fastsell` (`src/system/player.c:877`): quick-sell an inventory slot
+/// straight to the active merchant. Mirrors the C flow: `swap(cn, pos)`
+/// picks the slot item up onto the cursor (swapping back whatever was
+/// already held), `check_merchant` re-validates the open store, then a
+/// quest-item guard blocks the shortcut before reusing `player_store`'s sell
+/// path (`merchant_store_sell`).
+///
+/// REMAINING (scoped out for this task): C also falls through to
+/// `check_container_item` + `player_depot`/`account_depot_store`/
+/// `container` when no merchant is open (`ch[cn].con_in` branch). The
+/// per-character legacy depot (`DRD_DEPOT_PPD`) isn't ported yet, so this
+/// only implements the merchant branch; fast-selling into an open item
+/// container or account depot from an inventory slot is not wired.
+pub(crate) fn apply_fast_sell(
+    world: &mut World,
+    character_id: CharacterId,
+    slot: usize,
+) -> FastSellResult {
+    let mut result = FastSellResult {
+        messages: Vec::new(),
+        inventory_changed: false,
+        sold: false,
+    };
+    if !can_use_inventory_slot(slot) {
+        return result;
+    }
+
+    // C: `if (!swap(cn, pos)) return;` then `if (!(in = ch[cn].citem)) return;`
+    if inventory_swap_slot(world, character_id, slot) == InventoryCommandResult::Ignored {
+        return result;
+    }
+    result.inventory_changed = true;
+    let Some(cursor_id) = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.cursor_item)
+    else {
+        return result;
+    };
+
+    // C: `if (ch[cn].merchant) check_merchant(cn);`
+    world.check_merchant(character_id);
+    let Some(merchant_id) = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.merchant)
+    else {
+        return result;
+    };
+
+    if world
+        .items
+        .get(&cursor_id)
+        .is_some_and(|item| item.flags.contains(ItemFlags::QUEST))
+    {
+        result.messages.push(
+            "You cannot quick-sell quest items (hold down SHIFT and LEFT-CLICK on the merchant's windows to go ahead)."
+                .to_string(),
+        );
+        return result;
+    }
+
+    if let MerchantTradeResult::Traded(price) = world.merchant_store_sell(merchant_id, character_id)
+    {
+        result.messages.push(legacy_price_text("Sold", price));
+        result.sold = true;
+    }
+    result
+}
+
 /// C `store_citem`: move the just-bought cursor item into the first free
 /// carried inventory slot.
 fn store_cursor_in_inventory(world: &mut World, character_id: CharacterId) {

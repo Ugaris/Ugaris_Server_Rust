@@ -340,11 +340,38 @@ order.
     `packet.rs` (`ping_echoes_opaque_value_unmodified_like_c_cl_ping`).
   - REMAINING: nothing - task fully done as scoped.
 
-- [ ] **Fast sell (`CL_FASTSELL`)** - C `cl_fastsell` sells an inventory
+- [x] **Fast sell (`CL_FASTSELL`)** - C `cl_fastsell` sells an inventory
   slot directly to the active merchant (`player_store`-adjacent path).
   Extend `crates/ugaris-server/src/merchants.rs`; reuse
   `merchant_store_sell` semantics but from an inventory slot. Tests in
   `tests/commands_chat.rs`... no - `tests/merchants.rs` (create it).
+  - C: `cl_fastsell` (`src/system/player.c:877`) calls `swap(cn, pos)` to
+    pick the slot item up onto the cursor (swapping back whatever was
+    already held - so with an empty slot and a held item, the held item
+    lands in the slot and the sell attempt becomes a no-op), then
+    `check_merchant(cn)`, then blocks quest items with a hold-SHIFT
+    message before calling `player_store(cn, 0, 1, 0)`
+    (`src/module/merchants/store.c:325` `buy()`, already ported as
+    `World::merchant_store_sell`).
+  - Rust: added `apply_fast_sell` in `crates/ugaris-server/src/merchants.rs`
+    reusing `inventory_swap_slot` (existing simplified `swap`) +
+    `World::check_merchant` + `World::merchant_store_sell`; wired
+    `ClientAction::FastSell { slot }` in `crates/ugaris-server/src/main.rs`
+    to refresh inventory whenever the swap ran and the merchant store view
+    only when a sale actually happened (mirrors C sending `SV_SETITEM`-ish
+    inventory updates regardless, but store repaint only on a real trade).
+  - Tests: `tests/merchants.rs` (new file) - sells to an open merchant with
+    the C `buyprice` formula, swaps back into an empty slot when nothing
+    sells, blocks quest items with the exact C message while leaving the
+    item on the cursor, rejects the equip/spell slot range, and no-ops
+    without an active merchant.
+  - REMAINING: C also falls through to `check_container_item` +
+    `player_depot`/`account_depot_store`/`container` when no merchant is
+    open (the `ch[cn].con_in` branch). The per-character legacy depot
+    (`DRD_DEPOT_PPD`/`MAXDEPOT`, `src/system/depot.c`) isn't ported at all
+    yet (only the account-wide depot exists), and fast-selling into an
+    open item container or account depot from an inventory slot is not
+    wired either - only the merchant branch is implemented.
 
 - [ ] **NPC sighting messages (`NT_CHAR` emission)** - NPCs only "see"
   players through ad-hoc scans (merchant greeting, simple-baddy attack

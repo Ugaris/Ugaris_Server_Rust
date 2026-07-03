@@ -1272,6 +1272,21 @@ async fn main() -> anyhow::Result<()> {
                                 AccountDepotCommandResult::Ignored => {}
                             }
                         }
+                        ClientAction::FastSell { slot } => {
+                            // C `cl_fastsell`: quick-sell an inventory slot
+                            // straight to the active merchant.
+                            let result =
+                                apply_fast_sell(&mut world, character_id, usize::from(slot));
+                            for message in result.messages {
+                                command_feedback.push((character_id, message));
+                            }
+                            if result.inventory_changed {
+                                command_inventory_refresh.push(character_id);
+                            }
+                            if result.sold {
+                                command_container_refresh.push(character_id);
+                            }
+                        }
                         ClientAction::Swap { .. }
                         | ClientAction::UseInventory { .. }
                         | ClientAction::LookInventory { .. }
