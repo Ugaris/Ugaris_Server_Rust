@@ -1051,11 +1051,30 @@ suggestion; dependencies are noted.
     away, so some actions will now (harmlessly) double-send an inventory
     snapshot in the same tick.
 
-- [ ] **Serial validation everywhere** - C guards every queued action with
+- [x] **Serial validation everywhere** - C guards every queued action with
   `ch[co].serial != act2 -> abort`. Rust stores serials but
   `apply_player_action_setup` checks them only for kill/fireball/ball.
   Audit `PAC_*` setups against C `player_driver.c` switch and add the
   missing serial guards. Tests: stale-serial targets abort to idle.
+  Progress Log: audited `player_driver.c` in full - only the `PAC_KILL`
+  pre-switch guard and `fireball_driver`/`ball_driver` (behind
+  `PAC_FIREBALL2`/`PAC_BALL2`) ever validate the captured serial; take/
+  drop/use/give/bless/heal capture `ch[in].serial`/`ch[co].serial` into
+  `act2` but never check it (confirmed dead capture, not ported as a
+  check). Added the missing `PAC_KILL` serial guard in
+  `World::apply_player_action_setup` (`crates/ugaris-core/src/world/
+  actions.rs`). Found and fixed the real gap: `crates/ugaris-server/src/
+  player_actions.rs::apply_player_action` (the live client-command path)
+  hardcoded serial `0` for Kill/Give/CharacterSpell/character-targeted
+  MapSpell instead of capturing `ch[co].serial` at receive time like C's
+  `cl_kill`/`cl_give`/`player_driver_charspell`, so the world-layer
+  fireball/ball character-serial checks were previously always
+  short-circuited by the `0` no-check sentinel in real gameplay. Wired a
+  `character_serial` lookup and added explicit `Kill`/`Give` match arms;
+  threaded `&World::characters` through `ServerRuntime::queue_action` from
+  `crates/ugaris-server/src/main.rs`. Added tests for the stale/matching
+  `PAC_KILL` guard and for live serial capture on
+  Kill/Give/CharacterSpell/character-targeted MapSpell.
 
 - [ ] **Logout/exit flow** - C `cl_exit`/lostcon: linger timer
   (`CDR_LOSTCON` drives the body for `lagout_time`), save, despawn. Rust
@@ -1500,3 +1519,20 @@ Add one line per completed task: date, task, ledger section touched.
   exactly `item_decay_time` ticks; `IF_NODECAY` items never armed);
   ledger section "Ralph Loop - Ground Item Decay". Boot-smoked
   (game loop ticking, no panics).
+- 2026-07-03: Serial validation everywhere (P1, iteration 32) - audited
+  `player_driver.c` and ported the missing `PAC_KILL` pre-switch serial
+  guard into `World::apply_player_action_setup`
+  (`crates/ugaris-core/src/world/actions.rs`); found and fixed the actual
+  live-traffic gap in `crates/ugaris-server/src/player_actions.rs::
+  apply_player_action`, which hardcoded serial `0` for Kill/Give/
+  CharacterSpell/character-targeted MapSpell instead of capturing
+  `ch[co].serial` like C's `cl_kill`/`cl_give`/`player_driver_charspell`,
+  silently defeating the existing fireball/ball character-serial checks
+  in real gameplay; threaded `&World::characters` through
+  `ServerRuntime::queue_action` (`crates/ugaris-server/src/main.rs`).
+  7 new tests (2 core stale/matching-serial Kill tests, 5 server live-
+  capture tests); fixed a pre-existing test (`setup_world_actions_
+  promotes_deferred_legacy_player_fightback`) that used a mismatched
+  mock serial the new guard now correctly rejects; ledger section
+  "Ralph Loop - Serial Validation Everywhere". Boot-smoked (game loop
+  ticking, no panics).

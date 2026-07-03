@@ -398,10 +398,16 @@ impl ServerRuntime {
         self.next_character_id = next_character_id.max(1);
     }
 
-    fn queue_action(&mut self, session_id: u64, action: ClientAction, current_tick: u64) {
+    fn queue_action(
+        &mut self,
+        session_id: u64,
+        action: ClientAction,
+        current_tick: u64,
+        characters: &HashMap<CharacterId, Character>,
+    ) {
         if let Some(player) = self.players.get_mut(&session_id) {
             player.last_command_tick = current_tick;
-            apply_player_action(player, &action, current_tick);
+            apply_player_action(player, &action, current_tick, characters);
         }
         self.action_queue.push_back((session_id, action));
     }
@@ -5449,7 +5455,7 @@ async fn main() -> anyhow::Result<()> {
                         info!(%id, name = %login.name, client_version = ?login.client_version, payload_count, "login accepted by compatibility scaffold");
                     }
                     SessionEvent::Action { id, command_kind, action } => {
-                        runtime.queue_action(id.0, action, world.tick.0);
+                        runtime.queue_action(id.0, action, world.tick.0, &world.characters);
                         info!(%id, command = command_kind, "action queued for gameplay port");
                     }
                     SessionEvent::Disconnected { id } => {

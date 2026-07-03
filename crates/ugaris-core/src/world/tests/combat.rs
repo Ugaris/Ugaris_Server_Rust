@@ -109,6 +109,63 @@ fn world_blocks_player_kill_setup_without_pk_hate_entry() {
 }
 
 #[test]
+fn world_kill_setup_aborts_to_idle_when_target_serial_is_stale() {
+    let mut world = World::default();
+    let mut attacker = character(1);
+    attacker.x = 10;
+    attacker.y = 10;
+    let mut target = character(2);
+    target.x = 11;
+    target.y = 10;
+    world.map.tile_mut(11, 10).unwrap().character = 2;
+    world.add_character(attacker);
+    world.add_character(target);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+    // C `player_driver.c`'s pre-switch `PAC_KILL` guard: the serial
+    // captured by `cl_kill` (`ch[co].serial`, here 2 from `character(2)`)
+    // no longer matches the live character, so the whole attack aborts to
+    // idle before any attack-driver/attack-policy checks run.
+    player.action = QueuedAction {
+        action: PlayerActionCode::Kill,
+        arg1: 2,
+        arg2: 999,
+    };
+
+    assert!(world.apply_player_action_setup(&mut player, 2));
+
+    let attacker = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(attacker.action, action::IDLE);
+    assert_eq!(player.action.action, PlayerActionCode::Idle);
+}
+
+#[test]
+fn world_kill_setup_proceeds_when_target_serial_matches() {
+    let mut world = World::default();
+    let mut attacker = character(1);
+    attacker.x = 10;
+    attacker.y = 10;
+    let mut target = character(2);
+    target.x = 11;
+    target.y = 10;
+    world.map.tile_mut(11, 10).unwrap().character = 2;
+    world.add_character(attacker);
+    world.add_character(target);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+    player.action = QueuedAction {
+        action: PlayerActionCode::Kill,
+        arg1: 2,
+        arg2: 2,
+    };
+
+    assert!(world.apply_player_action_setup(&mut player, 2));
+
+    let attacker = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(attacker.action, action::ATTACK1);
+}
+
+#[test]
 fn world_removes_stale_pk_hate_when_pvp_level_check_fails() {
     let mut world = World::default();
     let mut attacker = character(1);

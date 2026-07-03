@@ -568,6 +568,7 @@ fn setup_world_actions_promotes_deferred_legacy_player_fightback() {
     attacker.flags.remove(CharacterFlags::PLAYER);
     attacker.x = 11;
     attacker.y = 10;
+    attacker.serial = 99;
     world.map.tile_mut(10, 10).unwrap().character = 1;
     world.map.tile_mut(11, 10).unwrap().character = 2;
     world.add_character(target);

@@ -12,6 +12,116 @@ fn character_fireball_command_queues_character_target_action() {
     assert_eq!((queued.arg1, queued.arg2), (42, 0));
 }
 
+/// C `cl_kill`/`cl_give`/`player_driver_charspell` all capture
+/// `ch[co].serial` synchronously while parsing the client packet. Live
+/// dispatch (`apply_player_action`, unlike the pure `action_to_queued`
+/// helper) must do the same lookup against the current world state instead
+/// of leaving the serial at the `0` no-check sentinel.
+#[test]
+fn apply_player_action_kill_captures_live_target_serial() {
+    let mut world = World::default();
+    let target = login_character(CharacterId(2), &login_block("Target"), 1, 11, 10);
+    world.add_character(target);
+
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+    apply_player_action(
+        &mut player,
+        &ClientAction::Kill { character: 2 },
+        0,
+        &world.characters,
+    );
+
+    assert_eq!(player.action.action, PlayerActionCode::Kill);
+    assert_eq!((player.action.arg1, player.action.arg2), (2, 2));
+}
+
+#[test]
+fn apply_player_action_kill_of_unknown_character_captures_zero_serial() {
+    let world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+    apply_player_action(
+        &mut player,
+        &ClientAction::Kill { character: 99 },
+        0,
+        &world.characters,
+    );
+
+    assert_eq!(player.action.action, PlayerActionCode::Kill);
+    assert_eq!((player.action.arg1, player.action.arg2), (99, 0));
+}
+
+#[test]
+fn apply_player_action_give_captures_live_target_serial() {
+    let mut world = World::default();
+    let target = login_character(CharacterId(2), &login_block("Target"), 1, 11, 10);
+    world.add_character(target);
+
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+    apply_player_action(
+        &mut player,
+        &ClientAction::Give { character: 2 },
+        0,
+        &world.characters,
+    );
+
+    assert_eq!(player.action.action, PlayerActionCode::Give);
+    assert_eq!((player.action.arg1, player.action.arg2), (2, 2));
+}
+
+#[test]
+fn apply_player_action_character_spell_captures_live_target_serial() {
+    // Live traffic only produces `ClientAction::CharacterSpell` for
+    // CL_BLESS/CL_HEAL (`crates/ugaris-protocol/src/command.rs`); both map
+    // to a character-only `PlayerActionCode` regardless of the
+    // `character_target` flag, so bless is the representative case here.
+    let mut world = World::default();
+    let target = login_character(CharacterId(2), &login_block("Target"), 1, 11, 10);
+    world.add_character(target);
+
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+    apply_player_action(
+        &mut player,
+        &ClientAction::CharacterSpell {
+            spell: SpellAction::Bless,
+            character: 2,
+        },
+        0,
+        &world.characters,
+    );
+
+    assert_eq!(player.queue.len(), 1);
+    assert_eq!(player.queue[0].action, PlayerActionCode::Bless);
+    assert_eq!((player.queue[0].arg1, player.queue[0].arg2), (2, 2));
+}
+
+#[test]
+fn apply_player_action_map_spell_character_target_captures_live_serial() {
+    let mut world = World::default();
+    let target = login_character(CharacterId(2), &login_block("Target"), 1, 11, 10);
+    world.add_character(target);
+
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+    apply_player_action(
+        &mut player,
+        &ClientAction::MapSpell {
+            spell: SpellAction::Ball,
+            x: 0,
+            y: 2,
+        },
+        0,
+        &world.characters,
+    );
+
+    assert_eq!(player.queue.len(), 1);
+    assert_eq!(player.queue[0].action, PlayerActionCode::BallCharacter);
+    assert_eq!((player.queue[0].arg1, player.queue[0].arg2), (2, 2));
+}
+
 #[test]
 fn warp_trial_door_spawn_helper_instantiates_fighter_at_room_center() {
     let mut world = World::default();

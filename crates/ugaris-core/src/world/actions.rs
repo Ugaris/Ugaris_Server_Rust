@@ -515,6 +515,16 @@ impl World {
                 let Some(target) = self.characters.get(&target_id) else {
                     return self.set_player_idle(player, character_id);
                 };
+                // C `player_driver.c` pre-switch guard: `if
+                // (ch[player[nr]->act1].serial != player[nr]->act2)
+                // player[nr]->action = PAC_IDLE;` catches a target character
+                // slot reused since `cl_kill` captured `ch[co].serial`. `0`
+                // is the no-check sentinel (matches the fireball/ball
+                // character-target convention below).
+                let target_serial = player.action.arg2 as u32;
+                if target_serial != 0 && target.serial != target_serial {
+                    return self.set_player_idle(player, character_id);
+                }
                 let target_x = usize::from(target.x);
                 let target_y = usize::from(target.y);
                 let Some(attacker) = self.characters.get(&character_id) else {

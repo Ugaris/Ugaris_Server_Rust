@@ -90,7 +90,7 @@ Remaining oversized files worth splitting during future work:
 | `src/system/area.c` randomized `area_sound` ambient effects | `crates/ugaris-core/src/area_sound.rs`, `crates/ugaris-server/src/main.rs` | Wet dungeon, dry dungeon, woods, park, and underwater section-to-sound roll tables ported, including legacy `player_special` option math and server `SV_SPECIAL` packet emission after successful player-driver action completions, with focused core/server tests. Exact call cadence/RNG parity and remaining sound call-site wiring remain. |
 | `src/system/player.c` login block and initial client sync scaffold | `crates/ugaris-protocol/src/login.rs`, `crates/ugaris-net/src/session.rs`, `crates/ugaris-server/src/main.rs` | Login block size, endian layout, vendor protocol version, password obfuscation, runtime character-id assignment, scaffolded in-world player spawn/despawn, temporary `new_warrior_m` player-template instantiation with starter equipment/items, optional PostgreSQL `begin_login`/snapshot load when `DATABASE_URL` is configured, DB snapshot PPD decode into player runtime, logout snapshot save with carried items and re-encoded legacy PPD blob, runtime login/bootstrap response (`SV_LOGINDONE`, `SV_TICKER`, `SV_MIRROR`, `SV_PROTOCOL`, `SV_ORIGIN`, full visible diamond `SV_MAP11`, visible character `SV_MAP10`, visible character identity `SV_NAME`, `SV_SETVAL*`, resources, exp, gold, cursor item, initial equipment/inventory `SV_SETITEM`, `SV_TEXT`), C-mapped `SV_SCROLL_*` plus origin, character clear/update, newly visible diamond fringe tile/character/name packets for one-tile walk completions, per-session visible-diamond cache initialized at login/refresh, same-origin non-walk map diff packets for changed tile/character cells, and cached visible-character `SV_NAME` identity packets for newly seen or renamed characters ported with tests. Server smoke-tested listening without DB. Password hash verification, robust login rejection/client error flow, character selection beyond direct name lookup, true inventory delta cache, character color/clan/PK identity fields, visibility/light cache parity, and full player state machine still partial. |
 | `src/module/book.c` / `src/module/book.h` `IDR_BOOK` text driver | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-server/src/main.rs` | Book driver dispatch, zero-character no-op boundary, C `BOOK_*`/`SIGN_*` text cases, raw color marker preservation, character-specific demon ritual words via the legacy `id_rand`/`demonspeak` formula, Earth Demon sign readability gates using Ancient Knowledge, random Book Nook joke selection, earth-demon diary `player_special` effects, runtime `SV_TEXT`/`SV_SPECIAL` emission, and C-compatible item-driver return code behavior ported with focused tests. Exact global RNG parity for joke selection remains. |
-| `src/system/player_driver.h` / `src/system/player_driver.c` action setters and primitive runtime bridge, `src/system/area.c` look-section/walk-section slices | `crates/ugaris-core/src/player.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-core/src/area_section.rs`, `crates/ugaris-server/src/main.rs` | `player_driver_stop`, `halt`, direct action setters, serial-preserving item/character actions, teleport, spell queue insertion/last-slot overwrite behavior, server-side use of driver setters for direct/spell client actions, and primitive tick-loop setup/completion for idle, walk-dir including diagonal wall-slide fallback, `PAC_MOVE`, adjacent/path-to-item take, adjacent/path-to-target drop, adjacent/path-to-item use including front-wall pathing, `PAC_TELEPORT` as facing item-use with legacy `spec = teleport + 1`, immediate `PAC_LOOK_MAP` turn/LOS/request handling plus server `SV_TEXT` feedback for hidden targets, C `show_section` section-name/level difficulty text for all non-empty legacy area-sector tables, coordinate fallback, and rest/clan/arena/peace flags, C `walk_section_msg` per-player section tracking with dark-gray `Now entering`/`Now leaving` feedback after successful walks, `PAC_GIVE` adjacent/path-to-recipient setup plus `AC_GIVE` cursor-item transfer, and `PAC_KILL` adjacent/path-to-target setup plus timed attack completion ported with tests. Queued spell priority execution, actual item use effects beyond potion, full combat/death/fightback side effects, serial validation, wall-use/door interaction during movement, music/special sounds for section changes, and action error side effects remain. |
+| `src/system/player_driver.h` / `src/system/player_driver.c` action setters and primitive runtime bridge, `src/system/area.c` look-section/walk-section slices | `crates/ugaris-core/src/player.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-core/src/area_section.rs`, `crates/ugaris-server/src/main.rs` | `player_driver_stop`, `halt`, direct action setters, serial-preserving item/character actions, teleport, spell queue insertion/last-slot overwrite behavior, server-side use of driver setters for direct/spell client actions, and primitive tick-loop setup/completion for idle, walk-dir including diagonal wall-slide fallback, `PAC_MOVE`, adjacent/path-to-item take, adjacent/path-to-target drop, adjacent/path-to-item use including front-wall pathing, `PAC_TELEPORT` as facing item-use with legacy `spec = teleport + 1`, immediate `PAC_LOOK_MAP` turn/LOS/request handling plus server `SV_TEXT` feedback for hidden targets, C `show_section` section-name/level difficulty text for all non-empty legacy area-sector tables, coordinate fallback, and rest/clan/arena/peace flags, C `walk_section_msg` per-player section tracking with dark-gray `Now entering`/`Now leaving` feedback after successful walks, `PAC_GIVE` adjacent/path-to-recipient setup plus `AC_GIVE` cursor-item transfer, and `PAC_KILL` adjacent/path-to-target setup plus timed attack completion, and the `PAC_KILL` pre-switch stale-target-serial guard (C's `ch[player[nr]->act1].serial != player[nr]->act2` check) plus live-traffic serial capture for Kill/Give/character-targeted spells (see "Ralph Loop - Serial Validation Everywhere" below) ported with tests. Queued spell priority execution, actual item use effects beyond potion, full combat/death/fightback side effects, wall-use/door interaction during movement, music/special sounds for section changes, and action error side effects remain. |
 | Zone template/map parser scaffolding from `src/system/create.c` / `src/system/map.c` | `crates/ugaris-core/src/zone.rs` | Legacy token parsing, `.itm`/`.chr` template record parsing including item `ID`, `.map` directive parsing with origin offsets, live item template ID retention, and tiny sample application into `World` ported with tests. Production zone validation, startup integration, full character template fields, item-driver creation side effects, and respawn/random-loot behavior remain. |
 | `src/system/death.c` `kill_char`/`die_char`/`god_save_char`/`respawn_callback`/`kill_score_level`/`death_loss`/`drop_grave` core, `src/system/respawn.c` boundary | `crates/ugaris-core/src/world/death.rs`, `crates/ugaris-core/src/world/hurt.rs`, `crates/ugaris-core/src/attack.rs`, `crates/ugaris-server/src/spawns.rs`, `crates/ugaris-server/src/main.rs` | `apply_legacy_hurt` now ports the C `hurt()` fatal-blow decision point for player `saves`: a non-PK death with `saves > 0` calls `World::god_save_character` (decrement+cap saves, `got_saved++`, hp reset, poison/burn removal, Ishtar feedback text, same-area rest transfer) instead of the normal kill path, exactly like C calling `god_save_char` before `kill_char` ever runs. Lethal hurt otherwise runs the C `kill_char` follow-up: death-driver dispatch and NT_DEAD fan-out (already ported) plus respawn-timer registration keyed by template/spawn tile, killer kill-score experience with the exact C level-taper table, hardcore kill bonus, LAG caps, queued server-side `give_exp` routing through runtime EXP modifiers, and the timed `AC_DIE` action (duration 12, act1 = killer, act2 = ispk). `AC_DIE` completion ports `die_char`: map/effect removal, C body rules (`CF_NOBODY` given-item drops, `CF_ITEMDEATH` slot-30 drop, `dead_body` items with the legacy sprite formula/description/player color drdata), extended-drop grave placement, body decay expire timers via a generic `expire_item` timer, loot containers as `contained_in` items (inventory + cursor + gold money item with the C sprite ladder; worn equipment kept except two shuffle-selected pieces; spells destroyed), player exp loss with the C newbie/used-exp taper and hardcore quarter, PK no-loss branch, resource restore, rest-position return, and NPC destruction. `respawn_callback` re-instantiates the stored zone template server-side with resource init and ten-second blocked-tile retries. Characters now carry serde-defaulted `template_key`/`respawn_ticks`, zone characters stamp spawn tiles into `rest_x/rest_y` like C `tmpx/tmpy`, and dying players can no longer cancel `AC_DIE` with new actions. Focused core tests cover the kill metadata, kill-score table, body/loot/money drops, NOBODY/ITEMDEATH branches, respawn scheduling/retry, player exp/PK/rest behavior, body expiry, and money sprites. Remaining gaps: death-mode loot tables (`loot.c`, currently unreferenced by zone data), `CDR_LOSTCON` exp cap, cross-area rest transfers, first-kill/military/achievement kill hooks, and exact global RNG parity for equipment loss. |
 | `src/module/merchants/store.c`, `src/module/merchants/merchant.c` core, merchant view slices of `src/system/player.c` / `src/system/act.c` `check_merchant` | `crates/ugaris-core/src/world/merchant.rs`, `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-server/src/merchants.rs`, `crates/ugaris-server/src/commands_chat.rs`, `crates/ugaris-server/src/main.rs` | `CDR_MERCHANT = 6` now has a typed driver-state (`MerchantDriverData`) parsed from C `merchant_driver_parse` args at zone load. Merchant NPCs lazily create stores from carried inventory 30+ (beyond `ignore`) as `always` stock with `pricemulti` defaulting to 400, greet visible players once per legacy 12-hour memory window with the C greeting/say format and Fred's extended range, react to `"<name> ... trade"` NT_TEXT speech by setting the speaker's `ch.merchant`, and destroy given items. Plain player `say` speech now fans out as NT_TEXT driver messages to nearby NPC drivers. C `salesprice`/`buyprice` formulas (barter + trader profession + 400 divisor, money exemption) are ported with tests, `sell`/`buy` port cursor-based buying/selling with always-stock preservation, sold-out/gold-low/cursor guards, ware stacking via `store_items_equal`, quest/nodepot/bond/lab/money stocking exclusions, and store gold accounting. The server sends C `con_type 2` store views (`SV_CONNAME`, `SV_CONCNT`, `SV_CONTAINER` sprites, `SV_PRICE`, `SV_ITEMPRICE`, `SV_CPRICE`), routes `CL_CONTAINER`/`CL_LOOK_CONTAINER` merchant-first like `cl_container` with `check_merchant` validation, formats the legacy bought/sold/too-expensive feedback, supports fast-buy inventory storing (`store_citem`), pushes view updates when the active merchant changes, and closes the view with a `con_type 0` packet. `CL_FASTSELL` (`cl_fastsell`, `src/system/player.c:877`) now quick-sells straight from an inventory slot: `apply_fast_sell` in `crates/ugaris-server/src/merchants.rs` reuses the existing simplified `swap` (`inventory_swap_slot`) to pick the slot item onto the cursor, re-validates with `check_merchant`, blocks quest items with the exact C hold-SHIFT message (leaving the item on the cursor, matching C's early return after the swap already ran), and otherwise reuses `merchant_store_sell`/`buyprice` for the trade. Focused core tests cover prices, arg parsing, store creation, trade activation, buy/sell mutations, quest-item exclusion, busy/distance clearing, and greeting memory. Remaining gaps: PostgreSQL-backed store persistence (`database_merchant.c`), special-store item generation (`add_special_store`/`create_special_item`), aclerk auction NPC, day/night shop movement/door handling, idle merchant chatter, and exact global RNG parity. |
@@ -2280,6 +2280,84 @@ Recommended next chest steps:
   `main.rs` were not migrated away, so a handful of actions will now
   (harmlessly) double-send an inventory snapshot within the same tick.
 - `cargo fmt --all` / `cargo test --workspace` (1120 core + 9 + 3 + 356
+  server + 0 doc-tests, all green) / `cargo build -p ugaris-server` clean
+  with zero warnings; boot-smoked (`entering Rust game loop`, ticking with
+  no panics for 10+ seconds).
+
+## Ralph Loop - Serial Validation Everywhere (Iteration 32)
+
+- Read `src/system/player_driver.c` in full (`cl_kill`/`cl_give`/
+  `player_driver_kill`/`player_driver_give`/`player_driver_charspell`
+  setters, `run_queue`/`check_high_prio_task`/`check_med_prio_task`/
+  `check_low_prio_task`, the pre-switch `switch (player[nr]->action)`
+  staleness block, and the post-`run_queue` dispatch switch) plus
+  `src/system/drvlib.c`'s `give_driver`/`take_driver`/`use_driver`/
+  `drop_driver`/`fireball_driver`/`ball_driver`. Contrary to the todo
+  note's "C guards every queued action" phrasing, C only actually
+  *validates* a captured serial in two places: the `PAC_KILL` pre-switch
+  block (`if (ch[player[nr]->act1].serial != player[nr]->act2)
+  player[nr]->action = PAC_IDLE;`, `player_driver.c:1055-1058`) and
+  `fireball_driver`/`ball_driver` (`if (!ch[co].flags || ch[co].serial !=
+  serial) { error = ERR_DEAD; return 0; }`, `drvlib.c:1118-1156`), reached
+  via the queued `PAC_FIREBALL2`/`PAC_BALL2` character-target variants.
+  `take_driver`/`drop_driver`/`give_driver`/`check_high_prio_task`'s
+  bless/heal all receive the captured serial as an unused parameter -
+  `player_driver_take`/`use`/`kill`/`give`/`charspell` capture
+  `it[in].serial`/`ch[co].serial` into `act2` every time, but only the two
+  call sites above ever compare it. This is dead data capture in C, not a
+  missing check, so it was not ported as a check for take/drop/give/
+  bless/heal (matches the "port observable behavior, not C oddities as
+  new features" hard rule).
+- `crates/ugaris-core/src/world/spells.rs::setup_fireball_character`/
+  `setup_ball_character` already had the `fireball_driver`/`ball_driver`
+  serial guard (`target_serial != 0 && target.id.0 != target_serial`);
+  added the missing `PAC_KILL` guard to the `PlayerActionCode::Kill` arm
+  of `World::apply_player_action_setup`
+  (`crates/ugaris-core/src/world/actions.rs`), checked before the
+  existing attack-policy/PK-hate logic to match C's pre-switch ordering,
+  using the same `0`-is-no-check sentinel convention as the fireball/ball
+  guards (real kills always carry a real, non-zero serial once captured
+  correctly - see below).
+- Found the actual live-gameplay gap while wiring this up: `crates/
+  ugaris-server/src/player_actions.rs::apply_player_action` - the
+  function that turns a parsed `ClientAction` into a `PlayerRuntime`
+  action/queue entry - hardcoded serial `0` for `ClientAction::
+  CharacterSpell` and the character-targeted (`x == 0`) branch of
+  `ClientAction::MapSpell`, and routed `ClientAction::Kill`/`Give`
+  through the generic `action_to_queued` helper, which also always
+  produces `arg2 = 0`. This meant the world-layer fireball/ball
+  character-serial checks were always defeated by the `0` sentinel in
+  real gameplay (never actually validated), and `PAC_KILL` had no serial
+  to check at all. Added a `character_serial` lookup helper and explicit
+  `ClientAction::Kill`/`Give` match arms to `apply_player_action`,
+  captured the live target serial for `CharacterSpell`/character-targeted
+  `MapSpell` the same way C's `cl_kill`/`cl_give`/
+  `player_driver_charspell` do (synchronous lookup at packet-receive
+  time, before the action is queued/dispatched); threaded
+  `&World::characters` through `ServerRuntime::queue_action`
+  (`crates/ugaris-server/src/main.rs`) from its one call site, which
+  already had `world` in scope.
+- Fixed a pre-existing test bug this exposed:
+  `tests::world_events::setup_world_actions_promotes_deferred_legacy_
+  player_fightback` (`crates/ugaris-server/src/tests/world_events.rs`)
+  set `player.next_fightback_serial = 99` without giving the mock
+  attacker character a matching `serial = 99` (it defaulted to the
+  attacker's `character_id.0 = 2`); the new `PAC_KILL` guard now
+  correctly rejects that mismatch, exactly like the sibling test
+  `hurt_events_start_legacy_player_fightback_for_nearby_attacker` right
+  above it already does it correctly. Set `attacker.serial = 99` to match
+  (same fix pattern as the working sibling test), not a weakened
+  assertion.
+- 7 new focused tests: `world_kill_setup_aborts_to_idle_when_target_
+  serial_is_stale` / `world_kill_setup_proceeds_when_target_serial_
+  matches` (`crates/ugaris-core/src/world/tests/combat.rs`), and
+  `apply_player_action_kill_captures_live_target_serial` /
+  `apply_player_action_kill_of_unknown_character_captures_zero_serial` /
+  `apply_player_action_give_captures_live_target_serial` /
+  `apply_player_action_character_spell_captures_live_target_serial` /
+  `apply_player_action_map_spell_character_target_captures_live_serial`
+  (`crates/ugaris-server/src/tests/commands_player.rs`).
+- `cargo fmt --all` / `cargo test --workspace` (1122 core + 9 + 3 + 361
   server + 0 doc-tests, all green) / `cargo build -p ugaris-server` clean
   with zero warnings; boot-smoked (`entering Rust game loop`, ticking with
   no panics for 10+ seconds).
