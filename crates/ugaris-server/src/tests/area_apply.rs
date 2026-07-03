@@ -80,7 +80,11 @@ fn random_shrine_edge_spends_saves_for_legacy_exp_and_marks_ppd() {
     let level_value = level_value(15);
     let expected = level_value / 3 + 3 * level_value / 30;
     assert_eq!(result, RandomShrineEdgeApplyResult::Used { exp: expected });
-    assert_eq!(character.exp, expected);
+    // The exp grant itself now happens in the caller via `World::give_exp`
+    // (C `shrine_edge` calls `give_exp(cn, bonus)`, not a raw mutation),
+    // so this function only reports the amount via the result and does not
+    // mutate `character.exp` - see `world/tests/exp.rs` for `give_exp`
+    // coverage and `main.rs`'s `RandomShrineKind::Edge` arm for the wiring.
     assert_eq!(character.saves, 0);
     assert!(character.flags.contains(CharacterFlags::UPDATE));
     assert!(player.has_used_random_shrine(30));
@@ -121,7 +125,11 @@ fn random_shrine_vitality_raises_warrior_hp_and_marks_ppd() {
     );
     assert_eq!(character.values[1][CharacterValue::Hp as usize], 100);
     assert_eq!(character.values[0][CharacterValue::Hp as usize], 100);
-    assert_eq!(character.exp, expected_cost);
+    // The exp grant/`update_char` recompute now happen in the caller via
+    // `World::give_exp`/`World::update_character` (C `shrine_vitality`
+    // calls `give_exp(cn, cost)` then `update_char(cn)`), so this function
+    // only reports `cost` via the result and does not mutate
+    // `character.exp` - see `main.rs`'s `RandomShrineKind::Vitality` arm.
     assert_eq!(character.exp_used, expected_cost);
     assert!(character.flags.contains(CharacterFlags::UPDATE));
     assert!(player.has_used_random_shrine(50));
@@ -163,7 +171,6 @@ fn random_shrine_continuity_enforces_sequence_and_grants_legacy_exp() {
         RandomShrineContinuityApplyResult::NeedYoungerBrother
     );
     assert_eq!(player.random_shrine_continuity, 10);
-    assert_eq!(character.exp, 0);
 
     let result = apply_random_shrine_continuity(&mut player, &mut character, 10);
 
@@ -176,7 +183,11 @@ fn random_shrine_continuity_enforces_sequence_and_grants_legacy_exp() {
         }
     );
     assert_eq!(player.random_shrine_continuity, 11);
-    assert_eq!(character.exp, expected);
+    // The exp grant now happens in the caller via `World::give_exp` (C
+    // `shrine_continuity` calls `give_exp(cn, cost)`, not a raw mutation),
+    // so this function only reports `exp` via the result and does not
+    // mutate `character.exp` - see `main.rs`'s `RandomShrineKind::Continuity`
+    // arm.
     assert!(character.flags.contains(CharacterFlags::UPDATE));
 
     let result = apply_random_shrine_continuity(&mut player, &mut character, 10);
@@ -186,7 +197,6 @@ fn random_shrine_continuity_enforces_sequence_and_grants_legacy_exp() {
         RandomShrineContinuityApplyResult::AlreadyVisited { opens_gate: false }
     );
     assert_eq!(player.random_shrine_continuity, 11);
-    assert_eq!(character.exp, expected);
 }
 
 #[test]
@@ -686,7 +696,7 @@ fn apply_zombie_shrine_requires_matching_skull() {
     let mut loader = ZoneLoader::new();
 
     assert_eq!(
-        apply_zombie_shrine(&mut world, &mut loader, character_id, 1, 0),
+        apply_zombie_shrine(&mut world, &mut loader, character_id, 1, 0, 0),
         ZombieShrineApplyResult::NeedsOffering(1)
     );
     assert_eq!(
@@ -718,7 +728,8 @@ fn apply_zombie_shrine_consumes_skull_and_grants_item_to_cursor() {
             &mut loader,
             character_id,
             0,
-            seed_for_legacy_random(22, 0)
+            seed_for_legacy_random(22, 0),
+            0,
         ),
         ZombieShrineApplyResult::Gift("Silver Skull".to_string())
     );
@@ -771,7 +782,8 @@ fn apply_zombie_shrine_consumes_skull_and_grants_experience() {
             &mut loader,
             character_id,
             2,
-            seed_for_legacy_random(7, 4)
+            seed_for_legacy_random(7, 4),
+            0,
         ),
         ZombieShrineApplyResult::Experience(2250)
     );
@@ -779,6 +791,69 @@ fn apply_zombie_shrine_consumes_skull_and_grants_experience() {
     assert_eq!(character.cursor_item, None);
     assert_eq!(character.exp, 2350);
     assert!(!world.items.contains_key(&ItemId(20)));
+}
+
+#[test]
+fn apply_zombie_shrine_experience_routes_through_give_exp_and_honors_noexp_and_modifier() {
+    // C `area2.c:390` grants the zombie shrine experience via
+    // `give_exp(cn, 2250)`, not a raw `ch[cn].exp += ...`, so it must
+    // respect `CF_NOEXP` and the runtime `exp_modifier` like every other
+    // `give_exp` call site.
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(20));
+    character.exp = 100;
+    character.flags.insert(CharacterFlags::NOEXP);
+    let mut world = World::default();
+    world.add_character(character);
+    let mut skull = test_item(ItemId(20), 1, ItemFlags::USED | ItemFlags::TAKE);
+    skull.template_id = IID_AREA2_ZOMBIESKULL3;
+    skull.carried_by = Some(character_id);
+    world.add_item(skull);
+    let mut loader = ZoneLoader::new();
+
+    assert_eq!(
+        apply_zombie_shrine(
+            &mut world,
+            &mut loader,
+            character_id,
+            2,
+            seed_for_legacy_random(7, 4),
+            0,
+        ),
+        ZombieShrineApplyResult::Experience(2250)
+    );
+    // NOEXP blocks the grant entirely - exp stays untouched.
+    assert_eq!(world.characters.get(&character_id).unwrap().exp, 100);
+
+    // Re-run without NOEXP but with a doubled exp_modifier: the grant must
+    // scale, matching `give_exp`'s multiplier math.
+    let character_id = CharacterId(8);
+    let mut character = login_character(character_id, &login_block("Tester2"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(21));
+    character.exp = 100;
+    world.add_character(character);
+    let mut skull = test_item(ItemId(21), 1, ItemFlags::USED | ItemFlags::TAKE);
+    skull.template_id = IID_AREA2_ZOMBIESKULL3;
+    skull.carried_by = Some(character_id);
+    world.add_item(skull);
+    world.settings.exp_modifier = 2.0;
+
+    assert_eq!(
+        apply_zombie_shrine(
+            &mut world,
+            &mut loader,
+            character_id,
+            2,
+            seed_for_legacy_random(7, 4),
+            0,
+        ),
+        ZombieShrineApplyResult::Experience(2250)
+    );
+    assert_eq!(
+        world.characters.get(&character_id).unwrap().exp,
+        100 + 2250 * 2
+    );
 }
 
 #[test]
@@ -800,7 +875,8 @@ fn apply_zombie_shrine_installs_timed_bonus_spell() {
             &mut loader,
             character_id,
             0,
-            seed_for_legacy_random(22, 16)
+            seed_for_legacy_random(22, 16),
+            0,
         ),
         ZombieShrineApplyResult::Bonus {
             message: "You have been protected for a short while.",

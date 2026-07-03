@@ -767,6 +767,39 @@ suggestion; dependencies are noted.
      `&mut World` already in scope, so wiring them is now a mechanical
      `world.give_exp(...)` swap-in, no further infrastructure needed - a
      good next slice.
+  - Iteration 23: closed the "`area_apply.rs`'s four random-shrine reward
+    sites" half of the previous note. C `shrine_edge`/`shrine_vitality`/
+    `shrine_braveness`/`shrine_continuity` (`src/area/14/random.c:2028`/
+    `2078`/`2176`/`2126`) all grant their exp via `give_exp(cn, ...)`, not
+    a raw `ch[cn].exp += ...`; `apply_random_shrine_edge`/`_vitality`/
+    `_braveness`/`_continuity` (`area_apply.rs`) each took only `&mut
+    Character` (no `&mut World`), so they now return the computed amount
+    through their existing `Used { exp, .. }` result variants without
+    touching `character.exp` themselves, and the four call sites in
+    `main.rs`'s `RandomShrineKind` match arms call `world.give_exp(...)`
+    (and, for vitality, `world.update_character(...)` matching C's
+    trailing `update_char(cn)`) once the `&mut Character` borrow has
+    ended - same outcome-based pattern as the `StatScrollUsed`/
+    `LollipopLicked` item-driver outcomes from earlier iterations. Also
+    found and fixed the same bug in `apply_zombie_shrine`'s experience
+    branch (C `area2.c:259/325/390`, a different file but the identical
+    raw-mutation issue): since that function already takes `&mut World`
+    directly, it now calls `world.give_exp(...)` inline instead of
+    mutating `character.exp`. Updated the pre-existing unit tests for
+    these four `apply_random_shrine_*` functions (`tests/area_apply.rs`,
+    `tests/item_apply.rs`, `tests/commands_admin.rs`) to stop asserting
+    `character.exp` (no longer this function's responsibility - see the
+    inline comments added at each call site) and added a new test,
+    `apply_zombie_shrine_experience_routes_through_give_exp_and_honors_noexp_and_modifier`,
+    proving the `NOEXP` gate blocks the grant and the runtime
+    `exp_modifier` multiplier scales it, which the old raw-mutation code
+    silently ignored. STILL REMAINING: `main.rs`'s inline quest/area
+    reward grants are now down to 4 confirmed raw-mutation sites (grep
+    `character.exp = character.exp.saturating_add` in `main.rs`): two in
+    the "warp"/reward-sphere block (~line 3376/3432, `level_value(...)/7`
+    and `/70` grants) and two more further down (~line 3826/3876,
+    unidentified in this iteration - need their C source cross-referenced
+    before porting) - a good next slice.
 
 - [ ] **Ground item decay** - dropped items never disappear (bodies do).
   C: `set_expire(in, item_decay_time)` on player drops (`act_drop`) and

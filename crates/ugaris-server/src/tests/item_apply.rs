@@ -53,7 +53,11 @@ fn random_shrine_braveness_requires_death_shrine_then_grants_exp_gold() {
             gold: expected / 10,
         }
     );
-    assert_eq!(character.exp, expected);
+    // The exp grant now happens in the caller via `World::give_exp` (C
+    // `shrine_braveness` calls `give_exp(cn, cost)`, not a raw mutation),
+    // so this function only reports `exp` via the result and does not
+    // mutate `character.exp` - see `main.rs`'s `RandomShrineKind::Braveness`
+    // arm.
     assert_eq!(character.gold, expected / 10);
     assert!(character
         .flags

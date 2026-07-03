@@ -491,7 +491,9 @@ pub(crate) fn apply_random_shrine_edge(
             .saturating_mul(level_value)
             .saturating_div(30),
     );
-    character.exp = character.exp.saturating_add(exp);
+    // C `shrine_edge` (`random.c:2038`) grants `exp` via `give_exp(cn, bonus)`,
+    // not a raw mutation; the caller applies it through `World::give_exp`
+    // once this function's `&mut Character` borrow has ended.
     character.saves = 0;
     character.flags.insert(CharacterFlags::UPDATE);
     player.mark_random_shrine_used(shrine_type);
@@ -529,7 +531,10 @@ pub(crate) fn apply_random_shrine_braveness(
         .min(u32::from(shrine_level));
     let exp = level_value(level);
     let gold = exp / 10;
-    character.exp = character.exp.saturating_add(exp);
+    // C `shrine_braveness` (`random.c:2193`) grants `cost` via
+    // `give_exp(cn, cost)`, not a raw mutation; the caller applies it
+    // through `World::give_exp` once this function's `&mut Character`
+    // borrow has ended.
     character.gold = character.gold.saturating_add(gold);
     character
         .flags
@@ -585,7 +590,10 @@ pub(crate) fn apply_random_shrine_vitality(
     character.values[1][value_index] = current.saturating_add(amount);
     character.values[0][value_index] = character.values[0][value_index].saturating_add(amount);
     character.exp_used = character.exp_used.saturating_add(cost);
-    character.exp = character.exp.saturating_add(cost);
+    // C `shrine_vitality` (`random.c:2109-2110`) grants `cost` via
+    // `give_exp(cn, cost)` then `update_char(cn)`, not a raw mutation; the
+    // caller applies both through `World::give_exp`/`World::update_character`
+    // once this function's `&mut Character` borrow has ended.
     character.flags.insert(CharacterFlags::UPDATE);
     player.mark_random_shrine_used(shrine_type);
 
@@ -620,7 +628,10 @@ pub(crate) fn apply_random_shrine_continuity(
         .saturating_add(5)
         .min(u32::from(shrine_level));
     let exp = level_value(level) / 6;
-    character.exp = character.exp.saturating_add(exp);
+    // C `shrine_continuity` (`random.c:2154`) grants `cost` via
+    // `give_exp(cn, cost)`, not a raw mutation; the caller applies it
+    // through `World::give_exp` once this function's `&mut Character`
+    // borrow has ended.
     character.flags.insert(CharacterFlags::UPDATE);
     RandomShrineContinuityApplyResult::Used {
         exp,
@@ -1489,6 +1500,7 @@ pub(crate) fn apply_zombie_shrine(
     character_id: CharacterId,
     shrine_type: u8,
     random_seed: u64,
+    area_id: u32,
 ) -> ZombieShrineApplyResult {
     let Some(character) = world.characters.get(&character_id) else {
         return ZombieShrineApplyResult::MissingPlayer;
@@ -1525,9 +1537,11 @@ pub(crate) fn apply_zombie_shrine(
         };
     }
     if let Some(exp_added) = zombie_shrine_experience(shrine_type, roll) {
-        if let Some(character) = world.characters.get_mut(&character_id) {
-            character.exp = character.exp.saturating_add(exp_added);
-        }
+        // C `area2.c:259/325/390` grants exp via `give_exp(cn, ...)`, not a
+        // raw mutation - route it through `World::give_exp` for the
+        // hardcore/exp_modifier multipliers, `CF_NOEXP`/area-21 gates, and
+        // `check_levelup`.
+        world.give_exp(character_id, i64::from(exp_added), area_id);
         return ZombieShrineApplyResult::Experience(exp_added);
     }
     if let Some((message, driver, strength, duration_ticks)) =

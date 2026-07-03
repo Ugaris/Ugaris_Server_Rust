@@ -2555,6 +2555,7 @@ async fn main() -> anyhow::Result<()> {
                                                 character_id,
                                                 shrine_type,
                                                 random_seed,
+                                                u32::from(args.area_id),
                                             ) {
                                                 ZombieShrineApplyResult::Gift(_) => {
                                                     feedback.push((character_id, "You received a gift.".to_string()));
@@ -2666,7 +2667,10 @@ async fn main() -> anyhow::Result<()> {
                                                         }
                                                     };
                                                     match result {
-                                                        RandomShrineEdgeApplyResult::Used { .. } => {
+                                                        RandomShrineEdgeApplyResult::Used { exp } => {
+                                                            // C `shrine_edge` (`random.c:2038`) grants
+                                                            // `bonus` via `give_exp(cn, bonus)`.
+                                                            world.give_exp(character_id, i64::from(exp), u32::from(args.area_id));
                                                             feedback.push((character_id, "A booming voice declares: 'Living on the edge has its merits - and its dangers!'".to_string()));
                                                             feedback.push((character_id, "Thou hast no saves left.".to_string()));
                                                             executed += 1;
@@ -2730,7 +2734,12 @@ async fn main() -> anyhow::Result<()> {
                                                         }
                                                     };
                                                     match result {
-                                                        RandomShrineVitalityApplyResult::Used { .. } => {
+                                                        RandomShrineVitalityApplyResult::Used { cost, .. } => {
+                                                            // C `shrine_vitality` (`random.c:2109-2110`)
+                                                            // grants `cost` via `give_exp(cn, cost)` then
+                                                            // `update_char(cn)`.
+                                                            world.give_exp(character_id, i64::from(cost), u32::from(args.area_id));
+                                                            world.update_character(character_id);
                                                             executed += 1;
                                                         }
                                                         RandomShrineVitalityApplyResult::NoExp => {
@@ -2755,7 +2764,10 @@ async fn main() -> anyhow::Result<()> {
                                                         }
                                                     };
                                                     match result {
-                                                        RandomShrineBravenessApplyResult::Used { .. } => {
+                                                        RandomShrineBravenessApplyResult::Used { exp, .. } => {
+                                                            // C `shrine_braveness` (`random.c:2193`) grants
+                                                            // `cost` via `give_exp(cn, cost)`.
+                                                            world.give_exp(character_id, i64::from(exp), u32::from(args.area_id));
                                                             feedback.push((character_id, "A triumphant voice says: 'Thou art brave indeed!'".to_string()));
                                                             executed += 1;
                                                         }
@@ -2777,7 +2789,11 @@ async fn main() -> anyhow::Result<()> {
                                                         }
                                                     };
                                                     match result {
-                                                        RandomShrineContinuityApplyResult::Used { opens_gate, .. } => {
+                                                        RandomShrineContinuityApplyResult::Used { exp, opens_gate } => {
+                                                            // C `shrine_continuity` (`random.c:2154`) grants
+                                                            // `cost` via `give_exp(cn, cost)` before the
+                                                            // level-99 gate teleport.
+                                                            world.give_exp(character_id, i64::from(exp), u32::from(args.area_id));
                                                             feedback.push((character_id, "A steady voice says: 'Continuity is power.'".to_string()));
                                                             if opens_gate {
                                                                 if world.teleport_character_same_area(character_id, 41, 250, false) {
