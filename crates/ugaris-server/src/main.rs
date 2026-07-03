@@ -543,6 +543,16 @@ use depot::legacy_account_depot_codec::{
     LEGACY_ACCOUNT_DEPOT_VALUE_OFFSET,
 };
 
+/// Real wall-clock seconds since the Unix epoch, matching C `time(NULL)`
+/// (`time_now = time(NULL);` in `src/server.c:616`, consumed by `tick_date()`
+/// immediately afterward).
+fn current_unix_time() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     fmt()
@@ -630,6 +640,14 @@ async fn main() -> anyhow::Result<()> {
         "initialized scaffold player character id allocator"
     );
     let mut tick = time::interval(TickRate::default().interval());
+    // C `tick_date()` (`src/system/date.c:267`) runs once before the very
+    // first `tick_char()` in the game loop (`src/server.c:618`), so players
+    // logging in before the first tick still see a live game clock.
+    world.advance_date(
+        current_unix_time(),
+        config.area_id,
+        (runtime.dlight_override != 0).then_some(runtime.dlight_override),
+    );
     info!(
         area_id = config.area_id,
         mirror_id = config.mirror_id,
@@ -640,6 +658,11 @@ async fn main() -> anyhow::Result<()> {
         tokio::select! {
             _ = tick.tick() => {
                 world.advance();
+                world.advance_date(
+                    current_unix_time(),
+                    config.area_id,
+                    (runtime.dlight_override != 0).then_some(runtime.dlight_override),
+                );
                 world.regenerate_characters(runtime.regen_time, config.area_id);
                 world.tick_effects_with_attack_policy(|caster_id, caster, target, map| {
                     if let Some(player) = runtime.player_for_character_mut(caster_id) {

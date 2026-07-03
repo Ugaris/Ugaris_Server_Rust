@@ -341,6 +341,16 @@ impl World {
         }
 
         let mut effective_context = context.clone();
+        // C timer-driven drivers read the global `dlight`/`hour`/moon-phase
+        // vars directly (e.g. `nightlight_driver`'s `dlight > 80` check in
+        // `src/module/base.c:1819`); mirror that here so every driver timer
+        // sees the live game clock instead of an all-zero default context.
+        effective_context.daylight = self.date.daylight.clamp(0, 255) as u8;
+        effective_context.hour = self.date.hour as u8;
+        effective_context.fullmoon = self.date.fullmoon;
+        effective_context.newmoon = self.date.newmoon;
+        effective_context.solstice = self.date.solstice;
+        effective_context.equinox = self.date.equinox;
         if driver == IDR_EDEMONBALL && effective_context.edemon_fire_enabled.is_none() {
             effective_context.edemon_fire_enabled = Some(edemon_fire_enabled(&self.items));
         }

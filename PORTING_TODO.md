@@ -225,20 +225,69 @@ order.
     damage by a lvl N NAME." log line (`death.c:1222`) is also still
     unported (only the sound was fixed to match its gating).
 
-- [ ] **Game clock advancement** - `world.date` never moves; it is always
+- [~] **Game clock advancement** - `world.date` never moves; it is always
   the same hour, so daylight/nightlight logic is frozen.
-  - C: `tick_date()`/time advancement in `src/system/date.c` (game time
-    advances some minutes per real tick; find the exact ratio in the C
-    main loop) plus the periodic `compute_dlight_*` refresh when `hour`
-    changes.
-  - Rust: `crates/ugaris-core/src/game_time.rs` already has `GameDate`
-    math. Advance it in the `main.rs` tick branch (or `World::advance`),
-    and when `daylight` changes, mark light-dirty sectors / recompute
-    indoor dlight (see `world/light.rs` helpers).
-  - Tests: date advances at the C rate; daylight value changes across a
-    sunrise boundary.
-  - Gotcha: nightlight item timers already fire on a daylight threshold -
-    verify they light up when night falls in a live boot.
+  - C: `tick_date()` in `src/system/date.c:267`, called once per iteration
+    of the main loop (`src/server.c:618`) with `time_now = time(NULL)`
+    taken just beforehand (`server.c:616`) - i.e. the game clock is not
+    incremented at a fixed per-tick rate, it is *recomputed from real
+    wall-clock time* every tick (`game_time = time_now - STARTTIME`,
+    `DAYLEN = 2 real hours` per in-game day). `player.c:2357`
+    (`if (dlight != player[nr]->dlight) redo = 1;`) is the only "periodic
+    refresh on hour change" - it forces a full per-player visible-map
+    resend, it does NOT recompute the static `tile.dlight` geometry
+    (`compute_dlight`/`reset_dlight` only change when indoor/outdoor map
+    structure changes, e.g. a door opening - confirmed by reading
+    `src/system/light.c` and grepping all `compute_dlight`/`reset_dlight`
+    call sites in `create.c`, which are exclusively door/structure
+    mutations, never `tick_date`/`tick_char`).
+  - Rust: new `World::advance_date` (`crates/ugaris-core/src/world/date.rs`)
+    wraps the already-ported `GameDate::calculate` math
+    (`crates/ugaris-core/src/game_time.rs`), called once before the tick
+    loop starts and once per tick in `crates/ugaris-server/src/main.rs`
+    (mirroring `tick_date()`'s pre-`tick_char()` position each real-time
+    loop iteration), using a new `current_unix_time()` helper (same
+    `SystemTime::now().duration_since(UNIX_EPOCH)` idiom as
+    `rng.rs`/`xmas.rs`/`stacks.rs`) and forwarding `runtime.dlight_override`
+    exactly like the existing `/dlight` admin command
+    (`commands_admin.rs`). Also fixed a real, previously-masked bug: the
+    timer-driven item-driver context built in
+    `World::execute_item_driver_timer_request`
+    (`crates/ugaris-core/src/world/item_outcomes.rs`) never populated
+    `ItemDriverContext::daylight`/`hour`/`fullmoon`/`newmoon`/`solstice`/
+    `equinox` at all (always the `0`/`false` `Default`), so
+    `nightlight_driver`/`swampwhisp_driver`
+    (`crates/ugaris-core/src/item_driver/lights.rs`,
+    `area15_swamp.rs`) always believed it was permanently night (the bug
+    was invisible before because `world.date` was *also* always frozen at
+    its zeroed default, so the two zeros matched) - now populated from
+    `self.date` on every timer-driven driver call, matching C's globals
+    being live at every `call_item` invocation.
+  - Tests: `world/tests/date.rs` (6 tests) - delegates to
+    `GameDate::calculate` correctly, reports no change while daylight is
+    unchanged, reports a change across a real sunrise boundary (daylight
+    0 -> 255), respects the `/dlight`-style numeric override, respects the
+    per-area light override table (area 23 underground), and advances one
+    `yday` per `DAY_LEN` real seconds.
+  - REMAINING: the "mark light-dirty sectors when daylight changes" half
+    of the original task note was investigated and intentionally not
+    ported as a map-wide sweep: `world.dirty_sectors`/`mark_dirty_sector`
+    are not consumed by `crates/ugaris-server/src/map_sync.rs` anywhere
+    yet (grepped - zero hits outside `sector.rs`'s own tests) - the
+    current per-tick map sync path (`map_diff_payloads`) already
+    recomputes each visible tile's effective light fresh from
+    `world.date.daylight` every tick and diffs it, so daylight changes
+    already propagate to clients without needing a dirty-sector sweep.
+    Revisit this note once `map_sync.rs` starts consuming
+    `skip_x_sector`/dirty sectors as a network-traffic optimization (it
+    doesn't today), at which point a real "was daylight this tick vs last
+    tick" comparison (already available via `advance_date`'s bool return)
+    should drive a full-map dirty mark, matching C's per-player
+    `redo = 1` on `dlight` change (`player.c:2357`). Live boot-smoked:
+    server enters the tick loop and runs without panics with the wired
+    date advancement in place (no player client was connected to visually
+    confirm nightlight sprites toggling, since that requires a live game
+    day/night cycle over real time to observe end-to-end).
 
 - [ ] **Look at character (`CL_LOOK_CHAR`)** - parsed, ignored.
   - C: `cl_look_char` -> `look_char` in `src/system/player.c` /
@@ -616,3 +665,10 @@ Add one line per completed task: date, task, ledger section touched.
   `ClientAction::Speed`/`FightMode` in `crates/ugaris-server/src/main.rs`
   (fight mode confirmed a no-op in C); ledger section "Ralph Loop - Speed
   Mode (CL_SPEED) and Fight Mode (CL_FIGHTMODE)".
+- 2026-07-03: Game clock advancement (P0, partial) - ported
+  `World::advance_date` to `crates/ugaris-core/src/world/date.rs`, wired
+  into `crates/ugaris-server/src/main.rs`'s tick loop and startup, and
+  fixed timer-driven `ItemDriverContext` date fields in
+  `crates/ugaris-core/src/world/item_outcomes.rs`; ledger section "Ralph
+  Loop - Game Clock Advancement". REMAINING: map-wide light-dirty sector
+  marking on daylight change deferred (see todo note/ledger for why).

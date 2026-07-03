@@ -14,6 +14,7 @@ mod area_mech;
 mod assembly;
 mod character_values;
 mod combat;
+mod date;
 mod death;
 mod doors;
 mod effect_tick;
