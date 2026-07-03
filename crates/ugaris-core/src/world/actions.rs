@@ -222,6 +222,14 @@ impl World {
         let after = item.clone();
         add_item_light(&mut self.map, item);
         self.mark_item_light_area(&after);
+        // C `act_drop` (`act.c:386-448`) puts the item on the map via
+        // `set_item_map` (`map.c:36-85`), which arms a decay timer for any
+        // `IF_TAKE` item: `if (it[in].flags & IF_TAKE) set_expire(in,
+        // item_decay_time);`. `set_expire` (`expire.c`) itself no-ops for
+        // `IF_NODECAY` items, so the combined gate here is TAKE && !NODECAY.
+        if after.flags.contains(ItemFlags::TAKE) && !after.flags.contains(ItemFlags::NODECAY) {
+            self.set_item_expire(item_id, self.settings.item_decay_time.max(1) as u64);
+        }
         // C `act_drop` (`act.c:440-443`): `NT_CHAR` gated on `CF_NONOTIFY`,
         // followed by an unconditional `NT_ITEM` broadcast for the item that
         // just landed on the map.

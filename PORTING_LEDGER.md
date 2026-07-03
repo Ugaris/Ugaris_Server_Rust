@@ -70,7 +70,7 @@ Remaining oversized files worth splitting during future work:
 | `src/system/act.h` | `crates/ugaris-core/src/legacy.rs` | Action IDs ported. |
 | `src/system/questlog.h`, `src/system/player.c` `sendquestlog` base packet | `crates/ugaris-core/src/quest.rs`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | Quest IDs, flags, fixed-size quest log behavior, C bitfield quest-entry packing, base `SV_QUESTLOG` payload shape with zeroed random-shrine PPD, and `CL_GETQUESTLOG` response path ported with tests. Full quest initialization/reopen side effects and mod-protocol questlog extensions remain. |
 | `src/system/io.c` / `src/system/io.h` | `crates/ugaris-protocol/src/frame.rs`, `crates/ugaris-net/src/*`, `crates/ugaris-server/src/main.rs` | Legacy tick frame envelope, TCP session skeleton, per-session server command channels, runtime-to-session framed payload sending, listener readiness/error reporting, default info logging, IPv4 plus IPv6 localhost listening for `localhost`, multi-payload login bootstrap queueing, and chunked full-map bootstrap below legacy frame limits ported. Full gameplay send buffering, compression modes, and backpressure policy remain partial. |
-| `src/system/map.h` / `src/system/map.c` primitives | `crates/ugaris-core/src/map.rs`, `crates/ugaris-core/src/item_ops.rs` | Legacy map indexing, bounds checks, movement/sight blocker helpers, grid wrapper, item map placement/removal, character map placement/removal, `NOMAGIC` flag sync, simple 3x3 drop order, extended pathfinder-backed drop order, carried-item removal, and carried-item replacement ported with tests. Light/expire/trap/notify callbacks remain. |
+| `src/system/map.h` / `src/system/map.c` primitives | `crates/ugaris-core/src/map.rs`, `crates/ugaris-core/src/item_ops.rs` | Legacy map indexing, bounds checks, movement/sight blocker helpers, grid wrapper, item map placement/removal, character map placement/removal, `NOMAGIC` flag sync, simple 3x3 drop order, extended pathfinder-backed drop order, carried-item removal, and carried-item replacement ported with tests. C `set_item_map`'s `IF_TAKE` decay-arming (`set_expire(in, item_decay_time)`) is ported at the `World::complete_drop` call site (`crates/ugaris-core/src/world/actions.rs`) rather than inside `map.rs` itself, since only `World` owns the timer queue - see "Ralph Loop - Ground Item Decay" below. Light/trap/notify callbacks remain. |
 | `src/system/los.h` / `src/system/los.c` primitive LOS | `crates/ugaris-core/src/map.rs` | Conservative line-of-sight helper with blocker tests ported. Full per-character cached LOS table remains. |
 | `src/system/light.h` / `src/system/light.c` primitives | `crates/ugaris-core/src/light.rs`, `crates/ugaris-core/src/map.rs`, `crates/ugaris-core/src/world.rs` | Legacy light distance, inverse-square light falloff, non-negative tile accumulation, character/item/effect light add/remove gates, takeable-item `MF_NOLIGHT` behavior, lava groundlight sprite table, foreground/sightblock shadow daylight calculation including injectable legacy-randomized flicker path, indoor daylight recomputation, mixed indoor/outdoor reset checks, live world light add/remove wiring for map item insertion, take/drop, timer-driven light item state changes, visible effect map slots, and world-level dirty-sector marking for groundlight/shadow/dlight recomputation ported with tests. Exact global RNG wiring for shadow flicker and bulk LOS-change remove/add around live world characters plus LOS-changing map edits remain. |
 | `src/system/path.h` / `src/system/path.c` | `crates/ugaris-core/src/path.rs` | A* path shape, legacy heuristic, first-direction result, node cap, 2/3 movement costs, inner-bound successor checks, and `path_ignore_char`-style character-ignoring movement mode ported with tests. Other custom target callbacks and exact global-state compatibility remain. |
@@ -2181,3 +2181,50 @@ Recommended next chest steps:
   server + 0 doc-tests, all green, no failures) / `cargo build
   -p ugaris-server` clean with zero warnings; boot-smoked past tick 232
   with no panics.
+
+## Ralph Loop - Ground Item Decay (Iteration 30)
+
+- C `act_drop` (`src/system/act.c:386-448`) itself does not arm any decay
+  timer; the timer is actually armed one layer down, inside
+  `set_item_map` (`src/system/map.c:36-85`), which every ground-item
+  placement path (player drop, container overflow spread, etc.) funnels
+  through: `if (it[in].flags & IF_TAKE) { set_expire(in, item_decay_time); }`.
+  `set_expire` (`src/system/expire.c`, full file read) itself no-ops for
+  `IF_NODECAY` items (`if (it[in].flags & IF_NODECAY) return 1;`) before
+  scheduling a single-shot `expire_timer` callback that removes the item
+  (and destroys any container contents) from the map at
+  `ticker + item_decay_time`. `item_decay_time` is a runtime-mutable
+  global defaulting to `5 * 60 * TICKS` (`src/config/game_settings.c`),
+  already ported unchanged to `GameSettings::item_decay_time` in
+  `crates/ugaris-core/src/game_settings.rs`. (Note: the `PORTING_TODO.md`
+  task text referenced `item.c`/`tool.c` and a function named
+  `expire_item`; neither exists in the C tree - the real home is
+  `expire.c` + `map.c`, corrected here for future reference.)
+- Rust's `World::set_item_expire` (pre-existing, `world/death.rs`, used
+  for player/NPC body decay via `set_expire_body`'s simplified
+  single-shot equivalent) is now also wired into `World::complete_drop`
+  (`crates/ugaris-core/src/world/actions.rs`): after `act_drop` succeeds
+  and the item is confirmed on the map, `item.flags.contains(TAKE) &&
+  !item.flags.contains(NODECAY)` arms `set_item_expire(item_id,
+  settings.item_decay_time)`. Since Rust's `set_item_expire` (unlike C's
+  `set_expire`) has no built-in `IF_NODECAY` check, the gate combining
+  both flags lives at the `complete_drop` call site instead - functionally
+  equivalent to C's two-layer check (`set_item_map`'s `IF_TAKE` gate +
+  `set_expire`'s internal `IF_NODECAY` early return).
+- `map.rs`'s lower-level `drop_item`/`set_item_map` primitives were left
+  untouched (no timer-queue access exists at that layer, matching the
+  existing architecture where `World` owns `self.timers`); `drop_item` is
+  currently dead code with no call sites outside its own unit test, so no
+  further wiring was needed this iteration.
+- 2 new focused tests in `crates/ugaris-core/src/world/tests/items.rs`:
+  `complete_drop_arms_decay_timer_for_take_items_and_expires_after_item_decay_time`
+  (item survives at `item_decay_time - 1` ticks, is gone at exactly
+  `item_decay_time` ticks, matching C's `ticker + duration` due-time
+  semantics) and
+  `complete_drop_does_not_arm_decay_timer_for_nodecay_take_items` (an
+  `IF_TAKE | IF_NODECAY` item, e.g. a dropped lit torch, survives well
+  past `item_decay_time`).
+- `cargo fmt --all` / `cargo test --workspace` (1120 core + 9 + 3 + 351
+  server + 0 doc-tests, all green) / `cargo build -p ugaris-server` clean
+  with zero warnings; boot-smoked (`entering Rust game loop`, ticking with
+  no panics for 10+ seconds).

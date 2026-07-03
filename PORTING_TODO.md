@@ -1006,7 +1006,7 @@ suggestion; dependencies are noted.
     iteration - this was a verification-only closure pass; full
     `cargo test --workspace` still green at the same counts.
 
-- [ ] **Ground item decay** - dropped items never disappear (bodies do).
+- [x] **Ground item decay** - dropped items never disappear (bodies do).
   C: `set_expire(in, item_decay_time)` on player drops (`act_drop`) and
   `expire_item` behavior for `IF_TAKE` ground items in `src/system/item.c`
   / `tool.c`. Rust: reuse `World::set_item_expire` from `world/death.rs`
@@ -1459,3 +1459,15 @@ Add one line per completed task: date, task, ledger section touched.
   `inventory_swap_slot` (`crates/ugaris-server/src/inventory.rs`); ledger
   section "Ralph Loop - Equipment Slot Rules on Swap (`CL_SWAP`)". 15 new
   tests (6 core + 9 server), all green; boot-smoked past tick 232.
+- 2026-07-03: Ground item decay (P1, iteration 30) - wired
+  `World::set_item_expire` (already existed for body decay in
+  `world/death.rs`) into `World::complete_drop`
+  (`crates/ugaris-core/src/world/actions.rs`), mirroring C
+  `set_item_map` (`map.c:36-85`)'s `if (it[in].flags & IF_TAKE)
+  set_expire(in, item_decay_time)` combined with `set_expire`
+  (`expire.c`)'s own `IF_NODECAY` no-op - gated on `TAKE && !NODECAY` at
+  the call site since Rust's `set_item_expire` has no built-in
+  `IF_NODECAY` check. 2 new tests in `world/tests/items.rs` (decays at
+  exactly `item_decay_time` ticks; `IF_NODECAY` items never armed);
+  ledger section "Ralph Loop - Ground Item Decay". Boot-smoked
+  (game loop ticking, no panics).

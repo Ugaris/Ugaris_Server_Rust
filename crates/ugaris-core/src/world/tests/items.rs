@@ -183,6 +183,66 @@ fn check_requirements_bondwear_restricts_to_the_bonded_owner() {
 }
 
 #[test]
+fn complete_drop_arms_decay_timer_for_take_items_and_expires_after_item_decay_time() {
+    let mut world = World::default();
+    let mut dropper = character(1);
+    dropper.x = 10;
+    dropper.y = 10;
+    dropper.dir = Direction::Right as u8;
+    dropper.act1 = 7;
+    dropper.cursor_item = Some(ItemId(7));
+    world.add_character(dropper);
+    world.add_item(item(7, ItemFlags::USED | ItemFlags::TAKE));
+
+    assert!(world.complete_drop(CharacterId(1), ItemId(7)));
+    assert!(world.items.contains_key(&ItemId(7)));
+
+    // C `set_item_map` (`map.c:36-85`): `IF_TAKE` items get
+    // `set_expire(in, item_decay_time)`; `item_decay_time` defaults to
+    // `5 * 60 * TICKS` (`game_settings.c`).
+    world.tick = Tick(world.tick.0 + world.settings.item_decay_time as u64 - 1);
+    world.process_due_timers(1);
+    assert!(
+        world.items.contains_key(&ItemId(7)),
+        "item must not decay before item_decay_time elapses"
+    );
+
+    world.tick = Tick(world.tick.0 + 1);
+    world.process_due_timers(1);
+    assert!(
+        !world.items.contains_key(&ItemId(7)),
+        "item must decay exactly at item_decay_time"
+    );
+}
+
+#[test]
+fn complete_drop_does_not_arm_decay_timer_for_nodecay_take_items() {
+    let mut world = World::default();
+    let mut dropper = character(1);
+    dropper.x = 10;
+    dropper.y = 10;
+    dropper.dir = Direction::Right as u8;
+    dropper.act1 = 7;
+    dropper.cursor_item = Some(ItemId(7));
+    world.add_character(dropper);
+    world.add_item(item(
+        7,
+        ItemFlags::USED | ItemFlags::TAKE | ItemFlags::NODECAY,
+    ));
+
+    assert!(world.complete_drop(CharacterId(1), ItemId(7)));
+
+    // C `set_expire` (`expire.c`) no-ops for `IF_NODECAY` items; a lit
+    // torch dropped on the ground must survive past `item_decay_time`.
+    world.tick = Tick(world.tick.0 + world.settings.item_decay_time as u64 + 1);
+    world.process_due_timers(1);
+    assert!(
+        world.items.contains_key(&ItemId(7)),
+        "IF_NODECAY items must never be armed with a decay timer"
+    );
+}
+
+#[test]
 fn check_requirements_ignores_out_of_range_modifier_index_without_panicking() {
     let mut world = World::default();
     world.add_character(character(1));
