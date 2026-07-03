@@ -1344,6 +1344,44 @@ async fn main() -> anyhow::Result<()> {
                                 runtime.send_to_session(session_id, builder.into_payload());
                             }
                         }
+                        ClientAction::LookCharacter { character } => {
+                            // C `cl_look_char` (`src/system/player.c`):
+                            // bounds-checks the target, gates on
+                            // `char_see_char`, then `look_char`
+                            // (`src/system/tool.c`) sends `#1`/`#2` text
+                            // plus the `SV_LOOKINV` paperdoll. `character
+                            // == 0` mirrors C's `co < 1` bounds check.
+                            if character != 0 {
+                                let target_id = CharacterId(u32::from(character));
+                                let target_is_brave = runtime
+                                    .player_for_character(target_id)
+                                    .is_some_and(|player| player.has_used_random_shrine(51));
+                                let target_mirror = runtime
+                                    .player_for_character(target_id)
+                                    .map(|player| u32::from(player.current_mirror_id))
+                                    .unwrap_or(0);
+                                if let Some(text) = world.look_character_text(
+                                    character_id,
+                                    target_id,
+                                    target_is_brave,
+                                    target_mirror,
+                                ) {
+                                    command_feedback.push((character_id, text.header));
+                                    if let Some(paperdoll) =
+                                        world.look_character_paperdoll(target_id)
+                                    {
+                                        let mut builder = PacketBuilder::new();
+                                        builder.look_inventory(
+                                            paperdoll.sprite,
+                                            paperdoll.colors,
+                                            paperdoll.worn_sprites,
+                                        );
+                                        runtime.send_to_session(session_id, builder.into_payload());
+                                    }
+                                    command_feedback.push((character_id, text.body));
+                                }
+                            }
+                        }
                         ClientAction::GetQuestLog => {
                             if let Some(player) = runtime.players.get(&session_id) {
                                 let payload = legacy_questlog_payload(player);

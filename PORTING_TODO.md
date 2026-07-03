@@ -289,7 +289,7 @@ order.
     Live boot-smoked again this iteration: server enters the tick loop and
     runs without panics with the wired date advancement in place.
 
-- [ ] **Look at character (`CL_LOOK_CHAR`)** - parsed, ignored.
+- [x] **Look at character (`CL_LOOK_CHAR`)** - parsed, ignored.
   - C: `cl_look_char` -> `look_char` in `src/system/player.c` /
     `src/system/act.c` (sends `SV_LOOK*` packets with sprite, name,
     description, equipment worn sprites for players; text description for
@@ -299,6 +299,15 @@ order.
     `crates/ugaris-server/src/inventory.rs` for the text-side conventions.
   - Tests: packet layout against C client expectations; NPC vs player
     variants.
+  - REMAINING: `look_char`'s labyrinth-solved count, first-kill Hell
+    flavor text, army rank, PK info, clan info, and club info lines are
+    not ported (no `count_solved_labs`/`check_first_kill`/`DRD_RANK_PPD`/
+    `DRD_PK_PPD`/clan/club system exists yet - each is its own P2/P3 todo
+    item). The looker-`CF_GOD` debug branch (dumping the target's carried
+    non-worn items + active effect slots) is also deferred since
+    `CL_LOOK_ITEM`'s text builder (next task below) doesn't exist yet
+    either. See `PORTING_LEDGER.md` "Ralph Loop - Look At Character
+    (CL_LOOK_CHAR)" for the full gap list.
 
 - [ ] **Look at map item (`CL_LOOK_ITEM`)** - parsed, ignored. Reuse
   `legacy_item_look_text`; gate by `char_see_item` and distance like C
@@ -681,3 +690,13 @@ Add one line per completed task: date, task, ledger section touched.
   and diffs), so there is no remaining correctness gap; marked `[x]`.
   No code changes, ledger section "Ralph Loop - Game Clock Advancement"
   updated with the closing note.
+- 2026-07-03: Look at character (`CL_LOOK_CHAR`) (P0) - ported
+  `World::look_character_text`/`World::look_character_paperdoll` to
+  `crates/ugaris-core/src/world/text.rs` and wired
+  `ClientAction::LookCharacter` in `crates/ugaris-server/src/main.rs`
+  (reuses the pre-existing but previously-uncalled
+  `PacketBuilder::look_inventory` builder for the `SV_LOOKINV` paperdoll);
+  ledger section "Ralph Loop - Look At Character (CL_LOOK_CHAR)".
+  REMAINING: labyrinth/first-kill/army-rank/PK/clan/club info lines and
+  the looker-`CF_GOD` debug branch are documented gaps pending their own
+  P2/P3 systems.

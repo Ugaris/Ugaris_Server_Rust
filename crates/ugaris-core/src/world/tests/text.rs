@@ -477,3 +477,225 @@ fn player_warcry_does_not_pass_soundblocking_tiles() {
     assert!(target.inventory[12..30].iter().all(Option::is_none));
     assert!(world.drain_pending_sound_specials().is_empty());
 }
+
+fn look_char_pair(looker_flags: CharacterFlags, target_flags: CharacterFlags) -> World {
+    let mut world = World::default();
+    let mut looker = character(1);
+    looker.flags = CharacterFlags::USED | looker_flags | CharacterFlags::PLAYER;
+    let mut target = character(2);
+    target.flags = CharacterFlags::USED | target_flags;
+    target.name = "Bob".into();
+    target.description = "A tall warrior.".into();
+    target.level = 10;
+    target.karma = 5;
+    world.spawn_character(looker, 10, 10);
+    world.spawn_character(target, 11, 10);
+    world
+}
+
+#[test]
+fn look_character_text_reports_saves_deaths_mirror_and_karma_for_player_target() {
+    let mut world = look_char_pair(
+        CharacterFlags::empty(),
+        CharacterFlags::PLAYER | CharacterFlags::MALE,
+    );
+    {
+        let target = world.characters.get_mut(&CharacterId(2)).unwrap();
+        target.saves = 3;
+        target.got_saved = 1;
+        target.deaths = 2;
+    }
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 7)
+        .expect("visible player target should produce look text");
+
+    assert_eq!(result.header, "#1Bob (10):");
+    assert_eq!(
+        result.body,
+        "#2A tall warrior. He has 3 saves, was saved 1 times and died 2 times. Mirror=7. Karma: 5"
+    );
+}
+
+#[test]
+fn look_character_text_uses_singular_save_wording_for_exactly_one_save() {
+    let mut world = look_char_pair(
+        CharacterFlags::empty(),
+        CharacterFlags::PLAYER | CharacterFlags::FEMALE,
+    );
+    {
+        let target = world.characters.get_mut(&CharacterId(2)).unwrap();
+        target.saves = 1;
+    }
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .unwrap();
+
+    assert!(result
+        .body
+        .contains("She has 1 save, was saved 0 times and died 0 times."));
+}
+
+#[test]
+fn look_character_text_reports_hardcore_death_count_instead_of_saves() {
+    let mut world = look_char_pair(
+        CharacterFlags::empty(),
+        CharacterFlags::PLAYER | CharacterFlags::HARDCORE | CharacterFlags::MALE,
+    );
+    {
+        let target = world.characters.get_mut(&CharacterId(2)).unwrap();
+        target.deaths = 4;
+    }
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .unwrap();
+
+    assert!(result
+        .body
+        .contains("He is a hardcore character and died 4 times."));
+    assert!(!result.body.contains("save"));
+}
+
+#[test]
+fn look_character_text_the_brave_header_variant_when_shrine_flag_set() {
+    let world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), true, 0)
+        .unwrap();
+
+    assert_eq!(result.header, "#1Bob the Brave (10):");
+}
+
+#[test]
+fn look_character_text_title_prefix_for_won_male_and_female() {
+    let mut world = look_char_pair(
+        CharacterFlags::empty(),
+        CharacterFlags::PLAYER | CharacterFlags::WON,
+    );
+    assert_eq!(
+        world
+            .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+            .unwrap()
+            .header,
+        "#1Sir Bob (10):"
+    );
+
+    world.characters.get_mut(&CharacterId(2)).unwrap().flags |= CharacterFlags::FEMALE;
+    assert_eq!(
+        world
+            .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+            .unwrap()
+            .header,
+        "#1Lady Bob (10):"
+    );
+}
+
+#[test]
+fn look_character_text_omits_player_only_lines_for_npc_targets() {
+    let world = look_char_pair(CharacterFlags::empty(), CharacterFlags::empty());
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 99)
+        .unwrap();
+
+    assert_eq!(result.header, "#1Bob (10):");
+    assert_eq!(result.body, "#2A tall warrior. ");
+    assert!(!result.body.contains("Mirror"));
+    assert!(!result.body.contains("Karma"));
+}
+
+#[test]
+fn look_character_text_includes_profession_lines_regardless_of_player_flag() {
+    let mut world = look_char_pair(CharacterFlags::empty(), CharacterFlags::empty());
+    {
+        let target = world.characters.get_mut(&CharacterId(2)).unwrap();
+        target.professions[0] = 20; // Athlete, 20/30 = 66% -> "a skilled "
+        target.flags.insert(CharacterFlags::MALE);
+    }
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .unwrap();
+
+    assert!(result.body.contains("He is a skilled Athlete. "));
+}
+
+#[test]
+fn look_character_text_none_when_looker_is_not_player() {
+    let world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
+    // Force the looker to not be a player (C requires ch[cn].flags & CF_PLAYER).
+    let mut world = world;
+    world
+        .characters
+        .get_mut(&CharacterId(1))
+        .unwrap()
+        .flags
+        .remove(CharacterFlags::PLAYER);
+
+    assert!(world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .is_none());
+}
+
+#[test]
+fn look_character_text_none_when_target_invisible() {
+    let mut world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
+    world
+        .characters
+        .get_mut(&CharacterId(2))
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::INVISIBLE);
+
+    assert!(world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .is_none());
+}
+
+#[test]
+fn look_character_text_none_for_unknown_looker_or_target() {
+    let world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
+
+    assert!(world
+        .look_character_text(CharacterId(99), CharacterId(2), false, 0)
+        .is_none());
+    assert!(world
+        .look_character_text(CharacterId(1), CharacterId(99), false, 0)
+        .is_none());
+}
+
+#[test]
+fn look_character_paperdoll_reports_sprite_colors_and_worn_item_sprites() {
+    let mut world = World::default();
+    let mut target = character(2);
+    target.flags = CharacterFlags::USED | CharacterFlags::PLAYER;
+    target.sprite = 1234;
+    target.c1 = 1;
+    target.c2 = 2;
+    target.c3 = 3;
+    let mut sword = item(10, ItemFlags::USED);
+    sword.sprite = 555;
+    world.items.insert(sword.id, sword);
+    target.inventory[0] = Some(ItemId(10));
+    world.characters.insert(target.id, target);
+
+    let paperdoll = world
+        .look_character_paperdoll(CharacterId(2))
+        .expect("target should exist");
+
+    assert_eq!(paperdoll.sprite, 1234);
+    assert_eq!(paperdoll.colors, [1, 2, 3]);
+    assert_eq!(paperdoll.worn_sprites[0], 555);
+    assert!(paperdoll.worn_sprites[1..]
+        .iter()
+        .all(|&sprite| sprite == 0));
+}
+
+#[test]
+fn look_character_paperdoll_none_for_unknown_target() {
+    let world = World::default();
+    assert!(world.look_character_paperdoll(CharacterId(42)).is_none());
+}

@@ -20,6 +20,88 @@ pub struct WorldAreaText {
     pub message: String,
 }
 
+/// C `prof[P_MAX]` (`src/system/prof.c`): profession display name and
+/// `max` value (used by `prof_title`'s percent-of-max thresholds). Distinct
+/// from `entity::PROFESSION_NAMES`, which mirrors the unrelated JSON export
+/// table in `src/system/game/character.c` (that table spells index 7
+/// "Master Trader" instead of prof.c's gameplay-visible "Trader").
+pub const PROF_TABLE: [(&str, u8); 20] = [
+    ("Athlete", 30),
+    ("Alchemist", 50),
+    ("Miner", 20),
+    ("Assassin", 50),
+    ("Thief", 30),
+    ("Light Warrior", 30),
+    ("Dark Warrior", 30),
+    ("Trader", 20),
+    ("Mercenary", 20),
+    ("Clan Warrior", 30),
+    ("Herbalist", 30),
+    ("Demon", 30),
+    ("empty", 30),
+    ("empty", 30),
+    ("empty", 30),
+    ("empty", 30),
+    ("empty", 30),
+    ("empty", 30),
+    ("empty", 30),
+    ("empty", 30),
+];
+
+/// C `prof_title` (`src/system/prof.c`): percent-of-max skill title prefix.
+fn profession_title(value: i16, max: u8) -> &'static str {
+    let percent = 100 * i32::from(value) / i32::from(max.max(1));
+    match percent {
+        p if p < 15 => "a newbie ",
+        p if p < 30 => "an apprentice ",
+        p if p < 45 => "an intermediate ",
+        p if p < 60 => "a fairly skilled ",
+        p if p < 75 => "a skilled ",
+        p if p < 90 => "a very skilled ",
+        _ => "a master ",
+    }
+}
+
+/// C `get_title` (`src/system/tool.c`): `CF_WON` title prefix.
+pub fn look_character_title(target: &Character) -> &'static str {
+    if !target.flags.contains(CharacterFlags::WON) {
+        ""
+    } else if target.flags.contains(CharacterFlags::FEMALE) {
+        "Lady "
+    } else {
+        "Sir "
+    }
+}
+
+/// C `Hename` (`src/system/tool.c`): capitalized he/she/it pronoun.
+pub fn look_character_hename(target: &Character) -> &'static str {
+    if target.flags.contains(CharacterFlags::MALE) {
+        "He"
+    } else if target.flags.contains(CharacterFlags::FEMALE) {
+        "She"
+    } else {
+        "It"
+    }
+}
+
+/// C `plr_send_inv` (`src/system/player.c`): the `SV_LOOKINV` paperdoll
+/// fields (target's sprite/colors/12 worn-slot item sprites).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LookCharacterPaperdoll {
+    pub sprite: u32,
+    pub colors: [u32; 3],
+    pub worn_sprites: [u32; 12],
+}
+
+/// C `look_char`'s two `log_char` calls (`src/system/tool.c`): the `"#1"`
+/// header line (name/title/level) and the `"#2"` body line (description
+/// plus player-only stat lines).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LookCharacterResult {
+    pub header: String,
+    pub body: String,
+}
+
 impl World {
     pub fn notify_twocity_pick_from_character(&mut self, character_id: CharacterId) {
         let Some(character) = self.characters.get(&character_id) else {
@@ -128,6 +210,115 @@ impl World {
 
     pub fn drain_pending_area_texts(&mut self) -> Vec<WorldAreaText> {
         self.pending_area_texts.drain(..).collect()
+    }
+
+    /// C `cl_look_char` -> `look_char` (`src/system/player.c`,
+    /// `src/system/tool.c`), text half. Gated the same way as C: the
+    /// looker must exist and be `CF_PLAYER`, and `char_see_char` (bounds/
+    /// LOS/light/stealth) must pass. `target_is_brave` is C's
+    /// `DRD_RANDOMSHRINE_PPD` `DEATH_SHRINE` check and `target_mirror` is
+    /// C's `ch[co].mirror` - both live in session-only `PlayerRuntime`
+    /// state in this codebase, so the caller (which has access to
+    /// `PlayerRuntime`) supplies them.
+    ///
+    /// REMAINING (not ported - no C-side data source exists yet in this
+    /// codebase): labyrinth-solved count, first-kill Hell flavor text,
+    /// army rank (`DRD_RANK_PPD`), PK info, clan info, club info. These
+    /// are documented gaps, not silently dropped - see `PORTING_TODO.md`.
+    pub fn look_character_text(
+        &self,
+        looker_id: CharacterId,
+        target_id: CharacterId,
+        target_is_brave: bool,
+        target_mirror: u32,
+    ) -> Option<LookCharacterResult> {
+        let looker = self.characters.get(&looker_id)?;
+        if !looker.flags.contains(CharacterFlags::PLAYER) {
+            return None;
+        }
+        let target = self.characters.get(&target_id)?;
+        if !char_see_char(looker, target, &self.map, self.date.daylight) {
+            return None;
+        }
+
+        let title = look_character_title(target);
+        let header = if target_is_brave {
+            format!("#1{title}{} the Brave ({}):", target.name, target.level)
+        } else {
+            format!("#1{title}{} ({}):", target.name, target.level)
+        };
+
+        let mut body = format!("#2{} ", target.description);
+        if target.flags.contains(CharacterFlags::PLAYER) {
+            if target.flags.contains(CharacterFlags::HARDCORE) {
+                body.push_str(&format!(
+                    "{} is a hardcore character and died {} times. ",
+                    look_character_hename(target),
+                    target.deaths
+                ));
+            } else {
+                let plural = if target.saves == 1 { "" } else { "s" };
+                body.push_str(&format!(
+                    "{} has {} save{plural}, was saved {} times and died {} times. ",
+                    look_character_hename(target),
+                    target.saves,
+                    target.got_saved,
+                    target.deaths
+                ));
+            }
+        }
+
+        for (index, &value) in target.professions.iter().enumerate() {
+            if value == 0 {
+                continue;
+            }
+            if let Some(&(name, max)) = PROF_TABLE.get(index) {
+                body.push_str(&format!(
+                    "{} is {}{name}. ",
+                    look_character_hename(target),
+                    profession_title(value, max)
+                ));
+            }
+        }
+
+        if target.flags.contains(CharacterFlags::PLAYER) {
+            body.push_str(&format!("Mirror={target_mirror}. "));
+            body.push_str(&format!("Karma: {}", target.karma));
+        }
+
+        Some(LookCharacterResult { header, body })
+    }
+
+    /// C `plr_send_inv` (`src/system/player.c`): builds the `SV_LOOKINV`
+    /// paperdoll fields directly from the target's `sprite`/`c1`/`c2`/`c3`
+    /// and the 12 worn-equipment slot item sprites (0 for empty slots).
+    /// No visibility gate here - callers must already have confirmed
+    /// `char_see_char` via `look_character_text`.
+    pub fn look_character_paperdoll(
+        &self,
+        target_id: CharacterId,
+    ) -> Option<LookCharacterPaperdoll> {
+        let target = self.characters.get(&target_id)?;
+        let mut worn_sprites = [0u32; 12];
+        for (slot, sprite) in worn_sprites.iter_mut().enumerate() {
+            *sprite = target
+                .inventory
+                .get(slot)
+                .copied()
+                .flatten()
+                .and_then(|item_id| self.items.get(&item_id))
+                .map(|item| item.sprite.max(0) as u32)
+                .unwrap_or(0);
+        }
+        Some(LookCharacterPaperdoll {
+            sprite: target.sprite.max(0) as u32,
+            colors: [
+                u32::from(target.c1),
+                u32::from(target.c2),
+                u32::from(target.c3),
+            ],
+            worn_sprites,
+        })
     }
 
     pub(crate) fn apply_tabunga_text_notification(
