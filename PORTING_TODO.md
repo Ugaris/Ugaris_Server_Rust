@@ -590,11 +590,12 @@ suggestion; dependencies are noted.
     heal/restore current `hp`/`mana`/`endurance` or install spells via
     `install_beyond_potion_spell` (already wired in iteration 17), never
     touch `values[]`, so they need no additional wiring.
-  - STILL REMAINING: level-up recompute (the "Experience/level-up side
-    effects" P1 task below is still unported, so there is no level-up call
-    site to wire yet). `raise_value_exp` also calls C `check_levelup(cn)`
-    before bumping the value, which stays unported until that task lands.
-    The `src/area/18/bones.c:317-431` and `src/area/37/arkhata.c:800-801`
+  - STILL REMAINING (iteration 20 update): `raise_value_exp`'s
+    `check_levelup(cn)` call is now wired too (see the "Experience/level-up
+    side effects" task's iteration 20 note - `world/item_outcomes.rs`'s
+    `StatScrollUsed` handler calls `check_levelup` before
+    `update_character`). The `src/area/18/bones.c:317-431` and
+    `src/area/37/arkhata.c:800-801`
     call sites of `raise_value_exp` are not yet ported to Rust at all (no
     `raise_value_exp` usage exists outside `scrolls.rs` in the Rust tree),
     so those specific area drivers remain out of scope for this note.
@@ -654,24 +655,39 @@ suggestion; dependencies are noted.
     either - only `raise_value_exp` calls `update_char` after its own
     `check_levelup` call, so no HP/mana-refill or update_char gap actually
     exists here.
-  - REMAINING: `raise_value_exp` (`skill.c:315-361`, backing
-    `item_driver/scrolls.rs`'s stat-scroll driver) still doesn't call
-    `check_levelup` before its raise even though C does - the driver only
-    has `&mut Character`, not `&mut World`, so wiring this needs the same
-    outcome-based pattern iteration 18 used for `update_character`
-    (`world/item_outcomes.rs::apply_item_driver_outcome`). The
-    level-10-multiple "Grats" server-wide broadcast (`server_chat(6,
-    ...)`), `achievement_check_level`, and `reset_name(cn)` have no Rust
-    equivalents anywhere (documented as gaps in `check_levelup`'s doc
-    comment, not silently dropped). Every other direct-mutation exp grant
-    site still bypasses `give_exp`/`check_levelup` entirely (no hardcore/
-    exp_modifier/NOEXP/NOLEVEL handling, no level-up): `area_apply.rs`'s
-    four random-shrine reward sites, `main.rs`'s inline quest/area reward
-    grants (~4 sites), `item_driver/food.rs`'s food exp bonus,
-    `player.rs:2921`, and `commands_admin.rs`'s `/milexp` command. Porting
-    those needs a `World`-level `give_exp` entry point usable from
-    `ugaris-core` item drivers too (today the modifiers live only in the
-    server-crate wrapper), which is a larger follow-up slice.
+  - Iteration 20: closed the `raise_value_exp` gap noted above. C
+    `raise_value_exp` (`skill.c:315-361`) calls `check_levelup(cn)` right
+    after adding the raise cost to `exp`/`exp_used`, once per successful
+    raise; the stat scroll driver (`item_driver/scrolls.rs`,
+    `base.c:6031` `IDR_STATSCROLL`) loops calling it per scroll charge on
+    `&mut Character` only, so - following the same outcome-based pattern
+    iteration 18 used for `update_character` - `World`'s
+    `ItemDriverOutcome::StatScrollUsed` handler
+    (`world/item_outcomes.rs::apply_item_driver_outcome`) now calls
+    `self.check_levelup(character_id)` before `self.update_character(...)`,
+    matching C's per-charge `check_levelup`/`update_char` ordering; a
+    single batched call after the loop is equivalent since both are
+    idempotent/monotonic on the final `exp`/`value[1]` state (documented
+    on the `ItemDriverOutcome::StatScrollUsed` doc comment, including why
+    the `V_PROFESSION` unlock edge case cannot diverge - raising
+    `V_PROFESSION` itself requires it already non-zero, which is exactly
+    when `check_levelup`'s unlock is a no-op). Test:
+    `world/tests/item_outcomes.rs::stat_scroll_use_triggers_check_levelup`
+    raises a cheap skill from a low bare value and asserts the character's
+    `level` field actually increments, not just `exp`.
+  - REMAINING: the level-10-multiple "Grats" server-wide broadcast
+    (`server_chat(6, ...)`), `achievement_check_level`, and
+    `reset_name(cn)` have no Rust equivalents anywhere (documented as gaps
+    in `check_levelup`'s doc comment, not silently dropped). Every other
+    direct-mutation exp grant site still bypasses `give_exp`/
+    `check_levelup` entirely (no hardcore/exp_modifier/NOEXP/NOLEVEL
+    handling, no level-up): `area_apply.rs`'s four random-shrine reward
+    sites, `main.rs`'s inline quest/area reward grants (~4 sites),
+    `item_driver/food.rs`'s food exp bonus, `player.rs:2921`, and
+    `commands_admin.rs`'s `/milexp` command. Porting those needs a
+    `World`-level `give_exp` entry point usable from `ugaris-core` item
+    drivers too (today the modifiers live only in the server-crate
+    wrapper), which is a larger follow-up slice.
 
 - [ ] **Ground item decay** - dropped items never disappear (bodies do).
   C: `set_expire(in, item_decay_time)` on player drops (`act_drop`) and

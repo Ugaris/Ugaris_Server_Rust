@@ -1157,6 +1157,19 @@ pub enum ItemDriverOutcome {
         modifier_slot: usize,
         modifier: i16,
     },
+    /// C `raise_value_exp` (`src/system/skill.c:315-361`) called once per
+    /// scroll charge by the stat scroll driver
+    /// (`item_driver::scrolls::stat_scroll_driver`, `base.c:6031`
+    /// `IDR_STATSCROLL`). `raised`/`exp_cost` are the totals across every
+    /// successful charge in the loop; `World`'s outcome handler
+    /// (`world/item_outcomes.rs`) applies `check_levelup` +
+    /// `update_character` once for the batch, equivalent to C's per-charge
+    /// `check_levelup(cn)`/`update_char(cn)` calls since both are
+    /// idempotent/monotonic on the final `exp`/`value[1]` state (the
+    /// profession-unlock edge case in `check_levelup` cannot diverge here:
+    /// raising `V_PROFESSION` itself requires `value[1][V_PROFESSION]` to
+    /// already be non-zero, which is exactly the condition under which
+    /// `check_levelup`'s unlock is a no-op).
     StatScrollUsed {
         item_id: ItemId,
         character_id: CharacterId,

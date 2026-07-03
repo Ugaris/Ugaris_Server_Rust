@@ -2264,15 +2264,12 @@ impl World {
                 }
             }
             ItemDriverOutcome::StatScrollUsed { character_id, .. } => {
-                // C `raise_value_exp` (`src/system/skill.c:315`) calls
-                // `update_char(cn)` right after bumping `value[1][v]` for
-                // each successful raise; the stat scroll driver
-                // (`base.c:6031` `IDR_STATSCROLL`) loops calling
-                // `raise_value_exp` per scroll charge, so by the time it
-                // returns the values are already stale relative to C's
-                // per-raise recompute. A single recompute here is
-                // equivalent since `update_char` is idempotent on the
-                // final `value[1]` state.
+                // See the `ItemDriverOutcome::StatScrollUsed` doc comment
+                // for why a single batched `check_levelup` +
+                // `update_character` pass here matches C's per-charge
+                // `check_levelup(cn)`/`update_char(cn)` calls in
+                // `raise_value_exp`.
+                self.check_levelup(character_id);
                 self.update_character(character_id);
                 outcome
             }

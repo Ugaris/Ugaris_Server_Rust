@@ -1045,3 +1045,50 @@ fn stat_scroll_use_triggers_update_character_recompute() {
     // skill (11 * 5 = 55), not the stale pre-raise bonus (10 * 5 = 50).
     assert_eq!(owner.values[0][CharacterValue::Armor as usize], 55);
 }
+
+#[test]
+fn stat_scroll_use_triggers_check_levelup() {
+    // C `raise_value_exp` (`src/system/skill.c:315-361`) calls
+    // `check_levelup(cn)` right after granting the raise cost as exp, for
+    // every successful raise. Raising a cheap skill (Pulse, index 11,
+    // `skill_start` 1, `skill_raise_cost_factor` 1) from a low bare value
+    // costs enough exp in one charge to cross multiple level thresholds,
+    // so the stat scroll driver must leave the character leveled up, not
+    // just exp-richer.
+    let mut world = World::default();
+    let mut owner = character(1);
+    owner.level = 1;
+    owner.exp = 0;
+    owner.exp_used = 0;
+    owner.values[0][CharacterValue::Pulse as usize] = 1;
+    owner.values[1][CharacterValue::Pulse as usize] = 1;
+    owner.inventory[30] = Some(ItemId(7));
+    world.add_character(owner);
+
+    let mut scroll = item(7, ItemFlags::USED | ItemFlags::USE);
+    scroll.driver = crate::item_driver::IDR_STATSCROLL;
+    scroll.carried_by = Some(CharacterId(1));
+    scroll.driver_data = vec![CharacterValue::Pulse as u8, 1];
+    world.add_item(scroll);
+
+    let outcome = world.execute_item_driver_request(
+        ItemDriverRequest::Driver {
+            driver: crate::item_driver::IDR_STATSCROLL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        1,
+    );
+
+    assert!(matches!(
+        outcome,
+        ItemDriverOutcome::StatScrollUsed { raised: 1, .. }
+    ));
+    let owner = &world.characters[&CharacterId(1)];
+    // raise_cost(11, 1, seyan=false): nr = 1 - 1 + 1 + 5 = 6, cost =
+    // 6^3 / 10 = 21 exp granted, which crosses `exp2level` thresholds
+    // 1 (exp 0) and 2 (exp 16), landing on level 2.
+    assert_eq!(owner.exp, 21);
+    assert_eq!(owner.level, 2);
+}

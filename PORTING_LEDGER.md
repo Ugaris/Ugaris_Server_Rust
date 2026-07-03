@@ -66,7 +66,7 @@ Remaining oversized files worth splitting during future work:
 | `src/module/base.c` `usetrap` / `steptrap` core scheduling paths, `balltrap` dispatch boundary, area 2 `spiketrap_driver` / `flamethrow_driver` / `extinguish_driver` core paths | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | `IDR_USETRAP` delayed target-item scheduling with the using character, `IDR_STEPTRAP` zero-character timer target discovery using the legacy 1/3/5/7 direction scan and distance 1 then 2, character-triggered delayed zero-character target scheduling, `IDR_BALLTRAP` non-player/timer guards plus legacy `drdata[0..2]` projectile start/target/power decoding to a typed outcome, `IDR_SPIKETRAP` one-shot armed-state sprite toggle, legacy `drdata[1] * POWERSCALE` damage unit, one-second reset timer, timer reset state, `IDR_FLAMETHROW` timer-only fire countdown, lit/unlit sprite/light modifier transitions, direction target scan for one/two tiles, one-tick active rescheduling, `drdata[3]` idle interval scheduling, C `burn_char` duplicate suppression/one-minute `EF_BURN` lifecycle with direct legacy-unit damage, `IDR_EXTINGUISH` burn removal/no-burn handling, legacy extinguish feedback text, and `SV_CEFFECT` burn body encoding ported with focused core/protocol/server tests. Actual projectile/effect creation for ball traps, exact `hurt` armor/shield reduction/death handling, and light/sector invalidation callbacks remain. |
 | `src/area/3/area3.c` `onofflight_driver` / `gate_driver` palace lamp-gate slice | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs` | `IDR_ONOFFLIGHT` timer registration, player light toggling, sprite/light modifier mutation, switched-on/off palace lamp counters, all-lamps-on keep-open window, `IDR_PALACEGATE` zero-character timer dispatch, gate open/close tile/item flag mutation, blocked close refusal, dirty-sector marking, and startup scheduling for existing palace lamps/gates ported with focused core/world tests. Exact area 3 character/dialogue quest flow around lamp ghosts and palace story state remains. |
 | `src/server.h` | `crates/ugaris-core/src/entity.rs`, `crates/ugaris-core/src/effect.rs`, `crates/ugaris-core/src/legacy.rs`, `crates/ugaris-core/src/map.rs` | Core flags, values, map/item/character/effect shapes including character sprite, item template ID, death counter, inventory ranges, version, tick constants ported. |
-| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_STATSCROLL` dispatch, carried-only and `/noexp` blocking, C skill-cost/start-factor/max checks needed by stat scrolls, XP grant/spend, bare/effective value raise, consume-on-success behavior, and runtime executed-outcome classification ported with focused tests. `CL_RAISE` now spends already-unspent exp (`raise_value`, distinct from the exp-granting `raise_value_exp` scroll path) through `World::raise_skill`, sending a single-value `SV_SETVAL0/1` + exp/exp_used feedback packet on success and staying silent on failure like C. Both raise paths now call `update_character`: `World::raise_skill` since iteration 17 and `World::apply_item_driver_outcome`'s `StatScrollUsed` arm since iteration 18 (the item driver itself only has `&mut Character`, so the `World`-level outcome handler recomputes once after the scroll's raise loop completes, matching C's per-raise `update_char` since the recompute is idempotent on the final `value[1]` state). Level-up recalculation and achievement checks remain for both raise paths. |
+| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_STATSCROLL` dispatch, carried-only and `/noexp` blocking, C skill-cost/start-factor/max checks needed by stat scrolls, XP grant/spend, bare/effective value raise, consume-on-success behavior, and runtime executed-outcome classification ported with focused tests. `CL_RAISE` now spends already-unspent exp (`raise_value`, distinct from the exp-granting `raise_value_exp` scroll path) through `World::raise_skill`, sending a single-value `SV_SETVAL0/1` + exp/exp_used feedback packet on success and staying silent on failure like C. Both raise paths now call `update_character`: `World::raise_skill` since iteration 17 and `World::apply_item_driver_outcome`'s `StatScrollUsed` arm since iteration 18 (the item driver itself only has `&mut Character`, so the `World`-level outcome handler recomputes once after the scroll's raise loop completes, matching C's per-raise `update_char` since the recompute is idempotent on the final `value[1]` state). As of iteration 20, the `StatScrollUsed` outcome handler also calls `check_levelup` before `update_character`, matching C `raise_value_exp`'s `check_levelup(cn)` call (`raise_value`/`CL_RAISE` never calls `check_levelup` in C, so `World::raise_skill` correctly has no such call). Achievement checks (`achievement_check_skill`/`achievement_check_level`) remain unported for both raise paths. |
 | `src/system/act.h` | `crates/ugaris-core/src/legacy.rs` | Action IDs ported. |
 | `src/system/questlog.h`, `src/system/player.c` `sendquestlog` base packet | `crates/ugaris-core/src/quest.rs`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | Quest IDs, flags, fixed-size quest log behavior, C bitfield quest-entry packing, base `SV_QUESTLOG` payload shape with zeroed random-shrine PPD, and `CL_GETQUESTLOG` response path ported with tests. Full quest initialization/reopen side effects and mod-protocol questlog extensions remain. |
 | `src/system/io.c` / `src/system/io.h` | `crates/ugaris-protocol/src/frame.rs`, `crates/ugaris-net/src/*`, `crates/ugaris-server/src/main.rs` | Legacy tick frame envelope, TCP session skeleton, per-session server command channels, runtime-to-session framed payload sending, listener readiness/error reporting, default info logging, IPv4 plus IPv6 localhost listening for `localhost`, multi-payload login bootstrap queueing, and chunked full-map bootstrap below legacy frame limits ported. Full gameplay send buffering, compression modes, and backpressure policy remain partial. |
@@ -1556,3 +1556,50 @@ Recommended next chest steps:
   (zero warnings), and a 10s boot smoke (`entering Rust game loop`, ticks
   advancing, NPC driver messages processed including live kill-exp
   `check_levelup` calls, no panics) all pass.
+
+## Ralph Loop - Experience/Level-Up Side Effects (Iteration 20)
+
+- Closed the "STILL REMAINING" gap from iteration 19 above: C
+  `raise_value_exp` (`src/system/skill.c:315-361`) calls
+  `check_levelup(cn)` right after adding the raise cost to
+  `exp`/`exp_used` (before bumping `value[1][v]`), once per successful
+  raise. The stat scroll driver (`item_driver/scrolls.rs`, `base.c:6031`
+  `IDR_STATSCROLL`) loops calling `raise_value_exp` per scroll charge on
+  `&mut Character` only (no `&mut World` access), so - following the same
+  outcome-based pattern iteration 18 used to wire `update_character` into
+  this same call site - `World`'s `ItemDriverOutcome::StatScrollUsed`
+  handler (`world/item_outcomes.rs::apply_item_driver_outcome`) now calls
+  `self.check_levelup(character_id)` immediately before
+  `self.update_character(character_id)`, matching C's per-charge
+  `check_levelup`/`update_char` ordering. A single batched call after the
+  loop completes is equivalent to per-charge calls because both
+  `check_levelup` (loops until `exp2level(exp) <= level`) and
+  `update_character` are idempotent/monotonic on the final `exp`/
+  `value[1]` state; documented on the `ItemDriverOutcome::StatScrollUsed`
+  doc comment (`item_driver/types.rs`) including why the `V_PROFESSION`
+  level-20-unlock edge case cannot diverge from per-charge ordering -
+  raising `V_PROFESSION` itself requires `value[1][V_PROFESSION]` already
+  non-zero (checked earlier in `raise_value_exp`), which is exactly the
+  condition under which `check_levelup`'s unlock (`if
+  value[1][V_PROFESSION] == 0`) is already a no-op.
+- Test: new
+  `world/tests/item_outcomes.rs::stat_scroll_use_triggers_check_levelup`
+  raises a cheap raisable value (Pulse, index 11) from a low bare value
+  via a stat scroll, computes the expected exp grant by hand from
+  `raise_cost`, and asserts the character's `level` field actually
+  increments (1 -> 2), not just `exp` - the existing
+  `stat_scroll_use_triggers_update_character_recompute` test only ever
+  exercised the `update_character` half of this outcome.
+- Updated both `PORTING_TODO.md` P1 entries that referenced this gap
+  ("`update_char` stat recomputation"'s STILL REMAINING note and
+  "Experience/level-up side effects"'s REMAINING note) to reflect it is
+  now closed; the remaining gaps in both tasks are unchanged (unported
+  `bones.c`/`arkhata.c` `raise_value_exp` call sites, the level-10 "Grats"
+  broadcast, `achievement_check_level`, `reset_name`, and the ~7
+  direct-mutation exp-grant call sites that bypass `give_exp`/
+  `check_levelup` entirely, which all still need a `World`-level
+  `give_exp` entry point as a larger follow-up slice).
+- Full workspace suite (1090 + 9 + 3 + 33 + 340 = 1475 tests across all
+  crates, 0 failed), `cargo fmt --all`, and `cargo build -p ugaris-server`
+  (zero warnings) all pass. This change does not touch the runtime loop,
+  login, map sync, or protocol, so no boot smoke was required.
