@@ -5330,6 +5330,13 @@ async fn main() -> anyhow::Result<()> {
                 let merchants_before_tick: std::collections::HashSet<CharacterId> =
                     world.merchant_stores.keys().copied().collect();
                 world.process_merchant_actions();
+                // C `merchant_driver`: seed/refresh "special" enchanted-item
+                // stock (`add_special_store`, every 12h).
+                let special_store_updates = world.refresh_special_stores(&mut zone_loader);
+                for merchant_id in special_store_updates {
+                    save_merchant_store_if_configured(&world, &merchant_repository, merchant_id)
+                        .await;
+                }
                 if let Some(repository) = &merchant_repository {
                     // C `create_store`: `load_merchant_inventory` on first
                     // creation, or an initial `queue_merchant_full_save` if

@@ -537,3 +537,8 @@ pub(crate) const IID_STAFF_REDKEY12: u32 = make_item_id(DEV_ID_WARR, 0x00001B);
 pub(crate) const IID_STAFF_REDKEY13: u32 = make_item_id(DEV_ID_WARR, 0x00001C);
 
 pub(crate) const IID_STAFF_REDKEY23: u32 = make_item_id(DEV_ID_WARR, 0x00001D);
+
+/// C `IID_GENERIC_SPECIAL` (`src/common/item_id.h`): marks an item built by
+/// `create_special_item`. `pub` (not `pub(crate)`) since `world::special_item`
+/// needs it outside the `item_driver` module.
+pub const IID_GENERIC_SPECIAL: u32 = make_item_id(DEV_ID_DB, 0x00002C);

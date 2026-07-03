@@ -36,6 +36,7 @@ mod npc_messages;
 mod regen;
 mod skills;
 mod spawn;
+mod special_item;
 mod speed;
 mod spells;
 mod teleport;
@@ -115,7 +116,9 @@ use crate::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
         CHARACTER_VALUE_COUNT, INVENTORY_SIZE, MAX_MODIFIERS, POWERSCALE, V_FIREBALL,
     },
-    game_settings::GameSettings,
+    game_settings::{
+        GameSettings, SP_FEW_CONST, SP_MANY_CONST, SP_RARE_CONST, SP_SOME_CONST, SP_ULTRA_CONST,
+    },
     game_time::GameDate,
     ids::{CharacterId, ItemId},
     item_driver::{
@@ -130,7 +133,8 @@ use crate::{
         IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM,
         IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_WARPKEYDOOR, IDR_WARPTELEPORT,
         IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY,
-        IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_MINEGATEWAY,
+        IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_GENERIC_SPECIAL,
+        IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
@@ -162,6 +166,7 @@ use crate::{
         POISON_DURATION, SPELL_SLOT_END, SPELL_SLOT_START, WARCRY_DURATION,
     },
     tick::TICKS_PER_SECOND,
+    zone::ZoneLoader,
     Tick,
 };
 

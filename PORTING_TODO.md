@@ -1306,11 +1306,80 @@ suggestion; dependencies are noted.
   are not wired to the new repository (`add_special_store` itself is still
   unported per the "Special stores" task below).
 
-- [ ] **Special stores** - C `add_special_store`/`create_special_item`
+- [x] **Special stores** - C `add_special_store`/`create_special_item`
   (`src/module/merchants/store.c` + `create.c`): the random enchanted-item
   stock merchants refresh every 12h. Port `create_special_item` into core
   (it is also used by chests/loot), then enable the `special` merchant arg
   path already parsed in `MerchantDriverData`.
+  - C: `create_special_item(strength, base, potionprob, maxchance)`
+    (`src/system/tool.c:2620-2789`, not `create.c` - corrected during
+    implementation, the doc-comment reference was stale) builds one
+    randomly-enchanted item: an optional potion branch
+    (`RANDOM(potionprob)`), a 21-entry `ITEM_TYPES[]` base-item roll
+    (`tool.c:2623-2626`), a non-gaussian `lowhi_random` strength roll
+    (`tool.c:2793-2799`), a weighted 76-entry `special_item[]` table roll
+    (`tool.c:2295-2390`, transcribed verbatim - the task description's "72
+    entries" estimate was off), and `set_item_requirements_sub`
+    (`tool.c:2392-2514`, level/Arch-class gating from the item's highest
+    modifier value). `add_special_store` (`src/module/merchants/
+    store.c:229-323`) rolls strength 1-22 (reused directly as
+    `create_special_item`'s `strength` arg) and a derived `base` tier via
+    a switch, then calls `create_special_item(str, base, 1, 1000)` (never
+    a potion, "no junk" tier) and adds the result to the merchant's store.
+    `merchant_driver` (`src/module/merchants/merchant.c:337-347,546-548`,
+    duplicated in `aclerk_driver` - a separate, still-unported NPC driver,
+    left alone) seeds five special wares the first time a
+    `special`-flagged merchant's store is created, then adds one more
+    every 12 real-time hours (`dat->lastadd`).
+  - Rust: `World::create_special_item`/`World::add_special_store`/
+    `World::refresh_special_stores` (new
+    `crates/ugaris-core/src/world/special_item.rs`), reusing the existing
+    `legacy_random_below_from_seed` LCG and `MerchantDriverData::special`/
+    `last_special_add` fields (already parsed, previously unused). Added
+    `pub const IID_GENERIC_SPECIAL` to `item_driver/ids.rs`. Threaded a
+    new `&mut ZoneLoader` parameter through `create_special_item`/
+    `add_special_store`/`refresh_special_stores` only (not through
+    `ensure_merchant_store`/`process_merchant_actions`, to avoid breaking
+    their many existing call sites) - `refresh_special_stores` is called
+    once per tick in `main.rs` right after `process_merchant_actions()`,
+    using the `last_special_add == 0` sentinel to detect "never seeded"
+    and drive the initial five-item seed, matching the existing
+    `clear_expired_merchant_memory` 12h-tick-comparison idiom. Returns the
+    merchants whose store changed so `main.rs` can persist them via the
+    existing `save_merchant_store_if_configured` helper (C: each
+    successful `add_special_store` ends with its own
+    `queue_merchant_full_save`).
+  - Tests: `crates/ugaris-core/src/world/tests/special_item.rs` (8 tests) -
+    a fully deterministic equipment roll verified digit-for-digit against
+    a Python replica of the exact LCG/table sequence (item name,
+    description text, value, modifier slot, `min_level`, `template_id`),
+    the potion branch returning an unmodified template, a missing-template
+    `None` result, `add_special_store` requiring an existing store, a
+    single successful add, and the full `refresh_special_stores` seed-five
+    then no-op-same-tick then refresh-after-12h sequence (plus a
+    `special == 0` no-op case). Confirmed real `ugaris_data` templates
+    exist for every one of the 21 `ITEM_TYPES` entries (all ten quality
+    tiers of the eight `%dq3` families, all 12 fixed entries) and all
+    three potion families, and that two real zone files
+    (`zones/12/mine.chr`, `zones/31/mineshop.chr`) actually use
+    `special=1`, confirming this isn't dead configuration.
+  - REMAINING: `create_special_item` is not yet wired to chest/loot
+    generation (`src/system/create.c:1102`'s `special_prob`/
+    `special_str`/`special_base` character-template fields, already
+    parsed by the zone loader but explicitly discarded per `zone.rs`'s
+    own doc comment) - out of scope for this slice, a separate follow-up.
+    `aclerk_driver`'s duplicate special-store logic
+    (`merchant.c:667,846-848`) is unported since `CDR_TRADER`/aclerk
+    itself has no Rust driver yet (tracked in the P2 "Aclerk / auction
+    NPC" task). On the very first tick a brand-new `special` store is
+    created, both the new explicit `save_merchant_store_if_configured`
+    call and the pre-existing `newly_created_stores`-diff DB-load/save
+    loop may both act on the same merchant in the same tick (the diff
+    loop's `load_store` could even overwrite the freshly-seeded five items
+    with an older persisted snapshot on a restart) - harmless (at most one
+    redundant save, and restoring persisted state on restart is correct
+    behavior) but worth knowing about if the merchant-persistence flow is
+    touched again.
 
 - [x] **Client command audit completion** - handle the remaining parsed
   actions: `ClientInfo`, `Log`, `ModPacket` (mod protocol - can be a
