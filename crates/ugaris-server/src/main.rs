@@ -1420,6 +1420,15 @@ async fn main() -> anyhow::Result<()> {
                                 }
                             }
                         }
+                        ClientAction::Ping { value } => {
+                            // C `cl_ping` (`src/system/player.c`) blindly
+                            // echoes the client's opaque 4-byte value back
+                            // prefixed with `SV_PING` - no character/world
+                            // state involved, pure transport round trip.
+                            let mut builder = PacketBuilder::new();
+                            builder.ping(value);
+                            runtime.send_to_session(session_id, builder.into_payload());
+                        }
                         _ => {}
                     }
                 }

@@ -378,4 +378,15 @@ mod tests {
             ClientAction::TakeGold { amount: 0x04030201 }
         );
     }
+
+    #[test]
+    fn parses_ping_opaque_value_little_endian() {
+        // C `cl_ping` (`src/system/player.c`) reads the client's 4-byte
+        // payload as a raw `unsigned int` and echoes it back unmodified -
+        // the client stores its own tick count there (opaque to the server).
+        assert_eq!(
+            parse_action(&[CL_PING, 0xef, 0xbe, 0xad, 0xde]).unwrap(),
+            ClientAction::Ping { value: 0xdeadbeef }
+        );
+    }
 }

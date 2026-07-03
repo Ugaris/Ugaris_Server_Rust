@@ -174,6 +174,15 @@ impl PacketBuilder {
         self
     }
 
+    /// C: `cl_ping` (`src/system/player.c`) echoes the client's opaque 4-byte
+    /// value back unmodified, prefixed with `SV_PING`. The client uses the
+    /// round trip to compute RTT; the server never interprets the value.
+    pub fn ping(&mut self, value: u32) -> &mut Self {
+        self.payload.put_u8(SV_PING);
+        self.payload.put_u32_le(value);
+        self
+    }
+
     pub fn protocol(&mut self, version: u8) -> &mut Self {
         self.raw(&protocol(version))
     }
@@ -979,6 +988,14 @@ mod tests {
         builder.ticker(0x11223344);
         let payload = builder.into_payload();
         assert_eq!(&payload[..], &[SV_TICKER, 0x44, 0x33, 0x22, 0x11]);
+    }
+
+    #[test]
+    fn ping_echoes_opaque_value_unmodified_like_c_cl_ping() {
+        let mut builder = PacketBuilder::new();
+        builder.ping(0xdeadbeef);
+        let payload = builder.into_payload();
+        assert_eq!(&payload[..], &[SV_PING, 0xef, 0xbe, 0xad, 0xde]);
     }
 
     #[test]

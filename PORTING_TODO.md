@@ -317,9 +317,28 @@ order.
   item (with `IF_NOJUNK` guard, not `IF_QUEST` - corrected during
   implementation; see below).
 
-- [ ] **Ping (`CL_PING`)** - C echoes `SV_PING`/`SV_LPING` with the client
+- [x] **Ping (`CL_PING`)** - C echoes `SV_PING`/`SV_LPING` with the client
   timestamp (see client `sv_ping`, `svl_ping`). Wire it so client RTT
   display works. Trivial: builder + handler + test.
+  - C: `cl_ping` (`src/system/player.c:1352-1358`) reads the raw 4-byte
+    opaque value the client sent (its own `SDL_GetTicks()`, per the
+    community client's `cmd_ping`) and echoes it back unmodified, prefixed
+    with `SV_PING` (49) - 5 bytes total, native/little-endian, no
+    transformation. There is no separate `SV_LPING` packet type; the
+    client's `sv_ping`/`svl_ping` are just its two-pass (length/process)
+    naming convention applied to the one `SV_PING` type.
+  - Rust: `ClientAction::Ping`/`CL_PING` parsing already existed
+    (`crates/ugaris-protocol/src/command.rs`, `client.rs`) but had no
+    builder or handler. Added `PacketBuilder::ping` (mirrors the existing
+    `ticker`/`mirror` `u8 + put_u32_le` shape) to
+    `crates/ugaris-protocol/src/packet.rs`, and wired a
+    `ClientAction::Ping { value }` match arm in
+    `crates/ugaris-server/src/main.rs` that echoes the value straight back
+    to the same session - no character/world state touched, matching C's
+    pure-transport handler.
+  - Tests: `command.rs` (`parses_ping_opaque_value_little_endian`),
+    `packet.rs` (`ping_echoes_opaque_value_unmodified_like_c_cl_ping`).
+  - REMAINING: nothing - task fully done as scoped.
 
 - [ ] **Fast sell (`CL_FASTSELL`)** - C `cl_fastsell` sells an inventory
   slot directly to the active merchant (`player_store`-adjacent path).
@@ -716,3 +735,8 @@ Add one line per completed task: date, task, ledger section touched.
   dispatch alongside the gold arm; ledger section "Ralph Loop - Junk Item
   (CL_JUNK_ITEM)". Corrected the todo note: C's real gate is `IF_NOJUNK`,
   not `IF_QUEST` (confirmed by reading `player.c:1325-1337`).
+- 2026-07-03: Ping (`CL_PING`) (P0) - added `PacketBuilder::ping` to
+  `crates/ugaris-protocol/src/packet.rs` and wired the
+  `ClientAction::Ping` match arm in `crates/ugaris-server/src/main.rs`
+  (opaque 4-byte echo, no state change); ledger section "Ralph Loop -
+  Ping (CL_PING)".
