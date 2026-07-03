@@ -15,6 +15,7 @@ mod login;
 mod map_sync;
 mod merchants;
 mod player_actions;
+mod resource_sync;
 mod server_misc;
 mod snapshots;
 mod spawns;

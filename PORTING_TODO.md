@@ -1012,7 +1012,7 @@ suggestion; dependencies are noted.
   / `tool.c`. Rust: reuse `World::set_item_expire` from `world/death.rs`
   in `complete_drop`; respect `IF_NODECAY`. Tests in `world/tests/items.rs`.
 
-- [ ] **`SV_SETVAL`/resource streaming on change** - C pushes value/exp/
+- [x] **`SV_SETVAL`/resource streaming on change** - C pushes value/exp/
   gold/HP bars whenever they change (`CF_UPDATE`/`CF_ITEMS` consumers in
   `plr_update`). Rust only sends resources in the periodic char record and
   after specific actions. Add a per-tick pass: when a session's character
@@ -1021,6 +1021,35 @@ suggestion; dependencies are noted.
   `ITEMS`) and clear the flags. Mirror C's flag semantics exactly.
   - This replaces several ad-hoc `command_inventory_refresh` pushes -
     migrate call sites gradually, do not break existing tests.
+  - C: `player_stats()` in `src/system/player.c:2944` (the function the todo
+    called `plr_update` does not exist under that name) - gates the
+    value-table diff loop behind `CF_UPDATE` and the item/citem/cprice/gold
+    diff behind `CF_ITEMS`, clearing each flag right after; HP/endurance/
+    mana/lifeshield/exp/exp_used are sent unconditionally on a per-session
+    shadow diff (no flag gate). Confirmed `CF_UPDATE`/`CF_ITEMS` bit values
+    (`1<<8`/`1<<12`) already matched the existing Rust `CharacterFlags`.
+  - Rust: new `crates/ugaris-server/src/resource_sync.rs`
+    (`queue_resource_sync_frames`), called once per tick in `main.rs` right
+    before `queue_periodic_player_frames` (mirrors C's `player_map` then
+    `player_stats` ordering). Rust has no per-session shadow-value cache
+    (unlike C), so instead of per-field diffing it sends a full snapshot of
+    whichever category's flag is set (same packet shapes as `login_payload`/
+    `inventory_snapshot_payload`) and clears exactly the flag(s) that were
+    acted on. This still matches C's flag-gating semantics (nothing sent
+    when neither flag is set) and is idempotent alongside the existing
+    ad-hoc `command_inventory_refresh`/action-specific pushes, which were
+    left in place per the task note (not migrated this iteration).
+  - Tests: `crates/ugaris-server/src/tests/resource_sync.rs` (5 tests) -
+    no-op when neither flag set, `UPDATE` sends values/hp/exp and clears
+    only `UPDATE`, `ITEMS` sends cursor/inventory/gold and clears only
+    `ITEMS`, both flags in one frame clear both, and non-`Normal` sessions
+    are skipped without touching the flag.
+  - REMAINING: no per-session shadow diff cache exists, so this sends full
+    category snapshots rather than only the changed fields (functionally
+    correct, more bytes on the wire than C); `command_inventory_refresh`/
+    `command_container_refresh` call sites in `main.rs` were not migrated
+    away, so some actions will now (harmlessly) double-send an inventory
+    snapshot in the same tick.
 
 - [ ] **Serial validation everywhere** - C guards every queued action with
   `ch[co].serial != act2 -> abort`. Rust stores serials but

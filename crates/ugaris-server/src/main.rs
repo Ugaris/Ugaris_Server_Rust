@@ -24,6 +24,7 @@ mod login;
 mod map_sync;
 mod merchants;
 mod player_actions;
+mod resource_sync;
 mod rng;
 mod snapshots;
 mod spawns;
@@ -50,6 +51,7 @@ pub(crate) use login::*;
 pub(crate) use map_sync::*;
 pub(crate) use merchants::*;
 pub(crate) use player_actions::*;
+pub(crate) use resource_sync::*;
 pub(crate) use rng::*;
 pub(crate) use snapshots::*;
 pub(crate) use spawns::*;
@@ -5267,6 +5269,11 @@ async fn main() -> anyhow::Result<()> {
                     send_pending_world_channel_broadcasts(&mut runtime, &mut world);
                 if channel_broadcast_sessions != 0 {
                     info!(channel_broadcast_sessions, tick = world.tick.0, "queued world channel broadcast feedback");
+                }
+
+                let resource_sync_sessions = queue_resource_sync_frames(&mut runtime, &mut world);
+                if resource_sync_sessions != 0 {
+                    info!(resource_sync_sessions, tick = world.tick.0, "queued resource/value sync frames");
                 }
 
                 let (periodic_diff_sessions, periodic_empty_frames) =

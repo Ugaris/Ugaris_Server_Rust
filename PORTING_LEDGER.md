@@ -2228,3 +2228,58 @@ Recommended next chest steps:
   server + 0 doc-tests, all green) / `cargo build -p ugaris-server` clean
   with zero warnings; boot-smoked (`entering Rust game loop`, ticking with
   no panics for 10+ seconds).
+
+## Ralph Loop - `SV_SETVAL`/Resource Streaming On Change (Iteration 31)
+
+- The function the `PORTING_TODO.md` task called `plr_update` does not
+  exist under that name; the real C home is `player_stats()`
+  (`src/system/player.c:2944-3398`), called once per tick per `ST_NORMAL`
+  player from the `player_map`/`player_stats`/`player_act` triple
+  (`player.c:3648-3662`). It gates the 43-slot value-table diff loop
+  (`SV_SETVAL0`/`SV_SETVAL1`) behind `CF_UPDATE`, clearing the flag right
+  after; gates the item/citem/cprice/gold diff behind `CF_ITEMS`, likewise
+  clearing after; and sends HP/endurance/mana/lifeshield/exp/exp_used
+  unconditionally whenever they differ from a per-session shadow (no flag
+  gate at all for those fields - C keeps a full per-player shadow of every
+  field it last sent and diffs field-by-field). Confirmed `CF_UPDATE`
+  (`1<<8`) / `CF_ITEMS` (`1<<12`) numeric values already matched the
+  existing Rust `CharacterFlags::UPDATE`/`::ITEMS` bit positions - that
+  part of the port (dozens of set-sites across `world/*.rs`,
+  `item_driver/*.rs`) was already faithfully done; nothing ever consumed
+  or cleared the flags.
+- New `crates/ugaris-server/src/resource_sync.rs`
+  (`queue_resource_sync_frames`), wired into the tick loop in `main.rs`
+  immediately before `queue_periodic_player_frames` (mirrors C's
+  `player_map` then `player_stats` call ordering). Since Rust has no
+  per-session shadow-value cache (unlike C's `player[nr]->value[][]`/
+  `hp`/`gold`/`item[]`), this sends a full snapshot of whichever
+  category's flag is set - same packet shapes as `login_payload`'s value
+  loop (`SV_SETVAL0/1` for all 43 slots, `SV_SETHP`/`SV_ENDURANCE`/
+  `SV_SETMANA`/`SV_LIFESHIELD`, `SV_EXP`/`SV_EXP_USED`) for `UPDATE`, and
+  `inventory_snapshot_payload`'s shape (`SV_SETCITEM`, `SV_SETITEM` per
+  slot, `SV_GOLD`) for `ITEMS` - instead of C's per-field diff, and clears
+  exactly the flag(s) that were acted on. This preserves C's flag-gating
+  semantics (nothing sent when neither flag is set) and coexists
+  harmlessly with the existing ad-hoc `command_inventory_refresh`/
+  `command_container_refresh`/per-action pushes in `main.rs`, which were
+  intentionally left in place this iteration per the task's own
+  "migrate call sites gradually, do not break existing tests" note.
+- 5 new focused tests in `crates/ugaris-server/src/tests/resource_sync.rs`:
+  no packet sent when neither flag is set, `UPDATE` sends values/HP/exp
+  and clears only `UPDATE` (leaving `ITEMS` untouched), `ITEMS` sends
+  cursor/inventory/gold and clears only `ITEMS`, both flags set in the
+  same tick produce one combined frame and clear both, and sessions not
+  in `PlayerConnectionState::Normal` are skipped without touching the
+  flag.
+- REMAINING: no per-session shadow diff cache exists yet, so this sends
+  full category snapshots rather than only the fields that actually
+  changed (functionally correct, strictly more bytes on the wire than C
+  - a future task could add a shadow cache parallel to
+  `VisibleMapCache`/`ClientEffectCache` for exact diff parity);
+  `command_inventory_refresh`/`command_container_refresh` call sites in
+  `main.rs` were not migrated away, so a handful of actions will now
+  (harmlessly) double-send an inventory snapshot within the same tick.
+- `cargo fmt --all` / `cargo test --workspace` (1120 core + 9 + 3 + 356
+  server + 0 doc-tests, all green) / `cargo build -p ugaris-server` clean
+  with zero warnings; boot-smoked (`entering Rust game loop`, ticking with
+  no panics for 10+ seconds).
