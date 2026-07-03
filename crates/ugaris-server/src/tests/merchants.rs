@@ -138,6 +138,102 @@ fn fast_sell_ignores_illegal_slots_like_c_bounds_check() {
 }
 
 #[test]
+fn merchant_store_snapshot_captures_name_position_gold_and_wares() {
+    let (mut world, merchant_id, _player_id) = merchant_and_shopper(400, 0);
+    world.merchant_stores.get_mut(&merchant_id).unwrap().gold = 12_345;
+    let ware_item = test_item(ItemId(910), 77, ItemFlags::TAKE | ItemFlags::USED);
+    world.merchant_stores.get_mut(&merchant_id).unwrap().wares[0] = Some(StoreWare {
+        item: ware_item,
+        count: 3,
+        always: true,
+    });
+
+    let snapshot = merchant_store_snapshot(&world, merchant_id).expect("store exists");
+
+    assert_eq!(snapshot.merchant_name, "Dolf");
+    assert_eq!(snapshot.x, 10);
+    assert_eq!(snapshot.y, 10);
+    assert_eq!(snapshot.gold, 12_345);
+    assert_eq!(snapshot.price_multi, 400);
+    let ware = snapshot.wares[0].as_ref().expect("ware present at slot 0");
+    assert_eq!(ware.count, 3);
+    assert!(ware.always);
+    assert_eq!(ware.item.sprite, 77);
+    assert!(snapshot.wares[1..].iter().all(Option::is_none));
+}
+
+#[test]
+fn merchant_store_snapshot_is_none_without_a_store() {
+    let mut world = World::default();
+    let merchant_id = CharacterId(1);
+    assert!(world.spawn_character(merchant_character(merchant_id, 400), 10, 10));
+    // No `ensure_merchant_store` call, so `world.merchant_stores` has no
+    // entry for this merchant yet.
+    assert!(merchant_store_snapshot(&world, merchant_id).is_none());
+}
+
+#[test]
+fn apply_merchant_store_snapshot_overwrites_gold_price_multi_and_wares() {
+    let (mut world, merchant_id, _player_id) = merchant_and_shopper(400, 0);
+    // C `load_merchant_inventory` fully replaces gold/pricemulti and every
+    // saved ware slot from the database row.
+    let loaded_item = test_item(ItemId(920), 99, ItemFlags::TAKE | ItemFlags::USED);
+    let snapshot = MerchantStoreSnapshot {
+        merchant_name: "Dolf".to_string(),
+        x: 10,
+        y: 10,
+        gold: 777,
+        price_multi: 250,
+        wares: vec![
+            Some(MerchantWareSnapshot {
+                item: loaded_item,
+                count: 5,
+                always: false,
+            }),
+            None,
+        ],
+    };
+
+    apply_merchant_store_snapshot(&mut world, merchant_id, snapshot);
+
+    let store = world.merchant_stores.get(&merchant_id).unwrap();
+    assert_eq!(store.gold, 777);
+    assert_eq!(store.price_multi, 250);
+    let ware = store.wares[0].as_ref().expect("ware loaded at slot 0");
+    assert_eq!(ware.count, 5);
+    assert!(!ware.always);
+    assert_eq!(ware.item.sprite, 99);
+    // Slots beyond the snapshot's saved wares are left untouched (all
+    // empty here, matching a freshly created store).
+    assert!(store.wares[2..].iter().all(Option::is_none));
+}
+
+#[test]
+fn apply_merchant_store_snapshot_ignores_out_of_range_slots_without_panicking() {
+    let (mut world, merchant_id, _player_id) = merchant_and_shopper(400, 0);
+    let mut wares = vec![None; MERCHANT_STORE_SIZE + 5];
+    wares[MERCHANT_STORE_SIZE + 2] = Some(MerchantWareSnapshot {
+        item: test_item(ItemId(930), 1, ItemFlags::TAKE | ItemFlags::USED),
+        count: 1,
+        always: false,
+    });
+    let snapshot = MerchantStoreSnapshot {
+        merchant_name: "Dolf".to_string(),
+        x: 10,
+        y: 10,
+        gold: 0,
+        price_multi: 400,
+        wares,
+    };
+
+    apply_merchant_store_snapshot(&mut world, merchant_id, snapshot);
+
+    // No panic, and legal slots stay empty.
+    let store = world.merchant_stores.get(&merchant_id).unwrap();
+    assert!(store.wares.iter().all(Option::is_none));
+}
+
+#[test]
 fn fast_sell_is_a_no_op_without_an_active_merchant() {
     let (mut world, _merchant_id, player_id) = merchant_and_shopper(400, 100);
     world.characters.get_mut(&player_id).unwrap().merchant = None;

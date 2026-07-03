@@ -1248,11 +1248,63 @@ suggestion; dependencies are noted.
     `character.rs` tests ... otherwise gate live tests behind
     `DATABASE_URL`") is now satisfied.
 
-- [ ] **Merchant store DB persistence** - C `database_merchant.c`
+- [x] **Merchant store DB persistence** - C `database_merchant.c`
   (load_merchant_inventory, queue_merchant_* tasks). Rust merchants are
   memory-only. Add `crates/ugaris-db/src/merchant.rs` + a migration
   mirroring the C tables, load on store creation, queue saves on
   buy/sell. Follow the existing `character.rs` repository shape.
+  Progress Log: added `migrations/0005_merchant_stores.sql` (single
+  `merchant_stores` table keyed by `(merchant_name, merchant_x,
+  merchant_y)` like C's `merchant_items`/`merchant_gold`, but storing the
+  whole ware list as one `jsonb` array per merchant instead of one row per
+  ware - `Item` already round-trips through serde JSON elsewhere, so this
+  avoids reimplementing C's hand-rolled `drdata_to_json`/`modifiers_to_json`
+  string builders). Added `crates/ugaris-db/src/merchant.rs`
+  (`MerchantRepository`/`PgMerchantRepository`, `save_store`/`load_store`,
+  mirroring `area.rs`'s simple repository shape) and registered it in
+  `lib.rs` (`Database::merchants()`). Wired into
+  `crates/ugaris-server/src/merchants.rs`
+  (`merchant_store_snapshot`/`apply_merchant_store_snapshot` conversion
+  helpers, `save_merchant_store_if_configured`) and `main.rs`: C
+  `create_store`'s "try `load_merchant_inventory`, else
+  `queue_merchant_full_save`" is ported as a diff of `world.merchant_stores`
+  keys before/after `world.process_merchant_actions()` each tick (detects
+  newly-created stores, since `ensure_merchant_store` only creates once);
+  buy (`Container` command) and fast-sell (`FastSell` command) both
+  trigger an inline full-store save after a successful trade, matching C's
+  own `add_item_to_merchant`/`remove_item_from_merchant`/
+  `update_merchant_item` helpers ("simple implementation - just save the
+  entire inventory") rather than the incremental `merchant_tasks.c` task
+  queue (no Rust task-queue abstraction exists; direct `.await` inline in
+  the tick loop matches the existing `character_repository` save
+  convention). `cargo fmt --all` / `cargo test --workspace` (1130 core +
+  27 db [3 new merchant tests, incl. 2 `DATABASE_URL`-gated live
+  save/load-round-trip tests following `character.rs`'s `live_login`
+  convention] + 3 net + 33 protocol + 372 server [9 merchant tests, 4
+  new], zero warnings) / `cargo build -p ugaris-server` clean. Verified
+  for real: spun up a throwaway local `postgres:16-alpine` Docker
+  container, applied all five `migrations/*.sql` files, ran
+  `DATABASE_URL=... cargo test -p ugaris-db` (all 27 tests green including
+  the 2 live merchant tests actually hitting Postgres, confirmed the test
+  row is cleaned up afterward), then boot-smoked the real server against
+  that database twice: first run logged "saved initial merchant store to
+  database" for all 3 zone-1 merchants (Egbert/Fred/Dolf) and persisted
+  108-slot ware arrays; second run (same DB) logged "loaded merchant store
+  from database" for all 3 instead of re-saving, confirming the
+  load-else-save-initial branch. Destroyed the container afterward.
+  REMAINING: (1) merchant position is captured as `character.x/y` at
+  store-creation time, not C's `tmpx/tmpy` semantics for shops that move
+  day/night (`MerchantDriverData.dayx/nightx` etc.) - day/night shop
+  relocation is still unported per the `world/merchant.rs` module doc, so
+  this is a latent gap, not a regression; (2) C's incremental
+  `merchant_tasks.c` queue (`save_incremental_change` per-item add/
+  remove/update/gold rows, batched via `process_pending_merchant_updates`)
+  is not ported - Rust always does a full-store upsert instead, which is
+  behaviorally equivalent but does more I/O per trade than C's targeted
+  single-row updates; (3) `add_special_store`'s restock save and the
+  periodic `save_all_merchants`/admin `#saveall` full-DB-sweep commands
+  are not wired to the new repository (`add_special_store` itself is still
+  unported per the "Special stores" task below).
 
 - [ ] **Special stores** - C `add_special_store`/`create_special_item`
   (`src/module/merchants/store.c` + `create.c`): the random enchanted-item

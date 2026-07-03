@@ -145,7 +145,7 @@ use ugaris_core::{
     world::{
         exp2level, legacy_save_number, level2exp, level_value, merchant_buy_price,
         merchant_sales_price, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
-        RaiseSkillOutcome, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        RaiseSkillOutcome, StoreWare, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -153,7 +153,7 @@ use ugaris_core::{
 
 use ugaris_db::{
     CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
-    LoginRequest,
+    LoginRequest, MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot,
 };
 
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
@@ -583,15 +583,16 @@ async fn main() -> anyhow::Result<()> {
         ..ServerConfig::default()
     };
 
-    let character_repository = if let Some(database_url) = args.database_url.as_deref() {
-        let db = ugaris_db::Database::connect(database_url, 8).await?;
-        db.ping().await?;
-        info!("connected to PostgreSQL");
-        Some(db.characters())
-    } else {
-        warn!("DATABASE_URL not set; starting without persistence");
-        None
-    };
+    let (character_repository, merchant_repository) =
+        if let Some(database_url) = args.database_url.as_deref() {
+            let db = ugaris_db::Database::connect(database_url, 8).await?;
+            db.ping().await?;
+            info!("connected to PostgreSQL");
+            (Some(db.characters()), Some(db.merchants()))
+        } else {
+            warn!("DATABASE_URL not set; starting without persistence");
+            (None, None)
+        };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
     let (listener_ready_tx, listener_ready_rx) = tokio::sync::oneshot::channel();
@@ -1291,6 +1292,12 @@ async fn main() -> anyhow::Result<()> {
                                 if result.changed {
                                     command_inventory_refresh.push(character_id);
                                     command_container_refresh.push(character_id);
+                                    save_merchant_store_if_configured(
+                                        &world,
+                                        &merchant_repository,
+                                        merchant_id,
+                                    )
+                                    .await;
                                 }
                                 continue;
                             }
@@ -1334,6 +1341,18 @@ async fn main() -> anyhow::Result<()> {
                             }
                             if result.sold {
                                 command_container_refresh.push(character_id);
+                                let merchant_id = world
+                                    .characters
+                                    .get(&character_id)
+                                    .and_then(|character| character.merchant);
+                                if let Some(merchant_id) = merchant_id {
+                                    save_merchant_store_if_configured(
+                                        &world,
+                                        &merchant_repository,
+                                        merchant_id,
+                                    )
+                                    .await;
+                                }
                             }
                         }
                         ClientAction::Swap { .. }
@@ -5260,7 +5279,48 @@ async fn main() -> anyhow::Result<()> {
                 // C merchant_driver: store creation, greetings, and trade
                 // activation, then push store views to players whose active
                 // merchant changed.
+                let merchants_before_tick: std::collections::HashSet<CharacterId> =
+                    world.merchant_stores.keys().copied().collect();
                 world.process_merchant_actions();
+                if let Some(repository) = &merchant_repository {
+                    // C `create_store`: `load_merchant_inventory` on first
+                    // creation, or an initial `queue_merchant_full_save` if
+                    // nothing was persisted yet for this merchant.
+                    let newly_created_stores: Vec<CharacterId> = world
+                        .merchant_stores
+                        .keys()
+                        .copied()
+                        .filter(|id| !merchants_before_tick.contains(id))
+                        .collect();
+                    for merchant_id in newly_created_stores {
+                        let Some((name, x, y)) = world
+                            .characters
+                            .get(&merchant_id)
+                            .map(|merchant| (merchant.name.clone(), merchant.x, merchant.y))
+                        else {
+                            continue;
+                        };
+                        match repository.load_store(&name, i32::from(x), i32::from(y)).await {
+                            Ok(Some(snapshot)) => {
+                                apply_merchant_store_snapshot(&mut world, merchant_id, snapshot);
+                                info!(merchant = %name, x, y, "loaded merchant store from database");
+                            }
+                            Ok(None) => {
+                                if let Some(snapshot) =
+                                    merchant_store_snapshot(&world, merchant_id)
+                                {
+                                    match repository.save_store(&snapshot).await {
+                                        Ok(()) => info!(merchant = %name, x, y, "saved initial merchant store to database"),
+                                        Err(err) => warn!(merchant = %name, x, y, error = %err, "failed to save initial merchant store"),
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                warn!(merchant = %name, x, y, error = %err, "failed to load merchant store from database");
+                            }
+                        }
+                    }
+                }
                 {
                     let mut merchant_view_updates: Vec<(CharacterId, Option<bytes::BytesMut>)> =
                         Vec::new();

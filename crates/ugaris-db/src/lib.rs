@@ -1,6 +1,7 @@
 pub mod anticheat;
 pub mod area;
 pub mod character;
+pub mod merchant;
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
@@ -12,6 +13,9 @@ pub use area::{AreaRepository, PgAreaRepository};
 pub use character::{
     CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
     LoginRequest, PgCharacterRepository,
+};
+pub use merchant::{
+    MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot, PgMerchantRepository,
 };
 
 #[derive(Debug, Clone)]
@@ -47,5 +51,9 @@ impl Database {
 
     pub fn anticheat(&self) -> PgAntiCheatRepository {
         PgAntiCheatRepository::new(self.pool.clone())
+    }
+
+    pub fn merchants(&self) -> PgMerchantRepository {
+        PgMerchantRepository::new(self.pool.clone())
     }
 }

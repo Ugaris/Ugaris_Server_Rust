@@ -93,7 +93,7 @@ Remaining oversized files worth splitting during future work:
 | `src/system/player_driver.h` / `src/system/player_driver.c` action setters and primitive runtime bridge, `src/system/area.c` look-section/walk-section slices | `crates/ugaris-core/src/player.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-core/src/area_section.rs`, `crates/ugaris-server/src/main.rs` | `player_driver_stop`, `halt`, direct action setters, serial-preserving item/character actions, teleport, spell queue insertion/last-slot overwrite behavior, server-side use of driver setters for direct/spell client actions, and primitive tick-loop setup/completion for idle, walk-dir including diagonal wall-slide fallback, `PAC_MOVE`, adjacent/path-to-item take, adjacent/path-to-target drop, adjacent/path-to-item use including front-wall pathing, `PAC_TELEPORT` as facing item-use with legacy `spec = teleport + 1`, immediate `PAC_LOOK_MAP` turn/LOS/request handling plus server `SV_TEXT` feedback for hidden targets, C `show_section` section-name/level difficulty text for all non-empty legacy area-sector tables, coordinate fallback, and rest/clan/arena/peace flags, C `walk_section_msg` per-player section tracking with dark-gray `Now entering`/`Now leaving` feedback after successful walks, `PAC_GIVE` adjacent/path-to-recipient setup plus `AC_GIVE` cursor-item transfer, and `PAC_KILL` adjacent/path-to-target setup plus timed attack completion, and the `PAC_KILL` pre-switch stale-target-serial guard (C's `ch[player[nr]->act1].serial != player[nr]->act2` check) plus live-traffic serial capture for Kill/Give/character-targeted spells (see "Ralph Loop - Serial Validation Everywhere" below) ported with tests. Queued spell priority execution, actual item use effects beyond potion, full combat/death/fightback side effects, wall-use/door interaction during movement, music/special sounds for section changes, and action error side effects remain. |
 | Zone template/map parser scaffolding from `src/system/create.c` / `src/system/map.c` | `crates/ugaris-core/src/zone.rs` | Legacy token parsing, `.itm`/`.chr` template record parsing including item `ID`, `.map` directive parsing with origin offsets, live item template ID retention, and tiny sample application into `World` ported with tests. Production zone validation, startup integration, full character template fields, item-driver creation side effects, and respawn/random-loot behavior remain. |
 | `src/system/death.c` `kill_char`/`die_char`/`god_save_char`/`respawn_callback`/`kill_score_level`/`death_loss`/`drop_grave` core, `src/system/respawn.c` boundary | `crates/ugaris-core/src/world/death.rs`, `crates/ugaris-core/src/world/hurt.rs`, `crates/ugaris-core/src/attack.rs`, `crates/ugaris-server/src/spawns.rs`, `crates/ugaris-server/src/main.rs` | `apply_legacy_hurt` now ports the C `hurt()` fatal-blow decision point for player `saves`: a non-PK death with `saves > 0` calls `World::god_save_character` (decrement+cap saves, `got_saved++`, hp reset, poison/burn removal, Ishtar feedback text, same-area rest transfer) instead of the normal kill path, exactly like C calling `god_save_char` before `kill_char` ever runs. Lethal hurt otherwise runs the C `kill_char` follow-up: death-driver dispatch and NT_DEAD fan-out (already ported) plus respawn-timer registration keyed by template/spawn tile, killer kill-score experience with the exact C level-taper table, hardcore kill bonus, LAG caps, queued server-side `give_exp` routing through runtime EXP modifiers, and the timed `AC_DIE` action (duration 12, act1 = killer, act2 = ispk). `AC_DIE` completion ports `die_char`: map/effect removal, C body rules (`CF_NOBODY` given-item drops, `CF_ITEMDEATH` slot-30 drop, `dead_body` items with the legacy sprite formula/description/player color drdata), extended-drop grave placement, body decay expire timers via a generic `expire_item` timer, loot containers as `contained_in` items (inventory + cursor + gold money item with the C sprite ladder; worn equipment kept except two shuffle-selected pieces; spells destroyed), player exp loss with the C newbie/used-exp taper and hardcore quarter, PK no-loss branch, resource restore, rest-position return, and NPC destruction. `respawn_callback` re-instantiates the stored zone template server-side with resource init and ten-second blocked-tile retries. Characters now carry serde-defaulted `template_key`/`respawn_ticks`, zone characters stamp spawn tiles into `rest_x/rest_y` like C `tmpx/tmpy`, and dying players can no longer cancel `AC_DIE` with new actions. Focused core tests cover the kill metadata, kill-score table, body/loot/money drops, NOBODY/ITEMDEATH branches, respawn scheduling/retry, player exp/PK/rest behavior, body expiry, and money sprites. Remaining gaps: death-mode loot tables (`loot.c`, currently unreferenced by zone data), `CDR_LOSTCON` exp cap, cross-area rest transfers, first-kill/military/achievement kill hooks, and exact global RNG parity for equipment loss. |
-| `src/module/merchants/store.c`, `src/module/merchants/merchant.c` core, merchant view slices of `src/system/player.c` / `src/system/act.c` `check_merchant` | `crates/ugaris-core/src/world/merchant.rs`, `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-server/src/merchants.rs`, `crates/ugaris-server/src/commands_chat.rs`, `crates/ugaris-server/src/main.rs` | `CDR_MERCHANT = 6` now has a typed driver-state (`MerchantDriverData`) parsed from C `merchant_driver_parse` args at zone load. Merchant NPCs lazily create stores from carried inventory 30+ (beyond `ignore`) as `always` stock with `pricemulti` defaulting to 400, greet visible players once per legacy 12-hour memory window with the C greeting/say format and Fred's extended range, react to `"<name> ... trade"` NT_TEXT speech by setting the speaker's `ch.merchant`, and destroy given items. Plain player `say` speech now fans out as NT_TEXT driver messages to nearby NPC drivers. C `salesprice`/`buyprice` formulas (barter + trader profession + 400 divisor, money exemption) are ported with tests, `sell`/`buy` port cursor-based buying/selling with always-stock preservation, sold-out/gold-low/cursor guards, ware stacking via `store_items_equal`, quest/nodepot/bond/lab/money stocking exclusions, and store gold accounting. The server sends C `con_type 2` store views (`SV_CONNAME`, `SV_CONCNT`, `SV_CONTAINER` sprites, `SV_PRICE`, `SV_ITEMPRICE`, `SV_CPRICE`), routes `CL_CONTAINER`/`CL_LOOK_CONTAINER` merchant-first like `cl_container` with `check_merchant` validation, formats the legacy bought/sold/too-expensive feedback, supports fast-buy inventory storing (`store_citem`), pushes view updates when the active merchant changes, and closes the view with a `con_type 0` packet. `CL_FASTSELL` (`cl_fastsell`, `src/system/player.c:877`) now quick-sells straight from an inventory slot: `apply_fast_sell` in `crates/ugaris-server/src/merchants.rs` reuses the existing simplified `swap` (`inventory_swap_slot`) to pick the slot item onto the cursor, re-validates with `check_merchant`, blocks quest items with the exact C hold-SHIFT message (leaving the item on the cursor, matching C's early return after the swap already ran), and otherwise reuses `merchant_store_sell`/`buyprice` for the trade. Focused core tests cover prices, arg parsing, store creation, trade activation, buy/sell mutations, quest-item exclusion, busy/distance clearing, and greeting memory. Remaining gaps: PostgreSQL-backed store persistence (`database_merchant.c`), special-store item generation (`add_special_store`/`create_special_item`), aclerk auction NPC, day/night shop movement/door handling, idle merchant chatter, and exact global RNG parity. |
+| `src/module/merchants/store.c`, `src/module/merchants/merchant.c` core, merchant view slices of `src/system/player.c` / `src/system/act.c` `check_merchant`, `src/system/database/database_merchant.c` | `crates/ugaris-core/src/world/merchant.rs`, `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-server/src/merchants.rs`, `crates/ugaris-server/src/commands_chat.rs`, `crates/ugaris-server/src/main.rs`, `crates/ugaris-db/src/merchant.rs`, `migrations/0005_merchant_stores.sql` | `CDR_MERCHANT = 6` now has a typed driver-state (`MerchantDriverData`) parsed from C `merchant_driver_parse` args at zone load. Merchant NPCs lazily create stores from carried inventory 30+ (beyond `ignore`) as `always` stock with `pricemulti` defaulting to 400, greet visible players once per legacy 12-hour memory window with the C greeting/say format and Fred's extended range, react to `"<name> ... trade"` NT_TEXT speech by setting the speaker's `ch.merchant`, and destroy given items. Plain player `say` speech now fans out as NT_TEXT driver messages to nearby NPC drivers. C `salesprice`/`buyprice` formulas (barter + trader profession + 400 divisor, money exemption) are ported with tests, `sell`/`buy` port cursor-based buying/selling with always-stock preservation, sold-out/gold-low/cursor guards, ware stacking via `store_items_equal`, quest/nodepot/bond/lab/money stocking exclusions, and store gold accounting. The server sends C `con_type 2` store views (`SV_CONNAME`, `SV_CONCNT`, `SV_CONTAINER` sprites, `SV_PRICE`, `SV_ITEMPRICE`, `SV_CPRICE`), routes `CL_CONTAINER`/`CL_LOOK_CONTAINER` merchant-first like `cl_container` with `check_merchant` validation, formats the legacy bought/sold/too-expensive feedback, supports fast-buy inventory storing (`store_citem`), pushes view updates when the active merchant changes, and closes the view with a `con_type 0` packet. `CL_FASTSELL` (`cl_fastsell`, `src/system/player.c:877`) now quick-sells straight from an inventory slot: `apply_fast_sell` in `crates/ugaris-server/src/merchants.rs` reuses the existing simplified `swap` (`inventory_swap_slot`) to pick the slot item onto the cursor, re-validates with `check_merchant`, blocks quest items with the exact C hold-SHIFT message (leaving the item on the cursor, matching C's early return after the swap already ran), and otherwise reuses `merchant_store_sell`/`buyprice` for the trade. `database_merchant.c`'s `load_merchant_inventory`/`save_merchant_inventory` are now ported as `PgMerchantRepository::load_store`/`save_store` (`crates/ugaris-db/src/merchant.rs`), keyed like C by `(merchant_name, merchant_x, merchant_y)` but storing the whole ware list as one `jsonb` array per merchant instead of one row per ware; `main.rs` loads on first store creation (diffing `world.merchant_stores` keys before/after `process_merchant_actions()` each tick, since `ensure_merchant_store` only creates once) or saves an initial snapshot when nothing was persisted yet, and both the buy (`Container`) and fast-sell (`FastSell`) command paths re-save the full store after a successful trade. Focused core tests cover prices, arg parsing, store creation, trade activation, buy/sell mutations, quest-item exclusion, busy/distance clearing, and greeting memory; server tests cover the snapshot<->store conversion helpers; db tests cover JSON round-tripping and (behind `DATABASE_URL`) a live save/load round trip against Postgres. Remaining gaps: special-store item generation (`add_special_store`/`create_special_item`, not yet wired to a save), aclerk auction NPC, day/night shop movement/door handling (so persistence currently keys off `character.x/y` at store-creation time rather than C's `tmpx/tmpy`), idle merchant chatter, C's incremental per-item `merchant_tasks.c` task queue (Rust always does a full-store upsert instead), the periodic `save_all_merchants`/admin `#saveall` full-DB sweep, and exact global RNG parity. |
 | Area terrain startup loading from `ugaris_data/zones/<area>/*.map` | `crates/ugaris-server/src/main.rs`, `crates/ugaris-core/src/zone.rs` | Server startup resolves `UGARIS_ZONE_ROOT` or default `ugaris_data/zones` / `../ugaris_data/zones`, loads generic and area `.itm`/`.chr` templates best-effort, loads the first area `.map`, accepts signed legacy sprite IDs, tolerates missing item/character templates while preserving terrain, sanitizes `from/to` range copies so live item/character IDs and temporary item blockers are not duplicated across terrain ranges, reports load counts, keeps the loader alive for runtime template instantiation, and chooses an open spawn tile. Area 1 `above1.map` smoke-tested: 65,533 ground tiles, 16,969 blocked tiles, 1,780 item templates, 188 character templates, 2,236 placed items, and 446 placed characters. Process-level legacy login smoke confirmed map bootstrap payloads after loading real area data. Full `.pre` expansion/generator parity, complete template metadata, respawn/random loot, and all object driver side effects remain. |
 
 ## Partial
@@ -2650,3 +2650,103 @@ Recommended next chest steps:
   `login_reject_message` unit tests in `crates/ugaris-server/src/
   login.rs`). The `NewArea` cross-server redirect remains a separate
   deferred "Cross-area transfer" task.
+
+## Ralph Loop - Merchant Store DB Persistence (Iteration 37)
+
+- Ported C `src/system/database/database_merchant.c`
+  (`load_merchant_inventory`/`save_merchant_inventory`; the incremental
+  `merchant_tasks.c` task queue was intentionally not ported - see below)
+  so merchant stores survive a server restart instead of always
+  regenerating from the zone-file `always` stock.
+- Added `migrations/0005_merchant_stores.sql`: a single `merchant_stores`
+  table keyed by `(merchant_name, merchant_x, merchant_y)` like C's
+  `merchant_items`/`merchant_gold` pair, but storing the whole ware list
+  (item + count + always flag) as one `jsonb` column per merchant instead
+  of one row per ware slot - C hand-rolls `drdata_to_json`/
+  `modifiers_to_json` string builders because MySQL had no native JSON
+  binding convenience for it in that codebase; Postgres/`sqlx::types::Json`
+  make that unnecessary since `ugaris_core::entity::Item` already derives
+  `Serialize`/`Deserialize` (same trick `character.rs` uses for
+  `character_json`/`item_json`).
+- Added `crates/ugaris-db/src/merchant.rs`: `MerchantWareSnapshot`,
+  `MerchantStoreSnapshot`, `MerchantRepository` trait +
+  `PgMerchantRepository` (`save_store`/`load_store`), mirroring `area.rs`'s
+  minimal repository shape (no transactions needed - each call is a single
+  upsert/select). Registered as `Database::merchants()` in `lib.rs`.
+  `Item` has no `PartialEq`, so neither does `MerchantWareSnapshot`/
+  `MerchantStoreSnapshot`; tests compare via `serde_json` serialization
+  instead of `assert_eq!` on the structs directly.
+- Wired into `crates/ugaris-server/src/merchants.rs`:
+  `merchant_store_snapshot` (world -> DB snapshot, C
+  `save_merchant_inventory`'s field mapping) and
+  `apply_merchant_store_snapshot` (DB snapshot -> world, C
+  `load_merchant_inventory`'s full gold/pricemulti/ware overwrite) as pure
+  conversion helpers, plus `save_merchant_store_if_configured` (a no-op
+  when `--database-url`/`DATABASE_URL` wasn't set).
+- Wired into `crates/ugaris-server/src/main.rs`: added a
+  `merchant_repository: Option<PgMerchantRepository>` built alongside the
+  existing `character_repository` from the same `ugaris_db::Database`
+  connection. C `create_store`'s "try `load_merchant_inventory`, else
+  `queue_merchant_full_save`" is ported by diffing
+  `world.merchant_stores.keys()` before/after each tick's
+  `world.process_merchant_actions()` call (since `ensure_merchant_store`
+  only actually creates a store once per merchant lifetime, this diff
+  reliably finds only newly-created stores without needing a dirty flag);
+  for each, `load_store` is awaited and applied on a hit, or
+  `save_store` is awaited with the just-built initial snapshot on a miss.
+  The `Container` (buy) and `FastSell` (fast-sell) command handlers both
+  call `save_merchant_store_if_configured` after a successful trade -
+  Rust has no equivalent of C's `merchant_tasks.c` background task queue
+  (`queue_merchant_item_add`/`_remove`/`_update`/`_gold_update`,
+  processed later by `process_pending_merchant_updates`), so this instead
+  follows C's *own* `add_item_to_merchant`/`remove_item_from_merchant`/
+  `update_merchant_item` helpers, which are themselves "simple
+  implementation - just save the entire inventory" full-store saves; the
+  behavior is equivalent, just with more I/O per trade than C's targeted
+  incremental row updates.
+- Tests: `crates/ugaris-db/src/merchant.rs` - a pure JSON round-trip test
+  (no database needed) plus a `mod live` (following `character.rs`'s
+  `live_login` convention exactly: `DATABASE_URL`-gated, skips instead of
+  failing when unset/unreachable) with two tests - save-then-load round
+  trips gold/pricemulti/wares, and loading an unknown merchant returns
+  `None`. `crates/ugaris-server/src/tests/merchants.rs` - 4 new tests for
+  the conversion helpers: snapshot captures name/position/gold/wares
+  correctly, snapshot is `None` without a store, applying a snapshot
+  overwrites gold/pricemulti/wares, and applying a snapshot with
+  out-of-range ware slots doesn't panic and leaves in-range slots alone.
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1130
+  core + 27 db (24 pre-existing + 3 new merchant tests) + 3 net + 33
+  protocol + 372 server (368 pre-existing + 4 new merchant tests), zero
+  warnings, zero failures. `cargo build -p ugaris-server` clean. Because
+  this change touches the tick loop and DB wiring, did a full live
+  end-to-end check beyond the required boot-smoke: spun up a throwaway
+  local `postgres:16-alpine` Docker container, applied all five
+  `migrations/*.sql` files, ran `DATABASE_URL=... cargo test -p
+  ugaris-db` (all 27 tests green for real, including the 2 live merchant
+  tests actually round-tripping through Postgres, confirmed the test row
+  is deleted afterward so re-runs don't accumulate rows), then ran the
+  actual `target/debug/ugaris-server` binary against that same database
+  twice: first run logged `saved initial merchant store to database` for
+  all three zone-1 merchants (Egbert/Fred/Dolf) with 108-slot ware arrays
+  persisted; second run (unmodified DB) logged `loaded merchant store
+  from database` for all three instead of re-saving, confirming the
+  load-else-save branch actually round-trips through a live database, not
+  just through the pure-Rust unit tests. Also ran the plain
+  boot-smoke without `DATABASE_URL` (matching the required recipe): past
+  tick 230 with `DATABASE_URL not set; starting without persistence`
+  logged once and no panics, confirming the feature is fully optional.
+  Destroyed the Docker container afterward.
+- Task marked `[x]` in `PORTING_TODO.md`. REMAINING (noted in both the
+  todo entry and the ledger table row above): (1) store position is keyed
+  off `character.x/y` at store-creation time, not C's `tmpx`/`tmpy` -
+  day/night shop relocation (`MerchantDriverData.dayx/nightx`/etc.) is
+  still unported per `world/merchant.rs`'s existing module doc, so a
+  future day/night-move port needs to re-key or move the persisted row
+  too; (2) `add_special_store` (still unported - see the "Special stores"
+  task) doesn't trigger a save; (3) C's periodic `save_all_merchants`
+  full-DB sweep and the admin `#saveall` command aren't wired to the new
+  repository (every trade already self-saves, so this is a smaller gap
+  than in C, mainly relevant for merchants that were never traded with
+  after a restock); (4) the incremental per-item task queue
+  (`merchant_tasks.c`) itself is intentionally not ported, as explained
+  above.

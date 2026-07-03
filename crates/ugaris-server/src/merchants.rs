@@ -82,6 +82,86 @@ pub(crate) fn container_close_payload() -> bytes::BytesMut {
     builder.into_payload()
 }
 
+/// C `save_merchant_inventory`: snapshot the current in-memory store for
+/// persistence, keyed like C by the merchant's name and spawn position
+/// (`ch[cn].name`/`tmpx`/`tmpy`).
+pub(crate) fn merchant_store_snapshot(
+    world: &World,
+    merchant_id: CharacterId,
+) -> Option<MerchantStoreSnapshot> {
+    let merchant = world.characters.get(&merchant_id)?;
+    let store = world.merchant_stores.get(&merchant_id)?;
+    Some(MerchantStoreSnapshot {
+        merchant_name: merchant.name.clone(),
+        x: i32::from(merchant.x),
+        y: i32::from(merchant.y),
+        gold: store.gold,
+        price_multi: store.price_multi,
+        wares: store
+            .wares
+            .iter()
+            .map(|ware| {
+                ware.as_ref().map(|ware| MerchantWareSnapshot {
+                    item: ware.item.clone(),
+                    count: ware.count,
+                    always: ware.always,
+                })
+            })
+            .collect(),
+    })
+}
+
+/// C `load_merchant_inventory`: overwrite the freshly created in-memory
+/// store's gold/pricemulti and every saved ware slot with the persisted
+/// snapshot.
+pub(crate) fn apply_merchant_store_snapshot(
+    world: &mut World,
+    merchant_id: CharacterId,
+    snapshot: MerchantStoreSnapshot,
+) {
+    let Some(store) = world.merchant_stores.get_mut(&merchant_id) else {
+        return;
+    };
+    store.gold = snapshot.gold;
+    store.price_multi = snapshot.price_multi;
+    for (slot, ware) in snapshot.wares.into_iter().enumerate() {
+        if slot >= store.wares.len() {
+            break;
+        }
+        store.wares[slot] = ware.map(|ware| StoreWare {
+            item: ware.item,
+            count: ware.count,
+            always: ware.always,
+        });
+    }
+}
+
+/// C `queue_merchant_gold_update`/`queue_merchant_item_*`: after a trade
+/// mutates a store's gold or wares, persist the full snapshot (Rust has no
+/// task queue, so this just re-saves inline like C's own
+/// `add_item_to_merchant`/`remove_item_from_merchant`/`update_merchant_item`
+/// helpers do). A no-op when no `--database-url` was configured.
+pub(crate) async fn save_merchant_store_if_configured(
+    world: &World,
+    repository: &Option<ugaris_db::PgMerchantRepository>,
+    merchant_id: CharacterId,
+) {
+    let Some(repository) = repository else {
+        return;
+    };
+    let Some(snapshot) = merchant_store_snapshot(world, merchant_id) else {
+        return;
+    };
+    let name = snapshot.merchant_name.clone();
+    let (x, y) = (snapshot.x, snapshot.y);
+    match repository.save_store(&snapshot).await {
+        Ok(()) => {}
+        Err(err) => {
+            tracing::warn!(merchant = %name, x, y, error = %err, "failed to save merchant store after trade");
+        }
+    }
+}
+
 pub(crate) struct MerchantCommandResult {
     pub messages: Vec<String>,
     pub changed: bool,
