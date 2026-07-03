@@ -609,7 +609,7 @@ suggestion; dependencies are noted.
   (`crates/ugaris-server/src/inventory.rs`) against C and port the missing
   gates. Tests exist in `tests/inventory.rs` - extend them.
 
-- [ ] **Experience/level-up side effects** - C `give_exp` ->
+- [~] **Experience/level-up side effects** - C `give_exp` ->
   `check_levelup` in `src/system/skill.c`/`tool.c`: level recompute from
   exp, `SV_TEXT` "You have reached level N!", HP/end/mana refill on level,
   `update_char`, achievements hook. Rust has exp modifiers server-side but
@@ -617,6 +617,61 @@ suggestion; dependencies are noted.
   already exist in `crates/ugaris-server/src/spawns.rs` - consolidate into
   `ugaris-core` and re-export) and apply on every exp grant (kill exp path
   in `world/death.rs` + admin/quest grants).
+  - Progress: ported `exp2level`/`level2exp`/`level_value`
+    (`src/system/tool.c:1272-1283`) into the new canonical
+    `crates/ugaris-core/src/world/exp.rs` and deleted the three duplicate
+    copies that had accreted (`ugaris-server/src/spawns.rs`
+    `legacy_level2exp`/`legacy_exp_to_level`, `ugaris-server/src/
+    area_apply.rs` `legacy_level_value`/`legacy_level_exp`,
+    `ugaris-core/src/item_driver/helpers.rs` `legacy_level_value` now
+    delegates to `world::level_value`); all former call sites (LQ
+    raise/reset, random shrines, quest rewards, food/area17/area29 item
+    drivers, `/god exp` NOLEVEL cap) now use the one core copy. Ported
+    `World::check_levelup(character_id)` (`tool.c:1318-1356`) with tests
+    in `world/tests/exp.rs`: level-increment loop over `max(exp,
+    exp_used)`, "Thou gained a level!" text, save grant/reset
+    (hardcore resets to 0, others +1 capped at 10) with its two feedback
+    lines, the level-20 profession unlock (`value[1][V_PROFESSION] = 1`)
+    guarded on it not already being set, and the `set_sector` dirty-map
+    refresh (`World::mark_dirty_sector`). Wired it into the two "give_exp"
+    call sites the C source actually has hooked to a live player: killer
+    exp (`world/death.rs` `KillExpAward` -> `main.rs` tick loop) and the
+    `/god exp` admin command, both of which route through
+    `commands_admin.rs::give_exp_with_runtime_modifiers` (kept in the
+    server crate since its two multipliers, `exp_modifier`/
+    `hardcore_exp_bonus`, are live-tunable `ServerRuntime` fields, not
+    `ugaris-core` `GameSettings`); it now takes `&mut World` +
+    `CharacterId` instead of `&mut Character` and calls
+    `world.check_levelup(character_id)` after updating `exp`, gated on
+    `!NOLEVEL` exactly like C's `if (!(ch[cn].flags & CF_NOLEVEL))
+    check_levelup(cn);` tail call. Extended
+    `tests/commands_admin.rs::god_exp_command_uses_runtime_exp_modifiers_and_legacy_gates`
+    to assert the target actually levels up (1 -> 3) and the NOLEVEL
+    character does not, despite being one exp shy of the next threshold.
+    Re-read `check_levelup` directly in C: it does **not** refill HP/
+    endurance/mana on level-up (that text in this task's own description
+    doesn't match the C source) and does not call `update_char` itself
+    either - only `raise_value_exp` calls `update_char` after its own
+    `check_levelup` call, so no HP/mana-refill or update_char gap actually
+    exists here.
+  - REMAINING: `raise_value_exp` (`skill.c:315-361`, backing
+    `item_driver/scrolls.rs`'s stat-scroll driver) still doesn't call
+    `check_levelup` before its raise even though C does - the driver only
+    has `&mut Character`, not `&mut World`, so wiring this needs the same
+    outcome-based pattern iteration 18 used for `update_character`
+    (`world/item_outcomes.rs::apply_item_driver_outcome`). The
+    level-10-multiple "Grats" server-wide broadcast (`server_chat(6,
+    ...)`), `achievement_check_level`, and `reset_name(cn)` have no Rust
+    equivalents anywhere (documented as gaps in `check_levelup`'s doc
+    comment, not silently dropped). Every other direct-mutation exp grant
+    site still bypasses `give_exp`/`check_levelup` entirely (no hardcore/
+    exp_modifier/NOEXP/NOLEVEL handling, no level-up): `area_apply.rs`'s
+    four random-shrine reward sites, `main.rs`'s inline quest/area reward
+    grants (~4 sites), `item_driver/food.rs`'s food exp bonus,
+    `player.rs:2921`, and `commands_admin.rs`'s `/milexp` command. Porting
+    those needs a `World`-level `give_exp` entry point usable from
+    `ugaris-core` item drivers too (today the modifiers live only in the
+    server-crate wrapper), which is a larger follow-up slice.
 
 - [ ] **Ground item decay** - dropped items never disappear (bodies do).
   C: `set_expire(in, item_decay_time)` on player drops (`act_drop`) and
@@ -997,3 +1052,19 @@ Add one line per completed task: date, task, ledger section touched.
   item-driver-level raise/scroll/potion paths (need `&mut World` access
   threaded through the item-driver dispatch) - see the todo note for
   details.
+- 2026-07-03: Experience/level-up side effects (P1, partial, iteration 19) -
+  ported `exp2level`/`level2exp`/`level_value`
+  (`src/system/tool.c:1272-1283`) into the new canonical
+  `crates/ugaris-core/src/world/exp.rs`, consolidating and deleting the
+  three duplicate copies that had accreted in `ugaris-server/src/
+  spawns.rs`, `ugaris-server/src/area_apply.rs`, and `ugaris-core/src/
+  item_driver/helpers.rs`; ported `World::check_levelup`
+  (`tool.c:1318-1356`, level loop, save grant/reset, level-20 profession
+  unlock, dirty-sector refresh) with 11 tests in the new
+  `crates/ugaris-core/src/world/tests/exp.rs`; wired it into the killer-exp
+  and `/god exp` paths via `commands_admin.rs::give_exp_with_runtime_
+  modifiers` (now takes `&mut World` instead of `&mut Character`); ledger
+  section "Ralph Loop - Experience/Level-Up Side Effects" (new). REMAINING:
+  stat-scroll `raise_value_exp`'s `check_levelup` call, the "Grats"
+  broadcast, achievements, `reset_name`, and ~7 other direct-mutation exp
+  grant sites still bypass level-up entirely - see the todo note.

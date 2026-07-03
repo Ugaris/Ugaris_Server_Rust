@@ -112,7 +112,8 @@ Remaining oversized files worth splitting during future work:
 | `src/area/22/lab3.c` `lab3_plant` carried yellow/brown berry use paths | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_LAB3_PLANT` dispatch is ported for carried yellow berries and brown berries: yellow berries decode legacy freshness/count oxygen durations, remove existing oxygen spell items before installing the refreshed `IDR_OXYGEN` timed spell, consume only on successful install, and brown berries install the 10-second `IDR_UWTALK` timed spell with duplicate-active blocking and legacy failure feedback. Whiteberry light emission, plant growth/picking/rot timers, area log fan-out, and exact dlog/audit integration remain. |
 | `src/area/18/bones.c` `bonebridge` / `boneladder` / `boneholder` / `bonewall` core paths | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_BONEBRIDGE` dispatch now ports the C full-bone cursor gate, area-18 libload guard, target tile fit checks, orientation-specific temporary bridge placement, cursor removal, dirty-sector marking, 60-second cleanup scheduling, timer retry while the bridge tile is temporarily blocked, bridge ageing sprite/drdata increments, and final removal while restoring permanent movement blocking with focused core tests. `IDR_BONELADDER` now ports the area-18 libload guard and paired same-area teleports using the C `drdata[0]` offset table. `IDR_BONEHOLDER` now ports the area-18 dispatch boundary for stand rune insertion gates, rune ID decoding for `rune1`..`rune9`, owner/tick metadata storage in `drdata[8..15]`, owner-only removal guards, 120-second timer expiry clearing, activation-holder classification, and legacy blocked feedback texts with focused core/server compilation coverage. `IDR_BONEWALL` now ports the area-18 libload guard, active/timer dispatch guards, adjacent dormant wall pulse scheduling, opening sprite/drdata progression, temporary map item removal with movement/sight unblock and void/use flag toggles, blocked restore retry, and final wall restoration with focused core/world tests. Partial-bridge add/remove inventory paths, template-backed `create_item("bone")`, exact `Hu?`/bug/does-not-fit feedback, boneholder cursor destruction/recreated-rune item placement/update-holder sprite/foreground application, activation scanning of adjacent holders, and `exec_rune` PPD reward/teleport behavior remain. |
 | `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_DUNGEONTELE`, `IDR_DUNGEONFAKE`, `IDR_DUNGEONKEY`, and `IDR_DUNGEONDOOR` now dispatch only under the legacy area-13 libload guard, decode C little-endian `drdata`, preserve player-only dungeon teleport behavior, consume fake/teleport source items through world item destruction, create `maze_key1`/`maze_key2` cursor keys with the decoded legacy key ID, mark first key take via `drdata[2]`, enforce dungeon-door exact key requirements through carried item IDs, enforce the legacy 20-defender catacomb gate, clear solved door key IDs, mark `drdata[12]`, and attempt the C fallback teleport destinations, with focused core tests plus workspace coverage. Clan jewel theft/state, dungeon master/fighter character drivers, server-chat raid protocol messages, solved-catacomb player/NPC notifications, and exact clan policy remain. |
-| `src/system/create.c` `update_char`/`armor_skill_req`/`armor_skill_bonus` | `crates/ugaris-core/src/world/character_values.rs` | `World::update_character(cn)`/`recompute_character_values` ports the full `value[0]` recompute: worn/spell item modifier sum with the seyan (72.5%) vs. single-class (50%) cap and non-warrior bless-item cap, `IF_BEYONDMAXMOD` uncapped bypass, skill-table base-attribute averaging (`skill[]` from `skill.c:27` hardcoded as `skill_base_attributes`), the `value[1]==0` skip for unraised skills, Cold/Demon special cases, Speed Skill/Athlete/Thief/Demon-profession bonuses, Body Control armor/weapon bonuses (with the bare-handed player weapon bonus) vs. the spell-average Armor bonus when Body Control is unraised, `armor_skill_bonus`'s body/head/legs/arms weighted requirement-vs-raised comparison, day/night/clan attribute profession bonuses, and the HP/endurance/mana current-value clamp to the new max. Wired into worn-slot equip/unequip (`crates/ugaris-server/src/inventory.rs::inventory_swap_slot`, `pos < 12` only, matching C `do.c:1294`). 11 focused tests in `crates/ugaris-core/src/world/tests/character_values.rs`. Documented gaps: `ch.ef[]` area-effect light contributions are not modeled; the `P_CLAN` bonus checks only the `MF_CLAN` map flag (`areaID == 13` catacombs special case unavailable, `World` has no current-area id); sprite reselection (demon suits, weapon-in-hand offsets) and `player_reset_map_cache` on infravision toggle are not ported (display-only). Not yet wired into spell install/expiry (`world/spells.rs` still uses the older ad-hoc `apply_item_modifier_deltas`), level up, login, or death respawn. |
+| `src/system/create.c` `update_char`/`armor_skill_req`/`armor_skill_bonus` | `crates/ugaris-core/src/world/character_values.rs` | `World::update_character(cn)`/`recompute_character_values` ports the full `value[0]` recompute: worn/spell item modifier sum with the seyan (72.5%) vs. single-class (50%) cap and non-warrior bless-item cap, `IF_BEYONDMAXMOD` uncapped bypass, skill-table base-attribute averaging (`skill[]` from `skill.c:27` hardcoded as `skill_base_attributes`), the `value[1]==0` skip for unraised skills, Cold/Demon special cases, Speed Skill/Athlete/Thief/Demon-profession bonuses, Body Control armor/weapon bonuses (with the bare-handed player weapon bonus) vs. the spell-average Armor bonus when Body Control is unraised, `armor_skill_bonus`'s body/head/legs/arms weighted requirement-vs-raised comparison, day/night/clan attribute profession bonuses, and the HP/endurance/mana current-value clamp to the new max. Wired into worn-slot equip/unequip (`crates/ugaris-server/src/inventory.rs::inventory_swap_slot`, `pos < 12` only, matching C `do.c:1294`). 11 focused tests in `crates/ugaris-core/src/world/tests/character_values.rs`. Documented gaps: `ch.ef[]` area-effect light contributions are not modeled; the `P_CLAN` bonus checks only the `MF_CLAN` map flag (`areaID == 13` catacombs special case unavailable, `World` has no current-area id); sprite reselection (demon suits, weapon-in-hand offsets) and `player_reset_map_cache` on infravision toggle are not ported (display-only). As of iteration 17/18 it is also wired into spell install/expiry (`world/spells.rs`), skill raising (`World::raise_skill`, stat-scroll `apply_item_driver_outcome`), player-death respawn (`World::die_character`), and login (`ugaris-server/src/snapshots.rs` + `main.rs`) - see the "Ralph Loop - `update_char` Stat Recomputation" sections below for the exact call-site history; this row's prose above predates that wiring and is kept for the original algorithm description. |
+| `src/system/tool.c` `exp2level`/`level2exp`/`level_value`/`check_levelup` | `crates/ugaris-core/src/world/exp.rs` | `exp2level`/`level2exp`/`level_value` (the `pow(level,4)`/`sqrt(sqrt(exp))` formulas) are now the single canonical copy, replacing three independent duplicates that had accreted in `ugaris-server/src/spawns.rs`, `ugaris-server/src/area_apply.rs`, and `ugaris-core/src/item_driver/helpers.rs` (the latter now delegates to this module; the two server-crate copies were deleted and all call sites repointed). `World::check_levelup(character_id)` ports the level-increment loop over `max(exp, exp_used)`, the "Thou gained a level!" text, save grant/reset (hardcore resets to 0, others +1 capped at 10) with feedback text, the level-20 profession unlock (`value[1][V_PROFESSION] = 1`, guarded on it not already being set), and the `set_sector` dirty-map refresh. Wired into the killer-exp and `/god exp` grant paths via `ugaris-server/src/commands_admin.rs::give_exp_with_runtime_modifiers` (kept in the server crate since its `exp_modifier`/`hardcore_exp_bonus` multipliers are live-tunable `ServerRuntime` fields), gated on `!NOLEVEL` exactly like C. 13 focused tests (`world/tests/exp.rs` + 2 server-crate assertions in `tests/commands_admin.rs`). Documented gaps: the level-10-multiple "Grats" server-wide broadcast (`server_chat`), `achievement_check_level`, and `reset_name(cn)` have no Rust equivalents; the stat-scroll `raise_value_exp` path (`item_driver/scrolls.rs`) still doesn't call `check_levelup` before its raise (needs the same `&mut Character`-only outcome-based pattern iteration 18 used for `update_character`); and roughly seven other direct-mutation exp grant sites (`area_apply.rs` shrines, `main.rs` inline quest rewards, `item_driver/food.rs`, `player.rs`, `/milexp`) still bypass `give_exp`/`check_levelup` entirely. |
 
 ## Continuation Handoff
 
@@ -1467,3 +1468,91 @@ Recommended next chest steps:
   crates, 0 failed), `cargo fmt --all`, `cargo build -p ugaris-server`
   (zero warnings), and a 10s boot smoke (`entering Rust game loop`, ticks
   advancing, NPC driver messages processed, no panics) all pass.
+
+## Ralph Loop - Experience/Level-Up Side Effects (Iteration 19)
+
+- Consolidated `exp2level`/`level2exp`/`level_value` (`src/system/
+  tool.c:1272-1283`) into the new canonical `crates/ugaris-core/src/
+  world/exp.rs`. These three pure formulas had independently accreted in
+  three separate spots: `ugaris-server/src/spawns.rs`
+  (`legacy_level2exp`/`legacy_exp_to_level`, used by LQ raise/reset),
+  `ugaris-server/src/area_apply.rs` (`legacy_level_value`/
+  `legacy_level_exp`, used by random shrines and quest rewards), and
+  `ugaris-core/src/item_driver/helpers.rs` (`legacy_level_value`, used by
+  `food.rs`/`area17_two.rs`/`area29_brannington.rs`). Deleted the two
+  server-crate duplicates outright and repointed every call site at the
+  core functions (re-exported through `main.rs`'s `ugaris_core::world`
+  import so `use super::*` picks them up in `spawns.rs`/`area_apply.rs`
+  without new per-file imports); turned the `item_driver/helpers.rs` copy
+  into a one-line delegate to `crate::world::level_value` since dozens of
+  `item_driver/*.rs` files already call it by that name.
+- Ported `World::check_levelup(character_id)` (`tool.c:1318-1356`) as a
+  new `impl World` block in `world/exp.rs`. Read the full C function
+  before writing anything: it loops `while
+  exp2level(max(exp,exp_used)) > level`, and per iteration does level
+  increment, `set_sector`, a "Thou gained a level!" `log_char`, hardcore
+  save-reset vs. non-hardcore save-grant (capped at 10) with two feedback
+  lines, a level-20 profession unlock, a level-10-multiple server chat
+  broadcast, an achievement check, `reset_name`, and a debug `dlog` call.
+  Ported the first five (level, save handling, profession unlock, dirty
+  sector, level-up text) exactly; the last four have no Rust primitive to
+  hook into yet (no all-sessions broadcast helper, no level-keyed
+  achievement system, no name-color-by-level refresh, no debug log sink)
+  and are called out explicitly in the function's doc comment as
+  documented gaps rather than silently dropped.
+- Notably, `check_levelup` does **not** refill HP/endurance/mana on
+  level-up and does not call `update_char` itself in C (verified by
+  reading the function body directly) - the existing `PORTING_TODO.md`
+  task description's mention of "HP/end/mana refill on level" and
+  "`update_char`" turned out not to correspond to anything in the actual
+  C source for this function, so no such gap exists to close here.
+- Wired `check_levelup` into the two `give_exp` call sites that reach a
+  live player today: killer experience (`world/death.rs`'s
+  `KillExpAward` queue, drained in `main.rs`'s tick loop) and the
+  `/god exp` admin command. Both route through
+  `ugaris-server/src/commands_admin.rs::give_exp_with_runtime_modifiers`,
+  which changed signature from `(&mut Character, ...)` to
+  `(&mut World, CharacterId, ...)` so it can call
+  `world.check_levelup(character_id)` after updating `exp`, gated on
+  `!character.flags.contains(NOLEVEL)` exactly like C's
+  `if (!(ch[cn].flags & CF_NOLEVEL)) check_levelup(cn);` tail call. This
+  function stays in the server crate (not `ugaris-core`) because its two
+  multipliers, `exp_modifier`/`hardcore_exp_bonus`, are live-tunable
+  `ServerRuntime` fields adjustable via `/setexpmod`/
+  `/sethardcoreexpbonus`, not `ugaris-core`'s static `GameSettings`
+  defaults.
+- Tests: 13 new focused tests. `world/tests/exp.rs` (11 tests) covers the
+  `exp2level`/`level2exp`/`level_value` formulas directly, single- and
+  multi-level-up-in-one-call, hardcore save reset vs. non-hardcore save
+  grant/cap, the level-20 profession unlock (both granting it and not
+  overwriting an already-chosen one), the `max(exp, exp_used)` source,
+  the noop/false-return case, and the unknown-character case. Extended
+  `ugaris-server/src/tests/commands_admin.rs::
+  god_exp_command_uses_runtime_exp_modifiers_and_legacy_gates` with two
+  new assertions: the hardcore target actually levels from 1 to 3 (130
+  exp with the test's 2x/1.5x runtime modifiers crosses `level2exp(3) ==
+  81`), and the `NOLEVEL`-flagged character does not level up despite its
+  capped exp sitting one point below the next threshold.
+- STILL REMAINING (documented in the todo note, not silently dropped):
+  stat-scroll `raise_value_exp` (`item_driver/scrolls.rs`) still doesn't
+  call `check_levelup` before its raise, even though C does - the driver
+  only has `&mut Character`, so this needs the same outcome-based pattern
+  iteration 18 used for wiring `update_character` into
+  `world/item_outcomes.rs`. The two area-specific `raise_value_exp` call
+  sites (`src/area/18/bones.c:317-431`, `src/area/37/arkhata.c:800-801`)
+  remain fully unported (no Rust usage of `raise_value_exp` exists
+  outside `scrolls.rs`). Roughly seven other direct-mutation exp grant
+  call sites still bypass `give_exp`/`check_levelup` entirely: four
+  random-shrine reward sites in `area_apply.rs`, ~4 inline quest/area
+  reward grants in `main.rs`, `item_driver/food.rs`'s food exp bonus,
+  `player.rs:2921`, and the `/milexp` admin command. Porting those
+  properly needs a `World`-level `give_exp` entry point reachable from
+  `ugaris-core` item drivers too (today the exp/hardcore multipliers live
+  only in the server-crate wrapper) - a larger follow-up slice, not
+  attempted this iteration to keep the change self-contained and fully
+  tested.
+- Full workspace suite (1089 + 9 + 3 + 33 + 340 = 1474 tests across all
+  crates, 0 failed), `cargo fmt --all`, `cargo build -p ugaris-server`
+  (zero warnings), and a 10s boot smoke (`entering Rust game loop`, ticks
+  advancing, NPC driver messages processed including live kill-exp
+  `check_levelup` calls, no panics) all pass.

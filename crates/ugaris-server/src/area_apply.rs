@@ -426,18 +426,6 @@ pub(crate) enum RandomShrineContinuityApplyResult {
     NeedYoungerBrother,
 }
 
-pub(crate) fn legacy_level_value(level: u32) -> u32 {
-    let level = u64::from(level);
-    let next = level.saturating_add(1);
-    next.saturating_pow(4)
-        .saturating_sub(level.saturating_pow(4))
-        .min(u64::from(u32::MAX)) as u32
-}
-
-pub(crate) fn legacy_level_exp(level: u32) -> u32 {
-    u64::from(level).saturating_pow(4).min(u64::from(u32::MAX)) as u32
-}
-
 pub(crate) fn apply_random_shrine_security(
     player: &mut PlayerRuntime,
     character: &mut Character,
@@ -497,7 +485,7 @@ pub(crate) fn apply_random_shrine_edge(
         .level
         .saturating_add(5)
         .min(u32::from(shrine_level));
-    let level_value = legacy_level_value(level);
+    let level_value = level_value(level);
     let exp = level_value.saturating_div(3).saturating_add(
         u32::from(character.saves)
             .saturating_mul(level_value)
@@ -539,7 +527,7 @@ pub(crate) fn apply_random_shrine_braveness(
         .level
         .saturating_add(5)
         .min(u32::from(shrine_level));
-    let exp = legacy_level_value(level);
+    let exp = level_value(level);
     let gold = exp / 10;
     character.exp = character.exp.saturating_add(exp);
     character.gold = character.gold.saturating_add(gold);
@@ -631,7 +619,7 @@ pub(crate) fn apply_random_shrine_continuity(
         .level
         .saturating_add(5)
         .min(u32::from(shrine_level));
-    let exp = legacy_level_value(level) / 6;
+    let exp = level_value(level) / 6;
     character.exp = character.exp.saturating_add(exp);
     character.flags.insert(CharacterFlags::UPDATE);
     RandomShrineContinuityApplyResult::Used {

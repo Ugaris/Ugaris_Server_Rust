@@ -1975,7 +1975,7 @@ fn god_exp_command_uses_runtime_exp_modifiers_and_legacy_gates() {
 
     let mut capped = login_character(capped_id, &login_block("Capped"), 1, 13, 10);
     capped.level = 10;
-    capped.exp = legacy_level_exp(10);
+    capped.exp = level2exp(10);
     capped.flags.insert(CharacterFlags::NOLEVEL);
     world.add_character(capped);
 
@@ -1985,7 +1985,14 @@ fn god_exp_command_uses_runtime_exp_modifiers_and_legacy_gates() {
 
     apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Target 10", 1)
         .expect("god exp target grant should be recognized");
-    assert_eq!(world.characters.get(&target_id).unwrap().exp, 130);
+    let target = world.characters.get(&target_id).unwrap();
+    assert_eq!(target.exp, 130);
+    // C `give_exp` -> `check_levelup`: 130 exp crosses level2exp(3) == 81,
+    // so the target levels up from 1 to 3 in the same call. Hardcore
+    // characters reset `saves` to 0 on every level (already 0 here, so this
+    // just confirms it stays 0 rather than incrementing).
+    assert_eq!(target.level, 3);
+    assert_eq!(target.saves, 0);
 
     apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Blocked 10", 1)
         .expect("god exp noexp target should be recognized");
@@ -1993,10 +2000,12 @@ fn god_exp_command_uses_runtime_exp_modifiers_and_legacy_gates() {
 
     apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Capped 100000", 1)
         .expect("god exp nolevel target should be recognized");
-    assert_eq!(
-        world.characters.get(&capped_id).unwrap().exp,
-        legacy_level_exp(11) - 1
-    );
+    let capped = world.characters.get(&capped_id).unwrap();
+    assert_eq!(capped.exp, level2exp(11) - 1);
+    // C `give_exp`: `check_levelup` only runs `if (!(ch[cn].flags &
+    // CF_NOLEVEL))`, so a NOLEVEL character never levels up even though its
+    // capped exp is one shy of level2exp(11).
+    assert_eq!(capped.level, 10);
 }
 
 #[test]

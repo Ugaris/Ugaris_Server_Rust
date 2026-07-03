@@ -77,7 +77,7 @@ fn random_shrine_edge_spends_saves_for_legacy_exp_and_marks_ppd() {
 
     let result = apply_random_shrine_edge(&mut player, &mut character, 30, 20);
 
-    let level_value = legacy_level_value(15);
+    let level_value = level_value(15);
     let expected = level_value / 3 + 3 * level_value / 30;
     assert_eq!(result, RandomShrineEdgeApplyResult::Used { exp: expected });
     assert_eq!(character.exp, expected);
@@ -167,7 +167,7 @@ fn random_shrine_continuity_enforces_sequence_and_grants_legacy_exp() {
 
     let result = apply_random_shrine_continuity(&mut player, &mut character, 10);
 
-    let expected = legacy_level_value(10) / 6;
+    let expected = level_value(10) / 6;
     assert_eq!(
         result,
         RandomShrineContinuityApplyResult::Used {

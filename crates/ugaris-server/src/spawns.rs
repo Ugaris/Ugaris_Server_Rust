@@ -514,7 +514,7 @@ pub(crate) fn lq_equipment_tier(base: i16) -> i16 {
 }
 
 pub(crate) fn apply_lq_raise(character: &mut Character, level: u16) {
-    let spend = legacy_level2exp(u32::from(level) + 2).saturating_sub(1);
+    let spend = level2exp(u32::from(level) + 2).saturating_sub(1);
     let sum: i32 = character.values[1]
         .iter()
         .enumerate()
@@ -544,7 +544,7 @@ pub(crate) fn apply_lq_raise(character: &mut Character, level: u16) {
     }
     character.exp = legacy_calc_exp_used(character);
     character.exp_used = character.exp;
-    character.level = legacy_exp_to_level(character.exp);
+    character.level = exp2level(character.exp);
 }
 
 pub(crate) fn lq_raise_skips_value(value: usize) -> bool {
@@ -566,14 +566,6 @@ pub(crate) fn legacy_cost_to_skill(value: usize, cost: i32, seyan: bool) -> i32 
         }
     }
     199
-}
-
-pub(crate) fn legacy_level2exp(level: u32) -> u32 {
-    level.saturating_pow(4)
-}
-
-pub(crate) fn legacy_exp_to_level(exp: u32) -> u32 {
-    (exp as f64).sqrt().sqrt().floor().max(1.0) as u32
 }
 
 pub(crate) fn add_lq_spell_item(

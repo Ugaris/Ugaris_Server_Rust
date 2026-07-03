@@ -10,6 +10,7 @@ mod death;
 mod doors;
 mod effect_tick;
 mod effects;
+mod exp;
 mod hurt;
 mod item_outcomes;
 mod items;

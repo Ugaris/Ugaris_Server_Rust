@@ -73,12 +73,13 @@ pub(crate) fn set_drdata_u32(item: &mut Item, idx: usize, value: u32) {
 
 pub(crate) const EDEMON_SWITCH_COOLDOWN_TICKS: u64 = TICKS_PER_SECOND * 60 * 5;
 
+/// C `level_value(level)` (`src/system/tool.c:1282`). Delegates to the
+/// canonical `world::level_value` (`world/exp.rs`) - kept as a thin
+/// `pub(crate)` re-export here since most `item_driver` modules already
+/// `use super::*`/`use helpers::*` and importing `crate::world::level_value`
+/// directly at every call site would be a larger, unrelated diff.
 pub(crate) fn legacy_level_value(level: u32) -> u32 {
-    let level = u64::from(level);
-    let next = level.saturating_add(1);
-    next.saturating_pow(4)
-        .saturating_sub(level.saturating_pow(4))
-        .min(u64::from(u32::MAX)) as u32
+    crate::world::level_value(level)
 }
 
 pub(crate) fn check_item_requirements(character: &Character, item: &Item) -> bool {

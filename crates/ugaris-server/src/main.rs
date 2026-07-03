@@ -139,9 +139,9 @@ use ugaris_core::{
     },
     tick::TICKS_PER_SECOND,
     world::{
-        legacy_save_number, merchant_buy_price, merchant_sales_price, LegacyHurtEvent,
-        LookMapRequest, MerchantTradeResult, RaiseSkillOutcome, WorldActionCompletion,
-        MERCHANT_STORE_SIZE,
+        exp2level, legacy_save_number, level2exp, level_value, merchant_buy_price,
+        merchant_sales_price, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
+        RaiseSkillOutcome, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -831,14 +831,13 @@ async fn main() -> anyhow::Result<()> {
                 // shared runtime EXP modifiers.
                 for award in world.drain_pending_kill_exp() {
                     let area_id = args.area_id;
-                    if let Some(character) = world.characters.get_mut(&award.killer_id) {
-                        give_exp_with_runtime_modifiers(
-                            character,
-                            i64::from(award.exp),
-                            &runtime,
-                            u32::from(area_id),
-                        );
-                    }
+                    give_exp_with_runtime_modifiers(
+                        &mut world,
+                        award.killer_id,
+                        i64::from(award.exp),
+                        &runtime,
+                        u32::from(area_id),
+                    );
                 }
                 let timer_feedback = timer_outcome_feedback(&timer_outcomes);
                 if !timer_feedback.is_empty() {
@@ -3359,7 +3358,7 @@ async fn main() -> anyhow::Result<()> {
                                                         match reward_sphere_kind {
                                                             Some(1) => {
                                                                 character.exp = character.exp.saturating_add(
-                                                                    legacy_level_value(reward_level) / 7,
+                                                                    level_value(reward_level) / 7,
                                                                 );
                                                                 feedback.push((
                                                                     character_id,
@@ -3415,7 +3414,7 @@ async fn main() -> anyhow::Result<()> {
                                                 } else if !no_step_exp {
                                                     if let Some(character) = world.characters.get_mut(&character_id) {
                                                         character.exp = character.exp.saturating_add(
-                                                            legacy_level_value(reward_level) / 70,
+                                                            level_value(reward_level) / 70,
                                                         );
                                                     }
                                                 }

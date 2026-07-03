@@ -6,8 +6,9 @@
 //! (do.c/act.c/tool.c/poison.c), `effects`+`effect_tick` (effect.c),
 //! `npc_*` (drvlib.c fight driver + module/simple_baddy.c), `doors`,
 //! `items`, `light` (light.c/sector.c), `spawn` (create.c slices), `text`
-//! (talk.c fan-out), `lq` (area/20), `lab2_undead` (area/22), and
-//! `area_mech`/`assembly`/`traps_hazards` for area-specific machinery.
+//! (talk.c fan-out), `lq` (area/20), `lab2_undead` (area/22), `exp`
+//! (tool.c experience/level-up math), and `area_mech`/`assembly`/
+//! `traps_hazards` for area-specific machinery.
 
 mod actions;
 mod area_mech;
@@ -19,6 +20,7 @@ mod death;
 mod doors;
 mod effect_tick;
 mod effects;
+mod exp;
 mod helpers;
 mod hurt;
 mod item_outcomes;
@@ -50,6 +52,7 @@ pub use doors::*;
 pub(crate) use effect_tick::*;
 #[allow(unused_imports)]
 pub(crate) use effects::*;
+pub use exp::*;
 pub(crate) use helpers::*;
 pub use hurt::*;
 #[allow(unused_imports)]

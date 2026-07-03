@@ -45,7 +45,7 @@ fn random_shrine_braveness_requires_death_shrine_then_grants_exp_gold() {
     player.mark_random_shrine_used(51);
     let result = apply_random_shrine_braveness(&mut player, &mut character, 52, 20);
 
-    let expected = legacy_level_value(12);
+    let expected = level_value(12);
     assert_eq!(
         result,
         RandomShrineBravenessApplyResult::Used {

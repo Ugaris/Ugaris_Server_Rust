@@ -48,7 +48,7 @@ fn god_setlevel_mutates_self_and_clears_spell_slots_and_effects() {
     assert!(low.name_changed);
     let character = world.characters.get(&character_id).unwrap();
     assert_eq!(character.level, 29);
-    assert_eq!(character.exp, legacy_level_exp(29));
+    assert_eq!(character.exp, level2exp(29));
     assert!(!character.flags.contains(CharacterFlags::ARCH));
     assert_eq!(character.values[1][CharacterValue::Duration as usize], 0);
     assert_eq!(character.values[1][CharacterValue::Rage as usize], 0);
@@ -62,7 +62,7 @@ fn god_setlevel_mutates_self_and_clears_spell_slots_and_effects() {
     assert!(high.messages.is_empty());
     let character = world.characters.get(&character_id).unwrap();
     assert_eq!(character.level, 36);
-    assert_eq!(character.exp, legacy_level_exp(36));
+    assert_eq!(character.exp, level2exp(36));
     assert!(character.flags.contains(CharacterFlags::ARCH));
     assert_eq!(character.values[1][CharacterValue::Duration as usize], 1);
     assert_eq!(character.values[1][CharacterValue::Rage as usize], 0);
