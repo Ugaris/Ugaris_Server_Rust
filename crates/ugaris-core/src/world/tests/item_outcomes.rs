@@ -998,3 +998,50 @@ fn swampwhisp_timer_moves_item_map_slot_and_reschedules() {
     let due = world.process_due_timers(15);
     assert_eq!(due.len(), 1);
 }
+
+#[test]
+fn stat_scroll_use_triggers_update_character_recompute() {
+    // C `raise_value_exp` (`src/system/skill.c:315-377`) calls
+    // `update_char(cn)` after bumping `value[1][v]`; the stat scroll driver
+    // (`base.c:6031` `IDR_STATSCROLL`) loops calling `raise_value_exp` per
+    // scroll charge. Raising Body Control (index 23) should immediately
+    // recompute the derived Armor bonus (`body_control * 5`,
+    // `create.c:1710`), proving `World::update_character` is wired at this
+    // outcome instead of only mutating the bare `values[1]` entry.
+    let mut world = World::default();
+    let mut owner = character(1);
+    owner.values[0][CharacterValue::BodyControl as usize] = 10;
+    owner.values[1][CharacterValue::BodyControl as usize] = 10;
+    owner.inventory[30] = Some(ItemId(7));
+    world.add_character(owner);
+
+    let mut scroll = item(7, ItemFlags::USED | ItemFlags::USE);
+    scroll.driver = crate::item_driver::IDR_STATSCROLL;
+    scroll.carried_by = Some(CharacterId(1));
+    scroll.driver_data = vec![CharacterValue::BodyControl as u8, 1];
+    world.add_item(scroll);
+
+    let outcome = world.execute_item_driver_request(
+        ItemDriverRequest::Driver {
+            driver: crate::item_driver::IDR_STATSCROLL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        1,
+    );
+
+    assert!(matches!(
+        outcome,
+        ItemDriverOutcome::StatScrollUsed {
+            value,
+            raised: 1,
+            ..
+        } if value == CharacterValue::BodyControl as u8
+    ));
+    let owner = &world.characters[&CharacterId(1)];
+    assert_eq!(owner.values[1][CharacterValue::BodyControl as usize], 11);
+    // Armor's effective value must reflect the freshly raised Body Control
+    // skill (11 * 5 = 55), not the stale pre-raise bonus (10 * 5 = 50).
+    assert_eq!(owner.values[0][CharacterValue::Armor as usize], 55);
+}

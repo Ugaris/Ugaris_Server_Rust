@@ -66,7 +66,7 @@ Remaining oversized files worth splitting during future work:
 | `src/module/base.c` `usetrap` / `steptrap` core scheduling paths, `balltrap` dispatch boundary, area 2 `spiketrap_driver` / `flamethrow_driver` / `extinguish_driver` core paths | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | `IDR_USETRAP` delayed target-item scheduling with the using character, `IDR_STEPTRAP` zero-character timer target discovery using the legacy 1/3/5/7 direction scan and distance 1 then 2, character-triggered delayed zero-character target scheduling, `IDR_BALLTRAP` non-player/timer guards plus legacy `drdata[0..2]` projectile start/target/power decoding to a typed outcome, `IDR_SPIKETRAP` one-shot armed-state sprite toggle, legacy `drdata[1] * POWERSCALE` damage unit, one-second reset timer, timer reset state, `IDR_FLAMETHROW` timer-only fire countdown, lit/unlit sprite/light modifier transitions, direction target scan for one/two tiles, one-tick active rescheduling, `drdata[3]` idle interval scheduling, C `burn_char` duplicate suppression/one-minute `EF_BURN` lifecycle with direct legacy-unit damage, `IDR_EXTINGUISH` burn removal/no-burn handling, legacy extinguish feedback text, and `SV_CEFFECT` burn body encoding ported with focused core/protocol/server tests. Actual projectile/effect creation for ball traps, exact `hurt` armor/shield reduction/death handling, and light/sector invalidation callbacks remain. |
 | `src/area/3/area3.c` `onofflight_driver` / `gate_driver` palace lamp-gate slice | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs` | `IDR_ONOFFLIGHT` timer registration, player light toggling, sprite/light modifier mutation, switched-on/off palace lamp counters, all-lamps-on keep-open window, `IDR_PALACEGATE` zero-character timer dispatch, gate open/close tile/item flag mutation, blocked close refusal, dirty-sector marking, and startup scheduling for existing palace lamps/gates ported with focused core/world tests. Exact area 3 character/dialogue quest flow around lamp ghosts and palace story state remains. |
 | `src/server.h` | `crates/ugaris-core/src/entity.rs`, `crates/ugaris-core/src/effect.rs`, `crates/ugaris-core/src/legacy.rs`, `crates/ugaris-core/src/map.rs` | Core flags, values, map/item/character/effect shapes including character sprite, item template ID, death counter, inventory ranges, version, tick constants ported. |
-| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_STATSCROLL` dispatch, carried-only and `/noexp` blocking, C skill-cost/start-factor/max checks needed by stat scrolls, XP grant/spend, bare/effective value raise, consume-on-success behavior, and runtime executed-outcome classification ported with focused tests. `CL_RAISE` now spends already-unspent exp (`raise_value`, distinct from the exp-granting `raise_value_exp` scroll path) through `World::raise_skill`, sending a single-value `SV_SETVAL0/1` + exp/exp_used feedback packet on success and staying silent on failure like C. Level-up recalculation, achievement checks, and exact `update_char` modifier recomputation remain for both raise paths. |
+| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_STATSCROLL` dispatch, carried-only and `/noexp` blocking, C skill-cost/start-factor/max checks needed by stat scrolls, XP grant/spend, bare/effective value raise, consume-on-success behavior, and runtime executed-outcome classification ported with focused tests. `CL_RAISE` now spends already-unspent exp (`raise_value`, distinct from the exp-granting `raise_value_exp` scroll path) through `World::raise_skill`, sending a single-value `SV_SETVAL0/1` + exp/exp_used feedback packet on success and staying silent on failure like C. Both raise paths now call `update_character`: `World::raise_skill` since iteration 17 and `World::apply_item_driver_outcome`'s `StatScrollUsed` arm since iteration 18 (the item driver itself only has `&mut Character`, so the `World`-level outcome handler recomputes once after the scroll's raise loop completes, matching C's per-raise `update_char` since the recompute is idempotent on the final `value[1]` state). Level-up recalculation and achievement checks remain for both raise paths. |
 | `src/system/act.h` | `crates/ugaris-core/src/legacy.rs` | Action IDs ported. |
 | `src/system/questlog.h`, `src/system/player.c` `sendquestlog` base packet | `crates/ugaris-core/src/quest.rs`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | Quest IDs, flags, fixed-size quest log behavior, C bitfield quest-entry packing, base `SV_QUESTLOG` payload shape with zeroed random-shrine PPD, and `CL_GETQUESTLOG` response path ported with tests. Full quest initialization/reopen side effects and mod-protocol questlog extensions remain. |
 | `src/system/io.c` / `src/system/io.h` | `crates/ugaris-protocol/src/frame.rs`, `crates/ugaris-net/src/*`, `crates/ugaris-server/src/main.rs` | Legacy tick frame envelope, TCP session skeleton, per-session server command channels, runtime-to-session framed payload sending, listener readiness/error reporting, default info logging, IPv4 plus IPv6 localhost listening for `localhost`, multi-payload login bootstrap queueing, and chunked full-map bootstrap below legacy frame limits ported. Full gameplay send buffering, compression modes, and backpressure policy remain partial. |
@@ -1410,3 +1410,60 @@ Recommended next chest steps:
   `cargo fmt --all`, `cargo build -p ugaris-server` (zero warnings), and a
   10s boot smoke (`entering Rust game loop`, ticks advancing, NPC driver
   messages processed, no panics) all pass.
+
+## Ralph Loop - `update_char` Stat Recomputation (Iteration 18)
+
+- Closed the "item-driver-level raise" sub-gap left open at the end of
+  iteration 17, choosing the second option that note described (the
+  `World`-level caller recomputes after applying the driver's outcome)
+  rather than threading `&mut World` through the entire item-driver
+  dispatch, since the latter would be a much larger, riskier refactor
+  touching dozens of driver files across `item_driver/*.rs`.
+- C `raise_value_exp` (`src/system/skill.c:315-377`) calls
+  `update_char(cn)` immediately after bumping `value[1][v]` for every
+  successful raise. The stat scroll driver (`base.c:6031` `IDR_STATSCROLL`,
+  Rust `item_driver/scrolls.rs::stat_scroll_driver`) loops calling
+  `raise_value_exp` per scroll charge purely on `&mut Character` (no
+  `&mut World` access) and returns `ItemDriverOutcome::StatScrollUsed`.
+  `World::apply_item_driver_outcome` (`world/item_outcomes.rs`) now
+  matches that outcome and calls `self.update_character(character_id)`
+  once after the loop completes - equivalent to C's per-raise calls since
+  `update_char` is idempotent on the final `value[1]` state (verified by
+  reading the full function body: it always recomputes from the current
+  `value[1]`/equipment/spell state, never accumulates deltas).
+- Test: `world/tests/item_outcomes.rs::stat_scroll_use_triggers_update_character_recompute`
+  raises Body Control (skill index 23) by 1 via a stat scroll through
+  `World::execute_item_driver_request` and asserts the derived Armor bonus
+  (`body_control * 5`, `create.c:1710`) immediately reflects the raised
+  value (55, not the stale pre-raise 50), proving the recompute actually
+  fires from this call site rather than only mutating `values[1]`.
+- Verified the other two drivers the iteration-17 note grouped with
+  scrolls are non-issues after reading their C sources directly (not
+  oversights, no wiring needed): `enchant_item`/`anti_enchant_item`
+  (`src/module/base.c:3543`/`5781`, backing `item_driver/orbs.rs`'s
+  `enchant_driver`/`anti_enchant_driver`) mutate only the *target item's*
+  `mod_index`/`mod_value` array and never call `update_char` in C either -
+  the recompute only happens later when the enhanced item is worn/re-worn,
+  which is already wired via `inventory_swap_slot`. `item_driver/potions.rs`'s
+  drivers (`potion_driver`/`special_potion_driver`/`beyond_potion_driver`)
+  only heal/restore current `hp`/`mana`/`endurance` directly or install
+  timed spells through `install_beyond_potion_spell` (already calling
+  `update_character` since iteration 17); none of them touch `values[]`
+  directly, so no additional wiring is needed there.
+- STILL REMAINING: level-up recompute (the "Experience/level-up side
+  effects" P1 todo item is still unported, so there is no level-up call
+  site to wire yet). `raise_value_exp` also calls C `check_levelup(cn)`
+  before bumping the value, which stays unported until that task lands.
+  The `src/area/18/bones.c:317-431` and `src/area/37/arkhata.c:800-801`
+  call sites of `raise_value_exp` (used for area-specific skill trainers,
+  distinct from the generic stat scroll item) are not yet ported to Rust
+  at all - `raise_value_exp` has no usage outside `item_driver/scrolls.rs`
+  in the Rust tree today, so those area drivers remain fully out of scope
+  until someone ports `area18_bones.rs`/`area37_arkhata.rs`'s trainer NPC
+  interactions. The documented gaps in the recompute algorithm itself
+  (`ch.ef[]` area-effect light, `P_CLAN`/`areaID == 13`, sprite
+  reselection) are unchanged from previous iterations.
+- Full workspace suite (1078 + 9 + 3 + 33 + 340 = 1463 tests across all
+  crates, 0 failed), `cargo fmt --all`, `cargo build -p ugaris-server`
+  (zero warnings), and a 10s boot smoke (`entering Rust game loop`, ticks
+  advancing, NPC driver messages processed, no panics) all pass.

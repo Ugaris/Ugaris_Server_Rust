@@ -563,18 +563,44 @@ suggestion; dependencies are noted.
     `world/tests/text.rs`, `world/tests/hurt.rs`,
     `world/tests/death.rs`, `world/tests/skills.rs` for the corrected
     fixtures/expectations and comments explaining each.
+  - Iteration 18: closed the "item-driver-level raise" sub-gap by having
+    the `World`-level caller recompute after applying the driver's outcome
+    (the second option the previous note left open), rather than
+    threading `&mut World` through the whole item-driver dispatch. C
+    `raise_value_exp` (`src/system/skill.c:315-377`, used by
+    `item_driver/scrolls.rs::stat_scroll_driver` for `IDR_STATSCROLL`)
+    calls `update_char(cn)` after every successful bare-value raise; the
+    Rust driver loops calling `raise_value_exp` per scroll charge purely
+    on `&mut Character` and returns `ItemDriverOutcome::StatScrollUsed`, so
+    `World::apply_item_driver_outcome` (`world/item_outcomes.rs`) now
+    matches that outcome and calls `self.update_character(character_id)`
+    once after the loop completes - equivalent to C's per-raise calls
+    since `update_char` is idempotent on the final `value[1]` state. Test:
+    `world/tests/item_outcomes.rs::stat_scroll_use_triggers_update_character_recompute`
+    raises Body Control via a scroll and asserts the derived Armor bonus
+    (`body_control * 5`) updates immediately instead of staying stale.
+    Verified the other two named gaps are non-issues after reading their C
+    sources directly: `enchant_item`/`anti_enchant_item`
+    (`src/module/base.c:3543`/`5781`, backing `orbs.rs::enchant_driver`/
+    `anti_enchant_driver`) mutate only the target item's `mod_index`/
+    `mod_value` and never call `update_char` in C either (the recompute
+    only happens later when the enhanced item is worn, which is already
+    wired via `inventory_swap_slot`); `potions.rs`'s drivers
+    (`potion_driver`/`special_potion_driver`/`beyond_potion_driver`) only
+    heal/restore current `hp`/`mana`/`endurance` or install spells via
+    `install_beyond_potion_spell` (already wired in iteration 17), never
+    touch `values[]`, so they need no additional wiring.
   - STILL REMAINING: level-up recompute (the "Experience/level-up side
     effects" P1 task below is still unported, so there is no level-up call
-    site to wire yet). Item-driver-level raise/scroll/potion/enchant paths
-    (`item_driver/scrolls.rs::raise_value_exp`, `item_driver/potions.rs`,
-    and similar) still don't call `update_character` since item drivers
-    operate on `&mut Character` only (no `&mut World` access) - wiring
-    those requires either passing `&mut World` through the item-driver
-    dispatch or having the `World`-level caller recompute after applying
-    the driver's outcome; this is a distinct, larger architectural slice
-    left for a future iteration. Documented gaps in the recompute itself
-    (`ch.ef[]` area-effect light, `P_CLAN`/`areaID == 13`, sprite
-    reselection) are unchanged from the previous iteration's notes.
+    site to wire yet). `raise_value_exp` also calls C `check_levelup(cn)`
+    before bumping the value, which stays unported until that task lands.
+    The `src/area/18/bones.c:317-431` and `src/area/37/arkhata.c:800-801`
+    call sites of `raise_value_exp` are not yet ported to Rust at all (no
+    `raise_value_exp` usage exists outside `scrolls.rs` in the Rust tree),
+    so those specific area drivers remain out of scope for this note.
+    Documented gaps in the recompute itself (`ch.ef[]` area-effect light,
+    `P_CLAN`/`areaID == 13`, sprite reselection) are unchanged from the
+    previous iteration's notes.
 
 - [ ] **Equipment slot rules on swap (`CL_SWAP` into worn slots)** - C
   `cl_swap`/`swap` checks `place_item_typed` rules: worn slot flag match
