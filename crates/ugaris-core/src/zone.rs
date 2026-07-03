@@ -455,6 +455,11 @@ impl ZoneLoader {
                 crate::character_driver::parse_merchant_driver_args(&template.args),
             ));
         }
+        if template.driver == crate::character_driver::CDR_BANK {
+            character.driver_state = Some(crate::character_driver::CharacterDriverState::Bank(
+                crate::character_driver::parse_bank_driver_args(&template.args),
+            ));
+        }
         if template.driver == CDR_LAB2UNDEAD {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_lab2_undead_create_message(&mut character, Some(&template.args));

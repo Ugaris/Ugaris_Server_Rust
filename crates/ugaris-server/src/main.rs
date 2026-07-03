@@ -144,7 +144,7 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::{
         exp2level, legacy_save_number, level2exp, level_value, merchant_buy_price,
-        merchant_sales_price, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
+        merchant_sales_price, BankEvent, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
         RaiseSkillOutcome, StoreWare, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
@@ -5330,6 +5330,14 @@ async fn main() -> anyhow::Result<()> {
                 let merchants_before_tick: std::collections::HashSet<CharacterId> =
                     world.merchant_stores.keys().copied().collect();
                 world.process_merchant_actions();
+                // C `bank_driver`: greetings, small talk, and
+                // deposit/withdraw/balance text commands (`src/module/
+                // bank.c`).
+                world.process_bank_actions(config.area_id);
+                let bank_events_applied = apply_bank_events(&mut runtime, &mut world);
+                if bank_events_applied != 0 {
+                    info!(bank_events_applied, tick = world.tick.0, "applied bank account events");
+                }
                 // C `merchant_driver`: seed/refresh "special" enchanted-item
                 // stock (`add_special_store`, every 12h).
                 let special_store_updates = world.refresh_special_stores(&mut zone_loader);

@@ -45,6 +45,8 @@ pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_STAFFER_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_FARMY_PPD_SIZE: usize = 85 * 4;
 pub const LEGACY_TEUFELRAT_PPD_SIZE: usize = 2 * 4;
+/// C `struct bank_ppd` (`src/module/bank.h`): a single `int imperial_gold`.
+pub const LEGACY_BANK_PPD_SIZE: usize = 4;
 pub const LEGACY_TWOCITY_PPD_SIZE: usize = 29 * 4;
 pub const LEGACY_LAB_PPD_SIZE: usize = 360;
 pub const LEGACY_SALTMINE_PPD_SIZE: usize = 4 + SALTMINE_LADDER_COUNT * 4 + 4;
@@ -153,6 +155,9 @@ pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DAT
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_DATA);
+/// C `#define DRD_BANK_PPD MAKE_DRD(DEV_ID_DB, 38 | PERSISTENT_PLAYER_DATA)`
+/// (`src/system/drdata.h:100`).
+pub const DRD_BANK_PPD: u32 = make_drd(DEV_ID_DB, 38 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TWOCITY_PPD: u32 = make_drd(DEV_ID_DB, 97 | PERSISTENT_PLAYER_DATA);
 pub const DRD_LAB_PPD: u32 = make_drd(DEV_ID_DB, 116 | PERSISTENT_PLAYER_DATA);
 pub const DRD_WARP_PPD: u32 = make_drd(DEV_ID_DB, 127 | PERSISTENT_PLAYER_DATA);
@@ -212,6 +217,7 @@ const STAFFER_PPD_SHANRA_STATE_OFFSET: usize = 16 * 4;
 const FARMY_PPD_BOSS_STAGE_OFFSET: usize = 0;
 const TEUFELRAT_PPD_KILLS_OFFSET: usize = 0;
 const TEUFELRAT_PPD_SCORE_OFFSET: usize = 4;
+const BANK_PPD_IMPERIAL_GOLD_OFFSET: usize = 0;
 const TWOCITY_PPD_GOODTILE_OFFSET: usize = 19 * 4;
 const TWOCITY_PPD_SOLVED_LIBRARY_OFFSET: usize = 24 * 4;
 const TWOCITY_PPD_THIEF_STATE_OFFSET: usize = 8 * 4;
@@ -453,6 +459,11 @@ pub struct PlayerRuntime {
     pub teufel_rat_kills: u32,
     #[serde(default)]
     pub teufel_rat_score: u32,
+    /// C `struct bank_ppd { int imperial_gold; }` (`src/module/bank.h`):
+    /// the player's Imperial Bank account balance, in the same silver-piece
+    /// unit as `Character.gold` (`ch[cn].gold`).
+    #[serde(default)]
+    pub bank_gold: u32,
     #[serde(default)]
     pub twocity_ppd: Vec<u8>,
     #[serde(default)]
@@ -585,6 +596,7 @@ impl PlayerRuntime {
             farmy_ppd: Vec::new(),
             teufel_rat_kills: 0,
             teufel_rat_score: 0,
+            bank_gold: 0,
             twocity_ppd: Vec::new(),
             lab_ppd: Vec::new(),
             warp_ppd: Vec::new(),
@@ -2085,6 +2097,24 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_bank_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_BANK_PPD_SIZE];
+        write_i32(
+            &mut bytes,
+            BANK_PPD_IMPERIAL_GOLD_OFFSET,
+            self.bank_gold.min(i32::MAX as u32) as i32,
+        );
+        bytes
+    }
+
+    pub fn decode_legacy_bank_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_BANK_PPD_SIZE {
+            return false;
+        }
+        self.bank_gold = read_i32(bytes, BANK_PPD_IMPERIAL_GOLD_OFFSET).max(0) as u32;
+        true
+    }
+
     pub fn add_teufel_rat_kill(&mut self, rat_level: u32, reduced_score: bool) -> (u32, u32) {
         let score = if reduced_score {
             1
@@ -2244,6 +2274,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_BANK_PPD => {
+                    if !self.decode_legacy_bank_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TWOCITY_PPD => {
                     if !self.decode_legacy_twocity_ppd(block.data) {
                         return false;
@@ -2311,6 +2346,7 @@ impl PlayerRuntime {
         let mut had_staffer = false;
         let mut had_farmy = false;
         let mut had_teufelrat = false;
+        let mut had_bank = false;
         let mut had_twocity = false;
         let mut had_saltmine = false;
         let mut had_treasure_dig = false;
@@ -2442,6 +2478,9 @@ impl PlayerRuntime {
                     DRD_TEUFELRAT_PPD,
                     &self.encode_legacy_teufelrat_ppd(),
                 );
+            } else if block.id == DRD_BANK_PPD {
+                had_bank = true;
+                write_ppd_block(&mut encoded, DRD_BANK_PPD, &self.encode_legacy_bank_ppd());
             } else if block.id == DRD_TWOCITY_PPD {
                 had_twocity = true;
                 write_ppd_block(
@@ -2658,6 +2697,9 @@ impl PlayerRuntime {
                     &self.encode_legacy_teufelrat_ppd(),
                 );
             }
+        }
+        if !had_bank && (existing_was_valid || existing.is_empty()) && self.bank_gold != 0 {
+            write_ppd_block(&mut encoded, DRD_BANK_PPD, &self.encode_legacy_bank_ppd());
         }
         if !had_twocity && (existing_was_valid || existing.is_empty()) {
             if !self.twocity_ppd.is_empty()
@@ -4479,6 +4521,59 @@ mod tests {
         assert_eq!(read_u32(&appended_blob, 0), DRD_TEUFELRAT_PPD);
         assert_eq!(read_i32(&appended_blob, 8), 1);
         assert_eq!(read_i32(&appended_blob, 12), 1);
+    }
+
+    #[test]
+    fn bank_ppd_codec_matches_legacy_c_layout() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.bank_gold = 3_800;
+
+        let encoded = player.encode_legacy_bank_ppd();
+        assert_eq!(encoded.len(), LEGACY_BANK_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, BANK_PPD_IMPERIAL_GOLD_OFFSET), 3_800);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_bank_ppd(&encoded));
+        assert_eq!(decoded.bank_gold, 3_800);
+        assert!(!decoded.decode_legacy_bank_ppd(&encoded[..LEGACY_BANK_PPD_SIZE - 1]));
+    }
+
+    #[test]
+    fn bank_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 222 | PERSISTENT_PLAYER_DATA);
+        let mut existing_bank = vec![0; LEGACY_BANK_PPD_SIZE];
+        write_i32(&mut existing_bank, BANK_PPD_IMPERIAL_GOLD_OFFSET, 500);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_BANK_PPD, &existing_bank);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.bank_gold = 12_345;
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_BANK_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_BANK_PPD_SIZE as u32);
+        assert_eq!(
+            read_i32(&encoded, 20 + BANK_PPD_IMPERIAL_GOLD_OFFSET),
+            12_345
+        );
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.bank_gold, 12_345);
+
+        let mut appended = PlayerRuntime::connected(3, 0);
+        appended.bank_gold = 700;
+        let appended_blob = appended.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended_blob, 0), DRD_BANK_PPD);
+        assert_eq!(read_i32(&appended_blob, 8), 700);
+
+        // C: a zero balance is never written out (matches every other
+        // "only append if nonzero" PPD block in `encode_legacy_ppd_blob`).
+        let zero_balance = PlayerRuntime::connected(4, 0);
+        assert!(zero_balance.encode_legacy_ppd_blob(&[]).is_empty());
     }
 
     #[test]

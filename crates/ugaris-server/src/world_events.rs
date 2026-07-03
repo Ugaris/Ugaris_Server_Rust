@@ -295,6 +295,84 @@ pub(crate) fn apply_player_fightback_from_hurt_event(
         })
 }
 
+/// C `bank_driver`'s deposit/withdraw/balance handling (`src/module/
+/// bank.c`), persistent-balance half: applies each [`BankEvent`] queued
+/// by `World::process_bank_actions` (see `world/bank.rs`'s module doc
+/// comment for why this split exists - `World` cannot see
+/// `PlayerRuntime`'s `DRD_BANK_PPD`-backed `bank_gold`) to the matching
+/// player's account balance, mirroring `apply_teufel_rat_death_from_hurt_event`'s
+/// `runtime`+`world` shape.
+pub(crate) fn apply_bank_events(runtime: &mut ServerRuntime, world: &mut World) -> usize {
+    let mut applied = 0;
+    for event in world.drain_pending_bank_events() {
+        match event {
+            BankEvent::Deposit { player_id, amount } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                // C `ppd->imperial_gold += val`; `Character.gold` was
+                // already debited synchronously in
+                // `World::process_bank_actions`.
+                player.bank_gold = player.bank_gold.saturating_add(amount);
+                applied += 1;
+            }
+            BankEvent::Withdraw {
+                bank_id,
+                player_id,
+                amount,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if amount > player.bank_gold {
+                    world.npc_quiet_say(
+                        bank_id,
+                        "Thou dost not have that much gold in thine account.",
+                    );
+                } else {
+                    // C `ppd->imperial_gold -= val;
+                    // give_money_silent(co, val, "Bank withdrawal");` - no
+                    // generic "give money" helper exists yet
+                    // (`world/bank.rs`'s module doc comment), so this
+                    // mirrors `world/merchant.rs::merchant_store_sell`'s
+                    // existing direct-mutation-plus-`CF_ITEMS` pattern.
+                    player.bank_gold -= amount;
+                    if let Some(character) = world.characters.get_mut(&player_id) {
+                        character.gold = character.gold.saturating_add(amount);
+                        character.flags.insert(CharacterFlags::ITEMS);
+                    }
+                    world.npc_quiet_say(
+                        bank_id,
+                        &format!("Thou hast withdrawn {} gold coins.", amount / 100),
+                    );
+                }
+                applied += 1;
+            }
+            BankEvent::Balance { bank_id, player_id } => {
+                let Some(player) = runtime.player_for_character(player_id) else {
+                    continue;
+                };
+                let balance = player.bank_gold;
+                // C `bank_driver`'s balance branch (`bank.c:379-387`).
+                let message = if balance > 100 {
+                    format!(
+                        "Thou hast {} gold and {} silver in thine account.",
+                        balance / 100,
+                        balance % 100
+                    )
+                } else if balance != 0 {
+                    format!("Thou hast {balance} silver in thine account.")
+                } else {
+                    "Thou dost not have any money in thine account.".to_string()
+                };
+                world.npc_quiet_say(bank_id, &message);
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
 pub(crate) fn send_pending_world_system_texts(
     runtime: &mut ServerRuntime,
     world: &mut World,

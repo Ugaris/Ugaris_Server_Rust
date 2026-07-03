@@ -13,6 +13,7 @@
 mod actions;
 mod area_mech;
 mod assembly;
+mod bank;
 mod character_values;
 mod combat;
 mod date;
@@ -46,6 +47,7 @@ mod traps_hazards;
 pub use actions::*;
 pub(crate) use area_mech::*;
 pub(crate) use assembly::*;
+pub use bank::*;
 pub(crate) use character_values::*;
 pub(crate) use combat::*;
 pub use death::*;
@@ -94,12 +96,12 @@ use crate::{
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, execute_character_died_driver,
         process_simple_baddy_messages,
-        remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, CharacterDriverOutcome,
-        CharacterDriverState, Lab2UndeadDriverData, LostconDriverData, SimpleBaddyEnemy,
-        SimpleBaddyMessageOutcome, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_MERCHANT, CDR_SIMPLEBADDY,
-        CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK,
-        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT,
-        NT_ITEM, NT_NPC, NT_SEEHIT, NT_SPELL, NT_TEXT,
+        remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, BankDriverData,
+        CharacterDriverOutcome, CharacterDriverState, Lab2UndeadDriverData, LostconDriverData,
+        SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_BANK, CDR_LAB2UNDEAD, CDR_LOSTCON,
+        CDR_MERCHANT, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON,
+        NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT,
+        NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC, NT_SEEHIT, NT_SPELL, NT_TEXT,
     },
     direction::Direction,
     do_action::{
@@ -235,6 +237,7 @@ pub struct World {
     pending_area_texts: Vec<WorldAreaText>,
     pending_channel_broadcasts: Vec<WorldChannelBroadcast>,
     pending_hurt_events: Vec<LegacyHurtEvent>,
+    pending_bank_events: Vec<BankEvent>,
 }
 
 impl Default for Tick {

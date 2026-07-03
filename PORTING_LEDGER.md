@@ -95,6 +95,7 @@ Remaining oversized files worth splitting during future work:
 | `src/system/death.c` `kill_char`/`die_char`/`god_save_char`/`respawn_callback`/`kill_score_level`/`death_loss`/`drop_grave` core, `src/system/respawn.c` boundary | `crates/ugaris-core/src/world/death.rs`, `crates/ugaris-core/src/world/hurt.rs`, `crates/ugaris-core/src/attack.rs`, `crates/ugaris-server/src/spawns.rs`, `crates/ugaris-server/src/main.rs` | `apply_legacy_hurt` now ports the C `hurt()` fatal-blow decision point for player `saves`: a non-PK death with `saves > 0` calls `World::god_save_character` (decrement+cap saves, `got_saved++`, hp reset, poison/burn removal, Ishtar feedback text, same-area rest transfer) instead of the normal kill path, exactly like C calling `god_save_char` before `kill_char` ever runs. Lethal hurt otherwise runs the C `kill_char` follow-up: death-driver dispatch and NT_DEAD fan-out (already ported) plus respawn-timer registration keyed by template/spawn tile, killer kill-score experience with the exact C level-taper table, hardcore kill bonus, LAG caps, queued server-side `give_exp` routing through runtime EXP modifiers, and the timed `AC_DIE` action (duration 12, act1 = killer, act2 = ispk). `AC_DIE` completion ports `die_char`: map/effect removal, C body rules (`CF_NOBODY` given-item drops, `CF_ITEMDEATH` slot-30 drop, `dead_body` items with the legacy sprite formula/description/player color drdata), extended-drop grave placement, body decay expire timers via a generic `expire_item` timer, loot containers as `contained_in` items (inventory + cursor + gold money item with the C sprite ladder; worn equipment kept except two shuffle-selected pieces; spells destroyed), player exp loss with the C newbie/used-exp taper and hardcore quarter, PK no-loss branch, resource restore, rest-position return, and NPC destruction. `respawn_callback` re-instantiates the stored zone template server-side with resource init and ten-second blocked-tile retries. Characters now carry serde-defaulted `template_key`/`respawn_ticks`, zone characters stamp spawn tiles into `rest_x/rest_y` like C `tmpx/tmpy`, and dying players can no longer cancel `AC_DIE` with new actions. Focused core tests cover the kill metadata, kill-score table, body/loot/money drops, NOBODY/ITEMDEATH branches, respawn scheduling/retry, player exp/PK/rest behavior, body expiry, and money sprites. Remaining gaps: death-mode loot tables (`loot.c`, currently unreferenced by zone data), `CDR_LOSTCON` exp cap, cross-area rest transfers, first-kill/military/achievement kill hooks, and exact global RNG parity for equipment loss. |
 | `src/module/merchants/store.c`, `src/module/merchants/merchant.c` core, merchant view slices of `src/system/player.c` / `src/system/act.c` `check_merchant`, `src/system/database/database_merchant.c` | `crates/ugaris-core/src/world/merchant.rs`, `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-server/src/merchants.rs`, `crates/ugaris-server/src/commands_chat.rs`, `crates/ugaris-server/src/main.rs`, `crates/ugaris-db/src/merchant.rs`, `migrations/0005_merchant_stores.sql` | `CDR_MERCHANT = 6` now has a typed driver-state (`MerchantDriverData`) parsed from C `merchant_driver_parse` args at zone load. Merchant NPCs lazily create stores from carried inventory 30+ (beyond `ignore`) as `always` stock with `pricemulti` defaulting to 400, greet visible players once per legacy 12-hour memory window with the C greeting/say format and Fred's extended range, react to `"<name> ... trade"` NT_TEXT speech by setting the speaker's `ch.merchant`, and destroy given items. Plain player `say` speech now fans out as NT_TEXT driver messages to nearby NPC drivers. C `salesprice`/`buyprice` formulas (barter + trader profession + 400 divisor, money exemption) are ported with tests, `sell`/`buy` port cursor-based buying/selling with always-stock preservation, sold-out/gold-low/cursor guards, ware stacking via `store_items_equal`, quest/nodepot/bond/lab/money stocking exclusions, and store gold accounting. The server sends C `con_type 2` store views (`SV_CONNAME`, `SV_CONCNT`, `SV_CONTAINER` sprites, `SV_PRICE`, `SV_ITEMPRICE`, `SV_CPRICE`), routes `CL_CONTAINER`/`CL_LOOK_CONTAINER` merchant-first like `cl_container` with `check_merchant` validation, formats the legacy bought/sold/too-expensive feedback, supports fast-buy inventory storing (`store_citem`), pushes view updates when the active merchant changes, and closes the view with a `con_type 0` packet. `CL_FASTSELL` (`cl_fastsell`, `src/system/player.c:877`) now quick-sells straight from an inventory slot: `apply_fast_sell` in `crates/ugaris-server/src/merchants.rs` reuses the existing simplified `swap` (`inventory_swap_slot`) to pick the slot item onto the cursor, re-validates with `check_merchant`, blocks quest items with the exact C hold-SHIFT message (leaving the item on the cursor, matching C's early return after the swap already ran), and otherwise reuses `merchant_store_sell`/`buyprice` for the trade. `database_merchant.c`'s `load_merchant_inventory`/`save_merchant_inventory` are now ported as `PgMerchantRepository::load_store`/`save_store` (`crates/ugaris-db/src/merchant.rs`), keyed like C by `(merchant_name, merchant_x, merchant_y)` but storing the whole ware list as one `jsonb` array per merchant instead of one row per ware; `main.rs` loads on first store creation (diffing `world.merchant_stores` keys before/after `process_merchant_actions()` each tick, since `ensure_merchant_store` only creates once) or saves an initial snapshot when nothing was persisted yet, and both the buy (`Container`) and fast-sell (`FastSell`) command paths re-save the full store after a successful trade. Focused core tests cover prices, arg parsing, store creation, trade activation, buy/sell mutations, quest-item exclusion, busy/distance clearing, and greeting memory; server tests cover the snapshot<->store conversion helpers; db tests cover JSON round-tripping and (behind `DATABASE_URL`) a live save/load round trip against Postgres. `add_special_store`/`create_special_item` (`src/module/merchants/store.c:229-323`, `src/system/tool.c:2620-2789`) are now ported as `World::create_special_item`/`World::add_special_store`/`World::refresh_special_stores` (`crates/ugaris-core/src/world/special_item.rs`): the full 76-entry weighted `special_item[]` enchant table, the 21-entry base-item roll, the potion branch, `lowhi_random`, and `set_item_requirements_sub` are all transcribed from C, and a `special`-flagged merchant now seeds five special wares on first store creation and one more every 12 real-time hours, matching `merchant_driver`'s C timing exactly; `main.rs` persists the merchant's store whenever `refresh_special_stores` reports a change. Remaining gaps: `create_special_item` is not yet wired to chest/loot generation (`create.c:1102`'s `special_prob`/`special_str`/`special_base` template fields), the aclerk auction NPC's duplicate special-store logic (`merchant.c:667,846-848`) is unported since `CDR_TRADER`/aclerk has no driver yet, day/night shop movement/door handling (so persistence currently keys off `character.x/y` at store-creation time rather than C's `tmpx/tmpy`), C's incremental per-item `merchant_tasks.c` task queue (Rust always does a full-store upsert instead), the periodic `save_all_merchants`/admin `#saveall` full-DB sweep, and exact global RNG parity. `merchant.c::analyse_text_driver`'s `qa[]` small-talk table is now ported behind a reusable, driver-agnostic matcher: `character_driver::{TextQaEntry, TextAnalysisOutcome, tokenize_text_words, analyse_text_qa}` tokenizes spoken text into lowercase words (C's `' ' ',' ':' '?' '!' '"' '.'` delimiter set, own-name filtering, 20-word cap, 250-byte-per-word bailout) and scans a qa table for an exact-length ordered match, returning `Said(text)` for entries with a canned `%s`-templated answer or `Matched(code)` for entries that only report an `answer_code` (C's `who are you`/`what's your name` style). `world::merchant::merchant_qa_reply` wires the `MERCHANT_QA` transcription of `merchant.c`'s table through it with the C guard clauses (`CF_PLAYER`, `char_dist <= 12`, `char_see_char`) and emits the reply via a new `merchant_quiet_say` helper using `settings.quietsay_dist` (C `quiet_say`'s `log_area(..., quietsay_dist, ...)` - the existing greet-on-sight message still uses `SAY_DIST`, which is a pre-existing mismatch left alone here). Remaining: `gwendylon.c`/`bank.c`/`base.c`/`military.c`/`forest.c`/`area3.c`/`arkhata.c`/`orb_bank_npc.c` each have their own `qa[]` tables and drivers that still need porting onto `analyse_text_qa`. |
 | Area terrain startup loading from `ugaris_data/zones/<area>/*.map` | `crates/ugaris-server/src/main.rs`, `crates/ugaris-core/src/zone.rs` | Server startup resolves `UGARIS_ZONE_ROOT` or default `ugaris_data/zones` / `../ugaris_data/zones`, loads generic and area `.itm`/`.chr` templates best-effort, loads the first area `.map`, accepts signed legacy sprite IDs, tolerates missing item/character templates while preserving terrain, sanitizes `from/to` range copies so live item/character IDs and temporary item blockers are not duplicated across terrain ranges, reports load counts, keeps the loader alive for runtime template instantiation, and chooses an open spawn tile. Area 1 `above1.map` smoke-tested: 65,533 ground tiles, 16,969 blocked tiles, 1,780 item templates, 188 character templates, 2,236 placed items, and 446 placed characters. Process-level legacy login smoke confirmed map bootstrap payloads after loading real area data. Full `.pre` expansion/generator parity, complete template metadata, respawn/random loot, and all object driver side effects remain. |
+| `src/module/bank.c`, `src/module/bank.h` | `crates/ugaris-core/src/world/bank.rs`, `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/world_events.rs`, `crates/ugaris-server/src/main.rs` | `CDR_BANK = 22` now has a typed driver state (`BankDriverData`) parsed from C `bank_driver_parse` args at zone load. `World::process_bank_actions` ports the full `bank_driver` body: `NT_CHAR` greeting is a periodic nearby-player scan (same simplification `world/merchant.rs` already established for its own greeting, rather than reacting to `notify_area`'s `NT_CHAR` broadcasts), small talk via the shared `analyse_text_qa` matcher against a transcribed `BANK_QA` table (including the verbatim "I'm just a merchant" copy-paste quirk from `merchant.c`), `deposit`/`withdraw`/`balance` text commands (raw substring search matching C's `strcasestr`, including the "explain deposit" double-reply quirk), `NT_GIVE` cursor-item destruction, the 16-line idle-murmur table with `RANDOM(25)`/`RANDOM(16)` throttling, the 12h greet-memory-clear timer, and the day/night shop-position/door movement block (`is_closed`/`is_room_empty`/`opening_time` ported fresh here - no prior Rust equivalent existed; `move_driver`/`use_item_at` map onto the existing `World::setup_walk_toward`/`toggle_door`). The persistent `ppd->imperial_gold` balance (`DRD_BANK_PPD`, C `struct bank_ppd`) is ported as `PlayerRuntime::bank_gold` with `encode_legacy_bank_ppd`/`decode_legacy_bank_ppd`; since `World` cannot see `PlayerRuntime`, deposit/withdraw/balance requests that need the persistent balance are queued as `BankEvent`s (`pending_bank_events`/`drain_pending_bank_events`, matching the existing `pending_kill_exp`-style convention) and applied by `world_events.rs::apply_bank_events` from `main.rs`'s tick loop. Documented deviations: the full keyed-door `use_driver` dispatch (`item_driver::door_driver`'s key-requirement gate) is not replicated for the bank's own door (toggles directly, since no zone data is expected to key a bank door); the "account"/"explain deposit/withdraw/balance" qa answers drop their `COL_LIGHT_BLUE`/`COL_RESET` color styling (the shared `&str`-based qa pipeline cannot carry the raw non-UTF8 legacy color marker byte) while keeping the wording byte-for-byte; `NT_GIVE` unconditionally destroys the received item rather than first trying `give_driver`'s give-it-back attempt (same simplification `world/merchant.rs` already made). 17 focused tests in `world/tests/bank.rs` plus 2 PPD round-trip tests in `player.rs`. |
 
 ## Partial
 
@@ -3125,4 +3126,97 @@ Recommended next chest steps:
   warnings, zero failures. `cargo build -p ugaris-server` clean, zero
   warnings. Boot-smoked `target/debug/ugaris-server --bind-addr
   127.0.0.1:5556` for 10s, "entering Rust game loop" logged, no panics.
+
+## Ralph Loop - `CDR_BANK` Banker NPC (Iteration 44)
+
+- Closed out the previous iteration's "Idle NPC chatter" `[~]` task as
+  `[x]`: its own note already explained the remaining "citizen
+  equivalents" are properly scoped as part of each of their own drivers'
+  future P2/P4 ports (bank, trader, aclerk, area3/gwendylon/clanmaster/
+  tunnel), so there was no standalone follow-up left for that task
+  itself.
+- Ported C `src/module/bank.c` (`bank_driver`, `bank_dead`, `bank_ppd`)
+  end to end as the next topmost P2 task:
+  - `character_driver.rs`: `CDR_BANK = 22` (matches
+    `src/system/drvlib.h:70`), `BankDriverData` (day/night positions,
+    door, store bounds, open/close hours, greet-throttle/memory-clear
+    ticks - same shape as `MerchantDriverData`), `parse_bank_driver_args`
+    (C `bank_driver_parse`, defaults `open=6`/`close=23` before parsing),
+    and `BANK_QA` (C's 15-row `qa[]`, including the literal "Sorry, I'm
+    just a merchant" line copy-pasted from `merchant.c` - preserved, not
+    "fixed"). `zone.rs` wires `CDR_BANK` spawn-time arg parsing the same
+    way `CDR_MERCHANT` already does.
+  - `player.rs`: `DRD_BANK_PPD = MAKE_DRD(DEV_ID_DB, 38 | ...)` (matches
+    `src/system/drdata.h:100`), `PlayerRuntime::bank_gold` (C `struct
+    bank_ppd { int imperial_gold; }`), `encode_legacy_bank_ppd`/
+    `decode_legacy_bank_ppd` following the `teufelrat` single-`i32`-field
+    codec pattern exactly (offset const, `decode_legacy_ppd_blob` match
+    arm, `encode_legacy_ppd_blob` mid-loop arm plus `had_bank`-guarded
+    append-if-nonzero tail block).
+  - `world/bank.rs` (new, ~430 lines): `World::process_bank_actions`
+    ports the full per-tick `bank_driver` body - message loop (`NT_TEXT`
+    small talk via the shared `analyse_text_qa` matcher plus raw
+    `strcasestr`-style deposit/withdraw/balance substring detection,
+    `NT_GIVE` cursor destruction), a periodic-scan greeting (same
+    simplification `world/merchant.rs` already established for `NT_CHAR`
+    instead of reacting to `notify_area` broadcasts), the 16-line
+    `bank_mutterings[]` idle-chatter table with `RANDOM(25)`/`RANDOM(16)`
+    throttling (byte-for-byte C text), the 12h greet-memory-clear timer,
+    and the day/night shop-position/door movement block. The last part
+    needed three primitives with **no prior Rust equivalent anywhere in
+    the codebase** (confirmed via targeted research before writing code):
+    `is_closed(x,y)` (checks a door item's `drdata[0]` via the existing
+    `door_open_state` helper), `is_room_empty(xs,ys,xe,ye)` (linear scan
+    over `CF_PLAYER` characters in a bounding box - C's sector-stepped
+    loop has no equivalent index in this codebase, same observable
+    result), and `opening_time(from,to)` (wrap-around-midnight hour
+    gate); `move_driver`/`use_item_at` map onto the pre-existing
+    `World::setup_walk_toward`/`World::toggle_door`.
+  - Cross-boundary design note (this is the first driver to need it):
+    `World` cannot see `PlayerRuntime` (owned by the `ugaris-server`
+    session layer), so the persistent `ppd->imperial_gold` balance
+    cannot be read or written from inside `World::process_bank_actions`.
+    Deposit's "enough carried gold?" check and `Character.gold`
+    debit/credit happen synchronously in `World` (mirroring
+    `world/merchant.rs::merchant_store_sell`'s existing direct-mutation
+    pattern), but the actual persistent-balance mutation and the
+    withdraw/balance reply text (which need the *current* balance,
+    unknown to `World`) are queued as a new `BankEvent`
+    (`Deposit`/`Withdraw`/`Balance`) via `pending_bank_events`/
+    `drain_pending_bank_events`, following the exact
+    `pending_kill_exp`-style convention already used throughout `World`.
+    `crates/ugaris-server/src/world_events.rs::apply_bank_events`
+    (mirroring `apply_teufel_rat_death_from_hurt_event`'s `runtime`+
+    `world` shape) drains the queue and applies each event to the
+    correct `PlayerRuntime`, called from `main.rs`'s tick loop right
+    after `process_merchant_actions`.
+  - Three documented (not silent) deviations from C, each with an inline
+    code comment: (1) the bank's own door toggles directly via
+    `toggle_door` rather than the full keyed-door `use_driver` dispatch
+    (`item_driver::door_driver`'s key-requirement gate) - no existing
+    zone data is expected to key a bank door; (2) the "account"/"explain
+    deposit/withdraw/balance" qa answers drop their C
+    `COL_LIGHT_BLUE`/`COL_RESET` color styling (the shared `&str`-based
+    `analyse_text_qa` pipeline cannot carry the raw non-UTF8 legacy color
+    marker byte - a real Rust-string-literal constraint, not a
+    convenience shortcut) while keeping the wording byte-for-byte
+    identical; (3) `NT_GIVE` unconditionally destroys the received item
+    rather than first attempting `give_driver`'s hand-it-back behavior,
+    following the same simplification `world/merchant.rs` already
+    established (no generic "give item back" helper exists yet).
+  - Tests: 17 new focused tests in `world/tests/bank.rs` (arg parsing,
+    greet-once memory, qa small talk, the "explain deposit" double-reply
+    quirk, deposit success/insufficient-funds/no-amount, withdraw
+    queued/no-amount/negative-amount, balance queued, `NT_GIVE`
+    destruction, idle-chatter lucky/unlucky-roll seeded RNG, no-day-
+    position spawn-tile return+turn, and `opening_time` wrap-around) plus
+    2 new PPD round-trip tests in `player.rs` (`bank_ppd_codec_matches_...`,
+    `bank_ppd_blob_round_trips_...`).
+  - Verification: `cargo fmt --all` clean. `cargo test --workspace`:
+    1182 core (19 net new) + 27 db + 3 net + 33 protocol + 374 server,
+    zero warnings, zero failures. `cargo build -p ugaris-server` clean,
+    zero warnings. Boot-smoked `target/debug/ugaris-server --bind-addr
+    127.0.0.1:5556` for 12s, "entering Rust game loop" logged, no
+    panics.
+  - `PORTING_TODO.md`'s `CDR_BANK` checkbox marked `[x]`.
 - Task marked `[~]` in `PORTING_TODO.md` with the scope note above.

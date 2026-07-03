@@ -1562,7 +1562,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   shout. The merchant greeting's missing color codes noted above are
   also still open.
 
-- [~] **Idle NPC chatter** - merchant/citizen random murmur tables
+- [x] **Idle NPC chatter** - merchant/citizen random murmur tables
   (`merchant_driver` RANDOM(25) block, citizen equivalents). Needs the
   speech helpers. Low complexity, high flavor.
   REMAINING: only `merchant_driver`'s block is wired (into
@@ -1597,10 +1597,54 @@ Unlocks every quest NPC. Do these before any P4 area work.
   --workspace` (1163+27+3+33+374 passed), `cargo build -p ugaris-server`
   all clean, and a 10s boot-smoke showed "entering Rust game loop" with
   no panics.
+  Closing note (iteration 44): the "citizen equivalents" remainder listed
+  above is explicitly scoped into the other drivers' own P2/P4 tasks
+  (`CDR_BANK`, `CDR_TRADER`, Aclerk, area3/gwendylon/clanmaster/tunnel), so
+  there is no standalone follow-up left for this task itself; marking done.
 
-- [ ] **`CDR_BANK` banker NPC** - C `src/module/bank.c`: deposit/withdraw
+- [x] **`CDR_BANK` banker NPC** - C `src/module/bank.c`: deposit/withdraw
   via text commands + `NT_GIVE` money handling, balance stored in PPD
   (`DRD_BANK_PPD`? read the C). Port driver + PPD codec + tests.
+  Progress Log: added `CDR_BANK`/`BankDriverData`/`parse_bank_driver_args`/
+  `BANK_QA` to `character_driver.rs` and wired spawn-time arg parsing in
+  `zone.rs`; added `DRD_BANK_PPD`/`bank_gold` PPD codec
+  (`encode_legacy_bank_ppd`/`decode_legacy_bank_ppd`) to
+  `player.rs::PlayerRuntime`; added `crates/ugaris-core/src/world/bank.rs`
+  (`World::process_bank_actions`) porting the full `bank_driver` body:
+  greeting (periodic nearby-player scan, same simplification
+  `world/merchant.rs` already established for `NT_CHAR`), small talk via
+  the shared `analyse_text_qa` matcher, deposit/withdraw/balance text
+  commands, `NT_GIVE` cursor-item destruction, the 16-line idle-murmur
+  table with `RANDOM(25)`/`RANDOM(16)` throttling, the 12h memory-clear
+  timer, and the day/night shop-position/door movement block (`is_closed`/
+  `is_room_empty`/`opening_time` ported fresh - no prior Rust equivalent
+  existed). Since `World` cannot see `PlayerRuntime` (the persistent
+  `ppd->imperial_gold` balance lives in the `ugaris-server` session layer,
+  not `World`), added a `BankEvent`/`pending_bank_events`/
+  `drain_pending_bank_events` queue (matching the existing
+  `pending_kill_exp`-style convention) plus
+  `crates/ugaris-server/src/world_events.rs::apply_bank_events` to apply
+  deposit credit / withdraw debit+payout / balance-reply against the
+  correct `PlayerRuntime`, called from `main.rs`'s tick loop right after
+  `process_merchant_actions`. Deviations (documented in code comments,
+  not silent): (1) `use_item_at`'s full keyed-door dispatch
+  (`item_driver::door_driver`'s key-requirement gate) is not replicated -
+  bank doors toggle directly via `toggle_door`, since no existing zone
+  data is expected to put a keyed door on a bank; (2) the C "account"/
+  "explain deposit"/"explain withdraw"/"explain balance" qa answers wrap
+  keywords in `COL_LIGHT_BLUE`/`COL_RESET` - the shared `analyse_text_qa`
+  pipeline works on plain `&str` (the legacy color marker is a raw
+  non-UTF8 byte that cannot be represented in a Rust string literal), so
+  color styling is dropped while wording stays byte-for-byte identical;
+  (3) `NT_GIVE` unconditionally destroys the received item rather than
+  first trying to hand it back (`give_driver`), following the same
+  simplification `world/merchant.rs` already established (no generic
+  "give item back" helper exists). `cargo fmt --all`, `cargo test
+  --workspace` (1182+27+3+33+374 passed, including 17 new
+  `world::tests::bank` tests and 2 new PPD round-trip tests in
+  `player.rs`), `cargo build -p ugaris-server` all clean with zero
+  warnings, and a 12s boot-smoke showed "entering Rust game loop" with no
+  panics.
 
 - [ ] **`CDR_TRADER` player-to-player trade NPC** (`src/module/base.c`
   trader section) and **`CDR_JANITOR`** (item cleanup NPC). Both have
