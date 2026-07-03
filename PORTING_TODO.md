@@ -309,7 +309,7 @@ order.
     either. See `PORTING_LEDGER.md` "Ralph Loop - Look At Character
     (CL_LOOK_CHAR)" for the full gap list.
 
-- [ ] **Look at map item (`CL_LOOK_ITEM`)** - parsed, ignored. Reuse
+- [x] **Look at map item (`CL_LOOK_ITEM`)** - parsed, ignored. Reuse
   `legacy_item_look_text`; gate by `char_see_item` and distance like C
   `cl_look_item`. Tests in `tests/inventory.rs`.
 
@@ -700,3 +700,9 @@ Add one line per completed task: date, task, ledger section touched.
   REMAINING: labyrinth/first-kill/army-rank/PK/clan/club info lines and
   the looker-`CF_GOD` debug branch are documented gaps pending their own
   P2/P3 systems.
+- 2026-07-03: Look at map item (`CL_LOOK_ITEM`) (P0) - added
+  `look_map_item_text` to `crates/ugaris-server/src/inventory.rs`, reusing
+  the existing `legacy_item_look_text`/`char_see_item` ports; wired
+  `ClientAction::LookItem` into `apply_inventory_client_action` and the
+  `main.rs` command-feedback dispatch; ledger section "Ralph Loop - Look
+  At Map Item (CL_LOOK_ITEM)".

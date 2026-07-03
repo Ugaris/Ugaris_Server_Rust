@@ -203,6 +203,124 @@ fn inventory_look_uses_legacy_item_text() {
 }
 
 #[test]
+fn look_item_uses_legacy_item_text_when_visible_on_map() {
+    // C `cl_look_item` (`src/system/player.c:764`): resolves `map[m].it`,
+    // gates on `char_see_item`, then calls `look_item(cn, it+in, -1)`.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+
+    let mut item = test_item(ItemId(10), 100, ItemFlags::USED);
+    item.name = "Fine Sword".to_string();
+    item.description = "A carefully balanced blade.".to_string();
+    assert!(world.map.set_item_map(&mut item, 11, 10));
+    world.add_item(item);
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::LookItem { x: 11, y: 10 },
+        1,
+    );
+
+    assert_eq!(
+        result,
+        InventoryCommandResult::Look("Fine Sword:\nA carefully balanced blade.".to_string())
+    );
+}
+
+#[test]
+fn look_item_ignores_out_of_bounds_coordinates() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+
+    // C: `x<1||x>=MAXMAP-1||y<1||y>=MAXMAP-1` bounds guard in `cl_look_item`.
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::LookItem { x: 0, y: 10 },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+}
+
+#[test]
+fn look_item_ignores_empty_tile() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+
+    // C: `if (!(in = map[m].it)) { return; }`
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::LookItem { x: 11, y: 10 },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+}
+
+#[test]
+fn look_item_ignores_carried_items() {
+    // C `char_see_item` (`src/system/see.c:159`): `if (it[in].carried) return 0;`
+    // A carried item never rests on `map[m].it`, so the tile lookup itself
+    // already fails; assert the end-to-end handler still no-ops rather than
+    // panicking if item bookkeeping ever regresses.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+
+    let mut item = test_item(ItemId(10), 100, ItemFlags::USED);
+    item.carried_by = Some(character_id);
+    world.add_item(item);
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::LookItem { x: 11, y: 10 },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+}
+
+#[test]
+fn look_item_ignores_items_out_of_line_of_sight_range() {
+    // C `char_see_item` gates via `los_can_see(..., DISTMAX)`; a character
+    // far outside `DIST_MAX` (40) tiles cannot look at a map item.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+
+    let mut item = test_item(ItemId(10), 100, ItemFlags::USED);
+    item.name = "Fine Sword".to_string();
+    assert!(world.map.set_item_map(&mut item, 200, 200));
+    world.add_item(item);
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::LookItem { x: 200, y: 200 },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+}
+
+#[test]
 fn logout_save_omits_arkhata_stopwatch_from_inventory_snapshot() {
     let mut world = World::default();
     let character_id = CharacterId(7);

@@ -53,6 +53,7 @@ pub(crate) fn apply_inventory_client_action(
         ClientAction::UseInventory { slot } => {
             inventory_use_slot(world, player, character_id, usize::from(slot), area_id)
         }
+        ClientAction::LookItem { x, y } => look_map_item_text(world, character_id, x, y),
         _ => InventoryCommandResult::Ignored,
     }
 }
@@ -131,6 +132,49 @@ pub(crate) fn inventory_look_slot(
         .filter(|text| !text.is_empty())
         .map(InventoryCommandResult::Look)
         .unwrap_or(InventoryCommandResult::Ignored)
+}
+
+/// C `cl_look_item` (`src/system/player.c:764`): bounds-check the target
+/// tile, resolve the item sitting on `map[m].it`, gate visibility via
+/// `char_see_item`, then build the same text `look_item(cn, it+in, -1)`
+/// sends for inventory items (slot `-1` means "not an inventory slot").
+pub(crate) fn look_map_item_text(
+    world: &World,
+    character_id: CharacterId,
+    x: u16,
+    y: u16,
+) -> InventoryCommandResult {
+    let (x, y) = (usize::from(x), usize::from(y));
+    if !world.map.legacy_inner_bounds(x, y) {
+        return InventoryCommandResult::Ignored;
+    }
+
+    let item_id = world
+        .map
+        .tile(x, y)
+        .map(|tile| tile.item)
+        .unwrap_or_default();
+    if item_id == 0 {
+        return InventoryCommandResult::Ignored;
+    }
+
+    let Some(character) = world.characters.get(&character_id) else {
+        return InventoryCommandResult::Ignored;
+    };
+    let Some(item) = world.items.get(&ugaris_core::ids::ItemId(item_id)) else {
+        return InventoryCommandResult::Ignored;
+    };
+
+    if !ugaris_core::see::char_see_item(character, item, &world.map, world.date.daylight) {
+        return InventoryCommandResult::Ignored;
+    }
+
+    let text = legacy_item_look_text(item, character);
+    if text.is_empty() {
+        InventoryCommandResult::Ignored
+    } else {
+        InventoryCommandResult::Look(text)
+    }
 }
 
 pub(crate) fn inventory_use_slot(

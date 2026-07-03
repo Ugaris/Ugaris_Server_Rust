@@ -1274,7 +1274,8 @@ async fn main() -> anyhow::Result<()> {
                         }
                         ClientAction::Swap { .. }
                         | ClientAction::UseInventory { .. }
-                        | ClientAction::LookInventory { .. } => {
+                        | ClientAction::LookInventory { .. }
+                        | ClientAction::LookItem { .. } => {
                             let result = apply_inventory_client_action(
                                 &mut world,
                                 runtime.player_for_character(character_id),
