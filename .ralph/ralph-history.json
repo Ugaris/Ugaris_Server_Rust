@@ -631,27 +631,57 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 20,
+      "startedAt": "2026-07-03T17:03:29.909Z",
+      "endedAt": "2026-07-03T17:11:24.866Z",
+      "durationMs": 474419,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/item_driver/types.rs",
+        "crates/ugaris-core/src/world/item_outcomes.rs",
+        "crates/ugaris-core/src/world/tests/item_outcomes.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- **Verification**: `cargo fmt --all`, `cargo test --workspace` (1090+9+3+33+340 = 1475 tests, 0 failed), `cargo build -p ugaris-server` (zero warnings) all pass. No boot smoke needed since this chang",
+        "test result: ok. 340 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1086 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\"",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test result: ok. 1090 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 21923078,
+  "totalDurationMs": 22397497,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 20,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
-      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 10,
-      "test error::tests::error_constants_match_legacy_header ... ok": 4,
-      "test error::tests::error_strings_match_legacy_table ... ok": 3,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 2,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 11,
+      "test error::tests::error_constants_match_legacy_header ... ok": 5,
+      "test error::tests::error_strings_match_legacy_table ... ok": 4,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 1,
@@ -695,7 +725,7 @@
       "test result: ok. 1053 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Now let's check the third failing test in item_outcomes.rs:": 1,
       "5. Verified: `cargo fmt --all`, `cargo test --workspace` (all passing, 0 failures), `cargo build -p ": 1,
-      "test result: ok. 340 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 7,
+      "test result: ok. 340 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 8,
       "assertion failed: world.characters.get(&CharacterId(3)).unwrap().driver_messages.is_empty()": 1,
       "assertion failed: world.characters[&CharacterId(2)].driver_messages.is_empty()": 1,
       "assertion failed: world.characters[&CharacterId(3)].driver_messages.is_empty()": 1,
@@ -743,7 +773,10 @@
       "All verification gates passed: `cargo fmt --all` clean, `cargo test --workspace` (1474 tests, 0 fail": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 2 previous errors": 1,
       "test result: ok. 1078 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
-      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1
+      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "- **Verification**: `cargo fmt --all`, `cargo test --workspace` (1090+9+3+33+340 = 1475 tests, 0 fai": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1086 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1090 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
