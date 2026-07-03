@@ -146,7 +146,9 @@ use crate::{
         compute_shadow_with_random, remove_character_light, remove_effect_light, remove_item_light,
         reset_dlight, LIGHT_DISTANCE,
     },
-    log_text::{emote_message, murmur_message, quiet_say_message, say_message, LOG_TALK},
+    log_text::{
+        emote_message, murmur_message, quiet_say_message, say_message, whisper_message, LOG_TALK,
+    },
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},
     player::{PlayerActionCode, PlayerRuntime},

@@ -97,6 +97,18 @@ pub fn look_character_hename(target: &Character) -> &'static str {
     }
 }
 
+/// C `hisname` (`src/system/tool.c:1488`): lowercase his/her/its possessive
+/// pronoun, gated the same way as `Hename`/`hename` (male/female/neuter).
+pub fn hisname(character: &Character) -> &'static str {
+    if character.flags.contains(CharacterFlags::MALE) {
+        "his"
+    } else if character.flags.contains(CharacterFlags::FEMALE) {
+        "her"
+    } else {
+        "its"
+    }
+}
+
 /// C `plr_send_inv` (`src/system/player.c`): the `SV_LOOKINV` paperdoll
 /// fields (target's sprite/colors/12 worn-slot item sprites).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,6 +197,26 @@ impl World {
             return false;
         };
         let Some(message) = murmur_message(&character.name, text) else {
+            return false;
+        };
+        self.pending_area_texts.push(WorldAreaText {
+            x: character.x,
+            y: character.y,
+            max_distance: self.settings.whisper_dist.max(0) as u16,
+            message: String::from_utf8_lossy(&message).into_owned(),
+        });
+        true
+    }
+
+    /// C `whisper(cn, format, ...)` (`src/system/talk.c:296`): `"<name>
+    /// whispers: \"<text>\""` fanned out at `whisper_dist` tiles, quote-
+    /// reject guard. Returns `false` if the character is unknown or `text`
+    /// contains a `"`.
+    pub fn npc_whisper(&mut self, character_id: CharacterId, text: &str) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(message) = whisper_message(&character.name, text) else {
             return false;
         };
         self.pending_area_texts.push(WorldAreaText {

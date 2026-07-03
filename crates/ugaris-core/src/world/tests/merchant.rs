@@ -2,6 +2,7 @@ use super::*;
 use crate::character_driver::{
     mem_add_driver, parse_merchant_driver_args, MerchantDriverData, CDR_MERCHANT,
 };
+use crate::world::merchant::MERCHANT_TALK_INTERVAL_TICKS;
 
 fn merchant_npc(id: u32, pricemulti: i32) -> Character {
     let mut merchant = character(id);
@@ -337,4 +338,113 @@ fn merchant_small_talk_ignores_speakers_beyond_analyse_text_distance() {
 
     let texts = world.drain_pending_area_texts();
     assert!(!texts.iter().any(|text| text.message.contains("Hello,")));
+}
+
+/// C `merchant_driver`'s idle-murmur block
+/// (`src/module/merchants/merchant.c` lines ~463-540): once per minute, on
+/// a `RANDOM(25)` 1-in-25 hit, murmur/whisper/emote a random line. These
+/// tests seed `legacy_random_seed` to values pre-computed to land on a
+/// known `(RANDOM(25), RANDOM(max_case + 1))` pair, matching how other
+/// legacy-RNG-driven tests in this codebase pin the seed rather than
+/// asserting on randomness.
+#[test]
+fn merchant_idle_chatter_murmurs_on_lucky_roll() {
+    let mut world = World::default();
+    // seed=546: RANDOM(25) == 0 (hit), RANDOM(17) == 0 ("My back itches.").
+    world.legacy_random_seed = 546;
+    world.tick = Tick(MERCHANT_TALK_INTERVAL_TICKS + 1);
+    assert!(world.spawn_character(merchant_npc(1, 400), 10, 10));
+
+    world.process_merchant_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.message == "Dolf murmurs: \"My back itches.\""),
+        "expected the case-0 murmur among {texts:?}"
+    );
+    let merchant = world.characters.get(&CharacterId(1)).unwrap();
+    match merchant.driver_state.as_ref() {
+        Some(CharacterDriverState::Merchant(data)) => {
+            assert_eq!(data.last_talk, MERCHANT_TALK_INTERVAL_TICKS + 1);
+        }
+        _ => panic!("expected merchant driver state"),
+    }
+}
+
+#[test]
+fn merchant_idle_chatter_stays_quiet_below_talk_interval() {
+    let mut world = World::default();
+    world.tick = Tick(MERCHANT_TALK_INTERVAL_TICKS);
+    assert!(world.spawn_character(merchant_npc(1, 400), 10, 10));
+
+    world.process_merchant_actions();
+
+    assert!(world.drain_pending_area_texts().is_empty());
+}
+
+#[test]
+fn merchant_idle_chatter_skips_unlucky_roll() {
+    let mut world = World::default();
+    // seed=17: RANDOM(25) == 1, missing the 1-in-25 hit.
+    world.legacy_random_seed = 17;
+    world.tick = Tick(MERCHANT_TALK_INTERVAL_TICKS + 1);
+    assert!(world.spawn_character(merchant_npc(1, 400), 10, 10));
+
+    world.process_merchant_actions();
+
+    assert!(world.drain_pending_area_texts().is_empty());
+    let merchant = world.characters.get(&CharacterId(1)).unwrap();
+    match merchant.driver_state.as_ref() {
+        Some(CharacterDriverState::Merchant(data)) => assert_eq!(data.last_talk, 0),
+        _ => panic!("expected merchant driver state"),
+    }
+}
+
+#[test]
+fn merchant_idle_chatter_grants_lori_the_extended_case_range() {
+    let mut world = World::default();
+    // seed=565: RANDOM(25) == 0 (hit), RANDOM(21) == 20 (Lori-only case
+    // 20: coin-flip emote + murmur), unreachable for a non-Lori merchant
+    // whose max_case is 16 (`RANDOM(17)`).
+    world.legacy_random_seed = 565;
+    world.tick = Tick(MERCHANT_TALK_INTERVAL_TICKS + 1);
+    let mut lori = merchant_npc(1, 400);
+    lori.name = "Lori".into();
+    lori.flags |= CharacterFlags::FEMALE;
+    assert!(world.spawn_character(lori, 10, 10));
+
+    world.process_merchant_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.message == "Lori Flips her coins."),
+        "expected the Lori-only case-20 emote among {texts:?}"
+    );
+    assert!(texts
+        .iter()
+        .any(|text| text.message == "Lori murmurs: \"These miners sure like to spend money.\""));
+}
+
+#[test]
+fn merchant_idle_chatter_emote_reflects_indoor_ceiling_vs_outdoor_sky() {
+    let mut world = World::default();
+    // seed=1074: RANDOM(25) == 0 (hit), RANDOM(17) == 9 (ceiling/sky emote).
+    world.legacy_random_seed = 1074;
+    world.tick = Tick(MERCHANT_TALK_INTERVAL_TICKS + 1);
+    world.map.tile_mut(10, 10).unwrap().flags |= MapFlags::INDOORS;
+    assert!(world.spawn_character(merchant_npc(1, 400), 10, 10));
+
+    world.process_merchant_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.message == "Dolf stares at the ceiling."),
+        "expected the indoor emote among {texts:?}"
+    );
 }

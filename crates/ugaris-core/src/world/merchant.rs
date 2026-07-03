@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::character_driver::{mem_add_driver, mem_check_driver, mem_erase_driver};
+use crate::world::text::hisname;
 
 /// C `STORESIZE` from `src/module/merchants/store.h`.
 pub const MERCHANT_STORE_SIZE: usize = INVENTORY_SIZE - 2;
@@ -14,6 +15,9 @@ pub const MERCHANT_STORE_SIZE: usize = INVENTORY_SIZE - 2;
 const MERCHANT_GREET_DISTANCE: i32 = 10;
 const FRED_GREET_DISTANCE: i32 = 25;
 const MERCHANT_MEMORY_CLEAR_TICKS: u64 = TICKS_PER_SECOND * 60 * 60 * 12;
+/// C `TICKS * 60` in `merchant_driver`'s idle-murmur throttle
+/// (`src/module/merchants/merchant.c`).
+pub(crate) const MERCHANT_TALK_INTERVAL_TICKS: u64 = TICKS_PER_SECOND * 60;
 /// C `mem_add_driver(cn, co, 7)`/`mem_check_driver(cn, co, 7)` in
 /// `merchant.c`'s greeting/trade-request handlers.
 const MERCHANT_GREET_MEMORY_SLOT: usize = 7;
@@ -376,6 +380,7 @@ impl World {
             self.ensure_merchant_store(merchant_id);
             self.process_merchant_messages(merchant_id);
             self.greet_nearby_players(merchant_id);
+            self.merchant_idle_chatter(merchant_id);
             self.clear_expired_merchant_memory(merchant_id);
         }
     }
@@ -532,6 +537,135 @@ impl World {
                     player_id.0,
                 );
             }
+        }
+    }
+
+    /// C `merchant_driver`'s idle-murmur block
+    /// (`src/module/merchants/merchant.c` lines ~463-540): once per minute,
+    /// roll `RANDOM(25)` and on a 1-in-25 hit pick a random line via
+    /// `RANDOM(max_case + 1)`. Lori gets 4 extra mine-only cases
+    /// (`max_case` 20 instead of 16, matched case-insensitively on name
+    /// per C's `strcasecmp`).
+    fn merchant_idle_chatter(&mut self, merchant_id: CharacterId) {
+        let tick = self.tick.0;
+        let Some(merchant) = self.characters.get(&merchant_id).cloned() else {
+            return;
+        };
+        let last_talk = match merchant.driver_state.as_ref() {
+            Some(CharacterDriverState::Merchant(data)) => data.last_talk,
+            _ => return,
+        };
+        if tick <= last_talk + MERCHANT_TALK_INTERVAL_TICKS {
+            return;
+        }
+        if legacy_random_below_from_seed(&mut self.legacy_random_seed, 25) != 0 {
+            // C: `dat->last_talk` is only updated on the roll's 1-in-25 hit
+            // branch (the surrounding `if` guards the whole block).
+            return;
+        }
+
+        let max_case: u32 = if merchant.name.eq_ignore_ascii_case("lori") {
+            20
+        } else {
+            16
+        };
+        let case = legacy_random_below_from_seed(&mut self.legacy_random_seed, max_case + 1);
+        let indoors = self
+            .map
+            .tile(usize::from(merchant.x), usize::from(merchant.y))
+            .is_some_and(|tile| tile.flags.contains(MapFlags::INDOORS));
+        let pronoun = hisname(&merchant);
+
+        match case {
+            0 => {
+                self.npc_murmur(merchant_id, "My back itches.");
+            }
+            1 => {
+                self.npc_whisper(merchant_id, "There's something stuck between your teeth.");
+            }
+            2 => {
+                self.npc_murmur(merchant_id, "Oh yeah, those were the days.");
+            }
+            3 => {
+                self.npc_murmur(merchant_id, "Now where did I put it?");
+            }
+            4 => {
+                self.npc_murmur(merchant_id, "Oh my, life is hard but unfair.");
+            }
+            5 => {
+                self.npc_murmur(merchant_id, "Beware of the fire snails!");
+            }
+            6 => {
+                self.npc_murmur(merchant_id, "Ishtar! Oh, what has become of us!");
+            }
+            7 => {
+                self.npc_murmur(merchant_id, "The demons will get you.");
+            }
+            8 => {
+                self.npc_emote(merchant_id, &format!("scratches {pronoun} back"));
+            }
+            9 => {
+                if indoors {
+                    self.npc_emote(merchant_id, "stares at the ceiling");
+                } else {
+                    self.npc_emote(merchant_id, "stares at the sky");
+                }
+            }
+            10 => {
+                self.npc_emote(merchant_id, &format!("twiddles {pronoun} thumbs"));
+            }
+            11 => {
+                self.npc_murmur(merchant_id, "Haggling is an art.");
+            }
+            12 => {
+                self.npc_murmur(merchant_id, "Quality goods at a fair price!");
+            }
+            13 => {
+                self.npc_emote(merchant_id, &format!("adjusts {pronoun} hat"));
+            }
+            14 => {
+                self.npc_murmur(merchant_id, "I've got what you need.");
+            }
+            15 => {
+                self.npc_murmur(merchant_id, "I'm not a merchant, I'm a wizard!");
+            }
+            16 => {
+                self.npc_murmur(
+                    merchant_id,
+                    "Oh how I wish I could be a mighty warrior like Eddow.",
+                );
+            }
+            17 => {
+                self.npc_murmur(
+                    merchant_id,
+                    "Have you seen Fred? He used to be a regular, but then he took a pickaxe to the ankle.",
+                );
+            }
+            18 => {
+                self.npc_murmur(
+                    merchant_id,
+                    "My oh My, what a wonderful day! Or that's what I would say if I wasn't deep down in the mines.",
+                );
+            }
+            19 => {
+                self.npc_murmur(
+                    merchant_id,
+                    "All these miners in the mines, they're all the same. Always after the good stuff",
+                );
+            }
+            20 => {
+                self.npc_emote(merchant_id, &format!("Flips {pronoun} coins"));
+                self.npc_murmur(merchant_id, "These miners sure like to spend money.");
+            }
+            _ => {}
+        }
+
+        if let Some(CharacterDriverState::Merchant(data)) = self
+            .characters
+            .get_mut(&merchant_id)
+            .and_then(|merchant| merchant.driver_state.as_mut())
+        {
+            data.last_talk = tick;
         }
     }
 

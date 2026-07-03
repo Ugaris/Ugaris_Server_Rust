@@ -1562,9 +1562,41 @@ Unlocks every quest NPC. Do these before any P4 area work.
   shout. The merchant greeting's missing color codes noted above are
   also still open.
 
-- [ ] **Idle NPC chatter** - merchant/citizen random murmur tables
+- [~] **Idle NPC chatter** - merchant/citizen random murmur tables
   (`merchant_driver` RANDOM(25) block, citizen equivalents). Needs the
   speech helpers. Low complexity, high flavor.
+  REMAINING: only `merchant_driver`'s block is wired (into
+  `World::process_merchant_actions` via a new
+  `world/merchant.rs::merchant_idle_chatter`). The "citizen equivalents" -
+  `bank.c::bank_driver`, `orb_bank_npc.c`, `base.c::trader_driver`,
+  `merchant.c::aclerk_driver` (a *second*, different `RANDOM(25)` table
+  at merchant.c:800, distinct from `merchant_driver`'s), `area3.c`,
+  `clanmaster.c`, `tunnel.c`, `gwendylon.c`, `sidestory.c` - all have
+  their own `RANDOM(25)` murmur blocks but are whole unported NPC drivers
+  in their own right (bank -> P2 "`CDR_BANK`"; trader -> P2 "`CDR_TRADER`";
+  aclerk -> P2 "Aclerk / auction NPC"; area3/gwendylon -> P4 area tasks;
+  clanmaster -> P4 Area 30; tunnel -> P4 Area 33), so porting each one's
+  murmur table is properly scoped as part of that driver's own port, not
+  a standalone follow-up here (same reasoning the "Generic NPC text
+  analysis" task above used for its per-driver `qa[]` tables). Added the
+  missing `World::npc_whisper` speech helper (`src/system/talk.c`'s
+  `whisper()`, `whisper_dist`) since the merchant table's case 1 needed
+  it and only `say`/`quiet_say`/`emote`/`murmur` existed before.
+  Progress Log: added `hisname`/`npc_whisper` to
+  `crates/ugaris-core/src/world/text.rs`; added
+  `world/merchant.rs::merchant_idle_chatter` (the 17-case table plus
+  Lori's 4 extra mine-only cases at `max_case=20`, matched
+  case-insensitively per C's `strcasecmp`) wired into
+  `process_merchant_actions` after `greet_nearby_players`. Preserved C's
+  exact text digit-for-digit, including the literal capitalization quirk
+  in case 20's `"Flips %s coins"` emote. 5 new unit tests in
+  `world/tests/merchant.rs` pinning `legacy_random_seed` to
+  pre-computed values that land on known `(RANDOM(25), RANDOM(n+1))`
+  rolls (lucky/unlucky hit, Lori's extended case range, indoor/outdoor
+  emote branch, talk-interval throttle). `cargo fmt --all`, `cargo test
+  --workspace` (1163+27+3+33+374 passed), `cargo build -p ugaris-server`
+  all clean, and a 10s boot-smoke showed "entering Rust game loop" with
+  no panics.
 
 - [ ] **`CDR_BANK` banker NPC** - C `src/module/bank.c`: deposit/withdraw
   via text commands + `NT_GIVE` money handling, balance stored in PPD
