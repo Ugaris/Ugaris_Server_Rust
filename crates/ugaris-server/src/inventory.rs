@@ -108,6 +108,12 @@ pub(crate) fn inventory_swap_slot(
     character.cursor_item = slot_id;
     character.inventory[slot] = cursor_id;
     character.flags.insert(CharacterFlags::ITEMS);
+
+    // C `swap` (`src/system/do.c:1216`): `if (pos < 12) update_char(cn);`
+    // - only worn-slot swaps trigger a stat recompute.
+    if slot < 12 {
+        world.update_character(character_id);
+    }
     InventoryCommandResult::Changed
 }
 

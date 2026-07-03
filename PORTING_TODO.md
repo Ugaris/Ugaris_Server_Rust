@@ -504,7 +504,7 @@ order.
 Systems every later port depends on. Order within the section is a
 suggestion; dependencies are noted.
 
-- [ ] **`update_char` stat recomputation** - the big one. C
+- [~] **`update_char` stat recomputation** - the big one. C
   `update_char(cn)` in `src/system/tool.c` recomputes `values[0]` from
   `values[1]` plus worn equipment modifiers, spell items, profession
   bonuses, race base, and clamps; it also recomputes `V_ARMOR`/`V_WEAPON`
@@ -520,6 +520,27 @@ suggestion; dependencies are noted.
     changes effective values exactly like C, including the +20 modifier cap
     and non-stacking rules.
   - Blocks: proper equip flow, enchant effects, level-ups feeling right.
+  - REMAINING: `World::update_character(cn)` now ports the full
+    `create.c:1710` algorithm (all four slices: item/spell modifier sum
+    with the 50%/72.5% seyan cap and `IF_BEYONDMAXMOD` bypass, skill-value
+    base-attribute averaging, Body Control/Armor Skill/spell-average armor
+    bonuses, Speed Skill/Athlete/Thief/Demon profession bonuses, day/
+    night/clan attribute bonuses, and the HP/endurance/mana current-value
+    clamp), and is wired into worn-slot equip/unequip
+    (`inventory_swap_slot`, `pos < 12` only, matching C `do.c:1294`). Not
+    yet wired into: spell install/expiry (`world/spells.rs` still uses the
+    old ad-hoc `apply_item_modifier_deltas` deltas instead of a full
+    recompute), level up (task below still creates the level path), login,
+    death respawn. Documented gaps in the recompute itself: `ch.ef[]`
+    area-effect light contributions are not modeled; the `P_CLAN` bonus
+    only checks the `MF_CLAN` map flag (the `areaID == 13` catacombs
+    special case is unavailable - `World` has no current-area id); sprite
+    reselection (demon suits, weapon-in-hand offsets) and
+    `player_reset_map_cache` on infravision toggle are not ported (display-
+    only, tracked separately). Next slice: switch `world/spells.rs`
+    equip/unequip and spell install/expiry call sites from
+    `apply_item_modifier_deltas`/`refresh_driver_spell_flags` to
+    `World::update_character`, then wire login/level-up/respawn.
 
 - [ ] **Equipment slot rules on swap (`CL_SWAP` into worn slots)** - C
   `cl_swap`/`swap` checks `place_item_typed` rules: worn slot flag match
@@ -883,3 +904,19 @@ Add one line per completed task: date, task, ledger section touched.
   `act_*` completion call sites (take/use/drop/give/attack/spells/idle)
   and the merchant-scan-to-message-consumer migration are deferred - see
   todo note and ledger for details.
+- 2026-07-03: `update_char` stat recomputation (P1, partial) - ported the
+  full `create.c:1710` recompute algorithm as
+  `World::update_character(cn)`/`recompute_character_values` in
+  `crates/ugaris-core/src/world/character_values.rs` (equipment/spell
+  modifier sum with seyan/single-class caps and `IF_BEYONDMAXMOD` bypass,
+  skill base-attribute averaging, Body Control/Armor Skill/spell-average
+  armor bonuses, Speed Skill/Athlete/Thief/Demon profession bonuses, day/
+  night/clan attribute bonuses, HP/endurance/mana clamp, light re-emission
+  via the existing `refresh_character_light_after_value_change`); wired
+  into worn-slot equip/unequip in
+  `crates/ugaris-server/src/inventory.rs::inventory_swap_slot` (`pos < 12`
+  only, matching C); added 11 tests in
+  `crates/ugaris-core/src/world/tests/character_values.rs`; ledger section
+  "Ralph Loop - `update_char` Stat Recomputation". REMAINING: not yet
+  wired into spell install/expiry, level up, login, or death respawn -
+  see the todo note for the precise next slice.
