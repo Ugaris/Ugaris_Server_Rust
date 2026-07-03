@@ -225,7 +225,7 @@ order.
     damage by a lvl N NAME." log line (`death.c:1222`) is also still
     unported (only the sound was fixed to match its gating).
 
-- [~] **Game clock advancement** - `world.date` never moves; it is always
+- [x] **Game clock advancement** - `world.date` never moves; it is always
   the same hour, so daylight/nightlight logic is frozen.
   - C: `tick_date()` in `src/system/date.c:267`, called once per iteration
     of the main loop (`src/server.c:618`) with `time_now = time(NULL)`
@@ -269,25 +269,25 @@ order.
     0 -> 255), respects the `/dlight`-style numeric override, respects the
     per-area light override table (area 23 underground), and advances one
     `yday` per `DAY_LEN` real seconds.
-  - REMAINING: the "mark light-dirty sectors when daylight changes" half
-    of the original task note was investigated and intentionally not
-    ported as a map-wide sweep: `world.dirty_sectors`/`mark_dirty_sector`
-    are not consumed by `crates/ugaris-server/src/map_sync.rs` anywhere
-    yet (grepped - zero hits outside `sector.rs`'s own tests) - the
-    current per-tick map sync path (`map_diff_payloads`) already
-    recomputes each visible tile's effective light fresh from
-    `world.date.daylight` every tick and diffs it, so daylight changes
-    already propagate to clients without needing a dirty-sector sweep.
-    Revisit this note once `map_sync.rs` starts consuming
-    `skip_x_sector`/dirty sectors as a network-traffic optimization (it
-    doesn't today), at which point a real "was daylight this tick vs last
-    tick" comparison (already available via `advance_date`'s bool return)
-    should drive a full-map dirty mark, matching C's per-player
-    `redo = 1` on `dlight` change (`player.c:2357`). Live boot-smoked:
-    server enters the tick loop and runs without panics with the wired
-    date advancement in place (no player client was connected to visually
-    confirm nightlight sprites toggling, since that requires a live game
-    day/night cycle over real time to observe end-to-end).
+  - Closed (2026-07-03 re-review): the "mark light-dirty sectors when
+    daylight changes" half of the original task note does not apply to the
+    current Rust architecture and is not a correctness gap. In C,
+    `player.c:2357`'s `redo = 1` on `dlight` change exists purely to defeat
+    the `skipx_sector` early-continue optimization inside
+    `plr_map_update`'s per-tile loop (`player.c:2374-2380`) - i.e. it forces
+    C to *recompute* tiles it would otherwise skip for performance. Rust's
+    `map_diff_payloads`/`tile_visibility` (`crates/ugaris-server/src/map_sync.rs`)
+    has no equivalent skip-sector fast path at all: it unconditionally
+    recomputes every visible tile's effective light from
+    `world.date.daylight` each tick and diffs the result against the cached
+    `VisibleMapCell`, so a daylight change is already detected and sent to
+    every affected player with no extra plumbing needed. `world.dirty_sectors`
+    remains unused by `map_sync.rs` (confirmed by grep) and should stay that
+    way unless a future task adds a real skip-sector optimization to
+    `map_diff_payloads`, at which point `advance_date`'s existing bool
+    return value is the right signal to force a full recompute that tick.
+    Live boot-smoked again this iteration: server enters the tick loop and
+    runs without panics with the wired date advancement in place.
 
 - [ ] **Look at character (`CL_LOOK_CHAR`)** - parsed, ignored.
   - C: `cl_look_char` -> `look_char` in `src/system/player.c` /
@@ -672,3 +672,12 @@ Add one line per completed task: date, task, ledger section touched.
   `crates/ugaris-core/src/world/item_outcomes.rs`; ledger section "Ralph
   Loop - Game Clock Advancement". REMAINING: map-wide light-dirty sector
   marking on daylight change deferred (see todo note/ledger for why).
+- 2026-07-03: Game clock advancement (P0) - re-reviewed the deferred
+  "light-dirty sector" remainder and closed it: confirmed by reading C
+  `player.c:2357-2380` that `redo = 1` on `dlight` change only defeats a
+  `skipx_sector` recompute-skip optimization that Rust's
+  `map_diff_payloads`/`tile_visibility` never has in the first place (it
+  always recomputes every visible tile's light from `world.date.daylight`
+  and diffs), so there is no remaining correctness gap; marked `[x]`.
+  No code changes, ledger section "Ralph Loop - Game Clock Advancement"
+  updated with the closing note.
