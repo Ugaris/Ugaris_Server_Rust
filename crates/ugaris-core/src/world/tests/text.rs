@@ -727,3 +727,73 @@ fn look_character_paperdoll_none_for_unknown_target() {
     let world = World::default();
     assert!(world.look_character_paperdoll(CharacterId(42)).is_none());
 }
+
+#[test]
+fn npc_say_broadcasts_at_say_dist_and_never_rejects_quotes() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.name = "Gwen".into();
+    assert!(world.spawn_character(npc, 10, 10));
+
+    // C `say()` has its quote-rejecting check commented out, unlike
+    // `quiet_say`/`emote`/`murmur`.
+    assert!(world.npc_say(CharacterId(1), "hi \"there\""));
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].message, "Gwen says: \"hi \"there\"\"");
+    assert_eq!(texts[0].max_distance, world.settings.say_dist as u16);
+
+    assert!(!world.npc_say(CharacterId(99), "nobody"));
+}
+
+#[test]
+fn npc_quiet_say_uses_quietsay_dist_and_rejects_quotes() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.name = "Gwen".into();
+    assert!(world.spawn_character(npc, 10, 10));
+
+    assert!(world.npc_quiet_say(CharacterId(1), "Hello there!"));
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].message, "Gwen says: \"Hello there!\"");
+    assert_eq!(texts[0].max_distance, world.settings.quietsay_dist as u16);
+
+    assert!(!world.npc_quiet_say(CharacterId(1), "bad \"quote\""));
+    assert!(world.drain_pending_area_texts().is_empty());
+    assert!(!world.npc_quiet_say(CharacterId(99), "nobody"));
+}
+
+#[test]
+fn npc_emote_uses_emote_dist_and_rejects_quotes() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.name = "Gwen".into();
+    assert!(world.spawn_character(npc, 10, 10));
+
+    assert!(world.npc_emote(CharacterId(1), "waves"));
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].message, "Gwen waves.");
+    assert_eq!(texts[0].max_distance, world.settings.emote_dist as u16);
+
+    assert!(!world.npc_emote(CharacterId(1), "bad \"quote\""));
+    assert!(world.drain_pending_area_texts().is_empty());
+}
+
+#[test]
+fn npc_murmur_uses_whisper_dist_and_rejects_quotes() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.name = "Gwen".into();
+    assert!(world.spawn_character(npc, 10, 10));
+
+    assert!(world.npc_murmur(CharacterId(1), "psst"));
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].message, "Gwen murmurs: \"psst\"");
+    assert_eq!(texts[0].max_distance, world.settings.whisper_dist as u16);
+
+    assert!(!world.npc_murmur(CharacterId(1), "bad \"quote\""));
+    assert!(world.drain_pending_area_texts().is_empty());
+}

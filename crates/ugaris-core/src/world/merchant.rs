@@ -441,7 +441,8 @@ impl World {
             }
         }
         for (_, reply) in small_talk {
-            self.merchant_quiet_say(merchant_id, &merchant_name, &reply);
+            // C `quiet_say(cn, "%s", reply)`.
+            self.npc_quiet_say(merchant_id, &reply);
         }
     }
 
@@ -482,21 +483,6 @@ impl World {
         }
     }
 
-    fn merchant_quiet_say(&mut self, merchant_id: CharacterId, merchant_name: &str, text: &str) {
-        let Some(merchant) = self.characters.get(&merchant_id) else {
-            return;
-        };
-        // C `quiet_say`: `log_area(..., LOG_TALK, cn, quietsay_dist, ...)`.
-        let max_distance = self.settings.quietsay_dist.max(0) as u16;
-        let say = crate::log_text::say_message(merchant_name, text);
-        self.pending_area_texts.push(WorldAreaText {
-            x: merchant.x,
-            y: merchant.y,
-            max_distance,
-            message: String::from_utf8_lossy(&say).into_owned(),
-        });
-    }
-
     fn greet_nearby_players(&mut self, merchant_id: CharacterId) {
         let Some(merchant) = self.characters.get(&merchant_id).cloned() else {
             return;
@@ -535,13 +521,10 @@ impl World {
         }
 
         for (player_id, greeting) in &greetings {
-            let say = crate::log_text::say_message(&merchant.name, greeting);
-            self.pending_area_texts.push(WorldAreaText {
-                x: merchant.x,
-                y: merchant.y,
-                max_distance: SAY_DIST as u16,
-                message: String::from_utf8_lossy(&say).into_owned(),
-            });
+            // C: `quiet_say(cn, "Hello %s! ...", ...)` - the greeting is a
+            // `quiet_say`, not `say` (was previously wired to the wrong
+            // helper/distance).
+            self.npc_quiet_say(merchant_id, greeting);
             if let Some(merchant) = self.characters.get_mut(&merchant_id) {
                 mem_add_driver(
                     &mut merchant.driver_memory,

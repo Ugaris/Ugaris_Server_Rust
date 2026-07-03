@@ -472,16 +472,8 @@ impl World {
                     .is_some_and(|item| item.driver == IDR_POISON0)
             });
         if has_poison0 {
-            if let Some(message) = emote_message(&character.name, "drinks a potion")
-                .and_then(|message| String::from_utf8(message).ok())
-            {
-                self.pending_area_texts.push(WorldAreaText {
-                    x: character.x,
-                    y: character.y,
-                    max_distance: (SAY_DIST / 2) as u16,
-                    message,
-                });
-            }
+            // C: `emote(cn, "drinks a potion")`.
+            self.npc_emote(character_id, "drinks a potion");
             self.remove_all_poison(character_id);
         }
     }

@@ -162,11 +162,11 @@ impl World {
                     });
 
             if protected_by_nomagic || !undead {
-                self.queue_lab2_undead_say(character_id, "Mwahahahaha...");
+                self.npc_say(character_id, "Mwahahahaha...");
                 continue;
             }
 
-            self.queue_lab2_undead_say(character_id, "Arrgh!");
+            self.npc_say(character_id, "Arrgh!");
             if let Some(character) = self.characters.get_mut(&character_id) {
                 character.flags.remove(CharacterFlags::NODEATH);
             }
@@ -321,7 +321,7 @@ impl World {
             }
         }
         if let Some(message) = say {
-            self.queue_lab2_undead_say(character_id, message);
+            self.npc_say(character_id, message);
         }
         if idle_ticks > 0 {
             if let Some(character) = self.characters.get_mut(&character_id) {
@@ -381,7 +381,7 @@ impl World {
             return false;
         }
 
-        self.queue_lab2_undead_say(character_id, "Arrgh!");
+        self.npc_say(character_id, "Arrgh!");
         self.create_mist_effect(i32::from(character.x), i32::from(character.y));
         if let Some(character) = self.characters.get_mut(&character_id) {
             character
@@ -484,20 +484,5 @@ impl World {
             .into_iter()
             .filter(|&character_id| self.process_lab2_undead_crypt_door_action(character_id))
             .count()
-    }
-
-    pub(crate) fn queue_lab2_undead_say(
-        &mut self,
-        character_id: CharacterId,
-        message: impl Into<String>,
-    ) {
-        if let Some(character) = self.characters.get(&character_id) {
-            self.pending_area_texts.push(WorldAreaText {
-                x: character.x,
-                y: character.y,
-                max_distance: SAY_DIST as u16,
-                message: message.into(),
-            });
-        }
     }
 }

@@ -79,7 +79,11 @@ fn lab2_undead_holy_water_damages_true_undead_and_delays_regen() {
         u32::from_le_bytes(regen.driver_data[8..12].try_into().unwrap()),
         100 + (TICKS_PER_SECOND * 20) as u32
     );
-    assert_eq!(world.drain_pending_area_texts()[0].message, "Arrgh!");
+    // C `say(cn, "Arrgh!")`: `"%s says: \"%s\""`.
+    assert_eq!(
+        world.drain_pending_area_texts()[0].message,
+        "Restless Undead says: \"Arrgh!\""
+    );
     assert_eq!(
         world.drain_pending_system_texts()[0].message,
         "You spill the holy water all over the Restless Undead."
@@ -117,9 +121,10 @@ fn lab2_undead_holy_water_is_laughed_off_in_nomagic_without_nonomagic() {
 
     assert_eq!(world.characters[&CharacterId(2)].hp, 25 * POWERSCALE);
     assert!(world.effects.is_empty());
+    // C `say(cn, "Mwahahahaha...")`: `"%s says: \"%s\""`.
     assert_eq!(
         world.drain_pending_area_texts()[0].message,
-        "Mwahahahaha..."
+        "Character says: \"Mwahahahaha...\""
     );
 }
 
@@ -206,9 +211,10 @@ fn lab2_undead_patrol_advances_waypoint_and_waits_like_c() {
     };
     assert_eq!(data.pat, 4);
     assert_eq!(undead.duration, (TICKS_PER_SECOND * 2) as i32);
+    // C `say(cn, "A gust of wind?")`: `"%s says: \"%s\""`.
     assert_eq!(
         world.drain_pending_area_texts()[0].message,
-        "A gust of wind?"
+        "Character says: \"A gust of wind?\""
     );
 }
 
@@ -261,7 +267,11 @@ fn lab2_undead_dies_on_cathedral_ground_sprite() {
     assert_eq!(undead.hp, 0);
     assert_eq!(undead.deaths, 1);
     assert_eq!(world.effects.values().next().unwrap().effect_type, EF_MIST);
-    assert_eq!(world.drain_pending_area_texts()[0].message, "Arrgh!");
+    // C `say(cn, "Arrgh!")`: `"%s says: \"%s\""`.
+    assert_eq!(
+        world.drain_pending_area_texts()[0].message,
+        "Character says: \"Arrgh!\""
+    );
 }
 
 #[test]

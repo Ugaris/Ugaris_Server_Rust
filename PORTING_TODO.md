@@ -1514,11 +1514,53 @@ Unlocks every quest NPC. Do these before any P4 area work.
   ugaris-server` all clean, and a 10s boot-smoke showed "entering Rust
   game loop" with no panics.
 
-- [ ] **`quiet_say`/`say`/`emote` NPC speech helpers in core** - several
+- [x] **`quiet_say`/`say`/`emote` NPC speech helpers in core** - several
   drivers need to talk. There are queued area-text pieces already
   (`queue_lab2_undead_say`); generalize to `World::npc_say(cn, text)`
   (say format), `npc_emote`, `npc_murmur` with the C color/format rules
   from `src/system/talk.c`. Migrate existing call sites.
+  C: `src/system/talk.c` - `say()` (`quiet_say`/`emote`/`murmur`'s
+  sibling; note its quote-rejecting `strchr(buf, '"')` check is
+  commented out, unlike the other three), `quiet_say()`, `emote()`,
+  `murmur()`. All four share the `log_area(x, y, LOG_TALK/LOG_INFO, cn,
+  <dist>, "<fmt>", ch[cn].name, buf)` pattern with a fixed format string
+  and per-function distance constant (`say_dist`/`quietsay_dist`/
+  `emote_dist`; `murmur` reuses `whisper_dist`, it has no distance of its
+  own).
+  Rust: added `World::npc_say`/`npc_quiet_say`/`npc_emote`/`npc_murmur`
+  to `crates/ugaris-core/src/world/text.rs`, each pushing a
+  `WorldAreaText` (the existing `pending_area_texts` queue merchant.rs
+  already used) at the matching `GameSettings` distance field. Added
+  `murmur_message`/`quiet_say_message` to `crates/ugaris-core/src/
+  log_text.rs` alongside the pre-existing `say_message`/`emote_message`/
+  `whisper_message`/`shout_message`/`holler_message` helpers.
+  Migrated the three existing ad-hoc `pending_area_texts.push`
+  call sites onto the new helpers: `world/lab2_undead.rs`'s
+  `queue_lab2_undead_say` (removed; call sites now call `npc_say`
+  directly - this was a latent bug fix, the old helper pushed the raw
+  message with no `"<name> says: \"...\""` wrapper even though C's
+  `say(cn, "Arrgh!")` always includes it; fixed the 4 affected unit
+  tests in `world/tests/lab2_undead.rs` to expect the correct wrapped
+  text per the Hard Rules), `world/npc_idle.rs`'s potion-drink emote
+  (now `npc_emote`), and `world/merchant.rs`'s small-talk reply +
+  greeting (now `npc_quiet_say` - the greeting call site was also a
+  latent bug: it used `say_message`/`SAY_DIST` even though C's
+  `merchant.c` greeting is `quiet_say(cn, "Hello %s! ...")`, i.e. the
+  wrong distance; left the missing `COL_LIGHT_BLUE`/`COL_RESET` color
+  codes around the trade phrase as a separate, out-of-scope gap).
+  Tests: 4 new unit tests in `world/tests/text.rs` (`npc_say` never
+  rejects quotes at `say_dist`, `npc_quiet_say`/`npc_emote`/`npc_murmur`
+  each reject a `"` and use their respective distance field), plus the
+  4 fixed `lab2_undead.rs` tests. `cargo fmt --all`, `cargo test
+  --workspace` (1158+27+3+33+374 passed), `cargo build -p ugaris-server`
+  all clean, and a 10s boot-smoke showed "entering Rust game loop" with
+  no panics.
+  REMAINING: `whisper`/`holler`/`shout` NPC helpers not added (only
+  player-authored local speech uses those in
+  `crates/ugaris-server/src/commands_chat.rs`; no NPC driver calls them
+  yet) - add them the same way if/when an NPC driver needs to holler or
+  shout. The merchant greeting's missing color codes noted above are
+  also still open.
 
 - [ ] **Idle NPC chatter** - merchant/citizen random murmur tables
   (`merchant_driver` RANDOM(25) block, citizen equivalents). Needs the
@@ -1953,3 +1995,11 @@ Add one line per completed task: date, task, ledger section touched.
   panics. Still `[~]`: mocked-pool/`DATABASE_URL`-gated tests and a live
   end-to-end TCP reject test remain blocked on a real Postgres instance,
   unavailable in this environment.
+- 2026-07-04: `quiet_say`/`say`/`emote` NPC speech helpers in core (P2,
+  iteration 42) - added `World::npc_say`/`npc_quiet_say`/`npc_emote`/
+  `npc_murmur` to `crates/ugaris-core/src/world/text.rs` plus
+  `murmur_message`/`quiet_say_message` to `crates/ugaris-core/src/
+  log_text.rs`; migrated `lab2_undead.rs`/`npc_idle.rs`/`merchant.rs`'s
+  ad-hoc `pending_area_texts` pushes onto the new helpers (fixing two
+  latent format/distance bugs found along the way); ledger section
+  "Ralph Loop - NPC Speech Helpers (`quiet_say`/`say`/`emote`/`murmur`)".

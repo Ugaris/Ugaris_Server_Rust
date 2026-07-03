@@ -116,6 +116,86 @@ pub struct LookCharacterResult {
 }
 
 impl World {
+    /// C `say(cn, format, ...)` (`src/system/talk.c:221`): area-fanned
+    /// `"<name> says: \"<text>\""` at `say_dist` tiles. C's quote-rejecting
+    /// `strchr(buf, '"')` check is commented out in `say()` (unlike
+    /// `quiet_say`/`emote`/`murmur`/`whisper`), so this never rejects text -
+    /// see `say_message`. Returns `false` only if `character_id` is unknown.
+    pub fn npc_say(&mut self, character_id: CharacterId, text: &str) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let message = say_message(&character.name, text);
+        self.pending_area_texts.push(WorldAreaText {
+            x: character.x,
+            y: character.y,
+            max_distance: self.settings.say_dist.max(0) as u16,
+            message: String::from_utf8_lossy(&message).into_owned(),
+        });
+        true
+    }
+
+    /// C `quiet_say(cn, format, ...)` (`src/system/talk.c:271`): same wire
+    /// text as `say` but a shorter `quietsay_dist` range and a quote-reject
+    /// guard. Returns `false` if the character is unknown or `text`
+    /// contains a `"` (message dropped, matching C's early `return 0`).
+    pub fn npc_quiet_say(&mut self, character_id: CharacterId, text: &str) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(message) = quiet_say_message(&character.name, text) else {
+            return false;
+        };
+        self.pending_area_texts.push(WorldAreaText {
+            x: character.x,
+            y: character.y,
+            max_distance: self.settings.quietsay_dist.max(0) as u16,
+            message: String::from_utf8_lossy(&message).into_owned(),
+        });
+        true
+    }
+
+    /// C `emote(cn, format, ...)` (`src/system/talk.c:247`): `"<name>
+    /// <text>."` fanned out at `emote_dist` tiles, quote-reject guard.
+    /// Returns `false` if the character is unknown or `text` contains a
+    /// `"`.
+    pub fn npc_emote(&mut self, character_id: CharacterId, text: &str) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(message) = emote_message(&character.name, text) else {
+            return false;
+        };
+        self.pending_area_texts.push(WorldAreaText {
+            x: character.x,
+            y: character.y,
+            max_distance: self.settings.emote_dist.max(0) as u16,
+            message: String::from_utf8_lossy(&message).into_owned(),
+        });
+        true
+    }
+
+    /// C `murmur(cn, format, ...)` (`src/system/talk.c:315`): `"<name>
+    /// murmurs: \"<text>\""` fanned out at `whisper_dist` tiles (C's
+    /// `murmur` reuses `whisper_dist`, it has no distance constant of its
+    /// own), quote-reject guard. Returns `false` if the character is
+    /// unknown or `text` contains a `"`.
+    pub fn npc_murmur(&mut self, character_id: CharacterId, text: &str) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(message) = murmur_message(&character.name, text) else {
+            return false;
+        };
+        self.pending_area_texts.push(WorldAreaText {
+            x: character.x,
+            y: character.y,
+            max_distance: self.settings.whisper_dist.max(0) as u16,
+            message: String::from_utf8_lossy(&message).into_owned(),
+        });
+        true
+    }
+
     pub fn notify_twocity_pick_from_character(&mut self, character_id: CharacterId) {
         let Some(character) = self.characters.get(&character_id) else {
             return;

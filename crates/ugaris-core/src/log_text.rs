@@ -96,6 +96,21 @@ pub fn whisper_message(name: &str, message: &str) -> Option<Vec<u8>> {
         .then(|| sanitize_log_bytes(format!("{name} whispers: \"{message}\"").as_bytes()))
 }
 
+/// C `murmur` (`src/system/talk.c:315`): `"%s murmurs: \"%s\""`, same
+/// quote-rejection as `whisper`/`emote`/`quiet_say` (`strchr(buf, '"')`).
+pub fn murmur_message(name: &str, message: &str) -> Option<Vec<u8>> {
+    (!message.contains('"'))
+        .then(|| sanitize_log_bytes(format!("{name} murmurs: \"{message}\"").as_bytes()))
+}
+
+/// C `quiet_say` (`src/system/talk.c:271`): identical wire text to `say`
+/// (`"%s says: \"%s\""`), but rejects text containing a `"` (`say` itself
+/// has that check commented out - see `say_message`).
+pub fn quiet_say_message(name: &str, message: &str) -> Option<Vec<u8>> {
+    (!message.contains('"'))
+        .then(|| sanitize_log_bytes(format!("{name} says: \"{message}\"").as_bytes()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +162,19 @@ mod tests {
             b"Bob whispers: \"Hi\"".to_vec()
         );
         assert!(shout_message("Bob", "bad\"quote").is_none());
+    }
+
+    #[test]
+    fn murmur_and_quiet_say_match_c_format_and_reject_quotes() {
+        assert_eq!(
+            murmur_message("Bob", "psst").unwrap(),
+            b"Bob murmurs: \"psst\"".to_vec()
+        );
+        assert!(murmur_message("Bob", "bad\"quote").is_none());
+        assert_eq!(
+            quiet_say_message("Bob", "hi").unwrap(),
+            b"Bob says: \"hi\"".to_vec()
+        );
+        assert!(quiet_say_message("Bob", "bad\"quote").is_none());
     }
 }
