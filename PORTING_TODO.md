@@ -670,7 +670,7 @@ suggestion; dependencies are noted.
   (`crates/ugaris-server/src/inventory.rs`) against C and port the missing
   gates. Tests exist in `tests/inventory.rs` - extend them.
 
-- [~] **Experience/level-up side effects** - C `give_exp` ->
+- [x] **Experience/level-up side effects** - C `give_exp` ->
   `check_levelup` in `src/system/skill.c`/`tool.c`: level recompute from
   exp, `SV_TEXT` "You have reached level N!", HP/end/mana refill on level,
   `update_char`, achievements hook. Rust has exp modifiers server-side but
@@ -897,6 +897,42 @@ suggestion; dependencies are noted.
     `reset_name(cn)` (a no-op by construction - no server-side
     colored-name cache exists to invalidate, documented in
     `character_values.rs`) are unchanged.
+  - Iteration 27 (closing review): re-audited the whole workspace for any
+    remaining raw `character.exp` grant mutations that should route
+    through `give_exp` (`grep -rn "\.exp = \|\.exp +=\|\.exp\.saturating_add"`
+    across all crates, excluding `/tests/`). Found none - the three
+    remaining raw-`exp` writers are all correctly *not* `give_exp` calls
+    once checked against their exact C originals: `scrolls.rs::
+    raise_value_exp` mirrors C `raise_value_exp` (`skill.c:315-361`),
+    which itself does a bare `ch[cn].exp += cost;` (not `give_exp`, so no
+    multiplier/NOEXP-area gating applies there either - confirmed by
+    reading the C function directly); `potions.rs`'s and `death.rs`'s
+    `saturating_sub` sites are exp *losses/refunds* (potion side-effect
+    exp refund, death exp loss), which C also applies as bare
+    subtractions, never through `give_exp` (a grant-only function); and
+    `commands_admin.rs`'s `/setlevel` debug command directly assigns
+    `level2exp(level)`, matching C `cmd_setlevel`'s own direct
+    `ch[cn].exp = level2exp(level)` assignment (a debug override, not a
+    gameplay grant). Marking this task `- [x]`: every C `give_exp` call
+    site that grants a player positive exp during normal gameplay
+    (kills, `/god exp`, `/milexp`, lollipops, demon shrine, random
+    shrines, zombie shrine, warp bonus/trickle, bookcase, staffer book,
+    and the two `raise_value_exp` callers via `StatScrollUsed`) now
+    routes through the canonical `World::give_exp`/`check_levelup`, with
+    the full multiplier/`NOEXP`/area-21/`NOLEVEL` gating and level-up
+    side effects (level text, saves grant, profession unlock at 20, the
+    "Grats" channel-6 broadcast) all verified against
+    `src/system/tool.c:1318-1430` line by line. The two remaining named
+    gaps - `achievement_check_level` and `reset_name(cn)` - are out of
+    this task's scope: achievement checks have their own dedicated P4
+    task below ("Achievements
+    (`src/module/achievements/achievement.c`)"), and `reset_name` is a
+    genuine no-op in this codebase (no server-side colored-name cache
+    exists to invalidate, so there is nothing to port). `dlog`/
+    `macro_track_exp_gain` also remain documented no-ops (no Rust
+    debug-log/anti-macro subsystem exists). No code changes this
+    iteration - this was a verification-only closure pass; full
+    `cargo test --workspace` still green at the same counts.
 
 - [ ] **Ground item decay** - dropped items never disappear (bodies do).
   C: `set_expire(in, item_decay_time)` on player drops (`act_drop`) and
