@@ -19,40 +19,6 @@ pub(crate) fn bonus_spell_shape(driver: u16) -> Option<(&'static str, CharacterV
     })
 }
 
-pub(crate) fn add_character_value_delta(
-    character: &mut Character,
-    value: CharacterValue,
-    delta: i32,
-) {
-    if let Some(slot) = character
-        .values
-        .get_mut(0)
-        .and_then(|values| values.get_mut(value as usize))
-    {
-        *slot = (i32::from(*slot) + delta).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-    }
-}
-
-pub(crate) fn apply_item_modifier_deltas(character: &mut Character, item: &Item, sign: i32) {
-    for (&modifier_index, &modifier_value) in
-        item.modifier_index.iter().zip(item.modifier_value.iter())
-    {
-        if modifier_value == 0 || modifier_index < 0 {
-            continue;
-        }
-        let Ok(value_index) = usize::try_from(modifier_index) else {
-            continue;
-        };
-        if value_index >= CHARACTER_VALUE_COUNT {
-            continue;
-        }
-        let Some(value) = character_value_from_index(value_index) else {
-            continue;
-        };
-        add_character_value_delta(character, value, i32::from(modifier_value) * sign);
-    }
-}
-
 pub(crate) fn refresh_driver_spell_flags(character: &mut Character, items: &HashMap<ItemId, Item>) {
     let mut has_infravision_spell = false;
     let mut has_nonomagic_spell = false;

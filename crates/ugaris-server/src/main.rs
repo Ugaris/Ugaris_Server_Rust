@@ -5324,6 +5324,10 @@ async fn main() -> anyhow::Result<()> {
                                 for item in inventory_items {
                                     world.add_item(item);
                                 }
+                                // C `login_ok` (`database_character.c:1512`):
+                                // `update_char(cn)` once the new character's
+                                // starting equipment is in place.
+                                world.update_character(character_id);
                             }
                         }
                         let view_distance = runtime

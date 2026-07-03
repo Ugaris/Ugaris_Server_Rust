@@ -252,6 +252,13 @@ fn player_death_loses_experience_and_returns_to_rest_position() {
     player.values[0][CharacterValue::Hp as usize] = 50;
     player.values[0][CharacterValue::Endurance as usize] = 40;
     player.values[0][CharacterValue::Mana as usize] = 30;
+    // C `update_char` (now wired into `die_char`'s post-respawn recompute,
+    // `src/system/death.c:807`) recomputes `value[0]` from the raised
+    // `value[1]` baseline; without it, the direct `value[0]` pokes above
+    // would be overwritten back to 0.
+    player.values[1][CharacterValue::Hp as usize] = 50;
+    player.values[1][CharacterValue::Endurance as usize] = 40;
+    player.values[1][CharacterValue::Mana as usize] = 30;
     player.inventory[0] = Some(ItemId(900));
     player.inventory[12] = Some(ItemId(901));
     player.inventory[30] = Some(ItemId(902));

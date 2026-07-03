@@ -39,6 +39,7 @@ pub(crate) fn apply_character_snapshot(
         character.flags.remove(CharacterFlags::SHUTUP);
     }
 
+    let character_id = character.id;
     let spawn_x = usize::from(character.x).max(1);
     let spawn_y = usize::from(character.y).max(1);
     if !world.spawn_character(character.clone(), spawn_x, spawn_y) {
@@ -55,6 +56,11 @@ pub(crate) fn apply_character_snapshot(
     for item in items {
         world.add_item(item);
     }
+    // C `login_ok` (`src/system/database/database_character.c:1512`):
+    // `update_char(cn)` once the loaded character (equipment included) is
+    // fully in place, before the newbie HP/endurance/mana-to-max branch
+    // that follows in C.
+    world.update_character(character_id);
     CharacterSnapshotApplyResult {
         loaded: true,
         account_depot,

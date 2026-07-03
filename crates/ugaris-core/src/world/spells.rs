@@ -805,14 +805,12 @@ impl World {
         };
         let old_item_id = target.inventory.get(slot).copied().flatten();
         if let Some(item_id) = old_item_id {
-            if let (Some(target), Some(item)) = (
-                self.characters.get_mut(&target_id),
-                self.items.get(&item_id),
-            ) {
-                apply_item_modifier_deltas(target, item, -1);
-            }
             self.items.remove(&item_id);
             self.remove_show_effect_type(target_id, EF_BLESS);
+            // C `bless_someone`/`bless_self` (`act.c:1113-1117`,
+            // `act.c:1156-1158`): `update_char(co)` right after destroying
+            // the pre-existing bless item.
+            self.update_character(target_id);
         }
 
         let item_id = self.next_runtime_item_id();
@@ -860,31 +858,32 @@ impl World {
         };
 
         self.items.insert(item_id, item);
+        let character_serial;
         if let Some(target) = self.characters.get_mut(&target_id) {
             if target.inventory.len() <= slot {
                 return false;
             }
             target.inventory[slot] = Some(item_id);
-            let character_serial = target.id.0;
+            character_serial = target.id.0;
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            if let Some(item) = self.items.get(&item_id) {
-                apply_item_modifier_deltas(target, item, 1);
-            }
-            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
-            self.create_show_effect(
-                EF_BLESS,
-                target_id,
-                start_tick,
-                expire_tick,
-                0,
-                strength / 4,
-            );
-            true
         } else {
-            false
+            return false;
         }
+        // C `bless_someone`/`bless_self`: `update_char(co)` again after
+        // installing the new bless item.
+        self.update_character(target_id);
+        self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+        self.create_show_effect(
+            EF_BLESS,
+            target_id,
+            start_tick,
+            expire_tick,
+            0,
+            strength / 4,
+        );
+        true
     }
 
     pub fn install_bonus_spell(
@@ -941,25 +940,25 @@ impl World {
         };
 
         self.items.insert(item_id, item);
+        let character_serial;
         if let Some(target) = self.characters.get_mut(&target_id) {
             if target.inventory.len() <= slot {
                 self.items.remove(&item_id);
                 return false;
             }
             target.inventory[slot] = Some(item_id);
-            let character_serial = target.id.0;
+            character_serial = target.id.0;
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            if let Some(item) = self.items.get(&item_id) {
-                apply_item_modifier_deltas(target, item, 1);
-            }
-            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
-            true
         } else {
             self.items.remove(&item_id);
-            false
+            return false;
         }
+        // C `add_bonus_spell` (`src/system/drvlib.c:2646`): `update_char(cn)`.
+        self.update_character(target_id);
+        self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+        true
     }
 
     pub(crate) fn install_beyond_potion_spell(
@@ -1027,39 +1026,33 @@ impl World {
             return false;
         }
         self.items.insert(item_id, item);
+        let character_serial;
         if let Some(character) = self.characters.get_mut(&character_id) {
             if character.inventory.len() <= slot {
                 self.items.remove(&item_id);
                 return false;
             }
             character.inventory[slot] = Some(item_id);
-            let character_serial = character.id.0;
+            character_serial = character.id.0;
             character
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            if let Some(item) = self.items.get(&item_id) {
-                apply_item_modifier_deltas(character, item, 1);
-            }
-            self.schedule_spell_remove_timer(
-                character_id,
-                item_id,
-                slot,
-                character_serial,
-                item_id.0,
-            );
-            self.create_show_effect(
-                EF_POTION,
-                character_id,
-                start_tick,
-                expire_tick,
-                0,
-                i32::from(modifier_value[0]),
-            );
-            true
         } else {
             self.items.remove(&item_id);
-            false
+            return false;
         }
+        // C `add_potion_spell` (`src/module/alchemy.c:1007`): `update_char(cn)`.
+        self.update_character(character_id);
+        self.schedule_spell_remove_timer(character_id, item_id, slot, character_serial, item_id.0);
+        self.create_show_effect(
+            EF_POTION,
+            character_id,
+            start_tick,
+            expire_tick,
+            0,
+            i32::from(modifier_value[0]),
+        );
+        true
     }
 
     pub(crate) fn install_speed_spell(
@@ -1109,34 +1102,35 @@ impl World {
         };
 
         self.items.insert(item_id, item);
+        let character_serial;
         if let Some(target) = self.characters.get_mut(&target_id) {
             if target.inventory.len() <= slot {
                 self.items.remove(&item_id);
                 return false;
             }
             target.inventory[slot] = Some(item_id);
-            let character_serial = target.id.0;
+            character_serial = target.id.0;
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            if let Some(item) = self.items.get(&item_id) {
-                apply_item_modifier_deltas(target, item, 1);
-            }
-            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
-            match driver {
-                IDR_FREEZE => {
-                    self.create_show_effect(EF_FREEZE, target_id, start_tick, expire_tick, 0, 0);
-                }
-                IDR_WARCRY => {
-                    self.create_show_effect(EF_WARCRY, target_id, start_tick, expire_tick, 0, 0);
-                }
-                _ => {}
-            }
-            true
         } else {
             self.items.remove(&item_id);
-            false
+            return false;
         }
+        // C `warcry_someone`/`freeze_someone` (`act.c:1324`, `act.c:1522`):
+        // `update_char(co)`.
+        self.update_character(target_id);
+        self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+        match driver {
+            IDR_FREEZE => {
+                self.create_show_effect(EF_FREEZE, target_id, start_tick, expire_tick, 0, 0);
+            }
+            IDR_WARCRY => {
+                self.create_show_effect(EF_WARCRY, target_id, start_tick, expire_tick, 0, 0);
+            }
+            _ => {}
+        }
+        true
     }
 
     pub(crate) fn install_curse_spell(
@@ -1193,18 +1187,14 @@ impl World {
                 );
             }
             if let Some(target) = self.characters.get_mut(&target_id) {
-                for value in [
-                    CharacterValue::Intelligence,
-                    CharacterValue::Wisdom,
-                    CharacterValue::Agility,
-                    CharacterValue::Strength,
-                ] {
-                    add_character_value_delta(target, value, -added_strength);
-                }
                 target
                     .flags
                     .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
             }
+            // C `ice_curse` (`src/system/act.c:1470`): `update_char(co)`
+            // unconditionally at the end, for both the existing-item and
+            // new-item branches.
+            self.update_character(target_id);
             return true;
         }
 
@@ -1249,26 +1239,25 @@ impl World {
         };
 
         self.items.insert(item_id, item);
+        let character_serial;
         if let Some(target) = self.characters.get_mut(&target_id) {
             if target.inventory.len() <= slot {
                 self.items.remove(&item_id);
                 return false;
             }
             target.inventory[slot] = Some(item_id);
-            let character_serial = target.id.0;
+            character_serial = target.id.0;
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            if let Some(item) = self.items.get(&item_id) {
-                apply_item_modifier_deltas(target, item, 1);
-            }
-            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
-            self.create_show_effect(EF_CURSE, target_id, start_tick, expire_tick, 0, strength);
-            true
         } else {
             self.items.remove(&item_id);
-            false
+            return false;
         }
+        self.update_character(target_id);
+        self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+        self.create_show_effect(EF_CURSE, target_id, start_tick, expire_tick, 0, strength);
+        true
     }
 
     pub(crate) fn install_firering_spell(&mut self, target_id: CharacterId) -> bool {
@@ -1312,23 +1301,30 @@ impl World {
         };
 
         self.items.insert(item_id, item);
+        let character_serial;
         if let Some(target) = self.characters.get_mut(&target_id) {
             if target.inventory.len() <= slot {
                 self.items.remove(&item_id);
                 return false;
             }
             target.inventory[slot] = Some(item_id);
-            let character_serial = target.id.0;
+            character_serial = target.id.0;
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            refresh_driver_spell_flags(target, &self.items);
-            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
-            true
         } else {
             self.items.remove(&item_id);
-            false
+            return false;
         }
+        // Note: C `act_firering` does not call `update_char` (the item
+        // carries no modifiers), but `update_character` is a superset of
+        // the old `refresh_driver_spell_flags` call this replaces and is a
+        // no-op for firering's flags, so this keeps identical observable
+        // behavior while removing the last direct `refresh_driver_spell_flags`
+        // call site in this file.
+        self.update_character(target_id);
+        self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+        true
     }
 
     pub(crate) fn install_infravision_spell(&mut self, target_id: CharacterId) -> bool {
@@ -1607,23 +1603,25 @@ impl World {
         };
 
         self.items.insert(item_id, item);
+        let character_serial;
         if let Some(target) = self.characters.get_mut(&target_id) {
             if target.inventory.len() <= slot {
                 self.items.remove(&item_id);
                 return false;
             }
             target.inventory[slot] = Some(item_id);
-            let character_serial = target.id.0;
+            character_serial = target.id.0;
             target
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            refresh_driver_spell_flags(target, &self.items);
-            self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
-            true
         } else {
             self.items.remove(&item_id);
-            false
+            return false;
         }
+        // C `add_spell` (`src/system/tool.c:1683`): `update_char(cn)`.
+        self.update_character(target_id);
+        self.schedule_spell_remove_timer(target_id, item_id, slot, character_serial, item_id.0);
+        true
     }
 
     pub(crate) fn remove_driver_spells(&mut self, target_id: CharacterId, driver: u16) {
@@ -1643,11 +1641,15 @@ impl World {
             })
             .unwrap_or_default();
 
+        let any_removed = !item_ids.is_empty();
         for item_id in item_ids {
             self.destroy_item(item_id);
         }
-        if let Some(character) = self.characters.get_mut(&target_id) {
-            refresh_driver_spell_flags(character, &self.items);
+        // Mirrors C's `remove_poison`/`remove_all_poison` pattern
+        // (`src/system/poison.c:117-150`): `update_char(cn)` only if an
+        // item was actually removed.
+        if any_removed {
+            self.update_character(target_id);
         }
     }
 
@@ -1702,39 +1704,33 @@ impl World {
         };
 
         self.items.insert(item_id, item);
+        let character_serial;
         if let Some(character) = self.characters.get_mut(&character_id) {
             if character.inventory.len() <= slot {
                 self.items.remove(&item_id);
                 return false;
             }
             character.inventory[slot] = Some(item_id);
-            let character_serial = character.id.0;
+            character_serial = character.id.0;
             character
                 .flags
                 .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
-            if let Some(item) = self.items.get(&item_id) {
-                apply_item_modifier_deltas(character, item, 1);
-            }
-            self.schedule_spell_remove_timer(
-                character_id,
-                item_id,
-                slot,
-                character_serial,
-                item_id.0,
-            );
-            self.schedule_poison_callback_timer(
-                self.tick.0 + crate::tick::TICKS_PER_SECOND,
-                character_id,
-                item_id,
-                slot,
-                character_serial,
-                item_id.0,
-            );
-            true
         } else {
             self.items.remove(&item_id);
-            false
+            return false;
         }
+        // C `poison_someone` (`src/system/poison.c:61`): `update_char(cn)`.
+        self.update_character(character_id);
+        self.schedule_spell_remove_timer(character_id, item_id, slot, character_serial, item_id.0);
+        self.schedule_poison_callback_timer(
+            self.tick.0 + crate::tick::TICKS_PER_SECOND,
+            character_id,
+            item_id,
+            slot,
+            character_serial,
+            item_id.0,
+        );
+        true
     }
 
     pub fn remove_poison(&mut self, character_id: CharacterId, poison_type: u16) -> bool {
@@ -1789,15 +1785,21 @@ impl World {
         character
             .flags
             .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+        // C `remove_poison`/`remove_all_poison` (`src/system/poison.c:128`,
+        // `:148`): `update_char(cn)` since an item was removed here.
+        self.update_character(character_id);
         true
     }
 
     pub fn schedule_existing_spell_timers(&mut self) -> usize {
         let character_ids: Vec<_> = self.characters.keys().copied().collect();
         for character_id in character_ids {
-            if let Some(character) = self.characters.get_mut(&character_id) {
-                refresh_driver_spell_flags(character, &self.items);
-            }
+            // Full recompute (rather than just the driver-spell flag subset)
+            // so a character loaded with spell items already in inventory
+            // has correct `value[0]` totals, matching what a live
+            // `update_char` call would have already applied when each
+            // spell was originally installed.
+            self.update_character(character_id);
         }
 
         let mut spells = Vec::new();
@@ -2073,7 +2075,6 @@ impl World {
         if item.serial != item_serial {
             return false;
         }
-        let item_for_modifier_removal = item.clone();
         let spell_driver = item.driver;
         if character.inventory.get(slot).copied().flatten() != Some(item_id) {
             return false;
@@ -2086,15 +2087,17 @@ impl World {
             .flags
             .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
         self.items.remove(&item_id);
-        apply_item_modifier_deltas(character, &item_for_modifier_removal, -1);
-        refresh_driver_spell_flags(character, &self.items);
+        // C `remove_spell` (`src/system/tool.c:1591`): `update_char(cn)`
+        // right after removing the item, before the freeze-duration
+        // rescale below.
+        self.update_character(character_id);
         if spell_driver == IDR_FREEZE && old_duration != 0 {
+            let Some(character) = self.characters.get_mut(&character_id) else {
+                return true;
+            };
+            let new_speed = character_value(character, CharacterValue::Speed);
             let real_duration = speed_ticks_inverse(old_speed, character.speed_mode, old_duration);
-            let new_duration = speed_ticks(
-                character_value(character, CharacterValue::Speed),
-                character.speed_mode,
-                real_duration,
-            );
+            let new_duration = speed_ticks(new_speed, character.speed_mode, real_duration);
             character.duration = new_duration;
             character.step = character.step * new_duration / old_duration;
         }

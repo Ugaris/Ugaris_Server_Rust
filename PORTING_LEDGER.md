@@ -1281,16 +1281,132 @@ Recommended next chest steps:
   weapon-in-hand sprite offsets) and the `player_reset_map_cache` call on
   infravision toggle are display-only side effects intentionally left for
   a future client-sync-focused pass.
-- REMAINING: `World::update_character` is not yet called from spell
-  install/expiry (`world/spells.rs` still uses the older ad-hoc
-  `apply_item_modifier_deltas`/`refresh_driver_spell_flags` pair directly
-  rather than a full recompute - functionally close for pure additive
-  spell modifiers but drifts once caps/profession bonuses matter), level
-  up (no level-recompute path exists yet - separate P1 todo item), login,
-  or death respawn. Next slice: migrate `world/spells.rs`'s equip/unequip
-  and spell-install/expiry call sites to `World::update_character`, then
-  wire login/level-up/respawn once those systems exist.
+- REMAINING (iteration 16 snapshot, superseded below): `World::update_character`
+  was not yet called from spell install/expiry, level up, login, or death
+  respawn.
 - Full workspace suite (1077 tests total across all crates, 0 failed),
+  `cargo fmt --all`, `cargo build -p ugaris-server` (zero warnings), and a
+  10s boot smoke (`entering Rust game loop`, ticks advancing, NPC driver
+  messages processed, no panics) all pass.
+
+### Iteration 17 follow-up: spell install/expiry, `raise_skill`, login, death respawn
+
+- Migrated every remaining `world/spells.rs` install/expire call site from
+  the old `apply_item_modifier_deltas`/`refresh_driver_spell_flags` pair to
+  `World::update_character`, each matched against its exact C call site
+  (function + line, all confirmed by reading the C source, not guessed):
+  - `install_bless_spell` <- `bless_someone`/`bless_self`
+    (`act.c:1117`/`act.c:1158`, `update_char` called twice: once after
+    destroying a pre-existing bless item, once after installing the new
+    one - both the old-item-removal and new-item-install deltas replaced).
+  - `install_bonus_spell` (armor/weapon/hp/mana spells) <- `add_bonus_spell`
+    (`drvlib.c:2646`).
+  - `install_beyond_potion_spell` <- `add_potion_spell`
+    (`module/alchemy.c:1007`).
+  - `install_speed_spell` (shared by warcry/freeze) <- `warcry_someone`
+    (`act.c:1324`) / `freeze_someone` (`act.c:1522`).
+  - `install_curse_spell` <- `ice_curse` (`act.c:1470`): C calls
+    `update_char(co)` **unconditionally after both branches** (existing-item
+    stack-and-cap and new-item-create), not just the new-item path the old
+    Rust code touched; restructured both branches to fall through to one
+    `update_character` call at the end, removing the manual
+    `add_character_value_delta` loop from the existing-item branch entirely
+    (the item's already-updated `modifier_value` is picked up by the
+    recompute automatically).
+  - `install_firering_spell` <- `act_firering` (`act.c:882`): C does **not**
+    call `update_char` here (the firering item carries no modifiers) - kept
+    the call anyway since `update_character` is a strict superset of the
+    `refresh_driver_spell_flags` call it replaces and is a no-op for
+    firering specifically (documented in a code comment), consolidating to
+    one recompute function everywhere in the file.
+  - `install_timed_identity_spell` (infravision/oxygen/underwater-talk) <-
+    `add_spell` (`tool.c:1683`).
+  - `remove_driver_spells` (curse-cleanse/oxygen-end helpers) <- mirrors
+    the `remove_poison`/`remove_all_poison` "only recompute if something was
+    actually removed" pattern (no single matching C function name; call
+    sites are area-specific item drivers).
+  - `poison_character` <- `poison_someone` (`system/poison.c:61`).
+  - `remove_poison_by_driver` (backs `remove_poison`/`remove_all_poison`) <-
+    `poison.c:128`/`poison.c:148`. **Bug fix**: this previously only set
+    `CF_ITEMS|CF_UPDATE` and never actually recomputed `value[0]`, so curing
+    poison never restored the HP the poison's permanent modifier had eaten.
+  - `poison_callback_from_timer`'s `tick == 0` branch <- `poison_callback`
+    (`poison.c:102`). **Bug fix**: the per-10-ticks HP-modifier decrement
+    (`it[in].mod_value[0]--`) only set a flag before, never recomputing
+    `value[0][V_HP]`, so poison's escalating permanent HP loss was inert.
+  - `schedule_existing_spell_timers` (bulk startup/load recompute, not yet
+    wired to any live call site - reserved for a future
+    save/load-on-login pass): switched its per-character
+    `refresh_driver_spell_flags` loop to a full `update_character` per
+    character, so a character loaded with spell items already in inventory
+    gets correct `value[0]` totals immediately, matching what a live
+    `update_char` call would already have applied.
+  - `remove_spell_from_timer` <- `remove_spell` (`tool.c:1591`): moved the
+    `update_char(cn)` call to the exact same position as C - right after
+    the item is removed from inventory, *before* the freeze-duration
+    rescale, which reads the character's now-recomputed Speed value (this
+    requires re-fetching the character reference after the recompute, since
+    it needs `&mut World` while the freeze-rescale code needs the character
+    mutably too).
+  - Deleted the now fully-superseded `apply_item_modifier_deltas`/
+    `add_character_value_delta` helpers from `character_values.rs`
+    entirely (zero remaining callers after the migration).
+- Wired `World::raise_skill` (`world/skills.rs`) to call
+  `update_character` after `raise_value` bumps `value[1]`, matching C
+  `raise_value` (`system/skill.c:256`) - so raising e.g. Body Control now
+  immediately re-applies its derived Armor/Weapon bonus, not just the raw
+  raised number.
+- Wired player-death respawn: `World::die_character` (`world/death.rs`)
+  now calls `update_character` right after `place_character_on_map`
+  succeeds, matching C `die_char` (`death.c:807`, the `update_char(cn)`
+  call that runs only when `transfer_to_restarea` returns 0/success -
+  Rust's `place_character_on_map` return value plays the same role as the
+  cross-area-handoff-vs-same-area-success branch C guards on).
+- Wired login: `ugaris-server/src/snapshots.rs::apply_character_snapshot`
+  (DB-loaded existing characters) and the template-instantiation/
+  hard-coded-scaffold path in `main.rs`'s login handler both now call
+  `world.update_character(character_id)` once the character and its
+  items are fully in the world, matching C `login_ok`
+  (`database_character/database_character.c:1512`, confirmed by reading
+  the function: `update_char(cn)` runs once equipment/profession/karma
+  validation is done, right before the "newbie -> set hp/end/mana to max"
+  branch that follows it - not ported here since Rust's two login paths
+  already set starting resources explicitly for new characters).
+- Test fallout (all fixed by adding realistic `values[1]` (raised base)
+  baselines to fixtures, never by weakening an assertion): the previous
+  ad-hoc delta helpers never enforced C's floor clamp
+  (`n <= V_STR && value[0][n] < 0 -> 0`, `create.c:1863-1865`) or the
+  50%-of-raised-base cap on item/bless modifiers (`create.c:1815-1819`),
+  so several fixtures that poked `value[0]` directly without a matching
+  `value[1]` baseline produced different (and, per a from-scratch C
+  source re-read, *incorrect*) numbers than before once the real
+  recompute ran. Fixed in `world/tests/spells.rs` (curse-stack and
+  ice-demon-freeze tests now assert the correct 0-floor-clamped values and
+  the ice-demon test gained an actual Cold-modifier item on the target
+  since `V_COLD` is entirely item-driven per `create.c:1795-1798` and was
+  being silently reset to 0 by the newly-live recompute; the bless test
+  gained a raised `values[1]` baseline so the bless cap has something to
+  apply against; two poison tests gained a large `values[1][V_HP]`
+  baseline so poison's tiny HP modifier doesn't itself clamp `hp` down via
+  the new max-HP guard), `world/tests/text.rs` (warcry test, same HP-clamp
+  fix), `world/tests/hurt.rs` (poison-lifeshield test, same HP-clamp fix),
+  `world/tests/death.rs` (player-death-respawn test needed `values[1]`
+  Hp/Endurance/Mana baselines matching its pre-existing `values[0]`
+  pokes), and `world/tests/skills.rs` (the "effective stays above bare"
+  raise test now uses a real worn item with a Sword modifier instead of a
+  bare `value[0]` poke, since only real items survive a full recompute).
+- STILL REMAINING: level-up (the "Experience/level-up side effects" P1
+  todo item is still unported, so there is no level-up call site to wire
+  yet); item-driver-level raise/scroll/potion/enchant paths
+  (`item_driver/scrolls.rs::raise_value_exp`, `item_driver/potions.rs`)
+  still don't call `update_character` since item drivers operate on
+  `&mut Character` only, with no `&mut World` access - wiring those needs
+  either threading `&mut World` through the item-driver dispatch or having
+  the `World`-level caller recompute after applying the driver's outcome;
+  left as a distinct follow-up slice. The documented gaps in the
+  recompute algorithm itself (`ch.ef[]` area-effect light, `P_CLAN`/
+  `areaID == 13`, sprite reselection) are unchanged.
+- Full workspace suite (1462 tests total across all crates, 0 failed),
   `cargo fmt --all`, `cargo build -p ugaris-server` (zero warnings), and a
   10s boot smoke (`entering Rust game loop`, ticks advancing, NPC driver
   messages processed, no panics) all pass.

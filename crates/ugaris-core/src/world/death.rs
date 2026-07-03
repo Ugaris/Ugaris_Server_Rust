@@ -377,7 +377,17 @@ impl World {
                 .map(|character| (character.rest_x, character.rest_y))
                 .unwrap_or_default();
             let target = if rest.0 != 0 { rest } else { (x, y) };
-            self.place_character_on_map(character_id, usize::from(target.0), usize::from(target.1));
+            if self.place_character_on_map(
+                character_id,
+                usize::from(target.0),
+                usize::from(target.1),
+            ) {
+                // C `die_char` (`src/system/death.c:807`): `update_char(cn)`
+                // once the player is back at the respawn point (skipped on
+                // the cross-area-handoff early return, which Rust's
+                // same-area-only `place_character_on_map` failure mirrors).
+                self.update_character(character_id);
+            }
             false
         } else {
             // C destroy_char(cn).

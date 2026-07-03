@@ -524,15 +524,53 @@
         "error: this comparison involving the minimum or maximum element for this type contains a case that is always true or always false",
         "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1066 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 17,
+      "startedAt": "2026-07-03T15:57:04.990Z",
+      "endedAt": "2026-07-03T16:30:52.552Z",
+      "durationMs": 2027042,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/character_values.rs",
+        "crates/ugaris-core/src/world/death.rs",
+        "crates/ugaris-core/src/world/skills.rs",
+        "crates/ugaris-core/src/world/spells.rs",
+        "crates/ugaris-core/src/world/tests/death.rs",
+        "crates/ugaris-core/src/world/tests/hurt.rs",
+        "crates/ugaris-core/src/world/tests/skills.rs",
+        "crates/ugaris-core/src/world/tests/spells.rs",
+        "crates/ugaris-core/src/world/tests/text.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/snapshots.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All green (1462 total tests passing, 0 failures). Now let's boot-smoke since this touches the login flow:",
+        "All verification passed: `cargo fmt --all` clean, `cargo test --workspace` (1462 tests, 0 failures), `cargo build -p ugaris-server` (zero warnings), and a 10s boot smoke with no panics.",
+        "test result: ok. 340 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test world::tests::spells::curse_spell_stack_uses_existing_slot_and_caps_strength ... FAILED",
+        "test world::tests::spells::ice_demon_freeze_installs_legacy_curse_spell ... FAILED",
+        "test world::tests::spells::player_bless_spell_installs_carried_spell_item_on_completion ... FAILED",
+        "test world::tests::spells::poison_callback_damages_and_reschedules_while_spell_is_carried ... FAILED",
+        "test world::tests::text::player_warcry_sets_up_and_debuffs_sound_reachable_targets ... FAILED",
+        "test result: FAILED. 1071 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
+      ]
     }
   ],
-  "totalDurationMs": 17953421,
+  "totalDurationMs": 19980463,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 17,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
@@ -588,7 +626,7 @@
       "test result: ok. 1053 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Now let's check the third failing test in item_outcomes.rs:": 1,
       "5. Verified: `cargo fmt --all`, `cargo test --workspace` (all passing, 0 failures), `cargo build -p ": 1,
-      "test result: ok. 340 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 4,
+      "test result: ok. 340 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 5,
       "assertion failed: world.characters.get(&CharacterId(3)).unwrap().driver_messages.is_empty()": 1,
       "assertion failed: world.characters[&CharacterId(2)].driver_messages.is_empty()": 1,
       "assertion failed: world.characters[&CharacterId(3)].driver_messages.is_empty()": 1,
@@ -618,7 +656,15 @@
       "- Verified: `cargo fmt --all`, `cargo test --workspace` (1077+ tests, 0 failures), `cargo build -p u": 1,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error; 84 warnings emitted": 1,
       "error: this comparison involving the minimum or maximum element for this type contains a case that i": 1,
-      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1066 filtered out; finished in 0.00s": 1
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1066 filtered out; finished in 0.00s": 1,
+      "All green (1462 total tests passing, 0 failures). Now let's boot-smoke since this touches the login ": 1,
+      "All verification passed: `cargo fmt --all` clean, `cargo test --workspace` (1462 tests, 0 failures),": 1,
+      "test world::tests::spells::curse_spell_stack_uses_existing_slot_and_caps_strength ... FAILED": 1,
+      "test world::tests::spells::ice_demon_freeze_installs_legacy_curse_spell ... FAILED": 1,
+      "test world::tests::spells::player_bless_spell_installs_carried_spell_item_on_completion ... FAILED": 1,
+      "test world::tests::spells::poison_callback_damages_and_reschedules_while_spell_is_carried ... FAILED": 1,
+      "test world::tests::text::player_warcry_sets_up_and_debuffs_sound_reachable_targets ... FAILED": 1,
+      "test result: FAILED. 1071 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

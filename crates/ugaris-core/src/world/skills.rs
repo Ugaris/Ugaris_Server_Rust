@@ -33,18 +33,21 @@ impl World {
             return RaiseSkillOutcome::Blocked;
         };
         let value = value as usize;
-        match crate::item_driver::raise_value(character, value) {
-            Some(_cost) => {
-                character.flags.insert(CharacterFlags::UPDATE);
-                RaiseSkillOutcome::Raised {
-                    value,
-                    bare: character.values[1][value],
-                    effective: character.values[0][value],
-                    exp: character.exp,
-                    exp_used: character.exp_used,
-                }
-            }
-            None => RaiseSkillOutcome::Blocked,
+        let raised = crate::item_driver::raise_value(character, value).is_some();
+        if !raised {
+            return RaiseSkillOutcome::Blocked;
+        }
+        // C `raise_value` (`src/system/skill.c:256`): `update_char(cn)`
+        // right after bumping `value[1]`, so derived bonuses (e.g. Body
+        // Control's armor/weapon boost) apply immediately.
+        self.update_character(character_id);
+        let character = self.characters.get(&character_id).expect("checked above");
+        RaiseSkillOutcome::Raised {
+            value,
+            bare: character.values[1][value],
+            effective: character.values[0][value],
+            exp: character.exp,
+            exp_used: character.exp_used,
         }
     }
 }

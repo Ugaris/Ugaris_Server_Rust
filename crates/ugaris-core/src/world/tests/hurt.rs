@@ -639,6 +639,10 @@ fn poison_callback_uses_legacy_hurt_shield_reduction() {
     let mut character = character(1);
     character.hp = 10 * POWERSCALE;
     character.lifeshield = POWERSCALE;
+    // C `update_char` clamps current HP to the recomputed max; give the
+    // character a raised HP baseline large enough that installing the
+    // poison spell's `-1` modifier doesn't itself clamp `hp` down.
+    character.values[1][CharacterValue::Hp as usize] = 100;
     world.add_character(character);
     assert!(world.poison_character(CharacterId(1), 4, 0));
 

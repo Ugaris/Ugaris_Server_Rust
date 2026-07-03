@@ -168,6 +168,14 @@ fn player_bless_spell_installs_carried_spell_item_on_completion() {
     character.flags.insert(CharacterFlags::PLAYER);
     character.mana = 10 * POWERSCALE;
     character.values[0][CharacterValue::Bless as usize] = 40;
+    // C `update_char` caps item/spell modifiers (including bless) at 50%
+    // of the character's own raised `value[1]` for that attribute
+    // (`create.c:1815-1819`), so a raised baseline is needed here for the
+    // +10 bless bonus below to be visible rather than capped to 0.
+    character.values[1][CharacterValue::Intelligence as usize] = 20;
+    character.values[1][CharacterValue::Wisdom as usize] = 20;
+    character.values[1][CharacterValue::Agility as usize] = 20;
+    character.values[1][CharacterValue::Strength as usize] = 20;
     world.add_character(character);
     let mut player = PlayerRuntime::connected(1, 0);
     player.character_id = Some(CharacterId(1));
@@ -196,13 +204,15 @@ fn player_bless_spell_installs_carried_spell_item_on_completion() {
     assert_eq!(spell.carried_by, Some(CharacterId(1)));
     assert_eq!(spell.modifier_index[..4], [4, 3, 5, 6]);
     assert_eq!(spell.modifier_value[..4], [10, 10, 10, 10]);
+    // Effective value = raised base (20) + bless bonus, capped at 50% of
+    // the raised base (20 * 0.5 = 10) = 30.
     assert_eq!(
         character.values[0][CharacterValue::Intelligence as usize],
-        10
+        30
     );
-    assert_eq!(character.values[0][CharacterValue::Wisdom as usize], 10);
-    assert_eq!(character.values[0][CharacterValue::Agility as usize], 10);
-    assert_eq!(character.values[0][CharacterValue::Strength as usize], 10);
+    assert_eq!(character.values[0][CharacterValue::Wisdom as usize], 30);
+    assert_eq!(character.values[0][CharacterValue::Agility as usize], 30);
+    assert_eq!(character.values[0][CharacterValue::Strength as usize], 30);
     assert_eq!(
         u32::from_le_bytes(spell.driver_data[0..4].try_into().unwrap()),
         2_980
@@ -241,13 +251,14 @@ fn player_bless_spell_installs_carried_spell_item_on_completion() {
     world.process_due_timers(1);
     let character = world.characters.get(&CharacterId(1)).unwrap();
     assert!(character.inventory[29].is_none());
+    // Back to the raised baseline (20) once the bless bonus expires.
     assert_eq!(
         character.values[0][CharacterValue::Intelligence as usize],
-        0
+        20
     );
-    assert_eq!(character.values[0][CharacterValue::Wisdom as usize], 0);
-    assert_eq!(character.values[0][CharacterValue::Agility as usize], 0);
-    assert_eq!(character.values[0][CharacterValue::Strength as usize], 0);
+    assert_eq!(character.values[0][CharacterValue::Wisdom as usize], 20);
+    assert_eq!(character.values[0][CharacterValue::Agility as usize], 20);
+    assert_eq!(character.values[0][CharacterValue::Strength as usize], 20);
 }
 
 #[test]
@@ -388,10 +399,20 @@ fn ice_demon_freeze_installs_legacy_curse_spell() {
     caster.values[1][CharacterValue::Demon as usize] = 10;
     let mut target = character(2);
     target.flags.insert(CharacterFlags::ALIVE);
-    target.values[0][CharacterValue::Cold as usize] = 3;
+    // C `V_COLD` is entirely item-driven (`update_char`, `create.c:1795-1798`:
+    // `ch[cn].value[0][n] = ch[cn].value[1][n] = mod[n];`), so a Cold value
+    // of 3 must come from a worn item's modifier, not a direct value poke -
+    // otherwise the `update_char(co)` call inside `install_speed_spell`
+    // (freeze) recomputes it back to 0 before the curse strength is read.
+    target.inventory[0] = Some(ItemId(500));
     target.values[0][CharacterValue::Immunity as usize] = 30;
     world.spawn_character(caster, 10, 10);
     world.spawn_character(target, 12, 10);
+    let mut cold_item = item(500, ItemFlags::WNBODY);
+    cold_item.carried_by = Some(CharacterId(2));
+    cold_item.modifier_index[0] = CharacterValue::Cold as i16;
+    cold_item.modifier_value[0] = 3;
+    world.add_item(cold_item);
     let mut player = PlayerRuntime::connected(1, 0);
     player.character_id = Some(CharacterId(1));
     player.action = QueuedAction {
@@ -414,10 +435,15 @@ fn ice_demon_freeze_installs_legacy_curse_spell() {
     assert_eq!(curse.modifier_index[3], CharacterValue::Strength as i16);
     assert_eq!(curse.modifier_value[..4], [-7, -7, -7, -7]);
     assert_eq!(curse.carried_by, Some(CharacterId(2)));
-    assert_eq!(target.values[0][CharacterValue::Intelligence as usize], -7);
-    assert_eq!(target.values[0][CharacterValue::Wisdom as usize], -7);
-    assert_eq!(target.values[0][CharacterValue::Agility as usize], -7);
-    assert_eq!(target.values[0][CharacterValue::Strength as usize], -7);
+    // C `update_char` (`create.c:1863-1865`) floors every base attribute
+    // (`n <= V_STR`) at 0 once totalled; the target's raised value[1] is
+    // 0 here, so the -7 curse modifier is visible on the item
+    // (`curse.modifier_value` above) but the character's effective value
+    // stays clamped at 0, not negative.
+    assert_eq!(target.values[0][CharacterValue::Intelligence as usize], 0);
+    assert_eq!(target.values[0][CharacterValue::Wisdom as usize], 0);
+    assert_eq!(target.values[0][CharacterValue::Agility as usize], 0);
+    assert_eq!(target.values[0][CharacterValue::Strength as usize], 0);
     assert_eq!(
         u32::from_le_bytes(curse.driver_data[0..4].try_into().unwrap()),
         43_500
@@ -463,10 +489,14 @@ fn curse_spell_stack_uses_existing_slot_and_caps_strength() {
     assert_eq!(curse.driver, IDR_CURSE);
     assert_eq!(curse.modifier_value[..4], [-10, -10, -10, -10]);
     assert!(target.inventory[28].is_none());
-    assert_eq!(target.values[0][CharacterValue::Intelligence as usize], -10);
-    assert_eq!(target.values[0][CharacterValue::Wisdom as usize], -10);
-    assert_eq!(target.values[0][CharacterValue::Agility as usize], -10);
-    assert_eq!(target.values[0][CharacterValue::Strength as usize], -10);
+    // C `update_char` floors every base attribute at 0 (`create.c:1863-1865`,
+    // `n <= V_STR`); with an unraised `value[1]` of 0, the -10 curse
+    // modifier is visible on the item but clamps the character's
+    // effective value at 0.
+    assert_eq!(target.values[0][CharacterValue::Intelligence as usize], 0);
+    assert_eq!(target.values[0][CharacterValue::Wisdom as usize], 0);
+    assert_eq!(target.values[0][CharacterValue::Agility as usize], 0);
+    assert_eq!(target.values[0][CharacterValue::Strength as usize], 0);
     let effects: Vec<_> = world
         .effects
         .values()
@@ -783,6 +813,12 @@ fn poison_callback_damages_and_reschedules_while_spell_is_carried() {
     world.tick = Tick(1_000);
     let mut character = character(1);
     character.hp = 10 * POWERSCALE;
+    // C `update_char` (`create.c:1863-1864`) clamps current HP down to
+    // the newly recomputed max whenever it's lower; give the character a
+    // large enough raised HP baseline that installing the poison spell's
+    // small `-1` modifier doesn't itself clamp `hp` before the damage tick
+    // below runs.
+    character.values[1][CharacterValue::Hp as usize] = 100;
     world.add_character(character);
     assert!(world.poison_character(CharacterId(1), 4, 0));
     let spell_id = world.characters[&CharacterId(1)].inventory[29].unwrap();

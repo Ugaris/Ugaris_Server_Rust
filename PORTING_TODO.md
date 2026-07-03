@@ -527,20 +527,54 @@ suggestion; dependencies are noted.
     bonuses, Speed Skill/Athlete/Thief/Demon profession bonuses, day/
     night/clan attribute bonuses, and the HP/endurance/mana current-value
     clamp), and is wired into worn-slot equip/unequip
-    (`inventory_swap_slot`, `pos < 12` only, matching C `do.c:1294`). Not
-    yet wired into: spell install/expiry (`world/spells.rs` still uses the
-    old ad-hoc `apply_item_modifier_deltas` deltas instead of a full
-    recompute), level up (task below still creates the level path), login,
-    death respawn. Documented gaps in the recompute itself: `ch.ef[]`
-    area-effect light contributions are not modeled; the `P_CLAN` bonus
-    only checks the `MF_CLAN` map flag (the `areaID == 13` catacombs
-    special case is unavailable - `World` has no current-area id); sprite
-    reselection (demon suits, weapon-in-hand offsets) and
-    `player_reset_map_cache` on infravision toggle are not ported (display-
-    only, tracked separately). Next slice: switch `world/spells.rs`
-    equip/unequip and spell install/expiry call sites from
-    `apply_item_modifier_deltas`/`refresh_driver_spell_flags` to
-    `World::update_character`, then wire login/level-up/respawn.
+    (`inventory_swap_slot`, `pos < 12` only, matching C `do.c:1294`).
+    Iteration 17: wired every remaining `world/spells.rs` install/expire
+    call site (`install_bless_spell`/`install_bonus_spell`/
+    `install_beyond_potion_spell`/`install_speed_spell` (warcry/freeze)/
+    `install_curse_spell`/`install_firering_spell`/
+    `install_timed_identity_spell` (infravision/oxygen/uwtalk)/
+    `remove_driver_spells`/`poison_character`/`remove_poison_by_driver`/
+    `schedule_existing_spell_timers`/`remove_spell_from_timer`), each
+    matched 1:1 against its C call site (`bless_someone`/`bless_self`
+    `act.c:1117/1158`, `add_bonus_spell` `drvlib.c:2646`,
+    `add_potion_spell` `alchemy.c:1007`, `warcry_someone`/`freeze_someone`
+    `act.c:1324/1522`, `ice_curse` `act.c:1470`, `add_spell`
+    `tool.c:1683`, `poison_someone`/`remove_poison`/`remove_all_poison`
+    `poison.c:61/128/148`, `remove_spell` `tool.c:1591`) - removed the now
+    fully-superseded `apply_item_modifier_deltas`/`add_character_value_delta`
+    helpers from `character_values.rs`. Also wired `World::raise_skill`
+    (`world/skills.rs`, C `raise_value` `skill.c:256`), player-death
+    respawn (`World::die_character`, C `die_char` `death.c:807`, gated on
+    the same-area `place_character_on_map` success matching C's
+    `transfer_to_restarea` return value), and login (both the DB-snapshot
+    path in `ugaris-server/src/snapshots.rs::apply_character_snapshot` and
+    the template/scaffold path in `main.rs`'s login handler), matching C
+    `login_ok` (`database_character.c:1512`). Uncovered and fixed a real
+    pre-existing bug along the way: `poison_callback_from_timer`'s
+    `tick == 0` HP-modifier decrement and `remove_poison_by_driver` never
+    triggered a stat recompute at all (only set `CF_UPDATE`), so poison's
+    permanent max-HP reduction was silently inert; both now call
+    `update_character` matching `poison_callback`/`remove_poison`/
+    `remove_all_poison` in C. Several `world/tests/*.rs` fixtures needed
+    `values[1]` (raised base) baselines added since the wired recompute now
+    genuinely enforces C's per-value floor clamp (`n <= V_STR` -> 0) and
+    the 50%-of-raised-base cap on item/bless modifiers, which the old
+    delta-only helper never enforced - see `world/tests/spells.rs`,
+    `world/tests/text.rs`, `world/tests/hurt.rs`,
+    `world/tests/death.rs`, `world/tests/skills.rs` for the corrected
+    fixtures/expectations and comments explaining each.
+  - STILL REMAINING: level-up recompute (the "Experience/level-up side
+    effects" P1 task below is still unported, so there is no level-up call
+    site to wire yet). Item-driver-level raise/scroll/potion/enchant paths
+    (`item_driver/scrolls.rs::raise_value_exp`, `item_driver/potions.rs`,
+    and similar) still don't call `update_character` since item drivers
+    operate on `&mut Character` only (no `&mut World` access) - wiring
+    those requires either passing `&mut World` through the item-driver
+    dispatch or having the `World`-level caller recompute after applying
+    the driver's outcome; this is a distinct, larger architectural slice
+    left for a future iteration. Documented gaps in the recompute itself
+    (`ch.ef[]` area-effect light, `P_CLAN`/`areaID == 13`, sprite
+    reselection) are unchanged from the previous iteration's notes.
 
 - [ ] **Equipment slot rules on swap (`CL_SWAP` into worn slots)** - C
   `cl_swap`/`swap` checks `place_item_typed` rules: worn slot flag match
@@ -920,3 +954,20 @@ Add one line per completed task: date, task, ledger section touched.
   "Ralph Loop - `update_char` Stat Recomputation". REMAINING: not yet
   wired into spell install/expiry, level up, login, or death respawn -
   see the todo note for the precise next slice.
+- 2026-07-03: `update_char` stat recomputation (P1, partial, iteration 17) -
+  switched every `world/spells.rs` install/expire call site from the old
+  `apply_item_modifier_deltas`/`refresh_driver_spell_flags` helpers (now
+  deleted) to `World::update_character`, matching each C call site 1:1;
+  also wired `World::raise_skill` (`world/skills.rs`), player-death
+  respawn (`World::die_character`, `world/death.rs`), and login (both the
+  DB-snapshot path in `ugaris-server/src/snapshots.rs` and the
+  template/scaffold path in `main.rs`); fixed a real pre-existing bug
+  where poison's HP-modifier decrement/removal never actually recomputed
+  effective HP; updated ~10 test fixtures in `world/tests/{spells,text,
+  hurt,death,skills}.rs` to add realistic `values[1]` baselines now that
+  the recompute genuinely enforces C's floor-clamp and modifier caps;
+  ledger section "Ralph Loop - `update_char` Stat Recomputation" extended.
+  STILL REMAINING: level-up (no level-up system ported yet) and
+  item-driver-level raise/scroll/potion paths (need `&mut World` access
+  threaded through the item-driver dispatch) - see the todo note for
+  details.

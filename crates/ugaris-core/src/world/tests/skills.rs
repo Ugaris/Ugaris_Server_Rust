@@ -41,13 +41,19 @@ fn raise_skill_spends_unused_exp_and_bumps_bare_and_effective_value() {
 fn raise_skill_does_not_lower_effective_value_above_bare() {
     let mut world = World::default();
     let mut player = character(1);
-    // Effective value already boosted above bare (e.g. by equipment); after
-    // raising bare from 10 to 11, effective (12) must stay untouched since
-    // C only bumps `value[0]` up to match `value[1]`, never down.
+    // Effective value boosted above bare by a worn item's Sword modifier;
+    // after raising bare from 10 to 11 (which now runs a full `update_char`
+    // recompute), the item's +2 stays applied on top of the new bare value.
     player.values[1][CharacterValue::Sword as usize] = 10;
     player.values[0][CharacterValue::Sword as usize] = 12;
+    player.inventory[0] = Some(ItemId(500));
     player.exp = 1_000;
     assert!(world.spawn_character(player, 10, 10));
+    let mut sword_item = item(500, ItemFlags::WNBODY);
+    sword_item.carried_by = Some(CharacterId(1));
+    sword_item.modifier_index[0] = CharacterValue::Sword as i16;
+    sword_item.modifier_value[0] = 2;
+    world.add_item(sword_item);
 
     let outcome = world.raise_skill(CharacterId(1), CharacterValue::Sword as u16);
 
@@ -56,7 +62,9 @@ fn raise_skill_does_not_lower_effective_value_above_bare() {
         RaiseSkillOutcome::Raised {
             value: CharacterValue::Sword as usize,
             bare: 11,
-            effective: 12,
+            // update_char: base(0) + bare(11) + item mod(2, under the 50%
+            // of bare cap) = 13.
+            effective: 13,
             exp: 1_000,
             exp_used: SWORD_RAISE_COST_AT_10,
         }

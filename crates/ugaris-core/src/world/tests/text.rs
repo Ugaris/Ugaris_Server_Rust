@@ -401,6 +401,11 @@ fn player_warcry_sets_up_and_debuffs_sound_reachable_targets() {
     target.hp = 20 * POWERSCALE;
     target.lifeshield = POWERSCALE;
     target.values[0][CharacterValue::Immunity as usize] = 20;
+    // C `update_char` (via `install_speed_spell`'s warcry install) clamps
+    // current HP to the recomputed max; give the target a raised HP
+    // baseline large enough that the warcry install itself doesn't clamp
+    // `hp` before the `hurt()` damage below is applied.
+    target.values[1][CharacterValue::Hp as usize] = 100;
     world.spawn_character(caster, 10, 10);
     world.spawn_character(target, 13, 10);
     let mut player = PlayerRuntime::connected(1, 0);
