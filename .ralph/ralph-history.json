@@ -850,15 +850,36 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 27,
+      "startedAt": "2026-07-03T18:35:03.973Z",
+      "endedAt": "2026-07-03T18:38:25.357Z",
+      "durationMs": 200780,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 342 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "69:| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-c",
+        "test result: ok. 342 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 27389410,
+  "totalDurationMs": 27590190,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 26,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 27,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
@@ -981,14 +1002,15 @@
       "All green, no warnings/failures. This change doesn't touch runtime loop/login/protocol structurally ": 1,
       "All green: 1105+9+3+33+342 = 1492 tests pass, zero failures, build clean. Let's commit this iteratio": 1,
       "5. **Verified**: `cargo fmt --all`, `cargo test --workspace` (1492 tests, 0 failures), `cargo build ": 1,
-      "test result: ok. 342 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 3,
+      "test result: ok. 342 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 4,
       "- Verified: `cargo fmt --all` clean, `cargo test --workspace` (1494 tests, 0 failed), `cargo build -": 1,
       "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 1088 filtered out; finished in 0.00s": 1,
       "test result: ok. 1107 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
-      "test result: ok. 342 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
+      "test result: ok. 342 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 3,
       "All green: 1110 + 9 + 3 + 33 + 342 = 1497 tests pass, zero failures, build clean. Let's check git st": 1,
       "**Verification:** `cargo fmt --all` (no diffs), `cargo test --workspace` (1497 tests, 0 failures), `": 1,
-      "test result: ok. 1110 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
+      "test result: ok. 1110 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "69:| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
