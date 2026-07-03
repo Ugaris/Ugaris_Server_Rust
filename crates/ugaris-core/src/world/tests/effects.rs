@@ -170,10 +170,37 @@ fn player_pulse_damages_low_health_target_and_creates_visible_effects() {
     assert!(target.hp <= 0);
     assert!(target.flags.contains(CharacterFlags::UPDATE));
     assert_eq!(target.driver_messages[0].message_type, NT_GOTHIT);
+    // C `act_pulse` (`act.c:1637-1640`): unconditional area `NT_CHAR`/
+    // `NT_SPELL` broadcast from the caster after the per-target loop and
+    // `create_pulse`; both caster and target sit inside the 32-tile notify
+    // box, so both see these two messages (in addition to whatever
+    // `apply_legacy_hurt`'s own unconditional `NT_SEEHIT` broadcast added).
+    let nt_spell: Vec<_> = target
+        .driver_messages
+        .iter()
+        .filter(|message| message.message_type == NT_SPELL)
+        .collect();
+    assert_eq!(nt_spell.len(), 1);
+    assert_eq!(nt_spell[0].dat1, 1);
+    assert_eq!(nt_spell[0].dat2, CharacterValue::Pulse as i32);
     assert_eq!(
-        world.characters[&CharacterId(1)].driver_messages[0].message_type,
-        NT_DIDHIT
+        target
+            .driver_messages
+            .iter()
+            .filter(|message| message.message_type == NT_CHAR)
+            .count(),
+        1
     );
+    let caster_after = &world.characters[&CharacterId(1)];
+    assert_eq!(caster_after.driver_messages[0].message_type, NT_DIDHIT);
+    assert!(caster_after
+        .driver_messages
+        .iter()
+        .any(|message| message.message_type == NT_CHAR));
+    assert!(caster_after
+        .driver_messages
+        .iter()
+        .any(|message| message.message_type == NT_SPELL));
     assert!(world
         .effects
         .values()

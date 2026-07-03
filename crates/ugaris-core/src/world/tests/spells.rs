@@ -94,6 +94,17 @@ fn player_magicshield_spell_sets_up_and_completes_lifeshield_gain() {
     assert_eq!(effect.target_character, Some(CharacterId(1)));
     assert_eq!(effect.stop_tick, 3);
     assert_eq!(effect.light, 25);
+    // C `act_magicshield` (`act.c:1090-1093`): `NT_CHAR` gated on
+    // `CF_NONOTIFY`, then unconditional `NT_SPELL` with a `0` payload.
+    assert_eq!(character.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(character.driver_messages[0].dat1, 1);
+    assert_eq!(character.driver_messages[1].message_type, NT_SPELL);
+    assert_eq!(character.driver_messages[1].dat1, 1);
+    assert_eq!(
+        character.driver_messages[1].dat2,
+        CharacterValue::MagicShield as i32
+    );
+    assert_eq!(character.driver_messages[1].dat3, 0);
 }
 
 #[test]
@@ -138,6 +149,15 @@ fn player_heal_spell_restores_target_hp_on_completion() {
     assert_eq!(effect.effect_type, EF_HEAL);
     assert_eq!(effect.target_character, Some(CharacterId(2)));
     assert_eq!(effect.stop_tick, 8);
+    // C `act_heal` (`act.c:1671-1674`): `NT_CHAR` gated on `CF_NONOTIFY`,
+    // then unconditional `NT_SPELL`, broadcast from the caster's own
+    // position (not the healed target's) - both sit inside the notify box.
+    let caster = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(caster.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(caster.driver_messages[0].dat1, 1);
+    assert_eq!(caster.driver_messages[1].message_type, NT_SPELL);
+    assert_eq!(caster.driver_messages[1].dat1, 1);
+    assert_eq!(caster.driver_messages[1].dat2, CharacterValue::Heal as i32);
 }
 
 #[test]
@@ -202,6 +222,16 @@ fn player_bless_spell_installs_carried_spell_item_on_completion() {
     assert_eq!(effect.stop_tick, 2_980);
     assert_eq!(effect.strength, 10);
     assert_eq!(world.timers.used_timers(), 1);
+    // C `act_bless` (`act.c:1237-1240`): `NT_CHAR` gated on `CF_NONOTIFY`,
+    // then unconditional `NT_SPELL` with a `0` payload.
+    assert_eq!(character.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(character.driver_messages[0].dat1, 1);
+    assert_eq!(character.driver_messages[1].message_type, NT_SPELL);
+    assert_eq!(character.driver_messages[1].dat1, 1);
+    assert_eq!(
+        character.driver_messages[1].dat2,
+        CharacterValue::Bless as i32
+    );
     assert_eq!(
         world.drain_pending_sound_specials()[0].special.special_type,
         29
@@ -269,6 +299,16 @@ fn player_flash_spell_installs_timed_speed_spell_on_self() {
     assert_eq!(effect.light, 50);
     assert_eq!(effect.strength, 40);
     assert_eq!(world.timers.used_timers(), 1);
+    // C `act_flash` (`act.c:1041-1044`): `NT_CHAR` gated on `CF_NONOTIFY`,
+    // then unconditional `NT_SPELL` with a `0` payload.
+    assert_eq!(character.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(character.driver_messages[0].dat1, 1);
+    assert_eq!(character.driver_messages[1].message_type, NT_SPELL);
+    assert_eq!(character.driver_messages[1].dat1, 1);
+    assert_eq!(
+        character.driver_messages[1].dat2,
+        CharacterValue::Flash as i32
+    );
 }
 
 #[test]
@@ -320,6 +360,18 @@ fn player_freeze_spell_installs_negative_speed_spell_on_nearby_target() {
     assert_eq!(world.timers.used_timers(), 1);
     let sounds = world.drain_pending_sound_specials();
     assert!(sounds.iter().any(|sound| sound.special.special_type == 31));
+    // C `act_freeze` (`act.c:1556-1560`): `NT_CHAR` gated on `CF_NONOTIFY`,
+    // then unconditional `NT_SPELL` with a `0` payload, broadcast from the
+    // caster - the target also observes both since it's inside the box.
+    let caster = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(caster.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(caster.driver_messages[0].dat1, 1);
+    assert_eq!(caster.driver_messages[1].message_type, NT_SPELL);
+    assert_eq!(caster.driver_messages[1].dat1, 1);
+    assert_eq!(
+        caster.driver_messages[1].dat2,
+        CharacterValue::Freeze as i32
+    );
 }
 
 #[test]
@@ -1263,7 +1315,31 @@ fn action_tick_attack_policy_can_block_area_spell_targets() {
     let target = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(target.hp, 10 * POWERSCALE);
     assert_eq!(target.lifeshield, POWERSCALE);
-    assert!(target.driver_messages.is_empty());
+    // C `act_pulse` (`act.c:1637-1640`): `NT_CHAR`/`NT_SPELL` are an
+    // unconditional area broadcast from the caster's position, independent
+    // of whether any individual target's damage was blocked by the attack
+    // policy - so the blocked target still observes both messages, but no
+    // `NT_GOTHIT`/`NT_SEEHIT` (which only fire from `pulse_someone` when
+    // damage is actually applied).
+    assert_eq!(
+        target.driver_messages,
+        vec![
+            crate::character_driver::CharacterDriverMessage {
+                message_type: NT_CHAR,
+                dat1: 1,
+                dat2: 0,
+                dat3: 0,
+                text: None,
+            },
+            crate::character_driver::CharacterDriverMessage {
+                message_type: NT_SPELL,
+                dat1: 1,
+                dat2: CharacterValue::Pulse as i32,
+                dat3: 0,
+                text: None,
+            },
+        ]
+    );
     assert!(world
         .effects
         .values()
@@ -1272,6 +1348,48 @@ fn action_tick_attack_policy_can_block_area_spell_targets() {
         .effects
         .values()
         .any(|effect| effect.effect_type == EF_PULSEBACK));
+}
+
+#[test]
+fn completed_firering_notifies_nearby_characters_with_nt_char_and_nt_spell() {
+    // C `act_firering` (`act.c:935-941`): `NT_CHAR` gated on `CF_NONOTIFY`,
+    // then unconditional `NT_SPELL` carrying the firering effect id, guarded
+    // by an "is the caster still alive" check (`if (ch[cn].flags)`) since
+    // `hurt` might kill the caster indirectly.
+    let mut world = World::default();
+    world.tick = Tick(700);
+    let mut caster = character(1);
+    caster.flags.insert(CharacterFlags::PLAYER);
+    caster.values[0][CharacterValue::Fireball as usize] = 20;
+    let mut target = character(2);
+    target.hp = 1_000_000;
+    world.spawn_character(caster, 10, 10);
+    world.spawn_character(target, 11, 10);
+    world.characters.get_mut(&CharacterId(1)).unwrap().action = action::FIRERING;
+    world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
+
+    let completed = world.tick_basic_actions();
+    assert!(completed[0].ok);
+
+    let caster = world.characters.get(&CharacterId(1)).unwrap();
+    // Index 0 is the unrelated `NT_DIDHIT` that `apply_legacy_hurt` queues to
+    // the attacker when the target actually took damage.
+    assert_eq!(caster.driver_messages[0].message_type, NT_DIDHIT);
+    assert_eq!(caster.driver_messages[1].message_type, NT_CHAR);
+    assert_eq!(caster.driver_messages[1].dat1, 1);
+    assert_eq!(caster.driver_messages[2].message_type, NT_SPELL);
+    assert_eq!(caster.driver_messages[2].dat1, 1);
+    assert_eq!(
+        caster.driver_messages[2].dat2,
+        CharacterValue::Fireball as i32
+    );
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(target.hp < 1_000_000);
+    assert!(target
+        .driver_messages
+        .iter()
+        .any(|message| message.message_type == NT_SPELL
+            && message.dat2 == CharacterValue::Fireball as i32));
 }
 
 #[test]

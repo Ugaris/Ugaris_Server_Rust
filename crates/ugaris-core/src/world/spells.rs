@@ -186,6 +186,19 @@ impl World {
         let duration = spell_duration_ticks(&caster, BLESS_DURATION);
         let installed = self.install_bless_spell(target_id, strength, duration);
         if installed {
+            // C `act_bless` (`act.c:1237-1241`): `NT_CHAR` gated on
+            // `CF_NONOTIFY`, then unconditional `NT_SPELL`/`sound_area`.
+            if !caster.flags.contains(CharacterFlags::NONOTIFY) {
+                self.notify_area(caster.x, caster.y, NT_CHAR, caster_id.0 as i32, 0, 0);
+            }
+            self.notify_area(
+                caster.x,
+                caster.y,
+                NT_SPELL,
+                caster_id.0 as i32,
+                CharacterValue::Bless as i32,
+                0,
+            );
             self.queue_sound_area(usize::from(caster.x), usize::from(caster.y), 29);
         }
         installed
@@ -215,6 +228,19 @@ impl World {
                 character_value(&caster, CharacterValue::Tactics),
             ),
         );
+        // C `act_flash` (`act.c:1041-1044`): `NT_CHAR` gated on
+        // `CF_NONOTIFY`, then unconditional `NT_SPELL`.
+        if !caster.flags.contains(CharacterFlags::NONOTIFY) {
+            self.notify_area(caster.x, caster.y, NT_CHAR, caster_id.0 as i32, 0, 0);
+        }
+        self.notify_area(
+            caster.x,
+            caster.y,
+            NT_SPELL,
+            caster_id.0 as i32,
+            CharacterValue::Flash as i32,
+            0,
+        );
         true
     }
 
@@ -228,8 +254,23 @@ impl World {
             return false;
         }
 
-        self.create_fireball_effect(&caster);
-        self.queue_sound_area(usize::from(caster.x), usize::from(caster.y), 5);
+        let effect_id = self.create_fireball_effect(&caster);
+        if effect_id != 0 {
+            // C `act_fireball` (`act.c:955-960`): `NT_CHAR` gated on
+            // `CF_NONOTIFY`, then unconditional `NT_SPELL`/`sound_area`.
+            if !caster.flags.contains(CharacterFlags::NONOTIFY) {
+                self.notify_area(caster.x, caster.y, NT_CHAR, caster_id.0 as i32, 0, 0);
+            }
+            self.notify_area(
+                caster.x,
+                caster.y,
+                NT_SPELL,
+                caster_id.0 as i32,
+                CharacterValue::Fireball as i32,
+                effect_id as i32,
+            );
+            self.queue_sound_area(usize::from(caster.x), usize::from(caster.y), 5);
+        }
         if let Some(caster) = self.characters.get_mut(&caster_id) {
             caster.action = action::FIREBALL2;
             caster.step = 0;
@@ -247,7 +288,25 @@ impl World {
             return false;
         }
 
-        self.create_ball_effect(&caster);
+        let effect_id = self.create_ball_effect(&caster);
+        if effect_id != 0 {
+            // C `act_ball` (`act.c:1057-1061`): `NT_CHAR` gated on
+            // `CF_NONOTIFY`, then unconditional `NT_SPELL` - note C uses
+            // `V_FLASH` (not `V_BALL`, there is no such value) as the
+            // payload here, matching `create_ball`'s own `spellpower(cn,
+            // V_FLASH)` power source.
+            if !caster.flags.contains(CharacterFlags::NONOTIFY) {
+                self.notify_area(caster.x, caster.y, NT_CHAR, caster_id.0 as i32, 0, 0);
+            }
+            self.notify_area(
+                caster.x,
+                caster.y,
+                NT_SPELL,
+                caster_id.0 as i32,
+                CharacterValue::Flash as i32,
+                effect_id as i32,
+            );
+        }
         if let Some(caster) = self.characters.get_mut(&caster_id) {
             caster.action = action::BALL2;
             caster.step = 0;
@@ -304,7 +363,7 @@ impl World {
         if !self.install_firering_spell(caster_id) {
             return false;
         }
-        self.create_show_effect(
+        let effect_id = self.create_show_effect(
             EF_FIRERING,
             caster_id,
             self.tick.0 as u32,
@@ -364,7 +423,29 @@ impl World {
             self.apply_legacy_hurt(target_id, Some(caster_id), damage, 10, 30, 85);
         }
 
-        self.queue_sound_area(caster_x, caster_y, 5);
+        // C `act_firering` (`act.c:935-941`): `if (ch[cn].flags)` guards
+        // against `hurt` having killed the caster indirectly (e.g. a
+        // char-dead driver reflecting damage); ported as a `!DEAD` check,
+        // mirroring `complete_attack`'s equivalent guard (`world/combat.rs`).
+        if let Some(caster) = self.characters.get(&caster_id) {
+            let alive = !caster.flags.contains(CharacterFlags::DEAD);
+            let notify_gated = !caster.flags.contains(CharacterFlags::NONOTIFY);
+            let (x, y) = (caster.x, caster.y);
+            if alive {
+                if notify_gated {
+                    self.notify_area(x, y, NT_CHAR, caster_id.0 as i32, 0, 0);
+                }
+                self.notify_area(
+                    x,
+                    y,
+                    NT_SPELL,
+                    caster_id.0 as i32,
+                    CharacterValue::Fireball as i32,
+                    effect_id as i32,
+                );
+                self.queue_sound_area(caster_x, caster_y, 5);
+            }
+        }
 
         true
     }
@@ -385,6 +466,23 @@ impl World {
             25,
             0,
         );
+        // C `act_magicshield` (`act.c:1090-1093`): `NT_CHAR` gated on
+        // `CF_NONOTIFY`, then unconditional `NT_SPELL` with a `0` payload
+        // (no effect id is passed, unlike fireball/firering/ball).
+        if let Some(character) = self.characters.get(&character_id) {
+            let (x, y) = (character.x, character.y);
+            if !character.flags.contains(CharacterFlags::NONOTIFY) {
+                self.notify_area(x, y, NT_CHAR, character_id.0 as i32, 0, 0);
+            }
+            self.notify_area(
+                x,
+                y,
+                NT_SPELL,
+                character_id.0 as i32,
+                CharacterValue::MagicShield as i32,
+                0,
+            );
+        }
         true
     }
 
@@ -465,6 +563,19 @@ impl World {
             caster.x,
             caster.y,
             character_value(&caster, CharacterValue::Pulse),
+        );
+        // C `act_pulse` (`act.c:1637-1640`): `NT_CHAR` gated on
+        // `CF_NONOTIFY`, then unconditional `NT_SPELL` with a `0` payload.
+        if !caster.flags.contains(CharacterFlags::NONOTIFY) {
+            self.notify_area(caster.x, caster.y, NT_CHAR, caster_id.0 as i32, 0, 0);
+        }
+        self.notify_area(
+            caster.x,
+            caster.y,
+            NT_SPELL,
+            caster_id.0 as i32,
+            CharacterValue::Pulse as i32,
+            0,
         );
         true
     }
@@ -551,6 +662,19 @@ impl World {
                 }
             }
         }
+        // C `act_freeze` (`act.c:1556-1560`): `NT_CHAR` gated on
+        // `CF_NONOTIFY`, then unconditional `NT_SPELL`/`sound_area`.
+        if !caster.flags.contains(CharacterFlags::NONOTIFY) {
+            self.notify_area(caster.x, caster.y, NT_CHAR, caster_id.0 as i32, 0, 0);
+        }
+        self.notify_area(
+            caster.x,
+            caster.y,
+            NT_SPELL,
+            caster_id.0 as i32,
+            CharacterValue::Freeze as i32,
+            0,
+        );
         self.queue_sound_area(caster_x, caster_y, 31);
         true
     }
@@ -634,6 +758,21 @@ impl World {
                 self.apply_legacy_hurt(target_id, Some(caster_id), damage, 1, 0, 0);
             }
         }
+
+        // C `act_warcry` (`act.c:1399-1402`): `NT_CHAR` gated on
+        // `CF_NONOTIFY`, then unconditional `NT_SPELL`, before the
+        // lifeshield-grant tail below.
+        if !caster.flags.contains(CharacterFlags::NONOTIFY) {
+            self.notify_area(caster.x, caster.y, NT_CHAR, caster_id.0 as i32, 0, 0);
+        }
+        self.notify_area(
+            caster.x,
+            caster.y,
+            NT_SPELL,
+            caster_id.0 as i32,
+            CharacterValue::Warcry as i32,
+            0,
+        );
 
         if character_value_present(&caster, CharacterValue::MagicShield) == 0 {
             if let Some(caster) = self.characters.get_mut(&caster_id) {
@@ -1982,6 +2121,20 @@ impl World {
                 0,
                 0,
             );
+            // C `act_heal` (`act.c:1671-1674`): `NT_CHAR` gated on
+            // `CF_NONOTIFY`, then unconditional `NT_SPELL`, broadcast from
+            // the caster's own position (not the target's).
+            if !caster.flags.contains(CharacterFlags::NONOTIFY) {
+                self.notify_area(caster.x, caster.y, NT_CHAR, caster_id.0 as i32, 0, 0);
+            }
+            self.notify_area(
+                caster.x,
+                caster.y,
+                NT_SPELL,
+                caster_id.0 as i32,
+                CharacterValue::Heal as i32,
+                0,
+            );
             return true;
         }
 
@@ -2001,6 +2154,17 @@ impl World {
             self.tick.0 as u32,
             self.tick.0.saturating_add(8) as u32,
             0,
+            0,
+        );
+        if !caster.flags.contains(CharacterFlags::NONOTIFY) {
+            self.notify_area(caster.x, caster.y, NT_CHAR, caster_id.0 as i32, 0, 0);
+        }
+        self.notify_area(
+            caster.x,
+            caster.y,
+            NT_SPELL,
+            caster_id.0 as i32,
+            CharacterValue::Heal as i32,
             0,
         );
         true

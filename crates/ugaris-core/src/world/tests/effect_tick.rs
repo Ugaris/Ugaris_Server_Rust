@@ -1009,6 +1009,17 @@ fn targeted_fireball_sets_up_projectile_action() {
     assert_eq!((effect.from_x, effect.from_y), (10, 10));
     assert_eq!((effect.to_x, effect.to_y), (15, 10));
     assert_eq!((effect.x, effect.y), (10 * 1024 + 512, 10 * 1024 + 512));
+    // C `act_fireball` (`act.c:955-960`): `NT_CHAR` gated on `CF_NONOTIFY`,
+    // then unconditional `NT_SPELL` carrying the fireball effect id.
+    assert_eq!(caster.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(caster.driver_messages[0].dat1, 1);
+    assert_eq!(caster.driver_messages[1].message_type, NT_SPELL);
+    assert_eq!(caster.driver_messages[1].dat1, 1);
+    assert_eq!(
+        caster.driver_messages[1].dat2,
+        CharacterValue::Fireball as i32
+    );
+    assert_eq!(caster.driver_messages[1].dat3, effect.serial);
 }
 
 #[test]
@@ -1301,6 +1312,14 @@ fn targeted_ball_sets_up_projectile_action() {
     assert_eq!(effect.light, 80);
     assert_eq!((effect.from_x, effect.from_y), (10, 10));
     assert_eq!((effect.to_x, effect.to_y), (15, 10));
+    // C `act_ball` (`act.c:1057-1061`): `NT_CHAR` gated on `CF_NONOTIFY`,
+    // then unconditional `NT_SPELL` with the ball effect id - note the C
+    // source uses `V_FLASH` (not a `V_BALL`, which doesn't exist) as the
+    // payload, matching `create_ball`'s own `spellpower(cn, V_FLASH)`.
+    assert_eq!(caster.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(caster.driver_messages[1].message_type, NT_SPELL);
+    assert_eq!(caster.driver_messages[1].dat2, CharacterValue::Flash as i32);
+    assert_eq!(caster.driver_messages[1].dat3, effect.serial);
 }
 
 #[test]

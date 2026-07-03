@@ -1141,3 +1141,69 @@ Recommended next chest steps:
   `cargo fmt --all`, `cargo build -p ugaris-server` (zero warnings), and a
   10s boot smoke (ticks advancing, NPC driver messages processed, no
   panics) all pass.
+
+### Ralph Loop Iteration 15 Additional Progress
+
+- Completed the P0 "NPC sighting messages (`NT_CHAR` emission)" task
+  (marked `[x]` in `PORTING_TODO.md`) by wiring the last remaining call
+  sites: the 12 spell-cast `act_*` completions in
+  `crates/ugaris-core/src/world/spells.rs`. `complete_bless`,
+  `complete_flash`, `complete_fireball`, `complete_ball`,
+  `complete_firering`, `complete_magicshield`, `complete_pulse`,
+  `complete_freeze`, `complete_warcry`, and `complete_heal` now each emit
+  `notify_area(.., NT_CHAR, ..)` gated on `!CharacterFlags::NONOTIFY`
+  followed by an unconditional `notify_area(.., NT_SPELL, .., value, fn)`,
+  matching every corresponding C call site exactly: `act.c:936-940`
+  (fireball), `1057-1061` (ball, which intentionally carries
+  `CharacterValue::Flash` as the payload - not a "Ball" value, which
+  doesn't exist in C either - copied digit-for-digit from
+  `notify_area(ch[cn].x, ch[cn].y, NT_SPELL, cn, V_FLASH, fn)`),
+  `929-933`/`935-941` (firering, including the "did `hurt` kill the caster"
+  `if (ch[cn].flags)` guard, ported as `!CharacterFlags::DEAD` mirroring
+  `complete_attack`'s existing equivalent guard), `1041-1044` (flash),
+  `1090-1093` (magicshield), `1237-1241` (bless, plus `sound_area`),
+  `1399-1402` (warcry), `1556-1560` (freeze, plus `sound_area`),
+  `1637-1640` (pulse), `1671-1674` (heal, broadcast from the caster's
+  position, not the healed target's). `complete_earthrain`/
+  `complete_earthmud` were intentionally left unchanged: C's own
+  `act_earthrain`/`act_earthmud` have their `notify_area` calls commented
+  out (dead code), so there is no C behavior to port there - confirmed by
+  reading `act.c:969-1001` directly.
+- Tests: added
+  `world/tests/spells.rs::completed_firering_notifies_nearby_characters_with_nt_char_and_nt_spell`
+  (the only spell with no existing player-facing completion test) and
+  added `NT_CHAR`/`NT_SPELL` assertions to the existing
+  `player_magicshield_spell_sets_up_and_completes_lifeshield_gain`,
+  `player_heal_spell_restores_target_hp_on_completion`,
+  `player_bless_spell_installs_carried_spell_item_on_completion`,
+  `player_flash_spell_installs_timed_speed_spell_on_self`,
+  `player_freeze_spell_installs_negative_speed_spell_on_nearby_target`
+  (`world/tests/spells.rs`),
+  `player_pulse_damages_low_health_target_and_creates_visible_effects`
+  (`world/tests/effects.rs`), `targeted_fireball_sets_up_projectile_action`
+  and `targeted_ball_sets_up_projectile_action`
+  (`world/tests/effect_tick.rs`), and both warcry tests
+  (`player_warcry_sets_up_and_debuffs_sound_reachable_targets`,
+  `player_warcry_does_not_pass_soundblocking_tiles` in
+  `world/tests/text.rs` - the second proves the broadcast is unconditional
+  even when a soundblock wall stops the warcry effect itself from reaching
+  the target). Updated one pre-existing test whose fixture locked in the
+  old "no messages" behavior:
+  `world/tests/spells.rs::action_tick_attack_policy_can_block_area_spell_targets`
+  now asserts the attack-policy-blocked pulse target still observes
+  `NT_CHAR`/`NT_SPELL` (the area broadcast from the caster's position is
+  unconditional, independent of whether any individual target's damage was
+  blocked by the attack policy), matching C exactly - this is a corrected
+  test, not a weakened one.
+- REMAINING (all intentional/deferred, documented in the P0 task note):
+  `sub_surround`/`V_SURROUND` (act.c:697-705) and `increase_rage` remain
+  unported (no `rage`/`V_SURROUND` fields on `Character` yet), independent
+  of all `NT_CHAR`/`NT_SPELL` wiring done across iterations 13-15.
+  `act_idle` (`world/regen.rs`) remains intentionally deferred pending the
+  idle-batch granularity fix. The merchant greeting scan migration to
+  consume `NT_CHAR` via `process_merchant_messages` remains
+  optional/undone (explicitly optional per the task's own wording).
+- Full workspace suite (1066 tests total across all crates, 0 failed),
+  `cargo fmt --all`, `cargo build -p ugaris-server` (zero warnings), and a
+  10s boot smoke (ticks advancing, NPC driver messages processed, no
+  panics) all pass.

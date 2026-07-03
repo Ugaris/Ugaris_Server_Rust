@@ -373,7 +373,7 @@ order.
     open item container or account depot from an inventory slot is not
     wired either - only the merchant branch is implemented.
 
-- [~] **NPC sighting messages (`NT_CHAR` emission)** - NPCs only "see"
+- [x] **NPC sighting messages (`NT_CHAR` emission)** - NPCs only "see"
   players through ad-hoc scans (merchant greeting, simple-baddy attack
   scan). C emits `NT_CHAR` notify messages from character movement so
   *every* driver reacts through its message queue.
@@ -443,14 +443,51 @@ order.
     bystander on a hit) and `completed_attack_skips_notify_when_cf_nonotify_set`
     (uses a miss roll to isolate the `CF_NONOTIFY` gate from
     `apply_legacy_hurt`'s own unconditional `NT_SEEHIT` broadcast).
-  - REMAINING: every spell cast's `act_*` completion (fireball/ball/
-    earthrain/earthmud/flash/magicshield/bless/warcry/freeze/pulse/heal, all
-    in `act.c` past line 880) still doesn't emit `NT_CHAR`/`NT_SPELL` in Rust
-    (`world/item_outcomes.rs`'s spell-outcome handlers) - this is the next
-    slice. `sub_surround`/`V_SURROUND` (act.c:697-705) and `increase_rage`
-    are still not ported at all (no `rage`/`V_SURROUND` fields exist on
-    `Character` yet), so `act_attack`'s surround-weapon and rage side
-    effects remain gaps independent of the `NT_CHAR` wiring done here. The
+  - Rust (iteration 15): wired the 12 spell-cast `act_*` completions in
+    `World::complete_*` (`crates/ugaris-core/src/world/spells.rs`):
+    `complete_bless`/`complete_flash`/`complete_fireball`/`complete_ball`/
+    `complete_firering`/`complete_magicshield`/`complete_pulse`/
+    `complete_freeze`/`complete_warcry`/`complete_heal` each now emit
+    `NT_CHAR` (gated on `!CharacterFlags::NONOTIFY`) followed by an
+    unconditional `NT_SPELL` carrying the matching `CharacterValue::*`
+    payload (`Bless`/`Flash`/`Fireball`/`Freeze`/`MagicShield`/`Pulse`/
+    `Warcry`/`Heal` - all match the legacy `V_*` numeric constants exactly),
+    mirroring each C call site (`act.c:936-940` fireball, `1057-1061` ball,
+    `929-933`/`935-941` firering (plus its "did `hurt` kill the caster"
+    `!DEAD` guard), `1041-1044` flash, `1090-1093` magicshield, `1237-1241`
+    bless+`sound_area`, `1399-1402` warcry, `1556-1560` freeze+`sound_area`,
+    `1637-1640` pulse, `1671-1674` heal). `complete_ball` intentionally uses
+    `CharacterValue::Flash` as the `NT_SPELL` payload (not a "Ball" value,
+    which doesn't exist) - copied digit-for-digit from C's own
+    `notify_area(..., V_FLASH, fn)`. `complete_earthrain`/`complete_earthmud`
+    were left unchanged: C's own `act_earthrain`/`act_earthmud` have their
+    `notify_area` calls commented out (dead code), so there is no C behavior
+    to port there.
+  - Tests: `world/tests/spells.rs` gained
+    `completed_firering_notifies_nearby_characters_with_nt_char_and_nt_spell`
+    plus `NT_CHAR`/`NT_SPELL` assertions in the existing
+    `player_magicshield_spell_sets_up_and_completes_lifeshield_gain`,
+    `player_heal_spell_restores_target_hp_on_completion`,
+    `player_bless_spell_installs_carried_spell_item_on_completion`,
+    `player_flash_spell_installs_timed_speed_spell_on_self`, and
+    `player_freeze_spell_installs_negative_speed_spell_on_nearby_target`
+    tests; `world/tests/effects.rs`'s
+    `player_pulse_damages_low_health_target_and_creates_visible_effects` and
+    `world/tests/effect_tick.rs`'s `targeted_fireball_sets_up_projectile_action`/
+    `targeted_ball_sets_up_projectile_action`; `world/tests/text.rs`'s two
+    warcry tests (including one proving the broadcast is unconditional even
+    when a soundblock wall stops the warcry effect itself from reaching the
+    target). Fixed one pre-existing test whose fixture asserted the
+    old "no messages" behavior:
+    `world/tests/spells.rs::action_tick_attack_policy_can_block_area_spell_targets`
+    now asserts the blocked target still observes `NT_CHAR`/`NT_SPELL` (the
+    area broadcast is unconditional, independent of the attack-policy gate
+    on the per-target damage), which matches the C source exactly.
+  - REMAINING (all documented as intentional/deferred, not oversights):
+    `sub_surround`/`V_SURROUND` (act.c:697-705) and `increase_rage` are still
+    not ported (no `rage`/`V_SURROUND` fields exist on `Character` yet), so
+    `act_attack`'s surround-weapon and rage side effects remain a gap
+    independent of all `NT_CHAR`/`NT_SPELL` wiring in this item. The
     `act_idle` equivalent (`world/regen.rs`) is intentionally deferred:
     Rust's idle regen runs every tick continuously rather than once per C's
     `act1`-sized batch, so wiring `NT_CHAR` there now would emit far more

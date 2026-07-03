@@ -427,6 +427,18 @@ fn player_warcry_sets_up_and_debuffs_sound_reachable_targets() {
     assert_eq!(target.driver_messages[0].message_type, NT_GOTHIT);
     assert_eq!(target.driver_messages[0].dat1, 1);
     assert_eq!(target.driver_messages[0].dat2, 3_600);
+    // C `act_warcry` (`act.c:1399-1402`): unconditional area `NT_CHAR`/
+    // `NT_SPELL` broadcast from the caster after the per-target loop, so the
+    // target also observes these two messages (indices 1-2) after its own
+    // `NT_GOTHIT` (index 0) from `warcry_someone`'s `hurt` call.
+    assert_eq!(target.driver_messages[1].message_type, NT_CHAR);
+    assert_eq!(target.driver_messages[1].dat1, 1);
+    assert_eq!(target.driver_messages[2].message_type, NT_SPELL);
+    assert_eq!(target.driver_messages[2].dat1, 1);
+    assert_eq!(
+        target.driver_messages[2].dat2,
+        CharacterValue::Warcry as i32
+    );
     let spell_id = target.inventory[29].unwrap();
     let spell = world.items.get(&spell_id).unwrap();
     assert_eq!(spell.driver, IDR_WARCRY);
@@ -473,9 +485,20 @@ fn player_warcry_does_not_pass_soundblocking_tiles() {
     world.characters.get_mut(&CharacterId(1)).unwrap().duration = 1;
     assert!(world.tick_basic_actions()[0].ok);
 
+    assert!(world.drain_pending_sound_specials().is_empty());
     let target = world.characters.get(&CharacterId(2)).unwrap();
     assert!(target.inventory[12..30].iter().all(Option::is_none));
-    assert!(world.drain_pending_sound_specials().is_empty());
+    // The `NT_CHAR`/`NT_SPELL` area broadcast is unconditional (not gated on
+    // sound-blocking, unlike the per-target warcry effect itself), so the
+    // target still observes it even though the soundblock wall stopped the
+    // warcry from actually reaching it.
+    assert_eq!(target.driver_messages.len(), 2);
+    assert_eq!(target.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(target.driver_messages[1].message_type, NT_SPELL);
+    assert_eq!(
+        target.driver_messages[1].dat2,
+        CharacterValue::Warcry as i32
+    );
 }
 
 fn look_char_pair(looker_flags: CharacterFlags, target_flags: CharacterFlags) -> World {
