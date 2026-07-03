@@ -866,6 +866,37 @@ suggestion; dependencies are noted.
     "Grats" server-wide broadcast, `achievement_check_level`, and
     `reset_name(cn)` documented in `check_levelup`'s doc comment have no
     Rust equivalents.
+  - Iteration 26: closed the "Grats" broadcast half of the remaining note.
+    C `check_levelup`'s `if (ch[cn].level % 10 == 0) server_chat(6, ...)`
+    (`tool.c:1347-1350`) sends `"0000000000" COL_MAUVE "Grats: %s is level
+    %d now!"` to channel 6 ("Grats", already a joinable chat channel in
+    `commands_chat.rs`). Since `server_chat`'s fan-out needs live session
+    state that `ugaris-core`'s `World::check_levelup` doesn't have, added
+    the same queue/drain pattern already used for
+    `pending_system_texts`/`pending_area_texts`: a new
+    `WorldChannelBroadcast { channel, message_bytes }` event type and
+    `World::queue_channel_broadcast`/`drain_pending_channel_broadcasts`
+    (`world/text.rs`). `check_levelup` (`world/exp.rs`) now queues one
+    per level-up crossing a multiple of ten, building the exact C byte
+    sequence (`b"0000000000"` + `COL_CHAT_GRATS` (== `COL_MAUVE`) +
+    formatted text). `ugaris-server`'s new
+    `send_pending_world_channel_broadcasts` (`world_events.rs`) drains the
+    queue each tick and fans each message out via `system_text_bytes` to
+    every session whose `PlayerRuntime::chat_channels` has the target
+    channel's bit set - the same join-bit rule `apply_chat_command`
+    (`commands_chat.rs`) uses for player-authored channel messages (no
+    clan/mirror/area/ignore filters apply to channel 6). Wired into the
+    tick loop next to the sibling `send_pending_world_*` calls
+    (`main.rs`). Tests in `world/tests/exp.rs`: broadcast queued with the
+    exact byte-for-byte payload at level 10, no broadcast at a
+    non-multiple-of-ten level-up, and two broadcasts (level 10 and 20)
+    when a single `give_exp` call vaults a character across both
+    thresholds at once. Boot-smoked (`entering Rust game loop`, no
+    panic). STILL REMAINING: `achievement_check_level` (needs a general
+    achievement engine, out of scope - see the P1 task list) and
+    `reset_name(cn)` (a no-op by construction - no server-side
+    colored-name cache exists to invalidate, documented in
+    `character_values.rs`) are unchanged.
 
 - [ ] **Ground item decay** - dropped items never disappear (bodies do).
   C: `set_expire(in, item_decay_time)` on player drops (`act_drop`) and

@@ -106,6 +106,60 @@ fn check_levelup_caps_saves_at_ten() {
 }
 
 #[test]
+fn check_levelup_queues_a_grats_channel_broadcast_at_level_ten() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.level = 9;
+    player.exp = level2exp(10);
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.check_levelup(CharacterId(1));
+
+    let broadcasts = world.drain_pending_channel_broadcasts();
+    assert_eq!(broadcasts.len(), 1);
+    assert_eq!(
+        broadcasts[0].channel, 6,
+        "C: server_chat(6, ...) is the Grats channel"
+    );
+    let mut expected = b"0000000000".to_vec();
+    expected.extend_from_slice(crate::text::COL_CHAT_GRATS);
+    expected.extend_from_slice(b"Grats: Character is level 10 now!");
+    assert_eq!(broadcasts[0].message_bytes, expected);
+}
+
+#[test]
+fn check_levelup_does_not_queue_a_grats_broadcast_for_non_multiple_of_ten_levels() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.exp = 16; // exp2level(16) == 2, not a multiple of 10.
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.check_levelup(CharacterId(1));
+
+    assert!(world.drain_pending_channel_broadcasts().is_empty());
+}
+
+#[test]
+fn check_levelup_queues_one_grats_broadcast_per_multiple_of_ten_when_gaining_several_levels() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.level = 8;
+    player.exp = level2exp(21); // gains levels 9..21, crossing 10 and 20.
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.check_levelup(CharacterId(1));
+
+    let broadcasts = world.drain_pending_channel_broadcasts();
+    assert_eq!(broadcasts.len(), 2);
+    assert!(broadcasts[0]
+        .message_bytes
+        .ends_with(b"Grats: Character is level 10 now!"));
+    assert!(broadcasts[1]
+        .message_bytes
+        .ends_with(b"Grats: Character is level 20 now!"));
+}
+
+#[test]
 fn check_levelup_unlocks_profession_choice_at_level_twenty() {
     let mut world = World::default();
     let mut player = character(1);

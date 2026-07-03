@@ -113,15 +113,16 @@ impl World {
     /// level!" text, save-count grant/reset (hardcore resets `saves` to 0;
     /// everyone else gets `saves + 1` capped at 10, with the two matching
     /// feedback lines), the level-20 profession unlock (`value[1]
-    /// [V_PROFESSION] = 1`) with its text, and the map dirty-sector refresh
-    /// (C `set_sector`).
+    /// [V_PROFESSION] = 1`) with its text, the level-10-multiple
+    /// server-wide "Grats: NAME is level N now!" channel-6 broadcast (C
+    /// `server_chat(6, ...)`, queued via `queue_channel_broadcast` -
+    /// `ugaris-server`'s tick loop drains it and fans it out to every
+    /// session whose `PlayerRuntime::chat_channels` has channel 6 joined,
+    /// matching `apply_chat_command`'s channel delivery rule), and the map
+    /// dirty-sector refresh (C `set_sector`).
     ///
     /// Documented gaps (not silently dropped, matching C `check_levelup`
     /// exactly otherwise):
-    /// - the level-10-multiple server-wide "Grats: NAME is level N now!"
-    ///   broadcast (`server_chat(6, ...)`) has no Rust equivalent yet - no
-    ///   fan-out-to-all-sessions primitive exists in `ugaris-core` (session
-    ///   management is a server-crate concept);
     /// - `achievement_check_level(cn, level)` has no Rust equivalent (the
     ///   existing `AchievementState` only tracks chest/transport
     ///   milestones, not level);
@@ -182,6 +183,15 @@ impl World {
                     }
                     messages.push("Thou mayest now choose to learn a profession.".to_string());
                 }
+            }
+
+            if level % 10 == 0 {
+                let mut broadcast = b"0000000000".to_vec();
+                broadcast.extend_from_slice(crate::text::COL_CHAT_GRATS);
+                broadcast.extend_from_slice(
+                    format!("Grats: {} is level {level} now!", character.name).as_bytes(),
+                );
+                self.queue_channel_broadcast(6, broadcast);
             }
 
             for message in messages {

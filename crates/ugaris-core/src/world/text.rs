@@ -20,6 +20,19 @@ pub struct WorldAreaText {
     pub message: String,
 }
 
+/// C `server_chat(channel, text)` (`src/system/chat/chat.c:827-834`): a
+/// message fanned out to every connected player who has joined `channel`
+/// (bit `1 << (channel - 1)` of `PlayerRuntime::chat_channels`), the same
+/// delivery rule `apply_chat_command` uses for a player-authored channel
+/// message. `message_bytes` is the fully-formed legacy wire payload
+/// (10-digit zero sender-id field + color marker + text), matching C's
+/// `"0000000000" COL_MAUVE "Grats: ..."` construction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorldChannelBroadcast {
+    pub channel: u8,
+    pub message_bytes: Vec<u8>,
+}
+
 /// C `prof[P_MAX]` (`src/system/prof.c`): profession display name and
 /// `max` value (used by `prof_title`'s percent-of-max thresholds). Distinct
 /// from `entity::PROFESSION_NAMES`, which mirrors the unrelated JSON export
@@ -216,6 +229,19 @@ impl World {
 
     pub fn drain_pending_area_texts(&mut self) -> Vec<WorldAreaText> {
         self.pending_area_texts.drain(..).collect()
+    }
+
+    /// C `server_chat(channel, text)` (`src/system/chat/chat.c:827-834`).
+    /// See `WorldChannelBroadcast` for the delivery semantics.
+    pub fn queue_channel_broadcast(&mut self, channel: u8, message_bytes: Vec<u8>) {
+        self.pending_channel_broadcasts.push(WorldChannelBroadcast {
+            channel,
+            message_bytes,
+        });
+    }
+
+    pub fn drain_pending_channel_broadcasts(&mut self) -> Vec<WorldChannelBroadcast> {
+        self.pending_channel_broadcasts.drain(..).collect()
     }
 
     /// C `cl_look_char` -> `look_char` (`src/system/player.c`,

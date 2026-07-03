@@ -5263,6 +5263,12 @@ async fn main() -> anyhow::Result<()> {
                     info!(world_text_sessions, tick = world.tick.0, "queued world system text feedback");
                 }
 
+                let channel_broadcast_sessions =
+                    send_pending_world_channel_broadcasts(&mut runtime, &mut world);
+                if channel_broadcast_sessions != 0 {
+                    info!(channel_broadcast_sessions, tick = world.tick.0, "queued world channel broadcast feedback");
+                }
+
                 let (periodic_diff_sessions, periodic_empty_frames) =
                     queue_periodic_player_frames(&mut runtime, &world);
                 if periodic_diff_sessions != 0 {

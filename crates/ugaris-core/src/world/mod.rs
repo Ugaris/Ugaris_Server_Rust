@@ -224,6 +224,7 @@ pub struct World {
     pending_sound_specials: Vec<WorldSoundSpecial>,
     pending_system_texts: Vec<WorldSystemText>,
     pending_area_texts: Vec<WorldAreaText>,
+    pending_channel_broadcasts: Vec<WorldChannelBroadcast>,
     pending_hurt_events: Vec<LegacyHurtEvent>,
 }
 

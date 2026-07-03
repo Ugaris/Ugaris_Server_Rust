@@ -339,6 +339,38 @@ pub(crate) fn send_pending_world_area_texts(
     sent
 }
 
+/// C `server_chat(channel, text)` (`src/system/chat/chat.c:827-834`),
+/// consumer half: drains `World::drain_pending_channel_broadcasts` and fans
+/// each message out to every connected player who has joined that channel,
+/// matching the channel-bit delivery rule `apply_chat_command`
+/// (`commands_chat.rs`) uses for player-authored channel messages (no
+/// clan/mirror/area/ignore filters apply to channel 6 "Grats", so a plain
+/// join-bit check is sufficient here).
+pub(crate) fn send_pending_world_channel_broadcasts(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+) -> usize {
+    let mut sent = 0;
+    for event in world.drain_pending_channel_broadcasts() {
+        let payload = ugaris_protocol::packet::system_text_bytes(&event.message_bytes);
+        let bit = 1_u32 << (event.channel.saturating_sub(1));
+        let recipients: Vec<CharacterId> = runtime
+            .players
+            .values()
+            .filter(|player| player.chat_channels & bit != 0)
+            .filter_map(|player| player.character_id)
+            .collect();
+        for character_id in recipients {
+            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                if runtime.send_to_session(session_id, payload.clone()) {
+                    sent += 1;
+                }
+            }
+        }
+    }
+    sent
+}
+
 pub(crate) fn pk_hate_prerequisites(source: &Character, target: &Character) -> bool {
     source.id != target.id
         && source
