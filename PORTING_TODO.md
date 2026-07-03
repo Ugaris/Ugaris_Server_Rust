@@ -692,12 +692,55 @@ suggestion; dependencies are noted.
     client-scroll-diff cache to invalidate) and the above four-slot
     approximation remaining as intentional, documented deviations.
 
-- [ ] **Equipment slot rules on swap (`CL_SWAP` into worn slots)** - C
+- [x] **Equipment slot rules on swap (`CL_SWAP` into worn slots)** - C
   `cl_swap`/`swap` checks `place_item_typed` rules: worn slot flag match
   (`IF_WN*`), min level, class gates, two-handed vs left hand, and calls
   `update_char`. Verify the Rust `inventory_swap_slot`
   (`crates/ugaris-server/src/inventory.rs`) against C and port the missing
   gates. Tests exist in `tests/inventory.rs` - extend them.
+  - Progress: ported `can_wear` (`src/system/tool.c:994-1098`) and
+    `check_requirements` (`tool.c:943-991`) as a new `World::can_wear`
+    method + `check_requirements` helper in
+    `crates/ugaris-core/src/world/items.rs` - all 12 `WN_*` slot-flag
+    matches, the `WN_LHAND`/`WN_RHAND` two-handed hand-conflict rules,
+    `min_level`/`max_level`, all four `needs_class` bits (Warrior/Mage/
+    Seyan'Du/Arch), negative-`modifier_index` stat requirements (read
+    against `value[1]`, with the same out-of-range-index guard as C to
+    avoid an `i16` negate-overflow panic), and `IF_BONDWEAR` ownership.
+    Wired into `inventory_swap_slot`
+    (`crates/ugaris-server/src/inventory.rs`): a non-empty cursor item
+    targeting a worn slot (`pos < 12`) is now rejected (silently, matching
+    C's `cl_swap` which never surfaces `error` to the client) unless
+    `can_wear` passes; unequip (empty cursor) is unaffected, matching C
+    (`can_wear` is only called inside `if ((in = ch[cn].citem))`). 13 new
+    tests: 6 core-level (`world/tests/items.rs` -
+    `can_wear_rejects_positions_outside_the_worn_slot_range`,
+    `check_requirements_rejects_above_maximum_level`,
+    `check_requirements_seyanddu_gate_needs_both_mage_and_warrior_flags`,
+    `check_requirements_arch_gate_rejects_non_arch_characters`,
+    `check_requirements_bondwear_restricts_to_the_bonded_owner`,
+    `check_requirements_ignores_out_of_range_modifier_index_without_panicking`)
+    plus 9 server-level end-to-end tests in
+    `crates/ugaris-server/src/tests/inventory.rs` covering slot-flag match/
+    mismatch, min-level, needs_class, stat-requirement, both two-handed
+    hand-conflict directions (and the non-conflict success case), and the
+    unequip-bypasses-`can_wear` case. `cargo fmt --all` / `cargo test
+    --workspace` (1118 core + 351 server tests, all green) / `cargo build
+    -p ugaris-server` all clean; boot-smoked past tick 232 with no panics.
+    REMAINING (left as documented, out-of-scope-for-this-slice gaps,
+    consistent with the task's explicit "worn slot flag match, min level,
+    class gates, two-handed vs left hand" enumeration): (1) the
+    `store_item`-based auto-unequip cross-hand cleanup in C `swap`
+    (`do.c:1260-1271`) is dead code in the normal flow - `can_wear` already
+    rejects both trigger conditions before that code can run (verified by
+    tracing `IF_WNTWOHANDED` vs the `inl`/`inr` occupancy checks) - so it
+    was not ported; (2) the "no switching equipment in Teufel PK arena"
+    early gate (`do.c:1230-1233`, `areaID == 34 && MF_ARENA`) needs an
+    `area_id` parameter threaded through `inventory_swap_slot` and its
+    `apply_fast_sell` call site in `merchants.rs`, deferred to keep this
+    slice focused; (3) the `IF_MONEY`-drop-into-slot-converts-to-gold
+    branch (`do.c:1276-1287`) is a distinct money-handling concern, not an
+    equipment-slot rule, and is left for a future task.
 
 - [x] **Experience/level-up side effects** - C `give_exp` ->
   `check_levelup` in `src/system/skill.c`/`tool.c`: level recompute from
@@ -1409,3 +1452,10 @@ Add one line per completed task: date, task, ledger section touched.
   call-site and sub-gap are now ported, with only the trivial
   `player_reset_map_cache` no-op and the four-slot approximation
   remaining as intentional, documented deviations.
+- 2026-07-03: Equipment slot rules on swap (`CL_SWAP` into worn slots)
+  (P1, iteration 29) - ported `can_wear`/`check_requirements`
+  (`tool.c:943-1098`) into `World::can_wear` +
+  `crates/ugaris-core/src/world/items.rs`, wired the gate into
+  `inventory_swap_slot` (`crates/ugaris-server/src/inventory.rs`); ledger
+  section "Ralph Loop - Equipment Slot Rules on Swap (`CL_SWAP`)". 15 new
+  tests (6 core + 9 server), all green; boot-smoked past tick 232.

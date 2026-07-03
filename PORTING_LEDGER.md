@@ -2104,3 +2104,80 @@ Recommended next chest steps:
   the trivial `player_reset_map_cache` display-cache no-op (Rust has no
   client-side scroll-diff cache to invalidate) and the above four-slot
   approximation remaining as intentional, documented deviations from C.
+
+## Ralph Loop - Iteration 29: Equipment Slot Rules on Swap (`CL_SWAP`)
+
+- C `can_wear` (`src/system/tool.c:994-1098`) and `check_requirements`
+  (`tool.c:943-991`) gate C `swap()`'s worn-slot placement
+  (`do.c:1216-1299`, invoked only when `pos < 12` and the cursor holds an
+  item) but had no Rust equivalent - `inventory_swap_slot`
+  (`crates/ugaris-server/src/inventory.rs`) previously let any item into
+  any worn slot unconditionally. Ported both as `World::can_wear`
+  (new `pub fn` on `impl World` in `crates/ugaris-core/src/world/items.rs`)
+  and a `pub(crate) fn check_requirements(character, item)` helper it
+  calls: all 12 `WN_*` slot-flag matches (`worn_slot::HEAD` needs
+  `IF_WNHEAD`, etc, using the crate's existing `legacy::worn_slot`
+  constants which already match the C `WN_*` `#define` values 1:1), the
+  `WN_LHAND`/`WN_RHAND` two-handed hand-conflict rules (equipping into
+  `WN_LHAND` is blocked outright if `WN_RHAND` holds an `IF_WNTWOHANDED`
+  item; equipping an `IF_WNTWOHANDED` item into `WN_RHAND` is blocked if
+  `WN_LHAND` is occupied by anything, regardless of its flags -
+  transcribed exactly from C's asymmetric `inr`-flag-check vs.
+  `inl`-truthiness-check), `min_level`/`max_level`, all four
+  `needs_class` bits (1=reject Mage/"Warrior-only", 2=reject Warrior/
+  "Mage-only", 4="Seyan'Du-only" requires both `CharacterFlags::MAGE` and
+  `CharacterFlags::WARRIOR` via bitflags `contains` on the OR'd mask,
+  8="Arch-only" requires `CharacterFlags::ARCH`), negative-`modifier_index`
+  stat requirements (read against `character.values[1]`, the base/raised
+  array, not the equipment-modified `values[0]` effective total - matches
+  C's `ch[cn].value[1][-v1]`), and `IF_BONDWEAR` ownership
+  (`item.owner_id != character.id`). Ported C's out-of-range-index guard
+  (`v1 <= -V_MAX`) as `mod_index <= -(CHARACTER_VALUE_COUNT as i16)`
+  *before* negating, since a naive `-mod_index` on `i16::MIN` panics with
+  an overflow (a bug caught by a dedicated test).
+- Wired into `inventory_swap_slot`: when the cursor holds an item and the
+  target `slot < 12`, `world.can_wear(character_id, item_id, slot)` must
+  return true or the swap is silently rejected (`InventoryCommandResult::
+  Ignored`) - matching C's `cl_swap`, which calls `swap()` and discards
+  its return value/`error` entirely, so a failed wear attempt has always
+  been silent to the legacy client too. Unequipping (empty cursor,
+  `pos < 12`) is unaffected, since C only calls `can_wear` inside
+  `if ((in = ch[cn].citem))`.
+- 15 new focused tests: 6 core-level in
+  `crates/ugaris-core/src/world/tests/items.rs`
+  (`can_wear_rejects_positions_outside_the_worn_slot_range`,
+  `check_requirements_rejects_above_maximum_level`,
+  `check_requirements_seyanddu_gate_needs_both_mage_and_warrior_flags`,
+  `check_requirements_arch_gate_rejects_non_arch_characters`,
+  `check_requirements_bondwear_restricts_to_the_bonded_owner`,
+  `check_requirements_ignores_out_of_range_modifier_index_without_panicking`)
+  and 9 server-level end-to-end in
+  `crates/ugaris-server/src/tests/inventory.rs` covering slot-flag match/
+  mismatch, min-level rejection, needs_class rejection, stat-requirement
+  rejection, both two-handed hand-conflict directions plus the
+  non-conflict success case, and confirming unequip bypasses `can_wear`.
+- Explicitly out of scope for this slice (documented, not silently
+  dropped): (1) C `swap()`'s `store_item`-based auto-unequip cross-hand
+  cleanup (`do.c:1260-1271`, e.g. "equip a torch into `WN_LHAND` while a
+  two-handed weapon occupies `WN_RHAND`, freeing `WN_RHAND` into the
+  backpack") is unreachable dead code in the normal flow - tracing both
+  trigger conditions shows `can_wear` already rejects the placement
+  before that code can execute (the `WN_LHAND` case needs `WN_RHAND` to
+  hold `IF_WNTWOHANDED`, which `can_wear`'s own `WN_LHAND` branch already
+  vetoes; the `WN_RHAND` case needs the incoming item to be
+  `IF_WNTWOHANDED` while `WN_LHAND` is occupied, which `can_wear`'s own
+  `WN_RHAND` branch already vetoes) - so it was intentionally not ported;
+  (2) the "no switching equipment in Teufel PK arena" gate (`do.c:1230-
+  1233`, `areaID == 34 && (tile.flags & MF_ARENA) && pos != WN_LHAND &&
+  pos < 12`) needs an `area_id` parameter threaded through
+  `inventory_swap_slot` and its `crates/ugaris-server/src/merchants.rs`
+  `apply_fast_sell` call site (which currently has no area_id available),
+  deferred to keep this slice focused on the task's named "worn slot flag
+  match, min level, class gates, two-handed vs left hand" scope; (3) the
+  `IF_MONEY`-item-swapped-into-a-slot-converts-to-gold branch
+  (`do.c:1276-1287`) is a distinct money-handling concern unrelated to
+  equipment-slot rules, left for a future task.
+- `cargo fmt --all` / `cargo test --workspace` (1118 core + 9 + 3 + 351
+  server + 0 doc-tests, all green, no failures) / `cargo build
+  -p ugaris-server` clean with zero warnings; boot-smoked past tick 232
+  with no panics.

@@ -177,6 +177,289 @@ fn inventory_swap_moves_cursor_and_slot_items() {
 }
 
 #[test]
+fn inventory_swap_wears_item_with_matching_worn_slot_flag() {
+    // C `swap` (`src/system/do.c:1239-1243`): `pos < 12` requires
+    // `can_wear`, which for `WN_HEAD` requires `IF_WNHEAD`.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(10));
+    world.add_character(character);
+    world.add_item(test_item(
+        ItemId(10),
+        100,
+        ItemFlags::USED | ItemFlags::WNHEAD,
+    ));
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::HEAD as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Changed);
+    let character = &world.characters[&character_id];
+    assert_eq!(character.cursor_item, None);
+    assert_eq!(character.inventory[worn_slot::HEAD], Some(ItemId(10)));
+}
+
+#[test]
+fn inventory_swap_rejects_item_without_matching_worn_slot_flag() {
+    // C `can_wear` (`src/system/tool.c:1026-1029`): `WN_HEAD` requires
+    // `IF_WNHEAD`; a body-only item must be rejected and left untouched.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(10));
+    world.add_character(character);
+    world.add_item(test_item(
+        ItemId(10),
+        100,
+        ItemFlags::USED | ItemFlags::WNBODY,
+    ));
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::HEAD as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+    let character = &world.characters[&character_id];
+    assert_eq!(character.cursor_item, Some(ItemId(10)));
+    assert_eq!(character.inventory[worn_slot::HEAD], None);
+}
+
+#[test]
+fn inventory_swap_rejects_item_below_minimum_level() {
+    // C `check_requirements` (`src/system/tool.c:966-968`): `min_level`
+    // gates wearing even when the slot flag matches.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.level = 3;
+    character.cursor_item = Some(ItemId(10));
+    world.add_character(character);
+    let mut item = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::WNHEAD);
+    item.min_level = 10;
+    world.add_item(item);
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::HEAD as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+    assert_eq!(
+        world.characters[&character_id].inventory[worn_slot::HEAD],
+        None
+    );
+}
+
+#[test]
+fn inventory_swap_rejects_item_restricted_to_other_class() {
+    // C `check_requirements` (`src/system/tool.c:973-981`): `needs_class`
+    // bit 2 ("Only usable by a Mage") rejects a `CF_WARRIOR` character.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::WARRIOR);
+    character.cursor_item = Some(ItemId(10));
+    world.add_character(character);
+    let mut item = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::WNHEAD);
+    item.needs_class = 2;
+    world.add_item(item);
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::HEAD as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+}
+
+#[test]
+fn inventory_swap_rejects_item_below_stat_requirement() {
+    // C `check_requirements` (`src/system/tool.c:959-963`): negative
+    // `mod_index` entries are read against `value[1]` (base, not
+    // equipment-modified) and reject the wear if the character falls
+    // short.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.values[1][CharacterValue::Strength as usize] = 12;
+    character.cursor_item = Some(ItemId(10));
+    world.add_character(character);
+    let mut item = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::WNHEAD);
+    item.modifier_index[0] = -(CharacterValue::Strength as i16);
+    item.modifier_value[0] = 20;
+    world.add_item(item);
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::HEAD as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+}
+
+#[test]
+fn inventory_swap_rejects_two_handed_weapon_into_right_hand_when_left_hand_occupied() {
+    // C `can_wear` (`src/system/tool.c:1086-1094`): a two-handed weapon
+    // (`IF_WNTWOHANDED`) cannot go into `WN_RHAND` while `WN_LHAND` is
+    // occupied by anything (a shield, torch, etc).
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(10));
+    character.inventory[worn_slot::LEFT_HAND] = Some(ItemId(20));
+    world.add_character(character);
+    world.add_item(test_item(
+        ItemId(10),
+        100,
+        ItemFlags::USED | ItemFlags::WNRHAND | ItemFlags::WNTWOHANDED,
+    ));
+    world.add_item(test_item(
+        ItemId(20),
+        200,
+        ItemFlags::USED | ItemFlags::WNLHAND,
+    ));
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::RIGHT_HAND as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+    assert_eq!(
+        world.characters[&character_id].inventory[worn_slot::RIGHT_HAND],
+        None
+    );
+}
+
+#[test]
+fn inventory_swap_allows_two_handed_weapon_into_right_hand_when_left_hand_empty() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(10));
+    world.add_character(character);
+    world.add_item(test_item(
+        ItemId(10),
+        100,
+        ItemFlags::USED | ItemFlags::WNRHAND | ItemFlags::WNTWOHANDED,
+    ));
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::RIGHT_HAND as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Changed);
+    assert_eq!(
+        world.characters[&character_id].inventory[worn_slot::RIGHT_HAND],
+        Some(ItemId(10))
+    );
+}
+
+#[test]
+fn inventory_swap_rejects_left_hand_item_when_right_hand_holds_two_handed_weapon() {
+    // C `can_wear` (`src/system/tool.c:1077-1080`): `WN_LHAND` is blocked
+    // outright whenever `WN_RHAND` holds an `IF_WNTWOHANDED` item.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(10));
+    character.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(20));
+    world.add_character(character);
+    world.add_item(test_item(
+        ItemId(10),
+        100,
+        ItemFlags::USED | ItemFlags::WNLHAND,
+    ));
+    world.add_item(test_item(
+        ItemId(20),
+        200,
+        ItemFlags::USED | ItemFlags::WNRHAND | ItemFlags::WNTWOHANDED,
+    ));
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::LEFT_HAND as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+}
+
+#[test]
+fn inventory_swap_unequip_ignores_wear_requirements() {
+    // C `swap`: `can_wear` is only invoked when the cursor holds an item
+    // (`if ((in = ch[cn].citem))`); taking a worn item off (empty cursor)
+    // never re-checks wear requirements.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.inventory[worn_slot::HEAD] = Some(ItemId(10));
+    world.add_character(character);
+    // No WN* flags at all - could never have been worn through `can_wear`,
+    // but an empty-cursor swap must still be able to take it off.
+    world.add_item(test_item(ItemId(10), 100, ItemFlags::USED));
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::HEAD as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Changed);
+    let character = &world.characters[&character_id];
+    assert_eq!(character.cursor_item, Some(ItemId(10)));
+    assert_eq!(character.inventory[worn_slot::HEAD], None);
+}
+
+#[test]
 fn inventory_look_uses_legacy_item_text() {
     let mut world = World::default();
     let character_id = CharacterId(7);

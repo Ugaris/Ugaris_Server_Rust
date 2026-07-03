@@ -89,3 +89,110 @@ fn world_applies_clanjewel_expiry_to_carried_inventory_item() {
     assert_eq!(character.inventory[30], None);
     assert!(character.flags.contains(CharacterFlags::ITEMS));
 }
+
+#[test]
+fn can_wear_rejects_positions_outside_the_worn_slot_range() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    world.add_item(item(9, ItemFlags::USED | ItemFlags::WNHEAD));
+
+    // C `can_wear` (`src/system/tool.c:1007-1010`): `pos < 0 || pos > 11`
+    // is an illegal call, always rejected.
+    assert!(!world.can_wear(CharacterId(1), ItemId(9), 12));
+}
+
+#[test]
+fn check_requirements_rejects_above_maximum_level() {
+    let mut world = World::default();
+    let mut wearer = character(1);
+    wearer.level = 40;
+    world.add_character(wearer);
+    let mut cap = item(9, ItemFlags::USED | ItemFlags::WNHEAD);
+    cap.max_level = 20;
+    world.add_item(cap);
+
+    // C `check_requirements` (`src/system/tool.c:969-971`): `max_level`.
+    assert!(!world.can_wear(CharacterId(1), ItemId(9), worn_slot::HEAD));
+}
+
+#[test]
+fn check_requirements_seyanddu_gate_needs_both_mage_and_warrior_flags() {
+    let mut world = World::default();
+    let mut hybrid = character(1);
+    hybrid
+        .flags
+        .insert(CharacterFlags::MAGE | CharacterFlags::WARRIOR);
+    world.add_character(hybrid);
+    let mut pure_warrior = character(2);
+    pure_warrior.flags.insert(CharacterFlags::WARRIOR);
+    world.add_character(pure_warrior);
+
+    let mut robe = item(9, ItemFlags::USED | ItemFlags::WNBODY);
+    robe.needs_class = 4; // C: "Only usable by a Seyan'Du."
+    world.add_item(robe);
+    let mut robe2 = item(10, ItemFlags::USED | ItemFlags::WNBODY);
+    robe2.needs_class = 4;
+    world.add_item(robe2);
+
+    assert!(world.can_wear(CharacterId(1), ItemId(9), worn_slot::BODY));
+    assert!(!world.can_wear(CharacterId(2), ItemId(10), worn_slot::BODY));
+}
+
+#[test]
+fn check_requirements_arch_gate_rejects_non_arch_characters() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut relic = item(9, ItemFlags::USED | ItemFlags::WNNECK);
+    relic.needs_class = 8; // C: "Only usable by an Arch."
+    world.add_item(relic);
+
+    assert!(!world.can_wear(CharacterId(1), ItemId(9), worn_slot::NECK));
+
+    let mut arch = character(2);
+    arch.flags.insert(CharacterFlags::ARCH);
+    world.add_character(arch);
+    let mut relic2 = item(10, ItemFlags::USED | ItemFlags::WNNECK);
+    relic2.needs_class = 8;
+    world.add_item(relic2);
+
+    assert!(world.can_wear(CharacterId(2), ItemId(10), worn_slot::NECK));
+}
+
+#[test]
+fn check_requirements_bondwear_restricts_to_the_bonded_owner() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut ring = item(
+        9,
+        ItemFlags::USED | ItemFlags::WNLRING | ItemFlags::BONDWEAR,
+    );
+    ring.owner_id = 999;
+    world.add_item(ring);
+
+    // C `check_requirements` (`src/system/tool.c:986-988`):
+    // `(it[in].flags & IF_BONDWEAR) && it[in].ownerID != ch[cn].ID`.
+    assert!(!world.can_wear(CharacterId(1), ItemId(9), worn_slot::LEFT_RING));
+
+    let mut ring2 = item(
+        10,
+        ItemFlags::USED | ItemFlags::WNLRING | ItemFlags::BONDWEAR,
+    );
+    ring2.owner_id = 1;
+    world.add_item(ring2);
+    assert!(world.can_wear(CharacterId(1), ItemId(10), worn_slot::LEFT_RING));
+}
+
+#[test]
+fn check_requirements_ignores_out_of_range_modifier_index_without_panicking() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut cursed = item(9, ItemFlags::USED | ItemFlags::WNFEET);
+    cursed.modifier_index[0] = i16::MIN;
+    cursed.modifier_value[0] = 5;
+    world.add_item(cursed);
+
+    // C `check_requirements` bounds-checks `mod_index` and drops illegal
+    // entries rather than indexing out of bounds; must not panic and must
+    // not spuriously block the wear.
+    assert!(world.can_wear(CharacterId(1), ItemId(9), worn_slot::FEET));
+}

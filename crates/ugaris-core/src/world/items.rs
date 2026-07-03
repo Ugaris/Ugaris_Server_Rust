@@ -219,6 +219,129 @@ impl World {
             .max(1);
         ItemId(next)
     }
+
+    /// C `can_wear` (`src/system/tool.c:994`): true if `item_id` may be
+    /// placed into worn slot `pos` (`0..=11`, `WN_*`) for `character_id` -
+    /// the item's `IF_WN*` slot flag must match `pos`, the hand slots
+    /// additionally veto two-handed conflicts (`IF_WNTWOHANDED` in the
+    /// opposite hand blocks `WN_LHAND`; a two-handed item is rejected for
+    /// `WN_RHAND` if `WN_LHAND` is occupied at all), and
+    /// `check_requirements` (min/max level, class gate, negative
+    /// modifier-index stat requirements, `IF_BONDWEAR` ownership) must
+    /// pass.
+    pub fn can_wear(&self, character_id: CharacterId, item_id: ItemId, pos: usize) -> bool {
+        if !LEGACY_EQUIPMENT_SLOTS.contains(&pos) {
+            return false;
+        }
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(item) = self.items.get(&item_id) else {
+            return false;
+        };
+
+        let right_hand_is_two_handed = character
+            .inventory
+            .get(worn_slot::RIGHT_HAND)
+            .copied()
+            .flatten()
+            .and_then(|id| self.items.get(&id))
+            .is_some_and(|item| item.flags.contains(ItemFlags::WNTWOHANDED));
+        let left_hand_occupied = character
+            .inventory
+            .get(worn_slot::LEFT_HAND)
+            .copied()
+            .flatten()
+            .is_some();
+
+        let slot_matches = match pos {
+            worn_slot::HEAD => item.flags.contains(ItemFlags::WNHEAD),
+            worn_slot::NECK => item.flags.contains(ItemFlags::WNNECK),
+            worn_slot::BODY => item.flags.contains(ItemFlags::WNBODY),
+            worn_slot::ARMS => item.flags.contains(ItemFlags::WNARMS),
+            worn_slot::BELT => item.flags.contains(ItemFlags::WNBELT),
+            worn_slot::LEGS => item.flags.contains(ItemFlags::WNLEGS),
+            worn_slot::FEET => item.flags.contains(ItemFlags::WNFEET),
+            worn_slot::CLOAK => item.flags.contains(ItemFlags::WNCLOAK),
+            worn_slot::LEFT_RING => item.flags.contains(ItemFlags::WNLRING),
+            worn_slot::RIGHT_RING => item.flags.contains(ItemFlags::WNRRING),
+            worn_slot::LEFT_HAND => {
+                !right_hand_is_two_handed && item.flags.contains(ItemFlags::WNLHAND)
+            }
+            worn_slot::RIGHT_HAND => {
+                if item.flags.contains(ItemFlags::WNTWOHANDED) {
+                    !left_hand_occupied
+                } else {
+                    item.flags.contains(ItemFlags::WNRHAND)
+                }
+            }
+            _ => false,
+        };
+        if !slot_matches {
+            return false;
+        }
+
+        check_requirements(character, item)
+    }
+}
+
+/// C `check_requirements` (`src/system/tool.c:943`): negative
+/// `modifier_index` entries are stat requirements checked against
+/// `value[1]` (the base/raised value, not the equipment-modified
+/// effective total), plus `min_level`/`max_level`/`needs_class` gates and
+/// `IF_BONDWEAR` ownership.
+pub(crate) fn check_requirements(character: &Character, item: &Item) -> bool {
+    for (&mod_index, &mod_value) in item.modifier_index.iter().zip(item.modifier_value.iter()) {
+        if mod_value == 0 || mod_index >= 0 {
+            continue;
+        }
+        // C `check_requirements` (`src/system/tool.c:952-958`): out-of-range
+        // indices (`v1 <= -V_MAX || v1 >= V_MAX`) are illegal data, cleared
+        // and skipped rather than treated as a requirement.
+        if mod_index <= -(CHARACTER_VALUE_COUNT as i16) {
+            continue;
+        }
+        let required_index = (-mod_index) as usize;
+        let current = character
+            .values
+            .get(1)
+            .and_then(|values| values.get(required_index))
+            .copied()
+            .unwrap_or_default();
+        if current < mod_value {
+            return false;
+        }
+    }
+
+    if item.min_level != 0 && character.level < u32::from(item.min_level) {
+        return false;
+    }
+    if item.max_level != 0 && character.level > u32::from(item.max_level) {
+        return false;
+    }
+
+    if item.needs_class & 1 != 0 && character.flags.contains(CharacterFlags::MAGE) {
+        return false;
+    }
+    if item.needs_class & 2 != 0 && character.flags.contains(CharacterFlags::WARRIOR) {
+        return false;
+    }
+    if item.needs_class & 4 != 0
+        && !character
+            .flags
+            .contains(CharacterFlags::MAGE | CharacterFlags::WARRIOR)
+    {
+        return false;
+    }
+    if item.needs_class & 8 != 0 && !character.flags.contains(CharacterFlags::ARCH) {
+        return false;
+    }
+
+    if item.flags.contains(ItemFlags::BONDWEAR) && item.owner_id != character.id.0 as i32 {
+        return false;
+    }
+
+    true
 }
 
 pub(crate) fn can_receive_given_item(character: &Character) -> bool {

@@ -85,6 +85,18 @@ pub(crate) fn inventory_swap_slot(
         return InventoryCommandResult::Ignored;
     }
 
+    // C `swap` (`src/system/do.c:1235`-1258`): placing a held item into a
+    // worn slot (`pos < 12`) requires `can_wear` (slot flag match, level,
+    // class, two-handed hand-conflict). Placing into the spell range
+    // (`12..30`) is always illegal from a non-empty cursor - callers
+    // already exclude that range via `can_use_inventory_slot`, matching
+    // the `else` branch that only re-validates when the cursor is empty.
+    if let Some(item_id) = cursor_id {
+        if slot < 12 && !world.can_wear(character_id, item_id, slot) {
+            return InventoryCommandResult::Ignored;
+        }
+    }
+
     if let Some(item_id) = cursor_id {
         if let Some(item) = world.items.get_mut(&item_id) {
             item.carried_by = Some(character_id);
