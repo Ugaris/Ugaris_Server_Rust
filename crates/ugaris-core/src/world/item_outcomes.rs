@@ -2273,6 +2273,22 @@ impl World {
                 self.update_character(character_id);
                 outcome
             }
+            ItemDriverOutcome::LollipopLicked {
+                character_id,
+                exp_added,
+                ..
+            } => {
+                // C `lollipop` (`base.c:3250`) calls `give_exp(cn, ...)`,
+                // not a raw `ch[cn].exp +=`; see the doc comment on the
+                // `lollipop_driver` call site (`item_driver/food.rs`) for
+                // why the grant happens here instead of in the driver.
+                self.give_exp(
+                    character_id,
+                    i64::from(exp_added),
+                    u32::from(current_area_id),
+                );
+                outcome
+            }
             _ => outcome,
         }
     }

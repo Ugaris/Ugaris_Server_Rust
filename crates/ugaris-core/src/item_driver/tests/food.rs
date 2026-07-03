@@ -65,7 +65,10 @@ fn execute_food_driver_consumes_simple_food_and_ports_special_food() {
         lollipop.description,
         "A sweet lollipop. Well, it's already used."
     );
-    assert_eq!(character.exp, 13);
+    // `exp_added` is granted by `World::give_exp` via the `LollipopLicked`
+    // outcome (see `world/tests/item_outcomes.rs`), not mutated in the bare
+    // `&mut Character` driver call, so `character.exp` is unchanged here.
+    assert_eq!(character.exp, 7);
     assert!(lollipop.flags.contains(ItemFlags::USED));
 
     lollipop.driver_data[1] = 7;

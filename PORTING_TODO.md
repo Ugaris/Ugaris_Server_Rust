@@ -709,19 +709,64 @@ suggestion; dependencies are noted.
     `world/tests/item_outcomes.rs::stat_scroll_use_triggers_check_levelup`
     raises a cheap skill from a low bare value and asserts the character's
     `level` field actually increments, not just `exp`.
-  - REMAINING: the level-10-multiple "Grats" server-wide broadcast
-    (`server_chat(6, ...)`), `achievement_check_level`, and
-    `reset_name(cn)` have no Rust equivalents anywhere (documented as gaps
-    in `check_levelup`'s doc comment, not silently dropped). Every other
-    direct-mutation exp grant site still bypasses `give_exp`/
-    `check_levelup` entirely (no hardcore/exp_modifier/NOEXP/NOLEVEL
-    handling, no level-up): `area_apply.rs`'s four random-shrine reward
-    sites, `main.rs`'s inline quest/area reward grants (~4 sites),
-    `item_driver/food.rs`'s food exp bonus, `player.rs:2921`, and
-    `commands_admin.rs`'s `/milexp` command. Porting those needs a
-    `World`-level `give_exp` entry point usable from `ugaris-core` item
-    drivers too (today the modifiers live only in the server-crate
-    wrapper), which is a larger follow-up slice.
+   - REMAINING: the level-10-multiple "Grats" server-wide broadcast
+     (`server_chat(6, ...)`), `achievement_check_level`, and
+     `reset_name(cn)` have no Rust equivalents anywhere (documented as gaps
+     in `check_levelup`'s doc comment, not silently dropped).
+   - Iteration 22: ported the canonical `World::give_exp(character_id,
+     base_exp, area_id)` (C `give_exp` `tool.c:1371-1423`) into
+     `ugaris-core/src/world/exp.rs` - the full algorithm (hardcore/global
+     multipliers now read from `self.settings.exp_modifier`/
+     `hardcore_exp_bonus`, the `CF_NOEXP`/area-21 no-op gate, the
+     `CF_NOLEVEL` exp-band clamp, the i32 range clamp, the
+     decrease-prevention guard, and the `check_levelup` tail call) so it is
+     usable from `ugaris-core` item drivers, which only ever have `&mut
+     World` (not `ServerRuntime`). Made `world.settings.exp_modifier`/
+     `hardcore_exp_bonus` the single source of truth: removed the
+     duplicate `ServerRuntime::exp_modifier`/`hardcore_exp_bonus` fields
+     (server crate never read `world.settings` before this, so the two
+     copies would otherwise silently diverge) and repointed
+     `/setexpmod`/`/sethardcoreexpbonus` to mutate `world.settings`
+     directly; `commands_admin.rs::give_exp_with_runtime_modifiers` is now
+     a thin `world.give_exp` wrapper. Wired two of the six remaining
+     direct-mutation call sites named in the previous note: `/milexp`
+     (`commands_admin.rs`, C `cmd_milexp`/`give_military_pts_no_npc`
+     `command.c:3014`/`tool.c:3281`) now routes its fixed `give_exp(co, 1)`
+     call through `World::give_exp` instead of a raw `+= 1`, and also fixed
+     a latent bug found while reading the C source: the hardcore
+     `military_points` multiplier was hardcoded to `1.10` instead of
+     reading the already-live-tunable `runtime.hardcore_military_exp_bonus`
+     (default 1.10, so previously invisible unless an admin changed it).
+     `item_driver/food.rs`'s lollipop exp bonus (C `lollipop` `base.c:3250`
+     calling `give_exp`) no longer mutates `character.exp` directly inside
+     the driver (which only has `&mut Character`); the driver now returns
+     the base amount via `ItemDriverOutcome::LollipopLicked.exp_added` and
+     `World::apply_item_driver_outcome`'s new arm
+     (`world/item_outcomes.rs`) grants it through `self.give_exp`, matching
+     the existing `StatScrollUsed` outcome-based pattern. Also fixed
+     `ugaris-core/src/player.rs::touch_demonshrine` (C `demonshrine_driver`
+     `base.c:3189-3235`, the `player.rs:2921` site named in the previous
+     note): it previously mutated `character.exp` directly too (missing
+     the multipliers/`CF_NOEXP`/`check_levelup`, and never called
+     `update_char` for the Demon value bump either); it now only mutates
+     the Demon value/`CF_ITEMS` and returns `exp_added` unapplied, with the
+     `ItemDriverOutcome::DemonShrine` handler in `ugaris-server/src/
+     main.rs` calling `World::update_character` then `World::give_exp`,
+     matching C's `update_char(cn); give_exp(cn, ...);` call order exactly.
+     Tests: `world/tests/exp.rs` (`give_exp_*`, 8 new cases covering the
+     modifier math, `NOEXP`/area-21 gates, `NOLEVEL` clamp both directions,
+     the decrease-prevention guard, and the `check_levelup` tail call),
+     `world/tests/item_outcomes.rs::lollipop_lick_grants_exp_through_give_exp_not_a_raw_mutation`,
+     `tests/commands_admin.rs::milexp_routes_its_fixed_one_exp_through_give_exp_and_honors_runtime_military_bonus`,
+     updated `player::tests::demonshrine_touch_updates_value_and_blocks_repeats`
+     to assert the caller-side application contract.
+     STILL REMAINING: `area_apply.rs`'s four random-shrine reward sites and
+     `main.rs`'s inline quest/area reward grants (~4 sites) still bypass
+     `give_exp`/`check_levelup` entirely (no hardcore/exp_modifier/NOEXP/
+     NOLEVEL handling, no level-up). Each is server-crate-only code with
+     `&mut World` already in scope, so wiring them is now a mechanical
+     `world.give_exp(...)` swap-in, no further infrastructure needed - a
+     good next slice.
 
 - [ ] **Ground item decay** - dropped items never disappear (bodies do).
   C: `set_expire(in, item_decay_time)` on player drops (`act_drop`) and
@@ -1118,3 +1163,25 @@ Add one line per completed task: date, task, ledger section touched.
   stat-scroll `raise_value_exp`'s `check_levelup` call, the "Grats"
   broadcast, achievements, `reset_name`, and ~7 other direct-mutation exp
   grant sites still bypass level-up entirely - see the todo note.
+- 2026-07-03: Experience/level-up side effects (P1, partial, iteration 22) -
+  ported the canonical `World::give_exp` (C `give_exp` `tool.c:1371-1423`)
+  into `crates/ugaris-core/src/world/exp.rs`, making `world.settings.
+  exp_modifier`/`hardcore_exp_bonus` the single source of truth (removed
+  the duplicate `ServerRuntime` copies); `commands_admin.rs::
+  give_exp_with_runtime_modifiers` is now a thin wrapper. Wired two more
+  direct-mutation exp sites through it: `/milexp`
+  (`commands_admin.rs`, also fixed a hardcoded `1.10` hardcore-military
+  multiplier that should have read the live-tunable
+  `hardcore_military_exp_bonus`) and the demon-shrine book
+  (`ugaris-core/src/player.rs::touch_demonshrine` + its
+  `ItemDriverOutcome::DemonShrine` caller in `main.rs`, which now also
+  calls the previously-missing `update_char` for the Demon value bump);
+  also wired `item_driver/food.rs`'s lollipop exp bonus through the new
+  `ItemDriverOutcome::LollipopLicked` arm in `world/item_outcomes.rs`. 11
+  new/updated tests across `world/tests/exp.rs`,
+  `world/tests/item_outcomes.rs`, `tests/commands_admin.rs`, and
+  `player.rs`; ledger section "Ralph Loop - Experience/Level-Up Side
+  Effects" extended. REMAINING: `area_apply.rs`'s four random-shrine
+  reward sites and `main.rs`'s ~4 inline quest/area reward grants still
+  bypass `give_exp` - each just needs a mechanical `world.give_exp(...)`
+  swap-in now that the infrastructure exists.

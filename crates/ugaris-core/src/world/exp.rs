@@ -39,6 +39,72 @@ pub fn level_value(level: u32) -> u32 {
 }
 
 impl World {
+    /// C `give_exp(cn, val)` (`src/system/tool.c:1371-1423`): the canonical
+    /// experience-grant entry point. Applies the hardcore/global exp
+    /// multipliers (`self.settings.hardcore_exp_bonus`/`exp_modifier`),
+    /// respects `CF_NOEXP` and the area-21 (arena) exp-disabled zone,
+    /// clamps `CF_NOLEVEL` characters to their current level's exp band,
+    /// prevents an unexpected decrease from a positive grant, and calls
+    /// `check_levelup` unless `CF_NOLEVEL` is set - matching the C function
+    /// line for line.
+    ///
+    /// This is the single copy for use both from server-crate call sites
+    /// (which previously duplicated this logic in
+    /// `ugaris-server/src/commands_admin.rs::give_exp_with_runtime_modifiers`,
+    /// now a thin wrapper) and from `ugaris-core` item drivers, which only
+    /// have `&mut World` (not `ServerRuntime`) available.
+    ///
+    /// Documented gap: C's trailing `macro_track_exp_gain(cn)` anti-macro
+    /// activity tracker has no Rust equivalent anywhere in the tree (no
+    /// macro-daemon system is ported), so it is intentionally skipped, not
+    /// silently dropped.
+    pub fn give_exp(&mut self, character_id: CharacterId, base_exp: i64, area_id: u32) {
+        let Some(character) = self.characters.get(&character_id) else {
+            return;
+        };
+
+        let mut added_exp = base_exp as f64;
+        if character.flags.contains(CharacterFlags::HARDCORE) {
+            added_exp *= self.settings.hardcore_exp_bonus;
+        }
+        added_exp *= self.settings.exp_modifier;
+        let added_exp = added_exp as i64;
+
+        if character.flags.contains(CharacterFlags::NOEXP) || area_id == 21 {
+            return;
+        }
+
+        let current_exp = i64::from(character.exp);
+        let mut new_exp = current_exp.saturating_add(added_exp);
+
+        let no_level = character.flags.contains(CharacterFlags::NOLEVEL);
+        if no_level {
+            let current_level_exp = i64::from(level2exp(character.level));
+            let next_level_exp = i64::from(level2exp(character.level.saturating_add(1)));
+            if new_exp >= next_level_exp {
+                new_exp = next_level_exp.saturating_sub(1);
+            } else if new_exp < current_level_exp {
+                new_exp = current_level_exp;
+            }
+        }
+
+        new_exp = new_exp.clamp(i64::from(i32::MIN), i64::from(i32::MAX));
+
+        if new_exp < current_exp && added_exp > 0 {
+            new_exp = current_exp;
+        }
+
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return;
+        };
+        character.exp = new_exp.clamp(0, i64::from(u32::MAX)) as u32;
+        character.flags.insert(CharacterFlags::UPDATE);
+
+        if !no_level {
+            self.check_levelup(character_id);
+        }
+    }
+
     /// C `check_levelup(cn)` (`src/system/tool.c:1318-1356`): loop while
     /// `exp2level(max(exp, exp_used)) > level`, granting one level per
     /// iteration. Returns whether any level was gained (C's `flag`).

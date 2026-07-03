@@ -1092,3 +1092,47 @@ fn stat_scroll_use_triggers_check_levelup() {
     assert_eq!(owner.exp, 21);
     assert_eq!(owner.level, 2);
 }
+
+#[test]
+fn lollipop_lick_grants_exp_through_give_exp_not_a_raw_mutation() {
+    // C `lollipop` (`base.c:3250`) calls `give_exp(cn, ...)`, so the
+    // hardcore/global exp multipliers on `world.settings` must apply to a
+    // lollipop lick, unlike a bare `character.exp +=`.
+    let mut world = World::default();
+    world.settings.exp_modifier = 2.0;
+    let mut owner = character(1);
+    owner.level = 10;
+    owner.exp = 0;
+    owner.inventory[30] = Some(ItemId(7));
+    world.add_character(owner);
+
+    let mut lollipop = item(7, ItemFlags::USED | ItemFlags::USE);
+    lollipop.driver = crate::item_driver::IDR_FOOD;
+    lollipop.carried_by = Some(CharacterId(1));
+    lollipop.driver_data = vec![2, 0];
+    world.add_item(lollipop);
+
+    let outcome = world.execute_item_driver_request(
+        ItemDriverRequest::Driver {
+            driver: crate::item_driver::IDR_FOOD,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        1,
+    );
+
+    assert!(matches!(
+        outcome,
+        ItemDriverOutcome::LollipopLicked {
+            exp_added: 6,
+            lick_count: 1,
+            ..
+        }
+    ));
+    // lollipop_exp(level 10) == max(5, level_value(10)/750) == 6, doubled
+    // by the 2.0 `exp_modifier` -> 12.
+    let owner = &world.characters[&CharacterId(1)];
+    assert_eq!(owner.exp, 12);
+    assert!(owner.flags.contains(CharacterFlags::UPDATE));
+}

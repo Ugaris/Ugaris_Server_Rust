@@ -180,3 +180,118 @@ fn check_levelup_returns_false_for_unknown_character() {
 
     assert!(!world.check_levelup(CharacterId(42)));
 }
+
+// C `give_exp(cn, val)` (`tool.c:1371-1423`).
+#[test]
+fn give_exp_applies_global_modifier_and_marks_update() {
+    let mut world = World::default();
+    world.settings.exp_modifier = 2.0;
+    let mut player = character(1);
+    player.exp = 10;
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.give_exp(CharacterId(1), 5, 1);
+
+    let character = &world.characters[&CharacterId(1)];
+    assert_eq!(character.exp, 20); // 10 + 5*2.0
+    assert!(character.flags.contains(CharacterFlags::UPDATE));
+}
+
+#[test]
+fn give_exp_applies_hardcore_bonus_before_global_modifier() {
+    let mut world = World::default();
+    world.settings.exp_modifier = 2.0;
+    world.settings.hardcore_exp_bonus = 1.5;
+    let mut player = character(1);
+    player.exp = 0;
+    player.flags.insert(CharacterFlags::HARDCORE);
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.give_exp(CharacterId(1), 10, 1);
+
+    // C: addedExp = 10 * 1.5 (hardcore) * 2.0 (global) = 30.
+    assert_eq!(world.characters[&CharacterId(1)].exp, 30);
+}
+
+#[test]
+fn give_exp_is_a_noop_for_noexp_characters() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.exp = 10;
+    player.flags.insert(CharacterFlags::NOEXP);
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.give_exp(CharacterId(1), 100, 1);
+
+    assert_eq!(world.characters[&CharacterId(1)].exp, 10);
+}
+
+#[test]
+fn give_exp_is_a_noop_in_area_21() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.exp = 10;
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.give_exp(CharacterId(1), 100, 21);
+
+    assert_eq!(world.characters[&CharacterId(1)].exp, 10);
+}
+
+#[test]
+fn give_exp_caps_nolevel_characters_at_the_next_level_threshold() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.level = 1;
+    player.exp = level2exp(1);
+    player.flags.insert(CharacterFlags::NOLEVEL);
+    assert!(world.spawn_character(player, 10, 10));
+
+    // A huge grant would normally exceed level2exp(2) = 16.
+    world.give_exp(CharacterId(1), 1000, 1);
+
+    let character = &world.characters[&CharacterId(1)];
+    assert_eq!(character.exp, level2exp(2) - 1);
+    assert_eq!(character.level, 1, "NOLEVEL must never level up");
+}
+
+#[test]
+fn give_exp_floors_nolevel_characters_back_to_their_level_band_on_negative_grants() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.level = 2;
+    player.exp = level2exp(2);
+    player.flags.insert(CharacterFlags::NOLEVEL);
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.give_exp(CharacterId(1), -1000, 1);
+
+    assert_eq!(world.characters[&CharacterId(1)].exp, level2exp(2));
+}
+
+#[test]
+fn give_exp_prevents_unexpected_decrease_from_a_positive_grant() {
+    // C: `if (newExp < currentExp && addedExp > 0) newExp = currentExp;`
+    // guards against the i64->u32 saturating clamp ever moving exp
+    // backwards on an actual positive grant.
+    let mut world = World::default();
+    let mut player = character(1);
+    player.exp = u32::MAX;
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.give_exp(CharacterId(1), 5, 1);
+
+    assert_eq!(world.characters[&CharacterId(1)].exp, u32::MAX);
+}
+
+#[test]
+fn give_exp_triggers_check_levelup_unless_nolevel() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.exp = 0;
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.give_exp(CharacterId(1), 16, 1); // exp2level(16) == 2
+
+    assert_eq!(world.characters[&CharacterId(1)].level, 2);
+}

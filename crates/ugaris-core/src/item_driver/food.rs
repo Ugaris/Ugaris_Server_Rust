@@ -37,8 +37,13 @@ pub(crate) fn lollipop_driver(character: &mut Character, item: &mut Item) -> Ite
     set_drdata(item, 1, next_licks);
     item.sprite += 1;
 
+    // C `lollipop` (`base.c:3242-3261`) grants exp via `give_exp(cn, ...)`,
+    // not a raw `ch[cn].exp +=`, so the hardcore/global exp multipliers and
+    // `check_levelup` need to run too - that only happens with `&mut World`
+    // access, so this outcome carries the base amount and
+    // `World::apply_item_driver_outcome`'s `LollipopLicked` arm calls
+    // `World::give_exp` with it instead of mutating `character.exp` here.
     let exp_added = lollipop_exp(character.level);
-    character.exp = character.exp.saturating_add(exp_added);
 
     if next_licks == 1 {
         item.description = "A sweet lollipop. Well, it's already used.".to_string();

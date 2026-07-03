@@ -2918,10 +2918,14 @@ impl PlayerRuntime {
         };
         let exp_added =
             (250_u32.saturating_add(new_demon.saturating_mul(100))).min(character.exp / 25);
-        character.exp = character.exp.saturating_add(exp_added);
-        character
-            .flags
-            .insert(CharacterFlags::UPDATE | CharacterFlags::ITEMS);
+        // C `demonshrine_driver` (`base.c:3231-3235`) also calls
+        // `update_char(cn)` (Demon value changed) and `give_exp(cn, ...)`
+        // after this point; this function only has `&mut Character`
+        // (`PlayerData` is not `World`), so both are applied by the caller
+        // (`World::give_exp`/`World::update_character`) using the returned
+        // `exp_added`, matching the `ItemDriverOutcome::LollipopLicked`
+        // pattern in `world/item_outcomes.rs`.
+        character.flags.insert(CharacterFlags::ITEMS);
         DemonShrineResult::Learned { exp_added }
     }
 
@@ -4809,7 +4813,7 @@ mod tests {
     }
 
     #[test]
-    fn demonshrine_touch_updates_value_exp_and_blocks_repeats() {
+    fn demonshrine_touch_updates_value_and_blocks_repeats() {
         let mut player = PlayerRuntime::connected(1, 0);
         let mut character = character(3);
         character.exp = 10_000;
@@ -4819,8 +4823,16 @@ mod tests {
             DemonShrineResult::Learned { exp_added: 350 }
         );
         assert_eq!(character.values[1][CharacterValue::Demon as usize], 1);
-        assert_eq!(character.exp, 10_350);
-        assert!(character.flags.contains(CharacterFlags::UPDATE));
+        // C `demonshrine_driver` (`base.c:3231-3235`) applies the returned
+        // `exp_added` via `give_exp`/`update_char`, both of which need
+        // `&mut World` and so are the caller's responsibility
+        // (`World::give_exp`/`World::update_character`, wired at the
+        // `ItemDriverOutcome::DemonShrine` call site in
+        // `ugaris-server/src/main.rs`) - `touch_demonshrine` itself no
+        // longer mutates `character.exp`, only the Demon value and
+        // `CF_ITEMS`.
+        assert_eq!(character.exp, 10_000);
+        assert!(!character.flags.contains(CharacterFlags::UPDATE));
         assert!(character.flags.contains(CharacterFlags::ITEMS));
         assert_eq!(
             player.touch_demonshrine(&mut character, 0x0001_0203),

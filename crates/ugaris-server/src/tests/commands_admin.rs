@@ -1267,7 +1267,7 @@ fn god_setexpmod_updates_runtime_with_legacy_feedback() {
         apply_admin_character_command(&mut world, &mut runtime, god_id, "/setexpmod 2.5xyz", 1)
             .expect("god setexpmod should be recognized");
 
-    assert_eq!(runtime.exp_modifier, 2.5);
+    assert_eq!(world.settings.exp_modifier, 2.5);
     assert_eq!(
         result.messages,
         vec!["Global experience modifier changed from 1.00 to 2.50"]
@@ -1276,7 +1276,7 @@ fn god_setexpmod_updates_runtime_with_legacy_feedback() {
     let invalid =
         apply_admin_character_command(&mut world, &mut runtime, god_id, "/setexpmod 0.09", 1)
             .expect("god setexpmod should handle invalid values");
-    assert_eq!(runtime.exp_modifier, 2.5);
+    assert_eq!(world.settings.exp_modifier, 2.5);
     assert_eq!(
         invalid.messages,
         vec!["Invalid value. Please specify a number between 0.1 and 1000.0"]
@@ -1338,7 +1338,7 @@ fn god_sethardcore_bonus_commands_match_legacy_ranges_and_feedback() {
         1,
     )
     .expect("god hardcore exp bonus command should be recognized");
-    assert_eq!(runtime.hardcore_exp_bonus, 2.25);
+    assert_eq!(world.settings.hardcore_exp_bonus, 2.25);
     assert_eq!(
         exp.messages,
         vec!["Hardcore experience bonus changed from 1.00 to 2.25"]
@@ -1394,7 +1394,7 @@ fn god_sethardcore_bonus_commands_match_legacy_ranges_and_feedback() {
         1,
     )
     .expect("invalid hardcore exp bonus should still be handled");
-    assert_eq!(runtime.hardcore_exp_bonus, 2.25);
+    assert_eq!(world.settings.hardcore_exp_bonus, 2.25);
     assert_eq!(
         invalid_exp.messages,
         vec!["Invalid value. Please specify a number between 0.1 and 1000.0"]
@@ -1980,8 +1980,8 @@ fn god_exp_command_uses_runtime_exp_modifiers_and_legacy_gates() {
     world.add_character(capped);
 
     let mut runtime = ServerRuntime::default();
-    runtime.exp_modifier = 2.0;
-    runtime.hardcore_exp_bonus = 1.5;
+    world.settings.exp_modifier = 2.0;
+    world.settings.hardcore_exp_bonus = 1.5;
 
     apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Target 10", 1)
         .expect("god exp target grant should be recognized");
@@ -2092,6 +2092,40 @@ fn god_milexp_command_reports_and_grants_military_points() {
         apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp Target", 1)
             .expect("god milexp target report should be recognized");
     assert_eq!(target_report.messages, vec!["Target has 201 exp."]);
+}
+
+#[test]
+fn milexp_routes_its_fixed_one_exp_through_give_exp_and_honors_runtime_military_bonus() {
+    // C `cmd_milexp` -> `give_military_pts_no_npc(co, val, 1)`
+    // (`command.c:3048`, `tool.c:3281-3299`): the exp side is always a
+    // fixed `1` through `give_exp` (so `exp_modifier`/`hardcore_exp_bonus`
+    // apply), while `military_points` uses the typed amount multiplied by
+    // the separately-tunable `hardcore_military_exp_bonus`.
+    let mut world = World::default();
+    world.settings.exp_modifier = 3.0;
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
+    target.exp = 0;
+    target.flags.insert(CharacterFlags::HARDCORE);
+    world.add_character(god);
+    world.add_character(target);
+    let mut runtime = ServerRuntime::default();
+    runtime.hardcore_military_exp_bonus = 2.0;
+
+    apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp Target 50", 1)
+        .expect("god milexp target grant should be recognized");
+
+    let target = world.characters.get(&target_id).unwrap();
+    // give_exp(co, 1) with exp_modifier 3.0 (no hardcore_exp_bonus set,
+    // defaults to 1.0) -> +3, not the raw +1 a bare mutation would give.
+    assert_eq!(target.exp, 3);
+    assert_eq!(target.military_normal_exp, 1);
+    // 50 * hardcore_military_exp_bonus(2.0) = 100, not the old hardcoded
+    // 1.10 multiplier.
+    assert_eq!(target.military_points, 100);
 }
 
 #[test]

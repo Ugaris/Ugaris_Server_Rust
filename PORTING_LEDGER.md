@@ -1665,3 +1665,116 @@ Recommended next chest steps:
   (this change touches character recompute, which runs on login/equip):
   "entering Rust game loop" appeared, ticked cleanly to tick 31, no
   panics.
+
+## Ralph Loop - Experience/Level-Up Side Effects (Iteration 22)
+
+- Resumed the P1 "Experience/level-up side effects" task (`- [~]`) and
+  closed the infrastructure gap its iteration-19/20 notes called out: C
+  `give_exp(cn, val)` (`src/system/tool.c:1371-1423`) itself had no Rust
+  equivalent - only the server-crate wrapper
+  `commands_admin.rs::give_exp_with_runtime_modifiers` duplicated its
+  logic, unusable from `ugaris-core` item drivers (which only ever get
+  `&mut World`, never `&mut ServerRuntime`).
+- Ported the full C `give_exp` algorithm as `World::give_exp` in the new
+  canonical spot, `crates/ugaris-core/src/world/exp.rs`: the
+  `CF_HARDCORE`/global `exp_modifier` multiplier chain, the
+  `CF_NOEXP`/area-21 no-op gate, the `CF_NOLEVEL` exp-band clamp (floors
+  at the current level's `level2exp` and ceils at `next_level2exp - 1`),
+  the i32-range clamp (C's `long long` -> `int` cast, INT_MAX/INT_MIN),
+  the "prevent an unexpected decrease from a positive grant" guard, and
+  the `check_levelup` tail call gated on `!CF_NOLEVEL`. The trailing C
+  `macro_track_exp_gain(cn)` anti-macro-daemon hook is documented as an
+  intentional gap on the function doc comment - no macro-daemon system
+  exists anywhere in the Rust tree to track activity for.
+- **Single source of truth for the exp multipliers.** `World` already
+  carried a `settings: GameSettings` field with `exp_modifier`/
+  `hardcore_exp_bonus` (defaulting to 1.0, matching C's defaults), but the
+  server crate never read or wrote it - the live-tunable `/setexpmod`/
+  `/sethardcoreexpbonus` admin commands instead mutated two duplicate
+  fields on `ServerRuntime`. For `World::give_exp` to see the live-tunable
+  values without silently diverging from the server-crate call sites,
+  removed the `ServerRuntime::exp_modifier`/`hardcore_exp_bonus` fields
+  entirely and repointed both admin commands
+  (`crates/ugaris-server/src/commands_admin.rs`) to mutate
+  `world.settings.exp_modifier`/`hardcore_exp_bonus` directly. Both
+  commands already had `world: &mut World` in scope
+  (`apply_admin_character_command`'s signature), so this was a
+  same-function field-path swap, not a signature change.
+  `commands_admin.rs::give_exp_with_runtime_modifiers` is now a two-line
+  wrapper around `world.give_exp` (kept only so call sites still read like
+  their C `give_exp(cn, val)` counterparts); its two existing callers
+  (killer-exp in `main.rs`'s tick loop, `/god exp`) needed only their now-
+  unused `&runtime` argument dropped.
+- **Wired two more direct-mutation exp sites named in the iteration 19/20
+  "STILL REMAINING" list through `give_exp`:**
+  - `/milexp` (`commands_admin.rs`, C `cmd_milexp`/
+    `give_military_pts_no_npc` `command.c:3014`/`tool.c:3281-3299`): C's
+    `give_military_pts_no_npc(co, val, 1)` grants a **fixed** `1` exp via
+    `give_exp` (independent of the typed `val` amount, which instead goes
+    to `military_points`) - the Rust command previously did a raw
+    `target.exp = target.exp.saturating_add(1)`, bypassing every
+    multiplier/gate/level-up. Now calls `world.give_exp(target_id, 1,
+    area_id)`. While reading the C source line-by-line for this fix, also
+    found and fixed a real latent bug: the hardcore `military_points`
+    multiplier was hardcoded to `1.10` in Rust instead of reading the
+    already-live-tunable `runtime.hardcore_military_exp_bonus` field
+    (default 1.10 too, so the bug was invisible unless an admin actually
+    ran `/sethardcoremilexpbonus`).
+  - The demon-shrine book driver (`ugaris-core/src/player.rs::
+    touch_demonshrine`, C `demonshrine_driver` `base.c:3189-3235`, the
+    `player.rs:2921` site the iteration-19/20 notes named): C calls
+    `update_char(cn)` (for the Demon value bump) then `give_exp(cn, ...)`;
+    the previous Rust port did neither, mutating `character.exp` raw and
+    never recomputing derived stats. Since `touch_demonshrine` only has
+    `&mut Character` (it is a `PlayerData` method, not a `World` one), it
+    now returns `exp_added` unapplied (via the existing
+    `DemonShrineResult::Learned { exp_added }` variant) and its caller -
+    the `ItemDriverOutcome::DemonShrine` arm in `ugaris-server/src/
+    main.rs`'s tick loop - calls `World::update_character` then
+    `World::give_exp` in that order, matching C exactly.
+  - `item_driver/food.rs`'s lollipop exp bonus (C `lollipop`
+    `base.c:3242-3261`, calling `give_exp`) had the same shape of bug: the
+    bare-`&mut Character` driver mutated `character.exp` raw. It now
+    leaves `character.exp` untouched and only returns the base amount via
+    the existing `ItemDriverOutcome::LollipopLicked.exp_added` field; a
+    new arm added to `World::apply_item_driver_outcome`
+    (`world/item_outcomes.rs`) calls `self.give_exp` with it, following
+    the exact same outcome-based pattern iteration 18/20 established for
+    `ItemDriverOutcome::StatScrollUsed`.
+- Tests: 8 new cases in `world/tests/exp.rs`
+  (`give_exp_applies_global_modifier_and_marks_update`,
+  `give_exp_applies_hardcore_bonus_before_global_modifier`,
+  `give_exp_is_a_noop_for_noexp_characters`,
+  `give_exp_is_a_noop_in_area_21`,
+  `give_exp_caps_nolevel_characters_at_the_next_level_threshold`,
+  `give_exp_floors_nolevel_characters_back_to_their_level_band_on_negative_grants`,
+  `give_exp_prevents_unexpected_decrease_from_a_positive_grant`,
+  `give_exp_triggers_check_levelup_unless_nolevel`); new
+  `world/tests/item_outcomes.rs::lollipop_lick_grants_exp_through_give_exp_not_a_raw_mutation`;
+  new
+  `tests/commands_admin.rs::milexp_routes_its_fixed_one_exp_through_give_exp_and_honors_runtime_military_bonus`;
+  updated the two `god_setexpmod_updates_runtime_with_legacy_feedback`-
+  style tests and `god_exp_command_uses_runtime_exp_modifiers_and_legacy_gates`
+  to assert against `world.settings.*` instead of the now-removed
+  `runtime.*` fields; renamed and updated
+  `player::tests::demonshrine_touch_updates_value_and_blocks_repeats` to
+  assert the new caller-applies-the-exp contract; updated
+  `item_driver/tests/food.rs`'s lollipop assertion the same way.
+- **STILL REMAINING** (unchanged in shape from the iteration 19/20 notes,
+  four sites left instead of seven): `area_apply.rs`'s four random-shrine
+  reward sites and `main.rs`'s ~4 inline quest/area reward grants still do
+  raw `character.exp +=` instead of `world.give_exp(...)`. Every one of
+  them already has `&mut World` in scope (they are server-crate,
+  non-item-driver code), so closing this task fully is now a mechanical
+  swap-in at each site plus a test per site - no further infrastructure
+  work is needed, unlike the item-driver sites this iteration closed. The
+  level-10 "Grats" broadcast, `achievement_check_level`, and `reset_name`
+  gaps inside `check_levelup` itself (documented since iteration 19)
+  remain unchanged.
+- Full workspace suite (1105 + 9 + 3 + 33 + 341 = 1491 tests across all
+  crates, 0 failed), `cargo fmt --all`, and `cargo build -p ugaris-server`
+  (zero warnings) all pass. Boot-smoked
+  `target/debug/ugaris-server --bind-addr 127.0.0.1:5556` for 10 seconds
+  (this change touches item-driver dispatch and an admin-command-reachable
+  runtime field): "entering Rust game loop" appeared, ticked cleanly with
+  no panics.

@@ -197,8 +197,6 @@ struct ServerRuntime {
     next_character_id: u32,
     dlight_override: i32,
     show_attack: bool,
-    exp_modifier: f64,
-    hardcore_exp_bonus: f64,
     hardcore_military_exp_bonus: f64,
     hardcore_kill_exp_bonus: f64,
     xmas_special_override: Option<i32>,
@@ -237,8 +235,6 @@ impl Default for ServerRuntime {
             next_character_id: 0,
             dlight_override: 0,
             show_attack: false,
-            exp_modifier: settings.exp_modifier,
-            hardcore_exp_bonus: settings.hardcore_exp_bonus,
             hardcore_military_exp_bonus: settings.hardcore_military_exp_bonus,
             hardcore_kill_exp_bonus: settings.hardcore_kill_exp_bonus,
             xmas_special_override: None,
@@ -835,7 +831,6 @@ async fn main() -> anyhow::Result<()> {
                         &mut world,
                         award.killer_id,
                         i64::from(award.exp),
-                        &runtime,
                         u32::from(area_id),
                     );
                 }
@@ -2868,7 +2863,12 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                             };
                                             match result {
-                                                DemonShrineResult::Learned { .. } => {
+                                                DemonShrineResult::Learned { exp_added } => {
+                                                    // C `demonshrine_driver` (`base.c:3231-3235`):
+                                                    // `update_char(cn)` after the Demon value bump,
+                                                    // then `give_exp(cn, ...)`.
+                                                    world.update_character(character_id);
+                                                    world.give_exp(character_id, i64::from(exp_added), u32::from(args.area_id));
                                                     feedback.push((character_id, "You study the old book and learn something about the ancient tribes. Your Ancient Knowledge went up by one and you gained experience.".to_string()));
                                                     executed += 1;
                                                 }

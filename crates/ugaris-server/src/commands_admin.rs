@@ -1,51 +1,21 @@
 use super::*;
 
-/// C `give_exp(cn, val)` (`src/system/tool.c:1371-1423`). The two
-/// runtime-tunable multipliers (`exp_modifier`, `hardcore_exp_bonus`) live
-/// on `ServerRuntime`, not `ugaris-core`'s `World`, so this wrapper stays in
-/// the server crate; it now also runs the C tail call
-/// `if (!(ch[cn].flags & CF_NOLEVEL)) check_levelup(cn);` via
-/// `World::check_levelup` (`ugaris-core/src/world/exp.rs`), which was
-/// previously entirely unwired.
+/// C `give_exp(cn, val)` (`src/system/tool.c:1371-1423`). Thin wrapper
+/// around the canonical `World::give_exp` (`ugaris-core/src/world/exp.rs`),
+/// which now owns the full algorithm (multipliers read from
+/// `world.settings.exp_modifier`/`hardcore_exp_bonus`, the `CF_NOLEVEL`
+/// exp-band clamp, and the `check_levelup` tail call) so it is usable both
+/// from server-crate call sites and from `ugaris-core` item drivers, which
+/// only ever have `&mut World` available. Kept as a named wrapper (rather
+/// than inlining `world.give_exp` at every call site) purely so call sites
+/// read the same as their C `give_exp(cn, val)` counterparts.
 pub(crate) fn give_exp_with_runtime_modifiers(
     world: &mut World,
     character_id: CharacterId,
     base_exp: i64,
-    runtime: &ServerRuntime,
     area_id: u32,
 ) {
-    let Some(character) = world.characters.get_mut(&character_id) else {
-        return;
-    };
-    let mut added = base_exp as f64;
-    if character.flags.contains(CharacterFlags::HARDCORE) {
-        added *= runtime.hardcore_exp_bonus;
-    }
-    added *= runtime.exp_modifier;
-    let added = added as i64;
-
-    if character.flags.contains(CharacterFlags::NOEXP) || area_id == 21 {
-        return;
-    }
-
-    let mut new_exp = i64::from(character.exp).saturating_add(added);
-    let no_level = character.flags.contains(CharacterFlags::NOLEVEL);
-    if no_level {
-        let current_level_exp = i64::from(level2exp(character.level));
-        let next_level_exp = i64::from(level2exp(character.level.saturating_add(1)));
-        if new_exp >= next_level_exp {
-            new_exp = next_level_exp.saturating_sub(1);
-        } else if new_exp < current_level_exp {
-            new_exp = current_level_exp;
-        }
-    }
-
-    character.exp = new_exp.clamp(0, i64::from(u32::MAX)) as u32;
-    character.flags.insert(CharacterFlags::UPDATE);
-
-    if !no_level {
-        world.check_levelup(character_id);
-    }
+    world.give_exp(character_id, base_exp, area_id);
 }
 
 pub(crate) fn legacy_lookup_skill(input: &str) -> Option<i16> {
@@ -1164,8 +1134,8 @@ pub(crate) fn apply_admin_character_command(
 
         let value = legacy_atof_prefix(rest);
         if (0.1..=1000.0).contains(&value) {
-            let old_value = runtime.exp_modifier;
-            runtime.exp_modifier = value;
+            let old_value = world.settings.exp_modifier;
+            world.settings.exp_modifier = value;
             return Some(KeyringCommandResult {
                 messages: vec![format!(
                     "Global experience modifier changed from {old_value:.2} to {value:.2}"
@@ -1192,8 +1162,8 @@ pub(crate) fn apply_admin_character_command(
 
         let value = legacy_atof_prefix(rest);
         if (0.1..=1000.0).contains(&value) {
-            let old_value = runtime.hardcore_exp_bonus;
-            runtime.hardcore_exp_bonus = value;
+            let old_value = world.settings.hardcore_exp_bonus;
+            world.settings.hardcore_exp_bonus = value;
             return Some(KeyringCommandResult {
                 messages: vec![format!(
                     "Hardcore experience bonus changed from {old_value:.2} to {value:.2}"
@@ -1440,7 +1410,7 @@ pub(crate) fn apply_admin_character_command(
             });
         }
         if exp != 0 {
-            give_exp_with_runtime_modifiers(world, target_id, exp, runtime, area_id);
+            give_exp_with_runtime_modifiers(world, target_id, exp, area_id);
             let target = world
                 .characters
                 .get(&target_id)
@@ -1471,18 +1441,27 @@ pub(crate) fn apply_admin_character_command(
         }
 
         let (target_id, target_name, exp) = parse_exp_command_target(world, character_id, rest);
-        let Some(target) = world.characters.get_mut(&target_id) else {
+        if !world.characters.contains_key(&target_id) {
             return Some(KeyringCommandResult {
                 messages: vec![format!("Sorry, no one by the name {target_name} around.")],
                 ..Default::default()
             });
-        };
+        }
         if exp != 0 {
-            target.exp = target.exp.saturating_add(1);
+            // C `cmd_milexp` -> `give_military_pts_no_npc(co, val, 1)`
+            // (`command.c:3048`, `tool.c:3281-3299`): `pts` is the typed
+            // amount (goes to `military_points`, hardcore-multiplied by
+            // `hardcore_military_exp_bonus`), while `exps` is a *fixed* `1`
+            // that routes through `give_exp` (and `normal_exp`), regardless
+            // of the typed amount.
+            world.give_exp(target_id, 1, area_id);
+            let Some(target) = world.characters.get_mut(&target_id) else {
+                return Some(KeyringCommandResult::default());
+            };
             target.military_normal_exp = target.military_normal_exp.saturating_add(1);
             let mut points = exp.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
             if target.flags.contains(CharacterFlags::HARDCORE) {
-                points = (f64::from(points) * 1.10) as i32;
+                points = (f64::from(points) * runtime.hardcore_military_exp_bonus) as i32;
             }
             target.military_points = target.military_points.saturating_add(points);
             target.flags.insert(CharacterFlags::UPDATE);
@@ -1493,6 +1472,10 @@ pub(crate) fn apply_admin_character_command(
             });
         }
 
+        let target = world
+            .characters
+            .get(&target_id)
+            .expect("target just checked");
         return Some(KeyringCommandResult {
             messages: vec![format!("{} has {} exp.", target.name, target.exp)],
             ..Default::default()
