@@ -172,6 +172,221 @@ pub fn parse_merchant_driver_args(args: &str) -> MerchantDriverData {
     data
 }
 
+//-----------------------
+// Generic NPC small-talk keyword matcher.
+//
+// C `analyse_text_driver` is duplicated near-verbatim across
+// `src/module/merchants/merchant.c`, `src/area/1/gwendylon.c`,
+// `src/module/bank.c`, `src/module/base.c`, `src/module/military.c`,
+// `src/area/16/forest.c`, `src/area/3/area3.c`, `src/area/37/arkhata.c` and
+// `src/module/orbbank/orb_bank_npc.c`. Every copy shares the same core:
+// tokenize the spoken text into lowercase words (splitting on
+// `' ' ',' ':' '?' '!' '"' '.'`), drop any word equal to the NPC's own
+// name (`strcasecmp(wordlist[w], ch[cn].name)`), then scan a `struct qa`
+// table in order for the first entry whose word pattern matches the
+// tokenized message *exactly* (same word count, same words in order -
+// the C inner loop only reports a hit when `n == w && !qa[q].word[n]`,
+// i.e. both the message and the pattern run out of words together).
+//
+// C's tokenizer is fed the *full* formatted log line (`"Name says:
+// \"text\""`) and skips a leading `alpha+space+alpha+':'+space+'"'`
+// prefix to strip the speaker name/verb before splitting into words; the
+// Rust driver messages (`push_driver_text_message`) already carry only
+// the bare spoken text, so that prefix-skip has no equivalent here.
+// C also never flushes the last accumulated word unless a delimiter
+// follows it - harmless in C because the trailing `'"'` of the quoted
+// log line always supplies one. Since our `text` has no such trailing
+// quote, we flush the final word unconditionally to keep the same
+// user-visible matching behavior.
+
+/// One `struct qa` row shared by every `analyse_text_driver` copy.
+#[derive(Debug, Clone, Copy)]
+pub struct TextQaEntry {
+    /// Lowercase word pattern (`qa[q].word[..]`), matched for an exact
+    /// (same length, same order) hit against the tokenized message.
+    pub words: &'static [&'static str],
+    /// `qa[q].answer`: a canned reply template fed to
+    /// `quiet_say(cn, answer, ch[co].name, ch[cn].name)`. `%s` placeholders
+    /// are substituted in order: speaker name, then the NPC's own name.
+    pub answer: Option<&'static str>,
+    /// `qa[q].answer_code`: reported back to the caller when `answer` is
+    /// `None`, for area-specific dialogue branches to interpret.
+    pub answer_code: i32,
+}
+
+/// Result of [`analyse_text_qa`], mirroring the two ways C
+/// `analyse_text_driver` reports a qa-table hit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextAnalysisOutcome {
+    /// Matched an entry with a canned `answer` template; text already has
+    /// `%s` placeholders substituted - the caller should `quiet_say` it.
+    Said(String),
+    /// Matched an entry with `answer: None`; carries `answer_code` for the
+    /// caller to interpret.
+    Matched(i32),
+    /// No qa entry matched the tokenized message (including the case of
+    /// an empty word list, matching C's `if (w) { ... }` guard).
+    NoMatch,
+}
+
+/// Tokenizes spoken `text` into lowercase words the way every
+/// `analyse_text_driver` copy does: split on `' ' ',' ':' '?' '!' '"'
+/// '.'`, drop words equal to `own_name` (`strcasecmp`), cap at 20 words
+/// (`if (w < 20) w++`), and bail out (returning `None`) if any single
+/// word exceeds 250 bytes (`if (n > 250) return 0;`).
+pub fn tokenize_text_words(text: &str, own_name: &str) -> Option<Vec<String>> {
+    let mut words: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let flush = |current: &mut String, words: &mut Vec<String>| {
+        if !current.is_empty() {
+            let lower = current.to_ascii_lowercase();
+            if !lower.eq_ignore_ascii_case(own_name) && words.len() < 20 {
+                words.push(lower);
+            }
+            current.clear();
+        }
+    };
+    for c in text.chars() {
+        match c {
+            ' ' | ',' | ':' | '?' | '!' | '"' | '.' => flush(&mut current, &mut words),
+            _ => {
+                current.push(c);
+                if current.len() > 250 {
+                    return None;
+                }
+            }
+        }
+    }
+    flush(&mut current, &mut words);
+    Some(words)
+}
+
+/// Substitutes `%s` placeholders in a qa `answer` template: the first
+/// with `speaker_name`, the second with `own_name`, matching C's
+/// `quiet_say(cn, qa[q].answer, ch[co].name, ch[cn].name)`.
+fn format_qa_answer(template: &str, speaker_name: &str, own_name: &str) -> String {
+    let mut args = [speaker_name, own_name].into_iter();
+    let mut out = String::with_capacity(template.len());
+    let mut chars = template.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' && chars.peek() == Some(&'s') {
+            chars.next();
+            out.push_str(args.next().unwrap_or(""));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// C `analyse_text_driver`'s shared tokenize-and-match core. Callers are
+/// responsible for the guard clauses that precede tokenization in C
+/// (ignore system/info log messages, ignore our own talk, ignore
+/// non-players, distance and visibility checks) since those need access
+/// to `World` state this module does not have.
+pub fn analyse_text_qa(
+    text: &str,
+    own_name: &str,
+    speaker_name: &str,
+    qa: &[TextQaEntry],
+) -> TextAnalysisOutcome {
+    let Some(words) = tokenize_text_words(text, own_name) else {
+        return TextAnalysisOutcome::NoMatch;
+    };
+    if words.is_empty() {
+        return TextAnalysisOutcome::NoMatch;
+    }
+    for entry in qa {
+        if entry.words.len() == words.len()
+            && entry
+                .words
+                .iter()
+                .zip(words.iter())
+                .all(|(pattern, word)| pattern.eq_ignore_ascii_case(word))
+        {
+            return match entry.answer {
+                Some(template) => {
+                    TextAnalysisOutcome::Said(format_qa_answer(template, speaker_name, own_name))
+                }
+                None => TextAnalysisOutcome::Matched(entry.answer_code),
+            };
+        }
+    }
+    TextAnalysisOutcome::NoMatch
+}
+
+/// C `struct qa qa[]` from `src/module/merchants/merchant.c`, shared
+/// verbatim by `src/area/1/gwendylon.c`'s small-talk subset (the entries
+/// below the "repeat"/"advice"/quest lines are area-specific and stay
+/// out of this generic table).
+pub const MERCHANT_QA: &[TextQaEntry] = &[
+    TextQaEntry {
+        words: &["how", "are", "you"],
+        answer: Some("I'm fine!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hello"],
+        answer: Some("Hello, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hi"],
+        answer: Some("Hi, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["greetings"],
+        answer: Some("Greetings, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hail"],
+        answer: Some("And hail to you, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["help"],
+        answer: Some("Sorry, I'm just a merchant, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what", "is", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["buy"],
+        answer: Some("Hey %s, use 'trade %s'!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["sell"],
+        answer: Some("Hey %s, use 'trade %s'!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["what", "is", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["who", "are", "you"],
+        answer: None,
+        answer_code: 1,
+    },
+];
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TwoSkellyDriverData {
     pub last_talk_tick: i32,
@@ -1157,6 +1372,100 @@ mod tests {
         assert_eq!(NT_NPC, 300);
         assert_eq!(NTID_MERCHANT, 1);
         assert_eq!(NTID_GLADIATOR, 16);
+    }
+
+    #[test]
+    fn analyse_text_qa_matches_keyword_and_substitutes_names() {
+        // C: `quiet_say(cn, "Hello, %s!", ch[co].name, ch[cn].name)`.
+        assert_eq!(
+            analyse_text_qa("hello", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::Said("Hello, Bob!".to_string())
+        );
+    }
+
+    #[test]
+    fn analyse_text_qa_is_case_insensitive() {
+        assert_eq!(
+            analyse_text_qa("HELLO", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::Said("Hello, Bob!".to_string())
+        );
+        assert_eq!(
+            analyse_text_qa("HeLLo", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::Said("Hello, Bob!".to_string())
+        );
+    }
+
+    #[test]
+    fn analyse_text_qa_reports_no_match_for_unknown_text() {
+        assert_eq!(
+            analyse_text_qa("blahblah nonsense", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::NoMatch
+        );
+        // Empty word list (e.g. only punctuation) is also NoMatch, matching
+        // C's `if (w) { ... }` guard around the qa scan.
+        assert_eq!(
+            analyse_text_qa("...", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::NoMatch
+        );
+    }
+
+    #[test]
+    fn analyse_text_qa_filters_own_name_out_of_wordlist() {
+        // C: `strcasecmp(wordlist[w], ch[cn].name)` drops the NPC's own
+        // name from the tokenized message before matching, so addressing
+        // the merchant by name doesn't break a match.
+        assert_eq!(
+            analyse_text_qa("Dolf, hello", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::Said("Hello, Bob!".to_string())
+        );
+        assert_eq!(
+            analyse_text_qa("hello Dolf", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::Said("Hello, Bob!".to_string())
+        );
+    }
+
+    #[test]
+    fn analyse_text_qa_requires_exact_word_count_match() {
+        // C's inner match loop requires the tokenized message and the qa
+        // pattern to run out of words together (`n == w && !qa[q].word[n]`);
+        // a longer or shorter phrase around a keyword is not a match.
+        assert_eq!(
+            analyse_text_qa("well hello there", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::NoMatch
+        );
+        assert_eq!(
+            analyse_text_qa("how are you doing", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::NoMatch
+        );
+        assert_eq!(
+            analyse_text_qa("how are you", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::Said("I'm fine!".to_string())
+        );
+    }
+
+    #[test]
+    fn analyse_text_qa_reports_answer_code_when_no_canned_answer() {
+        // C: `who are you` -> `answer: NULL, answer_code: 1` -> callers
+        // that don't special-case it (like `gwendylon_driver`) get the
+        // raw code back to interpret themselves.
+        assert_eq!(
+            analyse_text_qa("who are you", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::Matched(1)
+        );
+        assert_eq!(
+            analyse_text_qa("what is your name", "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::Matched(1)
+        );
+    }
+
+    #[test]
+    fn analyse_text_qa_rejects_oversized_words() {
+        // C: `if (n > 250) return 0;` bails out of tokenization entirely.
+        let huge_word = "a".repeat(300);
+        assert_eq!(
+            analyse_text_qa(&huge_word, "Dolf", "Bob", MERCHANT_QA),
+            TextAnalysisOutcome::NoMatch
+        );
     }
 
     #[test]

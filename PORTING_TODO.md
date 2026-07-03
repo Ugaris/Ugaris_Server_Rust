@@ -1423,13 +1423,37 @@ suggestion; dependencies are noted.
 
 Unlocks every quest NPC. Do these before any P4 area work.
 
-- [ ] **Generic NPC text analysis (`analyse_text_driver`)** - C
+- [~] **Generic NPC text analysis (`analyse_text_driver`)** - C
   `src/module/merchants/merchant.c::analyse_text_driver` and the richer
   copy in `src/area/1/gwendylon.c` (they share a pattern: lowercase the
   text, match name + keyword, respond via `quiet_say`). Port a reusable
   keyword-matcher into `crates/ugaris-core/src/character_driver.rs` that
   drivers feed their `NT_TEXT` messages through. Tests: keyword hit/miss,
   name gating, case insensitivity.
+  REMAINING: only the merchant `qa[]` table + guard clauses (player-flag,
+  distance>12, visibility) are wired to a real driver
+  (`world/merchant.rs::merchant_qa_reply`); the `gwendylon.c`/`bank.c`/
+  `base.c`/`military.c`/`forest.c`/`area3.c`/`arkhata.c`/
+  `orb_bank_npc.c` copies still need their own `qa[]` tables ported and
+  fed through `analyse_text_qa`, plus the `mem_*` driver-memory system
+  (next task) to replace ad-hoc greet throttling.
+  Progress Log: added `TextQaEntry`/`TextAnalysisOutcome`/
+  `tokenize_text_words`/`analyse_text_qa`/`format_qa_answer` to
+  `character_driver.rs` (tokenizer matches C's delimiter set and
+  exact-length qa matching, with the caller-supplied guard-clause model
+  since guards need `World` access this module doesn't have) plus the
+  `MERCHANT_QA` table transcribed from `merchant.c`. Wired it into
+  `world/merchant.rs::process_merchant_messages` via a new
+  `merchant_qa_reply`/`merchant_quiet_say` pair (also fixed the new
+  `quiet_say` distance to use `settings.quietsay_dist` per C
+  `quietsay_dist = SAYDIST/3`, rather than reusing the unrelated
+  `SAY_DIST` the existing greet code uses). Added 7 unit tests for the
+  matcher (hit/miss/case-insensitivity/name-gating/exact-length/
+  answer-code/oversized-word) and 3 world-level tests covering the
+  merchant's small-talk reply and its player-flag/distance guards.
+  `cargo fmt --all`, `cargo test --workspace` (1147+27+3+33+374 passed),
+  and `cargo build -p ugaris-server` all clean; boot-smoked 10s with no
+  panics.
 
 - [ ] **Driver memory (`mem_*`)** - C `src/system/mem.c`:
   `mem_add_driver/mem_check_driver/mem_erase_driver` per-(npc, player,

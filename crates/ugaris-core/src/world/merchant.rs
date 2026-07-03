@@ -384,19 +384,32 @@ impl World {
         let messages = std::mem::take(&mut merchant.driver_messages);
         let mut destroy_cursor = false;
         let mut trade_requests: Vec<CharacterId> = Vec::new();
+        let mut small_talk: Vec<(CharacterId, String)> = Vec::new();
 
         for message in messages {
             match message.message_type {
                 NT_TEXT => {
                     // C: talk containing "<merchant name>" and "trade".
-                    let speaker = CharacterId(message.dat3 as u32);
-                    if speaker != merchant_id {
+                    let speaker_id = CharacterId(message.dat3 as u32);
+                    if speaker_id != merchant_id {
                         if let Some(text) = message.text.as_deref() {
                             let lower = text.to_ascii_lowercase();
                             if lower.contains(&merchant_name.to_ascii_lowercase())
                                 && lower.contains("trade")
                             {
-                                trade_requests.push(speaker);
+                                trade_requests.push(speaker_id);
+                            }
+
+                            // C `analyse_text_driver` shared guard clauses:
+                            // ignore non-players, distance > 12, and
+                            // characters we can't see.
+                            if let Some(reply) = self.merchant_qa_reply(
+                                merchant_id,
+                                &merchant_name,
+                                speaker_id,
+                                text,
+                            ) {
+                                small_talk.push((speaker_id, reply));
                             }
                         }
                     }
@@ -423,6 +436,61 @@ impl World {
                 player.merchant = Some(merchant_id);
             }
         }
+        for (_, reply) in small_talk {
+            self.merchant_quiet_say(merchant_id, &merchant_name, &reply);
+        }
+    }
+
+    /// C `analyse_text_driver` from `src/module/merchants/merchant.c`,
+    /// wired through the generic [`crate::character_driver::analyse_text_qa`]
+    /// matcher. Returns the formatted reply text `quiet_say` would emit, or
+    /// `None` if a guard clause rejected the message or no qa entry matched.
+    fn merchant_qa_reply(
+        &self,
+        merchant_id: CharacterId,
+        merchant_name: &str,
+        speaker_id: CharacterId,
+        text: &str,
+    ) -> Option<String> {
+        let merchant = self.characters.get(&merchant_id)?;
+        let speaker = self.characters.get(&speaker_id)?;
+        if !speaker.flags.contains(CharacterFlags::PLAYER) {
+            return None;
+        }
+        if char_dist(merchant, speaker) > 12 {
+            return None;
+        }
+        if !char_see_char(merchant, speaker, &self.map, self.date.daylight) {
+            return None;
+        }
+        match crate::character_driver::analyse_text_qa(
+            text,
+            merchant_name,
+            &speaker.name,
+            crate::character_driver::MERCHANT_QA,
+        ) {
+            crate::character_driver::TextAnalysisOutcome::Said(reply) => Some(reply),
+            // C: `answer_code == 1` -> `quiet_say(cn, "I'm %s.", ch[cn].name)`.
+            crate::character_driver::TextAnalysisOutcome::Matched(1) => {
+                Some(format!("I'm {merchant_name}."))
+            }
+            _ => None,
+        }
+    }
+
+    fn merchant_quiet_say(&mut self, merchant_id: CharacterId, merchant_name: &str, text: &str) {
+        let Some(merchant) = self.characters.get(&merchant_id) else {
+            return;
+        };
+        // C `quiet_say`: `log_area(..., LOG_TALK, cn, quietsay_dist, ...)`.
+        let max_distance = self.settings.quietsay_dist.max(0) as u16;
+        let say = crate::log_text::say_message(merchant_name, text);
+        self.pending_area_texts.push(WorldAreaText {
+            x: merchant.x,
+            y: merchant.y,
+            max_distance,
+            message: String::from_utf8_lossy(&say).into_owned(),
+        });
     }
 
     fn greet_nearby_players(&mut self, merchant_id: CharacterId) {

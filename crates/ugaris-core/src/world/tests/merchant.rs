@@ -264,3 +264,76 @@ fn merchant_greets_visible_players_once() {
     world.process_merchant_actions();
     assert!(world.drain_pending_area_texts().is_empty());
 }
+
+fn merchant_npc_already_greeted(id: u32, pricemulti: i32, greeted: u32) -> Character {
+    let mut merchant = merchant_npc(id, pricemulti);
+    if let Some(CharacterDriverState::Merchant(data)) = merchant.driver_state.as_mut() {
+        data.greeted.push(greeted);
+    }
+    merchant
+}
+
+#[test]
+fn merchant_replies_to_small_talk_keyword() {
+    // C `analyse_text_driver` (`src/module/merchants/merchant.c`): saying
+    // "hello" gets `quiet_say(cn, "Hello, %s!", ch[co].name, ch[cn].name)`.
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(merchant_npc_already_greeted(1, 400, 2), 10, 10));
+    let mut visitor = player(2, 0);
+    visitor.name = "Godmode".into();
+    assert!(world.spawn_character(visitor, 12, 10));
+
+    if let Some(merchant) = world.characters.get_mut(&CharacterId(1)) {
+        merchant.push_driver_text_message(CharacterId(2), "hello");
+    }
+    world.process_merchant_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.message.contains("Hello, Godmode!")),
+        "expected a qa reply among {texts:?}"
+    );
+}
+
+#[test]
+fn merchant_small_talk_ignores_non_player_speakers() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(merchant_npc_already_greeted(1, 400, 2), 10, 10));
+    // A non-player character (no CF_PLAYER flag) at the same spot as id 2.
+    let mut npc = character(2);
+    npc.name = "Skelly".into();
+    assert!(world.spawn_character(npc, 12, 10));
+
+    if let Some(merchant) = world.characters.get_mut(&CharacterId(1)) {
+        merchant.push_driver_text_message(CharacterId(2), "hello");
+    }
+    world.process_merchant_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(
+        !texts.iter().any(|text| text.message.contains("Hello,")),
+        "C: `if (!(ch[co].flags & CF_PLAYER)) return 0;`"
+    );
+}
+
+#[test]
+fn merchant_small_talk_ignores_speakers_beyond_analyse_text_distance() {
+    // C `analyse_text_driver`: `if (char_dist(cn, co) > 12) return 0;`.
+    let mut world = World::default();
+    assert!(world.spawn_character(merchant_npc_already_greeted(1, 400, 2), 10, 10));
+    let mut visitor = player(2, 0);
+    visitor.name = "Godmode".into();
+    assert!(world.spawn_character(visitor, 40, 10));
+
+    if let Some(merchant) = world.characters.get_mut(&CharacterId(1)) {
+        merchant.push_driver_text_message(CharacterId(2), "hello");
+    }
+    world.process_merchant_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(!texts.iter().any(|text| text.message.contains("Hello,")));
+}
