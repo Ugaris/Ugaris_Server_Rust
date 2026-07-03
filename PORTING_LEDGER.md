@@ -102,7 +102,7 @@ Remaining oversized files worth splitting during future work:
 |---|---|---|
 | `src/system/database/database.h` | `crates/ugaris-db/src/lib.rs` | PostgreSQL pool, module boundary, and database handle ported. |
 | `src/system/database/database_area.h` | `crates/ugaris-db/src/area.rs`, `migrations/0001_core_accounts_characters.sql` | Area server records and alive/down/get operations scaffolded. |
-| `src/system/database/database_character.h` / `database_character.c` login and snapshot paths, `src/system/player.c` `read_login`/`player_client_exit` reject path | `crates/ugaris-db/src/character.rs`, `crates/ugaris-server/src/login.rs`, `crates/ugaris-server/src/constants.rs`, `crates/ugaris-server/src/main.rs`, `migrations/0001_core_accounts_characters.sql`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0003_character_snapshots.sql` | Login status semantics, character target lookup, legacy plaintext subscriber-password comparison against `accounts.password_hash`, current-area update, login session insert, release semantics, guarded backup save, logout save, Rust character JSON snapshot load/save, character item snapshot rows, server-side optional snapshot load/logout-save integration for PostgreSQL, and client-facing login rejection (every non-`Ready` `LoginOutcome`/DB error now sends the exact C `player_client_exit` `SV_EXIT` reject text and disconnects instead of spawning a scaffold character) are scaffolded/ported. Live DB migration verification, mocked-pool/`DATABASE_URL`-gated tests for `begin_login_tx` row branching, bad-password/IP throttling persistence (`Duplicate`/`TooManyBadPasswords` outcomes are defined but never constructed), cross-area `NewArea` redirect (`player_to_server`, deferred to the separate "Cross-area transfer" task), and full legacy binary blob decode/encode remain. |
+| `src/system/database/database_character.h` / `database_character.c` login and snapshot paths, `src/system/player.c` `read_login`/`player_client_exit` reject path, `src/system/badip.c` | `crates/ugaris-db/src/character.rs`, `crates/ugaris-server/src/login.rs`, `crates/ugaris-server/src/constants.rs`, `crates/ugaris-server/src/main.rs`, `migrations/0001_core_accounts_characters.sql`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0003_character_snapshots.sql`, `migrations/0004_bad_passwords.sql` | Login status semantics, character target lookup, legacy plaintext subscriber-password comparison against `accounts.password_hash`, current-area update, login session insert, release semantics, guarded backup save, logout save, Rust character JSON snapshot load/save, character item snapshot rows, server-side optional snapshot load/logout-save integration for PostgreSQL, client-facing login rejection (every non-`Ready` `LoginOutcome`/DB error now sends the exact C `player_client_exit` `SV_EXIT` reject text and disconnects instead of spawning a scaffold character), IP-based bad-password rate limiting (`is_badpass_ip`/`add_badpass_ip`, `>3`/60s, `>8`/1h, `>25`/24h windows, backed by a new `bad_passwords` table) constructing `LoginOutcome::TooManyBadPasswords`, and same-account duplicate-online-character detection (`load_char_dup`) constructing `LoginOutcome::Duplicate` are scaffolded/ported. `clean_badpass_ips` confirmed dead code in C (declared, never called) and intentionally not ported. Live DB migration verification, mocked-pool/`DATABASE_URL`-gated tests for `begin_login_tx` row branching, cross-area `NewArea` redirect (`player_to_server`, deferred to the separate "Cross-area transfer" task), and full legacy binary blob decode/encode remain. |
 | `src/system/database/database_anticheat.h` / `database_anticheat.c` session/event core | `crates/ugaris-db/src/anticheat.rs`, `migrations/0002_sessions_questlog_anticheat.sql` | Session/event schema, typed PostgreSQL repository boundary, session create/character/fingerprint/status/bot-score/counter/end operations, event logging, cleanup, and legacy result/action/risk text mappings ported with tests. Runtime anti-cheat packet integration, live migration verification, player-stat/admin query/signature/IP/hardware tables, and exact legacy MySQL report fan-out remain. |
 | `src/system/player.c` / `src/system/player.h` | `crates/ugaris-net`, `crates/ugaris-core`, `crates/ugaris-server` | Player states, `PAC_*`, command recognition, command payload parsing, login parse, runtime registry, session send channels, scaffold character spawn, direct action setters, action queue, and primitive world action bridge exist; full action execution, map cache/client sync, inventory delta sync, text logging, transfer, anti-cheat integration remain. |
 | `src/system/tell.h` / `src/system/tell.c`, `/tell` slice from `src/system/command.c` / `src/system/chat/chat.c` | `crates/ugaris-core/src/tell.rs`, `crates/ugaris-server/src/main.rs` | C-compatible ten-slot sent-tell tracking, duplicate suppression, first-empty insertion, received-tell removal, strict one-second timeout expiry, `DRD_TELL_DATA` ID, legacy not-listening feedback text, runtime `/tell <name> <text>` parsing, online character lookup, sender acknowledgement/self-tell feedback, staff-name/staff-code formatting, no-tell and ignore blocking with delayed not-listening feedback, recipient received-tell clearing, and spy fan-out are ported with focused tests. Offline cross-server tell delivery, lookup-in-progress retry semantics, dlog/audit logging, and exact chat-service transport remain. |
@@ -2523,3 +2523,63 @@ Recommended next chest steps:
   row and in the lostcon ledger note); and the `NewArea` cross-server
   redirect (`player_to_server`) remains a reject stub pending the
   dedicated "Cross-area transfer" task.
+
+## Ralph Loop - PostgreSQL Login Hardening: Duplicate/TooManyBadPasswords (iteration 35)
+
+- Closed the "`LoginOutcome::Duplicate`/`TooManyBadPasswords` are defined
+  but never constructed" gap left by the previous iteration.
+- Added `migrations/0004_bad_passwords.sql`: a `bad_passwords` table
+  (`id`, `ip`, `created_at`) mirroring C's `badip` table, whose schema is
+  documented as a trailing SQL comment in `src/system/badip.c`.
+- Ported C `is_badpass_ip` (`badip.c:56-72`) as `is_ip_rate_limited`
+  (`crates/ugaris-db/src/character.rs`): counts `bad_passwords` rows for
+  the login IP in three sliding windows (60s/3600s/86400s) via one SQL
+  query with `count(*) filter (where ...)`, then applies the exact C
+  thresholds (`>3`, `>8`, `>25` respectively, strict greater-than not
+  greater-or-equal) through a small pure helper,
+  `is_badpass_counts_rate_limited`, extracted specifically so the
+  threshold logic is unit-testable without a live database connection.
+  Called from `CharacterRepository::begin_login` before the row-lookup
+  transaction even opens, matching C `load_char`'s `is_badpass_ip` guard
+  which runs before `START TRANSACTION`.
+- Ported C `add_badpass_ip` (`badip.c:78-85`) as
+  `record_bad_password_attempt`: inserts one `bad_passwords` row for the
+  IP. Wired into `begin_login_tx` only in the branch where an existing
+  character row was found but the password comparison fails - matching
+  C `load_char_pwd` returning `tmp==1` (`database_character.c:876-877`,
+  `if (tmp == 1) { login_passwd(); add_badpass_ip(login.ip); }`) - and
+  deliberately *not* wired into the "no such character name" branch
+  (`row` is `None`), preserving the existing anti-enumeration behavior:
+  probing random usernames does not arm the rate limiter, only repeated
+  wrong-password attempts against a real account do, exactly like C.
+- Ported C `load_char_dup` (`database_character.c:731-753`) inline in
+  `begin_login_tx`: a `select count(*) from characters where account_id =
+  $1 and id != $2 and current_area != 0` query (constant
+  `BEGIN_LOGIN_TX_DUPLICATE_SQL`) run after the password/locked/paid
+  checks and before the area-resolution branch (matching C's call-site
+  order in `load_char`), returning `LoginOutcome::Duplicate` if any other
+  character on the same account is currently online. Carried over C's
+  `if (sID == 1) return 1; // hack for easier testing` exemption as
+  `account_id != 1` (Postgres bigserial `accounts.id` starts at 1, same
+  as C's subscriber-ID convention).
+- Read `clean_badpass_ips` (`badip.c:88-93`) and grepped the full C tree
+  for its call sites: zero results outside its own declaration/definition
+  - it is genuine dead code in the legacy server, so it was intentionally
+  left unported rather than adding an unreachable Rust equivalent.
+- 5 new tests in `crates/ugaris-db/src/character.rs`:
+  `badpass_ip_rate_limit_matches_legacy_thresholds` (all three window
+  boundaries as strict `>`, and that any single window tripping is
+  sufficient independent of the others),
+  `badpass_ip_sql_scopes_to_the_three_legacy_windows_for_one_ip`,
+  `duplicate_login_query_excludes_self_and_scopes_to_online_characters`.
+- `cargo fmt --all` / `cargo test --workspace` (1130 core + 12 db + 3 net
+  + 33 protocol + 368 server tests, all green, zero warnings) / `cargo
+  build -p ugaris-server` clean with zero warnings; boot-smoked past tick
+  230 with no panics.
+- REMAINING (task stays `[~]`): mocked-pool/`DATABASE_URL`-gated tests
+  exercising `begin_login_tx`'s full row-decision branching (including
+  the new duplicate/rate-limit branches) against a real Postgres, and a
+  live end-to-end TCP reject test, both remain blocked on a Postgres
+  instance not available in this environment (out of scope to add a
+  mocking dependency per the "do not update dependencies" rule). The
+  `NewArea` cross-server redirect stays a separate deferred task.

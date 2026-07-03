@@ -1160,14 +1160,53 @@ suggestion; dependencies are noted.
   helper functions are unit-tested; adding real coverage needs either a
   Postgres test dependency (out of scope per the "do not update
   dependencies" rule) or an async test harness `ugaris-db` does not
-  currently depend on. (2) `LoginOutcome::Duplicate`/`TooManyBadPasswords`
-  are defined but never constructed by `begin_login_tx` (duplicate-session
-  kick and bad-password rate limiting are unported, tracked in the
-  P1 "Robust login rejection" ledger note). (3) Live end-to-end reject
-  test over a real TCP socket with a configured `DATABASE_URL` was not
-  run (no local Postgres in this environment); verified via focused unit
-  tests on `login_reject_message` and the `SV_EXIT` payload/dispatch
-  wiring instead.
+  currently depend on. (2) Live end-to-end reject test over a real TCP
+  socket with a configured `DATABASE_URL` was not run (no local Postgres
+  in this environment); verified via focused unit tests on
+  `login_reject_message` and the `SV_EXIT` payload/dispatch wiring
+  instead.
+  - Iteration 35: closed the "`LoginOutcome::Duplicate`/
+    `TooManyBadPasswords` never constructed" gap. Added a `bad_passwords`
+    table (`migrations/0004_bad_passwords.sql`, mirrors C's `badip` table
+    from `src/system/badip.c`'s trailing SQL comment) and two helpers in
+    `crates/ugaris-db/src/character.rs`: `is_ip_rate_limited` (C
+    `is_badpass_ip`, `badip.c:56-72` - blocked once an IP has more than 3
+    bad-password rows in the last 60s, more than 8 in the last hour, or
+    more than 25 in the last 24h; the threshold comparison itself is
+    extracted into a pure `is_badpass_counts_rate_limited` helper so it is
+    unit-testable without a live database) called from `begin_login`
+    before the row-lookup transaction opens, matching C `load_char`'s
+    `is_badpass_ip` guard preceding `START TRANSACTION`; and
+    `record_bad_password_attempt` (C `add_badpass_ip`, `badip.c:78-85`)
+    called from inside `begin_login_tx` only on an *existing* character
+    row with a mismatched password (not on an unknown name), matching C's
+    `load_char_pwd` returning `tmp==1` specifically - preserves the
+    existing anti-enumeration behavior (unknown names never touch the
+    rate-limit counter) while still tracking genuine wrong-password
+    attempts against real accounts. Also wired the duplicate-login check:
+    C `load_char_dup` (`database_character.c:731-753`) queries whether
+    another character on the same subscriber/account is already online
+    (`current_area != 0`); ported as a `count(*) from characters where
+    account_id = $1 and id != $2 and current_area != 0` query inside
+    `begin_login_tx`, run after the password/locked/paid checks and
+    before the area-resolution branch (matching C's call-site order), with
+    the same `account_id == 1` test-account exemption C hardcodes
+    (`sID == 1` "hack for easier testing"). `clean_badpass_ips`
+    (`badip.c:88-93`) was checked against the full C source and confirmed
+    dead code (declared, never called anywhere in
+    `Ugaris_Server/src/**`), so it was intentionally not ported. 5 new
+    tests in `crates/ugaris-db/src/character.rs`
+    (`badpass_ip_rate_limit_matches_legacy_thresholds` covering all three
+    window boundaries as strict `>` not `>=`, `badpass_ip_sql_scopes_to_
+    the_three_legacy_windows_for_one_ip`, `duplicate_login_query_
+    excludes_self_and_scopes_to_online_characters`, plus the existing
+    `login_outcomes_match_legacy_find_login_codes` continues to cover the
+    `-4`/`-9` codes). `cargo fmt --all` / `cargo test --workspace` (1130
+    core + 12 db + 3 net + 33 protocol + 368 server, all green, zero
+    warnings) / `cargo build -p ugaris-server` clean; boot-smoked past
+    tick 230 with no panics. Remaining gaps (1)/(2) above are unchanged -
+    still blocked on a live Postgres instance/test harness, out of scope
+    per the "do not update dependencies" rule.
 
 - [ ] **Merchant store DB persistence** - C `database_merchant.c`
   (load_merchant_inventory, queue_merchant_* tasks). Rust merchants are
@@ -1626,3 +1665,24 @@ Add one line per completed task: date, task, ledger section touched.
   mocked-pool/`DATABASE_URL`-gated tests for `begin_login_tx`'s row
   branching, `Duplicate`/`TooManyBadPasswords` construction, cross-area
   `NewArea` redirect (separate deferred task).
+- 2026-07-03: PostgreSQL login hardening (P1, iteration 35, still
+  partial/`[~]`) - constructed the previously-dead `LoginOutcome::
+  Duplicate`/`TooManyBadPasswords` variants. Added `bad_passwords` table
+  (`migrations/0004_bad_passwords.sql`, mirrors C's `badip` table) plus
+  `is_ip_rate_limited`/`record_bad_password_attempt` in
+  `crates/ugaris-db/src/character.rs` porting C `is_badpass_ip`/
+  `add_badpass_ip` (`src/system/badip.c`) with the exact `>3`/60s,
+  `>8`/1h, `>25`/24h thresholds, called from `begin_login` (before the
+  transaction opens) and `begin_login_tx` (only on an existing row with a
+  wrong password, matching C's anti-enumeration-preserving call site).
+  Ported C `load_char_dup` (`database_character.c:731-753`) as an
+  online-duplicate-account query inside `begin_login_tx`, run after the
+  password/locked/paid checks with the same `account_id == 1` test-
+  account exemption C hardcodes. Confirmed `clean_badpass_ips` is C dead
+  code (never called) and intentionally left unported. 5 new
+  `ugaris-db` tests. `cargo fmt --all` / `cargo test --workspace` (1130
+  core + 12 db + 3 net + 33 protocol + 368 server, all green) / `cargo
+  build -p ugaris-server` clean; boot-smoked past tick 230 with no
+  panics. Still `[~]`: mocked-pool/`DATABASE_URL`-gated tests and a live
+  end-to-end TCP reject test remain blocked on a real Postgres instance,
+  unavailable in this environment.

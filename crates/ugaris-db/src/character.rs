@@ -154,6 +154,12 @@ impl CharacterRepository for PgCharacterRepository {
         if request.no_login {
             return Ok(LoginOutcome::Shutdown);
         }
+        // Matches C `load_char`'s `is_badpass_ip(login.ip)` guard
+        // (`database_character.c:781-786`), checked before the row lookup
+        // even begins.
+        if is_ip_rate_limited(&self.pool, request.ip).await? {
+            return Ok(LoginOutcome::TooManyBadPasswords);
+        }
 
         let mut tx = self.pool.begin().await?;
         let outcome = begin_login_tx(&mut tx, request).await?;
@@ -487,6 +493,13 @@ async fn begin_login_tx(
     };
 
     if !legacy_password_matches(&request.password, &password_hash) {
+        // Matches C `load_char_pwd` returning 1 (wrong password) ->
+        // `login_passwd(); add_badpass_ip(login.ip);`
+        // (`database_character.c:876-877`). An unknown character name never
+        // reaches this branch (handled by the `row` being `None` above),
+        // matching C's anti-enumeration behavior of only rate-limiting
+        // actual wrong-password attempts against an existing account.
+        record_bad_password_attempt(tx, request.ip).await?;
         return Ok(LoginOutcome::WrongPassword);
     }
 
@@ -501,6 +514,20 @@ async fn begin_login_tx(
     }
     if paid_until.is_none() {
         return Ok(LoginOutcome::NotPaid);
+    }
+    // Matches C `load_char_dup` (`database_character.c:731-753`): another
+    // character on the same account (`sID`) is already online
+    // (`current_area != 0`) -> `login_dup()`. `account_id == 1` is exempt,
+    // mirroring C's `if (sID == 1) return 1; // hack for easier testing`.
+    if account_id != 1 {
+        let duplicate_count: i64 = sqlx::query_scalar(BEGIN_LOGIN_TX_DUPLICATE_SQL)
+            .bind(account_id)
+            .bind(id)
+            .fetch_one(&mut **tx)
+            .await?;
+        if duplicate_count > 0 {
+            return Ok(LoginOutcome::Duplicate);
+        }
     }
     if allowed_area <= 0 {
         return Ok(LoginOutcome::InternalError);
@@ -561,10 +588,59 @@ fn legacy_password_matches(password: &str, stored_password: &str) -> bool {
     password == stored_password
 }
 
+const IS_BADPASS_IP_SQL: &str = "select \
+    count(*) filter (where created_at >= now() - interval '60 seconds'), \
+    count(*) filter (where created_at >= now() - interval '3600 seconds'), \
+    count(*) filter (where created_at >= now() - interval '86400 seconds') \
+ from bad_passwords where ip = $1";
+
+/// Matches C `is_badpass_ip` (`src/system/badip.c:56-72`): an IP is
+/// rate-limited if it has more than 3 recorded bad-password attempts in
+/// the last 60 seconds, more than 8 in the last hour, or more than 25 in
+/// the last 24 hours.
+async fn is_ip_rate_limited(pool: &PgPool, ip: u32) -> anyhow::Result<bool> {
+    let (recent_minute, recent_hour, recent_day): (i64, i64, i64) =
+        sqlx::query_as(IS_BADPASS_IP_SQL)
+            .bind(ip as i32)
+            .fetch_one(pool)
+            .await?;
+
+    Ok(is_badpass_counts_rate_limited(
+        recent_minute,
+        recent_hour,
+        recent_day,
+    ))
+}
+
+/// Pure decision extracted from `is_ip_rate_limited` so the exact legacy
+/// thresholds (`badip.c:59-70`: `>3` per minute, `>8` per hour, `>25` per
+/// day) can be unit-tested without a live database.
+fn is_badpass_counts_rate_limited(recent_minute: i64, recent_hour: i64, recent_day: i64) -> bool {
+    recent_minute > 3 || recent_hour > 8 || recent_day > 25
+}
+
+/// Matches C `add_badpass_ip` (`src/system/badip.c:78-85`): records one
+/// failed-password attempt for the given IP.
+async fn record_bad_password_attempt(
+    tx: &mut Transaction<'_, Postgres>,
+    ip: u32,
+) -> anyhow::Result<()> {
+    sqlx::query("insert into bad_passwords(ip) values ($1)")
+        .bind(ip as i32)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 const BEGIN_LOGIN_SQL: &str = "select c.id, c.account_id, c.name, a.password_hash, c.locked, a.locked, a.ip_locked, a.fixed, \
          extract(epoch from a.paid_until)::int, c.current_area, c.allowed_area, c.mirror, c.current_mirror \
           from characters c join accounts a on a.id = c.account_id \
           where lower(c.name) = lower($1) for update";
+
+/// Matches C `load_char_dup` (`database_character.c:731-753`): counts other
+/// characters on the same account currently online (`current_area != 0`).
+const BEGIN_LOGIN_TX_DUPLICATE_SQL: &str =
+    "select count(*) from characters where account_id = $1 and id != $2 and current_area != 0";
 
 async fn update_mirror_if_needed(
     tx: &mut Transaction<'_, Postgres>,
@@ -625,6 +701,38 @@ mod tests {
         assert!(SAVE_CHARACTER_LOGOUT_SQL.contains("logout_time = now()"));
         assert!(SAVE_CHARACTER_LOGOUT_SQL
             .contains("where id = $36 and current_area = $37 and current_mirror = $38"));
+    }
+
+    #[test]
+    fn badpass_ip_rate_limit_matches_legacy_thresholds() {
+        // C `is_badpass_ip` (`badip.c:56-72`): blocked once a window count
+        // exceeds (not reaches) the threshold.
+        assert!(!is_badpass_counts_rate_limited(0, 0, 0));
+        assert!(!is_badpass_counts_rate_limited(3, 0, 0));
+        assert!(is_badpass_counts_rate_limited(4, 0, 0));
+        assert!(!is_badpass_counts_rate_limited(0, 8, 0));
+        assert!(is_badpass_counts_rate_limited(0, 9, 0));
+        assert!(!is_badpass_counts_rate_limited(0, 0, 25));
+        assert!(is_badpass_counts_rate_limited(0, 0, 26));
+        // Any single window tripping is enough, independent of the others.
+        assert!(is_badpass_counts_rate_limited(4, 0, 0));
+        assert!(is_badpass_counts_rate_limited(0, 9, 0));
+        assert!(is_badpass_counts_rate_limited(0, 0, 26));
+    }
+
+    #[test]
+    fn badpass_ip_sql_scopes_to_the_three_legacy_windows_for_one_ip() {
+        assert!(IS_BADPASS_IP_SQL.contains("interval '60 seconds'"));
+        assert!(IS_BADPASS_IP_SQL.contains("interval '3600 seconds'"));
+        assert!(IS_BADPASS_IP_SQL.contains("interval '86400 seconds'"));
+        assert!(IS_BADPASS_IP_SQL.contains("where ip = $1"));
+    }
+
+    #[test]
+    fn duplicate_login_query_excludes_self_and_scopes_to_online_characters() {
+        assert!(BEGIN_LOGIN_TX_DUPLICATE_SQL.contains("account_id = $1"));
+        assert!(BEGIN_LOGIN_TX_DUPLICATE_SQL.contains("id != $2"));
+        assert!(BEGIN_LOGIN_TX_DUPLICATE_SQL.contains("current_area != 0"));
     }
 
     #[test]
