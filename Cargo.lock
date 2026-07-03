@@ -1777,6 +1777,7 @@ dependencies = [
  "async-trait",
  "sqlx",
  "thiserror 1.0.69",
+ "tokio",
  "ugaris-core",
 ]
 

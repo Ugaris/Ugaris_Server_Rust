@@ -11,3 +11,6 @@ async-trait.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 ugaris-core = { path = "../ugaris-core" }
+
+[dev-dependencies]
+tokio.workspace = true

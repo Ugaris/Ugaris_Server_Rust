@@ -848,6 +848,462 @@ mod tests {
         }
     }
 
+    /// Live-database tests for `begin_login_tx`'s row-decision branching
+    /// (unknown name / wrong password / locked / not-paid / duplicate /
+    /// area routing / success), gated behind `DATABASE_URL` per the task
+    /// note ("otherwise gate live tests behind `DATABASE_URL`"). Each test
+    /// opens its own transaction, serializes against sibling live tests
+    /// with a transaction-scoped advisory lock (`pg_advisory_xact_lock`,
+    /// released automatically on rollback/commit), resets the `accounts`
+    /// id sequence to a deterministic offset so `account_id == 1` (C's
+    /// duplicate-login test-account exemption, `sID == 1`) can be tested
+    /// precisely without racing other tests for that id, and always rolls
+    /// back at the end - no fixture ever needs manual cleanup. Skips
+    /// (rather than fails) when `DATABASE_URL` is unset or unreachable, so
+    /// the suite stays green in this porting environment's default
+    /// no-Postgres setup while still running for real against a live
+    /// database in environments (or Ralph iterations) that provide one.
+    mod live_login {
+        use super::*;
+        use sqlx::{PgPool, Postgres, Transaction};
+
+        const ADVISORY_LOCK_KEY: i64 = 0x7567_6172_6973_6462; // "ugarisdb"-ish
+
+        async fn connect() -> Option<PgPool> {
+            let url = std::env::var("DATABASE_URL").ok()?;
+            match PgPool::connect(&url).await {
+                Ok(pool) => Some(pool),
+                Err(err) => {
+                    eprintln!("skipping live DB test: could not connect to DATABASE_URL: {err}");
+                    None
+                }
+            }
+        }
+
+        /// Opens a transaction, serializes against other live tests, and
+        /// resets the `accounts_id_seq` so the next inserted account gets
+        /// id `next_account_id`. The transaction is never committed by the
+        /// caller (see module doc), so this reset is always race-free and
+        /// never collides with real persisted data.
+        async fn locked_tx(pool: &PgPool, next_account_id: i64) -> Transaction<'_, Postgres> {
+            let mut tx = pool.begin().await.expect("begin tx");
+            sqlx::query("select pg_advisory_xact_lock($1)")
+                .bind(ADVISORY_LOCK_KEY)
+                .execute(&mut *tx)
+                .await
+                .expect("advisory lock");
+            sqlx::query("select setval('accounts_id_seq', $1, false)")
+                .bind(next_account_id)
+                .execute(&mut *tx)
+                .await
+                .expect("reset accounts sequence");
+            tx
+        }
+
+        struct AccountOpts {
+            username: &'static str,
+            password_hash: &'static str,
+            locked: bool,
+            ip_locked: bool,
+            fixed: bool,
+            paid: bool,
+        }
+
+        impl Default for AccountOpts {
+            fn default() -> Self {
+                Self {
+                    username: "live_test_account",
+                    password_hash: "secret",
+                    locked: false,
+                    ip_locked: false,
+                    fixed: true,
+                    paid: true,
+                }
+            }
+        }
+
+        async fn insert_account(tx: &mut Transaction<'_, Postgres>, opts: AccountOpts) -> i64 {
+            let (id,): (i64,) = sqlx::query_as(
+                "insert into accounts(username, password_hash, locked, ip_locked, fixed, paid_until) \
+                 values ($1, $2, $3, $4, $5, case when $6 then now() + interval '1 day' else null end) \
+                 returning id",
+            )
+            .bind(opts.username)
+            .bind(opts.password_hash)
+            .bind(opts.locked)
+            .bind(opts.ip_locked)
+            .bind(opts.fixed)
+            .bind(opts.paid)
+            .fetch_one(&mut **tx)
+            .await
+            .expect("insert account");
+            id
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        async fn insert_character(
+            tx: &mut Transaction<'_, Postgres>,
+            account_id: i64,
+            name: &str,
+            locked: bool,
+            current_area: i32,
+            allowed_area: i32,
+            mirror: i32,
+            current_mirror: i32,
+        ) -> i64 {
+            let (id,): (i64,) = sqlx::query_as(
+                "insert into characters(account_id, name, locked, current_area, allowed_area, mirror, current_mirror) \
+                 values ($1, $2, $3, $4, $5, $6, $7) returning id",
+            )
+            .bind(account_id)
+            .bind(name)
+            .bind(locked)
+            .bind(current_area)
+            .bind(allowed_area)
+            .bind(mirror)
+            .bind(current_mirror)
+            .fetch_one(&mut **tx)
+            .await
+            .expect("insert character");
+            id
+        }
+
+        fn request(name: &str, password: &str) -> LoginRequest {
+            LoginRequest {
+                name: name.to_string(),
+                password: password.to_string(),
+                vendor: 0,
+                unique: 42,
+                ip: 0x0a00_0001,
+                area_id: 3,
+                mirror_id: 1,
+                no_login: false,
+            }
+        }
+
+        #[tokio::test]
+        async fn rejects_unknown_character_name() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2000).await;
+
+            let outcome = begin_login_tx(&mut tx, request("nosuchcharacter", "whatever"))
+                .await
+                .expect("begin_login_tx");
+
+            assert_eq!(outcome, LoginOutcome::WrongPassword);
+        }
+
+        #[tokio::test]
+        async fn rejects_wrong_password_and_records_bad_password() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2010).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "wrongpw_acct",
+                    ..Default::default()
+                },
+            )
+            .await;
+            insert_character(&mut tx, account_id, "Wrongpw", false, 0, 3, 1, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Wrongpw", "not-the-password"))
+                .await
+                .expect("begin_login_tx");
+            assert_eq!(outcome, LoginOutcome::WrongPassword);
+
+            let (bad_count,): (i64,) =
+                sqlx::query_as("select count(*) from bad_passwords where ip = $1")
+                    .bind(0x0a00_0001i32)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .expect("count bad_passwords");
+            assert_eq!(
+                bad_count, 1,
+                "wrong password must record a bad_passwords row (C add_badpass_ip)"
+            );
+        }
+
+        #[tokio::test]
+        async fn rejects_locked_character() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2020).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "lockedchar_acct",
+                    ..Default::default()
+                },
+            )
+            .await;
+            insert_character(&mut tx, account_id, "Lockedchar", true, 0, 3, 1, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Lockedchar", "secret"))
+                .await
+                .expect("begin_login_tx");
+            assert_eq!(outcome, LoginOutcome::Locked);
+        }
+
+        #[tokio::test]
+        async fn rejects_locked_account() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2030).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "lockedacct_acct",
+                    locked: true,
+                    ..Default::default()
+                },
+            )
+            .await;
+            insert_character(&mut tx, account_id, "Lockedacct", false, 0, 3, 1, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Lockedacct", "secret"))
+                .await
+                .expect("begin_login_tx");
+            assert_eq!(outcome, LoginOutcome::Locked);
+        }
+
+        #[tokio::test]
+        async fn rejects_ip_locked_account() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2040).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "iplocked_acct",
+                    ip_locked: true,
+                    ..Default::default()
+                },
+            )
+            .await;
+            insert_character(&mut tx, account_id, "Iplocked", false, 0, 3, 1, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Iplocked", "secret"))
+                .await
+                .expect("begin_login_tx");
+            assert_eq!(outcome, LoginOutcome::IpLocked);
+        }
+
+        #[tokio::test]
+        async fn rejects_unfixed_account() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2050).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "unfixed_acct",
+                    fixed: false,
+                    ..Default::default()
+                },
+            )
+            .await;
+            insert_character(&mut tx, account_id, "Unfixedchar", false, 0, 3, 1, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Unfixedchar", "secret"))
+                .await
+                .expect("begin_login_tx");
+            assert_eq!(outcome, LoginOutcome::AccountNotFixed);
+        }
+
+        #[tokio::test]
+        async fn rejects_not_paid_account() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2060).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "notpaid_acct",
+                    paid: false,
+                    ..Default::default()
+                },
+            )
+            .await;
+            insert_character(&mut tx, account_id, "Notpaidchar", false, 0, 3, 1, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Notpaidchar", "secret"))
+                .await
+                .expect("begin_login_tx");
+            assert_eq!(outcome, LoginOutcome::NotPaid);
+        }
+
+        #[tokio::test]
+        async fn rejects_internal_error_for_unresolved_allowed_area() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2070).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "noarea_acct",
+                    ..Default::default()
+                },
+            )
+            .await;
+            insert_character(&mut tx, account_id, "Noareachar", false, 0, 0, 1, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Noareachar", "secret"))
+                .await
+                .expect("begin_login_tx");
+            assert_eq!(outcome, LoginOutcome::InternalError);
+        }
+
+        #[tokio::test]
+        async fn rejects_duplicate_login_for_normal_account() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2080).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "dup_acct",
+                    ..Default::default()
+                },
+            )
+            .await;
+            // Another character on the same account is already online.
+            insert_character(&mut tx, account_id, "Duponline", false, 5, 3, 1, 5).await;
+            insert_character(&mut tx, account_id, "Dupoffline", false, 0, 3, 1, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Dupoffline", "secret"))
+                .await
+                .expect("begin_login_tx");
+            assert_eq!(outcome, LoginOutcome::Duplicate);
+        }
+
+        #[tokio::test]
+        async fn exempts_account_id_one_from_duplicate_login_check() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            // Deterministically force this account to id 1, matching C's
+            // `if (sID == 1) return 1; // hack for easier testing`
+            // (`database_character.c:731-753`) exemption from the
+            // duplicate-login check.
+            let mut tx = locked_tx(&pool, 1).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "hack_test_acct",
+                    ..Default::default()
+                },
+            )
+            .await;
+            assert_eq!(account_id, 1, "test setup must land account_id == 1");
+            insert_character(&mut tx, account_id, "Hackonline", false, 5, 3, 1, 5).await;
+            insert_character(&mut tx, account_id, "Hackoffline", false, 0, 3, 1, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Hackoffline", "secret"))
+                .await
+                .expect("begin_login_tx");
+            assert_ne!(
+                outcome,
+                LoginOutcome::Duplicate,
+                "account_id == 1 must be exempt from the duplicate-login check"
+            );
+        }
+
+        #[tokio::test]
+        async fn routes_to_new_area_when_allowed_area_mismatches_request() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2090).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "newarea_acct",
+                    ..Default::default()
+                },
+            )
+            .await;
+            // allowed_area (7) differs from request.area_id (3).
+            insert_character(&mut tx, account_id, "Newareachar", false, 0, 7, 2, 0).await;
+
+            let outcome = begin_login_tx(&mut tx, request("Newareachar", "secret"))
+                .await
+                .expect("begin_login_tx");
+            match outcome {
+                LoginOutcome::NewArea {
+                    area_id, mirror, ..
+                } => {
+                    assert_eq!(area_id, 7);
+                    assert_eq!(mirror, 2);
+                }
+                other => panic!("expected NewArea, got {other:?}"),
+            }
+        }
+
+        #[tokio::test]
+        async fn accepts_matching_area_and_records_login_session() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2100).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "ready_acct",
+                    ..Default::default()
+                },
+            )
+            .await;
+            let character_id =
+                insert_character(&mut tx, account_id, "Readychar", false, 0, 3, 1, 0).await;
+
+            let req = request("Readychar", "secret");
+            let outcome = begin_login_tx(&mut tx, req.clone())
+                .await
+                .expect("begin_login_tx");
+            match outcome {
+                LoginOutcome::Ready {
+                    character_id: got_id,
+                    mirror,
+                    unique,
+                    ..
+                } => {
+                    assert_eq!(got_id, CharacterId(character_id as u32));
+                    assert_eq!(mirror, 1);
+                    assert_eq!(unique, req.unique);
+                }
+                other => panic!("expected Ready, got {other:?}"),
+            }
+
+            let (current_area,): (i32,) =
+                sqlx::query_as("select current_area from characters where id = $1")
+                    .bind(character_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .expect("fetch character");
+            assert_eq!(current_area, req.area_id);
+
+            let (session_count,): (i64,) =
+                sqlx::query_as("select count(*) from login_sessions where character_id = $1")
+                    .bind(character_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .expect("count login_sessions");
+            assert_eq!(session_count, 1);
+        }
+    }
+
     fn item(id: u32) -> Item {
         Item {
             id: ItemId(id),

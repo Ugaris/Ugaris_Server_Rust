@@ -1124,7 +1124,7 @@ suggestion; dependencies are noted.
   duplicate-login kick of a still-connected (non-lostcon) old session
   (`read_login`'s `ch[cn].player != nr` guard).
 
-- [~] **PostgreSQL login hardening** - wrong password must send the legacy
+- [x] **PostgreSQL login hardening** - wrong password must send the legacy
   reject (`SV_EXIT` reason? check C `cmd_exit(nr, reason)` in
   `src/system/io.c`), not a scaffold accept. Character creation for
   unknown names per C account flow (or explicit reject if creation is
@@ -1207,6 +1207,46 @@ suggestion; dependencies are noted.
     tick 230 with no panics. Remaining gaps (1)/(2) above are unchanged -
     still blocked on a live Postgres instance/test harness, out of scope
     per the "do not update dependencies" rule.
+  - Iteration 36: closed remaining gap (1) - `ugaris-db/src/character.rs`
+    now has a `DATABASE_URL`-gated `live_login` test module (12 tests)
+    directly exercising `begin_login_tx`'s row-decision branching: unknown
+    name, wrong password (+ asserts the `bad_passwords` row is recorded),
+    locked character, locked account, ip-locked account, unfixed account,
+    not-paid account, `allowed_area <= 0` -> `InternalError`, duplicate
+    login rejected for a normal account, the `account_id == 1` duplicate
+    exemption (C's `sID == 1` "hack for easier testing"), `NewArea`
+    routing when `allowed_area != request.area_id`, and the success
+    `Ready` path (verifies both the `characters` row update and the new
+    `login_sessions` row). Each test opens its own transaction, serializes
+    against sibling live tests via a transaction-scoped
+    `pg_advisory_xact_lock` and a deterministic `accounts_id_seq` reset
+    (so the `account_id == 1` exemption test is race-free without needing
+    a fresh/isolated database), and always rolls back - no fixture needs
+    manual cleanup, and the tests are fully idempotent/re-runnable. Added
+    `tokio` as a dev-dependency of `ugaris-db` (`crates/ugaris-db/
+    Cargo.toml`, `tokio.workspace = true` under `[dev-dependencies]`) to
+    get `#[tokio::test]` - it is already a workspace member dependency
+    used elsewhere, so this is test-only wiring, not a new dependency.
+    Verified for real: spun up a throwaway local `postgres:16-alpine`
+    Docker container, applied all four `migrations/*.sql` files by hand
+    with `psql`, ran `DATABASE_URL=... cargo test -p ugaris-db` (all 24
+    tests green, including all 12 new live tests, confirmed stable across
+    3 repeated runs with default parallel test threads), then destroyed
+    the container. Without `DATABASE_URL` set (this environment's
+    default, and CI), the 12 live tests compile and pass trivially by
+    skipping (`connect()` returns `None`), so `cargo test --workspace`
+    stays green with no live Postgres present - confirmed (1130 core + 24
+    db + 3 net + 33 protocol + 368 server, zero warnings). `cargo build -p
+    ugaris-server` clean; boot-smoked past tick 228 with no panics.
+    Remaining gap (2) (a live end-to-end reject test over a real TCP
+    socket) is unchanged - out of scope for this slice, and lower value
+    now that `begin_login_tx` itself has direct DB-backed coverage; the
+    `SV_EXIT` payload/dispatch wiring is still covered by the existing
+    `login_reject_message` unit tests. Task considered complete: every
+    literal requirement in the task description (legacy `SV_EXIT` reject,
+    anti-enumeration character-creation behavior, and "extend
+    `character.rs` tests ... otherwise gate live tests behind
+    `DATABASE_URL`") is now satisfied.
 
 - [ ] **Merchant store DB persistence** - C `database_merchant.c`
   (load_merchant_inventory, queue_merchant_* tasks). Rust merchants are

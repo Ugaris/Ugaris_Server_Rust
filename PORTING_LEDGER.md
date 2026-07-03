@@ -102,7 +102,7 @@ Remaining oversized files worth splitting during future work:
 |---|---|---|
 | `src/system/database/database.h` | `crates/ugaris-db/src/lib.rs` | PostgreSQL pool, module boundary, and database handle ported. |
 | `src/system/database/database_area.h` | `crates/ugaris-db/src/area.rs`, `migrations/0001_core_accounts_characters.sql` | Area server records and alive/down/get operations scaffolded. |
-| `src/system/database/database_character.h` / `database_character.c` login and snapshot paths, `src/system/player.c` `read_login`/`player_client_exit` reject path, `src/system/badip.c` | `crates/ugaris-db/src/character.rs`, `crates/ugaris-server/src/login.rs`, `crates/ugaris-server/src/constants.rs`, `crates/ugaris-server/src/main.rs`, `migrations/0001_core_accounts_characters.sql`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0003_character_snapshots.sql`, `migrations/0004_bad_passwords.sql` | Login status semantics, character target lookup, legacy plaintext subscriber-password comparison against `accounts.password_hash`, current-area update, login session insert, release semantics, guarded backup save, logout save, Rust character JSON snapshot load/save, character item snapshot rows, server-side optional snapshot load/logout-save integration for PostgreSQL, client-facing login rejection (every non-`Ready` `LoginOutcome`/DB error now sends the exact C `player_client_exit` `SV_EXIT` reject text and disconnects instead of spawning a scaffold character), IP-based bad-password rate limiting (`is_badpass_ip`/`add_badpass_ip`, `>3`/60s, `>8`/1h, `>25`/24h windows, backed by a new `bad_passwords` table) constructing `LoginOutcome::TooManyBadPasswords`, and same-account duplicate-online-character detection (`load_char_dup`) constructing `LoginOutcome::Duplicate` are scaffolded/ported. `clean_badpass_ips` confirmed dead code in C (declared, never called) and intentionally not ported. Live DB migration verification, mocked-pool/`DATABASE_URL`-gated tests for `begin_login_tx` row branching, cross-area `NewArea` redirect (`player_to_server`, deferred to the separate "Cross-area transfer" task), and full legacy binary blob decode/encode remain. |
+| `src/system/database/database_character.h` / `database_character.c` login and snapshot paths, `src/system/player.c` `read_login`/`player_client_exit` reject path, `src/system/badip.c` | `crates/ugaris-db/src/character.rs`, `crates/ugaris-server/src/login.rs`, `crates/ugaris-server/src/constants.rs`, `crates/ugaris-server/src/main.rs`, `migrations/0001_core_accounts_characters.sql`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0003_character_snapshots.sql`, `migrations/0004_bad_passwords.sql` | Login status semantics, character target lookup, legacy plaintext subscriber-password comparison against `accounts.password_hash`, current-area update, login session insert, release semantics, guarded backup save, logout save, Rust character JSON snapshot load/save, character item snapshot rows, server-side optional snapshot load/logout-save integration for PostgreSQL, client-facing login rejection (every non-`Ready` `LoginOutcome`/DB error now sends the exact C `player_client_exit` `SV_EXIT` reject text and disconnects instead of spawning a scaffold character), IP-based bad-password rate limiting (`is_badpass_ip`/`add_badpass_ip`, `>3`/60s, `>8`/1h, `>25`/24h windows, backed by a new `bad_passwords` table) constructing `LoginOutcome::TooManyBadPasswords`, and same-account duplicate-online-character detection (`load_char_dup`) constructing `LoginOutcome::Duplicate` are scaffolded/ported. `clean_badpass_ips` confirmed dead code in C (declared, never called) and intentionally not ported. `begin_login_tx`'s full row-decision branching (unknown name, wrong password + bad-password recording, locked character/account, ip-locked, unfixed, not-paid, `allowed_area <= 0`, duplicate-login reject, `account_id == 1` duplicate exemption, `NewArea` routing, success `Ready` + `login_sessions` insert) now has a `DATABASE_URL`-gated live-Postgres test suite (`crates/ugaris-db/src/character.rs::tests::live_login`, 12 tests, `tokio` dev-dependency added to `ugaris-db`) - skips cleanly with no `DATABASE_URL` set, verified against a throwaway local `postgres:16-alpine` Docker container. Live DB migration verification (actually running `migrations/*.sql` against a fresh Postgres, done manually this iteration but not automated), cross-area `NewArea` redirect (`player_to_server`, deferred to the separate "Cross-area transfer" task), a true end-to-end reject test over a real TCP socket, and full legacy binary blob decode/encode remain. |
 | `src/system/database/database_anticheat.h` / `database_anticheat.c` session/event core | `crates/ugaris-db/src/anticheat.rs`, `migrations/0002_sessions_questlog_anticheat.sql` | Session/event schema, typed PostgreSQL repository boundary, session create/character/fingerprint/status/bot-score/counter/end operations, event logging, cleanup, and legacy result/action/risk text mappings ported with tests. Runtime anti-cheat packet integration, live migration verification, player-stat/admin query/signature/IP/hardware tables, and exact legacy MySQL report fan-out remain. |
 | `src/system/player.c` / `src/system/player.h` | `crates/ugaris-net`, `crates/ugaris-core`, `crates/ugaris-server` | Player states, `PAC_*`, command recognition, command payload parsing, login parse, runtime registry, session send channels, scaffold character spawn, direct action setters, action queue, and primitive world action bridge exist; full action execution, map cache/client sync, inventory delta sync, text logging, transfer, anti-cheat integration remain. |
 | `src/system/tell.h` / `src/system/tell.c`, `/tell` slice from `src/system/command.c` / `src/system/chat/chat.c` | `crates/ugaris-core/src/tell.rs`, `crates/ugaris-server/src/main.rs` | C-compatible ten-slot sent-tell tracking, duplicate suppression, first-empty insertion, received-tell removal, strict one-second timeout expiry, `DRD_TELL_DATA` ID, legacy not-listening feedback text, runtime `/tell <name> <text>` parsing, online character lookup, sender acknowledgement/self-tell feedback, staff-name/staff-code formatting, no-tell and ignore blocking with delayed not-listening feedback, recipient received-tell clearing, and spy fan-out are ported with focused tests. Offline cross-server tell delivery, lookup-in-progress retry semantics, dlog/audit logging, and exact chat-service transport remain. |
@@ -2583,3 +2583,70 @@ Recommended next chest steps:
   instance not available in this environment (out of scope to add a
   mocking dependency per the "do not update dependencies" rule). The
   `NewArea` cross-server redirect stays a separate deferred task.
+
+## Ralph Loop - PostgreSQL Login Hardening: Live `begin_login_tx` DB Tests (iteration 36)
+
+- Closed the last remaining gap on the "PostgreSQL login hardening" task:
+  `ugaris-db/src/character.rs` had no test exercising `begin_login_tx`'s
+  row-decision branching against a real database - only pure helper
+  functions were unit-tested. Discovered a local Docker daemon with a
+  cached `postgres:16-alpine` image was available in this environment
+  (previous iterations had recorded "no local Postgres" as a hard
+  blocker, which was true for a native `psql`/`pg_ctl` install but not
+  for Docker), so used it to both build and verify a real
+  `DATABASE_URL`-gated test suite instead of leaving the gap open.
+- Added `crates/ugaris-db/src/character.rs::tests::live_login`, a
+  12-test module covering every `begin_login_tx` branch: unknown
+  character name -> `WrongPassword`; wrong password against a real
+  account -> `WrongPassword` + asserts exactly one `bad_passwords` row
+  was recorded (C `add_badpass_ip`); locked character -> `Locked`;
+  locked account -> `Locked`; ip-locked account -> `IpLocked`; unfixed
+  account -> `AccountNotFixed`; not-paid account -> `NotPaid`;
+  `allowed_area <= 0` -> `InternalError`; another online character on the
+  same account -> `Duplicate`; the same scenario with `account_id == 1`
+  -> NOT `Duplicate` (C's `sID == 1` "hack for easier testing" exemption,
+  `database_character.c:731-753`); `allowed_area != request.area_id` ->
+  `NewArea` with the correct `area_id`/`mirror`; and the success path ->
+  `Ready` with the `characters.current_area` row updated and exactly one
+  `login_sessions` row inserted.
+- Test isolation: each test opens its own `Transaction`, takes a
+  transaction-scoped `pg_advisory_xact_lock` (auto-released on
+  commit/rollback) to serialize against sibling live tests, resets
+  `accounts_id_seq` to a test-specific offset via `setval` (safe because
+  Postgres sequences are not rolled back, so this is race-free even
+  though the tests never commit), inserts fixture `accounts`/`characters`
+  rows, calls `begin_login_tx` directly, asserts, and always rolls back -
+  zero manual cleanup, fully idempotent, safe to re-run against the same
+  database indefinitely. The `account_id == 1` exemption test resets the
+  sequence to land exactly on id 1 deterministically instead of relying
+  on database insertion order.
+- Added `tokio` under `[dev-dependencies]` in `crates/ugaris-db/Cargo.toml`
+  (`tokio.workspace = true`) to get `#[tokio::test]` - `tokio` is already
+  a workspace dependency used by other crates, so this only wires an
+  existing workspace dependency into `ugaris-db`'s test target; no new
+  crate or version was introduced, consistent with the "do not update
+  dependencies" rule.
+- Verification: `docker run -d postgres:16-alpine`, applied all four
+  `migrations/*.sql` files by hand with `psql` against the fresh
+  database, then ran `DATABASE_URL=postgres://... cargo test -p
+  ugaris-db` - all 24 tests (12 pre-existing + 12 new live tests) passed,
+  repeated 3x with default parallel test threads with no flakiness, then
+  destroyed the container. Without `DATABASE_URL` set (this repo's
+  default/CI state), the same 12 live tests compile and pass by skipping
+  early (`connect()` returns `None` when the env var is unset), so
+  `cargo test --workspace` stays fully green with no live Postgres
+  present: 1130 core + 24 db + 3 net + 33 protocol + 368 server tests,
+  zero warnings. `cargo fmt --all` clean. `cargo build -p ugaris-server`
+  clean with zero warnings. Boot-smoked past tick 228 with no panics.
+- Task marked `[x]` in `PORTING_TODO.md`: every literal requirement in
+  the task description (legacy `SV_EXIT` reject text, anti-enumeration
+  character-creation behavior, and "extend `character.rs` tests ...
+  otherwise gate live tests behind `DATABASE_URL`") is now satisfied.
+  Two minor items remain genuinely out of scope and are noted in the
+  ledger row rather than blocking completion: automated (vs. this
+  iteration's manual) migration-application verification, and a true
+  end-to-end reject test over a real TCP socket (the `SV_EXIT`
+  payload/dispatch wiring itself is already covered by
+  `login_reject_message` unit tests in `crates/ugaris-server/src/
+  login.rs`). The `NewArea` cross-server redirect remains a separate
+  deferred "Cross-area transfer" task.
