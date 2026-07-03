@@ -793,13 +793,53 @@ suggestion; dependencies are noted.
     `apply_zombie_shrine_experience_routes_through_give_exp_and_honors_noexp_and_modifier`,
     proving the `NOEXP` gate blocks the grant and the runtime
     `exp_modifier` multiplier scales it, which the old raw-mutation code
-    silently ignored. STILL REMAINING: `main.rs`'s inline quest/area
-    reward grants are now down to 4 confirmed raw-mutation sites (grep
-    `character.exp = character.exp.saturating_add` in `main.rs`): two in
-    the "warp"/reward-sphere block (~line 3376/3432, `level_value(...)/7`
-    and `/70` grants) and two more further down (~line 3826/3876,
-    unidentified in this iteration - need their C source cross-referenced
-    before porting) - a good next slice.
+    silently ignored.
+  - Iteration 24: closed the last "main.rs's inline quest/area reward
+    grants" sub-gap - all 4 remaining raw-mutation sites (grep
+    `character.exp = character.exp.saturating_add` in `main.rs`, now zero
+    hits). Cross-referenced each against C: the two warp/reward-sphere
+    sites (`ItemDriverOutcome::WarpBonus` handler) are C
+    `warpbonus_driver` (`src/area/25/warped.c:423` sphere-kind-1 reward,
+    `:453` the per-step trickle exp) - both call `give_exp(cn, ...)`, so
+    both now call `world.give_exp(character_id, ..., u32::from(args.area_id))`;
+    the reward-sphere match had to be restructured (the exp arm can no
+    longer sit inside the `world.characters.get_mut(&character_id)`
+    borrow used by the save/military/gold/lollipop arms, since
+    `give_exp` needs `&mut World` itself) into a top-level match on
+    `reward_sphere_kind` where only the non-exp arms re-borrow
+    `world.characters` individually - behaviorally identical, verified by
+    reading each arm against `warped.c:397-441` line by line (the
+    `Some(2)` guard-on-saves-and-not-hardcore condition is preserved
+    as an `if` instead of a match guard). The other two sites are C
+    `bookcase` (`src/area/17/two.c:2622`, the library-solved-once reward,
+    `give_exp(cn, min(level_value(level)/5, 80000))` - matches the
+    existing `bookcase_library_exp` helper exactly) and C
+    `staffer_animation_book` (`src/area/29/brannington.c:521`,
+    `give_exp(cn, min(level_value(60)/5, level_value(level)/4))` - matches
+    the existing driver-side `exp_added` computation in
+    `area29_brannington.rs`); both now call `world.give_exp(...,
+    u32::from(args.area_id))` instead of mutating `character.exp`
+    directly. All four sites pass the real `args.area_id` from the
+    dispatch loop (already used by the sibling `RandomShrineKind`/`Chest`
+    arms a few hundred lines up), so the `CF_NOEXP`/area-21/hardcore/
+    exp_modifier/`check_levelup` handling now applies uniformly. No
+    dedicated new tests: these are inline dispatch-loop match arms (no
+    testable pure function boundary, matching the existing precedent for
+    the sibling `RandomShrineKind::Edge` arm, which is likewise untested
+    at the `main.rs` wiring level - only the extracted pure functions
+    `apply_random_shrine_edge`/`bookcase_library_exp`/`warpbonus_driver`/
+    `staffer2_driver` have direct tests); `cargo test --workspace` stayed
+    at the same 342/1105/etc pass counts (no regressions), confirming the
+    refactor didn't change any currently-tested behavior. Grepped the
+    whole workspace for any other raw `character.exp` grant mutations
+    (excluding `exp_used`/`exp_cost`/`exp_added` counters and the
+    intentional subtraction sites in `potions.rs`/`death.rs` which are
+    refunds/losses, not grants, and correctly stay raw): none remain.
+    STILL REMAINING (unchanged from earlier iterations, and out of this
+    task's original C-`give_exp`-routing scope): the level-10-multiple
+    "Grats" server-wide broadcast, `achievement_check_level`, and
+    `reset_name(cn)` documented in `check_levelup`'s doc comment have no
+    Rust equivalents.
 
 - [ ] **Ground item decay** - dropped items never disappear (bodies do).
   C: `set_expire(in, item_decay_time)` on player drops (`act_drop`) and

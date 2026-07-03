@@ -3370,69 +3370,87 @@ async fn main() -> anyhow::Result<()> {
                                                 let current_points = player.warp_points.max(0) as u32;
                                                 let no_step_exp = player.warp_nostepexp != 0;
                                                 if advanced {
-                                                    if let Some(character) = world.characters.get_mut(&character_id) {
-                                                        match reward_sphere_kind {
-                                                            Some(1) => {
-                                                                character.exp = character.exp.saturating_add(
-                                                                    level_value(reward_level) / 7,
-                                                                );
-                                                                feedback.push((
-                                                                    character_id,
-                                                                    "You received experience.".to_string(),
-                                                                ));
-                                                            }
-                                                            Some(2)
+                                                    // C `warpbonus_driver` (`area/25/warped.c:423-449`)
+                                                    // grants the sphere-kind-1 case's exp via
+                                                    // `give_exp(cn, ...)`, not a raw mutation.
+                                                    match reward_sphere_kind {
+                                                        Some(1) => {
+                                                            world.give_exp(
+                                                                character_id,
+                                                                i64::from(level_value(reward_level) / 7),
+                                                                u32::from(args.area_id),
+                                                            );
+                                                            feedback.push((
+                                                                character_id,
+                                                                "You received experience.".to_string(),
+                                                            ));
+                                                        }
+                                                        Some(2) => {
+                                                            if let Some(character) =
+                                                                world.characters.get_mut(&character_id)
+                                                            {
                                                                 if character.saves < 10
                                                                     && !character
                                                                         .flags
-                                                                        .contains(CharacterFlags::HARDCORE) =>
-                                                            {
-                                                                character.saves += 1;
-                                                                feedback.push((
-                                                                    character_id,
-                                                                    "You received a save.".to_string(),
-                                                                ));
+                                                                        .contains(CharacterFlags::HARDCORE)
+                                                                {
+                                                                    character.saves += 1;
+                                                                    feedback.push((
+                                                                        character_id,
+                                                                        "You received a save.".to_string(),
+                                                                    ));
+                                                                }
                                                             }
-                                                            Some(3) => {
+                                                        }
+                                                        Some(3) => {
+                                                            if let Some(character) =
+                                                                world.characters.get_mut(&character_id)
+                                                            {
                                                                 character.military_points = character
                                                                     .military_points
                                                                     .saturating_add(reward_level as i32);
-                                                                feedback.push((
-                                                                    character_id,
-                                                                    "You received military rank.".to_string(),
-                                                                ));
                                                             }
-                                                            Some(4) => {
+                                                            feedback.push((
+                                                                character_id,
+                                                                "You received military rank.".to_string(),
+                                                            ));
+                                                        }
+                                                        Some(4) => {
+                                                            if let Some(character) =
+                                                                world.characters.get_mut(&character_id)
+                                                            {
                                                                 character.gold = character.gold.saturating_add(
                                                                     reward_level
                                                                         .saturating_mul(reward_level)
                                                                         .saturating_mul(10),
                                                                 );
                                                             }
-                                                            Some(5) => {
-                                                                if grant_template_item_smart(
-                                                                    &mut world,
-                                                                    &mut zone_loader,
-                                                                    character_id,
-                                                                    "lollipop",
-                                                                )
-                                                                .is_some()
-                                                                {
-                                                                    feedback.push((
-                                                                        character_id,
-                                                                        "You received a lollipop.".to_string(),
-                                                                    ));
-                                                                }
-                                                            }
-                                                            _ => {}
                                                         }
+                                                        Some(5) => {
+                                                            if grant_template_item_smart(
+                                                                &mut world,
+                                                                &mut zone_loader,
+                                                                character_id,
+                                                                "lollipop",
+                                                            )
+                                                            .is_some()
+                                                            {
+                                                                feedback.push((
+                                                                    character_id,
+                                                                    "You received a lollipop.".to_string(),
+                                                                ));
+                                                            }
+                                                        }
+                                                        _ => {}
                                                     }
                                                 } else if !no_step_exp {
-                                                    if let Some(character) = world.characters.get_mut(&character_id) {
-                                                        character.exp = character.exp.saturating_add(
-                                                            level_value(reward_level) / 70,
-                                                        );
-                                                    }
+                                                    // C `warpbonus_driver` (`area/25/warped.c:453`)
+                                                    // grants the step exp via `give_exp(cn, ...)`.
+                                                    world.give_exp(
+                                                        character_id,
+                                                        i64::from(level_value(reward_level) / 70),
+                                                        u32::from(args.area_id),
+                                                    );
                                                 }
                                                 if current_base <= 139 {
                                                     feedback.push((
@@ -3821,9 +3839,18 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                             }
                                             if grant_library_exp {
-                                                if let Some(character) = world.characters.get_mut(&character_id) {
-                                                    let exp_added = ugaris_core::item_driver::bookcase_library_exp(character.level);
-                                                    character.exp = character.exp.saturating_add(exp_added);
+                                                // C `bookcase` (`area/17/two.c:2622`) grants the
+                                                // library-solved exp via `give_exp(cn, ...)`, not a
+                                                // raw mutation.
+                                                if let Some(level) =
+                                                    world.characters.get(&character_id).map(|character| character.level)
+                                                {
+                                                    let exp_added = ugaris_core::item_driver::bookcase_library_exp(level);
+                                                    world.give_exp(
+                                                        character_id,
+                                                        i64::from(exp_added),
+                                                        u32::from(args.area_id),
+                                                    );
                                                 }
                                             }
                                             if kind != 0 {
@@ -3872,9 +3899,14 @@ async fn main() -> anyhow::Result<()> {
                                                 .map(|player| player.mark_staffer_animation_book_seen())
                                                 .unwrap_or(false);
                                             if grant_exp {
-                                                if let Some(character) = world.characters.get_mut(&character_id) {
-                                                    character.exp = character.exp.saturating_add(exp_added);
-                                                }
+                                                // C `staffer_animation_book`
+                                                // (`area/29/brannington.c:521`) grants exp via
+                                                // `give_exp(cn, ...)`, not a raw mutation.
+                                                world.give_exp(
+                                                    character_id,
+                                                    i64::from(exp_added),
+                                                    u32::from(args.area_id),
+                                                );
                                             }
                                             executed += 1;
                                         }
