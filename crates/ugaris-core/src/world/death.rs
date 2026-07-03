@@ -188,6 +188,54 @@ impl World {
         self.destroy_item(item_id);
     }
 
+    /// C `god_save_char(cn)` (`src/system/death.c`): divine intervention
+    /// that rescues a player from a fatal blow. Called from
+    /// `World::apply_legacy_hurt` at the exact point C calls it - inside
+    /// `hurt()`, before `kill_char`/the death animation ever starts - when
+    /// the dying character is a player with `saves > 0` and the death is
+    /// not a PK kill (C: `cc && CF_PLAYER(cn) && CF_PLAYER(cc)` is checked
+    /// first and takes priority over the save). The normal `die_character`
+    /// body/item/exp-loss sequence never runs for a god-saved character.
+    pub(crate) fn god_save_character(&mut self, character_id: CharacterId) {
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return;
+        };
+        let x = character.x;
+        let y = character.y;
+        // C: ch[cn].saves--; if (ch[cn].saves > 10) ch[cn].saves = 10;
+        character.saves = character.saves.saturating_sub(1);
+        if character.saves > 10 {
+            character.saves = 10;
+        }
+        // C: ch[cn].got_saved++;
+        character.got_saved = character.got_saved.saturating_add(1);
+        // C: ch[cn].hp = 1 * POWERSCALE;
+        character.hp = POWERSCALE;
+        let saves_left = character.saves;
+        let rest = (character.rest_x, character.rest_y);
+
+        // C: remove_all_poison(cn); extinguish(cn);
+        self.remove_all_poison(character_id);
+        self.remove_show_effect_type(character_id, EF_BURN);
+
+        self.queue_system_text(
+            character_id,
+            "Ishtar's hand reaches down and saves thee from certain death.",
+        );
+        self.queue_system_text(
+            character_id,
+            format!("Thou hast {} saves left.", legacy_save_number(saves_left)),
+        );
+
+        // C `transfer_to_restarea` (same-area case only; cross-server
+        // transfer is out of scope - see the "Cross-area transfer" P3 task).
+        // Fall back to the current position if no rest position is set yet
+        // (matches the same fallback already used below in `die_character`).
+        let target = if rest.0 != 0 { rest } else { (x, y) };
+        self.remove_character_from_map(character_id);
+        self.place_character_on_map(character_id, usize::from(target.0), usize::from(target.1));
+    }
+
     /// C `die_char(cn, co, ispk)`: the death animation finished. NPCs drop a
     /// lootable body and are destroyed; players lose experience/items and
     /// return to their rest position.
@@ -603,6 +651,25 @@ impl World {
         }
         self.characters.insert(character_id, character);
         placed
+    }
+}
+
+/// C `save_number(nr)` (`src/system/tool.c`): spells out save counts for the
+/// death/save feedback text ("Thou hast six saves left.").
+pub fn legacy_save_number(saves: u8) -> String {
+    match saves {
+        0 => "no".to_string(),
+        1 => "one".to_string(),
+        2 => "two".to_string(),
+        3 => "three".to_string(),
+        4 => "four".to_string(),
+        5 => "five".to_string(),
+        6 => "six".to_string(),
+        7 => "seven".to_string(),
+        8 => "eight".to_string(),
+        9 => "nine".to_string(),
+        10 => "ten".to_string(),
+        other => other.to_string(),
     }
 }
 

@@ -302,6 +302,135 @@ fn legacy_hurt_ports_hardkill_weapon_gate() {
 }
 
 #[test]
+fn legacy_hurt_god_saves_player_with_unspent_saves_instead_of_killing() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target
+        .flags
+        .insert(CharacterFlags::PLAYER | CharacterFlags::ALIVE);
+    target.hp = POWERSCALE;
+    target.saves = 3;
+    target.rest_x = 20;
+    target.rest_y = 20;
+    assert!(world.spawn_character(target, 10, 10));
+    // Cause is an NPC (not CF_PLAYER), so this is not a PK death.
+    assert!(world.spawn_character(character(2), 11, 10));
+
+    let outcome = world
+        .apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), POWERSCALE, 1, 0, 0)
+        .unwrap();
+
+    assert!(outcome.god_saved);
+    assert!(!outcome.killed);
+    assert!(!outcome.nodeath_saved);
+    let saved = world.characters.get(&CharacterId(1)).unwrap();
+    assert!(!saved.flags.contains(CharacterFlags::DEAD));
+    assert!(saved.flags.contains(CharacterFlags::ALIVE));
+    assert_eq!(saved.hp, POWERSCALE);
+    assert_eq!(saved.saves, 2);
+    assert_eq!(saved.got_saved, 1);
+    // Transferred to the rest position (mirrors C `transfer_to_restarea`).
+    assert_eq!((saved.x, saved.y), (20, 20));
+    assert_eq!(
+        world.drain_pending_system_texts(),
+        vec![
+            WorldSystemText {
+                character_id: CharacterId(1),
+                message: "Ishtar's hand reaches down and saves thee from certain death."
+                    .to_string(),
+            },
+            WorldSystemText {
+                character_id: CharacterId(1),
+                message: "Thou hast two saves left.".to_string(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn legacy_hurt_god_save_removes_poison_and_burn_effects() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.flags.insert(CharacterFlags::PLAYER);
+    target.hp = POWERSCALE;
+    target.saves = 1;
+    assert!(world.spawn_character(target, 10, 10));
+    world.create_show_effect(EF_BURN, CharacterId(1), 0, 10, 0, 0);
+    assert!(world.poison_character(CharacterId(1), 0, 0));
+
+    world.apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 0);
+
+    let saved = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(saved.saves, 0);
+    assert_eq!(saved.got_saved, 1);
+    assert!(!world
+        .effects
+        .values()
+        .any(|effect| effect.effect_type == EF_BURN
+            && effect.target_character == Some(CharacterId(1))));
+    assert!(saved
+        .inventory
+        .iter()
+        .skip(crate::spell::SPELL_SLOT_START)
+        .take(crate::spell::SPELL_SLOT_END - crate::spell::SPELL_SLOT_START)
+        .all(Option::is_none));
+}
+
+#[test]
+fn legacy_hurt_caps_saves_at_ten_after_decrement() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.flags.insert(CharacterFlags::PLAYER);
+    target.hp = POWERSCALE;
+    target.saves = 255;
+    assert!(world.spawn_character(target, 10, 10));
+
+    world.apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 0);
+
+    assert_eq!(world.characters[&CharacterId(1)].saves, 10);
+}
+
+#[test]
+fn legacy_hurt_pk_death_ignores_saves_and_kills_normally() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.flags.insert(CharacterFlags::PLAYER);
+    target.hp = POWERSCALE;
+    target.saves = 5;
+    assert!(world.spawn_character(target, 10, 10));
+    let mut killer = character(2);
+    killer.flags.insert(CharacterFlags::PLAYER);
+    assert!(world.spawn_character(killer, 11, 10));
+
+    let outcome = world
+        .apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), POWERSCALE, 1, 0, 0)
+        .unwrap();
+
+    assert!(outcome.killed);
+    assert!(!outcome.god_saved);
+    let target = world.characters.get(&CharacterId(1)).unwrap();
+    assert!(target.flags.contains(CharacterFlags::DEAD));
+    assert_eq!(target.saves, 5);
+}
+
+#[test]
+fn legacy_hurt_no_saves_left_kills_normally() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.flags.insert(CharacterFlags::PLAYER);
+    target.hp = POWERSCALE;
+    target.saves = 0;
+    assert!(world.spawn_character(target, 10, 10));
+
+    let outcome = world
+        .apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 0)
+        .unwrap();
+
+    assert!(outcome.killed);
+    assert!(!outcome.god_saved);
+}
+
+#[test]
 fn swamp_monster_death_driver_upgrades_midnight_stone_circle_weapon() {
     let mut world = World::default();
     world.date.hour = 0;

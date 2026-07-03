@@ -438,23 +438,6 @@ pub(crate) fn legacy_level_exp(level: u32) -> u32 {
     u64::from(level).saturating_pow(4).min(u64::from(u32::MAX)) as u32
 }
 
-pub(crate) fn legacy_save_number(saves: u8) -> String {
-    match saves {
-        0 => "no".to_string(),
-        1 => "one".to_string(),
-        2 => "two".to_string(),
-        3 => "three".to_string(),
-        4 => "four".to_string(),
-        5 => "five".to_string(),
-        6 => "six".to_string(),
-        7 => "seven".to_string(),
-        8 => "eight".to_string(),
-        9 => "nine".to_string(),
-        10 => "ten".to_string(),
-        other => other.to_string(),
-    }
-}
-
 pub(crate) fn apply_random_shrine_security(
     player: &mut PlayerRuntime,
     character: &mut Character,

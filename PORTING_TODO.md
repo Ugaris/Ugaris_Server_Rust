@@ -182,18 +182,48 @@ order.
   - REMAINING: nothing - task fully done as scoped (fight mode has no C
     behavior to port).
 
-- [ ] **Player death saves** - `die_character` never consults `saves`.
-  - C: `god_save_char` in `src/system/death.c` (lines ~850): if
-    `ch[cn].saves > 0` and death is not PK, decrement saves, HP = 1
-    POWERSCALE, remove poison (`remove_all_poison` - already ported),
-    extinguish burn effects, send the two Ishtar messages, transfer to rest
-    area, and skip the normal death consequences.
-  - Rust: extend `World::die_character` in
-    `crates/ugaris-core/src/world/death.rs` before the exp-loss branch.
-    `save_number` text helper already exists server-side in
-    `crates/ugaris-server/src/area_apply.rs` - move or mirror it in core.
-  - Tests: extend `world/tests/death.rs` - save consumed, exp kept, items
-    kept, feedback text, saves=0 falls through to normal death.
+- [x] **Player death saves** - `die_character` never consults `saves`.
+  - C: `god_save_char` in `src/system/death.c:851` is called from inside
+    `hurt()` (`death.c:1262`), not from `die_char`/`kill_char` - it runs
+    immediately at the fatal blow, before `kill_char` ever schedules the
+    `AC_DIE` animation, and takes priority-checked position right after the
+    PK-death branch (`cc && CF_PLAYER(cn) && CF_PLAYER(cc)` - PK kills never
+    get a save). Ported exactly: decrement `saves` then cap at 10 (odd but
+    literal C order), `got_saved++`, `hp = 1*POWERSCALE`,
+    `remove_all_poison`, `extinguish` (burn effects only), the two Ishtar
+    log lines, `transfer_to_restarea` (same-area case). Also found and
+    ported the C death-sound gating detail: the "killed with"
+    sound/threshold check plays for NODEATH *and* the saves branch too, not
+    only an actual kill (`death.c:1204-1229`, before the NODEATH/save/kill
+    branch split) - `apply_legacy_hurt`'s death sound condition now includes
+    `god_saved`.
+  - Rust: new `World::god_save_character` in
+    `crates/ugaris-core/src/world/death.rs`, called from
+    `World::apply_legacy_hurt` (`world/hurt.rs`) at the same decision point
+    as C - added a `cause_is_player` precheck and a new
+    `LegacyHurtOutcome::god_saved` flag so a saved player never gets
+    `CF_DEAD`/`deaths++`/the death-animation timer at all (matches C: the
+    entire `die_char` body/item/exp-loss path never runs for a god save).
+    Moved `legacy_save_number` (formerly server-crate-only in
+    `area_apply.rs`) into `world::death` as a public `legacy_save_number`
+    so both the shrine-security path and the new save message can share it.
+  - Tests: `world/tests/hurt.rs` - save consumed + `got_saved` incremented +
+    exp/items/position untouched except rest-teleport + feedback text
+    (`legacy_hurt_god_saves_player_with_unspent_saves_instead_of_killing`),
+    poison/burn removal
+    (`legacy_hurt_god_save_removes_poison_and_burn_effects`), the saves>10
+    decrement-then-cap quirk (`legacy_hurt_caps_saves_at_ten_after_decrement`),
+    PK death ignoring saves
+    (`legacy_hurt_pk_death_ignores_saves_and_kills_normally`), and
+    saves=0 falling through to a normal kill
+    (`legacy_hurt_no_saves_left_kills_normally`).
+  - REMAINING: the other `hurt()` special-case death branches sharing the
+    same C `else` chain (`shutdown_save_char`, `area_save_char` for areas
+    11/12/22/25/31/32/33/36, `arena_save_char`, Teufelheim PK, LQ-area
+    death, area-21 death) are still unported - out of scope for this task,
+    left as future `die_character`/`hurt.rs` work. The "Killed with X.XX
+    damage by a lvl N NAME." log line (`death.c:1222`) is also still
+    unported (only the sound was fixed to match its gating).
 
 - [ ] **Game clock advancement** - `world.date` never moves; it is always
   the same hour, so daylight/nightlight logic is frozen.

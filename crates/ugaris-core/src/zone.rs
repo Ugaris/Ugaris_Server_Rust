@@ -424,6 +424,7 @@ impl ZoneLoader {
             karma: 0,
             creation_time: 0,
             saves: 0,
+            got_saved: 0,
             deaths: 0,
             regen_ticker: 0,
             last_regen: 0,

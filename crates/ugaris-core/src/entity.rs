@@ -360,6 +360,9 @@ pub struct Character {
     pub creation_time: u64,
     #[serde(default)]
     pub saves: u8,
+    /// C `ch.got_saved`: lifetime count of `god_save_char` divine rescues.
+    #[serde(default)]
+    pub got_saved: u32,
     #[serde(default)]
     pub deaths: u32,
     #[serde(default)]
@@ -580,6 +583,7 @@ mod tests {
             karma: 0,
             creation_time: 0,
             saves: 0,
+            got_saved: 0,
             deaths: 0,
             regen_ticker: 0,
             last_regen: 0,

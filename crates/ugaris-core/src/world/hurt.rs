@@ -9,6 +9,10 @@ pub struct LegacyHurtOutcome {
     pub hp_damage: i32,
     pub killed: bool,
     pub nodeath_saved: bool,
+    /// C `god_save_char`: a player was saved from this fatal blow by an
+    /// unspent `saves` charge instead of dying (only possible when the
+    /// death is not a PK kill).
+    pub god_saved: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +44,12 @@ impl World {
             .and_then(|id| self.characters.get(&id))
             .map(|character| character.name.clone())
             .unwrap_or_else(|| "unknown".to_string());
+        // C: `cc && (ch[cn].flags & CF_PLAYER) && (ch[cc].flags & CF_PLAYER)`
+        // (PK death) - checked ahead of the `saves` branch below and takes
+        // priority over it, so a PK kill never triggers `god_save_char`.
+        let cause_is_player = cause_id
+            .and_then(|id| self.characters.get(&id))
+            .is_some_and(|character| character.flags.contains(CharacterFlags::PLAYER));
         let cause_hardkill_weapon = cause_id.and_then(|id| {
             let item_id = self
                 .characters
@@ -125,6 +135,14 @@ impl World {
                     if target.flags.contains(CharacterFlags::NODEATH) {
                         target.hp = 1;
                         outcome.nodeath_saved = true;
+                    } else if target.flags.contains(CharacterFlags::PLAYER)
+                        && !cause_is_player
+                        && target.saves > 0
+                    {
+                        // C: normal-death branch's `if (ch[cn].saves > 0)
+                        // god_save_char(cn);` - the actual save is applied
+                        // below, once `target`'s mutable borrow ends.
+                        outcome.god_saved = true;
                     } else {
                         target.flags.insert(CharacterFlags::DEAD);
                         target.flags.remove(CharacterFlags::ALIVE);
@@ -162,12 +180,19 @@ impl World {
                 if target_was_male { 9 } else { 32 },
             );
         }
-        if target_was_player && (outcome.killed || outcome.nodeath_saved) {
+        // C: this sound (and the unported "Killed with X damage..." log
+        // line) fires for every player death-threshold hit, including the
+        // NODEATH and saves branches - not just an actual kill.
+        if target_was_player && (outcome.killed || outcome.nodeath_saved || outcome.god_saved) {
             self.queue_sound_area(
                 usize::from(target_x),
                 usize::from(target_y),
                 if target_was_male { 4 } else { 33 },
             );
+        }
+
+        if outcome.god_saved {
+            self.god_save_character(target_id);
         }
 
         if create_magicshield_effect {

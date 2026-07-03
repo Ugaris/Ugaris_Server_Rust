@@ -139,8 +139,9 @@ use ugaris_core::{
     },
     tick::TICKS_PER_SECOND,
     world::{
-        merchant_buy_price, merchant_sales_price, LegacyHurtEvent, LookMapRequest,
-        MerchantTradeResult, RaiseSkillOutcome, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        legacy_save_number, merchant_buy_price, merchant_sales_price, LegacyHurtEvent,
+        LookMapRequest, MerchantTradeResult, RaiseSkillOutcome, WorldActionCompletion,
+        MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
