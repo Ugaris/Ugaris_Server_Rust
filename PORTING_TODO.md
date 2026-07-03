@@ -313,8 +313,9 @@ order.
   `legacy_item_look_text`; gate by `char_see_item` and distance like C
   `cl_look_item`. Tests in `tests/inventory.rs`.
 
-- [ ] **Junk item (`CL_JUNK_ITEM`)** - C `cl_junk_item` destroys the cursor
-  item (with `IF_QUEST` guard). Small task: handler + test.
+- [x] **Junk item (`CL_JUNK_ITEM`)** - C `cl_junk_item` destroys the cursor
+  item (with `IF_NOJUNK` guard, not `IF_QUEST` - corrected during
+  implementation; see below).
 
 - [ ] **Ping (`CL_PING`)** - C echoes `SV_PING`/`SV_LPING` with the client
   timestamp (see client `sv_ping`, `svl_ping`). Wire it so client RTT
@@ -706,3 +707,12 @@ Add one line per completed task: date, task, ledger section touched.
   `ClientAction::LookItem` into `apply_inventory_client_action` and the
   `main.rs` command-feedback dispatch; ledger section "Ralph Loop - Look
   At Map Item (CL_LOOK_ITEM)".
+- 2026-07-03: Junk item (`CL_JUNK_ITEM`) (P0) - added
+  `apply_junk_item_client_action` to
+  `crates/ugaris-server/src/item_apply.rs` (checks `ItemFlags::NOJUNK` and
+  calls the existing `World::destroy_item`, which already clears
+  `cursor_item`/sets `CharacterFlags::ITEMS`); wired
+  `ClientAction::JunkItem` in `crates/ugaris-server/src/main.rs`'s command
+  dispatch alongside the gold arm; ledger section "Ralph Loop - Junk Item
+  (CL_JUNK_ITEM)". Corrected the todo note: C's real gate is `IF_NOJUNK`,
+  not `IF_QUEST` (confirmed by reading `player.c:1325-1337`).

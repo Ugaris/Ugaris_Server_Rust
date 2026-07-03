@@ -338,6 +338,53 @@ fn client_drop_gold_only_deposits_money_cursor_items() {
 }
 
 #[test]
+fn client_junk_item_destroys_cursor_item_and_clears_cursor() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(99));
+    world.add_character(character);
+    let mut cursor_item = test_item(ItemId(99), 100, ItemFlags::TAKE);
+    cursor_item.carried_by = Some(character_id);
+    world.add_item(cursor_item);
+
+    assert!(apply_junk_item_client_action(&mut world, character_id));
+
+    assert!(!world.items.contains_key(&ItemId(99)));
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!(character.cursor_item, None);
+    assert!(character.flags.contains(CharacterFlags::ITEMS));
+}
+
+#[test]
+fn client_junk_item_respects_legacy_nojunk_flag() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(99));
+    world.add_character(character);
+    let mut cursor_item = test_item(ItemId(99), 100, ItemFlags::TAKE | ItemFlags::NOJUNK);
+    cursor_item.carried_by = Some(character_id);
+    world.add_item(cursor_item);
+
+    assert!(!apply_junk_item_client_action(&mut world, character_id));
+
+    assert!(world.items.contains_key(&ItemId(99)));
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!(character.cursor_item, Some(ItemId(99)));
+}
+
+#[test]
+fn client_junk_item_is_noop_without_cursor_item() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+
+    assert!(!apply_junk_item_client_action(&mut world, character_id));
+}
+
+#[test]
 fn enhance_gold_stack_merge_consumes_matching_cursor_stack() {
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);

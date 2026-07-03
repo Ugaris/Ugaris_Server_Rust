@@ -1310,6 +1310,11 @@ async fn main() -> anyhow::Result<()> {
                                 command_inventory_refresh.push(character_id);
                             }
                         }
+                        ClientAction::JunkItem => {
+                            if apply_junk_item_client_action(&mut world, character_id) {
+                                command_inventory_refresh.push(character_id);
+                            }
+                        }
                         ClientAction::Speed { mode } => {
                             // C `cl_speed` (`src/system/player.c`): silently
                             // ignores invalid mode bytes and fast-mode

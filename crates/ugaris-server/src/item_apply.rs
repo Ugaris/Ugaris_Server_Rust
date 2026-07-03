@@ -696,3 +696,27 @@ pub(crate) fn apply_gold_client_action(
         _ => false,
     }
 }
+
+/// C `cl_junk_item` (`src/system/player.c:1325`): destroys the item on the
+/// cursor (`ch[cn].citem`) unless it carries `IF_NOJUNK`. Clears the cursor
+/// and sets `CF_ITEMS` (mirrored here by `world.destroy_item` clearing
+/// `cursor_item` and inserting `CharacterFlags::ITEMS`). No response packet
+/// is sent directly - the client sees the cleared cursor via the normal
+/// `CF_ITEMS`-driven inventory refresh.
+pub(crate) fn apply_junk_item_client_action(world: &mut World, character_id: CharacterId) -> bool {
+    let Some(item_id) = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.cursor_item)
+    else {
+        return false;
+    };
+    let Some(item) = world.items.get(&item_id) else {
+        return false;
+    };
+    if item.flags.contains(ItemFlags::NOJUNK) {
+        return false;
+    }
+
+    world.destroy_item(item_id)
+}
