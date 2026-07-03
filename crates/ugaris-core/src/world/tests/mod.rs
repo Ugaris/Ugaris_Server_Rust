@@ -16,6 +16,7 @@ mod item_outcomes;
 mod items;
 mod lab2_undead;
 mod light;
+mod lostcon;
 mod lq;
 mod merchant;
 mod npc_fight;

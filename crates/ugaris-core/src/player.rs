@@ -3142,6 +3142,33 @@ impl PlayerRuntime {
         self.login_tick = current_tick;
     }
 
+    /// Reattaches a `CDR_LOSTCON`-lingering player's runtime state to a new
+    /// reconnecting session. C's reclaim (`tick_login`/`read_login`,
+    /// `src/system/database/database_character.c:1164`,
+    /// `src/system/player.c:493`) keeps the character's PPD-backed data
+    /// (`ppd_blob`, keyring, chest access history, achievements, etc.)
+    /// untouched across the reconnect and only resets the socket-session
+    /// bookkeeping, mirroring `PlayerRuntime::connected`'s transient fields.
+    pub fn reclaim_for_session(mut self, session_id: u64, current_tick: u64) -> Self {
+        self.session_id = session_id;
+        self.state = PlayerConnectionState::Connect;
+        self.client_version = 0;
+        self.view_distance = DIST_OLD;
+        self.last_command_tick = current_tick;
+        self.command.clear();
+        self.action = QueuedAction::default();
+        self.queue.clear();
+        self.client_ticker = 0;
+        self.next_fightback_character = None;
+        self.next_fightback_serial = 0;
+        self.next_fightback_tick = 0;
+        self.nofight_timer = 0;
+        self.login_tick = current_tick;
+        self.deferred_init = 0;
+        self.scrollback.clear();
+        self
+    }
+
     pub fn set_pending_action(&mut self, action: QueuedAction) {
         self.action = action;
     }
@@ -3449,6 +3476,51 @@ mod tests {
         assert_eq!(LEGACY_STAFFER_PPD_SIZE, 100);
         assert_eq!(LEGACY_FARMY_PPD_SIZE, 340);
         assert_eq!(SALTMINE_LADDER_COUNT, 20);
+    }
+
+    #[test]
+    fn reclaim_for_session_keeps_ppd_state_and_resets_session_bookkeeping() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.character_id = Some(CharacterId(42));
+        player.character_number = 42;
+        player.ppd_blob = vec![1, 2, 3];
+        player.keyring.push(KeyringEntry {
+            template_id: 99,
+            name: "Test Key".into(),
+            description: String::new(),
+            sprite: 0,
+            flags: 0,
+            value: 0,
+            driver: 0,
+            driver_data: Vec::new(),
+            expire_serial: 0,
+        });
+        player.client_version = 4;
+        player.view_distance = 40;
+        player.scrollback = vec![9, 9, 9];
+        player.queue.push_back(QueuedAction::default());
+        player.nofight_timer = 500;
+
+        let session_id = 2;
+        let current_tick = 1_000;
+        let reclaimed = player.reclaim_for_session(session_id, current_tick);
+
+        // Session-transient bookkeeping resets like a fresh connection.
+        assert_eq!(reclaimed.session_id, session_id);
+        assert_eq!(reclaimed.state, PlayerConnectionState::Connect);
+        assert_eq!(reclaimed.client_version, 0);
+        assert_eq!(reclaimed.view_distance, DIST_OLD);
+        assert_eq!(reclaimed.last_command_tick, current_tick);
+        assert_eq!(reclaimed.login_tick, current_tick);
+        assert!(reclaimed.queue.is_empty());
+        assert!(reclaimed.scrollback.is_empty());
+        assert_eq!(reclaimed.nofight_timer, 0);
+
+        // Persistent PPD-backed state survives the reconnect untouched.
+        assert_eq!(reclaimed.character_id, Some(CharacterId(42)));
+        assert_eq!(reclaimed.character_number, 42);
+        assert_eq!(reclaimed.ppd_blob, vec![1, 2, 3]);
+        assert_eq!(reclaimed.keyring.len(), 1);
     }
 
     #[test]

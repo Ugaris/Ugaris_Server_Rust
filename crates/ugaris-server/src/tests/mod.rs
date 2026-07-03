@@ -12,6 +12,7 @@ mod inventory;
 mod item_apply;
 mod keyring;
 mod login;
+mod lostcon;
 mod map_sync;
 mod merchants;
 mod player_actions;

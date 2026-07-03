@@ -1076,13 +1076,53 @@ suggestion; dependencies are noted.
   `PAC_KILL` guard and for live serial capture on
   Kill/Give/CharacterSpell/character-targeted MapSpell.
 
-- [ ] **Logout/exit flow** - C `cl_exit`/lostcon: linger timer
+- [x] **Logout/exit flow** - C `cl_exit`/lostcon: linger timer
   (`CDR_LOSTCON` drives the body for `lagout_time`), save, despawn. Rust
   despawns instantly on disconnect. Port the lostcon linger: on disconnect
   keep the character with `CDR_LOSTCON` driver for `runtime.lagout_time`
   ticks (idle, attackable), then save+remove. Tests: disconnect keeps the
   character breathing for the window; reconnect within the window reclaims
   it (C `take_over_char`).
+  Progress Log: ported C `kick_player` (`src/system/player.c:174`) +
+  `lostcon_driver`'s timeout/reclaim halves (`src/module/lostcon.c`,
+  `tick_login()`/`read_login()` in `database_character.c`/`player.c`).
+  Rust: `World::enter_lostcon`/`reclaim_lostcon`/`is_lostcon`/
+  `expired_lostcon_characters` (new `crates/ugaris-core/src/world/
+  lostcon.rs`, reusing the existing `Character.driver_state` slot via a new
+  `CharacterDriverState::Lostcon(LostconDriverData { deadline })` variant -
+  no new `Character` field needed, so no literal-construction call sites
+  broke). Session-side glue in new `crates/ugaris-server/src/lostcon.rs`:
+  `enter_lostcon_on_disconnect` (stashes the disconnecting session's
+  `PlayerRuntime` + account depot instead of dropping them),
+  `reclaim_lostcon_on_login` (restores the stashed `PlayerRuntime` via new
+  `PlayerRuntime::reclaim_for_session`, matching C's in-place reclaim
+  instead of a stale DB re-read), and `take_expired_lostcon_characters`
+  (tick-loop poll). Wired into `main.rs`: `SessionEvent::Disconnected` now
+  arms the linger instead of saving+removing immediately; a new per-tick
+  block saves+despawns expired lingerers; `SessionEvent::Login` reclaims a
+  lingering character in place (both the DB-repository path, skipping the
+  stale snapshot load, and the no-DB scaffold path) before falling through
+  to the existing DB-load/template-spawn logic. Tests: 6 in
+  `world/tests/lostcon.rs` (driver/deadline set, missing-character no-op,
+  still-attackable-on-map, reclaim clears state, expiry set matches
+  deadline+driver, reclaimed characters excluded from expiry), 1 in
+  `player.rs` (`reclaim_for_session` keeps PPD state, resets session
+  bookkeeping), 5 in `crates/ugaris-server/src/tests/lostcon.rs` (enter/
+  fallback, reclaim/no-op, expiry collection only takes matured entries).
+  Full workspace green (`cargo fmt --all`, `cargo test --workspace`:
+  1130+366+9+3+33 passed, `cargo build -p ugaris-server`: zero warnings);
+  boot-smoked 279+ ticks with no panics.
+  REMAINING: the `lostcon_driver` self-defense AI cascade (auto-heal/
+  potion/magicshield, `fight_driver_attack_visible`/
+  `fight_driver_follow_invisible`) is not ported - a lingering character is
+  attackable and takes/deals damage normally (matches the task's "idle,
+  attackable" wording) but will not proactively fight back, heal, or drink
+  potions on its own yet. Also unported: the instant-leave-at-restarea/
+  arena special cases and the `karma <= -12`/`-5` early-exit checks in
+  `lostcon_driver`, the `CDR_LOSTCON` exp-loss cap on death
+  (`death.c:1214`, tracked separately in the `death.rs` ledger row), and
+  duplicate-login kick of a still-connected (non-lostcon) old session
+  (`read_login`'s `ch[cn].player != nr` guard).
 
 - [ ] **PostgreSQL login hardening** - wrong password must send the legacy
   reject (`SV_EXIT` reason? check C `cmd_exit(nr, reason)` in

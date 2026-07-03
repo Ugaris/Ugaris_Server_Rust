@@ -447,7 +447,8 @@ impl World {
             CharacterDriverState::Clara(_)
             | CharacterDriverState::TwoSkelly(_)
             | CharacterDriverState::Lab2Undead(_)
-            | CharacterDriverState::Merchant(_) => None,
+            | CharacterDriverState::Merchant(_)
+            | CharacterDriverState::Lostcon(_) => None,
         }
     }
 

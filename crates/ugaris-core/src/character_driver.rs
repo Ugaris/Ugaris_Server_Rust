@@ -88,6 +88,16 @@ pub enum CharacterDriverState {
     TwoSkelly(TwoSkellyDriverData),
     Lab2Undead(Lab2UndeadDriverData),
     Merchant(MerchantDriverData),
+    Lostcon(LostconDriverData),
+}
+
+/// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
+/// half of the `CDR_LOSTCON` driver. `deadline` is the absolute tick
+/// (mirroring C's `dat->timeout = ticker + lagout_time`) at which the
+/// character is saved and despawned if still unclaimed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LostconDriverData {
+    pub deadline: u64,
 }
 
 /// C `struct merchant_driver_data` from `src/module/merchants/merchant.c`
@@ -412,7 +422,8 @@ pub fn apply_simple_baddy_create_message(
             CharacterDriverState::Clara(_)
             | CharacterDriverState::TwoSkelly(_)
             | CharacterDriverState::Lab2Undead(_)
-            | CharacterDriverState::Merchant(_),
+            | CharacterDriverState::Merchant(_)
+            | CharacterDriverState::Lostcon(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

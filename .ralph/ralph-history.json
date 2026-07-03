@@ -1024,15 +1024,55 @@
         "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
         "test result: FAILED. 360 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
       ]
+    },
+    {
+      "iteration": 33,
+      "startedAt": "2026-07-03T19:50:20.997Z",
+      "endedAt": "2026-07-03T20:24:59.967Z",
+      "durationMs": 2078304,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/player.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/npc_messages.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/mod.rs",
+        "crates/ugaris-core/src/world/lostcon.rs",
+        "crates/ugaris-core/src/world/tests/lostcon.rs",
+        "crates/ugaris-server/src/lostcon.rs",
+        "crates/ugaris-server/src/tests/lostcon.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 361 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-core` (lib test) due to 4 previous errors; 1 warning emitted",
+        "test world::tests::lostcon::expired_lostcon_characters_matches_deadline_and_driver ... FAILED",
+        "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 1119 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 1119 filtered out; finished in 0.00s",
+        "test result: ok. 1129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1129 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 2 previous errors; 1 warning emitted"
+      ]
     }
   ],
-  "totalDurationMs": 31879654,
+  "totalDurationMs": 33957958,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 32,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 33,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
@@ -1049,7 +1089,7 @@
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 1,
       "test result: FAILED. 1019 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 8,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 9,
       "test result: ok. 1030 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
@@ -1188,7 +1228,15 @@
       "366-            .ok_or_else(|| ZoneError::UnknownCharacter(key.to_string()))?": 1,
       "test tests::world_events::setup_world_actions_promotes_deferred_legacy_player_fightback ... FAILED": 1,
       "test result: FAILED. 355 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: FAILED. 360 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
+      "test result: FAILED. 360 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "test result: ok. 361 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 4 previous errors; 1 warning emitted": 1,
+      "test world::tests::lostcon::expired_lostcon_characters_matches_deadline_and_driver ... FAILED": 1,
+      "test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 1119 filtered out; finished in 0.00s": 1,
+      "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 1119 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1129 filtered out; finished in 0.00s": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 2 previous errors; 1 warning e": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

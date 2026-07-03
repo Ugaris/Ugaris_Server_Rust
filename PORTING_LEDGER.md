@@ -88,7 +88,7 @@ Remaining oversized files worth splitting during future work:
 | `src/system/talk.h` / `src/system/talk.c` low-level logging | `crates/ugaris-core/src/log_text.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-protocol/src/packet.rs` | `LOG_*` constants, text sanitization, scrollback behavior, raw color-marker preservation, `say`/`shout`/`holler`/`emote`/`whisper` message formats, `SV_TEXT` little-endian length layout, and `sound_area` positional player `SV_SPECIAL` fan-out math with legacy talk-sector gating ported with tests. Area text broadcast runtime fan-out remains. |
 | `src/system/player.c` `log_player` | `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-core/src/log_text.rs` | Text packet framing and scrollback rules ported with tests. |
 | `src/system/area.c` randomized `area_sound` ambient effects | `crates/ugaris-core/src/area_sound.rs`, `crates/ugaris-server/src/main.rs` | Wet dungeon, dry dungeon, woods, park, and underwater section-to-sound roll tables ported, including legacy `player_special` option math and server `SV_SPECIAL` packet emission after successful player-driver action completions, with focused core/server tests. Exact call cadence/RNG parity and remaining sound call-site wiring remain. |
-| `src/system/player.c` login block and initial client sync scaffold | `crates/ugaris-protocol/src/login.rs`, `crates/ugaris-net/src/session.rs`, `crates/ugaris-server/src/main.rs` | Login block size, endian layout, vendor protocol version, password obfuscation, runtime character-id assignment, scaffolded in-world player spawn/despawn, temporary `new_warrior_m` player-template instantiation with starter equipment/items, optional PostgreSQL `begin_login`/snapshot load when `DATABASE_URL` is configured, DB snapshot PPD decode into player runtime, logout snapshot save with carried items and re-encoded legacy PPD blob, runtime login/bootstrap response (`SV_LOGINDONE`, `SV_TICKER`, `SV_MIRROR`, `SV_PROTOCOL`, `SV_ORIGIN`, full visible diamond `SV_MAP11`, visible character `SV_MAP10`, visible character identity `SV_NAME`, `SV_SETVAL*`, resources, exp, gold, cursor item, initial equipment/inventory `SV_SETITEM`, `SV_TEXT`), C-mapped `SV_SCROLL_*` plus origin, character clear/update, newly visible diamond fringe tile/character/name packets for one-tile walk completions, per-session visible-diamond cache initialized at login/refresh, same-origin non-walk map diff packets for changed tile/character cells, and cached visible-character `SV_NAME` identity packets for newly seen or renamed characters ported with tests. Server smoke-tested listening without DB. Password hash verification, robust login rejection/client error flow, character selection beyond direct name lookup, true inventory delta cache, character color/clan/PK identity fields, visibility/light cache parity, and full player state machine still partial. |
+| `src/system/player.c` login block and initial client sync scaffold, `kick_player`, `src/module/lostcon.c`, `tick_login()`/`read_login()` reclaim halves of `src/system/database/database_character.c` / `src/system/player.c` | `crates/ugaris-protocol/src/login.rs`, `crates/ugaris-net/src/session.rs`, `crates/ugaris-core/src/world/lostcon.rs`, `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/lostcon.rs`, `crates/ugaris-server/src/main.rs` | Login block size, endian layout, vendor protocol version, password obfuscation, runtime character-id assignment, temporary `new_warrior_m` player-template instantiation with starter equipment/items, optional PostgreSQL `begin_login`/snapshot load when `DATABASE_URL` is configured, DB snapshot PPD decode into player runtime, logout snapshot save with carried items and re-encoded legacy PPD blob, runtime login/bootstrap response (`SV_LOGINDONE`, `SV_TICKER`, `SV_MIRROR`, `SV_PROTOCOL`, `SV_ORIGIN`, full visible diamond `SV_MAP11`, visible character `SV_MAP10`, visible character identity `SV_NAME`, `SV_SETVAL*`, resources, exp, gold, cursor item, initial equipment/inventory `SV_SETITEM`, `SV_TEXT`), C-mapped `SV_SCROLL_*` plus origin, character clear/update, newly visible diamond fringe tile/character/name packets for one-tile walk completions, per-session visible-diamond cache initialized at login/refresh, same-origin non-walk map diff packets for changed tile/character cells, and cached visible-character `SV_NAME` identity packets for newly seen or renamed characters ported with tests. Player spawn/despawn is no longer instant on disconnect: `kick_player`'s `CDR_LOSTCON` linger is ported (`World::enter_lostcon`/`reclaim_lostcon`/`is_lostcon`/`expired_lostcon_characters` plus a `CharacterDriverState::Lostcon(LostconDriverData { deadline })` state slot, `ugaris-server`'s `enter_lostcon_on_disconnect`/`reclaim_lostcon_on_login`/`take_expired_lostcon_characters`, and `PlayerRuntime::reclaim_for_session`) - a disconnecting player's character stays on the map under `CDR_LOSTCON` for `runtime.lagout_time` ticks (attackable, not actively defending itself yet), a reconnect within the window reclaims the same in-memory character in place (skipping a stale DB re-read) with its stashed `PlayerRuntime` (PPD blob, keyring, etc.) restored, and the tick loop saves+despawns it if the window expires unclaimed. Server smoke-tested listening without DB. Password hash verification, robust login rejection/client error flow, character selection beyond direct name lookup, true inventory delta cache, character color/clan/PK identity fields, visibility/light cache parity, full player state machine, the `lostcon_driver` self-defense AI cascade (auto-heal/potion/magicshield/fight-back), lostcon's restarea/arena instant-leave and karma early-exit branches, and duplicate-login kick of a still-connected old session still remain. |
 | `src/module/book.c` / `src/module/book.h` `IDR_BOOK` text driver | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-server/src/main.rs` | Book driver dispatch, zero-character no-op boundary, C `BOOK_*`/`SIGN_*` text cases, raw color marker preservation, character-specific demon ritual words via the legacy `id_rand`/`demonspeak` formula, Earth Demon sign readability gates using Ancient Knowledge, random Book Nook joke selection, earth-demon diary `player_special` effects, runtime `SV_TEXT`/`SV_SPECIAL` emission, and C-compatible item-driver return code behavior ported with focused tests. Exact global RNG parity for joke selection remains. |
 | `src/system/player_driver.h` / `src/system/player_driver.c` action setters and primitive runtime bridge, `src/system/area.c` look-section/walk-section slices | `crates/ugaris-core/src/player.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-core/src/area_section.rs`, `crates/ugaris-server/src/main.rs` | `player_driver_stop`, `halt`, direct action setters, serial-preserving item/character actions, teleport, spell queue insertion/last-slot overwrite behavior, server-side use of driver setters for direct/spell client actions, and primitive tick-loop setup/completion for idle, walk-dir including diagonal wall-slide fallback, `PAC_MOVE`, adjacent/path-to-item take, adjacent/path-to-target drop, adjacent/path-to-item use including front-wall pathing, `PAC_TELEPORT` as facing item-use with legacy `spec = teleport + 1`, immediate `PAC_LOOK_MAP` turn/LOS/request handling plus server `SV_TEXT` feedback for hidden targets, C `show_section` section-name/level difficulty text for all non-empty legacy area-sector tables, coordinate fallback, and rest/clan/arena/peace flags, C `walk_section_msg` per-player section tracking with dark-gray `Now entering`/`Now leaving` feedback after successful walks, `PAC_GIVE` adjacent/path-to-recipient setup plus `AC_GIVE` cursor-item transfer, and `PAC_KILL` adjacent/path-to-target setup plus timed attack completion, and the `PAC_KILL` pre-switch stale-target-serial guard (C's `ch[player[nr]->act1].serial != player[nr]->act2` check) plus live-traffic serial capture for Kill/Give/character-targeted spells (see "Ralph Loop - Serial Validation Everywhere" below) ported with tests. Queued spell priority execution, actual item use effects beyond potion, full combat/death/fightback side effects, wall-use/door interaction during movement, music/special sounds for section changes, and action error side effects remain. |
 | Zone template/map parser scaffolding from `src/system/create.c` / `src/system/map.c` | `crates/ugaris-core/src/zone.rs` | Legacy token parsing, `.itm`/`.chr` template record parsing including item `ID`, `.map` directive parsing with origin offsets, live item template ID retention, and tiny sample application into `World` ported with tests. Production zone validation, startup integration, full character template fields, item-driver creation side effects, and respawn/random-loot behavior remain. |
@@ -2361,3 +2361,92 @@ Recommended next chest steps:
   server + 0 doc-tests, all green) / `cargo build -p ugaris-server` clean
   with zero warnings; boot-smoked (`entering Rust game loop`, ticking with
   no panics for 10+ seconds).
+
+## Ralph Loop - Logout/Exit Flow: `CDR_LOSTCON` Linger (Iteration 33)
+
+- Read `src/system/player.c`'s `kick_player`/`exit_player`/`exit_char`/
+  `player_client_exit`/`read_login`, `src/module/lostcon.c`'s full
+  `lostcon_driver`/`lostcon_dead`, and `src/system/database/
+  database_character.c`'s `tick_login()` reclaim branch. The todo's
+  `cl_exit`/`take_over_char` names don't exist verbatim in the current C
+  tree; the real functions are `kick_player` (disconnect entry point:
+  `ac_player_disconnect`, then `ch[cn].driver = CDR_LOSTCON` +
+  `char_driver(driver, CDT_DEAD, cn, 0, 0)` to arm `dat->timeout = ticker +
+  lagout_time` - the character is *not* despawned on disconnect),
+  `player_client_exit` (sends `SV_EXIT`, the real `cmd_exit`), and the
+  in-place reclaim spread across `tick_login()`
+  (`ch[n].driver = 0; login_ok(n, 1);`) and `read_login`
+  (`ch[cn].player = nr; ch[cn].driver = 0;`). `lagout_time` defaults to
+  `5 * 60 * TICKS` = 7200 ticks (`game_settings.c:171`) and was already a
+  live `ServerRuntime`/`GameSettings` field with a `/setlagouttime` admin
+  command wired up (from an earlier iteration) but nothing read it yet.
+- Rust `World`-side state (`crates/ugaris-core/src/world/lostcon.rs`, new):
+  reused the existing `Character.driver_state: Option<CharacterDriverState>`
+  slot instead of adding a new `Character` field (which would have required
+  editing ~15+ existing `Character { ... }` struct-literal test/helper call
+  sites across the tree, since `Character` has no `Default` impl) - added a
+  `CharacterDriverState::Lostcon(LostconDriverData { deadline: u64 })`
+  variant (`character_driver.rs`) alongside the existing `Merchant`/
+  `SimpleBaddy`/etc. variants, and fixed the four now-non-exhaustive
+  `match`es this opened up (`character_driver.rs::apply_simple_baddy_
+  create_message`, `world/npc_fight.rs::simple_baddy_lastfight`, `world/
+  npc_idle.rs::setup_pending_simple_baddy_friend_bless`, `world/
+  npc_messages.rs::simple_baddy_recorded_enemy_ids`). `World::
+  enter_lostcon`/`reclaim_lostcon`/`is_lostcon`/`expired_lostcon_characters`
+  are the C `kick_player`/`tick_login`-reclaim/`lostcon_driver`-timeout
+  equivalents.
+- Rust session-side glue (`crates/ugaris-server/src/lostcon.rs`, new):
+  `enter_lostcon_on_disconnect` stashes the disconnecting session's
+  `PlayerRuntime` (which carries the PPD-backed persistent state - ppd_blob,
+  keyring, chest history, achievements, etc. - that C keeps alive in `ch[]`-
+  adjacent structures regardless of socket state, but Rust's architecture
+  ties to the session-owned `PlayerRuntime`) into a new `ServerRuntime.
+  lostcon_players: HashMap<CharacterId, PlayerRuntime>` map instead of
+  dropping it, and keeps the account depot in `account_depots` rather than
+  removing it. `reclaim_lostcon_on_login` restores the stashed
+  `PlayerRuntime` onto the new session via a new `PlayerRuntime::
+  reclaim_for_session` (resets only session-transient fields - socket id,
+  command queue, scrollback, fightback timers - leaving all PPD-backed
+  state untouched) and clears the world driver. `take_expired_lostcon_
+  characters` polls `World::expired_lostcon_characters` each tick and hands
+  back the stashed player+depot for saving.
+- Wired into `main.rs`: `SessionEvent::Disconnected` now calls
+  `enter_lostcon_on_disconnect` instead of saving+removing immediately (the
+  old immediate save+remove is kept as the fallback for the case where
+  there's no live world character to linger, matching C's
+  `if (player[nr]->state == ST_NORMAL)` guard). A new per-tick block right
+  after `world.regenerate_characters` collects expired lingerers, saves
+  each through a DB repository if configured (same `character_save_request`
+  used by the old immediate-disconnect path), and calls
+  `world.remove_character` - the C `exit_char`/`kick_char` tail.
+  `SessionEvent::Login` calls `reclaim_lostcon_on_login` in three spots: the
+  DB-repository `Ready` arm (before the stale `load_character_snapshot`
+  call, which would otherwise overwrite the live in-memory lingering
+  character with pre-disconnect DB data - skipped entirely on a successful
+  reclaim) and the no-DB-repository scaffold fallback (so `DATABASE_URL`-
+  less runs also honor the reclaim instead of falling through to a fresh
+  template spawn).
+- Tests: 6 in `crates/ugaris-core/src/world/tests/lostcon.rs` (deadline
+  arming, missing-character no-op, still-on-map-and-attackable while
+  lingering, reclaim clears driver/state, reclaim is a no-op when not
+  lingering, expiry set matches deadline+driver and excludes reclaimed
+  characters); 1 in `crates/ugaris-core/src/player.rs`
+  (`reclaim_for_session_keeps_ppd_state_and_resets_session_bookkeeping`); 5
+  in `crates/ugaris-server/src/tests/lostcon.rs` (enter/deadline+stash,
+  enter-falls-back-when-missing, reclaim restores stashed player, reclaim
+  no-op when not lingering, expiry collection only takes matured entries
+  and leaves others in place).
+- `cargo fmt --all` / `cargo test --workspace` (1130 core + 9 + 3 + 33 +
+  366 server + 0 doc-tests, all green, zero warnings) / `cargo build -p
+  ugaris-server` clean with zero warnings; boot-smoked (`entering Rust game
+  loop`, 279+ ticks with no panics).
+- REMAINING (documented in the `PORTING_TODO.md` task note, not silently
+  dropped): the `lostcon_driver` self-defense AI cascade (auto-heal/
+  potion/magicshield, `fight_driver_attack_visible`/
+  `fight_driver_follow_invisible`) - a lingering character is attackable
+  and takes/deals damage normally today but will not proactively fight
+  back; the instant-leave-at-restarea/arena special cases and
+  `karma <= -12`/`-5` early-exit branches in `lostcon_driver`; the
+  `CDR_LOSTCON` exp-loss cap on death (already tracked in the `death.rs`
+  ledger row); and duplicate-login kick of a still-connected (non-lostcon)
+  old session (`read_login`'s `ch[cn].player != nr` guard).

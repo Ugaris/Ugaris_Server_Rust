@@ -21,6 +21,7 @@ mod inventory;
 mod item_apply;
 mod keyring;
 mod login;
+mod lostcon;
 mod map_sync;
 mod merchants;
 mod player_actions;
@@ -48,6 +49,7 @@ pub(crate) use inventory::*;
 pub(crate) use item_apply::*;
 pub(crate) use keyring::*;
 pub(crate) use login::*;
+pub(crate) use lostcon::*;
 pub(crate) use map_sync::*;
 pub(crate) use merchants::*;
 pub(crate) use player_actions::*;
@@ -193,6 +195,13 @@ struct ServerRuntime {
     effect_caches: HashMap<u64, ClientEffectCache>,
     account_depots: HashMap<CharacterId, AccountDepotState>,
     merchant_views: HashMap<CharacterId, CharacterId>,
+    /// C `kick_player`/`CDR_LOSTCON`: the session-owned `PlayerRuntime` for
+    /// a character that lost its connection, stashed here (instead of
+    /// dropped) while the character lingers on the map so a reconnect
+    /// within `lagout_time` (`lostcon::reclaim_lostcon_on_login`) or the
+    /// eventual save-and-despawn (`lostcon::take_expired_lostcon_characters`)
+    /// can recover it.
+    lostcon_players: HashMap<CharacterId, PlayerRuntime>,
     tick_out: HashMap<u64, Vec<bytes::BytesMut>>,
     staff_codes: HashMap<CharacterId, String>,
     action_queue: VecDeque<(u64, ClientAction)>,
@@ -231,6 +240,7 @@ impl Default for ServerRuntime {
             effect_caches: HashMap::new(),
             account_depots: HashMap::new(),
             merchant_views: HashMap::new(),
+            lostcon_players: HashMap::new(),
             tick_out: HashMap::new(),
             staff_codes: HashMap::new(),
             action_queue: VecDeque::new(),
@@ -669,6 +679,42 @@ async fn main() -> anyhow::Result<()> {
                     (runtime.dlight_override != 0).then_some(runtime.dlight_override),
                 );
                 world.regenerate_characters(runtime.regen_time, config.area_id);
+                // C `lostcon_driver`'s `!ch[cn].player && ticker >
+                // dat->timeout` branch + `exit_char`/`kick_char`: save and
+                // despawn characters whose disconnect linger expired
+                // without being reclaimed by a reconnect.
+                let expired_lostcon =
+                    take_expired_lostcon_characters(&world, &mut runtime, world.tick.0);
+                if !expired_lostcon.is_empty() {
+                    let expired_count = expired_lostcon.len();
+                    for (character_id, player, account_depot) in expired_lostcon {
+                        if let Some(repository) = &character_repository {
+                            if let Some(character) = world.characters.get(&character_id) {
+                                let request = character_save_request(
+                                    &world,
+                                    &player,
+                                    character,
+                                    account_depot.as_ref(),
+                                    config.area_id,
+                                    config.mirror_id,
+                                );
+                                match repository.save_character_snapshot(request).await {
+                                    Ok(true) => {
+                                        info!(character_id = character_id.0, "saved DB-backed character snapshot on lostcon expiry");
+                                    }
+                                    Ok(false) => {
+                                        warn!(character_id = character_id.0, "DB character snapshot save was skipped by area guard on lostcon expiry");
+                                    }
+                                    Err(err) => {
+                                        warn!(character_id = character_id.0, error = %err, "failed to save DB-backed character snapshot on lostcon expiry");
+                                    }
+                                }
+                            }
+                        }
+                        world.remove_character(character_id);
+                    }
+                    info!(expired_count, tick = world.tick.0, "despawned expired lostcon characters");
+                }
                 world.tick_effects_with_attack_policy(|caster_id, caster, target, map| {
                     if let Some(player) = runtime.player_for_character_mut(caster_id) {
                         let attack_policy = RuntimePlayerAttackPolicy { attacker_runtime: &*player };
@@ -5325,33 +5371,46 @@ async fn main() -> anyhow::Result<()> {
                                         player.character_number = if character_number == 0 { db_character_id.0 } else { character_number };
                                         player.set_current_mirror(mirror.max(0) as u32);
                                     }
-                                    match repository.load_character_snapshot(db_character_id).await {
-                                        Ok(Some(snapshot)) => {
-                                            if let Some(player) = runtime.players.get_mut(&id.0) {
-                                                let login_realtime_seconds =
-                                                    world.tick.0 / TICKS_PER_SECOND;
-                                                let snapshot_result = apply_character_snapshot(
-                                                    &mut world,
-                                                    player,
-                                                    snapshot,
-                                                    spawn_tile.0,
-                                                    spawn_tile.1,
-                                                    login_realtime_seconds,
-                                                );
-                                                loaded_from_database = snapshot_result.loaded;
-                                                if let Some(account_depot) = snapshot_result.account_depot {
-                                                    runtime.account_depots.insert(db_character_id, account_depot);
+                                    // C `tick_login()`
+                                    // (`database_character.c:1164`): a
+                                    // character still loaded in memory under
+                                    // `CDR_LOSTCON` is reclaimed in place
+                                    // instead of being re-read from the
+                                    // (stale, pre-disconnect) database
+                                    // snapshot.
+                                    let reclaim_tick = world.tick.0;
+                                    if reclaim_lostcon_on_login(&mut world, &mut runtime, id.0, db_character_id, reclaim_tick) {
+                                        loaded_from_database = true;
+                                        info!(%id, character_id = db_character_id.0, "reclaimed lostcon-lingering character on reconnect");
+                                    } else {
+                                        match repository.load_character_snapshot(db_character_id).await {
+                                            Ok(Some(snapshot)) => {
+                                                if let Some(player) = runtime.players.get_mut(&id.0) {
+                                                    let login_realtime_seconds =
+                                                        world.tick.0 / TICKS_PER_SECOND;
+                                                    let snapshot_result = apply_character_snapshot(
+                                                        &mut world,
+                                                        player,
+                                                        snapshot,
+                                                        spawn_tile.0,
+                                                        spawn_tile.1,
+                                                        login_realtime_seconds,
+                                                    );
+                                                    loaded_from_database = snapshot_result.loaded;
+                                                    if let Some(account_depot) = snapshot_result.account_depot {
+                                                        runtime.account_depots.insert(db_character_id, account_depot);
+                                                    }
+                                                }
+                                                if loaded_from_database {
+                                                    info!(%id, character_id = db_character_id.0, mirror, "loaded DB-backed character snapshot");
                                                 }
                                             }
-                                            if loaded_from_database {
-                                                info!(%id, character_id = db_character_id.0, mirror, "loaded DB-backed character snapshot");
+                                            Ok(None) => {
+                                                warn!(%id, character_id = db_character_id.0, "DB login succeeded but no character snapshot was available; using scaffold");
                                             }
-                                        }
-                                        Ok(None) => {
-                                            warn!(%id, character_id = db_character_id.0, "DB login succeeded but no character snapshot was available; using scaffold");
-                                        }
-                                        Err(err) => {
-                                            warn!(%id, character_id = db_character_id.0, error = %err, "failed to load DB character snapshot; using scaffold");
+                                            Err(err) => {
+                                                warn!(%id, character_id = db_character_id.0, error = %err, "failed to load DB character snapshot; using scaffold");
+                                            }
                                         }
                                     }
                                 }
@@ -5362,6 +5421,17 @@ async fn main() -> anyhow::Result<()> {
                                     warn!(%id, error = %err, "DB login failed; using scaffold");
                                 }
                             }
+                        }
+                        let reclaim_tick = world.tick.0;
+                        if !loaded_from_database
+                            && reclaim_lostcon_on_login(&mut world, &mut runtime, id.0, character_id, reclaim_tick)
+                        {
+                            // No DB repository configured: still honor an
+                            // in-memory `CDR_LOSTCON` reclaim so the
+                            // scaffold path matches C's `tick_login` reclaim
+                            // instead of falling through to a fresh spawn.
+                            loaded_from_database = true;
+                            info!(%id, character_id = character_id.0, "reclaimed lostcon-lingering character on reconnect (no DB repository)");
                         }
                         if !loaded_from_database && !world.characters.contains_key(&character_id) {
                             let (character, inventory_items) = login_character_from_template(
@@ -5466,30 +5536,51 @@ async fn main() -> anyhow::Result<()> {
                             .and_then(|character_id| runtime.account_depots.get(&character_id).cloned());
                         if let Some(player) = runtime.disconnect(id.0) {
                             if let Some(character_id) = player.character_id {
-                                if let Some(repository) = &character_repository {
-                                    if let Some(character) = world.characters.get(&character_id) {
-                                        let request = character_save_request(
-                                            &world,
-                                            &player,
-                                            character,
-                                            account_depot.as_ref(),
-                                            config.area_id,
-                                            config.mirror_id,
-                                        );
-                                        match repository.save_character_snapshot(request).await {
-                                            Ok(true) => {
-                                                info!(%id, character_id = character_id.0, "saved DB-backed character snapshot on logout");
-                                            }
-                                            Ok(false) => {
-                                                warn!(%id, character_id = character_id.0, "DB character snapshot save was skipped by area guard");
-                                            }
-                                            Err(err) => {
-                                                warn!(%id, character_id = character_id.0, error = %err, "failed to save DB-backed character snapshot on logout");
+                                // C `kick_player`: the character is not
+                                // despawned on disconnect. It is detached
+                                // from the socket and lingers under
+                                // `CDR_LOSTCON` for `lagout_time` ticks
+                                // (attackable, reclaimable on reconnect)
+                                // before the tick loop's expiry check saves
+                                // and removes it.
+                                let lagout_time = runtime.lagout_time;
+                                let current_tick = world.tick.0;
+                                if let Some(leftover_player) = enter_lostcon_on_disconnect(
+                                    &mut world,
+                                    &mut runtime,
+                                    character_id,
+                                    player,
+                                    account_depot.clone(),
+                                    current_tick,
+                                    lagout_time,
+                                ) {
+                                    if let Some(repository) = &character_repository {
+                                        if let Some(character) = world.characters.get(&character_id) {
+                                            let request = character_save_request(
+                                                &world,
+                                                &leftover_player,
+                                                character,
+                                                account_depot.as_ref(),
+                                                config.area_id,
+                                                config.mirror_id,
+                                            );
+                                            match repository.save_character_snapshot(request).await {
+                                                Ok(true) => {
+                                                    info!(%id, character_id = character_id.0, "saved DB-backed character snapshot on logout");
+                                                }
+                                                Ok(false) => {
+                                                    warn!(%id, character_id = character_id.0, "DB character snapshot save was skipped by area guard");
+                                                }
+                                                Err(err) => {
+                                                    warn!(%id, character_id = character_id.0, error = %err, "failed to save DB-backed character snapshot on logout");
+                                                }
                                             }
                                         }
                                     }
+                                    world.remove_character(character_id);
+                                } else {
+                                    info!(%id, character_id = character_id.0, "character entered lostcon linger on disconnect");
                                 }
-                                world.remove_character(character_id);
                             }
                         }
                         info!(%id, "session removed");
