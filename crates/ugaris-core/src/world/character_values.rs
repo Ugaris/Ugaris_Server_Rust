@@ -380,14 +380,19 @@ fn skill_base_attributes(
 /// `value[1]` (the raised/base amount) plus equipment/spell modifiers,
 /// profession bonuses and race/class caps. This is the pure-data slice:
 /// equipment modifier sum + caps, base-attribute averaging, profession
-/// bonuses, Body Control/Armor Skill armor-weapon bonuses and the
+/// bonuses, Body Control/Armor Skill armor-weapon bonuses, the
+/// character-attached-effect `V_LIGHT` contribution (`effect_light`,
+/// computed by the caller since it needs `&self.effects`), and the
 /// HP/endurance/mana current-value clamp. Callers that have map access
 /// (`World::update_character`) additionally handle the light emission
 /// diff, which needs `&mut World`.
 ///
 /// Known gaps vs. the C original (documented, not silently dropped):
-/// - `ch.ef[]` area-effect light contributions are not modeled (Rust
-///   effects are not attached to characters the same way).
+/// - `ch.ef[]`'s fixed four-slot cap on character-attached effects is
+///   approximated, not exactly modeled: see
+///   [`World::character_attached_effect_light`] for the precise
+///   deviation (only matters with 5+ simultaneous character-attached
+///   effects).
 /// - The `player_reset_map_cache` call on infravision toggle is not
 ///   ported (display-only side effect tracked separately). Sprite
 ///   reselection (demon suits, weapon-in-hand offsets) *is* ported, as
@@ -398,6 +403,7 @@ pub(crate) fn recompute_character_values(
     items: &HashMap<ItemId, Item>,
     hour: i64,
     in_clan_area: bool,
+    effect_light: i32,
 ) {
     refresh_driver_spell_flags(character, items);
 
@@ -411,6 +417,17 @@ pub(crate) fn recompute_character_values(
     let mut mod_arr = [0i32; CHARACTER_VALUE_COUNT];
     let mut beyond_arr = [0i32; CHARACTER_VALUE_COUNT];
     let mut bless_arr = [0i32; CHARACTER_VALUE_COUNT];
+
+    // C `create.c:1788-1797`: `mod[V_LIGHT] += ef[fn].light` for each of
+    // the character's up to four attached effects (`ch[cn].ef[0..4]`).
+    // `World::update_character` computes `effect_light` as the sum of
+    // `.light` across the character's currently attached effects
+    // (`Effect::target_character`), matching this contribution before the
+    // shared value-recompute loop below applies it like any other
+    // uncapped V_LIGHT modifier (V_LIGHT is exempt from the seyan/
+    // warrior mod cap since it is outside the `n <= V_STR || n >= V_PULSE`
+    // range).
+    mod_arr[CharacterValue::Light as usize] += effect_light;
 
     for item_id in character.inventory.iter().take(30).flatten() {
         let Some(item) = items.get(item_id) else {
@@ -642,10 +659,12 @@ impl World {
                 .tile(usize::from(x), usize::from(y))
                 .is_some_and(|tile| tile.flags.contains(MapFlags::CLAN));
 
+        let effect_light = self.character_attached_effect_light(character_id);
+
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        recompute_character_values(character, &self.items, hour, in_clan_area);
+        recompute_character_values(character, &self.items, hour, in_clan_area, effect_light);
         let sprite_changed = recompute_character_sprite(character, &self.items);
 
         self.refresh_character_light_after_value_change(character_id, old_light);
@@ -653,5 +672,31 @@ impl World {
             self.mark_dirty_sector(usize::from(x), usize::from(y));
         }
         true
+    }
+
+    /// C `create.c:1785-1797`: sums `ef[fn].light` across the character's
+    /// attached effect slots (`ch[cn].ef[0..4]`). C caps a character to at
+    /// most four simultaneously attached effects (`add_effect_char`,
+    /// `src/system/effect.c:209`, returns 0 and silently drops the
+    /// attachment - including its light contribution - once all four
+    /// slots are full); Rust does not yet model that fixed four-slot
+    /// array (`Effect::target_character` allows unlimited attachments per
+    /// character), so as an approximation this takes the four
+    /// lowest-id (oldest/earliest-attached) effects, which matches C for
+    /// the common case and only deviates from C when a character has more
+    /// than four character-attached effects at once (a rare edge case:
+    /// e.g. bless + curse + warcry/freeze + a fifth combat effect like
+    /// magicshield/firering/pulseback/burn/strike/flash landing at the
+    /// same time). Documented, not silently dropped.
+    pub(crate) fn character_attached_effect_light(&self, character_id: CharacterId) -> i32 {
+        let mut attached: Vec<(u32, i32)> = self
+            .effects
+            .iter()
+            .filter(|(_, effect)| effect.target_character == Some(character_id))
+            .map(|(&effect_id, effect)| (effect_id, effect.light))
+            .collect();
+        attached.sort_unstable_by_key(|&(effect_id, _)| effect_id);
+        attached.truncate(4);
+        attached.iter().map(|&(_, light)| light).sum()
     }
 }

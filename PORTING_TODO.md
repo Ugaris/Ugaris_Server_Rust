@@ -504,7 +504,7 @@ order.
 Systems every later port depends on. Order within the section is a
 suggestion; dependencies are noted.
 
-- [~] **`update_char` stat recomputation** - the big one. C
+- [x] **`update_char` stat recomputation** - the big one. C
   `update_char(cn)` in `src/system/tool.c` recomputes `values[0]` from
   `values[1]` plus worn equipment modifiers, spell items, profession
   bonuses, race base, and clamps; it also recomputes `V_ARMOR`/`V_WEAPON`
@@ -662,6 +662,35 @@ suggestion; dependencies are noted.
     contributions to `V_LIGHT` are undocumented/unported (Rust effects
     are not attached to characters the way C's `ch.ef[]` array is); this
     is a separate, larger effects-system gap outside this task's scope.
+  - Iteration 28: closed the final documented gap. `World::update_character`
+    now computes `effect_light` (`World::character_attached_effect_light`,
+    `world/character_values.rs`) by summing `.light` across the
+    character's currently attached effects (`Effect::target_character ==
+    Some(character_id)`, which already existed for magicshield/firering/
+    pulseback/burn/bless/warcry/freeze/potion/curse/cap/lag/strike/flash
+    show-effects) and passes it into `recompute_character_values`, which
+    adds it into `mod[V_LIGHT]` exactly like C's `mod[V_LIGHT] +=
+    ef[fn].light` loop (`create.c:1785-1797`) - uncapped by the seyan/
+    warrior mod-percentage cap since `V_LIGHT` sits outside the `n <=
+    V_STR || n >= V_PULSE` range in C, matching the existing formula
+    already ported. Documented, intentional deviation: C's `ch.ef[]` is a
+    fixed four-slot array (`add_effect_char`, `effect.c:209`, silently
+    refuses a fifth simultaneous attachment), which Rust does not model;
+    as an approximation, `character_attached_effect_light` sums only the
+    four lowest-effect-id (earliest-attached) character-attached effects,
+    matching C for the common case and only deviating in the rare 5+
+    simultaneous character-attached-effect case. 2 new tests in
+    `world/tests/character_values.rs`
+    (`character_attached_effect_light_contributes_to_v_light`,
+    `character_attached_effect_light_caps_at_four_effects_by_creation_order`).
+    `cargo fmt --all` / `cargo test --workspace` (1112 core tests, all
+    green) / `cargo build -p ugaris-server` all clean; boot-smoked past
+    tick 233 with no panics. This closes the task: all four
+    `update_character` slices plus every documented call-site and
+    recompute-detail gap are now ported, with only the trivial
+    `player_reset_map_cache` display-cache no-op (Rust has no such
+    client-scroll-diff cache to invalidate) and the above four-slot
+    approximation remaining as intentional, documented deviations.
 
 - [ ] **Equipment slot rules on swap (`CL_SWAP` into worn slots)** - C
   `cl_swap`/`swap` checks `place_item_typed` rules: worn slot flag match
@@ -1366,3 +1395,17 @@ Add one line per completed task: date, task, ledger section touched.
   (`entering Rust game loop area_id=1`). REMAINING for this task: only
   `ch.ef[]` area-effect light contributions to `V_LIGHT` are unported -
   a larger, separate effects-attachment gap.
+- 2026-07-03: `update_char` stat recomputation (P1, iteration 28) - closed
+  the task's final documented gap by porting the `mod[V_LIGHT] +=
+  ef[fn].light` character-attached-effect contribution
+  (`World::character_attached_effect_light`,
+  `crates/ugaris-core/src/world/character_values.rs`, summing
+  `Effect::target_character`-matched effects' `.light`, capped at the
+  four lowest-id effects to approximate C's fixed four-slot `ch.ef[]`
+  array). 2 new tests in `world/tests/character_values.rs`; ledger
+  section "Ralph Loop - `update_char` Stat Recomputation" and the
+  `create.c` `update_char` row in the Ported table extended. Task
+  checkbox flipped to `[x]` - all four recompute slices plus every
+  call-site and sub-gap are now ported, with only the trivial
+  `player_reset_map_cache` no-op and the four-slot approximation
+  remaining as intentional, documented deviations.

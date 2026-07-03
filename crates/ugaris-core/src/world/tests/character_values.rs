@@ -403,3 +403,52 @@ fn clan_profession_bonus_does_not_apply_outside_area_13_or_clan_tile() {
     let actor = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!(actor.values[0][CharacterValue::Wisdom as usize], 50);
 }
+
+/// C `create.c:1785-1797`: `mod[V_LIGHT] += ef[fn].light` for each of the
+/// character's attached effects (`ch[cn].ef[0..4]`). A character-attached
+/// `EF_MAGICSHIELD` (`create_show_effect(EF_MAGICSHIELD, cn, ..., 25, 0)`,
+/// `src/system/act.c:1088`) contributes its light straight into V_LIGHT,
+/// uncapped (V_LIGHT sits outside the `n <= V_STR || n >= V_PULSE` mod-cap
+/// range in C).
+#[test]
+fn character_attached_effect_light_contributes_to_v_light() {
+    let mut world = World::default();
+    let actor = character(1);
+    assert!(world.spawn_character(actor, 50, 50));
+
+    let effect_id = world.next_effect_id();
+    let mut effect = Effect::new(EF_MAGICSHIELD, effect_id as i32, 0, 3);
+    effect.target_character = Some(CharacterId(1));
+    effect.light = 25;
+    world.effects.insert(effect_id, effect);
+
+    assert!(world.update_character(CharacterId(1)));
+    let actor = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(actor.values[0][CharacterValue::Light as usize], 25);
+}
+
+/// C `effect.c:209-238` `add_effect_char`: only the first four attached
+/// effects occupy `ch[cn].ef[0..4]`; a fifth attachment attempt fails and
+/// contributes no light. `World::character_attached_effect_light`
+/// approximates this by summing only the four lowest-id (earliest
+/// attached) character-attached effects.
+#[test]
+fn character_attached_effect_light_caps_at_four_effects_by_creation_order() {
+    let mut world = World::default();
+    let actor = character(1);
+    assert!(world.spawn_character(actor, 50, 50));
+
+    for _ in 0..5 {
+        let effect_id = world.next_effect_id();
+        let mut effect = Effect::new(EF_FIRERING, effect_id as i32, 0, 100);
+        effect.target_character = Some(CharacterId(1));
+        effect.light = 20;
+        world.effects.insert(effect_id, effect);
+    }
+
+    assert!(world.update_character(CharacterId(1)));
+    let actor = world.characters.get(&CharacterId(1)).unwrap();
+    // Only the first four (of five) attached effects' light counts, matching
+    // C's fixed four-slot `ch.ef[]` cap: 4 * 20 = 80, not 5 * 20 = 100.
+    assert_eq!(actor.values[0][CharacterValue::Light as usize], 80);
+}
