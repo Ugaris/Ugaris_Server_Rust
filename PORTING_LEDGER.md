@@ -77,7 +77,7 @@ Remaining oversized files worth splitting during future work:
 | `src/system/sector.h` / `src/system/sector.c` | `crates/ugaris-core/src/sector.rs` | Dirty sector tick tracking, `skipx_sector`, 8x8 character sector head/links, sound sector flood fill, shout sector flood fill, temporary sound door traversal, and hearing checks ported with tests. Runtime character/map integration remains. |
 | `src/system/see.h` / `src/system/see.c` | `crates/ugaris-core/src/see.rs`, `crates/ugaris-core/src/entity.rs` | Character and item visibility rules ported with tests: invisible checks, light/daylight blending, infrared/infravision boosts, light/dark profession boosts, stealth/perception scoring, carried item hiding, takeable item light requirement, and front-wall item side checks. Uses current conservative Rust LOS helper. |
 | `src/system/date.h` / `src/system/date.c` | `crates/ugaris-core/src/game_time.rs` | Game date units, moon phases, solstice/equinox flags, sunrise/sunset, area light overrides, and daylight calculation ported with tests. |
-| `src/system/do.h` / `src/system/do.c` primitive actions, `src/system/act.c` primitive completions | `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/entity.rs`, `crates/ugaris-core/src/world/actions.rs`, `crates/ugaris-core/src/world/regen.rs` | Error codes, duration constants, `speed`, `end_cost`, `do_idle`, deterministic `do_walk` movement checks/reservation, terrain/underwater movement costs, fast-mode endurance cost, timed `do_take`/`do_use`/`do_drop`/`do_attack` setup, `act_walk`, `act_take`, `act_drop`, `act_use` validation to typed item-driver request, `act_attack` deterministic-resolution bridge using ported attack formulas, action step readiness/reset, world-backed action completion helpers, minimal world action tick dispatcher including `AC_ATTACK1..3`, C `tile_special_check` slowdeath hazard damage, underwater drowning damage, oxygen bubble creation cadence, and pre-action tick-loop invocation, `turn`, and `act()`'s `regen_ticker` non-idle-action stamp ported with tests. `World::regenerate_characters` (called once per tick from `main.rs`) now ports C `regenerate()` (skill-gated endurance/lifeshield regen throttled per real second via the new `Character.last_regen` field) and the HP/endurance/mana/lifeshield-leak regen from `act_idle()`, gated by `regen_ticker + regen_time` and the `MF_NOREGEN`/area-33 special cases, with focused tests in `world/tests/regen.rs`. Since Rust's tick loop skips characters with `action == 0` entirely (no per-batch idle completion event like C), the idle regen applies continuously once per real tick using the per-tick-equivalent amount instead of C's `act1`-scaled batch amount; the steady-state rate matches, only the batching granularity differs (documented in `regen.rs`). Not yet ported: `reduce_rage`/`increase_rage` (no `rage` field on `Character` yet), the `NT_CHAR` notify-area call at the end of `act_idle` (tracked by the separate P0 "NPC sighting messages" task), and `check_endurance` (tracked by the "Speed mode" P0 task). Weather/effect movement modifiers, full central action dispatcher, exact legacy RNG parity, full `sub_attack` side effects, death/notify/surround integration, actual use-item driver effects, exact tile-special sound fan-out/random underwater sound selection, and spells remain. |
+| `src/system/do.h` / `src/system/do.c` primitive actions, `src/system/act.c` primitive completions | `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/entity.rs`, `crates/ugaris-core/src/world/actions.rs`, `crates/ugaris-core/src/world/regen.rs` | Error codes, duration constants, `speed`, `end_cost`, `do_idle`, deterministic `do_walk` movement checks/reservation, terrain/underwater movement costs, fast-mode endurance cost, timed `do_take`/`do_use`/`do_drop`/`do_attack` setup, `act_walk`, `act_take`, `act_drop`, `act_use` validation to typed item-driver request, `act_attack` deterministic-resolution bridge using ported attack formulas, action step readiness/reset, world-backed action completion helpers, minimal world action tick dispatcher including `AC_ATTACK1..3`, C `tile_special_check` slowdeath hazard damage, underwater drowning damage, oxygen bubble creation cadence, and pre-action tick-loop invocation, `turn`, and `act()`'s `regen_ticker` non-idle-action stamp ported with tests. `World::regenerate_characters` (called once per tick from `main.rs`) now ports C `regenerate()` (skill-gated endurance/lifeshield regen throttled per real second via the new `Character.last_regen` field) and the HP/endurance/mana/lifeshield-leak regen from `act_idle()`, gated by `regen_ticker + regen_time` and the `MF_NOREGEN`/area-33 special cases, with focused tests in `world/tests/regen.rs`. Since Rust's tick loop skips characters with `action == 0` entirely (no per-batch idle completion event like C), the idle regen applies continuously once per real tick using the per-tick-equivalent amount instead of C's `act1`-scaled batch amount; the steady-state rate matches, only the batching granularity differs (documented in `regen.rs`). Not yet ported: `reduce_rage`/`increase_rage` (no `rage` field on `Character` yet), the `NT_CHAR` notify-area call at the end of `act_idle` (tracked by the separate P0 "NPC sighting messages" task), and `check_endurance` (tracked by the "Speed mode" P0 task). `World::complete_attack_with_rolls_and_clash_roll` (`world/combat.rs`) now also emits `notify_area(.., NT_CHAR, ..)` from the attacker's position after `apply_legacy_hurt`, gated on `!CF_NONOTIFY` and firing on both hit and miss (matches C `act_attack`, act.c:763-793), with a defensive attacker-still-alive (`!CharacterFlags::DEAD`) guard mirroring C's `if (!ch[cn].flags) return 0`. Weather/effect movement modifiers, full central action dispatcher, exact legacy RNG parity, `sub_surround`/`V_SURROUND` and `increase_rage` (act_attack's remaining side effects - no `rage`/`V_SURROUND` fields on `Character` yet), death/notify/surround integration, actual use-item driver effects, exact tile-special sound fan-out/random underwater sound selection, and spells remain. |
 | `src/system/drvlib.c` distance helpers | `crates/ugaris-core/src/drvlib.rs`, `crates/ugaris-core/src/entity.rs` | `map_dist`, `char_dist`, `tile_char_dist`, and `step_char_dist` including `tox`/`toy` target-position handling ported with tests. Broader driver library remains. |
 | `src/system/error.h` / `src/system/error.c` | `crates/ugaris-core/src/error.rs` | Legacy `ERR_*` constants, exact error string table, and out-of-bounds fallback behavior ported with tests. |
 | `src/system/act.c` / `src/system/do.c` pure attack formulas | `crates/ugaris-core/src/attack.rs`, `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/world.rs` | Attack chance breakpoint table, strict roll comparison, attack/parry skill math, side/back/assassin bonuses, direct melee damage units, armor/lifeshield reduction helpers, `do_attack` setup/reachability checks, core `can_attack` guard subset, `act_attack` HP/lifeshield damage application, `PAC_KILL` adjacent/path-to-target setup, and timed `AC_ATTACK1..3` world completion ported with tests. Exact legacy RNG parity, full `sub_attack` side effects, rage/surround hits, death/hurt/notify integration, clan/hate/group policy, and player fightback state remain. |
@@ -1101,6 +1101,43 @@ Recommended next chest steps:
   granularity fix. The merchant greeting scan migration to consume
   `NT_CHAR` via `process_merchant_messages` remains optional/undone.
 - Full workspace suite (1063 tests total across all crates, 0 failed),
+  `cargo fmt --all`, `cargo build -p ugaris-server` (zero warnings), and a
+  10s boot smoke (ticks advancing, NPC driver messages processed, no
+  panics) all pass.
+
+### Ralph Loop Iteration 14 Additional Progress
+
+- Continued the P0 "NPC sighting messages (`NT_CHAR` emission)" task by
+  wiring `act_attack` (act.c:763-793): `World::complete_attack_with_rolls_and_clash_roll`
+  (`crates/ugaris-core/src/world/combat.rs`) now emits
+  `notify_area(.., NT_CHAR, ..)` from the attacker's position after
+  `apply_legacy_hurt`, gated on `!CF_NONOTIFY`, firing on both hit and miss
+  rolls (C calls `sub_attack` unconditionally, then runs the
+  surround/rage/notify tail regardless of the roll outcome). Added a
+  defensive "attacker still alive" check (`!CharacterFlags::DEAD`) mirroring
+  C's `if (!ch[cn].flags) return 0` guard against `sub_attack` having killed
+  the attacker mid-call - currently unreachable since nothing damages the
+  attacker during its own attack, but kept for parity and future
+  reflect-damage effects.
+- Tests: `world/tests/combat.rs` gained
+  `completed_attack_notifies_nearby_characters_with_nt_char_on_hit_and_miss`
+  (verifies `NT_CHAR` fires on both a hit and a miss roll, filtering out the
+  unrelated `NT_SEEHIT` that `apply_legacy_hurt` also queues to the same
+  bystander on a hit since bystanders inside the 16-tile `hurt()` radius get
+  both messages) and `completed_attack_skips_notify_when_cf_nonotify_set`
+  (uses a miss roll to isolate the `CF_NONOTIFY` gate from
+  `apply_legacy_hurt`'s own unconditional `NT_SEEHIT` broadcast).
+- REMAINING (unchanged scope for a future slice): every spell-cast `act_*`
+  completion (fireball/ball/earthrain/earthmud/flash/magicshield/bless/
+  warcry/freeze/pulse/heal) still doesn't emit `NT_CHAR`/`NT_SPELL` in Rust
+  (`world/item_outcomes.rs`'s spell-outcome handlers) - this is the natural
+  next slice. `sub_surround`/`V_SURROUND` (act.c:697-705) and
+  `increase_rage` remain unported (no `rage`/`V_SURROUND` fields on
+  `Character`), independent of the `NT_CHAR` wiring done here. `act_idle`
+  (`world/regen.rs`) remains intentionally deferred pending the idle-batch
+  granularity fix. The merchant greeting scan migration to consume
+  `NT_CHAR` via `process_merchant_messages` remains optional/undone.
+- Full workspace suite (1065 tests total across all crates, 0 failed),
   `cargo fmt --all`, `cargo build -p ugaris-server` (zero warnings), and a
   10s boot smoke (ticks advancing, NPC driver messages processed, no
   panics) all pass.

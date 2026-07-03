@@ -430,15 +430,44 @@
         "test result: FAILED. 36 passed; 1 failed; 0 ignored; 0 measured; 1026 filtered out; finished in 0.01s",
         "error: test failed, to rerun pass `-p ugaris-core --lib`"
       ]
+    },
+    {
+      "iteration": 14,
+      "startedAt": "2026-07-03T14:03:27.519Z",
+      "endedAt": "2026-07-03T14:12:12.038Z",
+      "durationMs": 524046,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/combat.rs",
+        "crates/ugaris-core/src/world/tests/combat.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- Verified: `cargo fmt --all` clean, `cargo test --workspace` (1065+ tests, 0 failures), `cargo build -p ugaris-server` (zero warnings), and a 10s boot-smoke confirming \"entering Rust game loop\" with ",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "(`CF_NONOTIFY` or failed validation) test per call site",
+        "\u001b[0m✗ \u001b[0mEdit crates/ugaris-core/src/world/tests/combat.rs failed",
+        "\u001b[91m\u001b[1mError: \u001b[0mFound multiple matches for oldString. Provide more surrounding context to make the match unique.",
+        "assertion failed: bystander.driver_messages.is_empty()",
+        "test result: FAILED. 1063 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|test result|error\\[|warning:\" | head -40",
+        "test result: ok. 1065 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
+      ]
     }
   ],
-  "totalDurationMs": 11148122,
+  "totalDurationMs": 11672168,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 13,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 14,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 1,
@@ -447,7 +476,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 8,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 9,
       "test error::tests::error_constants_match_legacy_header ... ok": 4,
       "test error::tests::error_strings_match_legacy_table ... ok": 3,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 2,
@@ -455,7 +484,7 @@
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 1,
       "test result: FAILED. 1019 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 4,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 5,
       "test result: ok. 1030 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
@@ -506,7 +535,14 @@
       "\u001b[0m$ \u001b[0mgrep -n \"complete_walk_notifies_nearby_characters_with_nt_char\\|complete_walk_skips_notify": 1,
       "test world::tests::actions::complete_give_notifies_nt_char_after_nt_give ... FAILED": 1,
       "test world::tests::actions::complete_use_skips_notify_when_validation_fails ... ok": 1,
-      "test result: FAILED. 36 passed; 1 failed; 0 ignored; 0 measured; 1026 filtered out; finished in 0.01": 1
+      "test result: FAILED. 36 passed; 1 failed; 0 ignored; 0 measured; 1026 filtered out; finished in 0.01": 1,
+      "- Verified: `cargo fmt --all` clean, `cargo test --workspace` (1065+ tests, 0 failures), `cargo buil": 1,
+      "(`CF_NONOTIFY` or failed validation) test per call site": 1,
+      "\u001b[0m✗ \u001b[0mEdit crates/ugaris-core/src/world/tests/combat.rs failed": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mFound multiple matches for oldString. Provide more surrounding context to make t": 1,
+      "assertion failed: bystander.driver_messages.is_empty()": 1,
+      "test result: FAILED. 1063 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
+      "test result: ok. 1065 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

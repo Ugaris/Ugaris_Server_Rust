@@ -344,3 +344,91 @@ fn character_ball_blocks_player_target_without_pk_hate_entry() {
     assert_eq!(caster.mana, 10 * POWERSCALE);
     assert_eq!(player.action.action, PlayerActionCode::Idle);
 }
+
+#[test]
+fn completed_attack_notifies_nearby_characters_with_nt_char_on_hit_and_miss() {
+    // C `act_attack` (act.c:763-793): `notify_area(ch[cn].x, ch[cn].y,
+    // NT_CHAR, cn, 0, 0)` fires from the attacker's position after
+    // `sub_attack`, regardless of whether the attack rolled a hit or a miss.
+    let mut world = World::default();
+    let mut attacker = character(1);
+    attacker.flags.insert(CharacterFlags::PLAYER);
+    attacker.x = 10;
+    attacker.y = 10;
+    attacker.dir = Direction::Right as u8;
+    attacker.act1 = 2;
+    attacker.values[0][CharacterValue::Attack as usize] = 10;
+    let mut defender = character(2);
+    defender.x = 11;
+    defender.y = 10;
+    defender.hp = 1_000_000;
+    defender.values[0][CharacterValue::Parry as usize] = 10;
+    let mut bystander = character(3);
+    bystander.x = 12;
+    bystander.y = 10;
+    world.spawn_character(attacker, 10, 10);
+    world.spawn_character(defender, 11, 10);
+    world.spawn_character(bystander, 12, 10);
+
+    // Hits (roll 1 < hit_chance). The bystander also receives an unrelated
+    // `NT_SEEHIT` from `apply_legacy_hurt` (C `hurt()`'s own unconditional
+    // area notify) since it sits within that call's 16-tile radius, so this
+    // only asserts the `NT_CHAR` message specifically is present exactly
+    // once.
+    assert!(world.complete_attack_with_rolls(CharacterId(1), CharacterId(2), 1, 1));
+    let bystander = world.characters.get(&CharacterId(3)).unwrap();
+    let nt_char: Vec<_> = bystander
+        .driver_messages
+        .iter()
+        .filter(|message| message.message_type == NT_CHAR)
+        .collect();
+    assert_eq!(nt_char.len(), 1);
+    assert_eq!(nt_char[0].dat1, 1);
+    world
+        .characters
+        .get_mut(&CharacterId(3))
+        .unwrap()
+        .driver_messages
+        .clear();
+
+    // Misses (roll 100 >= any hit_chance): `apply_legacy_hurt` isn't called
+    // on a miss, so only the `NT_CHAR` message is queued.
+    assert!(world.complete_attack_with_rolls(CharacterId(1), CharacterId(2), 100, 1));
+    let bystander = world.characters.get(&CharacterId(3)).unwrap();
+    assert_eq!(bystander.driver_messages.len(), 1);
+    assert_eq!(bystander.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(bystander.driver_messages[0].dat1, 1);
+}
+
+#[test]
+fn completed_attack_skips_notify_when_cf_nonotify_set() {
+    // C `act_attack`: `if (!(ch[cn].flags & CF_NONOTIFY)) notify_area(...)`.
+    let mut world = World::default();
+    let mut attacker = character(1);
+    attacker
+        .flags
+        .insert(CharacterFlags::PLAYER | CharacterFlags::NONOTIFY);
+    attacker.x = 10;
+    attacker.y = 10;
+    attacker.dir = Direction::Right as u8;
+    attacker.act1 = 2;
+    attacker.values[0][CharacterValue::Attack as usize] = 10;
+    let mut defender = character(2);
+    defender.x = 11;
+    defender.y = 10;
+    defender.hp = 1_000_000;
+    defender.values[0][CharacterValue::Parry as usize] = 10;
+    let mut bystander = character(3);
+    bystander.x = 12;
+    bystander.y = 10;
+    world.spawn_character(attacker, 10, 10);
+    world.spawn_character(defender, 11, 10);
+    world.spawn_character(bystander, 12, 10);
+
+    // Roll a miss so `apply_legacy_hurt` (and its unrelated, unconditional
+    // `NT_SEEHIT` broadcast) never runs, isolating the `NT_CHAR` gate.
+    assert!(world.complete_attack_with_rolls(CharacterId(1), CharacterId(2), 100, 1));
+
+    let bystander = world.characters.get(&CharacterId(3)).unwrap();
+    assert!(bystander.driver_messages.is_empty());
+}

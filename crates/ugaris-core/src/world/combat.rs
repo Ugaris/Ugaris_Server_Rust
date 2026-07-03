@@ -97,6 +97,25 @@ impl World {
                 resolution.shield_percent,
             );
         }
+        // C `act_attack` (act.c:763-793): after `sub_attack` (ported above as
+        // `apply_legacy_hurt`), checks `if (!ch[cn].flags) return 0` - guards
+        // against the attacker having died mid-attack (e.g. a future
+        // reflect-damage effect); no such effect exists yet, so this always
+        // passes today. Then two `sub_surround` calls fire for
+        // `V_SURROUND` weapons (not ported - `V_SURROUND`/`sub_surround` do
+        // not exist on `Character`/`World` yet) and `increase_rage` (not
+        // ported - no `rage` field on `Character` yet, see `world/regen.rs`
+        // doc comment). Finally `notify_area(ch[cn].x, ch[cn].y, NT_CHAR, cn,
+        // 0, 0)` fires gated on `!CF_NONOTIFY`, regardless of whether the
+        // attack hit or missed.
+        if let Some(attacker) = self.characters.get(&attacker_id) {
+            if !attacker.flags.contains(CharacterFlags::DEAD)
+                && !attacker.flags.contains(CharacterFlags::NONOTIFY)
+            {
+                let (x, y) = (attacker.x, attacker.y);
+                self.notify_area(x, y, NT_CHAR, attacker_id.0 as i32, 0, 0);
+            }
+        }
         true
     }
 

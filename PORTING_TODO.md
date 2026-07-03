@@ -426,20 +426,39 @@ order.
     test, which now correctly observes 2 driver messages (`NT_GIVE` then
     `NT_CHAR`) since the receiver sits inside its own notify box - this is
     correct C behavior, not a regression.
-  - REMAINING: `act_attack` (act.c:792-794) still doesn't emit `NT_CHAR` in
-    Rust (`World::complete_attack_with_rolls_and_clash_roll` in
-    `world/combat.rs`) - not touched this iteration. Every spell cast's
-    `act_*` completion (fireball/ball/earthrain/earthmud/flash/magicshield/
-    bless/warcry/freeze/pulse/heal, all in `act.c` past line 880) still
-    doesn't emit `NT_CHAR`/`NT_SPELL` in Rust (`world/item_outcomes.rs`'s
-    spell-outcome handlers). The `act_idle` equivalent (`world/regen.rs`) is
-    intentionally deferred: Rust's idle regen runs every tick continuously
-    rather than once per C's `act1`-sized batch, so wiring `NT_CHAR` there
-    now would emit far more often than C until that batching gap is closed.
-    Migrating the merchant greeting scan
-    (`world/merchant.rs::greet_nearby_players`) to consume `NT_CHAR` via
-    `process_merchant_messages` instead of its current per-tick brute-force
-    scan is also not done (optional per this item's own wording).
+  - Rust (iteration 14): wired `act_attack` (act.c:763-793) - added `NT_CHAR`
+    emission to `World::complete_attack_with_rolls_and_clash_roll`
+    (`crates/ugaris-core/src/world/combat.rs`), gated on `!CF_NONOTIFY`,
+    firing from the attacker's position after `apply_legacy_hurt` regardless
+    of hit or miss (matches C: `sub_attack` runs unconditionally, then the
+    surround/rage/notify tail runs regardless of roll outcome). Added a
+    defensive "attacker still alive" check (`!CharacterFlags::DEAD`) mirroring
+    C's `if (!ch[cn].flags) return 0` guard, even though nothing today can
+    kill the attacker mid-`apply_legacy_hurt` (no reflect-damage effect
+    exists yet).
+  - Tests: `world/tests/combat.rs` -
+    `completed_attack_notifies_nearby_characters_with_nt_char_on_hit_and_miss`
+    (asserts `NT_CHAR` fires on both a hit and a miss roll, filtering out the
+    unrelated `NT_SEEHIT` that `apply_legacy_hurt` also queues to the same
+    bystander on a hit) and `completed_attack_skips_notify_when_cf_nonotify_set`
+    (uses a miss roll to isolate the `CF_NONOTIFY` gate from
+    `apply_legacy_hurt`'s own unconditional `NT_SEEHIT` broadcast).
+  - REMAINING: every spell cast's `act_*` completion (fireball/ball/
+    earthrain/earthmud/flash/magicshield/bless/warcry/freeze/pulse/heal, all
+    in `act.c` past line 880) still doesn't emit `NT_CHAR`/`NT_SPELL` in Rust
+    (`world/item_outcomes.rs`'s spell-outcome handlers) - this is the next
+    slice. `sub_surround`/`V_SURROUND` (act.c:697-705) and `increase_rage`
+    are still not ported at all (no `rage`/`V_SURROUND` fields exist on
+    `Character` yet), so `act_attack`'s surround-weapon and rage side
+    effects remain gaps independent of the `NT_CHAR` wiring done here. The
+    `act_idle` equivalent (`world/regen.rs`) is intentionally deferred:
+    Rust's idle regen runs every tick continuously rather than once per C's
+    `act1`-sized batch, so wiring `NT_CHAR` there now would emit far more
+    often than C until that batching gap is closed. Migrating the merchant
+    greeting scan (`world/merchant.rs::greet_nearby_players`) to consume
+    `NT_CHAR` via `process_merchant_messages` instead of its current
+    per-tick brute-force scan is also not done (optional per this item's own
+    wording).
 
 ---
 
