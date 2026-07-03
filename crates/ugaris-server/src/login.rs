@@ -165,6 +165,34 @@ pub(crate) fn login_payload(
     builder.into_payload()
 }
 
+/// C `read_login` (`src/system/player.c:396-444`): maps a non-`Ready`
+/// `find_login` outcome to the exact reject text sent via
+/// `player_client_exit`. Returns `None` only for `Ready`/`Waiting`, which do
+/// not reject the connection here (`Waiting` means "still awaiting the DB",
+/// which cannot occur once `begin_login` has already resolved to a value).
+pub(crate) fn login_reject_message(outcome: &LoginOutcome) -> Option<&'static str> {
+    match outcome {
+        LoginOutcome::Ready { .. } | LoginOutcome::Waiting => None,
+        // Cross-area transfer (C `player_to_server`) is not implemented yet
+        // (tracked separately in `PORTING_TODO.md`'s "Cross-area transfer"
+        // task); until then, treat a target-area redirect like C's
+        // target-area-server-down fallback instead of silently spawning a
+        // scaffold character in the wrong area.
+        LoginOutcome::NewArea { .. } => Some(
+            "Target area server is down. Your character is being transfered to a different area. Please try again.",
+        ),
+        LoginOutcome::InternalError => Some(LOGIN_REJECT_INTERNAL_ERROR),
+        LoginOutcome::Locked => Some(LOGIN_REJECT_LOCKED),
+        LoginOutcome::WrongPassword => Some(LOGIN_REJECT_WRONG_PASSWORD),
+        LoginOutcome::Duplicate => Some(LOGIN_REJECT_DUPLICATE),
+        LoginOutcome::NotPaid => Some(LOGIN_REJECT_NOT_PAID),
+        LoginOutcome::Shutdown => Some(LOGIN_REJECT_SHUTDOWN),
+        LoginOutcome::IpLocked => Some(LOGIN_REJECT_IP_LOCKED),
+        LoginOutcome::AccountNotFixed => Some(LOGIN_REJECT_ACCOUNT_NOT_FIXED),
+        LoginOutcome::TooManyBadPasswords => Some(LOGIN_REJECT_TOO_MANY_BAD_PASSWORDS),
+    }
+}
+
 pub(crate) fn login_bootstrap_payloads(
     world: &World,
     character: &Character,

@@ -1124,13 +1124,50 @@ suggestion; dependencies are noted.
   duplicate-login kick of a still-connected (non-lostcon) old session
   (`read_login`'s `ch[cn].player != nr` guard).
 
-- [ ] **PostgreSQL login hardening** - wrong password must send the legacy
+- [~] **PostgreSQL login hardening** - wrong password must send the legacy
   reject (`SV_EXIT` reason? check C `cmd_exit(nr, reason)` in
   `src/system/io.c`), not a scaffold accept. Character creation for
   unknown names per C account flow (or explicit reject if creation is
   website-side - read `database_character.c::begin_login` fully and match
   it). Extend `crates/ugaris-db/src/character.rs` tests with a mocked pool
   if DB is unavailable; otherwise gate live tests behind `DATABASE_URL`.
+  REMAINING: the C functions are `find_login`/`load_char`
+  (`src/system/database/database_character.c`), not `begin_login`/
+  `cmd_exit`; the actual C reject sender is `player_client_exit`
+  (`src/system/player.c:260`), `SV_EXIT` opcode 19. `ugaris-db`'s
+  `begin_login_tx` already correctly maps an unknown name and a wrong
+  password to the same `LoginOutcome::WrongPassword` (matching C's
+  anti-enumeration behavior - C never creates a character for an absent
+  `chars` row; creation only happens in `tick_login()` for a pre-existing
+  DB row with `CF_USED` unset, which is out of scope here). What was
+  actually broken and is now fixed: `crates/ugaris-server/src/main.rs`'s
+  `SessionEvent::Login` handler unconditionally fell through to a scaffold
+  character spawn + login-accepted bootstrap for every non-`Ready`
+  `LoginOutcome` (wrong password, locked, not paid, shutdown, etc.) and
+  even for a hard DB error - a wrong password logged the client in as a
+  fresh character. Added `login_reject_message()`
+  (`crates/ugaris-server/src/login.rs`) mapping every `LoginOutcome`
+  variant to the exact C `read_login` (`src/system/player.c:396-444`)
+  reject string, wired it to build a `PacketBuilder::exit(...)` `SV_EXIT`
+  payload, flush it immediately, and send `SessionCommand::Disconnect`
+  instead of spawning a scaffold, for every reject outcome and DB error.
+  `LoginOutcome::NewArea` is also rejected for now (cross-area transfer is
+  a separate deferred P3 task) using C's target-area-server-down message
+  instead of silently spawning a wrong-area scaffold. Still remaining:
+  (1) `ugaris-db/src/character.rs` has no mocked-pool or `DATABASE_URL`-
+  gated test exercising `begin_login_tx`'s row-decision branching itself
+  (unknown name/wrong password/locked/not-paid/etc.) - only the pure
+  helper functions are unit-tested; adding real coverage needs either a
+  Postgres test dependency (out of scope per the "do not update
+  dependencies" rule) or an async test harness `ugaris-db` does not
+  currently depend on. (2) `LoginOutcome::Duplicate`/`TooManyBadPasswords`
+  are defined but never constructed by `begin_login_tx` (duplicate-session
+  kick and bad-password rate limiting are unported, tracked in the
+  P1 "Robust login rejection" ledger note). (3) Live end-to-end reject
+  test over a real TCP socket with a configured `DATABASE_URL` was not
+  run (no local Postgres in this environment); verified via focused unit
+  tests on `login_reject_message` and the `SV_EXIT` payload/dispatch
+  wiring instead.
 
 - [ ] **Merchant store DB persistence** - C `database_merchant.c`
   (load_merchant_inventory, queue_merchant_* tasks). Rust merchants are
@@ -1576,3 +1613,16 @@ Add one line per completed task: date, task, ledger section touched.
   mock serial the new guard now correctly rejects; ledger section
   "Ralph Loop - Serial Validation Everywhere". Boot-smoked (game loop
   ticking, no panics).
+- 2026-07-03: PostgreSQL login hardening (P1, partial/`[~]`) - wired the
+  `SessionEvent::Login` handler (`crates/ugaris-server/src/main.rs`) to
+  send the exact legacy `SV_EXIT` reject (C `player_client_exit`,
+  `src/system/player.c:260-276`/`396-444`) and disconnect instead of
+  falling through to a scaffold spawn for every non-`Ready`
+  `LoginOutcome` and DB error; added `login_reject_message()`
+  (`crates/ugaris-server/src/login.rs`) with the nine legacy reject
+  strings (`crates/ugaris-server/src/constants.rs`) plus 2 focused tests
+  (`crates/ugaris-server/src/tests/login.rs`); ledger row for
+  `database_character.c`/`player.c` login paths extended. REMAINING:
+  mocked-pool/`DATABASE_URL`-gated tests for `begin_login_tx`'s row
+  branching, `Duplicate`/`TooManyBadPasswords` construction, cross-area
+  `NewArea` redirect (separate deferred task).

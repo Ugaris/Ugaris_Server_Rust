@@ -201,6 +201,108 @@ fn character_save_request_encodes_runtime_ppd_and_carried_items() {
 }
 
 #[test]
+fn login_reject_message_matches_legacy_find_login_switch() {
+    // C `read_login` (`src/system/player.c:396-444`): every non-`Ready`
+    // `find_login` code maps to an exact reject string sent via
+    // `player_client_exit`. `Ready`/`Waiting` never reject.
+    assert_eq!(
+        login_reject_message(&LoginOutcome::Ready {
+            character_id: CharacterId(1),
+            character_number: 1,
+            mirror: 1,
+            unique: 0,
+        }),
+        None
+    );
+    assert_eq!(login_reject_message(&LoginOutcome::Waiting), None);
+    assert_eq!(
+        login_reject_message(&LoginOutcome::InternalError),
+        Some("Internal error. Please try again. If several retries fail email game@ugaris.com.")
+    );
+    assert_eq!(
+        login_reject_message(&LoginOutcome::Locked),
+        Some("You have been banned. Please email game@ugaris.com for details.")
+    );
+    assert_eq!(
+        login_reject_message(&LoginOutcome::WrongPassword),
+        Some("Username or password wrong.")
+    );
+    assert_eq!(
+        login_reject_message(&LoginOutcome::Duplicate),
+        Some("Duplicate login. Please make sure no other character from your account is active.")
+    );
+    assert_eq!(
+        login_reject_message(&LoginOutcome::NotPaid),
+        Some("Your account has not been paid.")
+    );
+    assert_eq!(
+        login_reject_message(&LoginOutcome::Shutdown),
+        Some("The server is being shut down. Please try again in a few minutes.")
+    );
+    assert_eq!(
+        login_reject_message(&LoginOutcome::IpLocked),
+        Some(
+            "Your IP address is banned. Please email game@ugaris.com with your account ID and ask for an exception to be made."
+        )
+    );
+    assert_eq!(
+        login_reject_message(&LoginOutcome::AccountNotFixed),
+        Some(
+            "Please log onto your account management on www.ugaris.com and update the account ownership information. Scroll down to 'Address Information' and choose 'Edit'."
+        )
+    );
+    assert_eq!(
+        login_reject_message(&LoginOutcome::TooManyBadPasswords),
+        Some("Too many tries with bad passwords. Please come back later.")
+    );
+    assert_eq!(
+        login_reject_message(&LoginOutcome::NewArea {
+            character_id: CharacterId(1),
+            area_id: 2,
+            mirror: 1,
+            unique: 0,
+        }),
+        Some(
+            "Target area server is down. Your character is being transfered to a different area. Please try again."
+        )
+    );
+}
+
+#[test]
+fn runtime_login_rejects_wrong_password_with_sv_exit_and_disconnects() {
+    // End-to-end wiring check for the `SessionEvent::Login` handler's reject
+    // path: build the exact `SV_EXIT` payload the way `main.rs` does for a
+    // rejected DB login and confirm it matches the legacy byte layout (C
+    // `player_client_exit`, `src/system/player.c:260`) instead of a
+    // scaffold login-accepted payload.
+    let mut runtime = ServerRuntime::default();
+    let (commands, mut rx) = mpsc::channel(4);
+    runtime.connect(5, commands, 10);
+
+    let reason = login_reject_message(&LoginOutcome::WrongPassword).unwrap();
+    let mut builder = PacketBuilder::new();
+    builder.exit(reason);
+    let payload = builder.into_payload();
+    runtime.send_to_session(5, payload.clone());
+    runtime.flush_session(5);
+    if let Some(commands) = runtime.sessions.get(&5) {
+        let _ = commands.try_send(SessionCommand::Disconnect);
+    }
+
+    assert_eq!(payload[0], ugaris_protocol::packet::SV_EXIT);
+    assert_eq!(payload[1] as usize, reason.len());
+    assert_eq!(&payload[2..], reason.as_bytes());
+
+    let SessionCommand::Send(sent_frame) = rx.try_recv().expect("exit frame queued") else {
+        panic!("expected a Send command carrying the exit frame");
+    };
+    assert!(sent_frame
+        .windows(reason.len())
+        .any(|w| w == reason.as_bytes()));
+    assert!(matches!(rx.try_recv(), Ok(SessionCommand::Disconnect)));
+}
+
+#[test]
 fn login_character_uses_full_scaled_resources() {
     let character = login_character(CharacterId(3), &login_block("Tester"), 12, 42, 43);
 

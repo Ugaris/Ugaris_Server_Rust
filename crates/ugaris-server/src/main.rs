@@ -5352,6 +5352,11 @@ async fn main() -> anyhow::Result<()> {
                             player.set_current_mirror(u32::from(config.mirror_id));
                         }
                         let mut loaded_from_database = false;
+                        // C `read_login` (`src/system/player.c:396-444`): a
+                        // non-`Ready` `find_login` result rejects the
+                        // connection with the matching legacy `SV_EXIT`
+                        // reason instead of continuing to a scaffold spawn.
+                        let mut login_reject: Option<&'static str> = None;
                         if let Some(repository) = &character_repository {
                             let request = LoginRequest {
                                 name: login.name.clone(),
@@ -5415,12 +5420,29 @@ async fn main() -> anyhow::Result<()> {
                                     }
                                 }
                                 Ok(outcome) => {
-                                    warn!(%id, code = outcome.legacy_find_login_code(), "DB login did not return a local ready character; using scaffold");
+                                    login_reject = login_reject_message(&outcome);
+                                    warn!(%id, code = outcome.legacy_find_login_code(), reject = login_reject.is_some(), "DB login did not return a local ready character");
                                 }
                                 Err(err) => {
-                                    warn!(%id, error = %err, "DB login failed; using scaffold");
+                                    login_reject = Some(LOGIN_REJECT_INTERNAL_ERROR);
+                                    warn!(%id, error = %err, "DB login failed; rejecting connection");
                                 }
                             }
+                        }
+                        if let Some(reason) = login_reject {
+                            // C `player_client_exit` (`src/system/player.c:260`):
+                            // send `SV_EXIT` with the reject text, then drop
+                            // the connection (`ST_EXIT`) instead of spawning
+                            // any character.
+                            let mut builder = PacketBuilder::new();
+                            builder.exit(reason);
+                            runtime.send_to_session(id.0, builder.into_payload());
+                            runtime.flush_session(id.0);
+                            if let Some(commands) = runtime.sessions.get(&id.0) {
+                                let _ = commands.try_send(SessionCommand::Disconnect);
+                            }
+                            info!(%id, name = %login.name, reason, "login rejected");
+                            continue;
                         }
                         let reclaim_tick = world.tick.0;
                         if !loaded_from_database

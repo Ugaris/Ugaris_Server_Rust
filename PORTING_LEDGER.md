@@ -102,7 +102,7 @@ Remaining oversized files worth splitting during future work:
 |---|---|---|
 | `src/system/database/database.h` | `crates/ugaris-db/src/lib.rs` | PostgreSQL pool, module boundary, and database handle ported. |
 | `src/system/database/database_area.h` | `crates/ugaris-db/src/area.rs`, `migrations/0001_core_accounts_characters.sql` | Area server records and alive/down/get operations scaffolded. |
-| `src/system/database/database_character.h` / `database_character.c` login and snapshot paths | `crates/ugaris-db/src/character.rs`, `migrations/0001_core_accounts_characters.sql`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0003_character_snapshots.sql`, `crates/ugaris-server/src/main.rs` | Login status semantics, character target lookup, legacy plaintext subscriber-password comparison against `accounts.password_hash`, current-area update, login session insert, release semantics, guarded backup save, logout save, Rust character JSON snapshot load/save, character item snapshot rows, and server-side optional snapshot load/logout-save integration for PostgreSQL are scaffolded. Live DB migration verification, robust client-facing login rejection handling, bad-password/IP throttling persistence, and full legacy binary blob decode/encode remain. |
+| `src/system/database/database_character.h` / `database_character.c` login and snapshot paths, `src/system/player.c` `read_login`/`player_client_exit` reject path | `crates/ugaris-db/src/character.rs`, `crates/ugaris-server/src/login.rs`, `crates/ugaris-server/src/constants.rs`, `crates/ugaris-server/src/main.rs`, `migrations/0001_core_accounts_characters.sql`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0003_character_snapshots.sql` | Login status semantics, character target lookup, legacy plaintext subscriber-password comparison against `accounts.password_hash`, current-area update, login session insert, release semantics, guarded backup save, logout save, Rust character JSON snapshot load/save, character item snapshot rows, server-side optional snapshot load/logout-save integration for PostgreSQL, and client-facing login rejection (every non-`Ready` `LoginOutcome`/DB error now sends the exact C `player_client_exit` `SV_EXIT` reject text and disconnects instead of spawning a scaffold character) are scaffolded/ported. Live DB migration verification, mocked-pool/`DATABASE_URL`-gated tests for `begin_login_tx` row branching, bad-password/IP throttling persistence (`Duplicate`/`TooManyBadPasswords` outcomes are defined but never constructed), cross-area `NewArea` redirect (`player_to_server`, deferred to the separate "Cross-area transfer" task), and full legacy binary blob decode/encode remain. |
 | `src/system/database/database_anticheat.h` / `database_anticheat.c` session/event core | `crates/ugaris-db/src/anticheat.rs`, `migrations/0002_sessions_questlog_anticheat.sql` | Session/event schema, typed PostgreSQL repository boundary, session create/character/fingerprint/status/bot-score/counter/end operations, event logging, cleanup, and legacy result/action/risk text mappings ported with tests. Runtime anti-cheat packet integration, live migration verification, player-stat/admin query/signature/IP/hardware tables, and exact legacy MySQL report fan-out remain. |
 | `src/system/player.c` / `src/system/player.h` | `crates/ugaris-net`, `crates/ugaris-core`, `crates/ugaris-server` | Player states, `PAC_*`, command recognition, command payload parsing, login parse, runtime registry, session send channels, scaffold character spawn, direct action setters, action queue, and primitive world action bridge exist; full action execution, map cache/client sync, inventory delta sync, text logging, transfer, anti-cheat integration remain. |
 | `src/system/tell.h` / `src/system/tell.c`, `/tell` slice from `src/system/command.c` / `src/system/chat/chat.c` | `crates/ugaris-core/src/tell.rs`, `crates/ugaris-server/src/main.rs` | C-compatible ten-slot sent-tell tracking, duplicate suppression, first-empty insertion, received-tell removal, strict one-second timeout expiry, `DRD_TELL_DATA` ID, legacy not-listening feedback text, runtime `/tell <name> <text>` parsing, online character lookup, sender acknowledgement/self-tell feedback, staff-name/staff-code formatting, no-tell and ignore blocking with delayed not-listening feedback, recipient received-tell clearing, and spy fan-out are ported with focused tests. Offline cross-server tell delivery, lookup-in-progress retry semantics, dlog/audit logging, and exact chat-service transport remain. |
@@ -2450,3 +2450,76 @@ Recommended next chest steps:
   `CDR_LOSTCON` exp-loss cap on death (already tracked in the `death.rs`
   ledger row); and duplicate-login kick of a still-connected (non-lostcon)
   old session (`read_login`'s `ch[cn].player != nr` guard).
+
+## Ralph Loop - PostgreSQL Login Hardening (Iteration 34, partial)
+
+- Read `src/system/player.c`'s `read_login` (lines 300-500, full function)
+  and `player_client_exit` (lines 260-276) plus
+  `src/system/database/database_character.h`'s `LS_*` constants. The task
+  note's `begin_login`/`cmd_exit` names don't exist in the C oracle - the
+  real functions are `find_login`/`load_char` (login lookup,
+  `database_character.c`) and `player_client_exit` (`SV_EXIT` sender,
+  `player.c:260`); `cmd_exit` is an unrelated area-20 `/usurp` chat command
+  (`src/area/20/lq.c:2139`), a red herring in the original task text.
+- Confirmed via `load_char` (`database_character.c:767-1159`) that an
+  unknown character name and a wrong password both resolve to the same
+  `find_login` code (`-3`, "Username or password wrong.") -
+  anti-enumeration by design, no distinction leaked to the client.
+  Character creation on unknown name does not happen in the login path at
+  all; it happens in `tick_login()` (`database_character.c:1216-1264`)
+  only for an *existing* `chars` row with `CF_USED` unset (a
+  website/registration-provisioned slot), which is out of scope for this
+  task and not something `ugaris-db`'s `begin_login_tx` needs to add - it
+  already uniformly rejects absent rows exactly like C.
+- Found the actual bug: `crates/ugaris-server/src/main.rs`'s
+  `SessionEvent::Login` handler called `repository.begin_login(...)` and,
+  for every outcome other than `LoginOutcome::Ready` (wrong password,
+  locked, IP-locked, not paid, shutdown, account-not-fixed,
+  too-many-bad-passwords, duplicate, new-area) *and* for a hard `Err` from
+  the DB call, only logged a `warn!` and then fell straight through to the
+  unconditional scaffold character-spawn + login-bootstrap-payload block
+  below - so a wrong password (or a DB outage) silently logged the client
+  into a brand-new scaffold character instead of being rejected.
+- Fix: added `login_reject_message(outcome: &LoginOutcome) -> Option<&'static
+  str>` (`crates/ugaris-server/src/login.rs`) mapping every reject variant
+  to the exact C `read_login` switch text (`player.c:396-444`, copied
+  digit-for-digit) via nine new message constants in
+  `crates/ugaris-server/src/constants.rs`
+  (`LOGIN_REJECT_INTERNAL_ERROR`/`_LOCKED`/`_WRONG_PASSWORD`/`_DUPLICATE`/
+  `_NOT_PAID`/`_SHUTDOWN`/`_IP_LOCKED`/`_ACCOUNT_NOT_FIXED`/
+  `_TOO_MANY_BAD_PASSWORDS`). `LoginOutcome::NewArea` also rejects (cross-
+  area transfer isn't implemented; reuses C's target-area-server-down
+  message rather than spawning a wrong-area scaffold) since the "Cross-
+  area transfer" P3 todo item owns that feature. In `main.rs`, a non-`None`
+  reject now builds a `PacketBuilder::exit(reason)` `SV_EXIT` payload
+  (opcode 19, existing `crates/ugaris-protocol/src/packet.rs` builder,
+  unchanged), queues + immediately flushes it to the session (so the
+  client receives it before the socket closes, since `SessionCommand` is
+  an ordered per-session `mpsc` channel), sends
+  `SessionCommand::Disconnect`, logs, and `continue`s the outer select
+  loop instead of falling into the scaffold-spawn/bootstrap code.
+- 2 new focused tests in `crates/ugaris-server/src/tests/login.rs`:
+  `login_reject_message_matches_legacy_find_login_switch` (all ten
+  `LoginOutcome` variants including `Ready`/`Waiting` returning `None`)
+  and `runtime_login_rejects_wrong_password_with_sv_exit_and_disconnects`
+  (verifies the `SV_EXIT` byte layout and that the session command channel
+  receives the `Send` frame containing the reject text followed by
+  `Disconnect`, in that order).
+- `cargo fmt --all` / `cargo test --workspace` (1130 core + 9 + 3 + 33 +
+  368 server + 0 doc-tests, all green, zero warnings) / `cargo build -p
+  ugaris-server` clean with zero warnings; boot-smoked (`entering Rust game
+  loop`, no panics for 10+ seconds, no DB configured so the reject path
+  itself wasn't exercised live - covered by the unit tests instead).
+- REMAINING (task left `[~]`, not closed): no mocked-pool or
+  `DATABASE_URL`-gated live test exercises `begin_login_tx`'s row-decision
+  branching (unknown name / wrong password / locked / IP-locked / not-
+  fixed / not-paid / allowed-area mismatch) against a real Postgres -
+  `ugaris-db` has no async test harness or Postgres mocking dependency
+  today, and adding one is out of scope under the "do not update
+  dependencies" rule; `LoginOutcome::Duplicate`/`TooManyBadPasswords` are
+  defined and now correctly rejected if ever returned, but
+  `begin_login_tx` never constructs them (duplicate-session kick and bad-
+  password rate limiting are unported, already tracked elsewhere in this
+  row and in the lostcon ledger note); and the `NewArea` cross-server
+  redirect (`player_to_server`) remains a reject stub pending the
+  dedicated "Cross-area transfer" task.

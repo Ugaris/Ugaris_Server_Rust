@@ -25,6 +25,25 @@ pub(crate) const LOGIN_SPAWN_Y: usize = 128;
 
 pub(crate) const LOGIN_ACCEPTED_MESSAGE: &str = "Rust Ugaris compatibility login accepted.";
 
+// C `read_login` (`src/system/player.c:396-444`): the exact reject text sent
+// via `player_client_exit`/`SV_EXIT` for each `find_login` error code. Text
+// must match digit-for-digit since it is rendered verbatim by the legacy
+// client.
+pub(crate) const LOGIN_REJECT_INTERNAL_ERROR: &str =
+    "Internal error. Please try again. If several retries fail email game@ugaris.com.";
+pub(crate) const LOGIN_REJECT_LOCKED: &str =
+    "You have been banned. Please email game@ugaris.com for details.";
+pub(crate) const LOGIN_REJECT_WRONG_PASSWORD: &str = "Username or password wrong.";
+pub(crate) const LOGIN_REJECT_DUPLICATE: &str =
+    "Duplicate login. Please make sure no other character from your account is active.";
+pub(crate) const LOGIN_REJECT_NOT_PAID: &str = "Your account has not been paid.";
+pub(crate) const LOGIN_REJECT_SHUTDOWN: &str =
+    "The server is being shut down. Please try again in a few minutes.";
+pub(crate) const LOGIN_REJECT_IP_LOCKED: &str = "Your IP address is banned. Please email game@ugaris.com with your account ID and ask for an exception to be made.";
+pub(crate) const LOGIN_REJECT_ACCOUNT_NOT_FIXED: &str = "Please log onto your account management on www.ugaris.com and update the account ownership information. Scroll down to 'Address Information' and choose 'Edit'.";
+pub(crate) const LOGIN_REJECT_TOO_MANY_BAD_PASSWORDS: &str =
+    "Too many tries with bad passwords. Please come back later.";
+
 pub(crate) const CHEST_EMPTY_MESSAGE: &str = "The chest is empty.";
 
 pub(crate) const CHEST_CURSOR_OCCUPIED_MESSAGE: &str =
