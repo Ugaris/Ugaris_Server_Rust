@@ -544,7 +544,7 @@ fn world_executes_area17_pick_door_with_legacy_timer() {
     nearby_npc.y = 8;
     world.add_character(nearby_npc);
     let mut distant_npc = character(3);
-    distant_npc.x = 25;
+    distant_npc.x = 60;
     distant_npc.y = 8;
     world.add_character(distant_npc);
     let mut door = item(

@@ -112,6 +112,11 @@ impl World {
         self.notify_area(x, y, NT_NPC, NTID_TWOCITY_PICK, character_id.0 as i32, 0);
     }
 
+    /// C `notify_area` (`src/system/notify.c:146-168`): an unconditional
+    /// bounding-box broadcast (no `char_see_char`/visibility gate here - C
+    /// applies that downstream in each driver's message consumer, e.g.
+    /// `merchant_driver`'s `char_see_char(cn, co)` check). `NOTIFY_SIZE` is
+    /// 32 tiles in C, giving a 65x65 box centered on `(x, y)`.
     pub fn notify_area(
         &mut self,
         x: u16,
@@ -121,10 +126,11 @@ impl World {
         dat2: i32,
         dat3: i32,
     ) {
-        let min_x = x.saturating_sub(16);
-        let max_x = x.saturating_add(16);
-        let min_y = y.saturating_sub(16);
-        let max_y = y.saturating_add(16);
+        const NOTIFY_SIZE: u16 = 32;
+        let min_x = x.saturating_sub(NOTIFY_SIZE);
+        let max_x = x.saturating_add(NOTIFY_SIZE);
+        let min_y = y.saturating_sub(NOTIFY_SIZE);
+        let max_y = y.saturating_add(NOTIFY_SIZE);
         for character in self.characters.values_mut() {
             if character.x >= min_x
                 && character.x <= max_x

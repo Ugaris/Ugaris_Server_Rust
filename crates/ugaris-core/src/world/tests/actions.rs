@@ -199,6 +199,89 @@ fn world_completes_walk_against_map_storage() {
 }
 
 #[test]
+fn complete_walk_notifies_nearby_characters_with_nt_char() {
+    // C `act_walk` (act.c:227-229): notify_area(ch[cn].x, ch[cn].y, NT_CHAR,
+    // cn, 0, 0) fires right after the position/light/sector update, so every
+    // character within the `NOTIFY_SIZE` (32-tile) box gets an NT_CHAR
+    // message queued about the mover, regardless of visibility.
+    let mut world = World::default();
+    let mut walker = character(1);
+    walker.x = 10;
+    walker.y = 10;
+    walker.tox = 11;
+    walker.toy = 10;
+    world.add_character(walker);
+
+    let mut nearby = character(2);
+    nearby.x = 15;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    let mut far_away = character(3);
+    far_away.x = 200;
+    far_away.y = 200;
+    world.add_character(far_away);
+
+    assert!(world.complete_walk(CharacterId(1)));
+
+    let nearby = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!(nearby.driver_messages.len(), 1);
+    assert_eq!(nearby.driver_messages[0].message_type, NT_CHAR);
+    assert_eq!(nearby.driver_messages[0].dat1, 1);
+
+    let far_away = world.characters.get(&CharacterId(3)).unwrap();
+    assert!(far_away.driver_messages.is_empty());
+
+    // The mover itself is inside its own notify box, matching C.
+    let walker = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(walker.driver_messages.len(), 1);
+    assert_eq!(walker.driver_messages[0].dat1, 1);
+}
+
+#[test]
+fn complete_walk_skips_notify_when_cf_nonotify_set() {
+    // C `act_walk`: `if (!(ch[cn].flags & CF_NONOTIFY)) notify_area(...)`.
+    let mut world = World::default();
+    let mut walker = character(1);
+    walker.x = 10;
+    walker.y = 10;
+    walker.tox = 11;
+    walker.toy = 10;
+    walker.flags.insert(CharacterFlags::NONOTIFY);
+    world.add_character(walker);
+
+    let mut nearby = character(2);
+    nearby.x = 15;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    assert!(world.complete_walk(CharacterId(1)));
+
+    let nearby = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(nearby.driver_messages.is_empty());
+}
+
+#[test]
+fn complete_walk_does_not_notify_when_walk_fails() {
+    let mut world = World::default();
+    // `tox`/`toy` left at their default (0, 0), which is out of the map's
+    // legacy inner bounds, so `act_walk` reports no movement.
+    let mut walker = character(1);
+    walker.x = 10;
+    walker.y = 10;
+    world.add_character(walker);
+
+    let mut nearby = character(2);
+    nearby.x = 11;
+    nearby.y = 10;
+    world.add_character(nearby);
+
+    assert!(!world.complete_walk(CharacterId(1)));
+    let nearby = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(nearby.driver_messages.is_empty());
+}
+
+#[test]
 fn world_completes_take_and_drop_against_item_storage() {
     let mut world = World::default();
     let mut character = character(1);

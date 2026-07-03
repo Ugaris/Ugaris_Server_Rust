@@ -373,22 +373,45 @@ order.
     open item container or account depot from an inventory slot is not
     wired either - only the merchant branch is implemented.
 
-- [ ] **NPC sighting messages (`NT_CHAR` emission)** - NPCs only "see"
+- [~] **NPC sighting messages (`NT_CHAR` emission)** - NPCs only "see"
   players through ad-hoc scans (merchant greeting, simple-baddy attack
   scan). C emits `NT_CHAR` notify messages from character movement so
   *every* driver reacts through its message queue.
   - C: `notify_area(x, y, NT_CHAR, cn, 0, 0)` call sites in
-    `src/system/act.c` (walk completion) and `src/system/create.c`
-    (spawn). Sector-based: only characters that can currently see the
-    mover get the message (`char_see_char` gate inside `notify_area` -
-    check the real C filter).
-  - Rust: emit in `World::complete_walk` and `World::spawn_character`
-    through the existing `notify_area` (add the see-gate). Then simplify
-    the merchant greeting scan to consume `NT_CHAR` like C
-    `merchant_driver` (keep the scan fallback if you must, but prefer the
-    message path).
-  - Tests: walking near an NPC queues `NT_CHAR` exactly once per sighting
-    with the C dedup behavior.
+    `src/system/act.c` (walk completion, and nearly every other `act_*`
+    completion: idle/take/use/drop/attack/give/every spell cast).
+    Correction found while implementing: `notify_area` itself has **no**
+    `char_see_char` gate - it's an unconditional `NOTIFY_SIZE` (32-tile) box
+    broadcast; the visibility gate is applied downstream by each driver's
+    own message consumer (`merchant.c`/`simple_baddy.c` both check
+    `char_see_char` themselves after receiving the queued message). Also,
+    `src/system/create.c` (spawn) never calls `notify_area` at all - only a
+    self-targeted `NT_CREATE`, already ported - so there is no spawn-time
+    `NT_CHAR` call site to add.
+  - Rust: `World::complete_walk` (`crates/ugaris-core/src/world/actions.rs`)
+    now emits `notify_area(.., NT_CHAR, ..)` gated on `!CF_NONOTIFY`,
+    matching C `act_walk`. Also fixed an independent radius bug found along
+    the way: `notify_area` used +-16 tiles instead of C's `NOTIFY_SIZE = 32`
+    (`crates/ugaris-core/src/world/text.rs`).
+  - Tests: `world/tests/actions.rs` - walking queues `NT_CHAR` exactly once
+    to every character in the (now-correct) 32-tile box including the mover
+    itself, `CF_NONOTIFY` suppresses it, a failed walk sends nothing, and a
+    character outside the box gets nothing. Fixed 3 pre-existing tests whose
+    "far away" fixtures were inside the corrected 32-tile radius (see
+    ledger).
+  - REMAINING: only the walk call site is wired. C's other `act_*`
+    completions (`act_idle`/`act_take`/`act_use`/`act_drop`/`act_attack`/
+    `act_give`/every spell cast) still don't emit `NT_CHAR` in Rust
+    (`world/actions.rs`'s `complete_take`/`complete_use`/`complete_drop`/
+    `complete_give`, and the spell-outcome handlers in
+    `world/item_outcomes.rs`). The `act_idle` equivalent
+    (`world/regen.rs`) is intentionally deferred: Rust's idle regen runs
+    every tick continuously rather than once per C's `act1`-sized batch, so
+    wiring `NT_CHAR` there now would emit far more often than C until that
+    batching gap is closed. Migrating the merchant greeting scan
+    (`world/merchant.rs::greet_nearby_players`) to consume `NT_CHAR` via
+    `process_merchant_messages` instead of its current per-tick brute-force
+    scan is also not done (optional per this item's own wording).
 
 ---
 
@@ -767,3 +790,12 @@ Add one line per completed task: date, task, ledger section touched.
   `ClientAction::Ping` match arm in `crates/ugaris-server/src/main.rs`
   (opaque 4-byte echo, no state change); ledger section "Ralph Loop -
   Ping (CL_PING)".
+- 2026-07-03: NPC sighting messages (`NT_CHAR` emission) (P0, partial) -
+  wired `notify_area(.., NT_CHAR, ..)` into `World::complete_walk`
+  (`crates/ugaris-core/src/world/actions.rs`), gated on `CF_NONOTIFY`, and
+  fixed the `notify_area` radius bug (16 -> C's `NOTIFY_SIZE = 32`) in
+  `crates/ugaris-core/src/world/text.rs`; ledger section "Ralph Loop - NPC
+  Sighting Messages (NT_CHAR Emission), Partial". REMAINING: other
+  `act_*` completion call sites (take/use/drop/give/attack/spells/idle)
+  and the merchant-scan-to-message-consumer migration are deferred - see
+  todo note and ledger for details.

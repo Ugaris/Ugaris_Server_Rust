@@ -168,7 +168,7 @@ fn world_fireball_machine_timer_creates_retained_projectile_and_reschedules() {
     nearby.y = 20;
     world.add_character(nearby);
     let mut far = character(2);
-    far.x = 40;
+    far.x = 80;
     far.y = 20;
     world.add_character(far);
     assert!(world.schedule_item_driver_timer(ItemId(7), CharacterId(0), 1));

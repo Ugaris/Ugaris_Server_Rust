@@ -984,3 +984,77 @@ Recommended next chest steps:
   - REMAINING (documented in `PORTING_TODO.md`): only the merchant branch is wired. C's `con_in` branch (`check_container_item` + `player_depot`/`account_depot_store`/`container`) is not implemented from an inventory slot - the per-character legacy depot (`DRD_DEPOT_PPD`/`MAXDEPOT`, `src/system/depot.c`) isn't ported at all yet (only the account-wide depot exists), so fast-selling into an open item container or account depot from an inventory slot is out of scope for this slice.
   - Tests: new `crates/ugaris-server/src/tests/merchants.rs` (5 tests) - sells to an open merchant using the exact C `buyprice` formula and stocks the sold item for resale, swaps a held cursor item back into an empty slot as a no-op sale when nothing was in the slot, blocks quest items with the verbatim C message while leaving the item on the cursor, rejects the equip/spell slot range like C's bounds check, and no-ops (but still swaps) without an active merchant.
   - Full workspace suite (340 ugaris-server tests, up from 335, + others, 0 failed), `cargo fmt --all`, `cargo build -p ugaris-server` (zero warnings), and a 10s boot smoke (`legacy TCP listener ready`, `loaded area zone map`, `entering Rust game loop`, ticks advancing, no panics) all pass.
+
+### Ralph Loop - NPC Sighting Messages (`NT_CHAR` Emission), Partial
+
+- P0 "NPC sighting messages (`NT_CHAR` emission)" - producer side wired for
+  the walk-completion call site; other `act_*` call sites deferred. Reading
+  the full C `notify_area` (`src/system/notify.c:146-168`) corrected two
+  wrong premises in the original todo note: (1) `notify_area` itself has
+  **no** `char_see_char`/visibility gate - it is an unconditional `NOTIFY_SIZE`
+  (32-tile) bounding-box broadcast to every character in range regardless of
+  invisibility/LOS; the visibility gate is applied *downstream*, inside each
+  driver's own message consumer (confirmed in `merchant.c:354-388`'s explicit
+  `char_see_char(cn, co)` check and `simple_baddy.c:198-204`'s helper-bless
+  gate) - so no gate belongs inside Rust's `World::notify_area`. (2)
+  `src/system/create.c` (spawn) never calls `notify_area` at all - the only
+  spawn-time notify is the self-targeted `notify_char(n, NT_CREATE, ...)`,
+  which Rust's zone-loading path already sends; there is no second `NT_CHAR`
+  call site to add to `World::spawn_character`.
+  - Also fixed a real, independent bug found while reading `notify_area`:
+    Rust's implementation used a `+-16` tile radius; C's `NOTIFY_SIZE` is 32
+    (a 65x65 box, not 33x33). Fixed in
+    `crates/ugaris-core/src/world/text.rs` for all `notify_area` callers
+    (`NT_NPC`/`NT_SPELL` sites unaffected in behavior beyond the wider box).
+  - Wired the highest-value producer call site: `World::complete_walk`
+    (`crates/ugaris-core/src/world/actions.rs`) now calls
+    `self.notify_area(after.x, after.y, NT_CHAR, character_id.0 as i32, 0, 0)`
+    after a successful move, gated on `!CharacterFlags::NONOTIFY`, mirroring
+    C `act_walk` (`act.c:227-229`) exactly (including that the mover itself
+    ends up inside its own notify box, same as C).
+  - This makes the previously dead-at-runtime `NT_CHAR` consumers actually
+    fire during normal gameplay: simple-baddy aggro/helper-bless
+    (`character_driver.rs::process_simple_baddy_messages`, driven by
+    `World::process_simple_baddy_message_actions_with_random`) and the
+    Lab2-undead patrol-removal check (`world/lab2_undead.rs`) both already
+    existed and were unit-tested in isolation, but had no live producer
+    before this change.
+  - Tests: `world/tests/actions.rs` - a completed walk queues exactly one
+    `NT_CHAR` message (with `dat1` = the mover's id) to every character
+    inside the 32-tile box including the mover itself, a character outside
+    the box gets nothing, `CharacterFlags::NONOTIFY` suppresses the
+    broadcast entirely, and a failed walk (no movement) sends nothing. Fixed
+    three pre-existing tests whose fixtures placed a "should not be
+    notified" character just outside the old (incorrect) 16-tile radius but
+    inside the correct 32-tile one - moved those fixtures further away to
+    keep testing the real boundary:
+    `world/tests/doors.rs::world_executes_area17_pick_door_with_legacy_timer`,
+    `world/tests/effect_tick.rs::world_fireball_machine_timer_creates_retained_projectile_and_reschedules`,
+    `world/tests/item_outcomes.rs::labtorch_extinguish_notifies_nearby_npcs`.
+  - REMAINING: C fires `notify_area(.., NT_CHAR, ..)` from nearly every
+    `act_*` completion, not just walk - `act_idle`, `act_take`, `act_use`,
+    `act_drop`, `act_attack`, `act_give`, and every spell-cast completion
+    (`act_firering`/`act_fireball`/`act_flash`/`act_magicshield`/`act_bless`/
+    `act_warcry`/`act_freeze`/`act_pulse`/`act_heal`). Only `complete_walk`
+    is wired here; `complete_take`/`complete_use`/`complete_drop`/
+    `complete_give` (`world/actions.rs`) and the spell-outcome handlers in
+    `world/item_outcomes.rs` still don't emit `NT_CHAR`. The `act_idle`
+    equivalent (`world/regen.rs`) is deliberately *not* wired in this slice:
+    Rust's idle regen runs continuously every real tick (documented
+    pre-existing gap in that module's doc comment) rather than once per C's
+    `act1`-sized idle batch, so naively adding a per-tick `notify_area` call
+    there would flood every idle character's neighbors with an `NT_CHAR`
+    message every single tick - a much higher rate than C's batched
+    emission - and needs the idle-batching gap closed first to be faithful.
+    The todo's suggestion to "simplify the merchant greeting scan to consume
+    `NT_CHAR` like C `merchant_driver`" is also not done - the existing
+    `greet_nearby_players` per-tick brute-force scan
+    (`world/merchant.rs`) still does the job independently of the message
+    queue; migrating it to a `process_merchant_messages` `NT_CHAR` arm is
+    left for a future slice since it is optional per the todo's own wording
+    ("keep the scan fallback if you must").
+  - Full workspace suite (1053 ugaris-core tests via `--lib`, plus
+    ugaris-server/protocol/db/net, 0 failed), `cargo fmt --all`,
+    `cargo build -p ugaris-server` (zero warnings), and a 10s boot smoke
+    (`legacy TCP listener ready`, `loaded area zone map`,
+    `entering Rust game loop`, ticks advancing, no panics) all pass.

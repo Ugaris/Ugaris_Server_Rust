@@ -161,6 +161,14 @@ impl World {
         let after = character.clone();
         self.mark_character_light_area(&before);
         self.mark_character_light_area(&after);
+        // C `act_walk` (`act.c:227-229`): `if (!(ch[cn].flags & CF_NONOTIFY))
+        // notify_area(ch[cn].x, ch[cn].y, NT_CHAR, cn, 0, 0);` right after the
+        // position/light/sector update. This is what lets NPC drivers (simple
+        // baddy aggro, merchant greeting) react to a character walking into
+        // range through their message queue.
+        if walked && !after.flags.contains(CharacterFlags::NONOTIFY) {
+            self.notify_area(after.x, after.y, NT_CHAR, character_id.0 as i32, 0, 0);
+        }
         walked
     }
 

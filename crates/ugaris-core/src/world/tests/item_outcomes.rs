@@ -425,7 +425,7 @@ fn labtorch_extinguish_notifies_nearby_npcs() {
     actor.flags.remove(CharacterFlags::PLAYER);
     assert!(world.spawn_character(actor, 10, 10));
     assert!(world.spawn_character(character(2), 12, 10));
-    assert!(world.spawn_character(character(3), 40, 40));
+    assert!(world.spawn_character(character(3), 80, 80));
 
     let mut torch = item(7, ItemFlags::USED | ItemFlags::USE);
     torch.driver = IDR_LABTORCH;
