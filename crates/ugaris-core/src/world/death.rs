@@ -40,6 +40,19 @@ pub struct KillExpAward {
     pub exp: u32,
 }
 
+/// Kill achievement award queued for the server achievement path, mirroring
+/// C `kill_char`'s `if (ch[co].flags & CF_PLAYER) { achievement_add_enemy_
+/// killed(co); if (ch[cn].flags & CF_DEMON) achievement_add_demons(co,
+/// areaID, 1); }` (`death.c:417-422`). Unlike [`KillExpAward`], this fires
+/// for *any* kill by a player character - including killing other players -
+/// since C's condition only gates on the killer, not the target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KillAchievementAward {
+    pub killer_id: CharacterId,
+    pub area_id: i32,
+    pub target_is_demon: bool,
+}
+
 impl World {
     /// C `kill_char(cn, co)` follow-up run once `hurt` marked the character
     /// dead: death-driver dispatch and NT_DEAD fan-out already happened in
@@ -55,6 +68,7 @@ impl World {
         };
         let target_level = target.level;
         let target_is_player = target.flags.contains(CharacterFlags::PLAYER);
+        let target_is_demon = target.flags.contains(CharacterFlags::DEMON);
 
         // C: if (ch[cn].flags & CF_RESPAWN) set_timer(ticker + ch[cn].respawn, respawn_callback, ...)
         if target.flags.contains(CharacterFlags::RESPAWN) && !target.template_key.is_empty() {
@@ -92,6 +106,20 @@ impl World {
         let killer_is_player = cause_id
             .and_then(|id| self.characters.get(&id))
             .is_some_and(|killer| killer.flags.contains(CharacterFlags::PLAYER));
+
+        // C: `if (ch[co].flags & CF_PLAYER) { achievement_add_enemy_killed(co);
+        // if (ch[cn].flags & CF_DEMON) achievement_add_demons(co, areaID, 1); }`
+        // (`death.c:417-422`) - fires for any kill by a player, independent of
+        // whether the target was a player (unlike the `give_exp` branch above).
+        if let Some(cause_id) = cause_id {
+            if killer_is_player {
+                self.pending_kill_achievements.push(KillAchievementAward {
+                    killer_id: cause_id,
+                    area_id: i32::from(self.area_id),
+                    target_is_demon,
+                });
+            }
+        }
 
         if let Some(target) = self.characters.get_mut(&target_id) {
             // C: ch[cn].action = AC_DIE; act1 = killer; act2 = ispk;
@@ -159,6 +187,11 @@ impl World {
 
     pub fn drain_pending_kill_exp(&mut self) -> Vec<KillExpAward> {
         std::mem::take(&mut self.pending_kill_exp)
+    }
+
+    /// Drain queued kill achievement awards for the server achievement path.
+    pub fn drain_pending_kill_achievements(&mut self) -> Vec<KillAchievementAward> {
+        std::mem::take(&mut self.pending_kill_achievements)
     }
 
     /// Schedule item destruction, mirroring C `set_expire` for bodies.

@@ -2661,6 +2661,40 @@ Unlocks every quest NPC. Do these before any P4 area work.
   3 net + 37 protocol + 439 server [+3], all green, zero failures),
   `cargo build -p ugaris-server` clean with zero warnings, and a 10s
   boot-smoke showed "entering Rust game loop" with no panics.
+  Progress Log (iteration 72): closed the "combat kill" gameplay call site
+  - C `kill_char` (`src/system/death.c:417-422`): `if (ch[co].flags &
+  CF_PLAYER) { achievement_add_enemy_killed(co); if (ch[cn].flags &
+  CF_DEMON) achievement_add_demons(co, areaID, 1); }`, which fires for
+  *any* kill scored by a player (unlike the sibling `give_exp` kill-
+  experience branch a few lines above, which this codebase already
+  restricts to non-player targets - a documented pre-existing
+  divergence, left untouched). Added a new `KillAchievementAward` queue
+  (`crates/ugaris-core/src/world/death.rs`, `World::pending_kill_
+  achievements`/`drain_pending_kill_achievements`) populated from
+  `kill_character_followup` whenever the killer has `CharacterFlags::
+  PLAYER`, carrying `area_id` from the pre-existing `World::area_id`
+  field (C's global `areaID`) and a `target_is_demon` flag from the
+  target's `CharacterFlags::DEMON`. Added `award_enemy_killed_
+  achievement(world, runtime, killer_id, area_id, target_is_demon)`
+  (`crates/ugaris-server/src/achievement.rs`), mirroring the `award_
+  chest_opened_achievement`/`award_play_time_minute` pattern exactly:
+  no-ops for characters without a live `PlayerRuntime`, calls `add_
+  enemy_killed` then conditionally `add_demons`, fans out any newly-
+  unlocked `SV_ACH_UNLOCK` to every session for that character. Wired
+  into `main.rs`'s tick loop right next to the existing `drain_pending_
+  kill_exp`/`give_exp_with_runtime_modifiers` drain. Added 3 core tests
+  (`crates/ugaris-core/src/world/tests/death.rs`: player-kills-player
+  still queues the award, demon target flags `target_is_demon`, non-
+  player killer queues nothing) and 5 server tests (`tests/achievement.
+  rs`: First Blood unlock + packet, no re-unlock on a later kill, demon
+  progress credited/skipped by flag, no-`PlayerRuntime` no-op). Still
+  unwired: (3) DB first-unlock/grats announcement, and ~11 remaining
+  gameplay call sites (gathering/potions, mining, tunnels, pentagram
+  solve reward, wealth beyond chests, clans, arena PvP). `cargo fmt
+  --all`, `cargo test --workspace` (1396 ugaris-core [+3] + 36 db + 3
+  net + 37 protocol + 444 server [+5], all green, zero failures),
+  `cargo build -p ugaris-server` clean with zero warnings, and a 10s
+  boot-smoke showed "entering Rust game loop" with no panics.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

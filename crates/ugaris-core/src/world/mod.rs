@@ -240,6 +240,7 @@ pub struct World {
     pub merchant_stores: HashMap<CharacterId, MerchantStore>,
     pending_npc_respawns: Vec<NpcRespawnRequest>,
     pending_kill_exp: Vec<KillExpAward>,
+    pending_kill_achievements: Vec<KillAchievementAward>,
     pending_lq_npc_spawns: Vec<LqNpcSpawnRequest>,
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,

@@ -587,3 +587,98 @@ fn award_play_time_minute_is_a_noop_for_characters_without_a_player_runtime() {
     award_play_time_minute(&world, &mut runtime, character_id);
     assert!(runtime.player_for_character(character_id).is_none());
 }
+
+// ============================================================================
+// `award_enemy_killed_achievement` (`src/system/death.c:417-422`,
+// `kill_char`'s `achievement_add_enemy_killed`/`achievement_add_demons`).
+// ============================================================================
+
+#[test]
+fn award_enemy_killed_achievement_unlocks_first_blood_on_first_kill() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_enemy_killed_achievement(&world, &mut runtime, character_id, 1, false);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.enemies_killed, 1);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::FirstBlood));
+
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0][0], SV_MOD3);
+    assert_eq!(payloads[0][2], SV_ACH_UNLOCK);
+    assert_eq!(payloads[0][3], AchievementType::FirstBlood as u8);
+}
+
+#[test]
+fn award_enemy_killed_achievement_does_not_reunlock_first_blood_on_later_kills() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .enemies_killed = 1;
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_data
+        .award(AchievementType::FirstBlood, "Tester", 1);
+
+    award_enemy_killed_achievement(&world, &mut runtime, character_id, 1, false);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.enemies_killed, 2);
+    assert!(runtime.tick_out.get(&1).is_none());
+}
+
+#[test]
+fn award_enemy_killed_achievement_also_awards_demon_progress_when_target_is_demon() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    // area_id 4 maps to `PentArea::Earth` (`achievement_area_to_pent_index`).
+    award_enemy_killed_achievement(&world, &mut runtime, character_id, 4, true);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.enemies_killed, 1);
+    assert_eq!(player.achievement_stats.demons_defeated, 1);
+    assert_eq!(player.achievement_stats.demons_per_area[0], 1);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::FirstBlood));
+}
+
+#[test]
+fn award_enemy_killed_achievement_skips_demon_progress_when_target_is_not_demon() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_enemy_killed_achievement(&world, &mut runtime, character_id, 4, false);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.demons_defeated, 0);
+}
+
+#[test]
+fn award_enemy_killed_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    award_enemy_killed_achievement(&world, &mut runtime, character_id, 1, false);
+    assert!(runtime.player_for_character(character_id).is_none());
+}

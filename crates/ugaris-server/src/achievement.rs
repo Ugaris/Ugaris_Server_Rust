@@ -425,6 +425,54 @@ pub(crate) fn award_play_time_minute(
     }
 }
 
+/// C `kill_char` (`src/system/death.c:417-422`): `if (ch[co].flags &
+/// CF_PLAYER) { achievement_add_enemy_killed(co); if (ch[cn].flags &
+/// CF_DEMON) achievement_add_demons(co, areaID, 1); }` - runs for every kill
+/// scored by a player character, independent of the target being a player
+/// (unlike the sibling `give_exp` kill-experience path). A no-op if the
+/// killer has no live `PlayerRuntime` (mirrors C's `CF_PLAYER` gate).
+pub(crate) fn award_enemy_killed_achievement(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    killer_id: CharacterId,
+    area_id: i32,
+    target_is_demon: bool,
+) {
+    let Some(name) = world
+        .characters
+        .get(&killer_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(killer_id) else {
+        return;
+    };
+    let mut unlocked = ugaris_core::achievement::add_enemy_killed(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        &name,
+        now,
+    );
+    if target_is_demon {
+        unlocked.extend(ugaris_core::achievement::add_demons(
+            &mut player.achievement_data,
+            &mut player.achievement_stats,
+            area_id,
+            1,
+            &name,
+            now,
+        ));
+    }
+    for ty in unlocked {
+        let payload = achievement_unlock_payload(ty, now);
+        for (sid, _) in runtime.sessions_for_character(killer_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+}
+
 /// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every
 /// achievement (all 127 defs carry a non-empty `steam_id`, so none are
 /// skipped, unlike C's defensive `if (!def->steam_id...) continue;`) into

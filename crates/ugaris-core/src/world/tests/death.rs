@@ -66,6 +66,71 @@ fn kill_awards_killer_experience_from_c_kill_score_table() {
 }
 
 #[test]
+fn kill_queues_achievement_award_for_player_killer_regardless_of_target_kind() {
+    let mut world = World::default();
+    world.area_id = 4;
+    let mut target = character(1);
+    target.hp = POWERSCALE;
+    // A player kill (not just an NPC kill) should still queue the
+    // achievement award: C's `achievement_add_enemy_killed`/`_demons` gate
+    // only checks `ch[co].flags & CF_PLAYER`, not the target's kind.
+    target.flags |= CharacterFlags::PLAYER;
+    assert!(world.spawn_character(target, 10, 10));
+    let mut killer = character(2);
+    killer.flags |= CharacterFlags::PLAYER;
+    assert!(world.spawn_character(killer, 11, 10));
+
+    lethal_hurt(&mut world, 1, 2);
+
+    assert_eq!(
+        world.drain_pending_kill_achievements(),
+        vec![KillAchievementAward {
+            killer_id: CharacterId(2),
+            area_id: 4,
+            target_is_demon: false,
+        }]
+    );
+}
+
+#[test]
+fn kill_achievement_award_flags_demon_targets() {
+    let mut world = World::default();
+    world.area_id = 34;
+    let mut target = character(1);
+    target.hp = POWERSCALE;
+    target.flags |= CharacterFlags::DEMON;
+    assert!(world.spawn_character(target, 10, 10));
+    let mut killer = character(2);
+    killer.flags |= CharacterFlags::PLAYER;
+    assert!(world.spawn_character(killer, 11, 10));
+
+    lethal_hurt(&mut world, 1, 2);
+
+    assert_eq!(
+        world.drain_pending_kill_achievements(),
+        vec![KillAchievementAward {
+            killer_id: CharacterId(2),
+            area_id: 34,
+            target_is_demon: true,
+        }]
+    );
+}
+
+#[test]
+fn kill_achievement_award_is_not_queued_for_non_player_killer() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.hp = POWERSCALE;
+    assert!(world.spawn_character(target, 10, 10));
+    let killer = character(2); // no CF_PLAYER flag.
+    assert!(world.spawn_character(killer, 11, 10));
+
+    lethal_hurt(&mut world, 1, 2);
+
+    assert!(world.drain_pending_kill_achievements().is_empty());
+}
+
+#[test]
 fn kill_score_level_matches_c_taper_table() {
     assert_eq!(crate::attack::kill_score_level(20, 0), 20);
     assert_eq!(crate::attack::kill_score_level(20, 15), 20);

@@ -918,6 +918,16 @@ async fn main() -> anyhow::Result<()> {
                         u32::from(area_id),
                     );
                 }
+                // C kill_char achievement_add_enemy_killed/achievement_add_demons.
+                for award in world.drain_pending_kill_achievements() {
+                    award_enemy_killed_achievement(
+                        &world,
+                        &mut runtime,
+                        award.killer_id,
+                        award.area_id,
+                        award.target_is_demon,
+                    );
+                }
                 let timer_feedback = timer_outcome_feedback(&timer_outcomes);
                 if !timer_feedback.is_empty() {
                     let mut feedback_sessions = 0;
