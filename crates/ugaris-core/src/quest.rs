@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 pub const MAX_QUESTS: usize = 100;
 pub const QF_OPEN: u8 = 1;
 pub const QF_DONE: u8 = 2;
-pub const QLF_REPEATABLE: u8 = 1;
+pub const QLF_REPEATABLE: u8 = 1 << 0;
+pub const QLF_XREPEAT: u8 = 1 << 1;
 
 pub const QLOG_LYDIA: usize = 0;
 pub const QLOG_GWENDY_FIRST_SKULL: usize = 1;
@@ -18,38 +19,872 @@ pub const QLOG_HERMIT_QUEST1: usize = 82;
 pub const QLOG_HERMIT_QUEST2: usize = 83;
 pub const QLOG_JESSICA_KILL: usize = 84;
 
+/// C `struct questlog` (`src/system/questlog.c:98-105`): the static quest
+/// metadata table entry (name/level-range/giver/area/nominal exp/flags).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuestMeta {
+    pub name: &'static str,
+    pub min_level: u8,
+    pub max_level: u8,
+    pub giver: &'static str,
+    pub area: &'static str,
+    /// Nominal exp reward (C `questlog[qnr].exp`). `0` marks quests whose
+    /// exp is awarded ad hoc by the driver instead (documented per entry
+    /// below, matching the C source comments).
+    pub exp: i64,
+    pub flags: u8,
+}
+
+/// C `struct questlog questlog[]` (`src/system/questlog.c:107-202`), copied
+/// digit for digit including the two trailing-space quest names (`"The
+/// Jewels of Brannington "`, `"A Thief's Loot "`) that exist verbatim in
+/// the C source.
+pub const QUEST_TABLE: [QuestMeta; 85] = [
+    QuestMeta {
+        name: "Lydia's Potion",
+        min_level: 1,
+        max_level: 2,
+        giver: "James",
+        area: "Cameron",
+        exp: 15,
+        flags: QLF_REPEATABLE,
+    }, // 0
+    QuestMeta {
+        name: "Find the Magic Item",
+        min_level: 2,
+        max_level: 3,
+        giver: "Gwendylon",
+        area: "Cameron",
+        exp: 75,
+        flags: QLF_REPEATABLE,
+    }, // 1
+    QuestMeta {
+        name: "The Second Skull",
+        min_level: 3,
+        max_level: 5,
+        giver: "Gwendylon",
+        area: "Cameron",
+        exp: 150,
+        flags: QLF_REPEATABLE,
+    }, // 2
+    QuestMeta {
+        name: "The Third Skull",
+        min_level: 5,
+        max_level: 7,
+        giver: "Gwendylon",
+        area: "Cameron",
+        exp: 300,
+        flags: QLF_REPEATABLE,
+    }, // 3
+    QuestMeta {
+        name: "Kill the Foul Magician",
+        min_level: 6,
+        max_level: 8,
+        giver: "Gwendylon",
+        area: "Cameron",
+        exp: 800,
+        flags: QLF_REPEATABLE,
+    }, // 4
+    QuestMeta {
+        name: "Bear Hunt",
+        min_level: 6,
+        max_level: 8,
+        giver: "Yoakin",
+        area: "Cameron",
+        exp: 600,
+        flags: QLF_REPEATABLE,
+    }, // 5
+    QuestMeta {
+        name: "A Fool's Request",
+        min_level: 6,
+        max_level: 8,
+        giver: "Nook",
+        area: "Cameron",
+        exp: 400,
+        flags: 0,
+    }, // 6
+    QuestMeta {
+        name: "Mages Gone Berserk",
+        min_level: 6,
+        max_level: 9,
+        giver: "Guiwynn",
+        area: "Cameron",
+        exp: 800,
+        flags: QLF_REPEATABLE,
+    }, // 7
+    QuestMeta {
+        name: "The Recipe for Happiness",
+        min_level: 7,
+        max_level: 10,
+        giver: "Guiwynn",
+        area: "Cameron",
+        exp: 900,
+        flags: QLF_REPEATABLE,
+    }, // 8
+    QuestMeta {
+        name: "Knightly Troubles",
+        min_level: 7,
+        max_level: 10,
+        giver: "Logain",
+        area: "Cameron",
+        exp: 1200,
+        flags: QLF_REPEATABLE,
+    }, // 9
+    QuestMeta {
+        name: "Loisan's House",
+        min_level: 9,
+        max_level: 12,
+        giver: "Seymour",
+        area: "Aston",
+        exp: 850,
+        flags: 0,
+    }, // 10
+    QuestMeta {
+        name: "The Silver Skull",
+        min_level: 10,
+        max_level: 13,
+        giver: "Seymour",
+        area: "Aston",
+        exp: 1000,
+        flags: 0,
+    }, // 11
+    QuestMeta {
+        name: "Find Loisan",
+        min_level: 11,
+        max_level: 15,
+        giver: "Seymour",
+        area: "Aston",
+        exp: 1500,
+        flags: QLF_REPEATABLE,
+    }, // 12
+    QuestMeta {
+        name: "Jeepers Creepers",
+        min_level: 12,
+        max_level: 18,
+        giver: "Kelly",
+        area: "Aston",
+        exp: 1850,
+        flags: QLF_REPEATABLE,
+    }, // 13
+    QuestMeta {
+        // C: "special case: exp awarded in driver, 4500 exp total"
+        name: "Underground Park Shrines",
+        min_level: 15,
+        max_level: 20,
+        giver: "Kelly",
+        area: "Aston",
+        exp: 0,
+        flags: 0,
+    }, // 14
+    QuestMeta {
+        name: "In Search of Clara",
+        min_level: 20,
+        max_level: 27,
+        giver: "Kelly",
+        area: "Aston",
+        exp: 2500,
+        flags: 0,
+    }, // 15
+    QuestMeta {
+        name: "The Astronomer's Notes",
+        min_level: 15,
+        max_level: 20,
+        giver: "Gerassimo",
+        area: "Aston",
+        exp: 5000,
+        flags: QLF_REPEATABLE,
+    }, // 16
+    QuestMeta {
+        name: "The Unwanted Tenants",
+        min_level: 9,
+        max_level: 12,
+        giver: "Reskin",
+        area: "Cameron",
+        exp: 1250,
+        flags: 0,
+    }, // 17
+    QuestMeta {
+        name: "The Toughest Monster",
+        min_level: 20,
+        max_level: 25,
+        giver: "Sir Jones",
+        area: "Aston",
+        exp: 7500,
+        flags: 0,
+    }, // 18
+    QuestMeta {
+        name: "The Toughestest Monster",
+        min_level: 20,
+        max_level: 26,
+        giver: "Sir Jones",
+        area: "Aston",
+        exp: 12000,
+        flags: 0,
+    }, // 19
+    QuestMeta {
+        name: "Wanted: Occult Staff",
+        min_level: 30,
+        max_level: 36,
+        giver: "Carlos",
+        area: "Aston",
+        exp: 40000,
+        flags: QLF_REPEATABLE,
+    }, // 20
+    QuestMeta {
+        name: "Slay the Swampbeast",
+        min_level: 23,
+        max_level: 30,
+        giver: "Clara",
+        area: "Swamp",
+        exp: 22500,
+        flags: 0,
+    }, // 21
+    QuestMeta {
+        name: "Impish Bear Hunt",
+        min_level: 20,
+        max_level: 27,
+        giver: "William/Imp",
+        area: "Forest",
+        exp: 12500,
+        flags: 0,
+    }, // 22
+    QuestMeta {
+        name: "Praying Mantis Stew",
+        min_level: 20,
+        max_level: 27,
+        giver: "William",
+        area: "Forest",
+        exp: 15000,
+        flags: 0,
+    }, // 23
+    QuestMeta {
+        name: "The Spider Queen",
+        min_level: 25,
+        max_level: 30,
+        giver: "Hermit",
+        area: "Forest",
+        exp: 25000,
+        flags: 0,
+    }, // 24
+    QuestMeta {
+        // C: "exp awarded in driver, amount depends on robbers killed. range: 5000 to 20000"
+        name: "Earning the Lockpick",
+        min_level: 25,
+        max_level: 30,
+        giver: "Guildmaster",
+        area: "Exkordon",
+        exp: 0,
+        flags: QLF_XREPEAT,
+    }, // 25
+    QuestMeta {
+        // C: "exp awarded in driver, 5000 or 10000"
+        name: "Extortion",
+        min_level: 25,
+        max_level: 30,
+        giver: "Guildmaster",
+        area: "Exkordon",
+        exp: 0,
+        flags: QLF_XREPEAT,
+    }, // 26
+    QuestMeta {
+        name: "Price Fix Exposed",
+        min_level: 25,
+        max_level: 30,
+        giver: "Guildmaster",
+        area: "Exkordon",
+        exp: 15000,
+        flags: QLF_XREPEAT,
+    }, // 27
+    QuestMeta {
+        name: "The Golden Lockpick",
+        min_level: 26,
+        max_level: 33,
+        giver: "Guildmaster",
+        area: "Exkordon",
+        exp: 15000,
+        flags: QLF_XREPEAT,
+    }, // 28
+    QuestMeta {
+        // C: "exp awarded in driver, 45000 total"
+        name: "Dirty Hands",
+        min_level: 26,
+        max_level: 33,
+        giver: "Sanwyn",
+        area: "Exkordon",
+        exp: 0,
+        flags: 0,
+    }, // 29
+    QuestMeta {
+        name: "The Old Governor's Cross",
+        min_level: 33,
+        max_level: 40,
+        giver: "Skeleton",
+        area: "Exkordon",
+        exp: 30000,
+        flags: QLF_REPEATABLE,
+    }, // 30
+    QuestMeta {
+        name: "Spider Poison",
+        min_level: 30,
+        max_level: 40,
+        giver: "Cervik",
+        area: "Exkordon",
+        exp: 30000,
+        flags: QLF_REPEATABLE,
+    }, // 31
+    QuestMeta {
+        name: "Join the Tribe",
+        min_level: 63,
+        max_level: 80,
+        giver: "Kalanur",
+        area: "Nomad Plains",
+        exp: 10000,
+        flags: 0,
+    }, // 32
+    QuestMeta {
+        name: "Searching Sarkilar",
+        min_level: 63,
+        max_level: 80,
+        giver: "Kir Laas",
+        area: "Nomad Plains",
+        exp: 450000,
+        flags: 0,
+    }, // 33
+    QuestMeta {
+        name: "A Golden Statue",
+        min_level: 72,
+        max_level: 90,
+        giver: "Kir Garan",
+        area: "Nomad Plains",
+        exp: 280000,
+        flags: 0,
+    }, // 34
+    QuestMeta {
+        name: "Smuggler Book",
+        min_level: 10,
+        max_level: 15,
+        giver: "Imp. Commander",
+        area: "Below Aston 2",
+        exp: 1000,
+        flags: QLF_REPEATABLE,
+    }, // 35
+    QuestMeta {
+        // C: "exp awarded in driver, 5000 total"
+        name: "Contraband",
+        min_level: 10,
+        max_level: 15,
+        giver: "Imp. Commander",
+        area: "Below Aston 2",
+        exp: 0,
+        flags: 0,
+    }, // 36
+    QuestMeta {
+        name: "Smuggler Leader",
+        min_level: 10,
+        max_level: 15,
+        giver: "Imp. Commander",
+        area: "Below Aston 2",
+        exp: 2000,
+        flags: QLF_REPEATABLE,
+    }, // 37
+    QuestMeta {
+        name: "The Family Heirloom",
+        min_level: 32,
+        max_level: 40,
+        giver: "Aristocrat",
+        area: "Bran. Forest",
+        exp: 40000,
+        flags: QLF_REPEATABLE,
+    }, // 38
+    QuestMeta {
+        name: "Bear Hunt - Again",
+        min_level: 32,
+        max_level: 36,
+        giver: "Yoatin",
+        area: "Bran. Forest",
+        exp: 40000,
+        flags: QLF_REPEATABLE,
+    }, // 39
+    QuestMeta {
+        // C: "exp awarded in driver, 120k total"
+        name: "The Jewels of Brannington ",
+        min_level: 34,
+        max_level: 40,
+        giver: "Count B.",
+        area: "Brannington",
+        exp: 0,
+        flags: QLF_REPEATABLE,
+    }, // 40
+    QuestMeta {
+        name: "A Grolm's Spoils",
+        min_level: 33,
+        max_level: 42,
+        giver: "Brenneth",
+        area: "Brannington",
+        exp: 15000,
+        flags: QLF_REPEATABLE,
+    }, // 41
+    QuestMeta {
+        name: "A Thief's Loot ",
+        min_level: 33,
+        max_level: 42,
+        giver: "Brenneth",
+        area: "Brannington",
+        exp: 15000,
+        flags: QLF_REPEATABLE,
+    }, // 42
+    QuestMeta {
+        name: "A Necromancer's Notes",
+        min_level: 33,
+        max_level: 42,
+        giver: "Brenneth",
+        area: "Brannington",
+        exp: 15000,
+        flags: QLF_REPEATABLE,
+    }, // 43
+    QuestMeta {
+        name: "A Rest Disturbed",
+        min_level: 36,
+        max_level: 43,
+        giver: "Spirit",
+        area: "Brannington",
+        exp: 60000,
+        flags: QLF_REPEATABLE,
+    }, // 44
+    QuestMeta {
+        name: "Searching a Miner's Tool",
+        min_level: 42,
+        max_level: 48,
+        giver: "Broklin",
+        area: "Brannington",
+        exp: 60000,
+        flags: QLF_REPEATABLE,
+    }, // 45
+    QuestMeta {
+        name: "A Miner's Vengeance",
+        min_level: 44,
+        max_level: 50,
+        giver: "Broklin",
+        area: "Brannington",
+        exp: 60000,
+        flags: 0,
+    }, // 46
+    QuestMeta {
+        name: "A Miner's Misery",
+        min_level: 85,
+        max_level: 95,
+        giver: "Dwarven Chief",
+        area: "Grimroot",
+        exp: 285000,
+        flags: 0,
+    }, // 47
+    QuestMeta {
+        name: "A Miner's Bane",
+        min_level: 95,
+        max_level: 105,
+        giver: "Dwarven Chief",
+        area: "Grimroot",
+        exp: 395000,
+        flags: 0,
+    }, // 48
+    QuestMeta {
+        name: "A Miner's Anguish",
+        min_level: 105,
+        max_level: 115,
+        giver: "Dwarven Chief",
+        area: "Grimroot",
+        exp: 525000,
+        flags: 0,
+    }, // 49
+    QuestMeta {
+        name: "A Miner Lost",
+        min_level: 115,
+        max_level: 125,
+        giver: "Dwarven Chief",
+        area: "Grimroot",
+        exp: 680000,
+        flags: 0,
+    }, // 50
+    QuestMeta {
+        name: "Lizard's Teeth",
+        min_level: 95,
+        max_level: 105,
+        giver: "Dwarven Shaman",
+        area: "Grimroot",
+        exp: 395000,
+        flags: 0,
+    }, // 51
+    QuestMeta {
+        name: "Collecting Berries",
+        min_level: 100,
+        max_level: 110,
+        giver: "Dwarven Shaman",
+        area: "Grimroot",
+        exp: 455000,
+        flags: 0,
+    }, // 52
+    QuestMeta {
+        name: "Elitist Head",
+        min_level: 105,
+        max_level: 115,
+        giver: "Dwarven Shaman",
+        area: "Grimroot",
+        exp: 525000,
+        flags: 0,
+    }, // 53
+    QuestMeta {
+        name: "Looking for Caligar",
+        min_level: 55,
+        max_level: 65,
+        giver: "Kelly",
+        area: "Aston",
+        exp: 80000,
+        flags: 0,
+    }, // 54
+    QuestMeta {
+        name: "Fighting Styles",
+        min_level: 55,
+        max_level: 65,
+        giver: "Glori",
+        area: "Caligar",
+        exp: 80000,
+        flags: 0,
+    }, // 55
+    QuestMeta {
+        name: "Obelisk Hunt",
+        min_level: 55,
+        max_level: 65,
+        giver: "Glori",
+        area: "Caligar",
+        exp: 80000,
+        flags: 0,
+    }, // 56
+    QuestMeta {
+        name: "Find the Keyparts",
+        min_level: 55,
+        max_level: 65,
+        giver: "Glori",
+        area: "Caligar",
+        exp: 80000,
+        flags: 0,
+    }, // 57
+    QuestMeta {
+        name: "Assemble the Key",
+        min_level: 55,
+        max_level: 65,
+        giver: "Glori",
+        area: "Caligar",
+        exp: 80000,
+        flags: 0,
+    }, // 58
+    QuestMeta {
+        name: "Amazon Invaders",
+        min_level: 55,
+        max_level: 65,
+        giver: "Homdem",
+        area: "Caligar",
+        exp: 80000,
+        flags: 0,
+    }, // 59
+    QuestMeta {
+        name: "The Emperor's Plaque",
+        min_level: 55,
+        max_level: 65,
+        giver: "Kelly",
+        area: "Aston",
+        exp: 160000,
+        flags: 0,
+    }, // 60
+    QuestMeta {
+        name: "The Imperial Vault",
+        min_level: 26,
+        max_level: 28,
+        giver: "Carlos",
+        area: "Aston",
+        exp: 20000,
+        flags: 0,
+    }, // 61
+    QuestMeta {
+        name: "Tunnel Magics",
+        min_level: 26,
+        max_level: 28,
+        giver: "Rouven",
+        area: "Imperial Vault",
+        exp: 10000,
+        flags: 0,
+    }, // 62
+    QuestMeta {
+        name: "Chronicles of Seyan",
+        min_level: 26,
+        max_level: 28,
+        giver: "Rouven",
+        area: "Imperial Vault",
+        exp: 10000,
+        flags: 0,
+    }, // 63
+    QuestMeta {
+        name: "Finding Arkhata",
+        min_level: 47,
+        max_level: 55,
+        giver: "Guard",
+        area: "Brannington",
+        exp: 60000,
+        flags: 0,
+    }, // 64
+    QuestMeta {
+        name: "Rammy's Crown",
+        min_level: 48,
+        max_level: 58,
+        giver: "Rammy",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 65
+    QuestMeta {
+        name: "Ishtar's Bracelet",
+        min_level: 49,
+        max_level: 59,
+        giver: "Jaz",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 66
+    QuestMeta {
+        name: "Queen Fiona's Ring",
+        min_level: 50,
+        max_level: 60,
+        giver: "Queen Fiona",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 67
+    QuestMeta {
+        name: "A Shopkeeper's Fright",
+        min_level: 51,
+        max_level: 61,
+        giver: "Ramin",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 68
+    QuestMeta {
+        name: "The Monks' Request",
+        min_level: 52,
+        max_level: 62,
+        giver: "Johnatan",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 69
+    QuestMeta {
+        name: "The Book Eater",
+        min_level: 53,
+        max_level: 63,
+        giver: "Tracy",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 70
+    QuestMeta {
+        name: "Entrance Passes",
+        min_level: 54,
+        max_level: 64,
+        giver: "Rammy",
+        area: "Arkhata",
+        exp: 90000,
+        flags: 0,
+    }, // 71
+    QuestMeta {
+        name: "The Source",
+        min_level: 60,
+        max_level: 70,
+        giver: "Jada",
+        area: "Arkhata",
+        exp: 120000,
+        flags: 0,
+    }, // 72
+    QuestMeta {
+        name: "Ceremonial Pot",
+        min_level: 48,
+        max_level: 58,
+        giver: "Pot Maker",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 73
+    QuestMeta {
+        name: "The Lost Secrets",
+        min_level: 49,
+        max_level: 59,
+        giver: "Thai Pan",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 74
+    QuestMeta {
+        name: "A Kidnapped Student",
+        min_level: 53,
+        max_level: 63,
+        giver: "Trainer",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 75
+    QuestMeta {
+        name: "The Traitors",
+        min_level: 53,
+        max_level: 63,
+        giver: "Clerk",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 76
+    QuestMeta {
+        name: "The Blue Harpy",
+        min_level: 58,
+        max_level: 68,
+        giver: "Hunter",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 77
+    QuestMeta {
+        name: "The Mysterious Language",
+        min_level: 60,
+        max_level: 65,
+        giver: "Johnatan",
+        area: "Arkhata",
+        exp: 60000,
+        flags: 0,
+    }, // 78
+    QuestMeta {
+        name: "The Robber Operations",
+        min_level: 6,
+        max_level: 9,
+        giver: "Jessica",
+        area: "Cameron",
+        exp: 750,
+        flags: QLF_REPEATABLE,
+    }, // 79
+    QuestMeta {
+        name: "Cleansing the Sanctuary",
+        min_level: 39,
+        max_level: 45,
+        giver: "Jiu",
+        area: "Cameron",
+        exp: 50000,
+        flags: 0,
+    }, // 80
+    QuestMeta {
+        name: "The dying forest",
+        min_level: 39,
+        max_level: 45,
+        giver: "Brithildie",
+        area: "Cameron",
+        exp: 50000,
+        flags: 0,
+    }, // 81
+    QuestMeta {
+        name: "Bear Control Hunt",
+        min_level: 9,
+        max_level: 15,
+        giver: "Hermit",
+        area: "Cameron",
+        exp: 1000,
+        flags: 0,
+    }, // 82
+    QuestMeta {
+        name: "Bear Tooth Necklace",
+        min_level: 9,
+        max_level: 15,
+        giver: "Hermit",
+        area: "Cameron",
+        exp: 1000,
+        flags: QLF_REPEATABLE,
+    }, // 83
+    QuestMeta {
+        name: "Defeating the Robber Leader",
+        min_level: 6,
+        max_level: 9,
+        giver: "Jessica",
+        area: "Cameron",
+        exp: 750,
+        flags: QLF_REPEATABLE,
+    }, // 84
+];
+
+/// C `questlog[qnr]` lookup - `None` for `qnr >= QUEST_TABLE.len()` (indices
+/// `85..MAX_QUESTS` have no metadata in C either; nothing in the ported
+/// tree references them).
+pub fn quest_meta(qnr: usize) -> Option<&'static QuestMeta> {
+    QUEST_TABLE.get(qnr)
+}
+
 const QUESTLOG_FLAGS: [u8; MAX_QUESTS] = {
-    let mut flags = [0; MAX_QUESTS];
-    flags[0] = QLF_REPEATABLE;
-    flags[1] = QLF_REPEATABLE;
-    flags[2] = QLF_REPEATABLE;
-    flags[3] = QLF_REPEATABLE;
-    flags[4] = QLF_REPEATABLE;
-    flags[5] = QLF_REPEATABLE;
-    flags[7] = QLF_REPEATABLE;
-    flags[8] = QLF_REPEATABLE;
-    flags[9] = QLF_REPEATABLE;
-    flags[12] = QLF_REPEATABLE;
-    flags[13] = QLF_REPEATABLE;
-    flags[16] = QLF_REPEATABLE;
-    flags[20] = QLF_REPEATABLE;
-    flags[30] = QLF_REPEATABLE;
-    flags[31] = QLF_REPEATABLE;
-    flags[35] = QLF_REPEATABLE;
-    flags[37] = QLF_REPEATABLE;
-    flags[38] = QLF_REPEATABLE;
-    flags[39] = QLF_REPEATABLE;
-    flags[40] = QLF_REPEATABLE;
-    flags[41] = QLF_REPEATABLE;
-    flags[42] = QLF_REPEATABLE;
-    flags[43] = QLF_REPEATABLE;
-    flags[44] = QLF_REPEATABLE;
-    flags[45] = QLF_REPEATABLE;
-    flags[79] = QLF_REPEATABLE;
-    flags[83] = QLF_REPEATABLE;
-    flags[84] = QLF_REPEATABLE;
+    let mut flags = [0u8; MAX_QUESTS];
+    let mut i = 0;
+    while i < QUEST_TABLE.len() {
+        flags[i] = QUEST_TABLE[i].flags;
+        i += 1;
+    }
     flags
 };
+
+/// C `questlog_scale(cnt, ex)` (`src/system/questlog.c:240-265`): the
+/// repeat-completion exp decay curve. `cnt` is the number of times the
+/// quest had already been completed *before* this completion (C's
+/// post-increment `quest[qnr].done++` read).
+pub fn scale_exp(prior_completions: u8, base_exp: i64) -> i64 {
+    match prior_completions {
+        0 => base_exp,
+        1 => base_exp * 82 / 100,
+        2 => base_exp * 68 / 100,
+        3 => base_exp * 56 / 100,
+        4 => base_exp * 46 / 100,
+        5 => base_exp * 38 / 100,
+        6 => base_exp * 32 / 100,
+        7 => base_exp * 26 / 100,
+        8 => base_exp * 21 / 100,
+        9 => base_exp * 18 / 100,
+        _ => base_exp * 15 / 100,
+    }
+}
+
+/// C `questlog_done`'s level-based taper (`src/system/questlog.c:286-295`):
+/// "scale down by level for those rushing ahead". `level_value` must be the
+/// caller's `ugaris_core::world::level_value(level)` result - this leaf
+/// module intentionally takes it as a parameter instead of depending on
+/// `world::exp` to avoid a `quest` -> `world` module dependency.
+pub fn taper_exp_by_level(level: u32, level_value: u32, scaled_exp: i64) -> i64 {
+    let level_value = i64::from(level_value);
+    if level > 44 {
+        scaled_exp.min(level_value / 6)
+    } else if level > 19 {
+        scaled_exp.min(level_value / 4)
+    } else if level > 4 {
+        scaled_exp.min(level_value / 2)
+    } else {
+        scaled_exp.min(level_value)
+    }
+}
+
+/// Result of `QuestLog::complete_legacy`, mirroring the values C's
+/// `questlog_done` (`src/system/questlog.c:267-305`) uses to call
+/// `give_exp`/`dlog`/`sendquestlog` - all of which stay in the caller
+/// (`World`/`PlayerRuntime` live in different structures, so this leaf
+/// module cannot call `World::give_exp` directly).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuestCompletion {
+    /// `quest[qnr].done` *after* the increment (C's `cnt + 1` in the dlog
+    /// text, and the function's `int` return value).
+    pub times_done: u8,
+    /// The exp value C passes to `give_exp(cn, val)` (already scaled by
+    /// prior completions and tapered by level).
+    pub granted_exp: i64,
+    /// C's nominal `questlog[qnr].exp` - the `dlog` line is only emitted
+    /// when this is `> 0`.
+    pub nominal_exp: i64,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuestReopenResult {
@@ -83,23 +918,73 @@ impl QuestLog {
         &self.quests
     }
 
+    /// C `questlog_open(cn, qnr)` (`src/system/questlog.c:204-219`): sets
+    /// `flags` to exactly `QF_OPEN`, discarding any prior `QF_DONE` bit
+    /// (C assigns, it doesn't OR). The caller is responsible for the C
+    /// side effect of resending the quest log packet.
     pub fn open(&mut self, quest: usize) {
         if let Some(entry) = self.quests.get_mut(quest) {
-            entry.flags |= QF_OPEN;
+            entry.flags = QF_OPEN;
         }
     }
 
+    /// C `questlog_close(cn, qnr)` (`src/system/questlog.c:221-238`): only
+    /// transitions `QF_OPEN` -> `QF_DONE` when `flags` is *exactly*
+    /// `QF_OPEN` (C's `if (quest[qnr].flags == QF_OPEN)`); any other state
+    /// (closed, already done) is left untouched.
     pub fn close(&mut self, quest: usize) {
         if let Some(entry) = self.quests.get_mut(quest) {
-            entry.flags &= !QF_OPEN;
+            if entry.flags == QF_OPEN {
+                entry.flags = QF_DONE;
+            }
         }
     }
 
+    /// C `questlog_done(cn, qnr)`'s bookkeeping half
+    /// (`src/system/questlog.c:267-305`, minus the exp math and side
+    /// effects - see `complete_legacy` for the full port). Kept as a
+    /// simple flag/counter helper for callers that don't need the exp
+    /// reward (e.g. test fixtures).
     pub fn mark_done(&mut self, quest: usize) {
         if let Some(entry) = self.quests.get_mut(quest) {
             entry.flags = (entry.flags | QF_DONE) & !QF_OPEN;
             entry.done = entry.done.saturating_add(1).min(0x3f);
         }
+    }
+
+    /// C `questlog_done(cn, qnr)` (`src/system/questlog.c:267-305`): full
+    /// port including the exp reward computation. Returns `None` for an
+    /// out-of-range quest number or one with no metadata row (C would read
+    /// past the end of the 85-entry `questlog[]` table for indices
+    /// `85..MAX_QUESTS`, which nothing in the ported tree ever does).
+    ///
+    /// The caller must still perform C's `give_exp(cn, val)` (using
+    /// `QuestCompletion::granted_exp`), the `dlog` line (only when
+    /// `nominal_exp > 0`), and `sendquestlog` resend - this leaf module
+    /// has no access to `World`/`PlayerRuntime`.
+    pub fn complete_legacy(
+        &mut self,
+        quest: usize,
+        level: u32,
+        level_value: u32,
+    ) -> Option<QuestCompletion> {
+        let meta = quest_meta(quest)?;
+        let entry = self.quests.get_mut(quest)?;
+
+        // C: `cnt = quest[qnr].done++;` (post-increment: `cnt` is the
+        // count *before* this completion).
+        let prior_completions = entry.done;
+        entry.done = entry.done.saturating_add(1).min(0x3f);
+        entry.flags = QF_DONE;
+
+        let scaled = scale_exp(prior_completions, meta.exp);
+        let granted_exp = taper_exp_by_level(level, level_value, scaled);
+
+        Some(QuestCompletion {
+            times_done: entry.done,
+            granted_exp,
+            nominal_exp: meta.exp,
+        })
     }
 
     pub fn reopen(&mut self, quest: usize) {
@@ -203,5 +1088,196 @@ mod tests {
             log.try_reopen_legacy(QLOG_LYDIA),
             QuestReopenResult::CannotOpenAgain
         );
+    }
+
+    /// C `level_value(level)` (`src/system/tool.c:1282`), duplicated here
+    /// only for test expectations (this leaf module doesn't depend on
+    /// `world::exp` - see `taper_exp_by_level`'s doc comment).
+    fn level_value(level: u32) -> u32 {
+        let next = level + 1;
+        next.pow(4) - level.pow(4)
+    }
+
+    #[test]
+    fn quest_table_has_85_entries_matching_c_array() {
+        assert_eq!(QUEST_TABLE.len(), 85);
+        assert_eq!(quest_meta(85), None);
+        assert_eq!(quest_meta(MAX_QUESTS - 1), None);
+    }
+
+    #[test]
+    fn quest_table_entries_match_c_source_digit_for_digit() {
+        let lydia = quest_meta(QLOG_LYDIA).unwrap();
+        assert_eq!(lydia.name, "Lydia's Potion");
+        assert_eq!(lydia.min_level, 1);
+        assert_eq!(lydia.max_level, 2);
+        assert_eq!(lydia.giver, "James");
+        assert_eq!(lydia.area, "Cameron");
+        assert_eq!(lydia.exp, 15);
+        assert_eq!(lydia.flags, QLF_REPEATABLE);
+
+        // Trailing-space quest names copied verbatim from the C table.
+        assert_eq!(quest_meta(40).unwrap().name, "The Jewels of Brannington ");
+        assert_eq!(quest_meta(42).unwrap().name, "A Thief's Loot ");
+
+        // QLF_XREPEAT-only entries (not QLF_REPEATABLE).
+        for qnr in [25, 26, 27, 28] {
+            let meta = quest_meta(qnr).unwrap();
+            assert_eq!(meta.flags, QLF_XREPEAT);
+            assert_eq!(meta.flags & QLF_REPEATABLE, 0);
+        }
+
+        // Highest-value quest in the table.
+        let sarkilar = quest_meta(33).unwrap();
+        assert_eq!(sarkilar.name, "Searching Sarkilar");
+        assert_eq!(sarkilar.exp, 450000);
+
+        assert_eq!(
+            quest_meta(QLOG_JESSICA_KILL).unwrap().name,
+            "Defeating the Robber Leader"
+        );
+    }
+
+    #[test]
+    fn quest_table_flags_stay_in_sync_with_reopen_repeatability_table() {
+        // Every quest previously hand-marked repeatable in QUESTLOG_FLAGS
+        // must have QLF_REPEATABLE set in the ported metadata table too.
+        let repeatable_indices = [
+            0, 1, 2, 3, 4, 5, 7, 8, 9, 12, 13, 16, 20, 30, 31, 35, 37, 38, 39, 40, 41, 42, 43, 44,
+            45, 79, 83, 84,
+        ];
+        for qnr in 0..QUEST_TABLE.len() {
+            let expects_repeatable = repeatable_indices.contains(&qnr);
+            let is_repeatable = (QUEST_TABLE[qnr].flags & QLF_REPEATABLE) != 0;
+            assert_eq!(
+                is_repeatable, expects_repeatable,
+                "quest {qnr} repeatability mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn scale_exp_matches_c_questlog_scale_curve() {
+        assert_eq!(scale_exp(0, 1000), 1000);
+        assert_eq!(scale_exp(1, 1000), 820);
+        assert_eq!(scale_exp(2, 1000), 680);
+        assert_eq!(scale_exp(3, 1000), 560);
+        assert_eq!(scale_exp(4, 1000), 460);
+        assert_eq!(scale_exp(5, 1000), 380);
+        assert_eq!(scale_exp(6, 1000), 320);
+        assert_eq!(scale_exp(7, 1000), 260);
+        assert_eq!(scale_exp(8, 1000), 210);
+        assert_eq!(scale_exp(9, 1000), 180);
+        assert_eq!(scale_exp(10, 1000), 150);
+        assert_eq!(scale_exp(200, 1000), 150);
+    }
+
+    #[test]
+    fn taper_exp_by_level_matches_c_bands() {
+        // level <= 4: min(level_value(level), val)
+        assert_eq!(
+            taper_exp_by_level(1, level_value(1), 1_000_000),
+            level_value(1) as i64
+        );
+        assert_eq!(taper_exp_by_level(1, level_value(1), 1), 1);
+
+        // 4 < level <= 19: min(level_value(level)/2, val)
+        assert_eq!(
+            taper_exp_by_level(10, level_value(10), 1_000_000_000),
+            (level_value(10) / 2) as i64
+        );
+
+        // 19 < level <= 44: min(level_value(level)/4, val)
+        assert_eq!(
+            taper_exp_by_level(30, level_value(30), 1_000_000_000),
+            (level_value(30) / 4) as i64
+        );
+
+        // level > 44: min(level_value(level)/6, val)
+        assert_eq!(
+            taper_exp_by_level(50, level_value(50), 1_000_000_000),
+            (level_value(50) / 6) as i64
+        );
+    }
+
+    #[test]
+    fn complete_legacy_ports_questlog_done_first_completion() {
+        let mut log = QuestLog::default();
+        log.open(QLOG_LYDIA);
+
+        let result = log
+            .complete_legacy(QLOG_LYDIA, 1, level_value(1))
+            .expect("Lydia's Potion has metadata");
+
+        assert_eq!(result.times_done, 1);
+        assert_eq!(result.nominal_exp, 15);
+        // scale_exp(0, 15) = 15, tapered by min(level_value(1), 15) = 15
+        // (level_value(1) is far bigger than 15 for level 1).
+        assert_eq!(result.granted_exp, 15);
+
+        let entry = log.entries()[QLOG_LYDIA];
+        assert_eq!(entry.done, 1);
+        assert_eq!(entry.flags, QF_DONE);
+    }
+
+    #[test]
+    fn complete_legacy_scales_repeat_completions_and_increments_done() {
+        let mut log = QuestLog::default();
+        // Complete Lydia's Potion (exp 15, repeatable) three times.
+        for expected_prior in 0..3u8 {
+            let result = log.complete_legacy(QLOG_LYDIA, 1, level_value(1)).unwrap();
+            assert_eq!(result.times_done, expected_prior + 1);
+        }
+        assert_eq!(log.count(QLOG_LYDIA), 3);
+
+        // Now complete a high-level, high-exp quest at a high level to
+        // exercise the taper.
+        let mut log2 = QuestLog::default();
+        let result = log2
+            .complete_legacy(20, 50, level_value(50))
+            .expect("Wanted: Occult Staff has metadata");
+        assert_eq!(result.nominal_exp, 40000);
+        // level 50 > 44, so granted = min(level_value(50)/6, 40000)
+        let expected = (level_value(50) as i64 / 6).min(40000);
+        assert_eq!(result.granted_exp, expected);
+    }
+
+    #[test]
+    fn complete_legacy_returns_none_for_indices_without_metadata() {
+        let mut log = QuestLog::default();
+        assert_eq!(log.complete_legacy(85, 1, level_value(1)), None);
+        assert_eq!(log.complete_legacy(MAX_QUESTS, 1, level_value(1)), None);
+    }
+
+    #[test]
+    fn open_matches_c_unconditional_assignment() {
+        let mut log = QuestLog::default();
+        log.mark_done(QLOG_LYDIA);
+        assert_eq!(log.entries()[QLOG_LYDIA].flags, QF_DONE);
+
+        // C `questlog_open` assigns flags = QF_OPEN outright, clearing
+        // QF_DONE, without touching `done`.
+        log.open(QLOG_LYDIA);
+        assert_eq!(log.entries()[QLOG_LYDIA].flags, QF_OPEN);
+        assert_eq!(log.entries()[QLOG_LYDIA].done, 1);
+    }
+
+    #[test]
+    fn close_only_transitions_from_exactly_open_like_c() {
+        let mut log = QuestLog::default();
+
+        // Closed (flags = 0): no-op.
+        log.close(QLOG_LYDIA);
+        assert_eq!(log.entries()[QLOG_LYDIA].flags, 0);
+
+        // Open -> Done.
+        log.open(QLOG_LYDIA);
+        log.close(QLOG_LYDIA);
+        assert_eq!(log.entries()[QLOG_LYDIA].flags, QF_DONE);
+
+        // Already done: closing again is a no-op (flags stay QF_DONE, not
+        // reset to 0 or anything else).
+        log.close(QLOG_LYDIA);
+        assert_eq!(log.entries()[QLOG_LYDIA].flags, QF_DONE);
     }
 }

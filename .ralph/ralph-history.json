@@ -1904,21 +1904,47 @@
         "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
         "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"test result|FAILED\""
       ]
+    },
+    {
+      "iteration": 59,
+      "startedAt": "2026-07-04T05:19:01.669Z",
+      "endedAt": "2026-07-04T05:32:58.760Z",
+      "durationMs": 836571,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/quest.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 1286 filtered out; finished in 0.00s",
+        "test result: ok. 1302 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
+        "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-core"
+      ]
     }
   ],
-  "totalDurationMs": 65881999,
+  "totalDurationMs": 66718570,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 58,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 59,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 29,
@@ -2016,7 +2042,7 @@
       "All verification gates passed: `cargo fmt --all` clean, `cargo test --workspace` (1474 tests, 0 fail": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 2 previous errors": 1,
       "test result: ok. 1078 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
-      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
+      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
       "- **Verification**: `cargo fmt --all`, `cargo test --workspace` (1090+9+3+33+340 = 1475 tests, 0 fai": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1086 filtered out; finished in 0.00s": 1,
       "test result: ok. 1090 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
@@ -2056,7 +2082,7 @@
       "test result: ok. 1118 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 351 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1120 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
-      "| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src": 1,
+      "| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src": 2,
       "server + 0 doc-tests, all green, no failures) / `cargo build": 1,
       "All 356 server tests pass (351 + 5 new), zero failures, zero warnings. Since this touches the runtim": 1,
       "5. **Verification**: `cargo fmt --all`, `cargo test --workspace` (1120+9+3+33+356, all green, zero f": 1,
@@ -2143,7 +2169,7 @@
       "- `cargo fmt --all`, `cargo test --workspace` (1228+36+3+33+374 passing, zero failures), and `cargo ": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error; 1 warning emitted": 1,
       "/// set, and skips (never fails) otherwise so `cargo test --workspace`": 1,
-      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
+      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
       "test auction::tests::live::search_filters_by_name_and_level_and_sorts_by_price ... FAILED": 1,
       "test auction::tests::live::deliveries_round_trip_and_summary_matches_pending_rows ... FAILED": 1,
       "test auction::tests::live::create_get_update_and_delete_round_trip ... FAILED": 1,
@@ -2193,7 +2219,9 @@
       "test result: ok. 404 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "whole gatekeeper.c file (welcome dialogue, test entry/success/failure,": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
-      "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
+      "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
+      "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 1286 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1302 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

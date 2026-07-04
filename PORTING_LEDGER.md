@@ -68,7 +68,7 @@ Remaining oversized files worth splitting during future work:
 | `src/server.h` | `crates/ugaris-core/src/entity.rs`, `crates/ugaris-core/src/effect.rs`, `crates/ugaris-core/src/legacy.rs`, `crates/ugaris-core/src/map.rs` | Core flags, values, map/item/character/effect shapes including character sprite, item template ID, death counter, inventory ranges, version, tick constants ported. |
 | `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_STATSCROLL` dispatch, carried-only and `/noexp` blocking, C skill-cost/start-factor/max checks needed by stat scrolls, XP grant/spend, bare/effective value raise, consume-on-success behavior, and runtime executed-outcome classification ported with focused tests. `CL_RAISE` now spends already-unspent exp (`raise_value`, distinct from the exp-granting `raise_value_exp` scroll path) through `World::raise_skill`, sending a single-value `SV_SETVAL0/1` + exp/exp_used feedback packet on success and staying silent on failure like C. Both raise paths now call `update_character`: `World::raise_skill` since iteration 17 and `World::apply_item_driver_outcome`'s `StatScrollUsed` arm since iteration 18 (the item driver itself only has `&mut Character`, so the `World`-level outcome handler recomputes once after the scroll's raise loop completes, matching C's per-raise `update_char` since the recompute is idempotent on the final `value[1]` state). As of iteration 20, the `StatScrollUsed` outcome handler also calls `check_levelup` before `update_character`, matching C `raise_value_exp`'s `check_levelup(cn)` call (`raise_value`/`CL_RAISE` never calls `check_levelup` in C, so `World::raise_skill` correctly has no such call). Achievement checks (`achievement_check_skill`/`achievement_check_level`) remain unported for both raise paths. |
 | `src/system/act.h` | `crates/ugaris-core/src/legacy.rs` | Action IDs ported. |
-| `src/system/questlog.h`, `src/system/player.c` `sendquestlog` base packet | `crates/ugaris-core/src/quest.rs`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | Quest IDs, flags, fixed-size quest log behavior, C bitfield quest-entry packing, base `SV_QUESTLOG` payload shape with zeroed random-shrine PPD, and `CL_GETQUESTLOG` response path ported with tests. Full quest initialization/reopen side effects and mod-protocol questlog extensions remain. |
+| `src/system/questlog.h`, `src/system/questlog.c` (metadata table, `questlog_scale`, `questlog_done`, `questlog_open`/`close`), `src/system/player.c` `sendquestlog` base packet | `crates/ugaris-core/src/quest.rs`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | Quest IDs, flags, fixed-size quest log behavior, C bitfield quest-entry packing, base `SV_QUESTLOG` payload shape with zeroed random-shrine PPD, and `CL_GETQUESTLOG` response path ported with tests. The 85-entry `struct questlog questlog[]` metadata table (name/level-range/giver/area/nominal-exp/flags, incl. `QLF_XREPEAT`) is now ported verbatim as `QUEST_TABLE`/`quest_meta()`; `questlog_scale`'s repeat-completion decay curve (`scale_exp`) and `questlog_done`'s level taper (`taper_exp_by_level`) are ported as pure functions; `QuestLog::complete_legacy` ports the full `questlog_done` bookkeeping + exp computation (caller still applies `give_exp`/`dlog`/`sendquestlog`); `QuestLog::open`/`close` now match C's exact flag assignment/guard semantics instead of bitwise OR/AND-NOT approximations. `questlog_init`'s area-PPD-driven flag derivation, the per-area `questlog_reopen_qN` reset side effects, `quest_exp.h`'s per-encounter exp/money constants, and wiring from NPC dialogue (which isn't ported yet) remain - see `PORTING_TODO.md` P3 "Questlog initialization & quest state machine" for the itemized gap. |
 | `src/system/io.c` / `src/system/io.h` | `crates/ugaris-protocol/src/frame.rs`, `crates/ugaris-net/src/*`, `crates/ugaris-server/src/main.rs` | Legacy tick frame envelope, TCP session skeleton, per-session server command channels, runtime-to-session framed payload sending, listener readiness/error reporting, default info logging, IPv4 plus IPv6 localhost listening for `localhost`, multi-payload login bootstrap queueing, and chunked full-map bootstrap below legacy frame limits ported. Full gameplay send buffering, compression modes, and backpressure policy remain partial. |
 | `src/system/map.h` / `src/system/map.c` primitives | `crates/ugaris-core/src/map.rs`, `crates/ugaris-core/src/item_ops.rs` | Legacy map indexing, bounds checks, movement/sight blocker helpers, grid wrapper, item map placement/removal, character map placement/removal, `NOMAGIC` flag sync, simple 3x3 drop order, extended pathfinder-backed drop order, carried-item removal, and carried-item replacement ported with tests. C `set_item_map`'s `IF_TAKE` decay-arming (`set_expire(in, item_decay_time)`) is ported at the `World::complete_drop` call site (`crates/ugaris-core/src/world/actions.rs`) rather than inside `map.rs` itself, since only `World` owns the timer queue - see "Ralph Loop - Ground Item Decay" below. Light/trap/notify callbacks remain. |
 | `src/system/los.h` / `src/system/los.c` primitive LOS | `crates/ugaris-core/src/map.rs` | Conservative line-of-sight helper with blocker tests ported. Full per-character cached LOS table remains. |
@@ -4404,3 +4404,49 @@ sections above, iterations 51-57).
   and the architecturally-moot `labentrance` `-1` branch above are the
   only known deviations, all intentional and documented). Marking the
   `PORTING_TODO.md` task `[x]`.
+
+- Ralph Loop iteration 59 - `src/system/questlog.c` (P3 "Questlog
+  initialization & quest state machine"): ported the 85-entry `struct
+  questlog questlog[]` metadata table digit-for-digit (including the two
+  trailing-space quest names, `QLF_XREPEAT`-only entries 25/26/27/28, and
+  every name/level-range/giver/area/exp field) into `QUEST_TABLE`/
+  `quest_meta()` (`crates/ugaris-core/src/quest.rs`). Ported
+  `questlog_scale`'s repeat-completion exp decay curve as `scale_exp` and
+  `questlog_done`'s level-based taper (`> 44`/`> 19`/`> 4`/else bands) as
+  `taper_exp_by_level`, both pure functions independent of `World` so they
+  stay testable without a live game world. Added `QuestLog::complete_legacy`,
+  the full `questlog_done` port: increments `done` (saturating at the C
+  6-bit bitfield's max 63), sets `flags = QF_DONE`, and returns a
+  `QuestCompletion { times_done, granted_exp, nominal_exp }` for the caller
+  to route through `World::give_exp`/`dlog`/`sendquestlog` (this leaf
+  module has no access to `World`/`PlayerRuntime`, which live in different
+  structures - `World` owns `Character`, while `QuestLog` lives on
+  `PlayerRuntime`). While porting, found and fixed two pre-existing bugs in
+  `QuestLog::open`/`close` (previously untested against real C semantics):
+  `open` used `flags |= QF_OPEN`, which could leave a stale `QF_DONE` bit
+  set after reopening a done quest - C `questlog_open` assigns
+  `flags = QF_OPEN` outright; `close` used an unconditional `flags &=
+  !QF_OPEN`, whereas C `questlog_close` only transitions when `flags` is
+  *exactly* `QF_OPEN` (`if (quest[qnr].flags == QF_OPEN) quest[qnr].flags =
+  QF_DONE;`), leaving other states (closed, already done) untouched. Added
+  10 new tests in `crates/ugaris-core/src/quest.rs` covering the table's
+  length/contents/trailing-space names/`QLF_XREPEAT` entries, the
+  repeatability-flag/table sync (guards against the hand-maintained
+  `QUESTLOG_FLAGS` table silently drifting from `QUEST_TABLE`), the full
+  `scale_exp` curve (`cnt` 0 through 10+), all four `taper_exp_by_level`
+  bands, `complete_legacy`'s first/repeat-completion/out-of-range
+  behavior, and the corrected `open`/`close` semantics.
+  REMAINING (documented in `PORTING_TODO.md`, task left `[~]`):
+  `questlog_init`'s derivation of quest flags from `area1_ppd`/
+  `area3_ppd`/`staffer_ppd`/`twocity_ppd`/`nomad_ppd` NPC-dialogue state
+  (blocked on `area1_ppd`/`nomad_ppd` becoming real decoded structs -
+  currently delete-only stubs), the per-area `questlog_reopen_qN` reset
+  side effects, `quest_exp.h`'s per-encounter exp/money constants, and any
+  actual wiring from NPC dialogue drivers (none of which call
+  `QuestLog::open`/`complete_legacy` yet, since the area NPC drivers
+  themselves are separate unported P4 tasks).
+  Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1302
+  ugaris-core (+10 new) + 36 db + 3 net + 33 protocol + 406 server, all
+  green, zero failures. `cargo build -p ugaris-server` and `cargo build
+  --workspace` both clean with zero warnings. 10s boot-smoke showed the
+  tick loop running with no panics.

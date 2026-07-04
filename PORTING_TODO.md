@@ -2210,12 +2210,44 @@ Unlocks every quest NPC. Do these before any P4 area work.
 
 ## P3 - World Systems
 
-- [ ] **Questlog initialization & quest state machine**
+- [~] **Questlog initialization & quest state machine**
   (`src/system/questlog.c`) - quest open/done transitions driven by NPC
   dialogue flags, `sendquestlog` on change (packet already ported), exp
   rewards per quest (`quest_exp.h`). Port the quest table + the
   `questlog_open/done` helpers; wire the already-ported `CL_REOPENQUEST`
   reset side effects per area.
+  REMAINING: `questlog_init` (derives quest flags from `area1_ppd`/
+  `area3_ppd`/`staffer_ppd`/`twocity_ppd`/`nomad_ppd` state machines) and
+  the per-area `questlog_reopen_qN` reset side effects are not ported -
+  they need `area1_ppd`/`nomad_ppd` to become real decoded structs first
+  (currently delete-only stubs in `player.rs`; only `area3_ppd`/
+  `twocity_ppd` are real). `quest_exp.h`'s per-encounter exp/money
+  constants (used by NPC drivers that don't exist yet) are also not
+  ported. No NPC dialogue driver calls `QuestLog::open`/`complete_legacy`
+  yet since the area NPC drivers themselves aren't ported (P4 area
+  content) - this slice only lands the reusable primitives.
+  Progress Log: ported the C `struct questlog questlog[]` metadata table
+  (85 entries, name/level-range/giver/area/nominal-exp/flags incl.
+  `QLF_XREPEAT`, copied digit-for-digit including the two trailing-space
+  quest names) into `QUEST_TABLE`/`quest_meta()`
+  (`crates/ugaris-core/src/quest.rs`). Ported `questlog_scale`'s repeat-
+  completion exp decay curve (`scale_exp`) and `questlog_done`'s level-
+  based taper (`taper_exp_by_level`) as pure, independently tested
+  functions. Added `QuestLog::complete_legacy` (full `questlog_done` port:
+  increments `done`, sets `flags = QF_DONE`, computes the scaled +
+  tapered exp reward) returning a `QuestCompletion` for the caller to
+  route through `World::give_exp`/`dlog`/`sendquestlog` (this leaf module
+  has no access to `World`/`PlayerRuntime`). Fixed two pre-existing bugs
+  in `QuestLog::open`/`close` found while porting: `open` now assigns
+  `flags = QF_OPEN` outright (C `questlog_open`), not `|=` (previously
+  left a stale `QF_DONE` bit when reopening); `close` now only transitions
+  `QF_OPEN -> QF_DONE` when `flags` is exactly `QF_OPEN` (C
+  `questlog_close`'s `if (quest[qnr].flags == QF_OPEN)` guard), not an
+  unconditional bit-clear. Added 10 new tests
+  (`crates/ugaris-core/src/quest.rs`) covering the table contents, the
+  repeatability-flag/table sync, `scale_exp`'s full curve, `taper_exp_by_
+  level`'s four level bands, `complete_legacy`'s first/repeat completions
+  and out-of-range handling, and the corrected `open`/`close` semantics.
 
 - [ ] **Achievements (`src/module/achievements/achievement.c`)** - runtime
   markers partially exist (chests, transport). Port the achievement
