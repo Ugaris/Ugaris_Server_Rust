@@ -3233,7 +3233,12 @@ Unlocks every quest NPC. Do these before any P4 area work.
   meaningless without the unported dungeon/raid system itself; the
   treasury/bonus/training half of this - `update_treasure`/
   `update_training`/jewels/cost-per-week/debt/bonus levels/depot money -
-  was closed in iteration 95, and the `doraid`/`raidonstart` raid-toggle
+  was closed in iteration 95, and wired into the live tick loop (plus
+  the relation escalation/de-escalation tick, `update_relations`) in
+  iteration 101 (see Progress Log) - `/killclan` no longer needs its
+  immediate-delete workaround now that the real weekly broke-deletion
+  path actually runs, but it's left as-is since it still matches C's
+  eventual real-world outcome exactly, just faster. The `doraid`/`raidonstart` raid-toggle
   pair - `get_clan_raid`/`set_clan_raid`/`set_clan_raid_god` - was closed
   in iteration 96, both see Progress Log; the `update_relations` `doraid`
   auto-enable-on-first-tick clamp stays intentionally unported per that
@@ -3965,7 +3970,74 @@ Unlocks every quest NPC. Do these before any P4 area work.
     populate `alc_pot`/`simple_pot`) - all three blocked on other
     unported systems (club.c, the merchant system, and the dungeon/raid
     + alchemy-potion systems respectively), not self-contained slices of
-    this task anymore.
+    this task anymore. Correction from iteration 101: this "REMAINING"
+    summary was wrong about scope - `ClanRelations::update`/
+    `ClanRegistry::update_treasure`/`update_training` were pure logic
+    with no live game-loop caller at all despite iteration 85/95's log
+    entries describing them as "closed" (their own doc comments said so
+    explicitly); see iteration 101's entry below for the actual wiring.
+  - 2026-07-04 (iteration 101): closed the real gap the note above this
+    one incorrectly believed was already done: `ClanRelations::update`
+    (the daily relation escalation/de-escalation tick, `clan.c:936-1089`)
+    and `ClanRegistry::update_treasure`/`update_training` (the weekly
+    treasury tick and hourly training-score decay, `clan.c:1105-1182`)
+    had been fully ported with passing unit tests since iterations 85/95
+    but were never actually invoked by the running server - grepping
+    `crates/ugaris-server/src/main.rs` for any call to `relations_mut()
+    .update`/`update_treasure`/`update_training` turned up nothing, so
+    clans could never escalate to war, never go broke from unpaid rent,
+    and training scores never decayed in a live game. Added
+    `ClanRelationChange::log_message` (`crates/ugaris-core/src/clan.rs`)
+    to format the seven `add_clanlog` message shapes given the *other*
+    clan's name/number (letter-for-letter match verified by a new
+    `relation_change_log_messages_match_c_add_clanlog_text_exactly`
+    test, including the `rel_name[]`-driven "Peace-Treaty" vs the
+    hardcoded "Peace Treaty" discrepancy C itself has). Added a `serial:
+    u32` field to `ClanTreasuryEvent::WentBroke`, capturing the
+    pre-deletion serial inside `update_treasure` itself - C's own
+    `add_clanlog` call happens *before* `clan[cnr].status.serial++`
+    (`clan.c:1155-1158`), and `ClanRegistry::delete_clan` already bumps
+    the serial, so a caller reading `registry.serial(nr)` *after*
+    `update_treasure` returns would log the wrong, already-bumped serial
+    - fixed 2 existing unit tests to match the new field. Added
+    `crates/ugaris-server/src/world_events.rs::apply_clan_economy_tick`
+    (same shape/pattern as the neighboring `apply_clanclerk_events`):
+    runs all three sub-ticks every server tick (matching C's own
+    `tick_clan` cadence once area 3's storage load completes - each
+    C function already self-gates on its own hour/day/week timers, so
+    per-tick calls are cheap and correct), writes both sides of each
+    relation-change pair's clan-log entry (actor `CharacterId(0)`
+    "system", prio 10) and the bankrupt-deletion entry (prio 1), and
+    intentionally does *not* log `PaidDebtWithJewels` (C's own `xlog`
+    there is server-debug-only, no player-facing `add_clanlog`). Wired
+    the single call site into `main.rs`'s tick loop right after
+    `apply_clanclerk_events`. Corrected several now-stale doc comments
+    this false-closure claim had left behind: the `clan.rs` module doc
+    comment's "Neither `update_treasure` nor `update_training` has a
+    live game-loop caller yet" line, each function's own "no live
+    game-loop caller yet" doc line, and (while auditing the same
+    module doc comment) two unrelated stale claims that had already
+    been fixed by other iterations without updating this doc comment -
+    the DB clan repository not existing (it does, `crates/ugaris-db/
+    src/clan.rs`, since iteration 93/94) and `ClanAttackPolicy` still
+    being `NoClanAttackPolicy` everywhere (wired since iteration 85). 3
+    new tests: `relation_change_log_messages_match_c_add_clanlog_text_
+    exactly` (`ugaris-core`), plus
+    `clan_economy_tick_escalates_mutual_relation_request_immediately`/
+    `clan_economy_tick_deletes_a_clan_that_goes_broke`/
+    `clan_economy_tick_advances_training_update_timestamp_after_an_hour`
+    (`ugaris-server`, verifying the wiring itself - the escalation state
+    machine and treasury arithmetic stay covered by `ugaris-core`'s own
+    existing exhaustive unit tests). `cargo fmt --all`, `cargo test
+    --workspace` (1542 ugaris-core + 47 db + 3 net + 37 protocol + 539
+    server, all green), `cargo build -p ugaris-server` clean with zero
+    warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+    panics. REMAINING for the "Clan system" task overall (unchanged from
+    the note two entries above, now actually accurate): club-variant
+    achievement wiring, `clan_trade_bonus`, and the dungeon-guard economy
+    proper - all three genuinely blocked on other unported systems
+    (club.c, the merchant system, the dungeon/raid + alchemy-potion
+    systems).
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

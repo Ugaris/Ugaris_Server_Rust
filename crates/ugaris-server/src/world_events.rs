@@ -1290,3 +1290,98 @@ pub(crate) async fn apply_clanclerk_events(
     }
     applied
 }
+
+/// C `tick_clan`'s three per-clan economy sub-ticks (`clan.c:358-436`,
+/// states 3/4), minus the multi-process storage load/save state machine
+/// C wraps them in (that side is handled separately by `main.rs`'s own
+/// once-a-minute `clan_repository`/`ClanRegistry::dirty` save, which has
+/// no C equivalent - see that call site's own comment): the daily
+/// relation escalation/de-escalation tick (`update_relations`,
+/// `clan.c:936-1089`, [`ClanRelations::update`]), the treasury tick
+/// (`update_treasure`, `clan.c:1105-1159`, [`ClanRegistry::
+/// update_treasure`] - bonus affordability, weekly upkeep, debt accrual/
+/// auto-pay, bankrupt-clan deletion), and the dungeon training-score
+/// decay tick (`update_training`, `clan.c:1166-1182`,
+/// [`ClanRegistry::update_training`]). Each function internally gates on
+/// its own `payed_till`/`want_date`/`last_training_update` timers (see
+/// their doc comments for the exact windows), so calling this every
+/// server tick - like C's own `tick_clan`, called every tick once area
+/// 3's clan storage load completes - is correct and cheap.
+pub(crate) async fn apply_clan_economy_tick(
+    world: &mut World,
+    clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    now_unix: i64,
+) -> usize {
+    let mut applied = 0;
+
+    let relation_events = world.clan_registry.relations_mut().update(now_unix);
+    for event in relation_events {
+        let (Some(name_a), Some(name_b)) = (
+            world.clan_registry.name(event.clan_a).map(str::to_string),
+            world.clan_registry.name(event.clan_b).map(str::to_string),
+        ) else {
+            continue;
+        };
+        let serial_a = world.clan_registry.serial(event.clan_a);
+        let serial_b = world.clan_registry.serial(event.clan_b);
+        // C `add_clanlog(n, ..., 0, 10, ...)`/`add_clanlog(m, ..., 0, 10,
+        // ...)` (`clan.c:980-1083`): both sides of the pair get the
+        // message, actor character ID 0 meaning "system".
+        crate::clan_log::write_clan_log_entry(
+            clan_log_repository,
+            event.clan_a,
+            serial_a,
+            CharacterId(0),
+            10,
+            event.change.log_message(&name_b, event.clan_b),
+            now_unix,
+        )
+        .await;
+        crate::clan_log::write_clan_log_entry(
+            clan_log_repository,
+            event.clan_b,
+            serial_b,
+            CharacterId(0),
+            10,
+            event.change.log_message(&name_a, event.clan_a),
+            now_unix,
+        )
+        .await;
+        applied += 1;
+    }
+
+    let treasury_events = world.clan_registry.update_treasure(now_unix);
+    for event in treasury_events {
+        match event {
+            // C `xlog(...)` only (`clan.c:1151`) - server debug log, no
+            // player-facing `add_clanlog` entry.
+            ClanTreasuryEvent::PaidDebtWithJewels { .. } => {}
+            ClanTreasuryEvent::WentBroke { clan, serial, name } => {
+                // C `add_clanlog(cnr, clan_serial(cnr), 0, 1, "Clan %s
+                // went broke and was deleted", get_clan_name(cnr))`
+                // (`clan.c:1156`), logged *before* the name is cleared
+                // and the serial bumped - `serial`/`name` are the
+                // pre-deletion values the event already carries, matching
+                // that ordering (see `ClanRegistry::update_treasure`'s
+                // doc comment on the `WentBroke` push site).
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan,
+                    serial,
+                    CharacterId(0),
+                    1,
+                    format!("Clan {name} went broke and was deleted"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+        }
+    }
+
+    // C `update_training` (`clan.c:1166-1182`): server-debug-log-only, no
+    // player-facing clan-log entry, so no events to apply here.
+    world.clan_registry.update_training(now_unix);
+
+    applied
+}

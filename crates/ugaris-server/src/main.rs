@@ -100,7 +100,7 @@ use ugaris_core::{
         CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY,
         CDR_SWAMPMONSTER, CDR_TEUFELRAT, NTID_GATEKEEPER, NT_NPC,
     },
-    clan::ClanRelations,
+    clan::{ClanRelations, ClanTreasuryEvent},
     direction::Direction,
     do_action::{
         can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy, ItemUseRequest,
@@ -5707,6 +5707,21 @@ async fn main() -> anyhow::Result<()> {
                         clanclerk_events_applied,
                         tick = world.tick.0,
                         "applied clanclerk treasury/admin events"
+                    );
+                }
+                // C `tick_clan` states 3/4 (`clan.c:358-436,936-1182`):
+                // the daily relation escalation/de-escalation tick, the
+                // weekly treasury tick (bonus affordability, upkeep,
+                // debt, bankrupt-clan deletion), and the hourly dungeon
+                // training-score decay tick.
+                let clan_economy_events_applied =
+                    apply_clan_economy_tick(&mut world, &clan_log_repository, current_unix_time())
+                        .await;
+                if clan_economy_events_applied != 0 {
+                    info!(
+                        clan_economy_events_applied,
+                        tick = world.tick.0,
+                        "applied clan relation/treasury economy events"
                     );
                 }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper

@@ -38,17 +38,14 @@
 //! raid system, so intentionally skipped in both places),
 //! clan-log persistence (`add_clanlog`/SQL `clanlog` table - this module
 //! returns event enums like [`ClanRelationEvent`]/[`ClanMoneyChange`]/
-//! [`ClanTreasuryEvent`] for a future caller to format and log),
-//! `crates/ugaris-db/src/clan.rs` (no DB repository/migration yet, so
-//! [`ClanRegistry`] is not yet persisted across restarts), the
-//! `ClanAttackPolicy` wiring in `do_action.rs` (still `NoClanAttackPolicy`
-//! everywhere), achievement awarding on membership change
-//! (`ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLUB_MEMBER`, left to the
-//! runtime caller per the pattern used elsewhere - see
-//! [`ClanRegistry::add_member`]), chat channel gating, and clan-hall
-//! transport access beyond direct membership. Neither `update_treasure`
-//! nor `update_training` has a live game-loop caller yet (same "pure
-//! logic first, wiring later" precedent as `update_relations`).
+//! [`ClanTreasuryEvent`] for the runtime caller to format and log; see
+//! `crates/ugaris-server/src/world_events.rs`'s `apply_clan_economy_tick`
+//! for [`ClanRelations::update`]/[`ClanRegistry::update_treasure`]/
+//! [`ClanRegistry::update_training`]'s live wiring), achievement awarding
+//! on membership change (`ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLUB_
+//! MEMBER`, left to the runtime caller per the pattern used elsewhere -
+//! see [`ClanRegistry::add_member`]), and clan-hall transport access
+//! beyond direct membership.
 
 use serde::{Deserialize, Serialize};
 
@@ -197,6 +194,45 @@ pub enum ClanRelationChange {
     /// C: `case CS_FEUD` decrement (`clan.c:1061-1083`). Message:
     /// `"Feud with {other} ({nr}) ended"`.
     FeudEnded,
+}
+
+impl ClanRelationChange {
+    /// Formats one side of this change's `add_clanlog` message
+    /// (`clan.c:936-1089`'s seven message shapes), given the *other*
+    /// clan's name/number. The caller writes this to both sides of the
+    /// pair, swapping which clan is "other" each time (`clan_a`'s log
+    /// names `clan_b` as other and vice versa).
+    pub fn log_message(&self, other_name: &str, other_nr: u16) -> String {
+        match self {
+            // C: `"%s with %s (%d) started", rel_name[want1], ...` - uses
+            // the raw `rel_name[]` text (hyphenated "Peace-Treaty"),
+            // unlike the hardcoded space-variant below.
+            ClanRelationChange::Agreed { relation } => {
+                format!(
+                    "{} with {other_name} ({other_nr}) started",
+                    relation.display_name()
+                )
+            }
+            ClanRelationChange::AllianceEnded => {
+                format!("Alliance with {other_name} ({other_nr}) ended")
+            }
+            ClanRelationChange::PeaceTreatyEnded => {
+                format!("Peace Treaty with {other_name} ({other_nr}) ended")
+            }
+            ClanRelationChange::WarStarted => {
+                format!("War with {other_name} ({other_nr}) started")
+            }
+            ClanRelationChange::PeaceTreatyStarted => {
+                format!("Peace Treaty with {other_name} ({other_nr}) started")
+            }
+            ClanRelationChange::WarEnded => {
+                format!("War with {other_name} ({other_nr}) ended")
+            }
+            ClanRelationChange::FeudEnded => {
+                format!("Feud with {other_name} ({other_nr}) ended")
+            }
+        }
+    }
 }
 
 /// A single relation-state change produced by [`ClanRelations::update`].
@@ -1209,8 +1245,9 @@ impl ClanRegistry {
     /// recomputes the weekly upkeep cost, accrues debt for elapsed time
     /// since `payed_till`, auto-pays off debt with jewels when possible,
     /// and deletes any clan whose debt reaches 2 jewels' worth
-    /// (`>= 2000`). Like [`ClanRelations::update`], this has no live
-    /// game-loop caller yet - see the module doc comment.
+    /// (`>= 2000`). Wired into the live tick loop by
+    /// `crates/ugaris-server/src/world_events.rs`'s
+    /// `apply_clan_economy_tick`.
     pub fn update_treasure(&mut self, now: i64) -> Vec<ClanTreasuryEvent> {
         let mut events = Vec::new();
         for cnr in 1..MAX_CLAN {
@@ -1266,8 +1303,17 @@ impl ClanRegistry {
 
             if economy.treasure.debt >= 2000 {
                 let name = identity.name.clone();
+                // C logs `get_clan_name(cnr)`/`clan_serial(cnr)` *before*
+                // clearing the name and bumping `status.serial`
+                // (`clan.c:1155-1158`), so the serial captured here must
+                // be the pre-deletion one - [`ClanRegistry::delete_clan`]
+                // bumps it, and any post-hoc `self.serial(cnr)` call
+                // after this method returns would observe the bumped
+                // value instead.
+                let serial = self.serials[cnr];
                 events.push(ClanTreasuryEvent::WentBroke {
                     clan: cnr as u16,
+                    serial,
                     name,
                 });
                 self.delete_clan(cnr as u16);
@@ -1280,8 +1326,8 @@ impl ClanRegistry {
     /// decays the clan's dungeon training score by 5% (`* 0.95f`, C's
     /// `xlog` here is a server debug log only, no player-facing
     /// clan-log entry - unlike [`ClanRegistry::update_treasure`]'s broke
-    /// deletion, so this has no event return). Like `update_treasure`,
-    /// no live game-loop caller yet.
+    /// deletion, so this has no event return). Wired into the live tick
+    /// loop alongside `update_treasure` - see that method's doc comment.
     pub fn update_training(&mut self, now: i64) {
         for cnr in 1..MAX_CLAN {
             let Some(identity) = self.identities[cnr].as_mut() else {
@@ -1333,7 +1379,11 @@ pub enum ClanTreasuryEvent {
     /// player-facing `add_clanlog(cnr, ..., "Clan %s went broke and was
     /// deleted", ...)` entry (priority 1, actor char ID 0 meaning
     /// "system").
-    WentBroke { clan: u16, name: String },
+    WentBroke {
+        clan: u16,
+        serial: u32,
+        name: String,
+    },
 }
 
 #[cfg(test)]
@@ -1586,6 +1636,52 @@ mod tests {
         let events = relations.update(5_000 + 60 * 60 * 24 + 1);
         assert_eq!(events[0].change, ClanRelationChange::FeudEnded);
         assert_eq!(relations.current_relation(1, 2), ClanRelation::War);
+    }
+
+    #[test]
+    fn relation_change_log_messages_match_c_add_clanlog_text_exactly() {
+        // `clan.c:980-1083`'s seven distinct `add_clanlog` message shapes,
+        // letter-for-letter (note the "Peace-Treaty" vs "Peace Treaty"
+        // discrepancy between the `rel_name[]`-driven `Agreed` message
+        // and the other hardcoded ones is intentional, matching C).
+        assert_eq!(
+            ClanRelationChange::Agreed {
+                relation: ClanRelation::War
+            }
+            .log_message("Enemies", 3),
+            "War with Enemies (3) started"
+        );
+        assert_eq!(
+            ClanRelationChange::Agreed {
+                relation: ClanRelation::PeaceTreaty
+            }
+            .log_message("Friends", 2),
+            "Peace-Treaty with Friends (2) started"
+        );
+        assert_eq!(
+            ClanRelationChange::AllianceEnded.log_message("Foo", 1),
+            "Alliance with Foo (1) ended"
+        );
+        assert_eq!(
+            ClanRelationChange::PeaceTreatyEnded.log_message("Foo", 1),
+            "Peace Treaty with Foo (1) ended"
+        );
+        assert_eq!(
+            ClanRelationChange::WarStarted.log_message("Foo", 1),
+            "War with Foo (1) started"
+        );
+        assert_eq!(
+            ClanRelationChange::PeaceTreatyStarted.log_message("Foo", 1),
+            "Peace Treaty with Foo (1) started"
+        );
+        assert_eq!(
+            ClanRelationChange::WarEnded.log_message("Foo", 1),
+            "War with Foo (1) ended"
+        );
+        assert_eq!(
+            ClanRelationChange::FeudEnded.log_message("Foo", 1),
+            "Feud with Foo (1) ended"
+        );
     }
 
     #[test]
@@ -2408,6 +2504,7 @@ mod tests {
             events,
             vec![ClanTreasuryEvent::WentBroke {
                 clan: nr,
+                serial: serial_before,
                 name: "Broke".to_string(),
             }]
         );
@@ -2420,6 +2517,7 @@ mod tests {
         let mut registry = ClanRegistry::new();
         let a = registry.found_clan("AlmostBroke", 0).unwrap();
         let b = registry.found_clan("Other", 0).unwrap();
+        let serial_a_before = registry.serial(a);
         registry.add_jewel(a).unwrap(); // only 1 jewel available
 
         // Four raids, each clamped to the single available jewel, push
@@ -2442,6 +2540,7 @@ mod tests {
                 },
                 ClanTreasuryEvent::WentBroke {
                     clan: a,
+                    serial: serial_a_before,
                     name: "AlmostBroke".to_string(),
                 },
             ]

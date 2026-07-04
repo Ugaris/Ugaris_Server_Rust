@@ -860,3 +860,90 @@ fn gate_welcome_death_handler_ignores_non_matching_driver_and_non_lethal_hits() 
         lethal_wrong_driver
     ));
 }
+
+#[tokio::test]
+async fn clan_economy_tick_escalates_mutual_relation_request_immediately() {
+    // `apply_clan_economy_tick`'s relation half wires `ClanRelations::
+    // update` (`clan.c:936-1089`) into the live tick loop; the escalation/
+    // de-escalation state machine itself is exhaustively unit-tested in
+    // `ugaris-core`'s `clan.rs`, so this only checks the wiring: the
+    // registry's live relation state actually advances and the returned
+    // `applied` count reflects the one pair-level change.
+    let mut world = World::default();
+    let a = world.clan_registry.found_clan("Alpha", 0).unwrap();
+    let b = world.clan_registry.found_clan("Beta", 0).unwrap();
+    world
+        .clan_registry
+        .relations_mut()
+        .set_relation(a, b, ugaris_core::clan::ClanRelation::War, 0)
+        .unwrap();
+    world
+        .clan_registry
+        .relations_mut()
+        .set_relation(b, a, ugaris_core::clan::ClanRelation::War, 0)
+        .unwrap();
+
+    let applied = apply_clan_economy_tick(&mut world, &None, 0).await;
+
+    assert_eq!(applied, 1);
+    assert_eq!(
+        world.clan_registry.relations().current_relation(a, b),
+        ugaris_core::clan::ClanRelation::War
+    );
+}
+
+#[tokio::test]
+async fn clan_economy_tick_deletes_a_clan_that_goes_broke() {
+    // Wires `ClanRegistry::update_treasure` (`clan.c:1105-1159`) into the
+    // live tick loop: a freshly founded clan with no jewels and a huge
+    // elapsed `payed_till` gap accrues enough debt in one tick to be
+    // deleted, matching what `/killclan`'s huge-debt trick eventually
+    // triggers in C (`kill_clan`, `clan.c:1413-1416`).
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Broke", 0).unwrap();
+    assert!(world.clan_registry.exists(nr));
+
+    // cost = 5000, step = 120; diff = 250_000 => n = 250000/120 + 1 = 2084,
+    // landing debt at 2084 (>= 2000) with zero jewels to pay it off (same
+    // arithmetic as `ugaris-core`'s own
+    // `update_treasure_deletes_clan_that_goes_broke_with_no_jewels` test).
+    let applied = apply_clan_economy_tick(&mut world, &None, 250_000).await;
+
+    assert_eq!(applied, 1);
+    assert!(!world.clan_registry.exists(nr));
+}
+
+#[tokio::test]
+async fn clan_economy_tick_advances_training_update_timestamp_after_an_hour() {
+    // Wires `ClanRegistry::update_training` (`clan.c:1166-1182`) into the
+    // live tick loop. `training_score` itself only ever decays (nothing
+    // feeds it yet - the dungeon system that would is unported, see the
+    // module doc comment), so a freshly founded clan's score stays `0`
+    // either way; `last_training_update` advancing is the observable
+    // signal that the sub-tick actually ran (exact 5%-decay arithmetic
+    // is unit-tested directly in `ugaris-core`'s
+    // `update_training_decays_score_by_five_percent_after_one_hour`).
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Trainers", 0).unwrap();
+    assert_eq!(
+        world
+            .clan_registry
+            .identity(nr)
+            .unwrap()
+            .economy
+            .last_training_update,
+        0
+    );
+
+    apply_clan_economy_tick(&mut world, &None, 3_600).await;
+
+    assert_eq!(
+        world
+            .clan_registry
+            .identity(nr)
+            .unwrap()
+            .economy
+            .last_training_update,
+        3_600
+    );
+}
