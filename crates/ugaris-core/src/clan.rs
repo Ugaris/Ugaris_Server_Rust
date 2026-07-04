@@ -73,6 +73,13 @@ pub const CLAN_HALL_RENT: i32 = 5;
 /// so future callers don't have to guess the magic number.
 pub const CLAN_BONUS_MERCHANT: usize = 2;
 
+/// Bonus slot index 1 ("Military Advisor", `bonus_name[1]`,
+/// `clan.c:64`): the periodic per-clan military-points feed
+/// `update_clan_points` (`military.c:1815-1832`) reads
+/// `get_clan_bonus(cnr, 1) * 20` every 60 seconds. Named the same way as
+/// [`CLAN_BONUS_MERCHANT`].
+pub const CLAN_BONUS_MILITARY_ADVISOR: usize = 1;
+
 /// C `score_to_level` (`clan.c:72-74`): converts a clan's dungeon-guard
 /// training score into the training-derived bonus level shown by
 /// `showclan` ("guard bonus: +%d", `clan.c:196-198`).

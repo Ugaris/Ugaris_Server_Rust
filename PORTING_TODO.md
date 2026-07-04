@@ -4109,16 +4109,23 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `NearbyPlayer` event handler right before `greet_player` (matching C's
   own call order - `greet_player`'s existing `AdvisorRecommendationAlready
   Shown` short-circuit was written for exactly this call order back when
-  it was first ported, so no changes needed there). REMAINING for the
-  Master driver itself: `process_clan_recommendation` (`military.c:
-  1654-1683`, the clan-points-funded recommendation variant - needs
-  `military_master_data.storage_data.clan_pts[]`, the unported NPC-scoped
-  storage-blob gap flagged below - and `update_clan_points`,
-  `military.c:1810-1830`, which feeds it from `get_clan_bonus`, already
-  ported as `ClanRegistry::bonus_level`) and the admin-only qa codes 18-21
-  (`info`/`reset`/`raise`/`promote` - `info` needs the same storage-blob
-  counters; `/milinfo`/`/milpoints`/`/milstats` already cover admin
-  needs). The
+  it was first ported, so no changes needed there). `process_clan_
+  recommendation`/`update_clan_points` (`military.c:1654-1674,1815-1832`,
+  the clan-points-funded recommendation variant and its periodic feed
+  from `get_clan_bonus`) were ported in iteration 115 (see Progress Log)
+  as `World::process_clan_recommendation`/`World::update_clan_points`,
+  along with the in-memory-only `MilitaryMasterStorage`/
+  `MilitaryMasterStorageRegistry` data model (`struct
+  military_master_storage`'s `clan_pts[MAXCLAN]` - the 4 quest counters
+  it also holds still have no real reader/writer call site). REMAINING
+  for the Master driver itself: DB persistence for that registry (resets
+  on restart today - see `MilitaryMasterStorageRegistry`'s own doc
+  comment in `crates/ugaris-core/src/world/military.rs` for the scoped
+  `military_master_storage(storage_id integer primary key, storage_json
+  jsonb, updated_at)` table design, following `clan.rs`'s
+  `PgClanRegistryRepository` pattern) and the admin-only qa codes 18-21
+  (`info`/`reset`/`raise`/`promote` - `info` needs the quest counters;
+  `/milinfo`/`/milpoints`/`/milstats` already cover admin needs). The
   Military *Advisor* NPC (`CDR_MILITARY_ADVISOR`) was ported in
   iteration 113 (see Progress Log): `handle_specific_mission_request`/
   `offer_favor`/`process_favor_payment` (the ppd-mutating halves),
@@ -4130,12 +4137,16 @@ Unlocks every quest NPC. Do these before any P4 area work.
   storage-blob counters below. Both drivers' storage state
   machines (`process_master_storage`/`process_advisor_storage`) plus the
   `dat->storage_data` quests-given/quests-solved/pts-given/exp-given
-  per-difficulty counters (Master) and sales-economy `struct cost_data`
-  counters (Advisor's `add_cost`/`update_advisor_storage`) they own (no
-  Rust `military_master_data`/`military_advisor_data` equivalent yet -
-  this shares the same "no generic storage-blob persistence concept in
-  `ugaris-db` yet" architectural gap the Arena rankings task's REMAINING
-  note also flags); the wealth-achievement ladder the real `give_money` also
+  per-difficulty counters (Master - `MilitaryMasterStorage` already
+  models these fields, just no reader/writer call site yet) and
+  sales-economy `struct cost_data` counters (Advisor's `add_cost`/
+  `update_advisor_storage` - no Rust `military_advisor_data` equivalent
+  at all yet) they own, plus DB persistence for the Master's own
+  `MilitaryMasterStorageRegistry` (in-memory only since iteration 115 -
+  same "no generic storage-blob persistence concept in `ugaris-db` yet"
+  architectural gap the Arena rankings task's REMAINING note also
+  flags, though the *in-memory* half of that gap is now closed for the
+  Master's `clan_pts`); the wealth-achievement ladder the real `give_money` also
   updates on `complete_mission`'s mercenary gold bonus (needs the DB-
   backed first-unlock announce, which lives in the server crate - wire
   `ugaris_core::achievement::add_gold_earned` at the same time; not done
@@ -4155,7 +4166,58 @@ Unlocks every quest NPC. Do these before any P4 area work.
   current C `command.c` tree either - checked; only the admin-only
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
-  correction, not a real gap).
+   correction, not a real gap).
+  Progress Log (iteration 115): ported `process_clan_recommendation`/
+  `update_clan_points` (`military.c:1654-1674,1815-1832`) as
+  `World::process_clan_recommendation`/`World::update_clan_points`
+  (`crates/ugaris-core/src/world/military.rs`), closing the first bullet
+  of iteration 114's REMAINING note. Built the in-memory data model these
+  need following iteration 114's own scoped recommendation ("a small
+  typed-struct-per-consumer table/repository... keyed per storage id
+  since these aren't singletons, not a generic byte-blob framework"):
+  `MilitaryMasterStorage` (`struct military_master_storage`'s
+  `clan_pts[MAXCLAN]` plus the 4 quest counters, which still have no
+  other call site) and `MilitaryMasterStorageRegistry` (a
+  `BTreeMap<i32, MilitaryMasterStorage>` keyed by each NPC's `storage_id`,
+  `Serialize`/`Deserialize` end to end like `ClanRegistry` but
+  deliberately *not* wired to any DB repository yet - see that type's own
+  doc comment for why this is a smaller regression than it sounds and the
+  scoped `military_master_storage(storage_id integer primary key,
+  storage_json jsonb, updated_at)` table design left for whoever closes
+  that gap next), added as a new `World::military_master_storage` field.
+  `crates/ugaris-core/src/character_driver.rs`'s
+  `MilitaryMasterDriverData` gained the two `dat`-scoped runtime fields
+  both functions need (`last_clan_update`/`last_recom`, C fields C itself
+  persists via the NPC's whole memory-image save rather than the storage
+  subsystem - Rust has no per-NPC restart persistence at all today, zone
+  reload is the only "reset", so this is no regression versus the rest of
+  this NPC's state) - `last_clan_update == 0` is treated as "just
+  created" and lazily stamped to `now` without granting a bonus on the
+  first tick, reproducing C's `dat->last_clan_update = realtime` on
+  `NT_CREATE` without needing a real-time value at zone-parse time. Also
+  added `crate::clan::CLAN_BONUS_MILITARY_ADVISOR = 1` (bonus slot 1,
+  `bonus_name[1] == "Military Advisor"`, `clan.c:64`), matching the
+  existing `CLAN_BONUS_MERCHANT` naming convention. Wired into real call
+  sites: `ugaris-server`'s `apply_military_master_nearby_player` now
+  calls `process_clan_recommendation` immediately before
+  `process_advisor_recommendation`, matching C's own `NT_CHAR` handler
+  call order exactly (`military.c:2150-2153`); `World::
+  process_military_master_actions` gained a new `now: i64` parameter and
+  calls `update_clan_points` once per NPC per tick (mirroring
+  `process_clanmaster_actions`'s own `now` parameter shape) - updated its
+  one caller in `ugaris-server/src/main.rs` and all 10 existing call
+  sites in `crates/ugaris-core/src/world/tests/military.rs`. 15 new
+  tests in that same file (lazy-init-without-bonus, the 60-second
+  throttle gate including a still-within-window no-op, zero/negative
+  bonus levels granting nothing, two clans updating independently in the
+  same tick, two NPCs' storage staying independent, the above/at/below-
+  threshold recommendation gate, non-clan-member no-op, same-player
+  dedup via `last_recom`, and a different player still getting
+  recommended after another already was). `cargo fmt --all`, `cargo test
+  --workspace` (1699 ugaris-core [+10] + 47 db + 3 net + 37 protocol +
+  553 server, all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, 12s boot-smoke confirmed "entering Rust game
+  loop" with no panics.
   Progress Log (iteration 114): ported `process_advisor_recommendation`
   (`military.c:1685-1755`) as `World::process_advisor_recommendation`
   (`crates/ugaris-core/src/world/military.rs`) - the last entirely-unported

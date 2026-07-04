@@ -477,14 +477,35 @@ pub fn parse_clanclerk_driver_args(args: &str) -> ClanclerkDriverData {
 }
 
 /// C `struct military_master_data`'s zone-file-parsed half
-/// (`src/module/military.c:355-364`) - just the `storage_ID` used by
-/// [`crate::world::calculate_advisor_index`]-adjacent bookkeeping. The
-/// NPC-scoped `military_master_storage` counters (clan points/quests
-/// given/solved/exp/pts per difficulty) are out of scope for this slice -
-/// see the "Military ranks" task in `PORTING_TODO.md`.
+/// (`src/module/military.c:355-364`), plus the two `dat`-scoped runtime
+/// fields C persists as part of the NPC's own memory image rather than
+/// through the `storage_data` subsystem: `last_clan_update` (the
+/// `update_clan_points` 60-second throttle timestamp, `military.c:357`)
+/// and `last_recom` (the character ID of the last player granted a clan
+/// recommendation, deduplicating repeat recommendations,
+/// `military.c:359`). Both default to `0` here (not zone-parsed); C
+/// instead stamps `last_clan_update = realtime` on `NT_CREATE`
+/// (`military.c:2126`) - Rust has no equivalent creation-time hook here,
+/// so [`crate::world::World::update_clan_points`] lazily treats a `0`
+/// timestamp as "just created" and stamps it to the current tick's time
+/// without granting a bonus yet, reproducing the same "no bonus for the
+/// first 60 seconds after spawn" behavior without needing a real-time
+/// value at zone-parse time.
+///
+/// The actual persisted `military_master_storage` counters (clan
+/// points/quests given/solved/exp/pts per difficulty,
+/// `struct military_master_storage`, `military.c:346-352`) live in
+/// [`crate::world::MilitaryMasterStorageRegistry`], keyed by
+/// `storage_id`, not on this struct - see that type's doc comment for
+/// the storage-blob architectural gap this still doesn't close (no DB
+/// persistence yet).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MilitaryMasterDriverData {
     pub storage_id: i32,
+    #[serde(default)]
+    pub last_clan_update: i64,
+    #[serde(default)]
+    pub last_recom: u32,
 }
 
 /// C `military_master_parse` (`military.c:1634-1644`): the only zone-file

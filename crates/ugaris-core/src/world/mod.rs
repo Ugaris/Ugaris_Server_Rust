@@ -240,6 +240,12 @@ pub struct World {
     /// any clan pair", so this wiring is a behavior no-op until clans are
     /// actually founded.
     pub clan_registry: ClanRegistry,
+    /// Military Master NPC-scoped storage blobs (`src/module/
+    /// military.c`'s `struct military_master_storage`), keyed by each
+    /// NPC's zone-file `storage=N;` id. In-memory only, no DB
+    /// persistence yet - see [`crate::world::MilitaryMasterStorageRegistry`]'s
+    /// doc comment.
+    pub military_master_storage: MilitaryMasterStorageRegistry,
     pub show_attack_debug: bool,
     pub timers: TimerQueue,
     pub scheduler: TaskScheduler,

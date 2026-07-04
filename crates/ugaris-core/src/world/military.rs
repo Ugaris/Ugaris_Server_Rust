@@ -146,6 +146,30 @@
 //!   pre-existing simplification from the fifth slice, documented on
 //!   that function itself, not tightened here to avoid touching its
 //!   already-tested behavior).
+//!
+//! This eighth slice closes the first bullet above:
+//! [`World::process_clan_recommendation`]/[`World::update_clan_points`]
+//! (`military.c:1654-1674,1815-1832`) plus the in-memory-only
+//! [`MilitaryMasterStorage`]/[`MilitaryMasterStorageRegistry`] data model
+//! they need (`struct military_master_storage`'s `clan_pts[MAXCLAN]` and
+//! the 4 quest counters, which have no other call site yet), and
+//! [`crate::character_driver::MilitaryMasterDriverData`] gained the two
+//! `dat`-scoped runtime fields (`last_clan_update`/`last_recom`) both
+//! functions need. Wired into a real call site: `ugaris-server`'s
+//! `apply_military_master_nearby_player` now calls `process_clan_
+//! recommendation` immediately before `process_advisor_recommendation`,
+//! matching C's own call order exactly, and
+//! [`World::process_military_master_actions`] now calls `update_clan_
+//! points` once per NPC per tick (a new `now: i64` parameter, mirroring
+//! `process_clanmaster_actions`' own shape).
+//!
+//! Still out of scope (documented on [`MilitaryMasterStorageRegistry`]'s
+//! own doc comment): DB persistence for the registry (in-memory only,
+//! resets on restart), the admin-only qa codes 18-21 (`info` needs the
+//! quest counters; `reset`/`raise`/`promote` don't touch storage at all
+//! and remain unported only because no one has ported the admin-facing
+//! qa codes yet), and the Advisor driver's own `struct cost_data`
+//! storage-blob economy (same architectural gap, different consumer).
 
 use super::*;
 use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome, MILITARY_QA};
@@ -1704,6 +1728,302 @@ impl World {
     }
 }
 
+/// C `struct military_master_storage` (`military.c:346-352`): the
+/// NPC-scoped counters `military_master_data` persists through the
+/// generic `storage` table (`create_storage`/`read_storage`/
+/// `update_storage`, `src/system/database/database_storage.c`) rather
+/// than through per-character PPD or the world save. This is the first
+/// consumer of that still-unported "storage-blob" concept - see
+/// [`MilitaryMasterStorageRegistry`]'s doc comment for the scoped
+/// in-memory-only approach this takes instead (no DB persistence yet).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MilitaryMasterStorage {
+    /// `clan_pts[MAXCLAN]`: military points banked on behalf of each
+    /// clan, fed by [`World::update_clan_points`] and spent by
+    /// [`World::process_clan_recommendation`]. Index `0` ("no clan") is
+    /// never read/written by either function (`get_char_clan` never
+    /// returns `0`), matching C leaving `clan_pts[0]` permanently unused.
+    clan_pts: [i32; crate::clan::MAX_CLAN],
+    /// `quests_given[5]`: incremented once per difficulty every time a
+    /// mission is offered (`military.c:1348`). No Rust call site yet -
+    /// see the "Military ranks" task's REMAINING note.
+    quests_given: [i32; 5],
+    /// `quests_solved[5]` (`military.c:1382`). No Rust call site yet.
+    quests_solved: [i32; 5],
+    /// `exp_given[5]` (`military.c:1411`). No Rust call site yet.
+    exp_given: [i32; 5],
+    /// `pts_given[5]` (`military.c:1407`). No Rust call site yet.
+    pts_given: [i32; 5],
+}
+
+impl Default for MilitaryMasterStorage {
+    fn default() -> Self {
+        Self {
+            clan_pts: [0; crate::clan::MAX_CLAN],
+            quests_given: [0; 5],
+            quests_solved: [0; 5],
+            exp_given: [0; 5],
+            pts_given: [0; 5],
+        }
+    }
+}
+
+impl MilitaryMasterStorage {
+    /// `dat->storage_data.clan_pts[clan_nr]`. Out-of-range clan numbers
+    /// read as `0`, matching a fresh `struct military_master_storage`'s
+    /// zero-initialized array (C itself never range-checks `clan_nr`
+    /// beyond the caller already having a valid `get_char_clan` result).
+    pub fn clan_pts(&self, clan_nr: u16) -> i32 {
+        self.clan_pts.get(clan_nr as usize).copied().unwrap_or(0)
+    }
+
+    fn add_clan_pts(&mut self, clan_nr: u16, delta: i32) {
+        if let Some(slot) = self.clan_pts.get_mut(clan_nr as usize) {
+            *slot += delta;
+        }
+    }
+
+    /// `dat->storage_data.quests_given[difficulty]`.
+    pub fn quests_given(&self, difficulty: usize) -> i32 {
+        self.quests_given.get(difficulty).copied().unwrap_or(0)
+    }
+
+    /// `dat->storage_data.quests_solved[difficulty]`.
+    pub fn quests_solved(&self, difficulty: usize) -> i32 {
+        self.quests_solved.get(difficulty).copied().unwrap_or(0)
+    }
+
+    /// `dat->storage_data.exp_given[difficulty]`.
+    pub fn exp_given(&self, difficulty: usize) -> i32 {
+        self.exp_given.get(difficulty).copied().unwrap_or(0)
+    }
+
+    /// `dat->storage_data.pts_given[difficulty]`.
+    pub fn pts_given(&self, difficulty: usize) -> i32 {
+        self.pts_given.get(difficulty).copied().unwrap_or(0)
+    }
+}
+
+/// A registry of [`MilitaryMasterStorage`] blobs keyed by `storage_id`
+/// (the zone-file `storage=N;` arg every Military Master NPC is
+/// configured with, `military.c:1634-1644` - see
+/// [`crate::character_driver::MilitaryMasterDriverData`]), mirroring
+/// [`crate::clan::ClanRegistry`]'s "one typed struct per consumer,
+/// `Serialize`/`Deserialize` end to end" shape rather than C's own
+/// generic byte-blob `storage` table
+/// (`src/system/database/database_storage.c`'s `create_storage`/
+/// `read_storage`/`update_storage`, id/version/blob with optimistic
+/// concurrency) - the scoped recommendation researched in the "Military
+/// ranks" task's own iteration-114 progress-log note: "a small
+/// typed-struct-per-consumer table/repository in `ugaris-db` ... keyed
+/// per storage id since these aren't singletons, not a generic
+/// byte-blob framework".
+///
+/// Unlike [`crate::clan::ClanRegistry`], this registry is **not yet
+/// wired to any DB repository** - it lives only in memory for the
+/// lifetime of the process, resetting to empty (all-zero counters) on
+/// every restart. This is a smaller regression than it sounds: C's own
+/// per-clan `clan_pts` bonus feed only ever grows by `get_clan_bonus(n,
+/// 1) * 20` every 60 seconds and is spent in 12000-point chunks, so a
+/// restart merely delays the next recommendation rather than losing
+/// meaningful player-facing state permanently. Closing this gap (a
+/// `military_master_storage(storage_id integer primary key, storage_json
+/// jsonb not null, updated_at)` table following `clan.rs`'s
+/// `PgClanRegistryRepository` pattern, loaded at boot and periodically
+/// saved when [`Self::dirty`]) is left for a future slice - see the
+/// "Military ranks" task in `PORTING_TODO.md`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct MilitaryMasterStorageRegistry {
+    entries: std::collections::BTreeMap<i32, MilitaryMasterStorage>,
+    #[serde(skip)]
+    dirty: bool,
+}
+
+impl MilitaryMasterStorageRegistry {
+    /// Read-only lookup; a `storage_id` with no entry yet reads as a
+    /// fresh all-zero [`MilitaryMasterStorage`] (matching C's own
+    /// zero-initialized `struct military_master_storage` before the
+    /// first `create_storage` round trip completes) without allocating
+    /// one.
+    pub fn clan_pts(&self, storage_id: i32, clan_nr: u16) -> i32 {
+        self.entries
+            .get(&storage_id)
+            .map(|storage| storage.clan_pts(clan_nr))
+            .unwrap_or(0)
+    }
+
+    /// C `dat->storage_data.clan_pts[n] += bonus;`
+    /// ([`World::update_clan_points`]) / `dat->storage_data.clan_pts[clan_
+    /// nr] -= 12000;` ([`World::process_clan_recommendation`]). Creates
+    /// the entry on first use, matching C's `create_storage` lazily
+    /// bringing a fresh zeroed blob into existence.
+    fn add_clan_pts(&mut self, storage_id: i32, clan_nr: u16, delta: i32) {
+        self.entries
+            .entry(storage_id)
+            .or_default()
+            .add_clan_pts(clan_nr, delta);
+        self.dirty = true;
+    }
+
+    /// Read-only per-difficulty quest-stat lookup - `(given, solved,
+    /// exp_given, pts_given)`, no Rust call site yet (see
+    /// [`MilitaryMasterStorage`]'s field doc comments).
+    pub fn quest_stats(&self, storage_id: i32, difficulty: usize) -> (i32, i32, i32, i32) {
+        match self.entries.get(&storage_id) {
+            Some(storage) => (
+                storage.quests_given(difficulty),
+                storage.quests_solved(difficulty),
+                storage.exp_given(difficulty),
+                storage.pts_given(difficulty),
+            ),
+            None => (0, 0, 0, 0),
+        }
+    }
+
+    /// Whether any entry has changed since the last [`Self::clear_dirty`]
+    /// - no DB repository reads this yet (see this type's doc comment).
+    pub fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
+    }
+}
+
+impl World {
+    /// C `process_clan_recommendation(cn, co, ppd, dat)`
+    /// (`military.c:1654-1674`): grants `+5 military_current_pts` (C's
+    /// `ppd->current_pts += 5`) and deducts 12000 clan points once a
+    /// clan-member player is greeted, gated on the clan having banked
+    /// more than 12000 points (fed by [`World::update_clan_points`]) and
+    /// not being the same player already recommended (`dat->last_recom`)
+    /// this NPC's lifetime. Called right before
+    /// [`World::process_advisor_recommendation`] in C's own `NT_CHAR`
+    /// handler (`military.c:2150-2153`), matching this function's own
+    /// call site in `ugaris-server`'s `apply_military_master_nearby_
+    /// player`.
+    ///
+    /// Reads through [`crate::clan::ClanRegistry::get_char_clan`], so a
+    /// stale clan reference on the player is cleared as a side effect,
+    /// exactly like every other `get_char_clan` call site. Non-clan-
+    /// member players are a silent no-op, matching C's `!(clan_nr =
+    /// get_char_clan(co))` early return.
+    pub fn process_clan_recommendation(
+        &mut self,
+        master_id: CharacterId,
+        player_id: CharacterId,
+        player: &mut PlayerRuntime,
+        player_name: &str,
+    ) -> Option<String> {
+        let clan_nr = {
+            let character = self.characters.get_mut(&player_id)?;
+            self.clan_registry.get_char_clan(character)?
+        };
+
+        let storage_id = match self
+            .characters
+            .get(&master_id)
+            .and_then(|c| c.driver_state.as_ref())
+        {
+            Some(CharacterDriverState::MilitaryMaster(data)) => data.storage_id,
+            _ => return None,
+        };
+
+        if self.military_master_storage.clan_pts(storage_id, clan_nr) <= 12000 {
+            return None;
+        }
+
+        let already_recommended = match self
+            .characters
+            .get(&master_id)
+            .and_then(|c| c.driver_state.as_ref())
+        {
+            Some(CharacterDriverState::MilitaryMaster(data)) => data.last_recom == player_id.0,
+            _ => true,
+        };
+        if already_recommended {
+            return None;
+        }
+
+        player.set_military_current_pts(player.military_current_pts() + 5);
+        self.military_master_storage
+            .add_clan_pts(storage_id, clan_nr, -12000);
+        if let Some(CharacterDriverState::MilitaryMaster(data)) = self
+            .characters
+            .get_mut(&master_id)
+            .and_then(|c| c.driver_state.as_mut())
+        {
+            data.last_recom = player_id.0;
+        }
+
+        Some(format!(
+            "Be greeted, {player_name}. You've been recommended by your clan!"
+        ))
+    }
+
+    /// C `update_clan_points(dat)` (`military.c:1815-1832`): every 60
+    /// seconds, feeds every clan's `get_clan_bonus(n, 1) * 20` ("Military
+    /// Advisor" bonus level, [`crate::clan::CLAN_BONUS_MILITARY_ADVISOR`])
+    /// into that clan's banked `clan_pts`. Called once per Military
+    /// Master NPC per tick (`ugaris-server`'s
+    /// `process_military_master_actions` call site), independent of any
+    /// player message.
+    ///
+    /// C stamps `dat->last_clan_update = realtime` on the NPC's own
+    /// `NT_CREATE` (`military.c:2126`), which Rust has no equivalent
+    /// hook for at zone-parse time (see
+    /// [`crate::character_driver::MilitaryMasterDriverData`]'s doc
+    /// comment) - so a `last_clan_update == 0` reads as "just created"
+    /// here and is lazily stamped to `now` without granting a bonus yet,
+    /// reproducing the same "no bonus for the first 60 seconds after
+    /// spawn" behavior.
+    pub fn update_clan_points(&mut self, master_id: CharacterId, now: i64) {
+        let Some(CharacterDriverState::MilitaryMaster(data)) = self
+            .characters
+            .get(&master_id)
+            .and_then(|c| c.driver_state.as_ref())
+        else {
+            return;
+        };
+        let storage_id = data.storage_id;
+        let last_clan_update = data.last_clan_update;
+
+        if last_clan_update == 0 {
+            if let Some(CharacterDriverState::MilitaryMaster(data)) = self
+                .characters
+                .get_mut(&master_id)
+                .and_then(|c| c.driver_state.as_mut())
+            {
+                data.last_clan_update = now;
+            }
+            return;
+        }
+        if now - last_clan_update <= 60 {
+            return;
+        }
+
+        for clan_nr in 1..crate::clan::MAX_CLAN as u16 {
+            let bonus = self
+                .clan_registry
+                .bonus_level(clan_nr, crate::clan::CLAN_BONUS_MILITARY_ADVISOR)
+                * 20;
+            if bonus > 0 {
+                self.military_master_storage
+                    .add_clan_pts(storage_id, clan_nr, bonus);
+            }
+        }
+
+        if let Some(CharacterDriverState::MilitaryMaster(data)) = self
+            .characters
+            .get_mut(&master_id)
+            .and_then(|c| c.driver_state.as_mut())
+        {
+            data.last_clan_update += 60;
+        }
+    }
+}
+
 /// C `process_advisor_recommendation`'s own difficulty-name ternary
 /// (`military.c:1706-1710`), embedded in the greeting/accept-prompt
 /// text: `pref == 0 ? "easy" : pref == 1 ? "normal" : pref == 2 ? "hard" :
@@ -2093,7 +2413,7 @@ impl World {
     /// of C `military_master_driver` (minus the deferred clan/advisor
     /// recommendation and storage-blob persistence - see this module's
     /// doc comment).
-    pub fn process_military_master_actions(&mut self, area_id: u16) {
+    pub fn process_military_master_actions(&mut self, area_id: u16, now: i64) {
         let master_ids: Vec<CharacterId> = self
             .characters
             .values()
@@ -2108,6 +2428,9 @@ impl World {
         for master_id in master_ids {
             self.process_military_master_messages(master_id);
             self.greet_nearby_military_master_players(master_id);
+            // C `update_clan_points(dat)` (`military.c:2195`): once per
+            // NPC per tick, independent of any player message.
+            self.update_clan_points(master_id, now);
             self.process_military_master_tick_action(master_id, area_id);
         }
     }

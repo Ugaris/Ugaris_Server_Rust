@@ -5719,7 +5719,7 @@ async fn main() -> anyhow::Result<()> {
                         .await;
                 // C `military_master_driver`: the mission-giving Military
                 // Master NPC (`src/module/military.c`).
-                world.process_military_master_actions(config.area_id);
+                world.process_military_master_actions(config.area_id, current_unix_time());
                 let military_master_events_applied =
                     apply_military_master_events(&mut world, &mut runtime, config.area_id);
                 if military_master_events_applied != 0 {

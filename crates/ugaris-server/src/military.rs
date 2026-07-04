@@ -159,10 +159,9 @@ pub(crate) fn apply_military_master_events(
     applied
 }
 
-/// C `military_master_driver`'s `NT_CHAR` branch (`military.c:2153-2177`,
-/// minus the still-unported `process_clan_recommendation` call - needs
-/// the NPC-scoped `clan_pts[]` storage-blob economy, see this module's
-/// parent doc comment): [`World::process_advisor_recommendation`],
+/// C `military_master_driver`'s `NT_CHAR` branch (`military.c:2153-2177`):
+/// [`World::process_clan_recommendation`],
+/// [`World::process_advisor_recommendation`],
 /// [`crate::PlayerRuntime::greet_player`], the `master_state == 1`
 /// rank-follow-up text, and [`World::complete_mission`].
 fn apply_military_master_nearby_player(
@@ -183,6 +182,15 @@ fn apply_military_master_nearby_player(
     let Some(player) = runtime.player_for_character_mut(player_id) else {
         return false;
     };
+
+    // C `process_clan_recommendation(cn, co, ppd, dat)` (`military.c:
+    // 1654-1674`), called right before `process_advisor_recommendation`
+    // in C's own `NT_CHAR` handler.
+    if let Some(greeting) =
+        world.process_clan_recommendation(master_id, player_id, player, &player_name)
+    {
+        world.npc_quiet_say(master_id, &greeting);
+    }
 
     // C `process_advisor_recommendation(cn, co, ppd)` (`military.c:
     // 1685-1755`), called right before `greet_player` in C's own

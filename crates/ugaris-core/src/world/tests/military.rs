@@ -1,8 +1,9 @@
 use super::*;
 use crate::character_driver::{
     parse_military_advisor_driver_args, parse_military_master_driver_args,
-    MilitaryAdvisorDriverData, CDR_MILITARY_ADVISOR, CDR_MILITARY_MASTER,
+    MilitaryAdvisorDriverData, MilitaryMasterDriverData, CDR_MILITARY_ADVISOR, CDR_MILITARY_MASTER,
 };
+use crate::clan::CLAN_BONUS_MILITARY_ADVISOR;
 
 // C `get_army_rank_int` (`tool.c:2023-2035`): `cbrt(military_pts)` clamped
 // to `[0, MAX_ARMY_RANK]`.
@@ -1515,7 +1516,7 @@ fn military_master_greet_scan_queues_nearby_visible_player() {
     visitor.name = "Godmode".into();
     assert!(world.spawn_character(visitor, 12, 10));
 
-    world.process_military_master_actions(0);
+    world.process_military_master_actions(0, 0);
 
     let events = world.drain_pending_military_master_events();
     assert!(events.contains(&MilitaryMasterEvent::NearbyPlayer {
@@ -1531,7 +1532,7 @@ fn military_master_greet_scan_skips_out_of_range_player() {
     let visitor = recruit(2);
     assert!(world.spawn_character(visitor, 30, 30));
 
-    world.process_military_master_actions(0);
+    world.process_military_master_actions(0, 0);
 
     assert!(world.drain_pending_military_master_events().is_empty());
 }
@@ -1547,7 +1548,7 @@ fn military_master_replies_to_small_talk_keyword_directly() {
     if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
         master.push_driver_text_message(CharacterId(2), "hello");
     }
-    world.process_military_master_actions(0);
+    world.process_military_master_actions(0, 0);
 
     let texts = world.drain_pending_area_texts();
     assert!(texts
@@ -1572,7 +1573,7 @@ fn military_master_whats_your_name_replies_with_own_name() {
     if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
         master.push_driver_text_message(CharacterId(2), "what's your name");
     }
-    world.process_military_master_actions(0);
+    world.process_military_master_actions(0, 0);
 
     let texts = world.drain_pending_area_texts();
     assert!(texts
@@ -1590,7 +1591,7 @@ fn military_master_mission_keyword_queues_mission_request_event() {
     if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
         master.push_driver_text_message(CharacterId(2), "mission");
     }
-    world.process_military_master_actions(0);
+    world.process_military_master_actions(0, 0);
 
     let events = world.drain_pending_military_master_events();
     assert!(events.contains(&MilitaryMasterEvent::MissionRequest {
@@ -1617,7 +1618,7 @@ fn military_master_difficulty_keywords_queue_accept_mission_events_with_correct_
         if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
             master.push_driver_text_message(CharacterId(2), keyword);
         }
-        world.process_military_master_actions(0);
+        world.process_military_master_actions(0, 0);
 
         let events = world.drain_pending_military_master_events();
         assert!(
@@ -1686,7 +1687,7 @@ fn military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_events(
         if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
             master.push_driver_text_message(CharacterId(2), keyword);
         }
-        world.process_military_master_actions(0);
+        world.process_military_master_actions(0, 0);
 
         let events = world.drain_pending_military_master_events();
         assert!(
@@ -1720,7 +1721,7 @@ fn military_master_ignores_advisor_and_admin_only_codes() {
         if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
             master.push_driver_text_message(CharacterId(2), keyword);
         }
-        world.process_military_master_actions(0);
+        world.process_military_master_actions(0, 0);
 
         // The visitor is also in range of the periodic `NT_CHAR` greet
         // scan (same tile as the master) - only that event, never a
@@ -1746,7 +1747,7 @@ fn military_master_ignores_text_from_speaker_out_of_range() {
     if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
         master.push_driver_text_message(CharacterId(2), "mission");
     }
-    world.process_military_master_actions(0);
+    world.process_military_master_actions(0, 0);
 
     assert!(world.drain_pending_military_master_events().is_empty());
     assert!(world.drain_pending_area_texts().is_empty());
@@ -1763,7 +1764,7 @@ fn military_master_given_item_is_destroyed_and_replies_junk() {
     if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
         master.push_driver_message(NT_GIVE, 2, 0, 0);
     }
-    world.process_military_master_actions(0);
+    world.process_military_master_actions(0, 0);
 
     assert!(world
         .characters
@@ -2308,4 +2309,298 @@ fn military_advisor_movement_rests_facing_dx_right() {
     world.process_military_advisor_actions(0);
 
     assert_eq!(world.characters[&CharacterId(1)].dir, 4);
+}
+
+//-----------------------
+// Military Master NPC-scoped storage blob: `process_clan_recommendation`/
+// `update_clan_points` (`military.c:1654-1674,1815-1832`).
+
+fn master_npc_with_storage(id: u32, storage_id: i32) -> Character {
+    let mut master = master_npc(id);
+    master.driver_state = Some(CharacterDriverState::MilitaryMaster(
+        MilitaryMasterDriverData {
+            storage_id,
+            ..Default::default()
+        },
+    ));
+    master
+}
+
+// C `update_clan_points`'s own `dat->last_clan_update = realtime` on
+// `NT_CREATE` (`military.c:2126`) has no Rust zone-parse-time equivalent,
+// so a `0` timestamp lazily stamps to `now` on the first call without
+// granting any bonus yet.
+#[test]
+fn update_clan_points_lazily_stamps_first_tick_without_granting_bonus() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    let cnr = world.clan_registry.found_clan("Iron Wolves", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(cnr, CLAN_BONUS_MILITARY_ADVISOR, 50)
+        .unwrap();
+
+    world.update_clan_points(CharacterId(1), 1_000);
+
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 0);
+    let Some(CharacterDriverState::MilitaryMaster(data)) =
+        world.characters[&CharacterId(1)].driver_state.clone()
+    else {
+        panic!("expected MilitaryMaster driver state");
+    };
+    assert_eq!(data.last_clan_update, 1_000);
+}
+
+// C `update_clan_points`: `realtime - dat->last_clan_update <= 60` throttle
+// - no change until more than 60 seconds have passed since the last real
+// update.
+#[test]
+fn update_clan_points_throttles_updates_to_every_sixty_seconds() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    let cnr = world.clan_registry.found_clan("Iron Wolves", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(cnr, CLAN_BONUS_MILITARY_ADVISOR, 50)
+        .unwrap();
+
+    world.update_clan_points(CharacterId(1), 1_000); // lazy-init stamp only
+    world.update_clan_points(CharacterId(1), 1_030); // only 30s later: no-op
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 0);
+
+    world.update_clan_points(CharacterId(1), 1_061); // 61s later: applies
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 50 * 20);
+    let Some(CharacterDriverState::MilitaryMaster(data)) =
+        world.characters[&CharacterId(1)].driver_state.clone()
+    else {
+        panic!("expected MilitaryMaster driver state");
+    };
+    // C: `dat->last_clan_update += 60;` (not stamped to `now`).
+    assert_eq!(data.last_clan_update, 1_060);
+
+    // A second call still within the same 60s window is a no-op.
+    world.update_clan_points(CharacterId(1), 1_090);
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 50 * 20);
+}
+
+// C: `bonus = get_clan_bonus(n, 1) * 20; if (bonus > 0) ...` - a clan with
+// no Military Advisor bonus level gets nothing.
+#[test]
+fn update_clan_points_skips_clans_with_no_military_advisor_bonus() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    let cnr = world.clan_registry.found_clan("Iron Wolves", 0).unwrap();
+
+    world.update_clan_points(CharacterId(1), 1_000);
+    world.update_clan_points(CharacterId(1), 1_061);
+
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 0);
+}
+
+// C: every founded clan is updated independently in the same tick.
+#[test]
+fn update_clan_points_updates_every_clan_independently() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    let alpha = world.clan_registry.found_clan("Alpha", 0).unwrap();
+    let beta = world.clan_registry.found_clan("Beta", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(alpha, CLAN_BONUS_MILITARY_ADVISOR, 10)
+        .unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(beta, CLAN_BONUS_MILITARY_ADVISOR, 30)
+        .unwrap();
+
+    world.update_clan_points(CharacterId(1), 1_000);
+    world.update_clan_points(CharacterId(1), 1_061);
+
+    assert_eq!(world.military_master_storage.clan_pts(7, alpha), 10 * 20);
+    assert_eq!(world.military_master_storage.clan_pts(7, beta), 30 * 20);
+}
+
+// Two Military Master NPCs (distinct `storage_id`s) accrue independent
+// clan-point pools, matching each NPC's own `struct military_master_data`.
+#[test]
+fn update_clan_points_keeps_separate_npcs_storage_independent() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    assert!(world.spawn_character(master_npc_with_storage(2, 9), 12, 10));
+    let cnr = world.clan_registry.found_clan("Iron Wolves", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(cnr, CLAN_BONUS_MILITARY_ADVISOR, 50)
+        .unwrap();
+
+    world.update_clan_points(CharacterId(1), 1_000);
+    world.update_clan_points(CharacterId(1), 1_061);
+    // NPC 2 never ticked past its own lazy-init stamp.
+    world.update_clan_points(CharacterId(2), 2_000);
+
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 50 * 20);
+    assert_eq!(world.military_master_storage.clan_pts(9, cnr), 0);
+}
+
+fn clan_member(id: u32, world: &mut World, cnr: u16) -> Character {
+    let mut player = recruit(id);
+    world.clan_registry.add_member(&mut player, cnr).unwrap();
+    player
+}
+
+// C `process_clan_recommendation` (`military.c:1654-1674`): grants
+// `ppd->current_pts += 5` and deducts 12000 from the clan's banked
+// points once the clan has banked more than 12000.
+#[test]
+fn process_clan_recommendation_grants_points_and_deducts_clan_pool_above_threshold() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    let cnr = world.clan_registry.found_clan("Iron Wolves", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(cnr, CLAN_BONUS_MILITARY_ADVISOR, 700)
+        .unwrap(); // 700 * 20 = 14000 > 12000 in a single tick
+    world.update_clan_points(CharacterId(1), 1_000);
+    world.update_clan_points(CharacterId(1), 1_061);
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 14_000);
+
+    let mut player_char = clan_member(2, &mut world, cnr);
+    player_char.name = "Godmode".into();
+    assert!(world.spawn_character(player_char, 10, 10));
+    let mut player = PlayerRuntime::connected(2, 0);
+
+    let greeting =
+        world.process_clan_recommendation(CharacterId(1), CharacterId(2), &mut player, "Godmode");
+
+    assert_eq!(
+        greeting.as_deref(),
+        Some("Be greeted, Godmode. You've been recommended by your clan!")
+    );
+    assert_eq!(player.military_current_pts(), 5);
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 2_000);
+}
+
+// C: `dat->storage_data.clan_pts[clan_nr] > 12000` - exactly at (or
+// below) the threshold is not enough.
+#[test]
+fn process_clan_recommendation_is_a_no_op_at_or_below_threshold() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    let cnr = world.clan_registry.found_clan("Iron Wolves", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(cnr, CLAN_BONUS_MILITARY_ADVISOR, 600)
+        .unwrap(); // 600 * 20 = 12000, exactly at the threshold
+    world.update_clan_points(CharacterId(1), 1_000);
+    world.update_clan_points(CharacterId(1), 1_061);
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 12_000);
+
+    let player_char = clan_member(2, &mut world, cnr);
+    assert!(world.spawn_character(player_char, 10, 10));
+    let mut player = PlayerRuntime::connected(2, 0);
+
+    let greeting =
+        world.process_clan_recommendation(CharacterId(1), CharacterId(2), &mut player, "Godmode");
+
+    assert_eq!(greeting, None);
+    assert_eq!(player.military_current_pts(), 0);
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 12_000);
+}
+
+// C: `!(clan_nr = get_char_clan(co))` - a non-clan-member player is a
+// silent no-op regardless of the clan pool.
+#[test]
+fn process_clan_recommendation_is_a_no_op_for_non_clan_members() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    let cnr = world.clan_registry.found_clan("Iron Wolves", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(cnr, CLAN_BONUS_MILITARY_ADVISOR, 700)
+        .unwrap();
+    world.update_clan_points(CharacterId(1), 1_000);
+    world.update_clan_points(CharacterId(1), 1_061);
+
+    let player_char = recruit(2); // no clan membership
+    assert!(world.spawn_character(player_char, 10, 10));
+    let mut player = PlayerRuntime::connected(2, 0);
+
+    let greeting =
+        world.process_clan_recommendation(CharacterId(1), CharacterId(2), &mut player, "Godmode");
+
+    assert_eq!(greeting, None);
+    assert_eq!(player.military_current_pts(), 0);
+    assert_eq!(world.military_master_storage.clan_pts(7, cnr), 14_000);
+}
+
+// C: `dat->last_recom != ch[co].ID` - the same player is only ever
+// recommended once per NPC lifetime, even if the clan pool refills above
+// threshold again.
+#[test]
+fn process_clan_recommendation_does_not_repeat_for_the_same_player() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    let cnr = world.clan_registry.found_clan("Iron Wolves", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(cnr, CLAN_BONUS_MILITARY_ADVISOR, 700)
+        .unwrap();
+    world.update_clan_points(CharacterId(1), 1_000);
+    world.update_clan_points(CharacterId(1), 1_061);
+
+    let player_char = clan_member(2, &mut world, cnr);
+    assert!(world.spawn_character(player_char, 10, 10));
+    let mut player = PlayerRuntime::connected(2, 0);
+
+    let first =
+        world.process_clan_recommendation(CharacterId(1), CharacterId(2), &mut player, "Godmode");
+    assert!(first.is_some());
+    assert_eq!(player.military_current_pts(), 5);
+
+    // Refill the pool above threshold again, then greet the same player.
+    world.update_clan_points(CharacterId(1), 1_121);
+    let second =
+        world.process_clan_recommendation(CharacterId(1), CharacterId(2), &mut player, "Godmode");
+
+    assert_eq!(second, None);
+    assert_eq!(player.military_current_pts(), 5); // unchanged
+}
+
+// A different player at the same NPC can still be recommended after
+// another player already was.
+#[test]
+fn process_clan_recommendation_allows_a_different_player_after_another_was_recommended() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+    let cnr = world.clan_registry.found_clan("Iron Wolves", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(cnr, CLAN_BONUS_MILITARY_ADVISOR, 1300)
+        .unwrap(); // 1300 * 20 = 26000: enough for two 12000 deductions
+    world.update_clan_points(CharacterId(1), 1_000);
+    world.update_clan_points(CharacterId(1), 1_061);
+
+    let first_char = clan_member(2, &mut world, cnr);
+    assert!(world.spawn_character(first_char, 10, 10));
+    let mut first_player = PlayerRuntime::connected(2, 0);
+    let first_outcome = world.process_clan_recommendation(
+        CharacterId(1),
+        CharacterId(2),
+        &mut first_player,
+        "Alice",
+    );
+    assert!(first_outcome.is_some());
+
+    let second_char = clan_member(3, &mut world, cnr);
+    assert!(world.spawn_character(second_char, 11, 10));
+    let mut second_player = PlayerRuntime::connected(3, 0);
+    let second_outcome = world.process_clan_recommendation(
+        CharacterId(1),
+        CharacterId(3),
+        &mut second_player,
+        "Bob",
+    );
+
+    assert!(second_outcome.is_some());
+    assert_eq!(second_player.military_current_pts(), 5);
 }
