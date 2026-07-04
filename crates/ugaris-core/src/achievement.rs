@@ -1524,7 +1524,7 @@ pub fn area_to_pent_index(area_id: i32) -> Option<PentArea> {
 }
 
 /// C `struct Achievement` (`achievement.h:218-223`).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Achievement {
     /// Unix timestamp when earned; `0` = not achieved.
     pub timestamp: i64,
@@ -1537,10 +1537,41 @@ pub struct Achievement {
 /// C `struct AccountAchievements` (`achievement.h:226-229`): per-subscriber
 /// (account-wide in C; left per-character here pending the PPD/DB wiring
 /// task noted in the module doc comment above) achievement storage.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AccountAchievements {
     pub version: u32,
+    #[serde(with = "achievement_array_serde")]
     pub achievements: [Achievement; MAX_ACHIEVEMENTS],
+}
+
+/// `serde` support for the fixed-size 128-entry `Achievement` array.
+/// `#[derive(Serialize, Deserialize)]` only covers array lengths 0..=32
+/// out of the box (`Achievement` isn't `Copy`, so the const-generic array
+/// impl serde otherwise offers doesn't apply here either); this goes
+/// through a `Vec` on the wire and rebuilds the fixed array on load, padding
+/// short/legacy data with `Achievement::default()` rather than erroring.
+mod achievement_array_serde {
+    use super::{Achievement, MAX_ACHIEVEMENTS};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        value: &[Achievement; MAX_ACHIEVEMENTS],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value.as_slice().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<[Achievement; MAX_ACHIEVEMENTS], D::Error> {
+        let vec = Vec::<Achievement>::deserialize(deserializer)?;
+        let mut out: [Achievement; MAX_ACHIEVEMENTS] =
+            std::array::from_fn(|_| Achievement::default());
+        for (slot, value) in out.iter_mut().zip(vec) {
+            *slot = value;
+        }
+        Ok(out)
+    }
 }
 
 impl Default for AccountAchievements {
@@ -1613,7 +1644,7 @@ impl AccountAchievements {
 }
 
 /// C `struct AchievementStats` (`achievement.h:232-276`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct AchievementStats {
     pub flowers_picked: u32,
     pub mushrooms_picked: u32,
@@ -3465,5 +3496,49 @@ mod tests {
                 .len(),
             39
         );
+    }
+
+    #[test]
+    fn account_achievements_json_roundtrip_preserves_all_128_slots() {
+        let mut data = AccountAchievements::default();
+        data.award(AchievementType::FirstBlood, "Hero", NOW);
+        data.add_progress(AchievementType::DemonSlayer, 3, "Hero", NOW);
+        let last = MAX_ACHIEVEMENTS - 1;
+        data.achievements[last].progress = 7;
+
+        let json = serde_json::to_string(&data).expect("serialize");
+        let restored: AccountAchievements = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored, data);
+        assert!(restored.is_unlocked(AchievementType::FirstBlood));
+        assert_eq!(restored.achievements[last].progress, 7);
+    }
+
+    #[test]
+    fn account_achievements_deserializes_from_short_legacy_array() {
+        // Simulate an older/short PPD blob: only the first few slots
+        // present. Missing trailing slots must fall back to
+        // `Achievement::default()` instead of erroring.
+        let json = r#"{"version":1,"achievements":[
+            {"timestamp":5,"progress":1,"target":1,"achieved_by":"Hero"}
+        ]}"#;
+        let restored: AccountAchievements = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(restored.achievements[0].timestamp, 5);
+        assert_eq!(restored.achievements[1], Achievement::default());
+        assert_eq!(
+            restored.achievements[MAX_ACHIEVEMENTS - 1],
+            Achievement::default()
+        );
+    }
+
+    #[test]
+    fn achievement_stats_json_roundtrip() {
+        let mut stats = AchievementStats::default();
+        stats.flowers_picked = 10;
+        stats.demons_per_area = [1, 2, 3, 4];
+        stats.gold_earned = 123_456_789;
+
+        let json = serde_json::to_string(&stats).expect("serialize");
+        let restored: AchievementStats = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored, stats);
     }
 }

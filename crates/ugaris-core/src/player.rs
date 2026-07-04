@@ -3,6 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    achievement::{AccountAchievements, AchievementStats},
     entity::{Character, CharacterFlags, CharacterValue, Item},
     ids::CharacterId,
     legacy::DIST_OLD,
@@ -625,6 +626,19 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub pk_hate: Vec<u32>,
     pub achievements: AchievementState,
+    /// C `struct AccountAchievements` PPD (`achievement.h:226-229`; see
+    /// `crate::achievement` module doc for the account-vs-character scoping
+    /// note). Per-unlock/progress storage for the 127-entry achievement
+    /// table; kept separate from the pre-existing `achievements` field
+    /// above (chest/transport exploration markers only) to avoid an
+    /// unrelated refactor of that older, narrower model.
+    #[serde(default)]
+    pub achievement_data: AccountAchievements,
+    /// C `struct AchievementStats` PPD (`achievement.h:232-276`): the
+    /// running counters `achievement_add_*`/`achievement_check_*` update
+    /// and `achievement_get_stat_progress` reads for progress-bar display.
+    #[serde(default)]
+    pub achievement_stats: AchievementStats,
     #[serde(default)]
     pub keyring_auto_add: bool,
     #[serde(default)]
@@ -759,6 +773,8 @@ impl PlayerRuntime {
             pk_last_death: 0,
             pk_hate: Vec::new(),
             achievements: AchievementState::default(),
+            achievement_data: AccountAchievements::default(),
+            achievement_stats: AchievementStats::default(),
             keyring_auto_add: false,
             current_section_id: 0,
             special_shrine_hcsc_last_touch_seconds: 0,

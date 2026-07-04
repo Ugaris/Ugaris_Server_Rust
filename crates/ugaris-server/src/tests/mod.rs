@@ -1,5 +1,6 @@
 use super::*;
 
+mod achievement;
 mod area_apply;
 mod auction;
 mod chests;

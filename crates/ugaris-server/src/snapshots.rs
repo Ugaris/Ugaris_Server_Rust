@@ -25,6 +25,12 @@ pub(crate) fn apply_character_snapshot(
     player.ppd_blob = ppd_blob;
     player.subscriber_blob = subscriber_blob;
     let account_depot = decode_legacy_account_depot_subscriber_blob(&player.subscriber_blob);
+    if let Some(data) = decode_legacy_achievement_data_subscriber_blob(&player.subscriber_blob) {
+        player.achievement_data = data;
+    }
+    if let Some(stats) = decode_legacy_achievement_stats_subscriber_blob(&player.subscriber_blob) {
+        player.achievement_stats = stats;
+    }
     let ppd_blob = player.ppd_blob.clone();
     if !ppd_blob.is_empty() && !player.decode_legacy_ppd_blob(&ppd_blob) {
         warn!(
@@ -174,9 +180,15 @@ pub(crate) fn character_save_request(
         character: snapshot_character,
         items: snapshot_items,
         ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
-        subscriber_blob: encode_legacy_account_depot_subscriber_blob(
-            &player.subscriber_blob,
-            account_depot,
+        subscriber_blob: encode_legacy_achievement_stats_subscriber_blob(
+            &encode_legacy_achievement_data_subscriber_blob(
+                &encode_legacy_account_depot_subscriber_blob(
+                    &player.subscriber_blob,
+                    account_depot,
+                ),
+                &player.achievement_data,
+            ),
+            &player.achievement_stats,
         ),
         mode: CharacterSaveMode::Logout {
             expected_current_area: i32::from(area_id),

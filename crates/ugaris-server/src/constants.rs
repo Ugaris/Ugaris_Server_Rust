@@ -5,6 +5,16 @@ pub(crate) const ARKHATA_CLERK_TIME_SECONDS: i32 = 60 * 15;
 pub(crate) const DRD_ACCOUNT_WIDE_DEPOT: u32 =
     (ugaris_core::player::DEV_ID_ED << 24) | (6 | ugaris_core::player::PERSISTENT_SUBSCRIBER_DATA);
 
+/// C `#define DRD_ACHIEVEMENT_DATA MAKE_DRD(DEV_ID_ED, 11 | PERSISTENT_SUBSCRIBER_DATA)`
+/// (`src/system/drdata.h:266`).
+pub(crate) const DRD_ACHIEVEMENT_DATA: u32 =
+    (ugaris_core::player::DEV_ID_ED << 24) | (11 | ugaris_core::player::PERSISTENT_SUBSCRIBER_DATA);
+
+/// C `#define DRD_ACHIEVEMENT_STATS MAKE_DRD(DEV_ID_ED, 12 | PERSISTENT_SUBSCRIBER_DATA)`
+/// (`src/system/drdata.h:267`).
+pub(crate) const DRD_ACHIEVEMENT_STATS: u32 =
+    (ugaris_core::player::DEV_ID_ED << 24) | (12 | ugaris_core::player::PERSISTENT_SUBSCRIBER_DATA);
+
 pub(crate) const LEGACY_CONTAINER_SIZE: usize = ugaris_core::entity::INVENTORY_SIZE - 2;
 
 pub(crate) const IID_AREA19_WOLFSSKIN: u32 = 0x0100008A;

@@ -8,6 +8,7 @@
 //! `world_events` drains, `depot`/`containers`/`inventory` views, and `zone`
 //! startup loading.
 
+mod achievement;
 mod area_apply;
 mod auction;
 mod chests;
@@ -37,6 +38,7 @@ mod world_events;
 mod xmas;
 mod zone;
 
+pub(crate) use achievement::*;
 pub(crate) use area_apply::*;
 pub(crate) use chests::*;
 pub(crate) use commands_admin::*;

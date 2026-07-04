@@ -2104,15 +2104,50 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 66,
+      "startedAt": "2026-07-04T07:22:39.016Z",
+      "endedAt": "2026-07-04T07:44:20.877Z",
+      "durationMs": 1301282,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/achievement.rs",
+        "crates/ugaris-core/src/player.rs",
+        "crates/ugaris-server/src/constants.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/snapshots.rs",
+        "crates/ugaris-server/src/tests/mod.rs",
+        "crates/ugaris-server/src/achievement.rs",
+        "crates/ugaris-server/src/tests/achievement.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-core` (lib) due to 4 previous errors",
+        "test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 1343 filtered out; finished in 0.00s",
+        "pub(crate) const LOGIN_REJECT_INTERNAL_ERROR: &str =",
+        "test tests::achievement::achievement_data_byte_layout_matches_c_offsets ... FAILED",
+        "test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
+        "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.00s",
+        "test result: ok. 417 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+      ]
     }
   ],
-  "totalDurationMs": 73273212,
+  "totalDurationMs": 74574494,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 65,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 66,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -2164,7 +2199,7 @@
       "The task for this iteration is complete: I implemented the `CL_FASTSELL` merchant-sell path (P0 task": 1,
       "test tests::merchants::fast_sell_sells_inventory_slot_to_active_merchant ... FAILED": 1,
       "test result: FAILED. 339 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 2,
+      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 3,
       "test result: ok. 1053 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Now let's check the third failing test in item_outcomes.rs:": 1,
       "5. Verified: `cargo fmt --all`, `cargo test --workspace` (all passing, 0 failures), `cargo build -p ": 1,
@@ -2317,7 +2352,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 365 filtered out; finished in 0.00s": 1,
       "3. All verification green: `cargo fmt --all`, `cargo test --workspace` (1619 tests passing, 0 failur": 1,
-      "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 3,
+      "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 4,
       "test result: ok. 1163 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test world::tests::bank::bank_withdraw_negative_amount_fails_without_ppd_lookup ... ok": 1,
       "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1163 filtered out; finished in 0.00s": 1,
@@ -2393,7 +2428,7 @@
       "test result: ok. 404 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "whole gatekeeper.c file (welcome dialogue, test entry/success/failure,": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
-      "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 8,
+      "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 9,
       "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 1286 filtered out; finished in 0.00s": 1,
       "test result: ok. 1302 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 2,
       "All green: 1311+36+3+33+406 tests passing, zero failures. Now let's check for warnings with clippy-s": 1,
@@ -2420,7 +2455,13 @@
       "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` (1386+36+3+33+406, all green, ze": 1,
       "KeyError: '500 demons\"'": 1,
       "test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 1345 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1386 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
+      "test result: ok. 1386 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
+      "test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 1343 filtered out; finished in 0.00s": 1,
+      "pub(crate) const LOGIN_REJECT_INTERNAL_ERROR: &str =": 1,
+      "test tests::achievement::achievement_data_byte_layout_matches_c_offsets ... FAILED": 1,
+      "test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.00s": 1,
+      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.00s": 1,
+      "test result: ok. 417 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

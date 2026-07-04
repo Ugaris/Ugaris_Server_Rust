@@ -116,7 +116,7 @@ Remaining oversized files worth splitting during future work:
 | `src/system/create.c` `update_char`/`armor_skill_req`/`armor_skill_bonus` | `crates/ugaris-core/src/world/character_values.rs` | `World::update_character(cn)`/`recompute_character_values` ports the full `value[0]` recompute: worn/spell item modifier sum with the seyan (72.5%) vs. single-class (50%) cap and non-warrior bless-item cap, `IF_BEYONDMAXMOD` uncapped bypass, skill-table base-attribute averaging (`skill[]` from `skill.c:27` hardcoded as `skill_base_attributes`), the `value[1]==0` skip for unraised skills, Cold/Demon special cases, Speed Skill/Athlete/Thief/Demon-profession bonuses, Body Control armor/weapon bonuses (with the bare-handed player weapon bonus) vs. the spell-average Armor bonus when Body Control is unraised, `armor_skill_bonus`'s body/head/legs/arms weighted requirement-vs-raised comparison, day/night/clan attribute profession bonuses, and the HP/endurance/mana current-value clamp to the new max. Wired into worn-slot equip/unequip (`crates/ugaris-server/src/inventory.rs::inventory_swap_slot`, `pos < 12` only, matching C `do.c:1294`). 11 focused tests in `crates/ugaris-core/src/world/tests/character_values.rs`. As of iteration 28, `World::character_attached_effect_light` sums `.light` across the character's currently-attached effects (`Effect::target_character`) and `recompute_character_values` adds it into `mod[V_LIGHT]`, matching C's `mod[V_LIGHT] += ef[fn].light` loop (`create.c:1785-1797`); the only remaining documented gap is an intentional approximation of C's fixed four-slot `ch.ef[]` cap (Rust sums the four lowest-id attached effects rather than tracking real slot occupancy, which only differs from C with 5+ simultaneous character-attached effects) and the trivial `player_reset_map_cache` display-cache no-op on infravision toggle (Rust has no client-scroll-diff cache to invalidate). As of iteration 25, `World` now has a real `pub area_id: u16` field (set once from `ServerConfig::area_id` at startup in `main.rs`, since this process is one area server for its whole lifetime) and the `P_CLAN` bonus checks `self.area_id == 13 || tile.flags.contains(MapFlags::CLAN)`, matching C `create.c:1856` (`areaID == 13 || (mmf & MF_CLAN)`) exactly - the catacombs special case is no longer a gap. As of iteration 21, sprite reselection (demon suits, weapon-in-hand offsets) *is* ported as `recompute_character_sprite`, called by `World::update_character` right after the value recompute and marking the character's tile dirty (`mark_dirty_sector`) on an actual sprite change, matching C's `set_sector` call; `reset_name(cn)` (colored-name cache invalidation) remains an intentional no-op since Rust has no such cache. As of iteration 17/18 it is also wired into spell install/expiry (`world/spells.rs`), skill raising (`World::raise_skill`, stat-scroll `apply_item_driver_outcome`), player-death respawn (`World::die_character`), and login (`ugaris-server/src/snapshots.rs` + `main.rs`) - see the "Ralph Loop - `update_char` Stat Recomputation" sections below for the exact call-site history; this row's prose above predates that wiring and is kept for the original algorithm description. |
 | `src/system/tool.c` `exp2level`/`level2exp`/`level_value`/`check_levelup` | `crates/ugaris-core/src/world/exp.rs` | `exp2level`/`level2exp`/`level_value` (the `pow(level,4)`/`sqrt(sqrt(exp))` formulas) are now the single canonical copy, replacing three independent duplicates that had accreted in `ugaris-server/src/spawns.rs`, `ugaris-server/src/area_apply.rs`, and `ugaris-core/src/item_driver/helpers.rs` (the latter now delegates to this module; the two server-crate copies were deleted and all call sites repointed). `World::check_levelup(character_id)` ports the level-increment loop over `max(exp, exp_used)`, the "Thou gained a level!" text, save grant/reset (hardcore resets to 0, others +1 capped at 10) with feedback text, the level-20 profession unlock (`value[1][V_PROFESSION] = 1`, guarded on it not already being set), and the `set_sector` dirty-map refresh. Wired into the killer-exp and `/god exp` grant paths via `ugaris-server/src/commands_admin.rs::give_exp_with_runtime_modifiers` (kept in the server crate since its `exp_modifier`/`hardcore_exp_bonus` multipliers are live-tunable `ServerRuntime` fields), gated on `!NOLEVEL` exactly like C. 13 focused tests (`world/tests/exp.rs` + 2 server-crate assertions in `tests/commands_admin.rs`). `World::give_exp(character_id, base_exp, area_id)` (C `give_exp` `tool.c:1371-1423`) is now the single canonical grant entry point in `ugaris-core`, applying the hardcore/global exp multipliers, `CF_NOEXP`/area-21 gate, `CF_NOLEVEL` exp-band clamp, decrease-prevention guard, and `check_levelup` tail call; as of iteration 24 every known exp-grant call site in the tree (killer exp, `/god exp`, `/milexp`, lollipop, demonshrine, the four random/zombie shrines, the warp-bonus reward-sphere/step-trickle grants, bookcase library-solved, staffer animation book, and the stat-scroll driver's `check_levelup`/`update_character` wiring) routes through `give_exp`/`check_levelup` instead of a raw `character.exp` mutation - `scrolls.rs::raise_value_exp` intentionally stays a raw `+=` since C's own `raise_value_exp` (`skill.c:353-354`) does too (it calls `check_levelup` directly, not `give_exp`). 13+ focused tests in `world/tests/exp.rs` plus per-call-site tests across `tests/commands_admin.rs`, `tests/area_apply.rs`, `item_driver/tests/*`. As of iteration 26, the level-10-multiple "Grats" broadcast (C `server_chat(6, ...)`, `tool.c:1347-1350`) is also ported: a new `World::queue_channel_broadcast`/`drain_pending_channel_broadcasts` (`world/text.rs`, `WorldChannelBroadcast { channel, message_bytes }`) queues the exact C byte sequence (`"0000000000"` + `COL_MAUVE` + text), and `ugaris-server`'s new `send_pending_world_channel_broadcasts` (`world_events.rs`, wired into the tick loop in `main.rs`) drains it each tick and fans it out to every session with that chat channel joined, reusing the same join-bit rule `apply_chat_command` uses for player channel messages. 3 new focused tests in `world/tests/exp.rs`. Remaining documented gaps (not silently dropped): `achievement_check_level` has no Rust equivalent (needs a general achievement engine), and `reset_name(cn)` is an intentional no-op (no server-side colored-name cache exists to invalidate). As of iteration 27, the P1 "Experience/level-up side effects" task is closed (`- [x]`): a full workspace re-audit found zero remaining raw `character.exp` grant mutations outside `give_exp`/`check_levelup` (the three raw-`exp` writers that remain - `raise_value_exp`'s bare `+=`, the potion/death exp-loss `saturating_sub`s, and `/setlevel`'s debug override - all correctly bypass `give_exp` because C does too). `achievement_check_level` is tracked separately under the P4 "Achievements" task; `reset_name` stays a documented no-op. |
 
-| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs` | Core data model and stat-driven award logic ported: the full 127-entry `AchievementType` enum + `achievement_defs` table (Steam ids/names/descriptions/categories/targets), `Achievement`/`AccountAchievements`/`AchievementStats` structs, `award`/`add_progress`/`get_stat_progress`/`area_to_pent_index`, and every `achievement_add_*`/`achievement_check_*` stat-update function, as a standalone leaf module with no `World`/`PlayerRuntime`/networking access (same pattern as `crate::quest` before its own live wiring landed). Not yet done: persistence (no PPD/DB column for `AccountAchievements`/`AchievementStats`; `crate::player::AchievementState`'s small pre-existing chests/transport-only subset is left untouched and unmerged), the `SV_ACH_*` mod-packet protocol (`mod_achievements.h`), `database_achievement.c`'s "first player globally" DB tracking + cross-server grats announcement, the `/achievements`/`/achstats`/`/achfix`/`/achclear`/`/achsync`/`/achgive` command dispatch (currently help-text-only stubs in `commands_player.rs`), and every real gameplay call site (chest opens, gathering, combat, mining, quests, clans, professions, login streak/play time) that needs to invoke the new `add_*`/`check_*` functions - see `ACHIEVEMENT_STATUS.txt` in the C repo for the full call-site list. |
+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris-server/src/snapshots.rs` | Core data model and stat-driven award logic ported: the full 127-entry `AchievementType` enum + `achievement_defs` table (Steam ids/names/descriptions/categories/targets), `Achievement`/`AccountAchievements`/`AchievementStats` structs, `award`/`add_progress`/`get_stat_progress`/`area_to_pent_index`, and every `achievement_add_*`/`achievement_check_*` stat-update function, as a standalone leaf module with no `World`/`PlayerRuntime`/networking access (same pattern as `crate::quest` before its own live wiring landed). As of iteration 66, persistence is wired: `PlayerRuntime::achievement_data`/`achievement_stats` fields hold the live account-side state; the `DRD_ACHIEVEMENT_DATA`(7176B)/`DRD_ACHIEVEMENT_STATS`(176B) legacy byte layouts (offsets verified against `achievement.h` via a C `sizeof`/`offsetof` probe) are encoded/decoded as subscriber-blob blocks in `ugaris-server/src/achievement.rs`, following the exact pattern `DRD_ACCOUNT_WIDE_DEPOT` established, and wired into `apply_character_snapshot`/`character_save_request`. Note: the C ids are `PERSISTENT_SUBSCRIBER_DATA` (account-wide) but this port persists them per-character (same compromise the account-depot code already makes) pending a real multi-character-per-account model; `crate::player::AchievementState`'s small pre-existing chests/transport-only subset is still left untouched and unmerged with this model. Not yet done: the `SV_ACH_*` mod-packet protocol (`mod_achievements.h`), `database_achievement.c`'s "first player globally" DB tracking + cross-server grats announcement, the `/achievements`/`/achstats`/`/achfix`/`/achclear`/`/achsync`/`/achgive` command dispatch (currently help-text-only stubs in `commands_player.rs`), and every real gameplay call site (chest opens, gathering, combat, mining, quests, clans, professions, login streak/play time) that needs to invoke the new `add_*`/`check_*` functions - see `ACHIEVEMENT_STATUS.txt` in the C repo for the full call-site list. |
 
 ## Continuation Handoff
 
@@ -4827,3 +4827,83 @@ standalone leaf module, `crates/ugaris-core/src/achievement.rs`
   10s boot-smoke showed the tick loop running with no panics (this change
   adds a new leaf module only - it isn't wired into the runtime loop,
   login, map sync, or protocol yet).
+
+## Ralph Loop - Achievements Persistence (Iteration 66, partial)
+
+Resumed the `[~]` "Achievements" P3 task and closed REMAINING gap (1),
+persistence, for the `AccountAchievements`/`AchievementStats` leaf data
+model added in iteration 65.
+
+- **`PlayerRuntime` fields**: added `achievement_data: AccountAchievements`
+  and `achievement_stats: AchievementStats` to `PlayerRuntime`
+  (`crates/ugaris-core/src/player.rs`), both `#[serde(default)]` and
+  initialized via their `Default` impls in `PlayerRuntime::connected`.
+  Deliberately left the pre-existing, narrower `AchievementState` (chests
+  + transport markers) untouched, per the iteration-65 note - the two
+  models still coexist unwired to each other.
+- **Serde support**: added `Serialize`/`Deserialize` to `Achievement`/
+  `AccountAchievements`/`AchievementStats` (`crates/ugaris-core/src/
+  achievement.rs`). The 128-entry `[Achievement; MAX_ACHIEVEMENTS]` array
+  needed a manual `#[serde(with = "achievement_array_serde")]` shim
+  (a small private module doing a `Vec<Achievement>` roundtrip) since
+  `Achievement` isn't `Copy` and serde's derive only auto-covers array
+  sizes 0..=32 for non-`Copy` element types; short/legacy data pads
+  missing trailing slots with `Achievement::default()` instead of
+  erroring. 3 new core tests cover the JSON roundtrip (all 128 slots),
+  short-array padding, and `AchievementStats`'s roundtrip.
+- **Legacy byte layout**: new `crates/ugaris-server/src/achievement.rs`
+  ports the exact C byte layout for `DRD_ACHIEVEMENT_DATA`/
+  `DRD_ACHIEVEMENT_STATS` (`achievement.c:358-372`,
+  `set_data(cn, DRD_ACHIEVEMENT_DATA/STATS, sizeof(...))`). Offsets were
+  not hand-derived from the struct declaration alone (risky given C's
+  `time_t`/`u64` alignment padding rules); instead verified with a
+  throwaway C program compiling `achievement.h`'s exact struct
+  definitions and printing `sizeof`/`offsetof` for every field (64-bit
+  Linux, the legacy server's target). Confirmed sizes: `Achievement` 56
+  bytes (`time_t timestamp` @0, `progress` @8, `target` @12,
+  `achieved_by[40]` @16, no padding), `AccountAchievements` 7176 bytes
+  (`version` @0 + 4 bytes alignment padding + `achievements[128]` @8),
+  `AchievementStats` 176 bytes (four leading `u32`s, then 8-byte-aligned
+  `u64`/`u64[4]` fields, more `u32`s including `u32[4]` pent-area arrays,
+  three trailing `u64`s, three trailing `u32`s, then the unmodeled
+  `reserved[6]` `u32` tail plus trailing alignment padding - always
+  encoded as zero since no Rust field tracks it).
+- **Subscriber-blob wiring**: `decode_legacy_achievement_data_subscriber_
+  blob`/`decode_legacy_achievement_stats_subscriber_blob`/
+  `encode_legacy_achievement_data_subscriber_blob`/`encode_legacy_
+  achievement_stats_subscriber_blob` (`ugaris-server/src/achievement.rs`)
+  follow `depot.rs`'s exact `DRD_ACCOUNT_WIDE_DEPOT` pattern: parse all
+  blocks, replace/insert the target block, pass every other block through
+  byte-for-byte untouched, and omit the block entirely when the data is
+  the untouched default (so players who never engage with achievements
+  don't grow the blob). Wired into `apply_character_snapshot`/
+  `character_save_request` (`crates/ugaris-server/src/snapshots.rs`),
+  chained after the existing account-depot encode/decode calls on the
+  same `subscriber_blob` bytes - each codec only touches its own block id
+  so the chaining order doesn't matter. New `DRD_ACHIEVEMENT_DATA`/
+  `DRD_ACHIEVEMENT_STATS` constants added to
+  `crates/ugaris-server/src/constants.rs` (`MAKE_DRD(DEV_ID_ED, 11/12 |
+  PERSISTENT_SUBSCRIBER_DATA)`, matching `drdata.h:266-267`).
+- **Scoping note carried forward** (not fixed this iteration): the C ids
+  are `PERSISTENT_SUBSCRIBER_DATA`, i.e. nominally account-wide across
+  every character on a subscriber; this codebase has no
+  multi-character-per-account model yet, so (matching the pre-existing
+  `DRD_ACCOUNT_WIDE_DEPOT` compromise) achievements are persisted
+  per-character in that character's own `subscriber_blob` column. Still
+  correct within the current one-character-per-login-session scope; will
+  need revisiting if/when multi-character accounts land.
+- Tests: 11 new tests in `crates/ugaris-server/src/tests/achievement.rs`
+  covering exact byte offsets for both structs, full encode/decode
+  roundtrips, short-buffer rejection, per-block subscriber-blob replace/
+  preserve-unknown/omit-default behavior, and both achievement blocks
+  coexisting with an unrelated account-depot block in one blob.
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1389
+  ugaris-core (+3) + 36 db + 3 net + 33 protocol + 417 server (+11), all
+  green, zero failures. `cargo build -p ugaris-server` clean, zero
+  warnings. A 10s boot-smoke showed "entering Rust game loop" with no
+  panics (this change touches `apply_character_snapshot`/
+  `character_save_request`, which are on the login/logout snapshot
+  path).
+- Still `[~]`: gaps (2) protocol packets, (3) DB first-unlock tracking,
+  (4) command dispatch, (5) gameplay call sites remain - see
+  `PORTING_TODO.md`'s task REMAINING note.

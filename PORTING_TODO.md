@@ -2487,27 +2487,42 @@ Unlocks every quest NPC. Do these before any P4 area work.
   markers partially exist (chests, transport). Port the achievement
   table, progress PPD, `SV_*` packets the community client expects
   (check client), and the grant/announce path. Wire existing markers.
-  REMAINING: this iteration ported the full core data model and
+  REMAINING: a previous iteration ported the full core data model and
   stat-driven award logic as a standalone leaf module
   (`crates/ugaris-core/src/achievement.rs`) - the 127-entry
   `AchievementType` enum + `achievement_defs` table, `Achievement`/
   `AccountAchievements`/`AchievementStats` structs, `award`/
   `add_progress`/`get_stat_progress`, and every `achievement_add_*`/
-  `achievement_check_*` stat-update function - but nothing wires it into
-  a live call site yet. Still to do: (1) persistence - no PPD/DB column
-  exists for `AccountAchievements`/`AchievementStats`; `crate::player`'s
-  pre-existing `AchievementState` (chests + transport markers only) is
-  untouched, so the two models coexist unwired; (2) protocol - the
-  `SV_ACH_UNLOCK`/`SV_ACH_PROGRESS`/`SV_ACH_SYNC`/`SV_ACH_STATS` mod
-  packets (`mod_achievements.h`) have no Rust definitions; (3) DB "first
-  player globally" tracking + cross-server grats announcement
-  (`database_achievement.c`) is unported; (4) the `/achievements`/
-  `/achstats`/`/achfix`/`/achclear`/`/achsync`/`/achgive` commands are
-  still help-text-only stubs in `commands_player.rs` with no dispatch
-  logic; (5) no call site anywhere (chest opens, gathering, combat,
-  mining, quests, clans, etc.) invokes the new `add_*`/`check_*`
-  functions yet - each needs wiring at its own C-identified call site
-  (`ACHIEVEMENT_STATUS.txt`'s file list) once (1)-(4) land.
+  `achievement_check_*` stat-update function - but nothing wired it into
+  a live call site. This iteration (66) closed gap (1), persistence:
+  added `PlayerRuntime::achievement_data`/`achievement_stats` fields
+  (`crates/ugaris-core/src/player.rs`), Serialize/Deserialize on
+  `Achievement`/`AccountAchievements`/`AchievementStats` (the 128-entry
+  array needs a manual `serde(with = ...)` shim since serde's array impl
+  tops out at derive-friendly sizes for non-`Copy` elements), and a new
+  `crates/ugaris-server/src/achievement.rs` with byte-exact
+  `DRD_ACHIEVEMENT_DATA`/`DRD_ACHIEVEMENT_STATS` subscriber-blob codecs
+  (offsets verified against `achievement.h` with a throwaway C
+  `sizeof`/`offsetof` probe), wired into `apply_character_snapshot`/
+  `character_save_request` (`crates/ugaris-server/src/snapshots.rs`)
+  alongside the existing `DRD_ACCOUNT_WIDE_DEPOT` block. Still to do:
+  (2) protocol - the `SV_ACH_UNLOCK`/`SV_ACH_PROGRESS`/`SV_ACH_SYNC`/
+  `SV_ACH_STATS` mod packets (`mod_achievements.h`) have no Rust
+  definitions; (3) DB "first player globally" tracking + cross-server
+  grats announcement (`database_achievement.c`) is unported; (4) the
+  `/achievements`/`/achstats`/`/achfix`/`/achclear`/`/achsync`/
+  `/achgive` commands are still help-text-only stubs in
+  `commands_player.rs` with no dispatch logic; (5) no call site anywhere
+  (chest opens, gathering, combat, mining, quests, clans, etc.) invokes
+  the new `add_*`/`check_*` functions yet - each needs wiring at its own
+  C-identified call site (`ACHIEVEMENT_STATUS.txt`'s file list) once
+  (2)-(4) land. Note: the C `DRD_ACHIEVEMENT_DATA`/`_STATS` ids are
+  `PERSISTENT_SUBSCRIBER_DATA` (account-wide); this port persists them
+  per-character in `subscriber_blob` for now (same scoping compromise
+  `DRD_ACCOUNT_WIDE_DEPOT` already makes) pending a real
+  multi-character-per-account model - `crate::player`'s pre-existing
+  `AchievementState` (chests + transport markers only) remains untouched
+  and still coexists unwired with this model.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository
@@ -2950,3 +2965,31 @@ Add one line per completed task: date, task, ledger section touched.
   + 406 server, all green, zero failures), `cargo build -p ugaris-server`
   clean with zero warnings, and a 10s boot-smoke showed ticking with no
   panics. Ledger section "Ralph Loop - Achievements Core Data Model".
+- 2026-07-04 (iteration 66): Achievements (P3, still `[~]`) - closed
+  REMAINING gap (1), persistence. Added `PlayerRuntime::achievement_data:
+  AccountAchievements`/`achievement_stats: AchievementStats` fields
+  (`crates/ugaris-core/src/player.rs`); added `Serialize`/`Deserialize`
+  to `Achievement`/`AccountAchievements`/`AchievementStats`
+  (`crates/ugaris-core/src/achievement.rs`, with a manual
+  `achievement_array_serde` shim for the 128-entry array since serde's
+  derive doesn't cover non-`Copy` const-generic arrays); added
+  `crates/ugaris-server/src/achievement.rs` with byte-exact
+  `DRD_ACHIEVEMENT_DATA`(7176B)/`DRD_ACHIEVEMENT_STATS`(176B)
+  subscriber-blob block codecs (offsets verified against `achievement.h`
+  with a throwaway C `sizeof`/`offsetof` probe, matching the exact
+  `time_t`/`u64` alignment padding); wired into
+  `apply_character_snapshot`/`character_save_request`
+  (`crates/ugaris-server/src/snapshots.rs`) alongside the existing
+  `DRD_ACCOUNT_WIDE_DEPOT` block, following its exact
+  parse/replace-block/omit-if-default pattern. Added
+  `DRD_ACHIEVEMENT_DATA`/`DRD_ACHIEVEMENT_STATS` constants
+  (`crates/ugaris-server/src/constants.rs`). 14 new tests (3 core
+  serde-roundtrip/short-buffer + 11 server byte-layout/roundtrip/
+  subscriber-blob-block tests). Left `[~]`: gaps
+  (2)-(5) (protocol packets, DB first-unlock tracking, command dispatch,
+  gameplay call sites) are unstarted. `cargo fmt --all`, `cargo test
+  --workspace` (1389 core [+3] + 36 db + 3 net + 33 protocol + 417
+  server [+11], all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, and a 10s boot-smoke showed
+  "entering Rust game loop" with no panics. Ledger section "Ralph Loop -
+  Achievements Core Data Model" extended.
