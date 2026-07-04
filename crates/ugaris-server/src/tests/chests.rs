@@ -582,3 +582,126 @@ fn chest_blocked_message_prefers_key_requirement_like_legacy_driver() {
         CHEST_KEY_REQUIRED_MESSAGE
     );
 }
+
+fn connected_player(character_id: CharacterId, session_id: u64) -> (World, ServerRuntime) {
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Tester"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(session_id, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&session_id) {
+        player.character_id = Some(character_id);
+    }
+    (world, runtime)
+}
+
+#[test]
+fn award_chest_opened_achievement_bumps_stat_without_unlock_below_looter_threshold() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    for _ in 0..9 {
+        award_chest_opened_achievement(&world, &mut runtime, character_id, None);
+    }
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.chests_opened, 9);
+    assert!(!player
+        .achievement_data
+        .is_unlocked(ugaris_core::achievement::AchievementType::Looter));
+    assert!(runtime.tick_out.get(&1).is_none());
+}
+
+#[test]
+fn award_chest_opened_achievement_unlocks_looter_at_ten_chests_and_notifies_session() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    for _ in 0..10 {
+        award_chest_opened_achievement(&world, &mut runtime, character_id, None);
+    }
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.chests_opened, 10);
+    assert!(player
+        .achievement_data
+        .is_unlocked(ugaris_core::achievement::AchievementType::Looter));
+
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0][0], ugaris_protocol::packet::SV_MOD3);
+    assert_eq!(
+        payloads[0][2],
+        ugaris_protocol::mod_achievements::SV_ACH_UNLOCK
+    );
+    assert_eq!(
+        payloads[0][3],
+        ugaris_core::achievement::AchievementType::Looter as u8
+    );
+}
+
+#[test]
+fn award_chest_opened_achievement_treasure_63_awards_gold_looter_alongside_stat_bump() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_chest_opened_achievement(&world, &mut runtime, character_id, Some(63));
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.chests_opened, 1);
+    assert!(player
+        .achievement_data
+        .is_unlocked(ugaris_core::achievement::AchievementType::GoldLooter));
+
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(
+        payloads[0][3],
+        ugaris_core::achievement::AchievementType::GoldLooter as u8
+    );
+}
+
+#[test]
+fn award_chest_opened_achievement_non_gold_looter_chest_does_not_award_gold_looter() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_chest_opened_achievement(&world, &mut runtime, character_id, Some(9));
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(!player
+        .achievement_data
+        .is_unlocked(ugaris_core::achievement::AchievementType::GoldLooter));
+    assert!(runtime.tick_out.get(&1).is_none());
+}
+
+#[test]
+fn award_chest_opened_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    // Should not panic even though no session/PlayerRuntime exists for this
+    // character (mirrors C's `ch[cn].flags & CF_PLAYER` gate never firing).
+    award_chest_opened_achievement(&world, &mut runtime, character_id, Some(63));
+    assert!(runtime.player_for_character(character_id).is_none());
+}

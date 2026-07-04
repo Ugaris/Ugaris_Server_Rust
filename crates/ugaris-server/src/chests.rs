@@ -6,6 +6,51 @@ pub(crate) const RATCHEST_COOLDOWN_SECONDS: u64 = 60 * 60 * 23;
 
 pub(crate) const RATCHEST_TREASURE_RESPAWN_SECONDS: u64 = 60 * 60 * 24;
 
+/// C `chest_driver` (`src/module/base.c:1648-1654`) and `randchest_driver`
+/// (`src/module/base.c:3168-3175`): both call `achievement_add_chests(cn, 1)`
+/// whenever `ch[cn].flags & CF_PLAYER` (a `PlayerRuntime` only exists for
+/// players here, matching that flag check) and a treasure/item/money reward
+/// was actually granted. `chest_driver` additionally special-cases treasure
+/// #63 (the Mines level 80 gold room chest) to award
+/// `ACHIEVEMENT_GOLD_LOOTER` outright; `randchest_driver` has no such
+/// special case, so callers pass `None` for that argument.
+pub(crate) fn award_chest_opened_achievement(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    gold_looter_treasure_index: Option<u8>,
+) {
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let name = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+        .unwrap_or_default();
+    let now = current_unix_time();
+    let mut unlocked = ugaris_core::achievement::add_chests(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        1,
+        &name,
+        now,
+    );
+    if gold_looter_treasure_index == Some(63)
+        && player
+            .achievement_data
+            .award(AchievementType::GoldLooter, &name, now)
+    {
+        unlocked.push(AchievementType::GoldLooter);
+    }
+    for ty in unlocked {
+        let payload = achievement_unlock_payload(ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ChestTreasureApplyResult {
     Granted {

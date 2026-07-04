@@ -2603,6 +2603,33 @@ Unlocks every quest NPC. Do these before any P4 area work.
   3 net + 37 protocol + 431 server, all unchanged/green, zero failures),
   `cargo build -p ugaris-server` clean with zero warnings, and a 10s
   boot-smoke showed "entering Rust game loop" with no panics.
+  Progress Log (iteration 70): closed two more of the (5) gameplay call
+  sites - both C `achievement_add_chests` callers in
+  `src/module/base.c`: `chest_driver` (treasure chests, `base.c:1648-1654`,
+  including the treasure-#63/Mines-lvl-80-gold-room special case that
+  outright awards `ACHIEVEMENT_GOLD_LOOTER`) and `randchest_driver`
+  (random chests, `base.c:3168-3175`, fired for both the money and item
+  reward branches, matching C's single call site covering both). Added a
+  shared `award_chest_opened_achievement` helper
+  (`crates/ugaris-server/src/chests.rs`) gated on a live `PlayerRuntime`
+  (mirrors C's `CF_PLAYER` flag check), wired into both
+  `ChestTreasureApplyResult::Granted` and
+  `RandomChestApplyResult::{Money,Item}` in `main.rs`'s item-driver
+  dispatch. Confirmed via the C source that `RatChest`
+  (`src/system/sewers.c`, unrelated file) never calls
+  `achievement_add_chests`, so it was correctly left unwired. Added 5
+  focused tests in `tests/chests.rs` (sub-threshold stat bump, Looter
+  unlock at 10 chests with its `SV_ACH_UNLOCK` packet landing in the
+  right session's `tick_out`, the Gold-Looter-only-on-#63 special case,
+  a non-#63 chest not granting Gold Looter, and the no-`PlayerRuntime`
+  no-op path). Still unwired: (3) DB first-unlock/grats announcement,
+  and most of the ~13 remaining gameplay call sites (gathering, combat,
+  mining, professions, wealth, exploration, clans, military, tunnels,
+  arena, play time). `cargo fmt --all`, `cargo test --workspace` (1393
+  ugaris-core + 36 db + 3 net + 37 protocol + 436 server [+5], all
+  green, zero failures), `cargo build -p ugaris-server` clean with zero
+  warnings, and a 10s boot-smoke showed "entering Rust game loop" with
+  no panics.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

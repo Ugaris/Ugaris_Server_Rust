@@ -1942,6 +1942,7 @@ async fn main() -> anyhow::Result<()> {
                                                     }
                                                     feedback.push((character_id, format!("You got a {item_name}.")));
                                                     executed += 1;
+                                                    award_chest_opened_achievement(&world, &mut runtime, character_id, Some(treasure_index));
                                                 }
                                                 ChestTreasureApplyResult::Empty => {
                                                     feedback.push((character_id, CHEST_EMPTY_MESSAGE.to_string()));
@@ -1977,10 +1978,12 @@ async fn main() -> anyhow::Result<()> {
                                                 RandomChestApplyResult::Money { amount } => {
                                                     feedback.push((character_id, format!("You found some money ({:.2}G)!", f64::from(amount) / 100.0)));
                                                     executed += 1;
+                                                    award_chest_opened_achievement(&world, &mut runtime, character_id, None);
                                                 }
                                                 RandomChestApplyResult::Item { item_name } => {
                                                     feedback.push((character_id, format!("You found a {item_name}.")));
                                                     executed += 1;
+                                                    award_chest_opened_achievement(&world, &mut runtime, character_id, None);
                                                 }
                                                 RandomChestApplyResult::Empty => {
                                                     feedback.push((character_id, RANDCHEST_EMPTY_MESSAGE.to_string()));
