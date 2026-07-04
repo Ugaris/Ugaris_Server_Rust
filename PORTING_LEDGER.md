@@ -5046,3 +5046,58 @@ sync/award trigger end to end.
   `ClientAction` dispatch).
 - Still `[~]`: gaps (3) DB first-unlock tracking, and (5)'s remaining
   ~14 gameplay call sites - see `PORTING_TODO.md`'s task REMAINING note.
+
+## Ralph Loop - Achievements "Play Time" Gameplay Call Site (Iteration 71, partial)
+
+- Closed another of the (5) unwired gameplay call sites:
+  `ACHIEVEMENT` play-time tracking (C `src/system/player.c:3448-3462`,
+  `player_update`). C spreads `stats_update(cn, 1, 0)` (daily-history
+  stats, `statistics.c` - out of scope, no Rust port exists) and
+  `achievement_add_play_time(cn, 1)` across the tick loop per player
+  slot via `nr % (TICKS * 60) == ticker % (TICKS * 60)`, so each
+  connected player gets exactly 1 minute credited once per real-time
+  minute.
+- `ugaris_core::achievement::add_play_time` (the stat-threshold logic:
+  `DedicatedPlayer` at 1440 minutes/24h, `VeteranPlayer` at 6000/100h,
+  `UgarisLifer` at 30000/500h) already existed from iteration 65 but had
+  no caller anywhere outside its own unit tests.
+- Added `award_play_time_minute(world, runtime, character_id)`
+  (`crates/ugaris-server/src/achievement.rs`), mirroring the
+  `award_chest_opened_achievement` (`chests.rs`, iteration 70) pattern
+  exactly: no-op for characters without a live `PlayerRuntime` (mirrors
+  C's implicit "only connected player slots run `player_update`" gate),
+  otherwise credits the minute and fans out any newly-unlocked
+  `SV_ACH_UNLOCK` packet to every session for that character via
+  `sessions_for_character`/`send_to_session`.
+- Wired into `crates/ugaris-server/src/main.rs`'s tick loop on the
+  existing once-a-minute `world.tick.0 % (TICKS_PER_SECOND * 60) == 0`
+  gate (previously used only for auction-house cleanup), iterating every
+  connected character. Rust's `PlayerRuntime` has no equivalent of C's
+  stable 1-indexed array-slot `nr`, so the per-player stagger across the
+  60-tick window couldn't be replicated exactly; this fires for all
+  logged-in characters simultaneously on the same tick each minute
+  instead. Net effect is identical (1 minute credited per minute of
+  real time per connected character) - documented as a deliberate small
+  divergence in the code comment at the call site.
+- Added 3 focused tests in `crates/ugaris-server/src/tests/
+  achievement.rs` (sub-threshold stat bump with no unlock, `Dedicated
+  Player` unlock at exactly 1440 minutes with its `SV_ACH_UNLOCK` packet
+  landing in the right session's `tick_out`, and the no-`PlayerRuntime`
+  no-op path for a character with no session) - same test shape as
+  `chests.rs`'s `award_chest_opened_achievement` test suite.
+- Still unwired: (3) DB first-unlock/grats announcement
+  (`database_achievement.c`), and (5)'s remaining ~12 gameplay call
+  sites (gathering (`alchemy.c` potions/flowers/mushrooms/berries,
+  `act.c` stones), combat/PvP (`death.c` demon-lord slayer, `random.c`
+  wizard slayer, area-specific kills), mining reward RNG (`mine.c`
+  silver/gold - the underlying reward roll itself isn't ported yet,
+  only the dig mechanic), gold-earned (`tool.c`/`do.c` - no generic
+  "give money" helper exists yet per `gatekeeper.rs`/`world_events.rs`
+  comments), professions, clans/military/tunnels/arena.
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1393
+  ugaris-core + 36 db + 3 net + 37 protocol + 439 server [+3], all
+  green, zero failures. `cargo build -p ugaris-server` clean, zero
+  warnings. A 10s boot-smoke showed "entering Rust game loop" with no
+  panics (this change touches the runtime tick loop).
+- Still `[~]`: gaps (3) DB first-unlock tracking, and (5)'s remaining
+  ~12 gameplay call sites - see `PORTING_TODO.md`'s task REMAINING note.

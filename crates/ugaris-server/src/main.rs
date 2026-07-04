@@ -5561,6 +5561,26 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                 }
+                // C `player_update` (`player.c:3448-3462`): every player
+                // slot gets `achievement_add_play_time(cn, 1)` (plus
+                // `stats_update`, unported - see PORTING_TODO.md) once
+                // per real-time minute, staggered across ticks via
+                // `nr % (TICKS * 60)`. Rust has no stable per-player slot
+                // index to replicate that stagger, so this fires for all
+                // logged-in characters on the same once-a-minute tick
+                // gate already used for auction cleanup above - same net
+                // rate (1 minute credited per minute of uptime), just
+                // synchronized instead of spread across the 60 ticks.
+                if world.tick.0 % (TICKS_PER_SECOND * 60) == 0 {
+                    let play_time_characters: Vec<CharacterId> = runtime
+                        .players
+                        .values()
+                        .filter_map(|player| player.character_id)
+                        .collect();
+                    for character_id in play_time_characters {
+                        award_play_time_minute(&world, &mut runtime, character_id);
+                    }
+                }
                 // C `tick_player`'s deferred-init sweep (`player.c:3660-
                 // 3676`): `ticks >= 2 && (deferred_init &
                 // DEFERRED_ACHIEVEMENTS)` fires `achievement_sync_all` +

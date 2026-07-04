@@ -2615,7 +2615,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (mirrors C's `CF_PLAYER` flag check), wired into both
   `ChestTreasureApplyResult::Granted` and
   `RandomChestApplyResult::{Money,Item}` in `main.rs`'s item-driver
-  dispatch. Confirmed via the C source that `RatChest`
+  dispatch.   Confirmed via the C source that `RatChest`
   (`src/system/sewers.c`, unrelated file) never calls
   `achievement_add_chests`, so it was correctly left unwired. Added 5
   focused tests in `tests/chests.rs` (sub-threshold stat bump, Looter
@@ -2630,6 +2630,37 @@ Unlocks every quest NPC. Do these before any P4 area work.
   green, zero failures), `cargo build -p ugaris-server` clean with zero
   warnings, and a 10s boot-smoke showed "entering Rust game loop" with
   no panics.
+  Progress Log (iteration 71): closed the "play time" gameplay call site
+  - C `player_update` (`src/system/player.c:3448-3462`): once per
+  real-time minute (staggered per-player-slot in C via `nr % (TICKS *
+  60)`), calls `stats_update(cn, 1, 0)` (unported daily-history stats,
+  out of scope for achievements) and `achievement_add_play_time(cn,
+  1)`. Added `award_play_time_minute(world, runtime, character_id)`
+  (`crates/ugaris-server/src/achievement.rs`), mirroring the
+  `award_chest_opened_achievement` pattern exactly: no-ops for
+  characters without a live `PlayerRuntime`, otherwise credits 1 minute
+  via `ugaris_core::achievement::add_play_time` and fans out any
+  newly-unlocked `SV_ACH_UNLOCK` (`DedicatedPlayer`/`VeteranPlayer`/
+  `UgarisLifer`) to every session for that character. Wired into
+  `main.rs`'s tick loop on the existing once-a-minute
+  `world.tick.0 % (TICKS_PER_SECOND * 60) == 0` gate (previously only
+  used for auction cleanup) for every connected character - Rust has no
+  stable per-player array-slot index to replicate C's `nr`-based stagger,
+  so this fires for all logged-in characters simultaneously each minute
+  instead of spread across the 60-tick window; same net rate (1 minute
+  credited per minute of uptime), documented as a deliberate small
+  divergence in the code comment. Added 3 focused tests in
+  `tests/achievement.rs` (sub-threshold stat bump with no unlock,
+  `DedicatedPlayer` unlock at the 1440-minute threshold with its
+  `SV_ACH_UNLOCK` packet landing in the right session's `tick_out`, and
+  the no-`PlayerRuntime` no-op path). Still unwired: (3) DB
+  first-unlock/grats announcement, and ~12 remaining gameplay call sites
+  (gathering, combat, mining, professions, wealth beyond chests,
+  exploration beyond transport, clans, military, tunnels, arena).
+  `cargo fmt --all`, `cargo test --workspace` (1393 ugaris-core + 36 db +
+  3 net + 37 protocol + 439 server [+3], all green, zero failures),
+  `cargo build -p ugaris-server` clean with zero warnings, and a 10s
+  boot-smoke showed "entering Rust game loop" with no panics.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository
@@ -3134,3 +3165,10 @@ Add one line per completed task: date, task, ledger section touched.
   clean with zero warnings, and a 10s boot-smoke showed "entering Rust
   game loop" with no panics. Ledger section "Ralph Loop - Achievements
   Core Data Model" extended.
+- 2026-07-04: Achievements (P3, still `[~]`) - closed the "play time"
+  gameplay call site (`src/system/player.c:3448-3462`,
+  `achievement_add_play_time`): new `award_play_time_minute` helper in
+  `crates/ugaris-server/src/achievement.rs`, wired into `main.rs`'s tick
+  loop on the existing once-a-minute gate for every connected character;
+  3 new tests in `tests/achievement.rs`; ledger section "Ralph Loop -
+  Achievements Core Data Model" extended.

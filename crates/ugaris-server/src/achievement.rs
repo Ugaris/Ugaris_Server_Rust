@@ -387,6 +387,44 @@ pub(crate) fn achievement_unlock_payload(ty: AchievementType, timestamp: i64) ->
     bytes::BytesMut::from(&bytes[..])
 }
 
+/// C `player_update` (`src/system/player.c:3448-3462`): credits one minute
+/// of play time to the character's `AchievementStats` (plus `stats_update`,
+/// unported - see `PORTING_TODO.md`'s Achievements task), sending an
+/// `SV_ACH_UNLOCK` for `DedicatedPlayer`/`VeteranPlayer`/`UgarisLifer` on
+/// first crossing their thresholds. A no-op if the character has no live
+/// `PlayerRuntime` (mirrors C's `CF_PLAYER` implicit gate: `player_update`
+/// only ever runs for connected player slots).
+pub(crate) fn award_play_time_minute(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+) {
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::add_play_time(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        1,
+        &name,
+        now,
+    );
+    for ty in unlocked {
+        let payload = achievement_unlock_payload(ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+}
+
 /// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every
 /// achievement (all 127 defs carry a non-empty `steam_id`, so none are
 /// skipped, unlike C's defensive `if (!def->steam_id...) continue;`) into

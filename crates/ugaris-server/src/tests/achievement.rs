@@ -506,3 +506,84 @@ fn achfix_achclear_achsync_are_god_only_and_full_word_only() {
         apply_achievement_command(&world, &mut runtime, character_id, "/achclear", 1).is_some()
     );
 }
+
+fn connected_player(character_id: CharacterId, session_id: u64) -> (World, ServerRuntime) {
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Tester"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(session_id, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&session_id) {
+        player.character_id = Some(character_id);
+    }
+    (world, runtime)
+}
+
+#[test]
+fn award_play_time_minute_bumps_stat_without_unlock_below_threshold() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_play_time_minute(&world, &mut runtime, character_id);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.play_time_minutes, 1);
+    assert!(!player
+        .achievement_data
+        .is_unlocked(AchievementType::DedicatedPlayer));
+    assert!(runtime.tick_out.get(&1).is_none());
+}
+
+#[test]
+fn award_play_time_minute_unlocks_dedicated_player_at_1440_minutes_and_notifies_session() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .play_time_minutes = 1439;
+
+    award_play_time_minute(&world, &mut runtime, character_id);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.play_time_minutes, 1440);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::DedicatedPlayer));
+
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0][0], SV_MOD3);
+    assert_eq!(payloads[0][2], SV_ACH_UNLOCK);
+    assert_eq!(payloads[0][3], AchievementType::DedicatedPlayer as u8);
+}
+
+#[test]
+fn award_play_time_minute_is_a_noop_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    // Should not panic even though no session/PlayerRuntime exists for this
+    // character (mirrors C's `player_update` only ever running for
+    // connected player slots).
+    award_play_time_minute(&world, &mut runtime, character_id);
+    assert!(runtime.player_for_character(character_id).is_none());
+}
