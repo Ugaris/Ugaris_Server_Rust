@@ -4081,20 +4081,27 @@ Unlocks every quest NPC. Do these before any P4 area work.
   on `Character`; port rank thresholds, `#rank` style commands, mission
   PPD (`mission_ppd.h`) and the governor mission flow (`check_military_solve`
   is referenced by the death path - port it there when this lands).
-  REMAINING: `military_ppd`'s own `mission_yday`/advisor state
-  (`current_advisor`/`advisor_state`/`advisor_cost`/`advisor_storage_nr`/
-  `advisor_last[20]`)/`took_yday`/`solved_yday`/`recommend`/mission type-
-  difficulty preference/temp mission selection/`reroll_yday` fields still
-  round-trip as opaque bytes (no accessors yet - the mission-slot table
-  `mis[5]` and the progress-tracking `took_mission`/`solved_mission`
-  fields this iteration needed now have typed accessors, see Progress
-  Log); the ppd-populating wrappers (`generate_demon_mission`/
-  `generate_sewer_mission`/`generate_mine_mission`/
-  `generate_mission_with_preference`) and ppd-mutating state transitions
-  (`accept_mission`/`complete_mission`/`handle_specific_mission_request`)
-  built on top of this file's pure generators - these still have nowhere
-  to write until they land; the Military Master/Advisor NPC drivers,
-  their `qa[]` dialogue table, and storage state machines; the
+  REMAINING: `military_ppd`'s own advisor state (`current_advisor`/
+  `advisor_state`/`advisor_cost`/`advisor_storage_nr`/`advisor_last[20]`)/
+  `took_yday`/`solved_yday`/`recommend`/temp mission selection
+  (`temp_mission_type`/`temp_mission_difficulty`)/`reroll_yday` fields
+  still round-trip as opaque bytes (no accessors yet - `mission_yday`/
+  `mission_type_preference`/`mission_difficulty_preference` gained typed
+  accessors this iteration, see Progress Log, alongside the mission-slot
+  table `mis[5]` and progress-tracking `took_mission`/`solved_mission`
+  fields from the previous iteration); the ppd-populating wrappers
+  (`generate_demon_mission`/`generate_sewer_mission`/
+  `generate_mine_mission`/`generate_mission_with_preference`/
+  `generate_mission`) are now ported as pure functions plus a
+  `PlayerRuntime::apply_mission_offer` ppd-mutating wrapper (see Progress
+  Log) but have no real call site yet - they need the rank-cubed-floored
+  `military_pts`/level-7-floored level inputs resolved from `Character`
+  and the current `World.date.yday`, which only the still-unported
+  Military Master/Advisor NPC driver would actually supply; the
+  ppd-mutating state transitions `accept_mission`/`complete_mission`/
+  `handle_specific_mission_request` remain unported; the Military
+  Master/Advisor NPC drivers, their `qa[]` dialogue table, and storage
+  state machines; the
   `SV_QUEST_EXT` mod-packet that shows the active mission in the client's
   quest log (so `check_military_solve`'s own `sendquestlog` calls are
   also not reproduced yet - cosmetic only, the progress state itself is
@@ -4106,7 +4113,49 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
   correction, not a real gap).
-  Progress Log: ported the next self-contained slice - `military_ppd`'s
+  Progress Log: ported the next self-contained slice - the ppd-populating
+  mission-offer-table wrappers on top of the existing pure per-instance
+  generators, plus the 3 remaining ppd fields they need. `crates/
+  ugaris-core/src/player.rs` gained `mission_type_preference`/
+  `set_mission_type_preference`, `mission_difficulty_preference`/
+  `set_mission_difficulty_preference`, and `mission_yday`/
+  `set_mission_yday` typed accessors (`military.h:50,51,41`, same
+  raw-block offset-accessor pattern as the previous iteration's `mis[5]`/
+  `took_mission`/`solved_mission`). `crates/ugaris-core/src/world/
+  military.rs` gained `generate_demon_mission(level, military_pts,
+  rng_seed)` (fills all 5 offer slots, `military.c:847-861`),
+  `generate_sewer_mission`/`generate_mine_mission` (`military.c:930-948,
+  1016-1034`, the random-slot-pick-and-overwrite pair, returning
+  `Option<(usize, SingleMission)>` for C's own `if (mission.type != 0)`
+  no-op-on-empty-pick guard), and `generate_mission_with_preference`/
+  `generate_mission` (`military.c:1036-1139`, the full offer-table
+  builder: base demon fill, the per-preferred-type ratling/silver/
+  variety switch, and the final difficulty-preference override) - all as
+  pure functions taking the already rank-cubed-floored `military_pts`
+  and raw level (internally `max(7)`-floored, matching C) so they carry
+  no ppd/character coupling. `PlayerRuntime::apply_mission_offer(level,
+  military_pts, preferred_type, yday, rng_seed)` is the new ppd-mutating
+  wrapper (`generate_mission_with_preference`'s C half that actually
+  touches `ppd`): reads this ppd's own stored `mission_difficulty_
+  preference`, writes all 5 generated missions into `mis[]`, and stamps
+  `mission_type_preference`/`mission_yday` (`yday + 1`). Deliberately does
+  NOT resolve `military_pts`/`level`/`yday` internally (`PlayerRuntime` is
+  session-only and can't reach `Character`/`World` - see this file's
+  module doc) - callers must resolve the rank-cubed floor and level-7
+  floor themselves, same division of labor as C's own caller
+  (`military_master_driver`) computing those before calling in one place.
+  13 new tests: 10 in `crates/ugaris-core/src/world/tests/military.rs`
+  (every generator's slot-fill/level-gate/preference-override behavior),
+  3 in `player.rs` (preference/yday accessor round-trip,
+  `apply_mission_offer`'s full write including the no-preference-at-
+  low-level demon-only guarantee and the stored-difficulty-preference
+  override reaching the pure generator). `cargo fmt --all`, `cargo test
+  --workspace` (1600 ugaris-core + 47 db + 3 net + 37 protocol + 541
+  server, all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panics. No NPC/networking wiring yet - see REMAINING
+  above.
+  Earlier progress: ported the next self-contained slice - `military_ppd`'s
   mission-progress fields plus `check_military_solve` on top of them,
   closing the exact gap the previous iteration's note flagged
   ("`check_military_solve` ... needs the ppd's `took_mission`/`mis[5]`

@@ -34,24 +34,37 @@
 //! `apply_military_mission_kill_check`, `crates/ugaris-server/src/
 //! military.rs`, sending the exact `COL_DARK_GRAY "Mission kill, %d to
 //! go."` / `"Elite demon slain! ..."` / `"You solved your mission. ..."`
-//! `log_char` text). `military_ppd`'s remaining fields (advisor state,
-//! `mission_yday`/`took_yday`/`solved_yday`, `recommend`, mission type/
-//! difficulty preference, temp mission selection, `reroll_yday`) still
-//! round-trip as opaque bytes - no accessors yet, not needed until the
-//! mission-offer/accept/reroll wrappers below land.
+//! `log_char` text). `military_ppd`'s remaining fields at that point
+//! (advisor state, `mission_yday`/`took_yday`/`solved_yday`, `recommend`,
+//! mission type/difficulty preference, temp mission selection,
+//! `reroll_yday`) still round-tripped as opaque bytes.
 //!
-//! REMAINING (unported, needs the above): `generate_demon_mission`/
-//! `generate_sewer_mission`/`generate_mine_mission`/
-//! `generate_mission_with_preference` (the ppd-populating wrappers around
-//! this file's per-instance generators, writing into `mis[5]` plus
-//! `mission_yday`); `accept_mission`/`complete_mission`/
-//! `handle_specific_mission_request` (the remaining ppd-mutating state
-//! transitions - taking/completing/paying for a mission, as opposed to
-//! this slice's read-only progress-tracking half); the Military
-//! Master/Advisor NPC drivers and their `qa[]` dialogue table
-//! (`analyse_text_driver`), storage state machines
-//! (`process_master_storage`/`process_advisor_storage`), and the
-//! `SV_QUEST_EXT` mod-packet (`mod_send_questlog_ext`,
+//! This fourth slice ports the ppd-populating mission-offer wrappers on
+//! top of the previous slices' per-instance generators:
+//! [`generate_demon_mission`]/[`generate_sewer_mission`]/
+//! [`generate_mine_mission`]/[`generate_mission_with_preference`]/
+//! [`generate_mission`] (`military.c:847-1139`), all pure functions over
+//! an already rank-cubed-floored `military_pts` and a raw level
+//! (internally `max(7)`-floored, matching C). `player.rs` gained the 3
+//! remaining ppd accessors these need (`mission_type_preference`/
+//! `mission_difficulty_preference`/`mission_yday`) plus
+//! `PlayerRuntime::apply_mission_offer`, the ppd-mutating wrapper that
+//! actually writes the generated offer table into `mis[]` and stamps
+//! `mission_type_preference`/`mission_yday`.
+//!
+//! REMAINING (unported, needs the above): `accept_mission`/
+//! `complete_mission`/`handle_specific_mission_request` (the remaining
+//! ppd-mutating state transitions - taking/completing/paying for a
+//! mission, as opposed to this slice's offer-generation half); resolving
+//! the rank-cubed-floored `military_pts`/level-7-floored level/current
+//! `yday` from `Character`/`World` and actually calling
+//! `apply_mission_offer` (no real call site yet - needs the Military
+//! Master/Advisor NPC drivers); those drivers themselves and their
+//! `qa[]` dialogue table (`analyse_text_driver`), storage state machines
+//! (`process_master_storage`/`process_advisor_storage`); `military_ppd`'s
+//! advisor-state/`took_yday`/`solved_yday`/`recommend`/temp-mission-
+//! selection/`reroll_yday` fields (still opaque bytes, no accessors yet);
+//! and the `SV_QUEST_EXT` mod-packet (`mod_send_questlog_ext`,
 //! `common/mod_packet.c:351-397`) that shows the active mission in the
 //! client's quest log (the `sendquestlog` calls inside `check_military_
 //! solve` itself are consequently also not reproduced yet - a cosmetic
@@ -567,6 +580,157 @@ pub fn generate_single_silver_mission(
         pts,
         exp: calculate_mission_exp(military_pts, pts, level),
     }
+}
+
+/// C `generate_demon_mission(level, ppd)` (`military.c:847-861`): fills
+/// all 5 offer slots with demon missions, one per difficulty.
+pub fn generate_demon_mission(
+    level: i32,
+    military_pts: i32,
+    rng_seed: &mut u32,
+) -> [SingleMission; 5] {
+    let mut missions = [SingleMission::default(); 5];
+    for (difficulty, slot) in missions.iter_mut().enumerate() {
+        *slot = generate_single_demon_mission(level, military_pts, difficulty as i32, rng_seed);
+    }
+    missions
+}
+
+/// C `generate_sewer_mission(level, ppd)` (`military.c:930-948`): picks
+/// one random difficulty slot (`RANDOM(5)`) and overwrites it with a
+/// ratling mission - but only if the level requirement is met (C's own
+/// `if (mission.type != 0) ppd->mis[difficulty] = mission;`, mirrored
+/// here by returning `None` instead of a slot index/mission pair when the
+/// pick is empty).
+pub fn generate_sewer_mission(
+    level: i32,
+    military_pts: i32,
+    rng_seed: &mut u32,
+) -> Option<(usize, SingleMission)> {
+    let difficulty = mission_random(rng_seed, 5) as usize;
+    let mission = generate_single_ratling_mission(level, military_pts, difficulty as i32, rng_seed);
+    if mission.is_empty() {
+        None
+    } else {
+        Some((difficulty, mission))
+    }
+}
+
+/// C `generate_mine_mission(level, ppd)` (`military.c:1016-1034`): same
+/// random-slot-overwrite shape as [`generate_sewer_mission`], for silver
+/// missions.
+pub fn generate_mine_mission(
+    level: i32,
+    military_pts: i32,
+    rng_seed: &mut u32,
+) -> Option<(usize, SingleMission)> {
+    let difficulty = mission_random(rng_seed, 5) as usize;
+    let mission = generate_single_silver_mission(level, military_pts, difficulty as i32, rng_seed);
+    if mission.is_empty() {
+        None
+    } else {
+        Some((difficulty, mission))
+    }
+}
+
+/// C `generate_mission_with_preference(cn, ppd, preferred_type)`
+/// (`military.c:1036-1131`)'s pure mission-table-building half: given the
+/// already rank-cubed-floored `military_pts` and the level (C clamps to a
+/// minimum of 7 itself before calling this - matched here too so callers
+/// can pass a raw character level), builds the 5-slot offer table.
+/// `mission_difficulty_preference` is `ppd->mission_difficulty_preference`
+/// (`-1`/anything outside `0..=4` means "no preference", matching C's own
+/// `>= 0 && < 5` guard). Does not touch `ppd->mission_type_preference` /
+/// `ppd->mission_yday` - see [`crate::PlayerRuntime::apply_mission_offer`]
+/// for the ppd-mutating wrapper that also stamps those.
+pub fn generate_mission_with_preference(
+    level: i32,
+    military_pts: i32,
+    preferred_type: i32,
+    mission_difficulty_preference: i32,
+    rng_seed: &mut u32,
+) -> [SingleMission; 5] {
+    let level = level.max(7);
+    let mut missions = generate_demon_mission(level, military_pts, rng_seed);
+
+    match preferred_type {
+        2 => {
+            if (9..=39).contains(&level) && level % 2 == 1 {
+                let mission = generate_single_ratling_mission(level, military_pts, 0, rng_seed);
+                if !mission.is_empty() {
+                    missions[0] = mission;
+                }
+            }
+            for _ in 0..3 {
+                if let Some((difficulty, mission)) =
+                    generate_sewer_mission(level, military_pts, rng_seed)
+                {
+                    missions[difficulty] = mission;
+                }
+            }
+        }
+        3 => {
+            if level >= 12 {
+                let mission = generate_single_silver_mission(level, military_pts, 0, rng_seed);
+                if !mission.is_empty() {
+                    missions[0] = mission;
+                }
+            }
+            for _ in 0..3 {
+                if let Some((difficulty, mission)) =
+                    generate_mine_mission(level, military_pts, rng_seed)
+                {
+                    missions[difficulty] = mission;
+                }
+            }
+        }
+        _ => {
+            if mission_random(rng_seed, 3) == 0 {
+                if let Some((difficulty, mission)) =
+                    generate_sewer_mission(level, military_pts, rng_seed)
+                {
+                    missions[difficulty] = mission;
+                }
+            }
+            if let Some((difficulty, mission)) =
+                generate_mine_mission(level, military_pts, rng_seed)
+            {
+                missions[difficulty] = mission;
+            }
+        }
+    }
+
+    if (0..5).contains(&mission_difficulty_preference) {
+        let diff = mission_difficulty_preference;
+        let mission = match preferred_type {
+            1 => generate_single_demon_mission(level, military_pts, diff, rng_seed),
+            2 => generate_single_ratling_mission(level, military_pts, diff, rng_seed),
+            3 => generate_single_silver_mission(level, military_pts, diff, rng_seed),
+            _ => SingleMission::default(),
+        };
+        if !mission.is_empty() {
+            missions[diff as usize] = mission;
+        }
+    }
+
+    missions
+}
+
+/// C `generate_mission(cn, ppd)` (`military.c:1137-1139`): the
+/// backwards-compatible no-preference entry point, `preferred_type = 0`.
+pub fn generate_mission(
+    level: i32,
+    military_pts: i32,
+    mission_difficulty_preference: i32,
+    rng_seed: &mut u32,
+) -> [SingleMission; 5] {
+    generate_mission_with_preference(
+        level,
+        military_pts,
+        0,
+        mission_difficulty_preference,
+        rng_seed,
+    )
 }
 
 /// C `death.h:21`/`pents.h:24`'s `LESSER_DEMON_CLASS_BASE`.

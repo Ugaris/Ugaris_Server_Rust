@@ -364,6 +364,120 @@ fn get_demon_mission_value_matches_c_elite_vs_everything_else() {
     assert_eq!(get_demon_mission_value(52), 1);
 }
 
+// C `generate_demon_mission(level, ppd)` (`military.c:847-861`): fills
+// every one of the 5 offer slots with a demon mission at the matching
+// difficulty.
+#[test]
+fn generate_demon_mission_fills_all_five_difficulty_slots() {
+    let mut seed = 42u32;
+    let missions = generate_demon_mission(20, 0, &mut seed);
+    for mission in missions {
+        assert_eq!(mission.mission_type, MISSION_TYPE_DEMON);
+        assert!(!mission.is_empty());
+    }
+}
+
+// C `generate_sewer_mission(level, ppd)` (`military.c:930-948`): a level
+// far outside the 9..=39 odd-level window can never produce a valid
+// ratling mission regardless of which difficulty `RANDOM(5)` picks, so
+// every draw across many seeds must come back `None`.
+#[test]
+fn generate_sewer_mission_returns_none_when_level_never_qualifies() {
+    for seed_value in 0..50u32 {
+        let mut seed = seed_value;
+        assert!(generate_sewer_mission(2, 0, &mut seed).is_none());
+    }
+}
+
+// A level inside the valid odd-level window always yields Some(...) for
+// at least difficulty 0..=2 (which don't shift the target level at all).
+#[test]
+fn generate_sewer_mission_returns_some_within_valid_level_window() {
+    let mut seed = 7u32;
+    let (difficulty, mission) = generate_sewer_mission(21, 0, &mut seed).expect("valid pick");
+    assert!(difficulty < 5);
+    assert_eq!(mission.mission_type, MISSION_TYPE_RATLING);
+}
+
+// C `generate_mine_mission(level, ppd)` (`military.c:1016-1034`): same
+// random-slot shape, gated on level >= 12 (post difficulty-adjustment).
+#[test]
+fn generate_mine_mission_returns_none_below_level_twelve() {
+    for seed_value in 0..50u32 {
+        let mut seed = seed_value;
+        assert!(generate_mine_mission(5, 0, &mut seed).is_none());
+    }
+}
+
+#[test]
+fn generate_mine_mission_returns_some_above_level_twelve() {
+    let mut seed = 3u32;
+    let (difficulty, mission) = generate_mine_mission(30, 0, &mut seed).expect("valid pick");
+    assert!(difficulty < 5);
+    assert_eq!(mission.mission_type, MISSION_TYPE_SILVER);
+}
+
+// C `generate_mission_with_preference(cn, ppd, preferred_type)`
+// (`military.c:1036-1131`): with `preferred_type == 0` (no preference,
+// C's `default:` branch) at a level too low for ratling/silver missions,
+// only the always-available demon missions are guaranteed - the "small
+// chance of other mission types" branch can only ever add a ratling or
+// silver mission (both level-gated below the level-7 floor here), so
+// every non-preferred-type slot must still be a demon mission.
+#[test]
+fn generate_mission_with_preference_no_preference_keeps_demon_missions_at_low_level() {
+    let mut seed = 123u32;
+    let missions = generate_mission_with_preference(5, 0, 0, -1, &mut seed);
+    for mission in missions {
+        assert_eq!(mission.mission_type, MISSION_TYPE_DEMON);
+    }
+}
+
+// `preferred_type == 2` at a valid odd ratling level replaces slot 0 with
+// a ratling mission (C's own `ppd->mis[0] = mission` when the level
+// qualifies) in addition to whatever slots the 3 extra `generate_sewer_
+// mission` random draws hit.
+#[test]
+fn generate_mission_with_preference_ratling_preference_overwrites_slot_zero() {
+    let mut seed = 55u32;
+    let missions = generate_mission_with_preference(21, 0, 2, -1, &mut seed);
+    assert_eq!(missions[0].mission_type, MISSION_TYPE_RATLING);
+}
+
+// `preferred_type == 3` at level 12+ replaces slot 0 with a silver
+// mission the same way.
+#[test]
+fn generate_mission_with_preference_silver_preference_overwrites_slot_zero() {
+    let mut seed = 77u32;
+    let missions = generate_mission_with_preference(12, 0, 3, -1, &mut seed);
+    assert_eq!(missions[0].mission_type, MISSION_TYPE_SILVER);
+}
+
+// `mission_difficulty_preference` in `0..=4` overrides whatever slot the
+// rest of the function already picked, replacing it with a mission of the
+// preferred type/difficulty combo (here type 1 = demon at difficulty 3,
+// C's `ppd->mis[diff] = mission` after the main preference switch).
+#[test]
+fn generate_mission_with_preference_difficulty_preference_overrides_slot() {
+    let mut seed = 9u32;
+    let missions = generate_mission_with_preference(20, 0, 1, 3, &mut seed);
+    assert_eq!(missions[3].mission_type, MISSION_TYPE_DEMON);
+    // Impossible-difficulty demon missions are worth 10 pts (see
+    // `generate_single_demon_mission`'s own difficulty=3 branch).
+    assert_eq!(missions[3].pts, 10);
+}
+
+// C `generate_mission(cn, ppd)` (`military.c:1137-1139`): identical to
+// `generate_mission_with_preference(cn, ppd, 0)`.
+#[test]
+fn generate_mission_matches_no_preference_wrapper() {
+    let mut seed_a = 4u32;
+    let mut seed_b = 4u32;
+    let via_wrapper = generate_mission(20, 0, -1, &mut seed_a);
+    let via_direct = generate_mission_with_preference(20, 0, 0, -1, &mut seed_b);
+    assert_eq!(via_wrapper, via_direct);
+}
+
 // C `check_military_solve`'s progress-message display gate
 // (`death.c:339-341` / `:369-370`): only echo every 5th/10th kill once
 // the remaining count reaches double digits, but always echo below 10.

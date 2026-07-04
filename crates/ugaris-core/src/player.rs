@@ -79,6 +79,13 @@ const MILITARY_PPD_TOOK_MISSION_OFFSET: usize =
 // took_yday (offset TOOK_MISSION+4) has no accessor yet - not needed until
 // the mission-accept/reroll wrappers land.
 const MILITARY_PPD_SOLVED_MISSION_OFFSET: usize = MILITARY_PPD_TOOK_MISSION_OFFSET + 8;
+// solved_yday (offset SOLVED_MISSION+4) has no accessor yet - not needed
+// until the mission-accept/reroll wrappers land.
+const MILITARY_PPD_RECOMMEND_OFFSET: usize = MILITARY_PPD_SOLVED_MISSION_OFFSET + 8;
+const MILITARY_PPD_MISSION_TYPE_PREFERENCE_OFFSET: usize = MILITARY_PPD_RECOMMEND_OFFSET + 4;
+const MILITARY_PPD_MISSION_DIFFICULTY_PREFERENCE_OFFSET: usize =
+    MILITARY_PPD_MISSION_TYPE_PREFERENCE_OFFSET + 4;
+const MILITARY_PPD_MISSION_YDAY_OFFSET: usize = MILITARY_PPD_MIS_BASE_OFFSET - 4;
 /// C `struct area3_ppd` (`src/area/3/area3.h:18-35` /
 /// `src/system/game/ppd_structs.h:109-127`): 18 `int` fields (`imp_kills,
 /// imp_flags;` declares two on one line). Was previously `17 * 4` (a
@@ -2343,6 +2350,80 @@ impl PlayerRuntime {
 
     pub fn set_military_solved_mission(&mut self, value: bool) {
         self.write_military_i32(MILITARY_PPD_SOLVED_MISSION_OFFSET, i32::from(value));
+    }
+
+    /// C `military_ppd::mission_type_preference` (`military.h:50`): 0 = no
+    /// preference, 1/2/3 = demon/ratling/silver.
+    pub fn mission_type_preference(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_MISSION_TYPE_PREFERENCE_OFFSET)
+    }
+
+    pub fn set_mission_type_preference(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_MISSION_TYPE_PREFERENCE_OFFSET, value);
+    }
+
+    /// C `military_ppd::mission_difficulty_preference` (`military.h:51`):
+    /// `0..=4` (easy..insane) or anything else for "no preference" (C's
+    /// own struct doesn't reserve a dedicated sentinel; the default value
+    /// after a fresh `set_data` zero-init is `0`, matching easy - callers
+    /// that want "unset" must explicitly write a negative value, same as
+    /// C's own callers never do differently).
+    pub fn mission_difficulty_preference(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_MISSION_DIFFICULTY_PREFERENCE_OFFSET)
+    }
+
+    pub fn set_mission_difficulty_preference(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_MISSION_DIFFICULTY_PREFERENCE_OFFSET, value);
+    }
+
+    /// C `military_ppd::mission_yday` (`military.h:41`): day of the year
+    /// (`yday + 1`, i.e. tomorrow) the current mission offer table
+    /// (`mis[5]`) was generated - used elsewhere in C to decide whether
+    /// to regenerate a stale offer (not itself ported yet).
+    pub fn mission_yday(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_MISSION_YDAY_OFFSET)
+    }
+
+    pub fn set_mission_yday(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_MISSION_YDAY_OFFSET, value);
+    }
+
+    /// C `generate_mission_with_preference(cn, ppd, preferred_type)`
+    /// (`military.c:1036-1131`)'s ppd-mutating half: builds the 5-slot
+    /// mission offer table via [`crate::world::generate_mission_with_
+    /// preference`] (reading this ppd's own stored `mission_difficulty_
+    /// preference`), writes every slot into `mis[]`, and stamps `mission_
+    /// type_preference`/`mission_yday` (`yday + 1`).
+    ///
+    /// C computes `military_pts` (the rank-cubed floor against `get_army_
+    /// rank_int(cn)`) and `level` (`ch[cn].level`, floored to 7) itself
+    /// before calling this - callers here must resolve those from
+    /// `Character` (unreachable from this session-only struct, see this
+    /// file's module doc) and pass them in; `level`'s own `max(7)` floor
+    /// is still applied internally, matching C exactly. `yday` is C's
+    /// global `yday` (`World.date.yday`). REMAINING: no Rust call site
+    /// yet invokes this - it needs the Military Master/Advisor NPC driver
+    /// (unported, see `PORTING_TODO.md`'s "Military ranks" entry).
+    pub fn apply_mission_offer(
+        &mut self,
+        level: i32,
+        military_pts: i32,
+        preferred_type: i32,
+        yday: i32,
+        rng_seed: &mut u32,
+    ) {
+        let missions = crate::world::generate_mission_with_preference(
+            level,
+            military_pts,
+            preferred_type,
+            self.mission_difficulty_preference(),
+            rng_seed,
+        );
+        for (idx, mission) in missions.into_iter().enumerate() {
+            self.set_military_mission(idx, mission);
+        }
+        self.set_mission_type_preference(preferred_type);
+        self.set_mission_yday(yday + 1);
     }
 
     /// C `check_military_solve(cn, co)` (`src/system/death.c:290-383`):
@@ -7074,6 +7155,81 @@ mod tests {
         assert_eq!(player.military_took_mission(), 2);
         player.set_military_solved_mission(true);
         assert!(player.military_solved_mission());
+    }
+
+    #[test]
+    fn military_ppd_mission_preference_and_yday_accessors_round_trip() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.mission_type_preference(), 0);
+        assert_eq!(player.mission_difficulty_preference(), 0);
+        assert_eq!(player.mission_yday(), 0);
+
+        player.set_mission_type_preference(2);
+        player.set_mission_difficulty_preference(3);
+        player.set_mission_yday(100);
+
+        assert_eq!(player.mission_type_preference(), 2);
+        assert_eq!(player.mission_difficulty_preference(), 3);
+        assert_eq!(player.mission_yday(), 100);
+        // These fields are distinct from the mis[]/took_mission/
+        // solved_mission fields exercised above - writing them must not
+        // disturb an already-set mission slot.
+        let mission = crate::world::SingleMission {
+            mission_type: crate::world::MISSION_TYPE_SILVER,
+            opt1: 7,
+            opt2: 0,
+            pts: 1,
+            exp: 10,
+        };
+        player.set_military_mission(4, mission);
+        player.set_mission_yday(200);
+        assert_eq!(player.military_mission(4), mission);
+    }
+
+    // C `generate_mission_with_preference(cn, ppd, preferred_type)`
+    // (`military.c:1036-1131`)'s ppd-mutating half, exercised via
+    // `PlayerRuntime::apply_mission_offer`.
+    #[test]
+    fn apply_mission_offer_writes_missions_preference_and_yday() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mut seed = 17u32;
+
+        // Level 5 (floored to 7 internally) is below both the ratling
+        // (9..=39) and silver (>=12) level gates, so every slot stays a
+        // demon mission regardless of the "small chance of other mission
+        // types" branch (`preferred_type == 1` matches C's `case 1:
+        // default:` no-extra-preference path).
+        player.apply_mission_offer(5, 0, 1, 50, &mut seed);
+
+        for idx in 0..5 {
+            assert_eq!(
+                player.military_mission(idx).mission_type,
+                crate::world::MISSION_TYPE_DEMON
+            );
+        }
+        assert_eq!(player.mission_type_preference(), 1);
+        assert_eq!(player.mission_yday(), 51);
+    }
+
+    #[test]
+    fn apply_mission_offer_uses_stored_difficulty_preference() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        // Silver preference (type 3) at difficulty 4 (insane): the base
+        // demon-mission fill would leave slot 4 as a demon mission unless
+        // overwritten, but the stored difficulty preference forces slot 4
+        // specifically to a silver mission (C's own final `ppd->mis[diff]
+        // = mission` override, applied after the main preferred-type
+        // switch already ran).
+        player.set_mission_difficulty_preference(4);
+        let mut seed = 3u32;
+
+        player.apply_mission_offer(20, 0, 3, 0, &mut seed);
+
+        assert_eq!(
+            player.military_mission(4).mission_type,
+            crate::world::MISSION_TYPE_SILVER
+        );
+        assert_eq!(player.military_mission(4).pts, 25);
     }
 
     #[test]
