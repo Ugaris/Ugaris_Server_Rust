@@ -1,5 +1,41 @@
 use super::*;
 use ugaris_core::achievement::{AccountAchievements, AchievementStats, AchievementType};
+use ugaris_protocol::mod_achievements::SV_ACH_UNLOCK;
+use ugaris_protocol::packet::SV_MOD3;
+
+fn connected_god(character_id: CharacterId) -> (World, ServerRuntime) {
+    let mut world = World::default();
+    let mut god = login_character(character_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&1) {
+        player.character_id = Some(character_id);
+    }
+    (world, runtime)
+}
+
+fn add_connected_target(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    target_id: CharacterId,
+    session_id: u64,
+) {
+    world.add_character(login_character(
+        target_id,
+        &login_block("Target"),
+        1,
+        11,
+        10,
+    ));
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(session_id, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&session_id) {
+        player.character_id = Some(target_id);
+    }
+}
 
 #[test]
 fn achievement_data_byte_layout_matches_c_offsets() {
@@ -182,4 +218,291 @@ fn achievement_data_and_stats_blocks_coexist_with_account_depot_in_one_blob() {
     assert_eq!(decoded_stats.chests_opened, 3);
     // Account depot decode looks for its own block id and should find none.
     assert!(decode_legacy_account_depot_subscriber_blob(&blob).is_none());
+}
+
+// ============================================================================
+// `/achievements`/`/achstats`/`/achgive`/`/achfix`/`/achclear`/`/achsync`
+// command dispatch (`achievement.c:1421-1810`, `command.c:9076-9227`).
+// ============================================================================
+
+#[test]
+fn achievements_command_reports_no_unlocks_message_like_c() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_god(character_id);
+    let result = apply_achievement_command(&world, &mut runtime, character_id, "/achievements", 1)
+        .expect("achievements should be handled");
+    assert_eq!(result.message_bytes.len(), 2);
+    assert_eq!(
+        result.message_bytes[1],
+        b"You haven't unlocked any achievements yet. Keep playing!".to_vec()
+    );
+    // Header line carries the C `COL_ORANGE "=== Your Achievements ===" COL_RESET` bytes.
+    assert!(result.message_bytes[0].starts_with(COL_ORANGE));
+    assert!(result.message_bytes[0].ends_with(COL_RESET));
+    let _ = &mut world;
+}
+
+#[test]
+fn achievements_command_lists_unlocked_entries_with_date_and_unlock_count() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_god(character_id);
+    runtime.players.get_mut(&1).unwrap().achievement_data.award(
+        AchievementType::FirstBlood,
+        "Godmode",
+        1_700_000_000,
+    );
+
+    let result = apply_achievement_command(&world, &mut runtime, character_id, "/achievements", 1)
+        .expect("achievements should be handled");
+    assert_eq!(result.message_bytes.len(), 3);
+    let entry = String::from_utf8_lossy(&result.message_bytes[1]).to_string();
+    assert!(entry.contains("First Blood"));
+    assert!(entry.contains("2023-11-14")); // 1_700_000_000 UTC.
+    assert!(entry.contains("by Godmode"));
+    let footer = String::from_utf8_lossy(&result.message_bytes[2]).to_string();
+    assert!(footer.contains(&format!(
+        "Unlocked: 1/{ACHIEVEMENT_TYPE_COUNT} achievements"
+    )));
+}
+
+#[test]
+fn achstats_command_lists_every_category_like_c() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_god(character_id);
+    {
+        let stats = &mut runtime.players.get_mut(&1).unwrap().achievement_stats;
+        stats.flowers_picked = 5;
+        stats.demons_per_area = [1, 2, 3, 4];
+        stats.pents_per_area = [5, 6, 7, 8];
+        stats.silver_mined = 100;
+        stats.gold_mined = 200;
+    }
+
+    let result = apply_achievement_command(&world, &mut runtime, character_id, "/achstats", 1)
+        .expect("achstats should be handled");
+    let lines: Vec<String> = result
+        .message_bytes
+        .iter()
+        .map(|line| String::from_utf8_lossy(line).to_string())
+        .collect();
+    assert!(lines[0].contains("Achievement Statistics"));
+    assert!(lines.iter().any(|line| line == "  Flowers picked: 5"));
+    assert!(lines
+        .iter()
+        .any(|line| line == "    Earth: 1, Fire: 2, Ice: 3, Hell: 4"));
+    assert!(lines
+        .iter()
+        .any(|line| line == "    Earth: 5, Fire: 6, Ice: 7, Hell: 8"));
+    assert!(lines.iter().any(|line| line == "  Silver mined: 100"));
+    assert!(lines.iter().any(|line| line == "  Gold mined: 200"));
+}
+
+#[test]
+fn achievements_and_achstats_respect_legacy_cmdcmp_prefix_lengths() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_god(character_id);
+    // "achievements" has minlen 6: shorter abbreviations don't match.
+    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achie", 1).is_none());
+    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achiev", 1).is_some());
+    // "achstats" has minlen 8 == its own length: no abbreviation at all.
+    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achstat", 1).is_none());
+    assert!(
+        apply_achievement_command(&world, &mut runtime, character_id, "/achstats", 1).is_some()
+    );
+}
+
+#[test]
+fn achgive_requires_god_flag() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    world.add_character(login_character(
+        character_id,
+        &login_block("Mortal"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+    assert!(
+        apply_achievement_command(&world, &mut runtime, character_id, "/achgive Mortal 0", 1)
+            .is_none()
+    );
+}
+
+#[test]
+fn achgive_awards_and_notifies_target_session_with_unlock_and_congrats() {
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let (mut world, mut runtime) = connected_god(god_id);
+    add_connected_target(&mut world, &mut runtime, target_id, 2);
+
+    let result = apply_achievement_command(
+        &world,
+        &mut runtime,
+        god_id,
+        "/achgive Target 0", // 0 = StartedUgaris
+        1_700_000_000,
+    )
+    .expect("achgive should be handled");
+    assert_eq!(result.messages, vec!["Achievement 0 awarded to Target."]);
+
+    let target_player = runtime.player_for_character(target_id).unwrap();
+    assert!(target_player
+        .achievement_data
+        .is_unlocked(AchievementType::StartedUgaris));
+
+    let payloads = runtime
+        .tick_out
+        .get(&2)
+        .expect("target session got packets");
+    assert_eq!(payloads.len(), 3);
+    assert_eq!(payloads[0][0], SV_MOD3);
+    assert_eq!(payloads[0][2], SV_ACH_UNLOCK);
+    assert_eq!(payloads[0][3], AchievementType::StartedUgaris as u8);
+    let line1 = text_payload_bytes(&payloads[1]);
+    assert!(String::from_utf8_lossy(&line1).contains("Achievement Unlocked"));
+    let line2 = text_payload_bytes(&payloads[2]);
+    assert!(!line2.is_empty());
+}
+
+#[test]
+fn achgive_rejects_unknown_player_and_bad_id() {
+    let god_id = CharacterId(7);
+    let (world, mut runtime) = connected_god(god_id);
+    let missing =
+        apply_achievement_command(&world, &mut runtime, god_id, "/achgive Ghost 0", 1).unwrap();
+    assert_eq!(missing.messages, vec!["Player 'Ghost' not found."]);
+
+    let mut world2 = world;
+    add_connected_target(&mut world2, &mut runtime, CharacterId(8), 2);
+    let bad_id =
+        apply_achievement_command(&world2, &mut runtime, god_id, "/achgive Target 9999", 1)
+            .unwrap();
+    assert_eq!(
+        bad_id.messages,
+        vec![format!(
+            "Invalid achievement ID. Range: 0-{}",
+            ACHIEVEMENT_TYPE_COUNT - 1
+        )]
+    );
+}
+
+#[test]
+fn achfix_awards_level_won_profession_and_stat_thresholds_for_self() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_god(character_id);
+    {
+        let character = world.characters.get_mut(&character_id).unwrap();
+        character.level = 20;
+        character.flags.insert(CharacterFlags::WON);
+        character.professions[ugaris_core::achievement::P_MINER as usize] = 20;
+    }
+    runtime
+        .players
+        .get_mut(&1)
+        .unwrap()
+        .achievement_stats
+        .chests_opened = 10;
+
+    let result = apply_achievement_command(&world, &mut runtime, character_id, "/achfix", 1)
+        .expect("achfix should be handled");
+    assert_eq!(result.messages, vec!["Achievements fixed for Godmode."]);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::ExperiencedHero)); // level >= 20
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::Ladykiller));
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::MasterMiner));
+    assert!(player.achievement_data.is_unlocked(AchievementType::Looter));
+}
+
+#[test]
+fn achclear_resets_data_and_stats_for_named_target() {
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let (mut world, mut runtime) = connected_god(god_id);
+    add_connected_target(&mut world, &mut runtime, target_id, 2);
+    {
+        let target_player = runtime.player_for_character_mut(target_id).unwrap();
+        target_player
+            .achievement_data
+            .award(AchievementType::FirstBlood, "Target", 1);
+        target_player.achievement_stats.chests_opened = 5;
+    }
+
+    let result = apply_achievement_command(&world, &mut runtime, god_id, "/achclear Target", 1)
+        .expect("achclear should be handled");
+    assert_eq!(result.messages, vec!["Achievements cleared for Target."]);
+    let target_player = runtime.player_for_character(target_id).unwrap();
+    assert_eq!(
+        target_player.achievement_data,
+        AccountAchievements::default()
+    );
+    assert_eq!(target_player.achievement_stats, AchievementStats::default());
+}
+
+#[test]
+fn achsync_sends_batched_payloads_to_named_target() {
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let (mut world, mut runtime) = connected_god(god_id);
+    add_connected_target(&mut world, &mut runtime, target_id, 2);
+    runtime
+        .player_for_character_mut(target_id)
+        .unwrap()
+        .achievement_data
+        .award(AchievementType::FirstBlood, "Target", 1);
+
+    let result = apply_achievement_command(&world, &mut runtime, god_id, "/achsync Target", 1)
+        .expect("achsync should be handled");
+    assert_eq!(
+        result.messages,
+        vec!["Achievements synced to client for Target."]
+    );
+    let payloads = runtime
+        .tick_out
+        .get(&2)
+        .expect("target session got sync packets");
+    assert!(!payloads.is_empty());
+    assert_eq!(
+        payloads[0][2],
+        ugaris_protocol::mod_achievements::SV_ACH_SYNC
+    );
+}
+
+#[test]
+fn achfix_achclear_achsync_are_god_only_and_full_word_only() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    world.add_character(login_character(
+        character_id,
+        &login_block("Mortal"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achfix", 1).is_none());
+    assert!(
+        apply_achievement_command(&world, &mut runtime, character_id, "/achclear", 1).is_none()
+    );
+    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achsync", 1).is_none());
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+    // Abbreviations below the full word length must not match
+    // (`cmdcmp(..., "achclear", 8)` etc. require the exact word).
+    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achclea", 1).is_none());
+    assert!(
+        apply_achievement_command(&world, &mut runtime, character_id, "/achclear", 1).is_some()
+    );
 }

@@ -2536,7 +2536,45 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `DRD_ACCOUNT_WIDE_DEPOT` already makes) pending a real
   multi-character-per-account model - `crate::player`'s pre-existing
   `AchievementState` (chests + transport markers only) remains untouched
-  and still coexists unwired with this model.
+  and still coexists unwired with this model. Iteration 68 closed gap
+  (4), command dispatch: added `apply_achievement_command`
+  (`crates/ugaris-server/src/commands_player.rs`), wired into `main.rs`'s
+  command if-let chain, covering all six verbs byte-for-byte against
+  `command.c:9076-9227`/`achievement.c:1421-1810` - `/achievements`
+  (`achievement_list`) and `/achstats` (`achievement_show_stats`) are
+  player-accessible (self only, colored `message_bytes` output incl. a
+  UTC-approximated `YYYY-MM-DD` unlock date via the existing `xmas.rs`
+  `civil_from_unix_seconds` helper, since this workspace has no `chrono`
+  dependency - C uses `localtime()`, a documented small divergence);
+  `/achgive`/`/achfix`/`/achclear`/`/achsync` are `CF_GOD`-gated
+  (`/achfix`/`/achclear`/`/achsync` take an optional target name
+  defaulting to the caller, matching `/reset`'s pattern). Added
+  `ugaris_core::achievement::fix_all_stat_thresholds` (new pub fn, +4
+  tests) to re-derive `achievement_fix_all`'s ~50-branch stat-threshold
+  re-check from current `AchievementStats` totals without needing a
+  fresh delta (deliberately excludes the per-area demon/pentagram
+  achievements and level/profession/exploration checks, exactly like the
+  C function). Since `KeyringCommandResult.target_message_bytes` is
+  always re-wrapped as `SV_TEXT` at drain time (correct for colored text,
+  wrong for already-built `SV_ACH_UNLOCK`/`SV_ACH_SYNC` packets), added a
+  small `send_raw_payloads_to_character` helper that sends pre-built
+  packets directly via `runtime.send_to_session`, bypassing that
+  pipeline - mirrors the tick loop's own deferred-achievement-sync send
+  pattern. Added 26 tests total (22 new + the 4 `ugaris-core`
+  threshold tests) covering `cmdcmp`-style abbreviation-length gating,
+  GOD-only enforcement, target-by-name resolution and "not found"
+  errors, the awarded-achievement unlock/sync packets landing in the
+  target session's `tick_out` (not the caller's), and
+  `/achclear`/`/achfix` mutating the right player's state. Still
+  unwired: (3) DB first-unlock/grats announcement, and (5) the ~15
+  gameplay call sites that should invoke `add_*`/`check_*` (chest opens
+  already call `chests_opened`-adjacent counters on the older
+  `AchievementState` model, not this one - the two models still don't
+  talk to each other). `cargo fmt --all`, `cargo test --workspace` (1393
+  ugaris-core [+48] + 36 db + 3 net + 37 protocol (unchanged) + 431
+  server [+11], all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, and a 10s boot-smoke showed "entering Rust
+  game loop" with no panics.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

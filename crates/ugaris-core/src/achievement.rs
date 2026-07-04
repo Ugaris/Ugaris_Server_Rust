@@ -2823,6 +2823,271 @@ pub fn clear_all(data: &mut AccountAchievements, stats: &mut AchievementStats) {
     *stats = AchievementStats::default();
 }
 
+/// C `achievement_fix_all`'s stat-based re-check section
+/// (`achievement.c:1511-1762`, the `if (stats) { ... }` block): re-derives
+/// every stat-driven achievement from the *current* `AchievementStats`
+/// totals, rather than a fresh delta, for `/achfix` use on players who
+/// accrued progress before the achievement system existed. Deliberately
+/// excludes the per-area demon/pentagram achievements (`EarthboundNovice`
+/// etc. - not in the C function's checks either) and the level/
+/// `Ladykiller`/exploration/profession checks, which the caller performs
+/// separately via `check_level`/`check_profession`/`check_exploration`
+/// and its own `CF_WON` check (mirroring `achievement_fix_all`'s own
+/// structure, which calls those independently around this block).
+/// Unlike the `add_*` family, every award here passes `show_congrats =
+/// 0` in C (no chat text) - this function has no side effect beyond the
+/// `AccountAchievements` mutation; the caller decides whether/how to
+/// notify the client (`achievement_send_to_client`'s `SV_ACH_UNLOCK` is
+/// unconditional in C regardless of `show_congrats`, so callers should
+/// still send it for anything returned here).
+pub fn fix_all_stat_thresholds(
+    data: &mut AccountAchievements,
+    stats: &AchievementStats,
+    achieved_by: &str,
+    now: i64,
+) -> Vec<AchievementType> {
+    let mut out = Vec::new();
+    let mut award = |ty: AchievementType| {
+        if data.award(ty, achieved_by, now) {
+            out.push(ty);
+        }
+    };
+
+    if stats.flowers_picked >= 10 {
+        award(AchievementType::GreenThumb);
+    }
+    if stats.flowers_picked >= 50 {
+        award(AchievementType::BotanyEnthusiast);
+    }
+    if stats.flowers_picked >= 200 {
+        award(AchievementType::NaturesFriend);
+    }
+    if stats.flowers_picked >= 500 {
+        award(AchievementType::Herbalist);
+    }
+    if stats.flowers_picked >= 1000 {
+        award(AchievementType::MasterHerbalist);
+    }
+
+    if stats.mushrooms_picked >= 10 {
+        award(AchievementType::MushroomHunter);
+    }
+    if stats.mushrooms_picked >= 50 {
+        award(AchievementType::FungusFinder);
+    }
+    if stats.mushrooms_picked >= 200 {
+        award(AchievementType::SporeSeeker);
+    }
+    if stats.mushrooms_picked >= 500 {
+        award(AchievementType::MushroomMaster);
+    }
+    if stats.mushrooms_picked >= 1000 {
+        award(AchievementType::Mycologist);
+    }
+
+    if stats.berries_picked >= 10 {
+        award(AchievementType::BerryPicker);
+    }
+    if stats.berries_picked >= 50 {
+        award(AchievementType::FruitForager);
+    }
+    if stats.berries_picked >= 200 {
+        award(AchievementType::BerryEnthusiast);
+    }
+    if stats.berries_picked >= 500 {
+        award(AchievementType::HarvestHero);
+    }
+    if stats.berries_picked >= 1000 {
+        award(AchievementType::MasterGatherer);
+    }
+
+    if stats.potions_brewed >= 10 {
+        award(AchievementType::Alchemist);
+    }
+    if stats.potions_brewed >= 50 {
+        award(AchievementType::JourneymanBrewer);
+    }
+    if stats.potions_brewed >= 100 {
+        award(AchievementType::ArcaneAlchemist);
+    }
+    if stats.potions_brewed >= 200 {
+        award(AchievementType::GrandmasterBrewer);
+    }
+    if stats.potions_brewed >= 500 {
+        award(AchievementType::PotionMaster);
+    }
+    if stats.potions_brewed >= 1000 {
+        award(AchievementType::LegendaryBrewer);
+    }
+
+    if stats.demons_defeated >= 100 {
+        award(AchievementType::FiendFighter);
+    }
+    if stats.demons_defeated >= 2500 {
+        award(AchievementType::Demonbane);
+    }
+    if stats.demons_defeated >= 15000 {
+        award(AchievementType::DreadDestroyer);
+    }
+    if stats.demons_defeated >= 250_000 {
+        award(AchievementType::DemonicExterminator);
+    }
+
+    if stats.pents_solved >= 1 {
+        award(AchievementType::Solved);
+    }
+    if stats.pents_solved >= 20 {
+        award(AchievementType::FullOfSolves);
+    }
+    if stats.pents_solved >= 100 {
+        award(AchievementType::RuneMaster);
+    }
+    if stats.pents_solved >= 500 {
+        award(AchievementType::GrandmasterPentagram);
+    }
+
+    if stats.enemies_killed >= 1 {
+        award(AchievementType::FirstBlood);
+    }
+    if stats.pvp_kills >= 1 {
+        award(AchievementType::ArenaCombatant);
+    }
+
+    if stats.chests_opened >= 10 {
+        award(AchievementType::Looter);
+    }
+    if stats.chests_opened >= 50 {
+        award(AchievementType::TreasureHunter);
+    }
+    if stats.chests_opened >= 100 {
+        award(AchievementType::TreasureMaster);
+    }
+    if stats.chests_opened >= 500 {
+        award(AchievementType::LegendaryLooter);
+    }
+
+    if stats.earth_stones >= 50 {
+        award(AchievementType::EarthRocks);
+    }
+    if stats.fire_stones >= 100 {
+        award(AchievementType::FireRocks);
+    }
+    if stats.ice_stones >= 1000 {
+        award(AchievementType::IceRocks);
+    }
+
+    if stats.military_missions >= 10 {
+        award(AchievementType::Recruit);
+    }
+    if stats.military_missions >= 25 {
+        award(AchievementType::Soldier);
+    }
+    if stats.military_missions >= 100 {
+        award(AchievementType::MilitaryVeteran);
+    }
+    if stats.military_missions >= 250 {
+        award(AchievementType::Commander);
+    }
+    if stats.military_missions >= 500 {
+        award(AchievementType::General);
+    }
+    if stats.military_missions >= 1000 {
+        award(AchievementType::WarLegend);
+    }
+
+    if stats.tunnel_levels >= 10 {
+        award(AchievementType::TunnelExplorer);
+    }
+    if stats.tunnel_levels >= 25 {
+        award(AchievementType::TunnelRunner);
+    }
+    if stats.tunnel_levels >= 50 {
+        award(AchievementType::TunnelVeteran);
+    }
+    if stats.tunnel_levels >= 100 {
+        award(AchievementType::TunnelRat);
+    }
+
+    if stats.gold_earned >= 10_000 {
+        award(AchievementType::CoinCollector);
+    }
+    if stats.gold_earned >= 100_000 {
+        award(AchievementType::WealthyAdventurer);
+    }
+    if stats.gold_earned >= 1_000_000 {
+        award(AchievementType::RichNoble);
+    }
+    if stats.gold_earned >= 10_000_000 {
+        award(AchievementType::Millionaire);
+    }
+
+    if stats.play_time_minutes >= 1440 {
+        award(AchievementType::DedicatedPlayer);
+    }
+    if stats.play_time_minutes >= 6000 {
+        award(AchievementType::VeteranPlayer);
+    }
+    if stats.play_time_minutes >= 30_000 {
+        award(AchievementType::UgarisLifer);
+    }
+
+    if stats.login_streak >= 7 {
+        award(AchievementType::Regular);
+    }
+    if stats.login_streak >= 30 {
+        award(AchievementType::Committed);
+    }
+    if stats.login_streak >= 100 {
+        award(AchievementType::Devoted);
+    }
+
+    if stats.silver_mined >= 100 {
+        award(AchievementType::SilverNovice);
+    }
+    if stats.silver_mined >= 1_000 {
+        award(AchievementType::SilverCollector);
+    }
+    if stats.silver_mined >= 10_000 {
+        award(AchievementType::SilverHoarder);
+    }
+    if stats.silver_mined >= 100_000 {
+        award(AchievementType::SilverBaron);
+    }
+    if stats.silver_mined >= 1_000_000 {
+        award(AchievementType::SilverTycoon);
+    }
+    if stats.silver_mined >= 10_000_000 {
+        award(AchievementType::SilverMagnate);
+    }
+    if stats.silver_mined >= 50_000_000 {
+        award(AchievementType::SilverLegend);
+    }
+
+    if stats.gold_mined >= 50 {
+        award(AchievementType::GoldNovice);
+    }
+    if stats.gold_mined >= 500 {
+        award(AchievementType::GoldCollector);
+    }
+    if stats.gold_mined >= 5_000 {
+        award(AchievementType::GoldHoarder);
+    }
+    if stats.gold_mined >= 50_000 {
+        award(AchievementType::GoldBaron);
+    }
+    if stats.gold_mined >= 500_000 {
+        award(AchievementType::GoldTycoon);
+    }
+    if stats.gold_mined >= 5_000_000 {
+        award(AchievementType::GoldMagnate);
+    }
+    if stats.gold_mined >= 50_000_000 {
+        award(AchievementType::GoldLegend);
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3540,5 +3805,78 @@ mod tests {
         let json = serde_json::to_string(&stats).expect("serialize");
         let restored: AchievementStats = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(restored, stats);
+    }
+
+    #[test]
+    fn fix_all_stat_thresholds_awards_every_crossed_tier_from_current_totals() {
+        let mut data = AccountAchievements::default();
+        let mut stats = AchievementStats::default();
+        stats.flowers_picked = 1000;
+        stats.gold_mined = 50_000_000;
+        stats.enemies_killed = 1;
+
+        let unlocked = fix_all_stat_thresholds(&mut data, &stats, "Hero", NOW);
+
+        for ty in [
+            AchievementType::GreenThumb,
+            AchievementType::BotanyEnthusiast,
+            AchievementType::NaturesFriend,
+            AchievementType::Herbalist,
+            AchievementType::MasterHerbalist,
+            AchievementType::GoldNovice,
+            AchievementType::GoldCollector,
+            AchievementType::GoldHoarder,
+            AchievementType::GoldBaron,
+            AchievementType::GoldTycoon,
+            AchievementType::GoldMagnate,
+            AchievementType::GoldLegend,
+            AchievementType::FirstBlood,
+        ] {
+            assert!(unlocked.contains(&ty), "expected {ty:?} to be unlocked");
+            assert!(data.is_unlocked(ty));
+        }
+        // Nothing else should have been touched (e.g. mushrooms stayed 0).
+        assert!(!data.is_unlocked(AchievementType::MushroomHunter));
+    }
+
+    #[test]
+    fn fix_all_stat_thresholds_is_a_noop_below_every_threshold() {
+        let mut data = AccountAchievements::default();
+        let stats = AchievementStats::default();
+        let unlocked = fix_all_stat_thresholds(&mut data, &stats, "Hero", NOW);
+        assert!(unlocked.is_empty());
+        assert_eq!(data, AccountAchievements::default());
+    }
+
+    #[test]
+    fn fix_all_stat_thresholds_does_not_double_award_already_unlocked() {
+        let mut data = AccountAchievements::default();
+        let mut stats = AchievementStats::default();
+        stats.chests_opened = 10;
+        data.award(AchievementType::Looter, "Hero", 1);
+
+        let unlocked = fix_all_stat_thresholds(&mut data, &stats, "Hero", NOW);
+        assert!(!unlocked.contains(&AchievementType::Looter));
+        // Original award's `achieved_by`/timestamp must be untouched.
+        assert_eq!(
+            data.achievements[AchievementType::Looter as usize].timestamp,
+            1
+        );
+    }
+
+    #[test]
+    fn fix_all_stat_thresholds_excludes_per_area_pent_and_demon_achievements() {
+        // C's `achievement_fix_all` only re-checks the *aggregate*
+        // demon/pentagram thresholds, never the per-area ones
+        // (`EarthboundNovice` etc.) - those stay gated behind
+        // `achievement_check_exploration`-adjacent per-hit calls this
+        // function deliberately doesn't replicate.
+        let mut data = AccountAchievements::default();
+        let mut stats = AchievementStats::default();
+        stats.demons_per_area[PentArea::Earth as usize] = 999;
+        stats.pents_per_area[PentArea::Earth as usize] = 999;
+        let unlocked = fix_all_stat_thresholds(&mut data, &stats, "Hero", NOW);
+        assert!(!unlocked.contains(&AchievementType::EarthboundNovice));
+        assert!(!data.is_unlocked(AchievementType::EarthboundNovice));
     }
 }

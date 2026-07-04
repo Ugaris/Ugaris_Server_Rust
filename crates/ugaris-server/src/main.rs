@@ -86,7 +86,11 @@ use tracing::{debug, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 
 use ugaris_core::{
-    achievement::{check_exploration, check_level, check_login_streak, AchievementType},
+    achievement::{
+        achievement_def, check_exploration, check_level, check_login_streak, check_profession,
+        clear_all, fix_all_stat_thresholds, AccountAchievements, AchievementStats, AchievementType,
+        PentArea, ACHIEVEMENT_TYPE_COUNT,
+    },
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{
@@ -1093,6 +1097,24 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 if result.name_changed {
                                     command_name_refresh.push(character_id);
+                                }
+                                continue;
+                            }
+                            if let Some(result) = apply_achievement_command(
+                                &world,
+                                &mut runtime,
+                                character_id,
+                                &command,
+                                current_unix_time(),
+                            ) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                for message in result.message_bytes {
+                                    command_feedback_bytes.push((character_id, message));
+                                }
+                                for (target_id, message) in result.target_message_bytes {
+                                    command_feedback_bytes.push((target_id, message));
                                 }
                                 continue;
                             }
