@@ -6,22 +6,23 @@
 //! top of the DB layer in `ugaris_db::clan_log` (`add_clanlog`/
 //! `lookup_clanlog`/`db_read_clanlog`, `database_notes.c`).
 //!
-//! This slice only wires the *read* side (`/clanlog`) and the *admin
-//! clear* side (`/clearclanlog`). C's `add_clanlog` is called from many
-//! clan-mutation call sites (`found_clan`, `add_member`/`remove_member`,
-//! the daily relation tick, dungeon raids, rank/website/message edits,
-//! ...) - none of those call sites exist yet in the running server (clan
-//! founding/membership is still an NPC-dialogue flow that has no live
-//! command wiring, and the relation tick has no live game-loop caller
-//! either; see the "Clan system" P3 task in `PORTING_TODO.md`), so there
-//! is currently nothing for a write helper to be called *from*. The DB
-//! `ClanLogRepository::add_entry` method exists and is tested, ready for
-//! whichever future slice wires those mutation call sites.
+//! This slice wires the *read* side (`/clanlog`) and the *admin clear*
+//! side (`/clearclanlog`). [`write_clan_log_entry`] is the first *write*
+//! call site: `found_clan`/`add_member`/`remove_member` via the
+//! clanmaster NPC (`crate::world_events::apply_clanmaster_events`,
+//! `crate::clanmaster` in `ugaris-core`) now call it for the "Clan was
+//! founded by %s"/"%s was added to clan by %s"/"%s was fired from clan by
+//! %s" entries. The daily relation-tick entries and the rank/website/
+//! message-edit entries still have no live call site (the relation tick
+//! has no game-loop caller yet, and rank/website/message editing needs a
+//! real `/clan` command parser - see the "Clan system" P3 task in
+//! `PORTING_TODO.md`).
 //!
 //! Like `/ah` (`auction.rs`), this feature is entirely DB-backed with no
 //! in-memory `World` representation of log rows, so both commands are
 //! unavailable (matching the "auction house unavailable" precedent, not
-//! a silent no-op) when the server runs without `--database-url`.
+//! a silent no-op) when the server runs without `--database-url`; the
+//! write helper below silently no-ops the same way when unconfigured.
 
 use super::*;
 
@@ -337,6 +338,30 @@ pub(crate) fn format_clan_log_entries(
 
 fn plain_line_bytes(text: &str) -> Vec<u8> {
     text.as_bytes().to_vec()
+}
+
+/// C `add_clanlog` (`src/system/database/database_notes.c:74-104`),
+/// called by whichever live clan-mutation call site needs it (currently
+/// only `crate::world_events::apply_clanmaster_events`). Silently no-ops
+/// (like every other DB-backed write in this codebase) when the server
+/// runs without `--database-url`, and swallows a failed write rather than
+/// propagating it - matching C's own `add_clanlog`, which only `elog`s on
+/// failure and never surfaces the error to the caller.
+pub(crate) async fn write_clan_log_entry(
+    repository: &Option<PgClanLogRepository>,
+    clan: u16,
+    serial: u32,
+    character_id: CharacterId,
+    prio: u8,
+    content: String,
+    now_unix: i64,
+) {
+    let Some(repository) = repository else {
+        return;
+    };
+    let _ = repository
+        .add_entry(clan, serial, character_id, prio, &content, now_unix)
+        .await;
 }
 
 /// C `command.c:9642-9644`'s `cmdcmp(ptr, "clanlog", 7)` dispatch to

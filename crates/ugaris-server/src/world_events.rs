@@ -715,3 +715,122 @@ pub(crate) fn apply_gate_welcome_events(
     }
     applied
 }
+
+/// Applies each [`ClanmasterEvent`] queued by `World::process_clanmaster_actions`:
+/// the clan-log entries and achievement awards C's `found_clan`/
+/// `add_member`/`remove_member` perform internally, which the pure
+/// `ClanRegistry` methods leave to the caller (see `crate::world_events`'s
+/// module doc comment shape, mirroring `apply_trader_events`/
+/// `apply_bank_events`).
+pub(crate) async fn apply_clanmaster_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    now_unix: i64,
+) -> usize {
+    let mut applied = 0;
+    for event in world.drain_pending_clanmaster_events() {
+        match event {
+            ClanmasterEvent::ClanFounded {
+                founder_id,
+                clan_nr,
+            } => {
+                let Some(founder_name) = world.characters.get(&founder_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `found_clan` (`clan.c:489`): "Clan was founded by %s".
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    founder_id,
+                    1,
+                    format!("Clan was founded by {founder_name}"),
+                    now_unix,
+                )
+                .await;
+                // C `add_member` (`clan.c:1192`): "%s was added to clan by
+                // %s" (master = the founder's own name, `clanmaster.c:570`).
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    founder_id,
+                    15,
+                    format!("{founder_name} was added to clan by {founder_name}"),
+                    now_unix,
+                )
+                .await;
+                award_clanmaster_member_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    founder_id,
+                )
+                .await;
+                award_clanmaster_master_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    founder_id,
+                )
+                .await;
+                applied += 1;
+            }
+            ClanmasterEvent::MemberAdded {
+                member_id,
+                clan_nr,
+                master_name,
+            } => {
+                let Some(member_name) = world.characters.get(&member_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    member_id,
+                    15,
+                    format!("{member_name} was added to clan by {master_name}"),
+                    now_unix,
+                )
+                .await;
+                award_clanmaster_member_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    member_id,
+                )
+                .await;
+                applied += 1;
+            }
+            ClanmasterEvent::MemberLeft { member_id, clan_nr } => {
+                let Some(member_name) = world.characters.get(&member_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `remove_member(co, co)` via `leave!`
+                // (`clanmaster.c:435-441`): master is the leaving member
+                // themself.
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    member_id,
+                    15,
+                    format!("{member_name} was fired from clan by {member_name}"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+        }
+    }
+    applied
+}

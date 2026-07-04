@@ -156,7 +156,7 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::{
         exp2level, legacy_save_number, level2exp, level_value, merchant_buy_price,
-        merchant_sales_price, BankEvent, FirstKillCheck, GateWelcomeOutcomeEvent,
+        merchant_sales_price, BankEvent, ClanmasterEvent, FirstKillCheck, GateWelcomeOutcomeEvent,
         GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
         RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
@@ -5661,6 +5661,24 @@ async fn main() -> anyhow::Result<()> {
                     apply_trader_events(&mut world, &mut runtime, &achievement_repository).await;
                 if trader_events_applied != 0 {
                     info!(trader_events_applied, tick = world.tick.0, "applied trader item-look events");
+                }
+                // C `clanmaster_driver`: the clan foundations NPC
+                // (`src/area/30/clanmaster.c`).
+                world.process_clanmaster_actions(config.area_id, current_unix_time());
+                let clanmaster_events_applied = apply_clanmaster_events(
+                    &mut world,
+                    &mut runtime,
+                    &achievement_repository,
+                    &clan_log_repository,
+                    current_unix_time(),
+                )
+                .await;
+                if clanmaster_events_applied != 0 {
+                    info!(
+                        clanmaster_events_applied,
+                        tick = world.tick.0,
+                        "applied clanmaster founding/membership events"
+                    );
                 }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
                 // greeter NPC (`src/system/gatekeeper.c`).

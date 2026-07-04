@@ -4,10 +4,10 @@ use thiserror::Error;
 
 use crate::{
     character_driver::{
-        apply_lab2_undead_create_message, apply_simple_baddy_create_message, CharacterDriverState,
-        GateFightDriverData, GateWelcomeDriverData, JanitorDriverData, TraderDriverData,
-        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER,
-        NT_CREATE,
+        apply_lab2_undead_create_message, apply_simple_baddy_create_message,
+        parse_clanmaster_driver_args, CharacterDriverState, GateFightDriverData,
+        GateWelcomeDriverData, JanitorDriverData, TraderDriverData, CDR_CLANMASTER, CDR_GATE_FIGHT,
+        CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -473,6 +473,11 @@ impl ZoneLoader {
             // (`set_data` zero-initializes it) - no args to read here.
             character.driver_state =
                 Some(CharacterDriverState::Trader(TraderDriverData::default()));
+        }
+        if template.driver == CDR_CLANMASTER {
+            character.driver_state = Some(CharacterDriverState::Clanmaster(
+                parse_clanmaster_driver_args(&template.args),
+            ));
         }
         if template.driver == CDR_JANITOR {
             // C never parses zone-file args into `struct janitor_data`

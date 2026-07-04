@@ -42,6 +42,9 @@ pub const CDR_LAB2UNDEAD: u16 = 198;
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
 pub const CDR_GATE_WELCOME: u16 = 39;
+/// C `#define CDR_CLANMASTER 27` (`src/system/drvlib.h`): the clan
+/// foundations NPC (`src/area/30/clanmaster.c::clanmaster_driver`).
+pub const CDR_CLANMASTER: u16 = 27;
 /// C `#define CDR_GATE_FIGHT 40` (`src/system/drvlib.h`): the private-room
 /// opponent NPC spawned by `enter_room` (`gatekeeper_w`/`gatekeeper_m`/
 /// `gatekeeper_s` templates, `src/system/gatekeeper.c::gate_fight_driver`).
@@ -108,6 +111,16 @@ pub enum CharacterDriverState {
     Janitor(JanitorDriverData),
     GateWelcome(GateWelcomeDriverData),
     GateFight(GateFightDriverData),
+    Clanmaster(ClanmasterDriverData),
+    /// C `struct clan_found_data` (`src/area/30/clanmaster.c:288-292`),
+    /// stored via `set_data(co, DRD_CLANFOUND, ...)` on the *player*
+    /// being talked to, not on the clanmaster NPC itself. Reusing the
+    /// same `driver_state` slot for a player character is a new case for
+    /// this codebase (every prior `CharacterDriverState` variant belongs
+    /// to an NPC) but is safe: no other feature currently reads or writes
+    /// a player's `driver_state`, and C's own `set_data` is likewise just
+    /// a per-character named-slot store with no NPC-only restriction.
+    ClanFound(ClanFoundData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -321,6 +334,21 @@ pub fn parse_bank_driver_args(args: &str) -> BankDriverData {
     data
 }
 
+/// C `clanmaster_driver_parse` (`src/area/30/clanmaster.c:290-298`): the
+/// zone-file `arg="dir=1;"` only ever sets `dir` (any other name is an
+/// `elog` warning in C, silently dropped here as elsewhere in this file).
+pub fn parse_clanmaster_driver_args(args: &str) -> ClanmasterDriverData {
+    let mut data = ClanmasterDriverData::default();
+    let mut rest = args;
+    while let Some((name, value, next)) = next_legacy_name_value(rest) {
+        if name == "dir" {
+            data.dir = value.parse::<i32>().unwrap_or(0);
+        }
+        rest = next;
+    }
+    data
+}
+
 /// C `struct trader_data` from `src/module/base.c`'s `trader_driver`
 /// (`CDR_TRADER`, the player-to-player trade middleman NPC). Unlike
 /// `MerchantDriverData`/`BankDriverData`, C never parses zone-file args
@@ -383,6 +411,47 @@ pub struct GateFightDriverData {
     pub victim_last_x: u16,
     pub victim_last_y: u16,
     pub victim_visible: bool,
+}
+
+/// C `struct clanmaster_driver_data` (`src/area/30/clanmaster.c:278-289`):
+/// the clan foundations NPC's own driver memory (`CDR_CLANMASTER`). The
+/// leader-invites-member handshake (`accept:`/`join:`) lives here, on the
+/// *NPC's* driver data, distinct from the per-player founding state in
+/// [`ClanFoundData`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClanmasterDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub dir: i32,
+    /// C `dat->accept[80]`: the name of the player a clan leader has
+    /// invited (`accept: <name>`).
+    pub accept: String,
+    pub accept_clan: u16,
+    /// C `dat->accept_cn`: set by the `accept:` handler but never read
+    /// again anywhere in `clanmaster.c` - kept for fidelity even though it
+    /// is dead state in C too.
+    pub accept_cn: Option<CharacterId>,
+    /// C `dat->join[80]`: the inviting leader's own name, echoed back by
+    /// the invitee via `join: <leader name>` to confirm the invite.
+    pub join: String,
+    pub give_try: i32,
+    #[serde(default)]
+    pub memcleartimer: u64,
+}
+
+/// C `struct clan_found_data` (`src/area/30/clanmaster.c:288-292`), stored
+/// on the *player* who is in the middle of founding a clan (see
+/// [`CharacterDriverState::ClanFound`]'s doc comment for why this lives on
+/// the player, not the NPC).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClanFoundData {
+    /// C `dat->state`: `0` nothing pending, `1` a name has been chosen and
+    /// is waiting for a Clan Jewel to be handed over.
+    pub state: i32,
+    /// C `dat->nr`: the newly founded clan's number, filled in by
+    /// `found_clan` once the Clan Jewel is handed over.
+    pub nr: u16,
+    pub name: String,
 }
 
 /// C `struct janitor_data` from `src/module/base.c`'s `janitor_driver`
@@ -966,6 +1035,117 @@ pub const GATEKEEPER_QA: &[TextQaEntry] = &[
     },
 ];
 
+/// C `struct qa qa[]` from `src/area/30/clanmaster.c:126-146`. Unlike
+/// `MERCHANT_QA`/`BANK_QA`/`TRADER_QA`, C's own caller
+/// (`clanmaster_driver`) never even reads `analyse_text_driver`'s return
+/// value, so `answer_code` 2 ("jewels"), 3 ("repeat"), and 4 ("info") are
+/// genuinely dead in C - no observable side effect - and are kept here
+/// only for table fidelity; [`crate::world::World::clanmaster_qa_reply`]
+/// (the caller) intentionally treats every `Matched(_)` outcome as "no
+/// reply", matching that dead-code behavior exactly.
+pub const CLANMASTER_QA: &[TextQaEntry] = &[
+    TextQaEntry {
+        words: &["how", "are", "you"],
+        answer: Some("I'm fine!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hello"],
+        answer: Some("Hello, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hi"],
+        answer: Some("Hi, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["greetings"],
+        answer: Some("Greetings, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hail"],
+        answer: Some("And hail to you, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["help"],
+        answer: Some("Sorry, I'm just a merchant, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what", "is", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["what", "is", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["who", "are", "you"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["clan"],
+        answer: Some(
+            "If you wish to found a clan, tell me the name you want that clan to have, and \
+             hand me a Clan Jewel. If you wish to tell me the name, use: 'name: <clan name>', \
+             that is, to name your clan 'Black Rose', use: 'name: Black Rose'. Be aware that \
+             the game will use the phrase 'The <clan name> clan', ie. 'The Black Rose Clan', so \
+             avoid 'The' and 'Clan' in the name.",
+        ),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["jewels"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["repeat"],
+        answer: None,
+        answer_code: 3,
+    },
+    TextQaEntry {
+        words: &["raid"],
+        answer: Some(
+            "I will enter the clan you name, kill any guards I see and try to steal a clan \
+             jewel. If I succeed I will transfer that jewel to your clan vault. I can only \
+             attack a clan if you are at war with that clan. If you want me to attack clan 2, \
+             say 'attack 2'.",
+        ),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["scout"],
+        answer: Some(
+            "On a scouting mission, I will just take a peek into the clan you name and give \
+             you a report about its guards. Say 'sneak 2' if you want me to scout clan number \
+             2.",
+        ),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["info"],
+        answer: None,
+        answer_code: 4,
+    },
+];
+
 //-----------------------
 // Generic per-character driver memory.
 //
@@ -1296,7 +1476,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Trader(_)
             | CharacterDriverState::Janitor(_)
             | CharacterDriverState::GateWelcome(_)
-            | CharacterDriverState::GateFight(_),
+            | CharacterDriverState::GateFight(_)
+            | CharacterDriverState::Clanmaster(_)
+            | CharacterDriverState::ClanFound(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

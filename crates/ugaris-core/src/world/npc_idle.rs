@@ -448,7 +448,9 @@ impl World {
                 | CharacterDriverState::Trader(_)
                 | CharacterDriverState::Janitor(_)
                 | CharacterDriverState::GateWelcome(_)
-                | CharacterDriverState::GateFight(_) => None,
+                | CharacterDriverState::GateFight(_)
+                | CharacterDriverState::Clanmaster(_)
+                | CharacterDriverState::ClanFound(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

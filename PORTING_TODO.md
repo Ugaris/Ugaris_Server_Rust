@@ -3230,30 +3230,29 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (transport module has the seam). REMAINING: treasury/bonus/dungeon-guard
   economy (`update_treasure`/`update_training`/`struct clan_dungeon` -
   jewels, cost-per-week/debt, bonuses, dungeon guard counts, potions),
-  calling `add_member`/`remove_member`/`found_clan` from an
-  actual `/clan` or GM command (`/killclan`/`/renclan` are now wired onto
-  `delete_clan`/`set_name` as of iteration 88, and `/joinclan` now reads
-  `clan_serial` through the registry, but `add_member`/`found_clan`
-  themselves have no command wiring yet - clan founding is an NPC-dialogue
-  flow, `area/30/clanmaster.c`, not a `/clan` command; a real join/leave
-  command still doesn't exist either), the `ACHIEVEMENT_CLAN_MEMBER`/
-  `ACHIEVEMENT_CLAN_MASTER`/`ACHIEVEMENT_CLUB_MEMBER` award wiring on
-  membership change, `clan_trade_bonus` (blocked on the merchant system
-  itself not being ported) - channel 12/ClanA alliance-aware chat gating
-  was closed in iteration 92 and clan-hall transport access beyond direct
-  membership was closed in iteration 93 (see Progress Log) - the
-  `set_clan_website`/`set_clan_message` trailing-character-strip quirk
-  (deferred to whichever future task wires a real `/clan` command
-  parser). Clan-log *read*/*admin-clear* persistence is now ported
-  (`/clanlog`, `/clearclanlog`, `crates/ugaris-db/src/clan_log.rs`) - but
-  the *write* side (`add_clanlog`) still has zero live call sites: every
-  C call site is on a clan mutation this codebase either doesn't call
-  from a command yet (`found_clan`, `add_member`/`remove_member`) or
-  doesn't tick at all yet (the daily relation-transition tick,
-  `ClanRelations::update`, is a pure function with no game-loop caller -
-  a real, separate gap from clan-log itself, worth its own note for
-  whoever wires it). Wire `ClanLogRepository::add_entry` into each of
-  those call sites as they get built.
+  `CDR_CLANCLERK` (`clanclerk_driver`, `area/30/clanmaster.c:662-1213` -
+  the members-only economy driver: deposit/withdraw/bonus/relation/
+  rank-name/website/message/raiding commands - needs the treasury
+  functions above plus jewel-in-vault counts and raid flags, none of
+  which exist in `clan.rs` yet), the clanmaster NPC's `rank:`/`fire:` text
+  commands (leader rank-management, plus the offline-player
+  `task_set_clan_rank`/`task_fire_from_clan` async DB-task fallback - a
+  whole separate subsystem this codebase has no equivalent of), the
+  `ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLAN_MASTER`/
+  `ACHIEVEMENT_CLUB_MEMBER` award wiring for the club variant (clubs
+  aren't founded/joined anywhere - `club.c` itself isn't ported), and
+  `clan_trade_bonus` (blocked on the merchant system itself not being
+  ported) - channel 12/ClanA alliance-aware chat gating was closed in
+  iteration 92, clan-hall transport access beyond direct membership was
+  closed in iteration 93, and `add_member`/`found_clan`/`remove_member`
+  now have real call site wiring, clan-log *write* persistence, and
+  `ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLAN_MASTER` award wiring, all
+  closed in iteration 94 (see Progress Log) - the `set_clan_website`/
+  `set_clan_message` trailing-character-strip quirk (deferred to
+  whichever future task wires a real `/clan` text-command parser, since
+  `clanmaster_driver`'s own `name:`/`accept:`/`join:`/`leave!` handlers
+  are NPC-dialogue keywords, not a `/clan` command, and never touch
+  website/message at all).
 
   Progress Log:
   - 2026-07-04: ported the pure relation state machine as a first
@@ -3585,6 +3584,64 @@ Unlocks every quest NPC. Do these before any P4 area work.
     unchanged: `add_member`/`found_clan` command wiring (and then wiring
     `add_clanlog` into it), achievement-on-join wiring, `clan_trade_bonus`,
     and the treasury/dungeon economy all still need their own slices.
+  - 2026-07-04 (iteration 94): closed the "calling `add_member`/
+    `remove_member`/`found_clan` from a live call site", "clan-log write
+    persistence", and "achievement-on-join wiring" REMAINING items
+    together, by porting `src/area/30/clanmaster.c`'s `clanmaster_driver`
+    (the clan foundations NPC, `CDR_CLANMASTER`/27) as a self-contained
+    slice: the `name:`/`accept:`/`join:`/`leave!` free-text keyword
+    handshake, the Clan Jewel `NT_GIVE` handoff that completes founding,
+    the generic small-talk qa table, the periodic greeting, the idle-
+    murmur table, and the 12h driver-memory clear timer - all new code in
+    `crates/ugaris-core/src/world/clanmaster.rs` plus the driver-data/qa-
+    table additions in `character_driver.rs` (`CDR_CLANMASTER`,
+    `ClanmasterDriverData`, `ClanFoundData` - the latter stored on the
+    *player* being talked to via the existing generic `driver_state` slot,
+    a new case for this codebase but a safe one, documented inline) and
+    the zone-spawn wiring in `zone.rs`. This is the first live caller of
+    `ClanRegistry::found_clan`/`add_member`/`remove_member` (previously
+    only reachable from the `/joinclan`/`/killclan`/`/renclan` GM
+    cheats), so it also closes the "clan-log write side has zero live
+    call sites" and "achievement award wiring on membership change" gaps
+    for the clan (non-club) case: `crates/ugaris-server/src/clan_log.rs`
+    gained `write_clan_log_entry` (the first caller of
+    `ClanLogRepository::add_entry`) and `achievement.rs` gained
+    `award_clanmaster_member_achievement`/`award_clanmaster_master_
+    achievement`, both wired through a new `ClanmasterEvent` queue/
+    `apply_clanmaster_events` in `world_events.rs` (mirroring the
+    `TraderEvent`/`apply_trader_events` split, since achievement awards
+    and DB writes need `ServerRuntime`/DB handles `World` doesn't have),
+    called from `main.rs`'s tick loop right after
+    `process_trader_actions`. Deliberately out of scope, documented
+    inline and in this task's REMAINING notes above: `rank:`/`fire:`
+    (leader rank-management plus the offline-player `task_set_clan_rank`/
+    `task_fire_from_clan` async DB-task fallback), `CDR_CLANCLERK`
+    (`clanclerk_driver`, the members-only economy driver - needs 8+ new
+    `clan.rs` functions that don't exist yet), and club founding/joining
+    (`get_char_club` approximated as a bare `clan >= CLUB_OFFSET` range
+    check since `club.c` isn't ported - this driver never actually joins
+    anyone to a club either way, matching C). Two documented deviations
+    matching established precedent: the `NT_GIVE` "try to give the item
+    back first" `give_driver`/`dat->give_try` fallback is simplified to
+    an unconditional `destroy_item` (same simplification as
+    `world/bank.rs`/`world/merchant.rs`); `secure_move_driver` is ported
+    via the same `setup_walk_toward`/`turn` fallback `world/bank.rs`
+    already established rather than porting the C helper itself. 21 new
+    tests in `crates/ugaris-core/src/world/tests/clanmaster.rs` (founding
+    start/reject-unpaid/reject-existing-member/quote-and-79-char
+    truncation, the Clan Jewel `NT_GIVE` success/must-name-first/non-
+    jewel-destroyed paths, accept/join success plus every reject branch
+    - not-a-leader, uninvited, wrong-confirmation-name, already-a-member,
+    leave success/reject, the periodic greeting's remember-once
+    behavior, the qa small-talk/`clan` keyword replies, the C "multiple
+    independent `if`s fire together" quirk for a message containing both
+    `name:` and `accept:`, idle murmur, and the memory-clear timer's
+    one-tick-late ordering). `cargo fmt --all`, `cargo test --workspace`
+    (1479 ugaris-core [+21] + 47 db + 3 net + 37 protocol + 520 server,
+    all green, zero failures), `cargo build -p ugaris-server` clean with
+    zero warnings, 10s boot-smoke confirmed "entering Rust game loop"
+    with no panics (this iteration adds a tick-loop call site). REMAINING
+    updated above to reflect what's now closed.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

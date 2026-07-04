@@ -16,6 +16,7 @@ mod area_mech;
 mod assembly;
 mod bank;
 mod character_values;
+mod clanmaster;
 mod combat;
 mod date;
 mod death;
@@ -55,6 +56,7 @@ pub(crate) use area_mech::*;
 pub(crate) use assembly::*;
 pub use bank::*;
 pub(crate) use character_values::*;
+pub use clanmaster::*;
 pub(crate) use combat::*;
 pub use death::*;
 pub use doors::*;
@@ -138,16 +140,16 @@ use crate::{
         execute_item_driver_with_context, reset_flask_empty_state, use_item,
         EdemonGateSpawnContext, FdemonGateSpawnContext, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, WarpTrialDoorContext, IDR_BONEWALL,
-        IDR_CALIGAR, IDR_CALIGARFLAME, IDR_CLANSPAWN, IDR_DOOR, IDR_DUNGEONDOOR, IDR_EDEMONBALL,
-        IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER,
-        IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE,
-        IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST, IDR_LAB2_WATER,
-        IDR_LAB3_PLANT, IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT,
-        IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM,
-        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_TOYLIGHT, IDR_WARPKEYDOOR, IDR_WARPTELEPORT,
-        IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY,
-        IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_GENERIC_SPECIAL,
-        IID_MINEGATEWAY,
+        IDR_CALIGAR, IDR_CALIGARFLAME, IDR_CLANJEWEL, IDR_CLANSPAWN, IDR_DOOR, IDR_DUNGEONDOOR,
+        IDR_EDEMONBALL, IDR_EDEMONBLOCK, IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT,
+        IDR_EDEMONLOADER, IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM,
+        IDR_FDEMONGATE, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FORESTCHEST,
+        IDR_LAB2_WATER, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY,
+        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION, IDR_RANDOMSHRINE, IDR_STEPTRAP,
+        IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_TOYLIGHT, IDR_WARPKEYDOOR,
+        IDR_WARPTELEPORT, IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY,
+        IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY, IID_AREA25_TELEKEY,
+        IID_GENERIC_SPECIAL, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
@@ -265,6 +267,7 @@ pub struct World {
     pending_hurt_events: Vec<LegacyHurtEvent>,
     pending_bank_events: Vec<BankEvent>,
     pending_trader_events: Vec<TraderEvent>,
+    pending_clanmaster_events: Vec<ClanmasterEvent>,
 }
 
 impl Default for Tick {

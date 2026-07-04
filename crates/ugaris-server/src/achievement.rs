@@ -914,6 +914,44 @@ pub(crate) async fn award_trader_deal_achievement(
     .await;
 }
 
+/// C `add_member`'s `ACHIEVEMENT_CLAN_MEMBER` award (`clan.c:1199-1205`,
+/// `cnr < CLUBOFFSET` is always true for this driver - see
+/// `crate::clanmaster`'s module doc comment) plus, for founding, the
+/// clanmaster NPC's own explicit `ACHIEVEMENT_CLAN_MASTER` award
+/// (`src/area/30/clanmaster.c:567`). Consumes a `ClanmasterEvent` queued
+/// by `World::process_clanmaster_actions`.
+pub(crate) async fn award_clanmaster_member_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    member_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        member_id,
+        AchievementType::ClanMember,
+    )
+    .await;
+}
+
+pub(crate) async fn award_clanmaster_master_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    founder_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        founder_id,
+        AchievementType::ClanMaster,
+    )
+    .await;
+}
+
 /// C `give_first_kill`'s class-range congrats-message dispatch
 /// (`death.c:213-253`). `has_name` gates on `ch[co].flags & CF_HASNAME`
 /// (checked before any class range); the two subsequent `else if` chains
