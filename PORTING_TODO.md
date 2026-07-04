@@ -3271,7 +3271,12 @@ Unlocks every quest NPC. Do these before any P4 area work.
   mistake, corrected now) - the `clanmaster_driver`'s own `name:`/
   `accept:`/`join:`/`leave!` handlers remain NPC-dialogue keywords, not
   a `/clan` command, and never touch
-  website/message at all).
+  website/message at all). The read-only `/clan` and `/relation` player
+  text commands (`showclan`/`show_clan_relation`, `clan.c:128-233,
+  311-357`) were ported in iteration 98 (see Progress Log); `/clanpots`
+  (`show_clan_pots`, `clan.c:1426-1453`) remains unported - it needs the
+  same still-unported dungeon-guard potion stockpile as the rest of
+  `struct clan_dungeon` above.
 
   Progress Log:
   - 2026-07-04: ported the pure relation state machine as a first
@@ -3829,6 +3834,38 @@ Unlocks every quest NPC. Do these before any P4 area work.
     offline-player DB-task fallback for `rank:`/`fire:`, club-variant
     achievement wiring, `clan_trade_bonus`, and the dungeon-guard economy
     proper (guard counts/potions - `use`/`buy`'s real logic).
+  - 2026-07-04 (iteration 98): ported the player-facing `/clan` and
+    `/relation` read-only display text commands (`showclan`/
+    `show_clan_relation`, `clan.c:128-233,311-357`, dispatched from
+    `command.c:5978-6011`) in a new `crates/ugaris-server/src/
+    clan_command.rs`: the clan-list header (per-clan jewels/raiding-
+    state/training level), the "Your Clan" section (rank, and - for
+    rank > 0 - the Treasury line, the Training line, website/message,
+    Active Bonuses, and the ENABLED/PENDING-with-hours-remaining/
+    DISABLED raiding status), and `/relation`'s per-clan-pair current/
+    want-relation-with-timestamps table. Two small `clan.rs` additions
+    this needed: `score_to_level` (`clan.c:72-74`, `score / 100`) and
+    `ClanRelations::want_relation`/`want_date` read accessors (the
+    mutator `set_relation` already existed; nothing previously exposed
+    the "want" side for display). Intentionally NOT ported: `/clanpots`
+    (`show_clan_pots`, `clan.c:1426-1453` - reads the still-unported
+    dungeon-guard potion stockpile, no Rust data exists to read) and
+    `showclan`'s "--- Dungeon Guards ---"/"Dungeon points: X / 400"
+    lines (same reason - guard counts aren't part of `ClanEconomy`),
+    both documented inline for whichever future iteration ports the
+    dungeon-guard economy. 14 new tests in `crates/ugaris-server/src/
+    tests/clan_command.rs` plus 3 new `clan.rs` unit tests
+    (`score_to_level`, `want_relation`/`want_date` read + invalid-clan
+    cases). `cargo fmt --all`, `cargo test --workspace` (1541
+    ugaris-core [+3] + 47 db + 3 net + 37 protocol + 532 server [+14],
+    all green, zero failures), `cargo build -p ugaris-server` clean with
+    zero warnings, 10s boot-smoke confirmed "entering Rust game loop"
+    with no panics (this iteration adds a new tick-loop command-dispatch
+    call site). REMAINING for the "Clan system" task overall (updated
+    above): the offline-player DB-task fallback for `rank:`/`fire:`,
+    club-variant achievement wiring, `clan_trade_bonus`, `/clanpots`,
+    and the dungeon-guard economy proper (guard counts/potions - `use`/
+    `buy`'s real logic).
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

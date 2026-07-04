@@ -12,6 +12,7 @@ mod achievement;
 mod area_apply;
 mod auction;
 mod chests;
+mod clan_command;
 mod clan_log;
 mod commands_admin;
 mod commands_chat;
@@ -1425,6 +1426,19 @@ async fn main() -> anyhow::Result<()> {
                             )
                             .await
                             {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                for message in result.message_bytes {
+                                    command_feedback_bytes.push((character_id, message));
+                                }
+                            }
+                            if let Some(result) = clan_command::apply_clan_command(
+                                &mut world,
+                                character_id,
+                                &command,
+                                current_unix_time(),
+                            ) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }

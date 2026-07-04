@@ -75,6 +75,13 @@ pub const CLAN_HALL_RENT: i32 = 5;
 /// so future callers don't have to guess the magic number.
 pub const CLAN_BONUS_MERCHANT: usize = 2;
 
+/// C `score_to_level` (`clan.c:72-74`): converts a clan's dungeon-guard
+/// training score into the training-derived bonus level shown by
+/// `showclan` ("guard bonus: +%d", `clan.c:196-198`).
+pub fn score_to_level(score: i32) -> i32 {
+    score / 100
+}
+
 /// C `get_bonus_name` + `static char *bonus_name[MAXBONUS]`
 /// (`clan.c:63-68,522-527`). Takes `i32` (not `usize`) to mirror C's
 /// `nr < 0` half of the range guard directly, since callers may pass an
@@ -324,6 +331,24 @@ impl ClanRelations {
             return ClanRelation::None;
         }
         self.current_relation[clan as usize][other as usize]
+    }
+
+    /// C: `clan[clan].status.want_relation[other]`, read by
+    /// `show_clan_relation` (`clan.c:339-342`).
+    pub fn want_relation(&self, clan: u16, other: u16) -> ClanRelation {
+        if !Self::valid_clan(clan) || !Self::valid_clan(other) {
+            return ClanRelation::None;
+        }
+        self.want_relation[clan as usize][other as usize]
+    }
+
+    /// C: `clan[clan].status.want_date[other]` (`realtime` seconds), read
+    /// by `show_clan_relation` (`clan.c:341-342`).
+    pub fn want_date(&self, clan: u16, other: u16) -> i64 {
+        if !Self::valid_clan(clan) || !Self::valid_clan(other) {
+            return 0;
+        }
+        self.want_date[clan as usize][other as usize]
     }
 
     /// C `may_enter_clan` (`clan.c:881-905`): `own_clan` is the entering
@@ -1327,6 +1352,39 @@ mod tests {
             relations.set_relation(1, 2, ClanRelation::None, 0),
             Err(ClanRelationError::InvalidRelation)
         );
+    }
+
+    #[test]
+    fn score_to_level_matches_c_integer_division() {
+        assert_eq!(score_to_level(0), 0);
+        assert_eq!(score_to_level(99), 0);
+        assert_eq!(score_to_level(100), 1);
+        assert_eq!(score_to_level(999), 9);
+        assert_eq!(score_to_level(1000), 10);
+    }
+
+    #[test]
+    fn want_relation_and_want_date_read_the_set_relation_side() {
+        let mut relations = ClanRelations::new();
+        relations.found_clan(1, 0);
+        relations.found_clan(2, 0);
+        relations
+            .set_relation(1, 2, ClanRelation::War, 500)
+            .unwrap();
+
+        assert_eq!(relations.want_relation(1, 2), ClanRelation::War);
+        assert_eq!(relations.want_date(1, 2), 500);
+        // The reverse direction and the current relation are unaffected.
+        assert_eq!(relations.want_relation(2, 1), ClanRelation::Neutral);
+        assert_eq!(relations.current_relation(1, 2), ClanRelation::Neutral);
+    }
+
+    #[test]
+    fn want_relation_and_want_date_are_none_zero_for_invalid_clans() {
+        let relations = ClanRelations::new();
+        assert_eq!(relations.want_relation(0, 1), ClanRelation::None);
+        assert_eq!(relations.want_relation(1, 32), ClanRelation::None);
+        assert_eq!(relations.want_date(0, 1), 0);
     }
 
     #[test]
