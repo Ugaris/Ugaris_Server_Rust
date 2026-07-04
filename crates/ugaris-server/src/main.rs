@@ -5741,15 +5741,17 @@ async fn main() -> anyhow::Result<()> {
                 // whole-server memory-image save, not a dedicated flush
                 // task), so this reuses the same once-a-minute cadence as
                 // the auction/play-time maintenance above rather than
-                // C's own `clan_changed`-gated write. REMAINING: track a
-                // dirty flag on `ClanRegistry` (mirroring C's
-                // `clan_changed`) to skip the write on unchanged ticks
-                // instead of always saving the whole (currently small)
-                // registry.
-                if world.tick.0 % (TICKS_PER_SECOND * 60) == 0 {
+                // C's own `update_state`-driven storage state machine.
+                // Gated on `ClanRegistry::dirty` (mirroring C's own
+                // `clan_changed` check, `clan.c:415-418`) so an unchanged
+                // registry doesn't get rewritten every minute.
+                if world.tick.0 % (TICKS_PER_SECOND * 60) == 0 && world.clan_registry.dirty() {
                     if let Some(repository) = &clan_repository {
-                        if let Err(err) = repository.save_registry(&world.clan_registry).await {
-                            warn!(error = %err, "failed to save clan registry to database");
+                        match repository.save_registry(&world.clan_registry).await {
+                            Ok(()) => world.clan_registry.clear_dirty(),
+                            Err(err) => {
+                                warn!(error = %err, "failed to save clan registry to database")
+                            }
                         }
                     }
                 }

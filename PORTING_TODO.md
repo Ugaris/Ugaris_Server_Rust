@@ -3244,10 +3244,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   clan-hall transport access beyond direct membership, the
   `set_clan_website`/`set_clan_message` trailing-character-strip quirk
   (deferred to whichever future task wires a real `/clan` command
-  parser), and a `clan_changed`-style dirty flag on `ClanRegistry` so the
-  now-ported DB persistence's once-a-minute periodic save (see iteration
-  89's progress log entry) can skip unchanged ticks instead of always
-  rewriting the whole registry.
+  parser).
 
   Progress Log:
   - 2026-07-04: ported the pure relation state machine as a first
@@ -3427,6 +3424,37 @@ Unlocks every quest NPC. Do these before any P4 area work.
     a `clan_changed`-style dirty flag on `ClanRegistry` so the periodic
     save can skip unchanged ticks instead of always rewriting the whole
     (currently tiny) registry - `add_member`/`found_clan` command wiring,
+    clan-log, achievement-on-join wiring, `clan_trade_bonus`, chat
+    channel gating, clan-hall transport beyond direct membership, and
+    the treasury/dungeon economy all still need their own slices.
+  - 2026-07-04 (iteration 90): closed the "no dirty flag" REMAINING item
+    from iteration 89. Ported C's `static int clan_changed`
+    (`clan.c:61`) as a `#[serde(skip)] dirty: bool` field on
+    `ClanRegistry` (`crates/ugaris-core/src/clan.rs`), set unconditionally
+    on every successful mutation exactly like C sets `clan_changed = 1`
+    at each of `update_relations`'s many call sites (`clan.c:936-1089`):
+    `found_clan`, `delete_clan`, `set_rankname`, `set_website`,
+    `set_message`, `set_name`, and (conservatively, since it hands out an
+    unguarded `&mut ClanRelations`) `relations_mut`. Added
+    `ClanRegistry::dirty()`/`clear_dirty()` mirroring C's own
+    `clan_changed` read (`clan.c:416`) and its clear after a successful
+    `update_storage` write (`clan.c:430`). `#[serde(skip)]` means a
+    registry freshly loaded from the DB always starts clean, matching
+    what was just persisted, instead of forcing an immediate redundant
+    save. Wired the once-a-minute periodic save in
+    `crates/ugaris-server/src/main.rs` to check `world.clan_registry.
+    dirty()` before calling `save_registry`, and to call `clear_dirty()`
+    only after a successful save (a failed save leaves the flag set so
+    the next tick retries). 11 new unit tests in `clan.rs` (dirty on
+    fresh registry, each mutator marking dirty, each mutator's failure
+    path *not* marking dirty, `clear_dirty`, `relations_mut` marking
+    dirty, and a `serde_json` round-trip proving the flag doesn't survive
+    (de)serialization). `cargo fmt --all`, `cargo test --workspace` (1458
+    ugaris-core [+11] + 42 db + 3 net + 37 protocol + 494 server, all
+    green, zero failures), `cargo build -p ugaris-server` clean with zero
+    warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+    panics (touches the tick loop's maintenance block). REMAINING
+    unchanged otherwise: `add_member`/`found_clan` command wiring,
     clan-log, achievement-on-join wiring, `clan_trade_bonus`, chat
     channel gating, clan-hall transport beyond direct membership, and
     the treasury/dungeon economy all still need their own slices.

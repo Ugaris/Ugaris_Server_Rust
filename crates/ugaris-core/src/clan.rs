@@ -550,6 +550,16 @@ pub struct ClanRegistry {
     relations: ClanRelations,
     serials: [u32; MAX_CLAN],
     identities: [Option<ClanIdentity>; MAX_CLAN],
+    /// C `static int clan_changed` (`clan.c:61`): set on every mutation,
+    /// cleared once the registry has been flushed to persistent storage
+    /// (`update_state == 6/7`, `clan.c:415-430`). Lets the periodic save
+    /// task skip rewriting an unchanged registry. Deliberately not
+    /// serialized: a registry freshly loaded from the database is, by
+    /// definition, already in sync with what's stored there, so it starts
+    /// clean (`false`, matching `Deserialize`'s use of `Default` for
+    /// skipped fields) rather than forcing an immediate redundant save.
+    #[serde(skip)]
+    dirty: bool,
 }
 
 impl Default for ClanRegistry {
@@ -558,6 +568,7 @@ impl Default for ClanRegistry {
             relations: ClanRelations::default(),
             serials: [0; MAX_CLAN],
             identities: std::array::from_fn(|_| None),
+            dirty: false,
         }
     }
 }
@@ -610,8 +621,31 @@ impl ClanRegistry {
         &self.relations
     }
 
+    /// Returns a mutable handle to the relation state machine. Since
+    /// callers can mutate `ClanRelations` freely through the returned
+    /// reference (e.g. the daily `update` tick), this conservatively
+    /// marks the registry dirty on every call rather than trying to
+    /// detect whether the eventual mutation was a no-op - matching how
+    /// C's own `clan_changed = 1` is set unconditionally at every one of
+    /// `update_relations`'s many relation-transition sites
+    /// (`clan.c:936-1089`).
     pub fn relations_mut(&mut self) -> &mut ClanRelations {
+        self.dirty = true;
         &mut self.relations
+    }
+
+    /// C `static int clan_changed` read (`clan.c:416`): whether the
+    /// registry has unsaved mutations since the last [`ClanRegistry::
+    /// clear_dirty`] call.
+    pub fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// C: `clan_changed = 0` after a successful `update_storage` write
+    /// (`clan.c:430`). Callers should invoke this after persisting the
+    /// registry.
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
     }
 
     /// C `found_clan` (`clan.c:460-492`) + `clan_standards`
@@ -635,6 +669,7 @@ impl ClanRegistry {
         };
         self.identities[slot] = Some(ClanIdentity::standard(name.to_string()));
         self.relations.found_clan(slot as u16, now);
+        self.dirty = true;
         Ok(slot as u16)
     }
 
@@ -649,6 +684,7 @@ impl ClanRegistry {
             self.identities[nr as usize] = None;
             self.serials[nr as usize] = self.serials[nr as usize].wrapping_add(1);
             self.relations.delete_clan(nr);
+            self.dirty = true;
         }
     }
 
@@ -744,6 +780,7 @@ impl ClanRegistry {
         }
         let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
         identity.rank_names[rank] = name.to_string();
+        self.dirty = true;
         Ok(())
     }
 
@@ -759,6 +796,7 @@ impl ClanRegistry {
     pub fn set_website(&mut self, cnr: u16, site: &str) -> Result<(), ClanIdentityError> {
         let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
         identity.website = site.chars().take(79).collect();
+        self.dirty = true;
         Ok(())
     }
 
@@ -768,6 +806,7 @@ impl ClanRegistry {
     pub fn set_message(&mut self, cnr: u16, message: &str) -> Result<(), ClanIdentityError> {
         let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
         identity.message = message.chars().take(79).collect();
+        self.dirty = true;
         Ok(())
     }
 
@@ -790,6 +829,7 @@ impl ClanRegistry {
     pub fn set_name(&mut self, cnr: u16, name: &str) -> Result<(), ClanIdentityError> {
         let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
         identity.name = name.chars().take(78).collect();
+        self.dirty = true;
         Ok(())
     }
 }
@@ -1401,5 +1441,104 @@ mod tests {
             registry.set_name(5, "Ghost"),
             Err(ClanIdentityError::NotFound)
         );
+    }
+
+    #[test]
+    fn fresh_registry_is_not_dirty() {
+        let registry = ClanRegistry::new();
+        assert!(!registry.dirty());
+    }
+
+    #[test]
+    fn found_clan_marks_registry_dirty() {
+        let mut registry = ClanRegistry::new();
+        assert!(!registry.dirty());
+        registry.found_clan("Dirty", 0).unwrap();
+        assert!(registry.dirty());
+    }
+
+    #[test]
+    fn found_clan_failure_does_not_mark_dirty() {
+        let mut registry = ClanRegistry::new();
+        assert_eq!(
+            registry.found_clan(&"x".repeat(79), 0),
+            Err(ClanFoundError::NameTooLong)
+        );
+        assert!(!registry.dirty());
+    }
+
+    #[test]
+    fn clear_dirty_resets_the_flag() {
+        let mut registry = ClanRegistry::new();
+        registry.found_clan("Dirty", 0).unwrap();
+        assert!(registry.dirty());
+        registry.clear_dirty();
+        assert!(!registry.dirty());
+    }
+
+    #[test]
+    fn delete_clan_marks_registry_dirty_only_when_valid() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Doomed", 0).unwrap();
+        registry.clear_dirty();
+        registry.delete_clan(999);
+        assert!(!registry.dirty(), "out-of-range delete must not mutate");
+        registry.delete_clan(nr);
+        assert!(registry.dirty());
+    }
+
+    #[test]
+    fn identity_mutators_mark_registry_dirty() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Mutable", 0).unwrap();
+
+        registry.clear_dirty();
+        registry.set_rankname(nr, 0, "Chief").unwrap();
+        assert!(registry.dirty());
+
+        registry.clear_dirty();
+        registry.set_website(nr, "https://example.com").unwrap();
+        assert!(registry.dirty());
+
+        registry.clear_dirty();
+        registry.set_message(nr, "hi").unwrap();
+        assert!(registry.dirty());
+
+        registry.clear_dirty();
+        registry.set_name(nr, "Renamed").unwrap();
+        assert!(registry.dirty());
+    }
+
+    #[test]
+    fn identity_mutator_failure_does_not_mark_dirty() {
+        let mut registry = ClanRegistry::new();
+        assert_eq!(
+            registry.set_rankname(1, 0, "Nobody"),
+            Err(ClanIdentityError::NotFound)
+        );
+        assert!(!registry.dirty());
+    }
+
+    #[test]
+    fn relations_mut_marks_registry_dirty() {
+        let mut registry = ClanRegistry::new();
+        assert!(!registry.dirty());
+        registry.relations_mut().found_clan(1, 0);
+        assert!(registry.dirty());
+    }
+
+    #[test]
+    fn dirty_flag_is_not_persisted_across_serde_round_trip() {
+        let mut registry = ClanRegistry::new();
+        registry.found_clan("Dirty", 0).unwrap();
+        assert!(registry.dirty());
+
+        let json = serde_json::to_string(&registry).unwrap();
+        let reloaded: ClanRegistry = serde_json::from_str(&json).unwrap();
+        assert!(
+            !reloaded.dirty(),
+            "a freshly deserialized registry starts clean, matching what was just saved"
+        );
+        assert_eq!(reloaded.name(1), Some("Dirty"));
     }
 }
