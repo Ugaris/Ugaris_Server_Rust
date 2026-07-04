@@ -2575,6 +2575,34 @@ Unlocks every quest NPC. Do these before any P4 area work.
   server [+11], all green, zero failures), `cargo build -p ugaris-server`
   clean with zero warnings, and a 10s boot-smoke showed "entering Rust
   game loop" with no panics.
+  Progress Log (iteration 69): closed one of the (5) gameplay call
+  sites - `ACHIEVEMENT_QUESTER` (`src/system/questlog.c:815-822`):
+  `achievement_award(cn, ACHIEVEMENT_QUESTER, 1)` fires when
+  `questlog_reopen`'s per-quest switch leaves `ret` truthy (our
+  `QuestReopenResult::Reopened`), gated implicitly on `CF_PLAYER` (always
+  true for this action). Wired directly in `crates/ugaris-server/src/
+  main.rs`'s `ClientAction::ReopenQuest` handler: on `Reopened`, looks up
+  the character's name, calls the already-tested `AccountAchievements::
+  award(AchievementType::Quester, ..)`, and on a fresh unlock sends an
+  `SV_ACH_UNLOCK` via the already-tested `achievement_unlock_payload` to
+  every session for that character - mirroring the tick loop's existing
+  `DEFERRED_ACHIEVEMENTS` sweep pattern exactly. Removed the stale
+  "skipped pending the achievement system port" comment this call site
+  carried since iteration ~60. No new tests added for the `main.rs` glue
+  itself (consistent with this codebase's existing pattern: `main()`'s
+  giant per-tick match isn't unit-testable in isolation, and every piece
+  it calls - `reopen_quest_legacy`'s `Reopened` branch, `award`,
+  `achievement_unlock_payload` - already has dedicated core/`achievement.
+  rs` tests; the sibling `DEFERRED_ACHIEVEMENTS` tick-loop wiring from
+  iteration 67 has the same no-direct-test shape). Still unwired: (3) DB
+  first-unlock/grats announcement, and (5)'s remaining ~14 call sites
+  (chests, gathering, combat, mining, professions, wealth, exploration,
+  clans, military, tunnels, arena, play time, login streak beyond the
+  tick-loop's own STARTED_UGARIS/level/exploration/login-streak checks).
+  `cargo fmt --all`, `cargo test --workspace` (1393 ugaris-core + 36 db +
+  3 net + 37 protocol + 431 server, all unchanged/green, zero failures),
+  `cargo build -p ugaris-server` clean with zero warnings, and a 10s
+  boot-smoke showed "entering Rust game loop" with no panics.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

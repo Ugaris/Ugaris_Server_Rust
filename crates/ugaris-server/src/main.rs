@@ -1568,12 +1568,39 @@ async fn main() -> anyhow::Result<()> {
                                 if let Some(payload) = payload {
                                     runtime.send_to_session(session_id, payload);
                                 }
+                                // C `questlog_reopen` (`src/system/
+                                // questlog.c:815-822`): when `ret` stayed
+                                // truthy (our `Reopened` case) and the
+                                // character is a player (always true here),
+                                // `achievement_award(cn,
+                                // ACHIEVEMENT_QUESTER, 1)` fires.
+                                if matches!(result, QuestReopenResult::Reopened) {
+                                    let name = world
+                                        .characters
+                                        .get(&character_id)
+                                        .map(|character| character.name.clone());
+                                    if let (Some(name), Some(player)) =
+                                        (name, runtime.player_for_character_mut(character_id))
+                                    {
+                                        let now = current_unix_time();
+                                        if player.achievement_data.award(
+                                            AchievementType::Quester,
+                                            &name,
+                                            now,
+                                        ) {
+                                            let payload = achievement_unlock_payload(
+                                                AchievementType::Quester,
+                                                now,
+                                            );
+                                            for (sid, _) in
+                                                runtime.sessions_for_character(character_id)
+                                            {
+                                                runtime.send_to_session(sid, payload.clone());
+                                            }
+                                        }
+                                    }
+                                }
                                 match result {
-                                    // C also awards the QUESTER achievement
-                                    // here (`achievement_award(cn,
-                                    // ACHIEVEMENT_QUESTER, 1)`); skipped
-                                    // pending the achievement system port
-                                    // (see PORTING_TODO.md's "Achievements").
                                     QuestReopenResult::Reopened | QuestReopenResult::NoEffect => {}
                                     QuestReopenResult::SeriesConflict => command_feedback.push((
                                         character_id,
