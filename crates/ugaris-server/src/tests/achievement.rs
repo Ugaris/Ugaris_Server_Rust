@@ -1482,3 +1482,67 @@ async fn award_trader_deal_achievement_credits_only_the_side_with_a_live_player_
         .is_unlocked(AchievementType::TrustButVerify));
     assert!(runtime.player_for_character(c2).is_none());
 }
+
+// ============================================================================
+// `award_swap_money_converted_achievement` (`src/system/do.c:1276-1287`,
+// `swap`'s `IF_MONEY` branch calling `achievement_add_gold_earned`).
+// ============================================================================
+
+#[tokio::test]
+async fn award_swap_money_converted_achievement_tracks_gold_earned_in_whole_gold_units() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    // 1,000,000 silver / 100 = 10,000 whole gold units, unlocking
+    // CoinCollector - matches C's `(unsigned int)(price / 100)` cast.
+    award_swap_money_converted_achievement(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        1_000_000,
+    )
+    .await;
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.gold_earned, 10_000);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::CoinCollector));
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads[0][3], AchievementType::CoinCollector as u8);
+}
+
+#[tokio::test]
+async fn award_swap_money_converted_achievement_below_100_silver_bumps_no_stat() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    award_swap_money_converted_achievement(&mut world, &mut runtime, &None, character_id, 99).await;
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.gold_earned, 0);
+}
+
+#[tokio::test]
+async fn award_swap_money_converted_achievement_is_a_no_op_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    award_swap_money_converted_achievement(&mut world, &mut runtime, &None, character_id, 500)
+        .await;
+
+    assert!(runtime.player_for_character(character_id).is_none());
+    assert!(runtime.tick_out.get(&1).is_none());
+}

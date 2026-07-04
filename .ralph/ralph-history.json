@@ -2559,21 +2559,53 @@
         "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
         "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 81,
+      "startedAt": "2026-07-04T11:18:57.267Z",
+      "endedAt": "2026-07-04T11:32:35.328Z",
+      "durationMs": 817421,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/achievement.rs",
+        "crates/ugaris-server/src/inventory.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/achievement.rs",
+        "crates/ugaris-server/src/tests/inventory.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 473 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris",
+        "295:- `IDR_XMASMAKER = 143` now dispatches from the base item-driver path for C `xmasmaker`: zero-character calls and non-staff/non-god users no-op, staff/god users return a typed runtime outcome, and",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error",
+        "test result: ok. 479 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
+        "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 87398120,
+  "totalDurationMs": 88215541,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 80,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 81,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 29,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 30,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 31,
@@ -2582,7 +2614,7 @@
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 11,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 4,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 5,
       "test result: FAILED. 1019 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 14,
       "test result: ok. 1030 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
@@ -2891,7 +2923,7 @@
       "test result: ok. 420 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 1343 filtered out; finished in 0.00s": 1,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
-      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "- `cargo test --workspace` — 1393/36/3/37/431 all green, zero failures (unchanged counts; no new tes": 1,
       "test result: ok. 431 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
@@ -2914,7 +2946,7 @@
       "test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 1,
       "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
-      "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
+      "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error; 1 warning em": 1,
       "**Verification:** `cargo fmt --all`, `cargo test --workspace` (1396 core + 38 db + 3 net + 37 protoc": 1,
@@ -2928,8 +2960,12 @@
       "All green, zero failures, zero warnings. This satisfies the iteration's scope: a self-contained, tes": 1,
       "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 1376 filtered out; finished in 0.01s": 1,
       "test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.01s": 1,
-      "test result: ok. 473 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
+      "test result: ok. 473 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
+      "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
+      "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievemen": 1,
+      "295:- `IDR_XMASMAKER = 143` now dispatches from the base item-driver path for C `xmasmaker`: zero-ch": 1,
+      "test result: ok. 479 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

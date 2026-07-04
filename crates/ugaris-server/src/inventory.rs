@@ -4,7 +4,18 @@ use super::*;
 pub(crate) enum InventoryCommandResult {
     Ignored,
     Changed,
-    ContainerOpened { account_depot: bool },
+    /// C `swap`'s `IF_MONEY` branch (`src/system/do.c:1276-1287`): the
+    /// cursor held a money item, which was destroyed and its `price`
+    /// (silver) credited straight to `character.gold` instead of being
+    /// placed in the target slot. The caller must still refresh the
+    /// inventory (money items never actually occupy a slot) and award
+    /// the `achievement_add_gold_earned` wealth-ladder tail.
+    MoneyConverted {
+        price: u32,
+    },
+    ContainerOpened {
+        account_depot: bool,
+    },
     Look(String),
 }
 
@@ -97,6 +108,19 @@ pub(crate) fn inventory_swap_slot(
         }
     }
 
+    // C `swap` (`src/system/do.c:1276-1287`): `it[in].flags & IF_MONEY`,
+    // checked against the *original* cursor item (`in`) - a money item
+    // held on the cursor never actually lands in the target slot; it's
+    // destroyed on the spot (`destroy_money_item`) and its value credited
+    // straight to `ch[cn].gold` instead.
+    let money_price = cursor_id.and_then(|item_id| {
+        world
+            .items
+            .get(&item_id)
+            .filter(|item| item.flags.contains(ItemFlags::MONEY))
+            .map(|item| item.value)
+    });
+
     if let Some(item_id) = cursor_id {
         if let Some(item) = world.items.get_mut(&item_id) {
             item.carried_by = Some(character_id);
@@ -114,19 +138,37 @@ pub(crate) fn inventory_swap_slot(
         }
     }
 
+    if money_price.is_some() {
+        if let Some(item_id) = cursor_id {
+            world.items.remove(&item_id);
+        }
+    }
+
     let Some(character) = world.characters.get_mut(&character_id) else {
         return InventoryCommandResult::Ignored;
     };
     character.cursor_item = slot_id;
-    character.inventory[slot] = cursor_id;
+    character.inventory[slot] = if money_price.is_some() {
+        None
+    } else {
+        cursor_id
+    };
     character.flags.insert(CharacterFlags::ITEMS);
+    if let Some(price) = money_price {
+        character.gold = character.gold.saturating_add(price);
+    }
 
     // C `swap` (`src/system/do.c:1216`): `if (pos < 12) update_char(cn);`
     // - only worn-slot swaps trigger a stat recompute.
     if slot < 12 {
         world.update_character(character_id);
     }
-    InventoryCommandResult::Changed
+
+    if let Some(price) = money_price {
+        InventoryCommandResult::MoneyConverted { price }
+    } else {
+        InventoryCommandResult::Changed
+    }
 }
 
 pub(crate) fn inventory_look_slot(

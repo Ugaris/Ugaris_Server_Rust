@@ -3049,6 +3049,53 @@ Unlocks every quest NPC. Do these before any P4 area work.
   failures), `cargo build -p ugaris-server` clean with zero warnings, and
   a 10s boot-smoke confirmed "entering Rust game loop" with no panics
   (touches the tick loop's trader-event-application call site).
+  Progress Log (iteration 81): closed two of the three `achievement_add_
+  gold_earned` call sites left unwired by iteration 75's research (that
+  iteration wired `give_money` itself but explicitly left `swap`'s money
+  branch and `give_char_item_smart`'s silent branch unwired as separate
+  gaps). Wired C `swap`'s `IF_MONEY` branch (`src/system/do.c:1276-1287`):
+  dropping a held money item into any inventory slot never lands it in
+  that slot - it's destroyed on the spot and its value credited straight
+  to `ch[cn].gold`, then `achievement_add_gold_earned(cn, price / 100)`
+  fires under the `CF_PLAYER` gate. `inventory_swap_slot` (`crates/
+  ugaris-server/src/inventory.rs`) previously had zero handling for
+  `IF_MONEY` cursor items (a real gap, not just an unwired achievement -
+  money items were being placed into slots like any other item, which C
+  never does). Added the money check/gold-credit/item-destroy inline
+  (matching C's exact order: `ch[cn].citem = ch[cn].item[pos]` runs
+  first regardless, so the slot's original occupant still lands on the
+  cursor even on a money conversion), added a new `InventoryCommandResult
+  ::MoneyConverted { price }` variant so the caller can both refresh the
+  inventory and award the achievement, and added `award_swap_money_
+  converted_achievement` (`crates/ugaris-server/src/achievement.rs`,
+  same no-op-without-`PlayerRuntime`/DB-first-unlock-announce shape as
+  every other `award_*` helper) wired into the one call site in `main.
+  rs`'s `ClientAction::Swap` match arm. `stats_update`/`dlog` remain
+  unported (same documented omission as `give_money`'s doc comment).
+  `give_char_item_smart`'s silent branch (`tool.c:3422`) has no direct
+  Rust equivalent at all (no ported function matches its signature/
+  behavior contract) and was left for a future slice - the closest analog,
+  `grant_template_item_smart` (`area_apply.rs`), only ever instantiates
+  scroll/orb-style templates in its current callers, never money-item
+  templates, so wiring it now would be speculative/untested; noted for
+  whoever adds the first money-item-granting template call site. Added 4
+  new tests in `tests/inventory.rs` (money-to-gold conversion with an
+  empty target slot, conversion when the slot already held an item -
+  confirming that item still lands on the cursor, and money items being
+  rejected from worn slots exactly like any other unwearable item via
+  `can_wear`) and 3 in `tests/achievement.rs` (gold-earned wealth-ladder
+  unlock in whole-gold units, sub-100-silver no stat bump, and the
+  no-`PlayerRuntime` no-op path) - 6 new tests total mirroring `give_
+  money`'s existing test shapes. Still unwired: (5)'s remaining ~12
+  gameplay call sites gated on unported systems (mining reward RNG,
+  professions, exploration beyond transport, clans/clubs, military,
+  tunnels, arena, pentagram solve/lucky-pent reward), plus `give_char_
+  item_smart`'s silent-branch achievement call noted above. `cargo fmt
+  --all`, `cargo test --workspace` (1397 ugaris-core + 38 db + 3 net + 37
+  protocol + 479 server [+6], all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, and a 10s boot-smoke confirmed
+  "entering Rust game loop" with no panics (touches the tick loop's
+  inventory-swap-action call site).
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

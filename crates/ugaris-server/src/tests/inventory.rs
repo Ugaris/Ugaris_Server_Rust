@@ -460,6 +460,112 @@ fn inventory_swap_unequip_ignores_wear_requirements() {
 }
 
 #[test]
+fn inventory_swap_converts_held_money_item_into_gold() {
+    // C `swap`'s `IF_MONEY` branch (`src/system/do.c:1276-1287`): a money
+    // item held on the cursor is destroyed on swap and its `value`
+    // credited straight to `ch[cn].gold` instead of landing in the target
+    // slot.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(10));
+    character.gold = 500;
+    world.add_character(character);
+    let mut money = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::MONEY);
+    money.value = 250;
+    world.add_item(money);
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap { slot: 30 },
+        1,
+    );
+
+    assert_eq!(
+        result,
+        InventoryCommandResult::MoneyConverted { price: 250 }
+    );
+    let character = &world.characters[&character_id];
+    assert_eq!(character.gold, 750);
+    assert_eq!(character.cursor_item, None);
+    assert_eq!(character.inventory[30], None);
+    assert!(!world.items.contains_key(&ItemId(10)));
+}
+
+#[test]
+fn inventory_swap_converts_held_money_item_and_puts_slot_item_on_cursor() {
+    // Same money-conversion branch, but the target slot already holds an
+    // item: C's `ch[cn].citem = ch[cn].item[pos];` runs before the money
+    // check, so the slot's original occupant still ends up on the cursor.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(10));
+    character.inventory[30] = Some(ItemId(11));
+    world.add_character(character);
+    let mut money = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::MONEY);
+    money.value = 250;
+    world.add_item(money);
+    world.add_item(test_item(
+        ItemId(11),
+        200,
+        ItemFlags::USED | ItemFlags::TAKE,
+    ));
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap { slot: 30 },
+        1,
+    );
+
+    assert_eq!(
+        result,
+        InventoryCommandResult::MoneyConverted { price: 250 }
+    );
+    let character = &world.characters[&character_id];
+    assert_eq!(character.cursor_item, Some(ItemId(11)));
+    assert_eq!(character.inventory[30], None);
+    assert!(!world.items.contains_key(&ItemId(10)));
+    assert_eq!(world.items[&ItemId(11)].carried_by, Some(character_id));
+}
+
+#[test]
+fn inventory_swap_rejects_money_item_into_worn_slot_without_matching_wear_flags() {
+    // Money items carry no `WN*` wear-slot flags, so `can_wear` rejects
+    // them exactly like any other unwearable item for `pos < 12` - the
+    // money conversion never runs.
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.cursor_item = Some(ItemId(10));
+    character.gold = 500;
+    world.add_character(character);
+    let mut money = test_item(ItemId(10), 100, ItemFlags::USED | ItemFlags::MONEY);
+    money.value = 250;
+    world.add_item(money);
+
+    let result = apply_inventory_client_action(
+        &mut world,
+        None,
+        character_id,
+        &ClientAction::Swap {
+            slot: worn_slot::HEAD as u8,
+        },
+        1,
+    );
+
+    assert_eq!(result, InventoryCommandResult::Ignored);
+    let character = &world.characters[&character_id];
+    assert_eq!(character.gold, 500);
+    assert_eq!(character.cursor_item, Some(ItemId(10)));
+    assert!(world.items.contains_key(&ItemId(10)));
+}
+
+#[test]
 fn inventory_look_uses_legacy_item_text() {
     let mut world = World::default();
     let character_id = CharacterId(7);

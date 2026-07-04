@@ -1459,6 +1459,17 @@ async fn main() -> anyhow::Result<()> {
                                 InventoryCommandResult::Changed => {
                                     command_inventory_refresh.push(character_id);
                                 }
+                                InventoryCommandResult::MoneyConverted { price } => {
+                                    command_inventory_refresh.push(character_id);
+                                    award_swap_money_converted_achievement(
+                                        &mut world,
+                                        &mut runtime,
+                                        &achievement_repository,
+                                        character_id,
+                                        price,
+                                    )
+                                    .await;
+                                }
                                 InventoryCommandResult::ContainerOpened { account_depot } => {
                                     if account_depot {
                                         runtime.ensure_account_depot(character_id);

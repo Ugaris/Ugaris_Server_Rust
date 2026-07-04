@@ -700,6 +700,52 @@ pub(crate) async fn give_money(
     record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
+/// C `swap`'s `IF_MONEY` branch (`src/system/do.c:1276-1287`): dropping a
+/// held money item into any inventory slot destroys it and credits its
+/// value straight to `ch[cn].gold` instead of ever occupying a slot (the
+/// gold-credit itself already happened synchronously in
+/// `inventory_swap_slot`, which returned `MoneyConverted { price }`).
+/// This helper handles the remaining `CF_PLAYER`-gated tail: `achievement_
+/// add_gold_earned(cn, (unsigned int)(price / 100))` (integer division,
+/// exactly like C's cast). `stats_update(cn, 0, price)` and the `dlog`
+/// call have no Rust equivalent yet (same omission as `give_money`'s doc
+/// comment). A no-op if the character has no live `PlayerRuntime`. Also
+/// records the DB first-unlock/grats-announce tail for anything newly
+/// unlocked (see `award_play_time_minute`'s doc comment).
+pub(crate) async fn award_swap_money_converted_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    character_id: CharacterId,
+    price: u32,
+) {
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::add_gold_earned(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        price / 100,
+        &name,
+        now,
+    );
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
+}
+
 /// C `act_take` (`src/system/act.c:305-327`)'s stone-pickup block, which
 /// only runs when `keyring_try_auto_add` did *not* consume the item (that
 /// branch `return`s early in C before reaching this check): `if
