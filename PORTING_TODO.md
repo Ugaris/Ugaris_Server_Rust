@@ -4157,17 +4157,20 @@ Unlocks every quest NPC. Do these before any P4 area work.
    were ported in iteration 119 as `CostData`/`MilitaryAdvisorStorage`/
    `MilitaryAdvisorStorageRegistry` (see Progress Log) - `update_advisor_
    storage`'s own state-machine kickoff remains unported for the same
-   reason `process_master_storage` itself was never ported (the
-   in-memory registry supersedes it). DB persistence for the Master's own
-   `MilitaryMasterStorageRegistry` was closed in iteration 118
-   (`crates/ugaris-db/src/military.rs::PgMilitaryMasterStorageRepository`,
-   `migrations/0010_military_master_storage.sql`, loaded at boot and
-   saved once a minute when `dirty`, mirroring the clan registry's own
-   flush cadence in `main.rs` - see Progress Log); the Advisor's own
-   `MilitaryAdvisorStorageRegistry` (iteration 119) has no equivalent
-   table yet either, though it now at least has a Rust model to persist
-   (the architectural gap the Arena rankings task's REMAINING note also
-   flags is now closed for both NPCs' registries, DB persistence aside).
+    reason `process_master_storage` itself was never ported (the
+    in-memory registry supersedes it). DB persistence for the Master's own
+    `MilitaryMasterStorageRegistry` was closed in iteration 118
+    (`crates/ugaris-db/src/military.rs::PgMilitaryMasterStorageRepository`,
+    `migrations/0010_military_master_storage.sql`, loaded at boot and
+    saved once a minute when `dirty`, mirroring the clan registry's own
+    flush cadence in `main.rs` - see Progress Log); the Advisor's own
+    `MilitaryAdvisorStorageRegistry` got its own equivalent table in
+    iteration 120 (`PgMilitaryAdvisorStorageRepository`,
+    `migrations/0011_military_advisor_storage.sql`, same load-at-boot/
+    save-once-a-minute-when-dirty wiring - see Progress Log) - the
+    architectural gap the Arena rankings task's REMAINING note also
+    flags is now fully closed for both NPCs' registries, DB persistence
+    included.
    The wealth-achievement ladder the real `give_money` also
   updates on `complete_mission`'s mercenary gold bonus (needs the DB-
   backed first-unlock announce, which lives in the server crate - wire
@@ -4232,6 +4235,42 @@ Unlocks every quest NPC. Do these before any P4 area work.
     promotion text still going through `queue_system_text` rather than
     `npc_quiet_say` - see the REMAINING note above (unchanged except the
     DB-persistence item now closed).
+  Progress Log (iteration 120): closed the DB-persistence gap for
+    `MilitaryAdvisorStorageRegistry` that the previous iteration's
+    REMAINING note flagged, directly mirroring iteration 118's Master
+    storage repository pattern. Added `migrations/
+    0011_military_advisor_storage.sql` (`military_advisor_storage
+    (storage_id integer primary key, storage_json jsonb, updated_at)`)
+    and `MilitaryAdvisorStorageRepository`/
+    `PgMilitaryAdvisorStorageRepository` in `crates/ugaris-db/src/
+    military.rs` (`save_registry` per-row upsert, `load_registry` full
+    table read via `MilitaryAdvisorStorageRegistry::from_rows`/`iter`,
+    both already public from iteration 119). Added
+    `Database::military_advisor_storage()` alongside the Master's own
+    constructor in `crates/ugaris-db/src/lib.rs`. Wired boot-time load
+    and a once-a-minute `dirty`-gated save into `ugaris-server/src/
+    main.rs`, directly mirroring the existing `military_master_storage_
+    repository` load/save blocks (same cadence, same `Option<Repository>`
+    "run without persistence if `DATABASE_URL` unset" shape) - the
+    startup repository tuple grew one more slot
+    (`military_advisor_storage_repository`). 4 new tests in `crates/
+    ugaris-db/src/military.rs` (SQL-shape assertion, a JSON round-trip
+    test building a synthetic `MilitaryAdvisorStorage` via
+    `serde_json::from_value` against its field names rather than any
+    crate-private mutator, plus 2 `live` tests following the Master
+    repository's own "skip without failing when `DATABASE_URL` is unset"
+    convention). `cargo fmt --all`, `cargo test --workspace` (1707
+    ugaris-core + 55 db [+4] + 3 net + 37 protocol + 553 server, all
+    green, zero failures), `cargo build -p ugaris-server` clean with
+    zero warnings, 10s boot-smoke confirmed "entering Rust game loop"
+    with no panics (this iteration's load/save blocks live in the
+    runtime tick loop and startup path). REMAINING for the "Military
+    ranks" task overall: the wealth-achievement ladder wiring on
+    `complete_mission`'s gold bonus, the cosmetic `SV_QUEST_EXT`
+    quest-log packet, and `complete_mission`/`promote`'s reward/
+    promotion text still going through `queue_system_text` rather than
+    `npc_quiet_say` - see the REMAINING note above (unchanged except the
+    Advisor DB-persistence item now closed).
   Progress Log (iteration 119): closed the Advisor's own sales-economy
     `struct cost_data` gap the previous iteration's REMAINING note
     flagged. Added `CostData`/`MilitaryAdvisorStorage`/

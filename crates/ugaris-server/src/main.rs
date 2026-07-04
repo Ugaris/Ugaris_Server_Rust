@@ -171,7 +171,8 @@ use ugaris_core::{
 use ugaris_db::{
     AuctionRepository, CharacterRepository, CharacterSaveMode, CharacterSaveRequest,
     CharacterSnapshot, ClanRegistryRepository, LoginOutcome, LoginRequest, MerchantRepository,
-    MerchantStoreSnapshot, MerchantWareSnapshot, MilitaryMasterStorageRepository,
+    MerchantStoreSnapshot, MerchantWareSnapshot, MilitaryAdvisorStorageRepository,
+    MilitaryMasterStorageRepository,
 };
 
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
@@ -615,6 +616,7 @@ async fn main() -> anyhow::Result<()> {
         clan_repository,
         clan_log_repository,
         military_master_storage_repository,
+        military_advisor_storage_repository,
     ) = if let Some(database_url) = args.database_url.as_deref() {
         let db = ugaris_db::Database::connect(database_url, 8).await?;
         db.ping().await?;
@@ -635,10 +637,11 @@ async fn main() -> anyhow::Result<()> {
             Some(db.clans()),
             Some(db.clan_log()),
             Some(db.military_master_storage()),
+            Some(db.military_advisor_storage()),
         )
     } else {
         warn!("DATABASE_URL not set; starting without persistence");
-        (None, None, None, None, None, None, None)
+        (None, None, None, None, None, None, None, None)
     };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
@@ -735,6 +738,23 @@ async fn main() -> anyhow::Result<()> {
             }
             Err(err) => {
                 warn!(error = %err, "failed to load military master storage registry from database; starting with an empty one");
+            }
+        }
+    }
+    // Restart-persistence for `world.military_advisor_storage` (no C
+    // equivalent as a standalone table - see
+    // `crates/ugaris-db/src/military.rs`'s doc comment): load whatever
+    // was last saved before the game loop starts, so Military Advisor
+    // sales-economy counters survive a restart instead of always
+    // starting empty.
+    if let Some(repository) = &military_advisor_storage_repository {
+        match repository.load_registry().await {
+            Ok(loaded) => {
+                info!("loaded military advisor storage registry from database");
+                world.military_advisor_storage = loaded;
+            }
+            Err(err) => {
+                warn!(error = %err, "failed to load military advisor storage registry from database; starting with an empty one");
             }
         }
     }
@@ -5911,6 +5931,24 @@ async fn main() -> anyhow::Result<()> {
                             Ok(()) => world.military_master_storage.clear_dirty(),
                             Err(err) => {
                                 warn!(error = %err, "failed to save military master storage registry to database")
+                            }
+                        }
+                    }
+                }
+                // Restart-persistence for `world.military_advisor_storage`:
+                // same once-a-minute cadence and `dirty`-gating as the
+                // Military Master storage save above.
+                if world.tick.0 % (TICKS_PER_SECOND * 60) == 0
+                    && world.military_advisor_storage.dirty()
+                {
+                    if let Some(repository) = &military_advisor_storage_repository {
+                        match repository
+                            .save_registry(&world.military_advisor_storage)
+                            .await
+                        {
+                            Ok(()) => world.military_advisor_storage.clear_dirty(),
+                            Err(err) => {
+                                warn!(error = %err, "failed to save military advisor storage registry to database")
                             }
                         }
                     }

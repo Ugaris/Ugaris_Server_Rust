@@ -33,7 +33,10 @@ pub use clan_log::{
 pub use merchant::{
     MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot, PgMerchantRepository,
 };
-pub use military::{MilitaryMasterStorageRepository, PgMilitaryMasterStorageRepository};
+pub use military::{
+    MilitaryAdvisorStorageRepository, MilitaryMasterStorageRepository,
+    PgMilitaryAdvisorStorageRepository, PgMilitaryMasterStorageRepository,
+};
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -92,5 +95,9 @@ impl Database {
 
     pub fn military_master_storage(&self) -> PgMilitaryMasterStorageRepository {
         PgMilitaryMasterStorageRepository::new(self.pool.clone())
+    }
+
+    pub fn military_advisor_storage(&self) -> PgMilitaryAdvisorStorageRepository {
+        PgMilitaryAdvisorStorageRepository::new(self.pool.clone())
     }
 }

@@ -14,7 +14,10 @@
 
 use async_trait::async_trait;
 use sqlx::{types::Json, PgPool};
-use ugaris_core::world::{MilitaryMasterStorage, MilitaryMasterStorageRegistry};
+use ugaris_core::world::{
+    MilitaryAdvisorStorage, MilitaryAdvisorStorageRegistry, MilitaryMasterStorage,
+    MilitaryMasterStorageRegistry,
+};
 
 #[async_trait]
 pub trait MilitaryMasterStorageRepository: Send + Sync {
@@ -74,6 +77,72 @@ impl MilitaryMasterStorageRepository for PgMilitaryMasterStorageRepository {
     }
 }
 
+/// Restart-persistence for [`MilitaryAdvisorStorageRegistry`], the
+/// Military Advisor NPC's own per-NPC sales-economy storage-blob
+/// registry (`crates/ugaris-core/src/world/military.rs`). Mirrors
+/// [`PgMilitaryMasterStorageRepository`]'s shape exactly, against its own
+/// `military_advisor_storage` table (see
+/// `migrations/0011_military_advisor_storage.sql`).
+#[async_trait]
+pub trait MilitaryAdvisorStorageRepository: Send + Sync {
+    /// Upserts every `(storage_id, storage)` row currently held by the
+    /// in-memory registry.
+    async fn save_registry(&self, registry: &MilitaryAdvisorStorageRegistry) -> anyhow::Result<()>;
+
+    /// Loads every persisted row into a fresh registry. Returns an empty
+    /// (`Default`) registry if nothing has ever been saved, matching a
+    /// brand-new database.
+    async fn load_registry(&self) -> anyhow::Result<MilitaryAdvisorStorageRegistry>;
+}
+
+#[derive(Debug, Clone)]
+pub struct PgMilitaryAdvisorStorageRepository {
+    pool: PgPool,
+}
+
+impl PgMilitaryAdvisorStorageRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+const UPSERT_ADVISOR_STORAGE_SQL: &str =
+    "insert into military_advisor_storage(storage_id, storage_json, updated_at) \
+     values ($1, $2, now()) \
+     on conflict (storage_id) do update set storage_json = excluded.storage_json, \
+     updated_at = now()";
+
+const LOAD_ALL_ADVISOR_STORAGE_SQL: &str =
+    "select storage_id, storage_json from military_advisor_storage";
+
+#[async_trait]
+impl MilitaryAdvisorStorageRepository for PgMilitaryAdvisorStorageRepository {
+    async fn save_registry(&self, registry: &MilitaryAdvisorStorageRegistry) -> anyhow::Result<()> {
+        // One upsert per row; a fresh registry with no entries yet is a
+        // no-op, matching C's `create_storage` never being called until
+        // the first counter actually changes.
+        for (storage_id, storage) in registry.iter() {
+            sqlx::query(UPSERT_ADVISOR_STORAGE_SQL)
+                .bind(storage_id)
+                .bind(Json(storage))
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn load_registry(&self) -> anyhow::Result<MilitaryAdvisorStorageRegistry> {
+        let rows =
+            sqlx::query_as::<_, (i32, Json<MilitaryAdvisorStorage>)>(LOAD_ALL_ADVISOR_STORAGE_SQL)
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(MilitaryAdvisorStorageRegistry::from_rows(
+            rows.into_iter()
+                .map(|(storage_id, Json(storage))| (storage_id, storage)),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +152,110 @@ mod tests {
         assert!(UPSERT_STORAGE_SQL.contains("values ($1, $2, now())"));
         assert!(UPSERT_STORAGE_SQL.contains("on conflict (storage_id) do update"));
         assert!(LOAD_ALL_STORAGE_SQL.contains("from military_master_storage"));
+    }
+
+    #[test]
+    fn advisor_upsert_sql_targets_storage_id_and_updates_in_place() {
+        assert!(UPSERT_ADVISOR_STORAGE_SQL.contains("values ($1, $2, now())"));
+        assert!(UPSERT_ADVISOR_STORAGE_SQL.contains("on conflict (storage_id) do update"));
+        assert!(LOAD_ALL_ADVISOR_STORAGE_SQL.contains("from military_advisor_storage"));
+    }
+
+    /// Builds a [`MilitaryAdvisorStorage`] with a single non-zero
+    /// `earned`/`sold` slot via `serde_json` rather than calling any of
+    /// its mutators (all crate-private in `ugaris-core`).
+    fn advisor_storage_with_cost(
+        favor_size: usize,
+        earned: i64,
+        sold: i32,
+    ) -> MilitaryAdvisorStorage {
+        let mut cost_data = vec![serde_json::json!({"earned": 0, "sold": 0}); 5];
+        cost_data[favor_size] = serde_json::json!({"earned": earned, "sold": sold});
+        serde_json::from_value(serde_json::json!({ "cost_data": cost_data }))
+            .expect("decode synthetic advisor storage")
+    }
+
+    /// `MilitaryAdvisorStorageRegistry` round-trips through `serde_json`
+    /// exactly the same way `sqlx::types::Json` will bind/decode each
+    /// row's blob against Postgres - catches serialization drift without
+    /// needing a live database.
+    #[test]
+    fn advisor_registry_rows_round_trip_through_json() {
+        let storage = advisor_storage_with_cost(2, 4200, 7);
+        let registry = MilitaryAdvisorStorageRegistry::from_rows([(11, storage)]);
+        let mut rows: Vec<(i32, MilitaryAdvisorStorage)> = registry
+            .iter()
+            .map(|(id, storage)| (id, storage.clone()))
+            .collect();
+        assert_eq!(rows.len(), 1);
+        let (storage_id, storage) = rows.remove(0);
+        let encoded = serde_json::to_string(&storage).expect("encode storage");
+        let decoded: MilitaryAdvisorStorage =
+            serde_json::from_str(&encoded).expect("decode storage");
+        let reloaded = MilitaryAdvisorStorageRegistry::from_rows([(storage_id, decoded)]);
+        assert_eq!(reloaded.earned(storage_id, 2), 4200);
+        assert_eq!(reloaded.sold(storage_id, 2), 7);
+    }
+
+    /// Mirrors the Master repository's own `live` test convention.
+    mod advisor_live {
+        use super::*;
+
+        async fn connect() -> Option<PgPool> {
+            let url = std::env::var("DATABASE_URL").ok()?;
+            match PgPool::connect(&url).await {
+                Ok(pool) => Some(pool),
+                Err(err) => {
+                    eprintln!("skipping live DB test: could not connect to DATABASE_URL: {err}");
+                    None
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn save_then_load_round_trips_a_storage_row() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgMilitaryAdvisorStorageRepository::new(pool.clone());
+
+            let storage_id = 987_654_323i32;
+            sqlx::query("delete from military_advisor_storage where storage_id = $1")
+                .bind(storage_id)
+                .execute(&pool)
+                .await
+                .ok();
+
+            let storage = advisor_storage_with_cost(3, 900, 2);
+            let registry = MilitaryAdvisorStorageRegistry::from_rows([(storage_id, storage)]);
+            repo.save_registry(&registry).await.expect("save registry");
+
+            let loaded = repo.load_registry().await.expect("load registry");
+            assert_eq!(loaded.earned(storage_id, 3), 900);
+            assert_eq!(loaded.sold(storage_id, 3), 2);
+
+            sqlx::query("delete from military_advisor_storage where storage_id = $1")
+                .bind(storage_id)
+                .execute(&pool)
+                .await
+                .ok();
+        }
+
+        #[tokio::test]
+        async fn load_returns_empty_registry_when_nothing_was_ever_saved_for_an_id() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let storage_id = 987_654_324i32;
+            sqlx::query("delete from military_advisor_storage where storage_id = $1")
+                .bind(storage_id)
+                .execute(&pool)
+                .await
+                .ok();
+            let repo = PgMilitaryAdvisorStorageRepository::new(pool);
+            let loaded = repo.load_registry().await.expect("load registry");
+            assert_eq!(loaded.earned(storage_id, 1), 0);
+        }
     }
 
     /// Builds a [`MilitaryMasterStorage`] with a single non-zero

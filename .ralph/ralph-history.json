@@ -3808,21 +3808,52 @@
         "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "122:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/`get_army_rank_string`/`give_military_pts`/`give_military_pts_no_npc`) | `crates/ugaris-core/src/"
       ]
+    },
+    {
+      "iteration": 120,
+      "startedAt": "2026-07-04T23:33:35.367Z",
+      "endedAt": "2026-07-04T23:42:41.081Z",
+      "durationMs": 545145,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-db/src/lib.rs",
+        "crates/ugaris-db/src/military.rs",
+        "crates/ugaris-server/src/main.rs",
+        "migrations/0011_military_advisor_storage.sql"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 553 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "122:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/`get_army_rank_string`/`give_military_pts`/`give_military_pts_no_npc`) | `crates/ugaris-core/src/",
+        "| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris-ser",
+        "| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/world/clanmaster.rs`, `crates/ugaris-core/src/world/clanclerk.rs`, `",
+        "-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/`get_army_rank_string`/`give_military_pts`/`give_military_pts_no_npc`) | `crates/ugaris-core/src/wor",
+        "+| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/`get_army_rank_string`/`give_military_pts`/`give_military_pts_no_npc`) | `crates/ugaris-core/src/wor",
+        "test result: ok. 1707 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 131309341,
+  "totalDurationMs": 131854486,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 119,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 120,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 41,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 42,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 37,
@@ -4311,7 +4342,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1612 filtered out; finished in 0.00s": 1,
       "error: unexpected argument 'milpref' found": 1,
       "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 537 filtered out; finished in 0.00s": 1,
-      "test result: ok. 553 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 10,
+      "test result: ok. 553 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 11,
       "test result: ok. 1613 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
       "This iteration's work is complete: I ported a self-contained slice of the \"Military ranks\" P3 task (": 1,
       "test world::tests::military::mission_reroll_confirmed_spends_gold_and_generates_new_missions ... FAI": 1,
@@ -4333,7 +4364,7 @@
       "/// [`ClanRaidError::NoOp`] for C's `return 1` case (asking to turn on": 1,
       "let identity = self.identity_mut(cnr).ok_or(ClanRaidError::NotFound)?;": 1,
       "test result: ok. 1704 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1,
-      "122:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 3,
+      "122:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 4,
       "- `cargo test --workspace` — 1705 ugaris-core + 47 db + 3 net + 37 protocol + 553 server, all passin": 1,
       "test result: ok. 152 passed; 0 failed; 0 ignored; 0 measured; 1552 filtered out; finished in 0.01s": 1,
       "error: unexpected argument 'military_master_ignores' found": 1,
@@ -4341,11 +4372,12 @@
       "test result: ok. 1705 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 2,
       "test result: ok. 553 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s": 1,
       "test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
-      "| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs": 1,
-      "| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_acti": 1,
-      "-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/": 1,
-      "+| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/": 1,
-      "test result: ok. 1707 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1
+      "| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs": 2,
+      "| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_acti": 2,
+      "-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/": 2,
+      "+| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/": 2,
+      "test result: ok. 1707 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 2,
+      "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
