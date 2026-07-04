@@ -4123,9 +4123,15 @@ Unlocks every quest NPC. Do these before any P4 area work.
   comment in `crates/ugaris-core/src/world/military.rs` for the scoped
   `military_master_storage(storage_id integer primary key, storage_json
   jsonb, updated_at)` table design, following `clan.rs`'s
-  `PgClanRegistryRepository` pattern) and the admin-only qa codes 18-21
-  (`info`/`reset`/`raise`/`promote` - `info` needs the quest counters;
-  `/milinfo`/`/milpoints`/`/milstats` already cover admin needs). The
+   `PgClanRegistryRepository` pattern). The Master driver's own admin-only
+  qa codes 18-21 (`info`/`reset`/`raise`/`promote`, `military.c:2037-2089`)
+  were closed this iteration (see Progress Log) - `info` reads the
+  quest-stat/clan-pts counters closed in iteration 116, `reset`/`raise`
+  mutate the speaker's own ppd fields directly, and `promote` reuses
+  `World::give_military_pts`'s point/rank math (though its promotion text
+  still goes through `queue_system_text` rather than this NPC's own
+  speech, the same pre-existing simplification `complete_mission`'s
+  reward text already carries - see that function's doc comment). The
    Military *Advisor* NPC (`CDR_MILITARY_ADVISOR`) was ported in
    iteration 113 (see Progress Log): `handle_specific_mission_request`/
    `offer_favor`/`process_favor_payment` (the ppd-mutating halves),
@@ -4173,9 +4179,53 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `#rank`-style status command was
   also not added (there is no such command anywhere in the
   current C `command.c` tree either - checked; only the admin-only
-  `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
-   so there is nothing to port here; dropping this as a documentation
-    correction, not a real gap).
+   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
+    so there is nothing to port here; dropping this as a documentation
+     correction, not a real gap).
+  Progress Log (iteration 117): ported the Military Master driver's own
+    admin-only qa codes 18-21 (`info`/`reset`/`raise`/`promote`,
+    `military.c:2037-2089`, the shared `if (!(ch[co].flags & CF_GOD))
+    break;` guard). Added 4 new `MilitaryMasterEvent` variants (`Info`/
+    `Reset`/`Raise`/`Promote`, `crates/ugaris-core/src/world/
+    military.rs`) and a new match arm in `process_military_master_
+    messages` gating codes 18-21 on the speaker's `CharacterFlags::GOD`
+    (a non-admin speaker gets the same silent no-op C's `break` produces,
+    still consuming the message - `return 1`-equivalent). Implemented the
+    4 corresponding `apply_military_master_*` functions in `crates/
+    ugaris-server/src/military.rs`: `info` renders the speaker's own
+    `military_pts`/`normal_exp` plus the master NPC's nonzero
+    `clan_pts[1..32]` and per-difficulty quest statistics (solve rate,
+    average exp) as consecutive `npc_quiet_say` lines, reading the
+    quest-stat counters iteration 116 already wired real reader/writer
+    call sites for; `reset` zeroes the speaker's own `solved_yday`/
+    `mission_yday` (`PlayerRuntime::set_military_solved_yday`/
+    `set_mission_yday`); `raise` adds 1000 to the speaker's own
+    `military_pts` ppd field directly (distinct from `Character.
+    military_points`, the real rank score); `promote` reuses `World::
+    give_military_pts(player_id, 100, 1, area_id)` for the point/rank
+    math, exactly as that function's own doc comment anticipated -
+    documented inline that its promotion-announcement text still goes
+    through `queue_system_text` rather than this NPC's own
+    `npc_quiet_say`, the same pre-existing simplification
+    `complete_mission`'s reward text already carries (C's own
+    `give_military_pts`/`give_military_pts_no_npc` are otherwise
+    identical point/rank math - the `while` vs `if` promotion-loop
+    difference between them is not a real behavioral difference since
+    `set_army_rank` jumps straight to the final target rank, making the
+    loop body run at most once either way). 2 new/renamed tests in
+    `crates/ugaris-core/src/world/tests/military.rs`
+    (`military_master_admin_codes_queue_matching_events_for_god_speaker`
+    covering all 4 codes; the existing admin-code coverage in the
+    Master-ignored test was renamed to `military_master_ignores_advisor_
+    and_non_admin_codes` and continues to prove a non-`GOD` speaker gets
+    silent treatment for the same 4 keywords). `cargo fmt --all`, `cargo
+    test --workspace` (1705 ugaris-core [+1] + 47 db + 3 net + 37
+    protocol + 553 server, all green, zero failures), `cargo build -p
+    ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+    "entering Rust game loop" with no panics (this iteration's new event
+    dispatch lives in the live Master-driver tick path). No DB
+    persistence for `MilitaryMasterStorageRegistry` yet - still the one
+    remaining item for the Master driver itself, see REMAINING above.
   Progress Log (iteration 116): wired the Military Master's per-
     difficulty quest statistics (`struct military_master_storage`'s
     `quests_given`/`quests_solved`/`exp_given`/`pts_given[5]`,

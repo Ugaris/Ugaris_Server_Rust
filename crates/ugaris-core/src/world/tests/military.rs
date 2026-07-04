@@ -1697,12 +1697,15 @@ fn military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_events(
     }
 }
 
-// Advisor-only codes (favor/small/medium/big/huge/vast/pay), admin codes
-// (info/reset/raise/promote), and advisor-recommendation combo codes
-// (e.g. "easy demon") are all matched by the shared qa table but not
-// handled by the Master driver - matches C's own `default: return 0`.
+// Advisor-only codes (favor/small/medium/big/huge/vast/pay) and
+// advisor-recommendation combo codes (e.g. "easy demon") are matched by
+// the shared qa table but not handled by the Master driver - matches C's
+// own `default: return 0`. The admin-only codes (info/reset/raise/
+// promote) are also matched here but require `CF_GOD` on the speaker
+// (`military.c:2037-2089`'s shared guard) - a non-admin speaker gets the
+// same silent no-op, exercised below with `recruit` (no `GOD` flag).
 #[test]
-fn military_master_ignores_advisor_and_admin_only_codes() {
+fn military_master_ignores_advisor_and_non_admin_codes() {
     for keyword in [
         "favor",
         "small",
@@ -1726,13 +1729,66 @@ fn military_master_ignores_advisor_and_admin_only_codes() {
         // The visitor is also in range of the periodic `NT_CHAR` greet
         // scan (same tile as the master) - only that event, never a
         // message-driven one, should have been queued for these
-        // Master-ignored codes.
+        // Master-ignored/non-admin codes.
         let events = world.drain_pending_military_master_events();
         assert!(
             events
                 .iter()
                 .all(|event| matches!(event, MilitaryMasterEvent::NearbyPlayer { .. })),
             "keyword {keyword:?} should not queue a message-driven event, got {events:?}"
+        );
+    }
+}
+
+// C `military.c:2037-2089`'s shared `if (!(ch[co].flags & CF_GOD)) break;`
+// guard: a `CF_GOD`-flagged speaker's "info"/"reset"/"raise"/"promote"
+// keywords each queue their matching admin-only event.
+#[test]
+fn military_master_admin_codes_queue_matching_events_for_god_speaker() {
+    let cases = [
+        (
+            "info",
+            MilitaryMasterEvent::Info {
+                master_id: CharacterId(1),
+                player_id: CharacterId(2),
+            },
+        ),
+        (
+            "reset",
+            MilitaryMasterEvent::Reset {
+                player_id: CharacterId(2),
+            },
+        ),
+        (
+            "raise",
+            MilitaryMasterEvent::Raise {
+                player_id: CharacterId(2),
+            },
+        ),
+        (
+            "promote",
+            MilitaryMasterEvent::Promote {
+                master_id: CharacterId(1),
+                player_id: CharacterId(2),
+            },
+        ),
+    ];
+    for (keyword, expected_event) in cases {
+        let mut world = World::default();
+        assert!(world.spawn_character(master_npc(1), 10, 10));
+        let mut admin = recruit(2);
+        admin.flags |= CharacterFlags::GOD;
+        assert!(world.spawn_character(admin, 10, 10));
+
+        if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
+            master.push_driver_text_message(CharacterId(2), keyword);
+        }
+        world.process_military_master_actions(0, 0);
+
+        let events = world.drain_pending_military_master_events();
+        assert!(
+            events.contains(&expected_event),
+            "keyword {keyword:?} expected {expected_event:?}, got {events:?}"
         );
     }
 }

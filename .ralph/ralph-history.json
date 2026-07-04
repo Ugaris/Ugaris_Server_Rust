@@ -3715,15 +3715,45 @@
         "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
         "122:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/`get_army_rank_string`/`give_military_pts`/`give_military_pts_no_npc`) | `crates/ugaris-core/src/"
       ]
+    },
+    {
+      "iteration": 117,
+      "startedAt": "2026-07-04T22:52:07.580Z",
+      "endedAt": "2026-07-04T23:06:01.813Z",
+      "durationMs": 833601,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/military.rs",
+        "crates/ugaris-core/src/world/tests/military.rs",
+        "crates/ugaris-server/src/military.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- `cargo test --workspace` — 1705 ugaris-core + 47 db + 3 net + 37 protocol + 553 server, all passing, zero failures",
+        "test result: ok. 553 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Text: {\"filePath\": \"/home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src",
+        "Error message: JSON Parse error: Property name must be a string literal",
+        "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_events ... ok",
+        "test result: ok. 152 passed; 0 failed; 0 ignored; 0 measured; 1552 filtered out; finished in 0.01s",
+        "error: unexpected argument 'military_master_ignores' found",
+        "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 1692 filtered out; finished in 0.01s",
+        "test result: ok. 1705 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s"
+      ]
     }
   ],
-  "totalDurationMs": 128833956,
+  "totalDurationMs": 129667557,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 116,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 117,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -3745,8 +3775,8 @@
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
       "Verified: `cargo fmt --all` (clean), `cargo test --workspace` (1035+9+3+31+327 passed, 0 failed), `c": 1,
-      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 42,
-      "Error message: JSON Parse error: Property name must be a string literal": 37,
+      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 43,
+      "Error message: JSON Parse error: Property name must be a string literal": 38,
       "assertion failed: saved.flags.contains(CharacterFlags::ALIVE)": 1,
       "test result: FAILED. 1034 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1035 filtered out; finished in 0.00s": 1,
@@ -4218,7 +4248,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1612 filtered out; finished in 0.00s": 1,
       "error: unexpected argument 'milpref' found": 1,
       "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 537 filtered out; finished in 0.00s": 1,
-      "test result: ok. 553 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 7,
+      "test result: ok. 553 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 8,
       "test result: ok. 1613 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
       "This iteration's work is complete: I ported a self-contained slice of the \"Military ranks\" P3 task (": 1,
       "test world::tests::military::mission_reroll_confirmed_spends_gold_and_generates_new_missions ... FAI": 1,
@@ -4231,7 +4261,7 @@
       "test world::tests::military::handle_mission_request_advisor_recommendation_short_circuits ... FAILED": 1,
       "test world::tests::military::military_master_replies_to_small_talk_keyword_directly ... FAILED": 1,
       "test world::tests::military::military_master_ignores_advisor_and_admin_only_codes ... FAILED": 1,
-      "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_e": 3,
+      "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_e": 4,
       "test result: ok. 129 passed; 0 failed; 0 ignored; 0 measured; 1552 filtered out; finished in 0.01s": 1,
       "test result: ok. 1681 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1,
       "test result: ok. 137 passed; 0 failed; 0 ignored; 0 measured; 1552 filtered out; finished in 0.01s": 1,
@@ -4240,7 +4270,12 @@
       "/// [`ClanRaidError::NoOp`] for C's `return 1` case (asking to turn on": 1,
       "let identity = self.identity_mut(cnr).ok_or(ClanRaidError::NotFound)?;": 1,
       "test result: ok. 1704 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1,
-      "122:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1
+      "122:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1,
+      "- `cargo test --workspace` — 1705 ugaris-core + 47 db + 3 net + 37 protocol + 553 server, all passin": 1,
+      "test result: ok. 152 passed; 0 failed; 0 ignored; 0 measured; 1552 filtered out; finished in 0.01s": 1,
+      "error: unexpected argument 'military_master_ignores' found": 1,
+      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 1692 filtered out; finished in 0.01s": 1,
+      "test result: ok. 1705 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -154,6 +154,32 @@ pub(crate) fn apply_military_master_events(
                     applied += 1;
                 }
             }
+            MilitaryMasterEvent::Info {
+                master_id,
+                player_id,
+            } => {
+                if apply_military_master_info(world, runtime, master_id, player_id) {
+                    applied += 1;
+                }
+            }
+            MilitaryMasterEvent::Reset { player_id } => {
+                if apply_military_master_reset(runtime, player_id) {
+                    applied += 1;
+                }
+            }
+            MilitaryMasterEvent::Raise { player_id } => {
+                if apply_military_master_raise(runtime, player_id) {
+                    applied += 1;
+                }
+            }
+            MilitaryMasterEvent::Promote {
+                master_id,
+                player_id,
+            } => {
+                if apply_military_master_promote(world, runtime, master_id, player_id, area_id) {
+                    applied += 1;
+                }
+            }
         }
     }
     applied
@@ -538,6 +564,115 @@ fn apply_military_master_reroll(
             }
         }
     }
+    true
+}
+
+/// C qa code 18 ("info", admin-only, `military.c:2037-2059`): the
+/// speaker's own `military_pts`/`normal_exp`, then this master NPC's
+/// storage-scoped clan points (`clan_pts[1..32]`, only nonzero entries)
+/// and per-difficulty quest statistics (`quests_given[n] > 0` gate),
+/// each rendered as its own `say()` line via `npc_quiet_say`.
+fn apply_military_master_info(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    master_id: CharacterId,
+    player_id: CharacterId,
+) -> bool {
+    let Some(player) = runtime.player_for_character(player_id) else {
+        return false;
+    };
+    let pts = player.military_pts();
+    let exp = player.military_normal_exp_ppd();
+
+    let Some(CharacterDriverState::MilitaryMaster(data)) = world
+        .characters
+        .get(&master_id)
+        .and_then(|c| c.driver_state.as_ref())
+    else {
+        return false;
+    };
+    let storage_id = data.storage_id;
+
+    world.npc_quiet_say(
+        master_id,
+        &format!("You have {pts} pts and you have gained {exp} exp."),
+    );
+
+    for clan_nr in 1..ugaris_core::clan::MAX_CLAN as u16 {
+        let clan_pts = world.military_master_storage.clan_pts(storage_id, clan_nr);
+        if clan_pts != 0 {
+            world.npc_quiet_say(master_id, &format!("Clan {clan_nr} has {clan_pts} pts"));
+        }
+    }
+
+    for difficulty in 0..5usize {
+        let (given, solved, exp_given, _pts_given) = world
+            .military_master_storage
+            .quest_stats(storage_id, difficulty);
+        if given > 0 {
+            let solve_rate = 100.0 * f64::from(solved) / f64::from(given);
+            let avg_exp = if solved > 0 {
+                f64::from(exp_given) / f64::from(solved)
+            } else {
+                0.0
+            };
+            let diff_name = mission_difficulty_name(difficulty);
+            world.npc_quiet_say(
+                master_id,
+                &format!(
+                    "I have given {given} {diff_name} quests, {solved} of these have been \
+                     solved ({solve_rate:.2}%) for a total of {exp_given} exp ({avg_exp:.2} exp \
+                     per quest)"
+                ),
+            );
+        }
+    }
+    true
+}
+
+/// C qa code 19 ("reset", admin-only, `military.c:2068-2075`):
+/// `ppd->solved_yday = ppd->mission_yday = 0`, no text.
+fn apply_military_master_reset(runtime: &mut ServerRuntime, player_id: CharacterId) -> bool {
+    let Some(player) = runtime.player_for_character_mut(player_id) else {
+        return false;
+    };
+    player.set_military_solved_yday(0);
+    player.set_mission_yday(0);
+    true
+}
+
+/// C qa code 20 ("raise", admin-only, `military.c:2076-2082`):
+/// `ppd->military_pts += 1000`, no text.
+fn apply_military_master_raise(runtime: &mut ServerRuntime, player_id: CharacterId) -> bool {
+    let Some(player) = runtime.player_for_character_mut(player_id) else {
+        return false;
+    };
+    player.set_military_pts(player.military_pts() + 1000);
+    true
+}
+
+/// C qa code 21 ("promote", admin-only, `military.c:2083-2089`):
+/// `give_military_pts(cn, co, 100, 1)` - reuses [`World::
+/// give_military_pts`]'s point/rank math (the promotion-announcement
+/// text goes through `World::queue_system_text` rather than this NPC's
+/// own `npc_quiet_say`, the same pre-existing simplification already
+/// documented on [`World::give_military_pts`] and on `complete_mission`'s
+/// reward text - functionally correct promotion, just delivered as a
+/// system message instead of an NPC speech bubble).
+fn apply_military_master_promote(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    master_id: CharacterId,
+    player_id: CharacterId,
+    area_id: u16,
+) -> bool {
+    if runtime.player_for_character(player_id).is_none() {
+        return false;
+    }
+    if world.characters.get(&master_id).is_none() {
+        return false;
+    }
+    world.give_military_pts(player_id, 100, 1, u32::from(area_id));
     true
 }
 

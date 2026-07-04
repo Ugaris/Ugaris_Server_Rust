@@ -2332,6 +2332,32 @@ pub enum MilitaryMasterEvent {
         master_id: CharacterId,
         player_id: CharacterId,
     },
+    /// qa code 18 ("info", admin-only, `military.c:2037-2059`): dumps the
+    /// speaker's own `military_pts`/`normal_exp` plus the master NPC's
+    /// storage-scoped clan points and per-difficulty quest statistics via
+    /// consecutive `say()` lines. Only queued when the speaker has
+    /// `CF_GOD` (`ugaris_core::character::CharacterFlags::GOD`), matching
+    /// C's own guard - a non-admin typing "info" gets silent no-op
+    /// handling here exactly like C's `break;` with no output.
+    Info {
+        master_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa code 19 ("reset", admin-only, `military.c:2068-2075`):
+    /// `ppd->solved_yday = ppd->mission_yday = 0`, no text. Admin-gated
+    /// the same way as [`Self::Info`].
+    Reset { player_id: CharacterId },
+    /// qa code 20 ("raise", admin-only, `military.c:2076-2082`):
+    /// `ppd->military_pts += 1000`, no text. Admin-gated the same way as
+    /// [`Self::Info`].
+    Raise { player_id: CharacterId },
+    /// qa code 21 ("promote", admin-only, `military.c:2083-2089`):
+    /// `give_military_pts(cn, co, 100, 1)`. Admin-gated the same way as
+    /// [`Self::Info`].
+    Promote {
+        master_id: CharacterId,
+        player_id: CharacterId,
+    },
 }
 
 impl World {
@@ -2426,10 +2452,35 @@ impl World {
                                 player_id: speaker_id,
                             });
                         }
-                        // Advisor-only codes (3-9, 30-44), admin codes
-                        // (18-21, deferred - see this module's doc
-                        // comment), and any unmatched text: no handling,
-                        // matches C's own `default: return 0`.
+                        // C: `if (!(ch[co].flags & CF_GOD)) { break; }` -
+                        // every admin-only code 18-21 guards identically,
+                        // silently dropping the message with no output
+                        // for a non-admin speaker (matching C's `break`
+                        // out of the `switch`, still `return 1` overall).
+                        TextAnalysisOutcome::Matched(code @ 18..=21)
+                            if speaker.flags.contains(CharacterFlags::GOD) =>
+                        {
+                            match code {
+                                18 => events.push(MilitaryMasterEvent::Info {
+                                    master_id,
+                                    player_id: speaker_id,
+                                }),
+                                19 => events.push(MilitaryMasterEvent::Reset {
+                                    player_id: speaker_id,
+                                }),
+                                20 => events.push(MilitaryMasterEvent::Raise {
+                                    player_id: speaker_id,
+                                }),
+                                21 => events.push(MilitaryMasterEvent::Promote {
+                                    master_id,
+                                    player_id: speaker_id,
+                                }),
+                                _ => unreachable!(),
+                            }
+                        }
+                        // Advisor-only codes (3-9, 30-44) and any
+                        // unmatched text: no handling, matches C's own
+                        // `default: return 0`.
                         TextAnalysisOutcome::Matched(_) | TextAnalysisOutcome::NoMatch => {}
                     }
                 }
