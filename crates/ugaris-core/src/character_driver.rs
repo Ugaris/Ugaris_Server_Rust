@@ -16,6 +16,9 @@ pub const CDT_DEAD: u16 = 2;
 pub const CDT_RESPAWN: u16 = 3;
 pub const CDT_SPECIAL: u16 = 4;
 
+/// C `#define CDR_ACLERK 4` (`src/system/drvlib.h`): the arena clerk in
+/// Cameron (`src/module/merchants/merchant.c::aclerk_driver`).
+pub const CDR_ACLERK: u16 = 4;
 pub const CDR_LOSTCON: u16 = 5;
 pub const CDR_MERCHANT: u16 = 6;
 pub const CDR_SIMPLEBADDY: u16 = 7;
@@ -90,6 +93,7 @@ pub enum CharacterDriverState {
     TwoSkelly(TwoSkellyDriverData),
     Lab2Undead(Lab2UndeadDriverData),
     Merchant(MerchantDriverData),
+    Aclerk(AclerkDriverData),
     Lostcon(LostconDriverData),
     Bank(BankDriverData),
     Trader(TraderDriverData),
@@ -144,6 +148,79 @@ pub fn parse_merchant_driver_args(args: &str) -> MerchantDriverData {
         open: 6,
         close: 23,
         ..MerchantDriverData::default()
+    };
+    let mut rest = args;
+    while let Some((name, value, next)) = next_legacy_name_value(rest) {
+        let parsed = value.parse::<i32>().unwrap_or(0);
+        match name {
+            "dir" => data.dir = parsed,
+            "dayx" => data.dayx = parsed,
+            "dayy" => data.dayy = parsed,
+            "daydir" => data.daydir = parsed,
+            "nightx" => data.nightx = parsed,
+            "nighty" => data.nighty = parsed,
+            "nightdir" => data.nightdir = parsed,
+            "ignore" => data.ignore = parsed,
+            "storefx" => data.storefx = parsed,
+            "storefy" => data.storefy = parsed,
+            "storetx" => data.storetx = parsed,
+            "storety" => data.storety = parsed,
+            "doorx" => data.doorx = parsed,
+            "doory" => data.doory = parsed,
+            "open" => data.open = parsed,
+            "close" => data.close = parsed,
+            "special" => data.special = parsed,
+            "pricemulti" => data.pricemulti = parsed,
+            _ => {}
+        }
+        rest = next;
+    }
+    data
+}
+
+/// C `struct aclerk_driver_data` from `src/module/merchants/merchant.c`
+/// (`CDR_ACLERK`, the arena clerk in Cameron). Field-for-field identical to
+/// `MerchantDriverData` - C copy-pastes the same struct shape for both
+/// drivers - kept as its own type so `CharacterDriverState` stays a plain
+/// enum over driver-specific data.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AclerkDriverData {
+    pub dir: i32,
+    pub dayx: i32,
+    pub dayy: i32,
+    pub daydir: i32,
+    pub nightx: i32,
+    pub nighty: i32,
+    pub nightdir: i32,
+    pub doorx: i32,
+    pub doory: i32,
+    pub storefx: i32,
+    pub storefy: i32,
+    pub storetx: i32,
+    pub storety: i32,
+    pub open: i32,
+    pub close: i32,
+    pub ignore: i32,
+    pub special: i32,
+    pub pricemulti: i32,
+    #[serde(default)]
+    pub last_talk: u64,
+    #[serde(default)]
+    pub last_special_add: u64,
+    #[serde(default)]
+    pub memory_clear_tick: u64,
+    #[serde(default)]
+    pub store_created: bool,
+}
+
+/// C `aclerk_driver_parse` from `src/module/merchants/merchant.c`. Defaults
+/// opening hours to 6..23 before parsing, identical to
+/// `merchant_driver_parse`.
+pub fn parse_aclerk_driver_args(args: &str) -> AclerkDriverData {
+    let mut data = AclerkDriverData {
+        open: 6,
+        close: 23,
+        ..AclerkDriverData::default()
     };
     let mut rest = args;
     while let Some((name, value, next)) = next_legacy_name_value(rest) {
@@ -1026,6 +1103,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::TwoSkelly(_)
             | CharacterDriverState::Lab2Undead(_)
             | CharacterDriverState::Merchant(_)
+            | CharacterDriverState::Aclerk(_)
             | CharacterDriverState::Lostcon(_)
             | CharacterDriverState::Bank(_)
             | CharacterDriverState::Trader(_)

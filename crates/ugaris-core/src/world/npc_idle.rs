@@ -442,6 +442,7 @@ impl World {
                 | CharacterDriverState::TwoSkelly(_)
                 | CharacterDriverState::Lab2Undead(_)
                 | CharacterDriverState::Merchant(_)
+                | CharacterDriverState::Aclerk(_)
                 | CharacterDriverState::Lostcon(_)
                 | CharacterDriverState::Bank(_)
                 | CharacterDriverState::Trader(_)

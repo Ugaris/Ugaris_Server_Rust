@@ -1720,12 +1720,47 @@ Unlocks every quest NPC. Do these before any P4 area work.
   zero warnings, and a 12s boot-smoke showed "entering Rust game loop"
   with no panics.
 
-- [ ] **Aclerk / auction NPC** - C `merchant.c::aclerk_driver` +
+- [~] **Aclerk / auction NPC** - C `merchant.c::aclerk_driver` +
   `src/system/auction/*.c` + `database_merchant.c`. Big; slice it:
   (1) aclerk dialogue/give handling, (2) auction storage in DB,
   (3) `CL_*` auction client protocol if the community client uses it
   (check client sources first - if the client has no auction UI, mark
   N/A with a note).
+  REMAINING: slice (2) auction storage in DB and slice (3) `CL_*` auction
+  protocol are untouched - `src/system/auction/*.c` is a separate subsystem
+  the arena clerk driver itself never calls, still needs its own audit.
+  Progress Log: ported slice (1), `CDR_ACLERK`'s dialogue/greet/idle-chatter/
+  give handling in new `world/aclerk.rs` (`AclerkDriverData`/
+  `parse_aclerk_driver_args` in `character_driver.rs`, zone spawn wiring in
+  `zone.rs`, generalized `ensure_merchant_store`/`refresh_special_stores`
+  in `world/merchant.rs`/`world/special_item.rs` to also cover
+  `CDR_ACLERK` since C's `create_store`/`add_special_store` calls are
+  identical to `merchant_driver`'s). Confirmed via the community client's
+  `render.c` that there is no auction UI at all (the only "auction" hit is
+  a chat-palette color name) - slice (3) can likely be marked N/A once
+  slice (2) is scoped, but leaving that call for whoever audits
+  `src/system/auction/*.c` since this iteration didn't open that file.
+  Deviations documented in code comments: C's `aclerk_driver` has three
+  `quiet_say` blocks in its `NT_CHAR` handler but the first ends with an
+  unconditional `continue`, making the second (an "arena is safe" message)
+  and third (a merchant-style trade greeting) unreachable dead code - only
+  the first "Welcome to the Cameron Arena!" message is ported. Also unlike
+  `merchant_driver`, `aclerk_driver`'s "`<name> ... trade`" handler never
+  sets `ch[co].merchant = cn` - it only reacts to a hardcoded `abuser()` ID
+  list with a murmur/emote, so saying "<clerk>, trade" never actually
+  opens the arena clerk's store in C, and this port matches that exactly.
+  Two idle-chatter emote lines have an embedded period in their C format
+  string that doubles up with `emote()`'s own trailing period
+  (`"eyeballs deep within the forest.."`, `"...to wake himself up.."`) -
+  copied digit-for-digit including the double period. `abuser()`'s
+  hardcoded persistent player IDs are checked against the raw runtime
+  `CharacterId` (same simplification as `TraderDriverData::c1_id`/`c2_id`).
+  Day/night shop movement remains unported for `CDR_ACLERK`, matching the
+  same known gap already documented on `CDR_MERCHANT` in `world/merchant.rs`.
+  Tests: 13 new tests in `world/tests/aclerk.rs`. `cargo fmt --all`,
+  `cargo test --workspace` (1228+27+3+33+374 passed), `cargo build
+  -p ugaris-server` clean with zero warnings, and a 12s boot-smoke showed
+  "entering Rust game loop" with no panics.
 
 - [ ] **Gatekeeper NPC (`src/system/gatekeeper.c`)** - lab entrance
   dialogue/fight driver. The lab item drivers are ported; this is the

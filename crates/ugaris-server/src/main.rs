@@ -5330,6 +5330,10 @@ async fn main() -> anyhow::Result<()> {
                 let merchants_before_tick: std::collections::HashSet<CharacterId> =
                     world.merchant_stores.keys().copied().collect();
                 world.process_merchant_actions();
+                // C `aclerk_driver` (`CDR_ACLERK`): the Cameron arena
+                // clerk's store creation, welcome greeting, and idle chatter
+                // (`src/module/merchants/merchant.c`).
+                world.process_aclerk_actions();
                 // C `bank_driver`: greetings, small talk, and
                 // deposit/withdraw/balance text commands (`src/module/
                 // bank.c`).

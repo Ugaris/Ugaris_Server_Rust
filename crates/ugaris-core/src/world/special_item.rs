@@ -953,12 +953,18 @@ impl World {
     }
 
     fn set_merchant_last_special_add(&mut self, merchant_id: CharacterId, tick: u64) {
-        if let Some(CharacterDriverState::Merchant(data)) = self
+        if let Some(driver_state) = self
             .characters
             .get_mut(&merchant_id)
             .and_then(|merchant| merchant.driver_state.as_mut())
         {
-            data.last_special_add = tick;
+            match driver_state {
+                CharacterDriverState::Merchant(data) => data.last_special_add = tick,
+                // C `aclerk_driver`'s special-store timer block is
+                // identical to `merchant_driver`'s.
+                CharacterDriverState::Aclerk(data) => data.last_special_add = tick,
+                _ => {}
+            }
         }
     }
 
@@ -976,11 +982,15 @@ impl World {
     /// `add_special_store` call ends with its own
     /// `queue_merchant_full_save(cn)`).
     pub fn refresh_special_stores(&mut self, loader: &mut ZoneLoader) -> Vec<CharacterId> {
+        // C: `aclerk_driver`'s special-store block (`merchant.c`) is
+        // identical to `merchant_driver`'s, so `CDR_ACLERK` shares this
+        // refresh path with `CDR_MERCHANT`.
         let merchant_ids: Vec<CharacterId> = self
             .characters
             .values()
             .filter(|character| {
-                character.driver == CDR_MERCHANT && character.flags.contains(CharacterFlags::USED)
+                (character.driver == CDR_MERCHANT || character.driver == CDR_ACLERK)
+                    && character.flags.contains(CharacterFlags::USED)
             })
             .map(|character| character.id)
             .collect();
@@ -995,6 +1005,9 @@ impl World {
                 self.characters.get(&merchant_id).and_then(|merchant| {
                     match merchant.driver_state.as_ref() {
                         Some(CharacterDriverState::Merchant(data)) => {
+                            Some((data.special, data.last_special_add))
+                        }
+                        Some(CharacterDriverState::Aclerk(data)) => {
                             Some((data.special, data.last_special_add))
                         }
                         _ => None,

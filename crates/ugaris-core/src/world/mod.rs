@@ -10,6 +10,7 @@
 //! (tool.c experience/level-up math), and `area_mech`/`assembly`/
 //! `traps_hazards` for area-specific machinery.
 
+mod aclerk;
 mod actions;
 mod area_mech;
 mod assembly;
@@ -101,9 +102,9 @@ use crate::{
         process_simple_baddy_messages,
         remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, BankDriverData,
         CharacterDriverMessage, CharacterDriverOutcome, CharacterDriverState, Lab2UndeadDriverData,
-        LostconDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_BANK, CDR_JANITOR,
-        CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_MERCHANT, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TRADER,
-        FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH,
+        LostconDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_ACLERK, CDR_BANK,
+        CDR_JANITOR, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_MERCHANT, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
+        CDR_TRADER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH,
         NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC,
         NT_SEEHIT, NT_SPELL, NT_TEXT,
     },

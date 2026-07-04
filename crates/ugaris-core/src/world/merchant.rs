@@ -135,6 +135,16 @@ impl World {
                     400
                 },
             ),
+            // C `aclerk_driver`'s `create_store` call is identical to
+            // `merchant_driver`'s.
+            Some(CharacterDriverState::Aclerk(data)) => (
+                data.ignore.max(0) as usize,
+                if data.pricemulti > 0 {
+                    data.pricemulti
+                } else {
+                    400
+                },
+            ),
             _ => (0, 400),
         };
 
@@ -164,8 +174,10 @@ impl World {
         }
         self.merchant_stores.insert(merchant_id, store);
         if let Some(merchant) = self.characters.get_mut(&merchant_id) {
-            if let Some(CharacterDriverState::Merchant(data)) = merchant.driver_state.as_mut() {
-                data.store_created = true;
+            match merchant.driver_state.as_mut() {
+                Some(CharacterDriverState::Merchant(data)) => data.store_created = true,
+                Some(CharacterDriverState::Aclerk(data)) => data.store_created = true,
+                _ => {}
             }
         }
         true

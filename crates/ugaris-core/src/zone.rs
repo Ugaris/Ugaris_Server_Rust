@@ -456,6 +456,11 @@ impl ZoneLoader {
                 crate::character_driver::parse_merchant_driver_args(&template.args),
             ));
         }
+        if template.driver == crate::character_driver::CDR_ACLERK {
+            character.driver_state = Some(crate::character_driver::CharacterDriverState::Aclerk(
+                crate::character_driver::parse_aclerk_driver_args(&template.args),
+            ));
+        }
         if template.driver == crate::character_driver::CDR_BANK {
             character.driver_state = Some(crate::character_driver::CharacterDriverState::Bank(
                 crate::character_driver::parse_bank_driver_args(&template.args),
