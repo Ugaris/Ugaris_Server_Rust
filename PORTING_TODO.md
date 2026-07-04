@@ -1646,7 +1646,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   warnings, and a 12s boot-smoke showed "entering Rust game loop" with no
   panics.
 
-- [~] **`CDR_TRADER` player-to-player trade NPC** (`src/module/base.c`
+- [x] **`CDR_TRADER` player-to-player trade NPC** (`src/module/base.c`
   trader section) and **`CDR_JANITOR`** (item cleanup NPC). Both have
   registry stubs already - fill in behavior.
   Progress Log: `CDR_TRADER` is fully ported. Added `TraderDriverData`
@@ -1684,11 +1684,41 @@ Unlocks every quest NPC. Do these before any P4 area work.
   fmt --all`, `cargo test --workspace` (1203+27+3+33+374 passed), `cargo
   build -p ugaris-server` all clean with zero warnings, and a 10s
   boot-smoke showed "entering Rust game loop" with no panics.
-  REMAINING: `CDR_JANITOR` (the lamp-lighting/item-tidying NPC AI, uses
-  `qsort`-based item-distance heuristics plus unported `take_driver`/
-  `drop_driver`/`move_driver` helpers around a specific area's toy-light
-  network) is not ported - it is a materially different, self-contained
-  AI loop from the trader and deserves its own follow-up pass.
+  Continuation (iteration 46): `CDR_JANITOR` is now also fully ported.
+  Added `JanitorDriverData` (`character_driver.rs`, only the `cnt` murmur
+  counter is kept as real persistent state - see below) + wired zone
+  spawn-time init (`zone.rs`, no zone-file args to parse, matching
+  `CDR_TRADER`'s `set_data` zero-init) + `crates/ugaris-core/src/world/
+  janitor.rs` (`World::process_janitor_actions`) porting the full
+  `janitor_driver` body: toggling the nearest `IDR_TOYLIGHT` whose on/off
+  state doesn't match the current day/night `ls` target, picking up the
+  nearest visible `IF_TAKE` junk item on the janitor's town half (the
+  `y == 192` divide filter from the C `NT_ITEM` handler) that isn't
+  already on one of the nine home-area tiles, stashing held junk in the
+  deep-inventory "bag" range (`item[30..INVENTORYSIZE]`, C's own comment
+  on `struct char.item[]`), and dropping bagged junk off one at a time at
+  the nine fixed home tiles in C's exact order, plus the idle-murmur
+  table (rolled only right after a successful light-toggle, unlike the
+  other NPC drivers' per-minute throttle) including the dynamic "N lights
+  I turned on" counter case. Deviations (documented in code comments):
+  (1) C's `struct janitor_data` also carries `light[MAXLIGHT]`/
+  `take[MAXTAKE]`, a cache of item IDs discovered via `NT_ITEM` notify
+  messages as the janitor patrols (`scan_item_driver`); this port
+  recomputes the nearest matching candidate directly from `World::items`
+  every tick instead - the same class of simplification already
+  established for the merchant/bank/trader greeting scans; (2) C's
+  bag-unstash loop reads `ch[cn].item[INVENTORYSIZE]` first (an
+  off-by-one out-of-bounds read) before falling back to
+  `INVENTORYSIZE-1` - this port starts at the last valid index instead of
+  replicating undefined behavior. Added generic `take_driver`/
+  `drop_driver`/`use_driver` equivalents local to `world/janitor.rs`
+  (built on the existing `setup_walk_toward`/`setup_walk_toward_use_item`/
+  `do_take`/`do_drop`/`do_use` primitives - no new pathfinding machinery
+  needed, it already existed). Tests: 12 new tests in
+  `world/tests/janitor.rs`. `cargo fmt --all`, `cargo test --workspace`
+  (1215+27+3+33+374 passed), `cargo build -p ugaris-server` clean with
+  zero warnings, and a 12s boot-smoke showed "entering Rust game loop"
+  with no panics.
 
 - [ ] **Aclerk / auction NPC** - C `merchant.c::aclerk_driver` +
   `src/system/auction/*.c` + `database_merchant.c`. Big; slice it:

@@ -5345,6 +5345,9 @@ async fn main() -> anyhow::Result<()> {
                 if trader_events_applied != 0 {
                     info!(trader_events_applied, tick = world.tick.0, "applied trader item-look events");
                 }
+                // C `janitor_driver`: lamp-lighting/item-tidying NPC
+                // (`src/module/base.c`).
+                world.process_janitor_actions(config.area_id);
                 // C `merchant_driver`: seed/refresh "special" enchanted-item
                 // stock (`add_special_store`, every 12h).
                 let special_store_updates = world.refresh_special_stores(&mut zone_loader);

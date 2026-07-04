@@ -93,6 +93,7 @@ pub enum CharacterDriverState {
     Lostcon(LostconDriverData),
     Bank(BankDriverData),
     Trader(TraderDriverData),
+    Janitor(JanitorDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -267,6 +268,27 @@ pub struct TraderDriverData {
     pub memory_clear_tick: u64,
     #[serde(default)]
     pub last_talk: u64,
+}
+
+/// C `struct janitor_data` from `src/module/base.c`'s `janitor_driver`
+/// (`CDR_JANITOR`, the lamp-lighting/item-tidying NPC). Unlike C's
+/// `struct janitor_data` (which also carries `light[MAXLIGHT]`/
+/// `take[MAXTAKE]` - a persistent cache of item IDs discovered via
+/// `NT_ITEM` notify messages as the janitor patrols), `World::janitor.rs`
+/// recomputes the nearest matching light/take-item candidate directly
+/// from `World::items` every tick instead of maintaining that cache (the
+/// same class of simplification already established for the merchant/
+/// bank/trader greeting scans: a fresh nearest-match scan is behaviorally
+/// equivalent to C's steady-state "closest known item" selection without
+/// needing the extra per-character message-cache plumbing). `cnt` is the
+/// only field kept, since it is genuinely persistent narrative state (the
+/// "N lights I turned on in my life" murmur counter).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JanitorDriverData {
+    /// C `dat->cnt`: seeded to `25598` the first time murmur case `1`
+    /// rolls (`base.c:5153-5157`), then incremented on every subsequent
+    /// roll of that case.
+    pub cnt: u32,
 }
 
 //-----------------------
@@ -1006,7 +1028,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Merchant(_)
             | CharacterDriverState::Lostcon(_)
             | CharacterDriverState::Bank(_)
-            | CharacterDriverState::Trader(_),
+            | CharacterDriverState::Trader(_)
+            | CharacterDriverState::Janitor(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

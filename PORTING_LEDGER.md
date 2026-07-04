@@ -108,7 +108,7 @@ Remaining oversized files worth splitting during future work:
 | `src/system/player.c` / `src/system/player.h` | `crates/ugaris-net`, `crates/ugaris-core`, `crates/ugaris-server` | Player states, `PAC_*`, command recognition, command payload parsing, login parse, runtime registry, session send channels, scaffold character spawn, direct action setters, action queue, and primitive world action bridge exist; full action execution, map cache/client sync, inventory delta sync, text logging, transfer, anti-cheat integration remain. As of iteration 38, the `ClientAction::Nop`/`ClientInfo`/`Log`/`ModPacket` dispatch audit is closed: `cl_nop`/`cl_clientinfo` (true C no-ops) get explicit non-logging match arms in `crates/ugaris-server/src/main.rs`'s per-tick dispatch and `player_actions.rs::apply_player_action`'s immediate dispatch instead of falling through a catch-all; `cl_log` is ported as a `debug!`-logged `charlog`-shaped message via new helper `player_actions::format_client_log_message`; `ModPacket` (`cl_mod1`/`cl_mod3`) is a `debug!`-logged no-op matching C's own "acknowledge for now" handshake stub. |
 | `src/system/tell.h` / `src/system/tell.c`, `/tell` slice from `src/system/command.c` / `src/system/chat/chat.c` | `crates/ugaris-core/src/tell.rs`, `crates/ugaris-server/src/main.rs` | C-compatible ten-slot sent-tell tracking, duplicate suppression, first-empty insertion, received-tell removal, strict one-second timeout expiry, `DRD_TELL_DATA` ID, legacy not-listening feedback text, runtime `/tell <name> <text>` parsing, online character lookup, sender acknowledgement/self-tell feedback, staff-name/staff-code formatting, no-tell and ignore blocking with delayed not-listening feedback, recipient received-tell clearing, and spy fan-out are ported with focused tests. Offline cross-server tell delivery, lookup-in-progress retry semantics, dlog/audit logging, and exact chat-service transport remain. |
 | `src/system/libload.c`, `src/system/drvlib.h`, module driver switch mapping | `DRIVER_PORTING_PLAN.md` | Static Rust driver registry architecture and prioritized character/item driver port order documented. Implementation remains. |
-| `src/module/base.c` `ch_driver` / `ch_died_driver` / `ch_respawn_driver` dispatch boundary, `src/system/libload.h` `CDT_*`, `src/system/drvlib.h` base `CDR_*` IDs, `src/module/base.c` `trader_driver` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/src/world/trader.rs`, `crates/ugaris-core/src/drvlib.rs`, `crates/ugaris-server/src/world_events.rs` | Legacy dispatch type constants, base `CDR_MACRO`/`CDR_TRADER`/`CDR_JANITOR` IDs, typed character-driver call/outcome shapes, C-compatible handled/unsupported return-code behavior for tick/death/respawn dispatch scaffolded. `CDR_TRADER` (the player-to-player trade middleman NPC) is now fully ported: `World::process_trader_actions` handles the "trade with <name>"/"stop trade"/"accept trade"/"show trade" text-command state machine with exact C string matching, `NT_GIVE` item collection capped at 10 per side with cross-partner notification, the three-minute timeout with item return, deal-swap semantics, a periodic-scan greeting (like `world/bank.rs`/`world/merchant.rs`, but also turning to face the greeted player via the new `drvlib::offset2dx`/`turn` combo since C's `talkdir` mechanic is part of this driver's observable behavior), the 12-line idle-murmur table, and the 12h driver-memory clear timer; a new `TraderEvent`/`pending_trader_events` queue (mirroring `BankEvent`) defers the "show trade" item dump and `NT_GIVE` cross-notify to `crates/ugaris-server/src/world_events.rs::apply_trader_events`, which needs `legacy_item_look_text` (lives in `ugaris-server`, not `ugaris-core`). `CDR_MACRO`/`CDR_JANITOR` behavior, character message queues for drivers other than trader, and runtime invocation for the rest of the registry remain. |
+| `src/module/base.c` `ch_driver` / `ch_died_driver` / `ch_respawn_driver` dispatch boundary, `src/system/libload.h` `CDT_*`, `src/system/drvlib.h` base `CDR_*` IDs, `src/module/base.c` `trader_driver` / `janitor_driver` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/src/world/trader.rs`, `crates/ugaris-core/src/world/janitor.rs`, `crates/ugaris-core/src/drvlib.rs`, `crates/ugaris-server/src/world_events.rs` | Legacy dispatch type constants, base `CDR_MACRO`/`CDR_TRADER`/`CDR_JANITOR` IDs, typed character-driver call/outcome shapes, C-compatible handled/unsupported return-code behavior for tick/death/respawn dispatch scaffolded. `CDR_TRADER` (the player-to-player trade middleman NPC) is now fully ported: `World::process_trader_actions` handles the "trade with <name>"/"stop trade"/"accept trade"/"show trade" text-command state machine with exact C string matching, `NT_GIVE` item collection capped at 10 per side with cross-partner notification, the three-minute timeout with item return, deal-swap semantics, a periodic-scan greeting (like `world/bank.rs`/`world/merchant.rs`, but also turning to face the greeted player via the new `drvlib::offset2dx`/`turn` combo since C's `talkdir` mechanic is part of this driver's observable behavior), the 12-line idle-murmur table, and the 12h driver-memory clear timer; a new `TraderEvent`/`pending_trader_events` queue (mirroring `BankEvent`) defers the "show trade" item dump and `NT_GIVE` cross-notify to `crates/ugaris-server/src/world_events.rs::apply_trader_events`, which needs `legacy_item_look_text` (lives in `ugaris-server`, not `ugaris-core`). `CDR_JANITOR` (the lamp-lighting/item-tidying NPC) is now also fully ported: `World::process_janitor_actions` toggles the nearest `IDR_TOYLIGHT` whose on/off state doesn't match the current day/night target, takes the nearest visible `IF_TAKE` junk item on the janitor's town half (the C `NT_ITEM` handler's `y == 192` divide filter) not already on one of the nine fixed home-area tiles, stashes held junk in the `item[30..INVENTORYSIZE]` deep-inventory range (C's own comment on `struct char.item[]`), and drops bagged junk off one at a time at the nine home tiles in C's exact candidate order, plus the idle-murmur table (rolled only right after a successful light-toggle, including the dynamic "N lights I turned on" counter case) - all recomputed directly from `World::items` every tick (`JanitorDriverData` keeps only the `cnt` murmur counter as real persistent state) instead of porting C's `NT_ITEM`-message item-ID cache, the same class of simplification already established for the merchant/bank/trader greeting scans; built entirely on existing `setup_walk_toward`/`setup_walk_toward_use_item`/`do_take`/`do_drop`/`do_use` primitives, no new pathfinding machinery was needed. `CDR_MACRO` behavior, character message queues for drivers other than trader/janitor, and runtime invocation for the rest of the registry remain. |
 | `src/area/2/area2.c` `shrine_driver`, `src/system/drvlib.c` `add_bonus_spell` shrine use sites | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | Area 2 zombie shrine `IDR_SHRINE` dispatch, cursor skull offering gates for bone/silver/gold skulls, legacy craving feedback, offering consumption, random item reward table for skull/torch/potion gifts, direct cursor gift placement, XP reward branches, temporary armor/weapon/HP/mana bonus spell installation for shrine rolls with C spell-slot/timer/modifier semantics, and legacy gift/experience/bonus feedback are ported with focused core/server tests. Exact legacy dlog/audit integration remains. |
 | `src/area/22/lab3.c` `lab3_plant` carried yellow/brown berry use paths | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_LAB3_PLANT` dispatch is ported for carried yellow berries and brown berries: yellow berries decode legacy freshness/count oxygen durations, remove existing oxygen spell items before installing the refreshed `IDR_OXYGEN` timed spell, consume only on successful install, and brown berries install the 10-second `IDR_UWTALK` timed spell with duplicate-active blocking and legacy failure feedback. Whiteberry light emission, plant growth/picking/rot timers, area log fan-out, and exact dlog/audit integration remain. |
 | `src/area/18/bones.c` `bonebridge` / `boneladder` / `boneholder` / `bonewall` core paths | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_BONEBRIDGE` dispatch now ports the C full-bone cursor gate, area-18 libload guard, target tile fit checks, orientation-specific temporary bridge placement, cursor removal, dirty-sector marking, 60-second cleanup scheduling, timer retry while the bridge tile is temporarily blocked, bridge ageing sprite/drdata increments, and final removal while restoring permanent movement blocking with focused core tests. `IDR_BONELADDER` now ports the area-18 libload guard and paired same-area teleports using the C `drdata[0]` offset table. `IDR_BONEHOLDER` now ports the area-18 dispatch boundary for stand rune insertion gates, rune ID decoding for `rune1`..`rune9`, owner/tick metadata storage in `drdata[8..15]`, owner-only removal guards, 120-second timer expiry clearing, activation-holder classification, and legacy blocked feedback texts with focused core/server compilation coverage. `IDR_BONEWALL` now ports the area-18 libload guard, active/timer dispatch guards, adjacent dormant wall pulse scheduling, opening sprite/drdata progression, temporary map item removal with movement/sight unblock and void/use flag toggles, blocked restore retry, and final wall restoration with focused core/world tests. Partial-bridge add/remove inventory paths, template-backed `create_item("bone")`, exact `Hu?`/bug/does-not-fit feedback, boneholder cursor destruction/recreated-rune item placement/update-holder sprite/foreground application, activation scanning of adjacent holders, and `exec_rune` PPD reward/teleport behavior remain. |
@@ -3306,3 +3306,69 @@ Recommended next chest steps:
     with a note that `CDR_TRADER` itself is done and only `CDR_JANITOR`
     remains as a follow-up (a materially different, self-contained
     lamp-lighting/item-tidying AI loop).
+- 2026-07-04 (iteration 46): **`CDR_JANITOR` lamp-lighting/item-tidying
+  NPC** (P2, completes the `CDR_TRADER`/`CDR_JANITOR` task from
+  iteration 45) - ported C `src/module/base.c::janitor_driver` in full.
+  - Added `JanitorDriverData` (`character_driver.rs`, new
+    `CharacterDriverState::Janitor` variant) and wired spawn-time
+    initialization for `CDR_JANITOR` in `zone.rs` (C never parses
+    zone-file args into `struct janitor_data` either, matching
+    `CDR_TRADER`'s precedent). Unlike C's `struct janitor_data` (which
+    also carries `light[MAXLIGHT]`/`take[MAXTAKE]`, a cache of item IDs
+    discovered via `NT_ITEM` notify messages as the janitor patrols via
+    `scan_item_driver`), only `cnt` (the "N lights I turned on" murmur
+    counter) is kept as genuinely persistent state - the new
+    `crates/ugaris-core/src/world/janitor.rs` recomputes the nearest
+    matching light/take-item candidate directly from `World::items`
+    every tick instead, the same class of simplification already
+    established for the merchant/bank/trader greeting scans.
+  - `World::process_janitor_actions` ports the full `janitor_driver`
+    tick body: absorb any held cursor item into the deep-inventory "bag"
+    range (`item[30..INVENTORY_SIZE]`, C's own comment on `struct
+    char.item[]`, `"30-(INVENTORYSIZE-1) inventory"`) if there is room;
+    if not currently holding an item, take the nearest visible `IF_TAKE`
+    junk item on the janitor's town half (C's `NT_ITEM` handler's
+    `y == 192` divide filter, `base.c:5107-5111`) that is not already
+    resting on one of the nine fixed home-area tiles (`161..=162,
+    178..=183`), gated by `char_see_item` like C's `take_driver`; toggle
+    the nearest known `IDR_TOYLIGHT` (same town-half filter) whose
+    on/off state doesn't match the current day/night `ls` target
+    (`dlight > 200` -> off, else on) via the existing
+    `setup_walk_toward_use_item` helper (no visibility gate, matching
+    C's commented-out `char_see_item` check in `use_driver`'s light
+    branch); otherwise pop the highest-occupied bag slot (or the already-
+    held cursor item) and try to drop it at each of the nine home tiles
+    in C's exact order (`janitor_drop`'s hardcoded coordinate list),
+    restoring it to the bag on total failure, then walk toward the home
+    tile or idle. The idle-murmur table (18 lines, including the dynamic
+    "N lights I turned on in my life" counter case seeded to 25598) is
+    rolled only right after a successful light-toggle action (1-in-50),
+    unlike the other NPC drivers' per-minute throttle - matching C's
+    `janitor_driver` exactly (the murmur roll is nested inside the
+    `use_driver` success branch, not gated by a separate timer).
+  - No new pathfinding/action machinery was needed: the janitor's
+    take/use/drop movement is built entirely on the existing
+    `setup_walk_toward`/`setup_walk_toward_use_item`/`do_take`/`do_drop`/
+    `do_use`/`adjacent_direction`/`adjacent_use_direction` primitives
+    already used by the player action pipeline (`world/actions.rs`).
+  - Documented (not silent) deviation: C's bag-unstash loop reads
+    `ch[cn].item[INVENTORYSIZE]` first (`base.c:5093`, an off-by-one
+    out-of-bounds read past the valid `0..INVENTORYSIZE` array range)
+    before falling back to `INVENTORYSIZE-1`; this port starts at the
+    last valid index instead of replicating undefined behavior.
+  - Tests: 12 new focused tests in `world/tests/janitor.rs` (adjacent
+    vs. distant light-toggle-needed dispatch, leaving an
+    already-correct-state light alone and taking a junk item instead,
+    town-half exclusion, home-drop-zone exclusion, nearest-of-two
+    take-item selection, bag-absorb-then-restore-on-blocked-drop, first-
+    open-home-spot drop, first-spot-blocked-falls-to-second-spot drop,
+    fixed-line and dynamic-counter idle murmur on seeded RNG rolls, and
+    dead/unused characters are skipped by the dispatch loop).
+  - Verification: `cargo fmt --all` clean. `cargo test --workspace`:
+    1215 core (12 net new) + 27 db + 3 net + 33 protocol + 374 server,
+    zero warnings, zero failures. `cargo build -p ugaris-server` clean,
+    zero warnings. Boot-smoked `target/debug/ugaris-server --bind-addr
+    127.0.0.1:5556` for 12s, "entering Rust game loop" logged, no
+    panics.
+  - `PORTING_TODO.md`'s `CDR_TRADER`/`CDR_JANITOR` checkbox marked `[x]`
+    (both halves of the task are now complete).

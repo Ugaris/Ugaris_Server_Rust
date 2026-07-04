@@ -15,6 +15,7 @@ mod exp;
 mod hurt;
 mod item_outcomes;
 mod items;
+mod janitor;
 mod lab2_undead;
 mod light;
 mod lostcon;

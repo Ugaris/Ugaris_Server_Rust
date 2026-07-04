@@ -1471,15 +1471,52 @@
         "test error::tests::error_constants_match_legacy_header ... ok",
         "test error::tests::error_strings_match_legacy_table ... ok"
       ]
+    },
+    {
+      "iteration": 46,
+      "startedAt": "2026-07-04T00:14:52.089Z",
+      "endedAt": "2026-07-04T00:42:48.980Z",
+      "durationMs": 1676328,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/npc_messages.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-core/src/zone.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-core/src/world/janitor.rs",
+        "crates/ugaris-core/src/world/tests/janitor.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "5. Verified: `cargo fmt --all` clean, `cargo test --workspace` (1215+27+3+33+374, zero failures/warnings), `cargo build -p ugaris-server` clean, and a boot-smoke showing \"entering Rust game loop\" with",
+        "test result: ok. 374 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "return Err(DoError::Dead);",
+        "return Err(DoError::IllegalCoords);",
+        "return Err(DoError::NoItem);",
+        "return Err(DoError::Confused);",
+        "return Err(DoError::HaveCursorItem);",
+        "return Err(DoError::NotTakeable);",
+        "return Err(DoError::NotUsable);"
+      ]
     }
   ],
-  "totalDurationMs": 47686960,
+  "totalDurationMs": 49363288,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 45,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 46,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -1665,7 +1702,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 371 filtered out; finished in 0.00s": 1,
       "test result: ok. 1130 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "- All green: `cargo fmt --all`, `cargo test --workspace` (1137 core + 27 db + 3 net + 33 protocol + ": 1,
-      "test result: ok. 374 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 7,
+      "test result: ok. 374 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 8,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1129 filtered out; finished in 0.00s": 1,
       "test result: ok. 1137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 1147 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
@@ -1692,7 +1729,15 @@
       "**Verification:** `cargo fmt --all`, `cargo test --workspace` (1203+27+3+33+374 passed, zero failure": 1,
       "error: could not compile `ugaris-core` (lib test) due to 4 previous errors": 1,
       "test result: ok. 1183 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
-      "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 1183 filtered out; finished in 0.00s": 1
+      "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 1183 filtered out; finished in 0.00s": 1,
+      "5. Verified: `cargo fmt --all` clean, `cargo test --workspace` (1215+27+3+33+374, zero failures/warn": 1,
+      "return Err(DoError::Dead);": 1,
+      "return Err(DoError::IllegalCoords);": 1,
+      "return Err(DoError::NoItem);": 1,
+      "return Err(DoError::Confused);": 1,
+      "return Err(DoError::HaveCursorItem);": 1,
+      "return Err(DoError::NotTakeable);": 1,
+      "return Err(DoError::NotUsable);": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
