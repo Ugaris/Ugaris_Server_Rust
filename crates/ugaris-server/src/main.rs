@@ -4734,6 +4734,7 @@ async fn main() -> anyhow::Result<()> {
                                                 realtime_seconds,
                                             ) {
                                                 PickBerryApplyResult::Picked(_) => {
+                                                    award_gathering_achievement(&world, &mut runtime, character_id, kind);
                                                     executed += 1;
                                                 }
                                                 PickBerryApplyResult::NotRipe => {
@@ -4801,6 +4802,7 @@ async fn main() -> anyhow::Result<()> {
                                                 feedback.push((character_id, message));
                                             }
                                             feedback.push((character_id, "The potion seems finished.".to_string()));
+                                            award_potion_brewed_achievement(&world, &mut runtime, character_id);
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::FlaskRuined { character_id, ingredient_counts, .. } => {

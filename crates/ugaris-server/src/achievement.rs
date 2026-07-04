@@ -473,6 +473,101 @@ pub(crate) fn award_enemy_killed_achievement(
     }
 }
 
+/// C `flower_driver` (`src/module/alchemy.c:1306-1315`): `if (ch[cn].flags
+/// & CF_PLAYER) { ... if (it[in].drdata[0] >= 1 && <= 7)
+/// achievement_add_flowers(cn, 1); else if (>= 8 && <= 16)
+/// achievement_add_mushrooms(cn, 1); else if (>= 17 && <= 20)
+/// achievement_add_berries(cn, 1); }` - `kind` is the picked item's
+/// `drdata[0]` template index (1-20), matching `ItemDriverOutcome::
+/// PickAlchemyFlower`'s `kind` field (the C `IDR_FLOWER` driver, not the
+/// unrelated area-31 `IDR_PICKBERRY` driver, which never calls any
+/// achievement function in C). A no-op if the character has no live
+/// `PlayerRuntime` (mirrors C's `CF_PLAYER` gate).
+pub(crate) fn award_gathering_achievement(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    kind: u8,
+) {
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = match kind {
+        1..=7 => ugaris_core::achievement::add_flowers(
+            &mut player.achievement_data,
+            &mut player.achievement_stats,
+            1,
+            &name,
+            now,
+        ),
+        8..=16 => ugaris_core::achievement::add_mushrooms(
+            &mut player.achievement_data,
+            &mut player.achievement_stats,
+            1,
+            &name,
+            now,
+        ),
+        17..=20 => ugaris_core::achievement::add_berries(
+            &mut player.achievement_data,
+            &mut player.achievement_stats,
+            1,
+            &name,
+            now,
+        ),
+        _ => Vec::new(),
+    };
+    for ty in unlocked {
+        let payload = achievement_unlock_payload(ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+}
+
+/// C `flask_driver`'s `mixer()` success branch (`src/module/alchemy.c:1077-
+/// 1082`): `if (mixer(cn, in)) { ... if (ch[cn].flags & CF_PLAYER) {
+/// achievement_add_potions(cn, 1); } }`, i.e. shaking a filled flask into a
+/// magical potion. A no-op if the character has no live `PlayerRuntime`
+/// (mirrors C's `CF_PLAYER` gate).
+pub(crate) fn award_potion_brewed_achievement(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+) {
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::add_potions(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        1,
+        &name,
+        now,
+    );
+    for ty in unlocked {
+        let payload = achievement_unlock_payload(ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+}
+
 /// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every
 /// achievement (all 127 defs carry a non-empty `steam_id`, so none are
 /// skipped, unlike C's defensive `if (!def->steam_id...) continue;`) into

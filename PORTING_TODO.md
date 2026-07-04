@@ -2695,6 +2695,35 @@ Unlocks every quest NPC. Do these before any P4 area work.
   net + 37 protocol + 444 server [+5], all green, zero failures),
   `cargo build -p ugaris-server` clean with zero warnings, and a 10s
   boot-smoke showed "entering Rust game loop" with no panics.
+  Progress Log (iteration 73): closed the "gathering/potions" gameplay
+  call sites in `src/module/alchemy.c` - `flower_driver`
+  (`alchemy.c:1306-1315`, the C `IDR_FLOWER` driver; confirmed the
+  unrelated area-31 `IDR_PICKBERRY` driver, `pick_berry()` in
+  `warrmines.c`, never calls any achievement function in C, so it was
+  correctly left unwired), which awards `achievement_add_flowers`/
+  `_mushrooms`/`_berries` keyed on the picked item's `drdata[0]` kind
+  (1-7/8-16/17-20); and `flask_driver`'s `mixer()` success branch
+  (`alchemy.c:1077-1082`), which awards `achievement_add_potions`. Added
+  `award_gathering_achievement(world, runtime, character_id, kind)` and
+  `award_potion_brewed_achievement(world, runtime, character_id)`
+  (`crates/ugaris-server/src/achievement.rs`), mirroring the existing
+  `award_chest_opened_achievement`/`award_play_time_minute` no-op-
+  without-`PlayerRuntime` pattern exactly; wired the first into the
+  `PickAlchemyFlower` outcome's `Picked` arm and the second into the
+  `FlaskMixed` outcome arm, both in `main.rs`'s item-driver dispatch.
+  Added 8 focused tests in `tests/achievement.rs` (flower/mushroom/berry
+  threshold unlocks by kind range, an out-of-range-kind no-op, the
+  potion-brewed Alchemist unlock at 10 potions, a sub-threshold stat
+  bump with no unlock, and the no-`PlayerRuntime` no-op path for both
+  helpers). Still unwired: (3) DB first-unlock/grats announcement, and
+  ~9 remaining gameplay call sites (mining, professions, wealth beyond
+  chests/trading, exploration beyond transport, clans, military,
+  tunnels, arena PvP, pentagram solve reward). `cargo fmt --all`,
+  `cargo test --workspace` (1396 ugaris-core + 36 db + 3 net + 37
+  protocol + 452 server [+8], all green, zero failures), `cargo build
+  -p ugaris-server` clean with zero warnings, and a 10s boot-smoke
+  showed ticking with no panics (item-driver-only change; doesn't touch
+  login/map sync/protocol).
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

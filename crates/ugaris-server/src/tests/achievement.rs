@@ -682,3 +682,167 @@ fn award_enemy_killed_achievement_is_a_noop_for_characters_without_a_player_runt
     award_enemy_killed_achievement(&world, &mut runtime, character_id, 1, false);
     assert!(runtime.player_for_character(character_id).is_none());
 }
+
+// ============================================================================
+// `award_gathering_achievement` (`src/module/alchemy.c:1306-1315`,
+// `flower_driver`'s `achievement_add_flowers`/`_mushrooms`/`_berries`).
+// ============================================================================
+
+#[test]
+fn award_gathering_achievement_credits_flowers_for_kind_1_through_7() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .flowers_picked = 9;
+
+    award_gathering_achievement(&world, &mut runtime, character_id, 7);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.flowers_picked, 10);
+    assert_eq!(player.achievement_stats.mushrooms_picked, 0);
+    assert_eq!(player.achievement_stats.berries_picked, 0);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::GreenThumb));
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads[0][3], AchievementType::GreenThumb as u8);
+}
+
+#[test]
+fn award_gathering_achievement_credits_mushrooms_for_kind_8_through_16() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .mushrooms_picked = 9;
+
+    award_gathering_achievement(&world, &mut runtime, character_id, 16);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.mushrooms_picked, 10);
+    assert_eq!(player.achievement_stats.flowers_picked, 0);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::MushroomHunter));
+}
+
+#[test]
+fn award_gathering_achievement_credits_berries_for_kind_17_through_20() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .berries_picked = 9;
+
+    award_gathering_achievement(&world, &mut runtime, character_id, 20);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.berries_picked, 10);
+    assert_eq!(player.achievement_stats.mushrooms_picked, 0);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::BerryPicker));
+}
+
+#[test]
+fn award_gathering_achievement_ignores_out_of_range_kind() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_gathering_achievement(&world, &mut runtime, character_id, 0);
+    award_gathering_achievement(&world, &mut runtime, character_id, 21);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.flowers_picked, 0);
+    assert_eq!(player.achievement_stats.mushrooms_picked, 0);
+    assert_eq!(player.achievement_stats.berries_picked, 0);
+}
+
+#[test]
+fn award_gathering_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    award_gathering_achievement(&world, &mut runtime, character_id, 1);
+    assert!(runtime.player_for_character(character_id).is_none());
+}
+
+// ============================================================================
+// `award_potion_brewed_achievement` (`src/module/alchemy.c:1077-1082`,
+// `flask_driver`'s `mixer()` success branch calling `achievement_add_
+// potions`).
+// ============================================================================
+
+#[test]
+fn award_potion_brewed_achievement_unlocks_alchemist_at_10_potions() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .potions_brewed = 9;
+
+    award_potion_brewed_achievement(&world, &mut runtime, character_id);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.potions_brewed, 10);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::Alchemist));
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads[0][3], AchievementType::Alchemist as u8);
+}
+
+#[test]
+fn award_potion_brewed_achievement_bumps_stat_without_unlock_below_threshold() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_potion_brewed_achievement(&world, &mut runtime, character_id);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.potions_brewed, 1);
+    assert!(!player
+        .achievement_data
+        .is_unlocked(AchievementType::Alchemist));
+    assert!(runtime.tick_out.get(&1).is_none());
+}
+
+#[test]
+fn award_potion_brewed_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    award_potion_brewed_achievement(&world, &mut runtime, character_id);
+    assert!(runtime.player_for_character(character_id).is_none());
+}
