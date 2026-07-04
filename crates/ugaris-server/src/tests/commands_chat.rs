@@ -904,6 +904,117 @@ fn chat_command_forwards_private_channel_to_spying_god() {
 }
 
 #[test]
+fn chat_command_delivers_alliance_channel_to_allied_clan_not_just_own_clan() {
+    // C `chat.c:284`: `channel == 12` delivery skips only when the target is
+    // neither in the sender's own clan *nor* allied to it (`clan_alliance`).
+    let mut world = World::default();
+    let sender_id = CharacterId(7);
+    let ally_id = CharacterId(8);
+    let neutral_id = CharacterId(9);
+    let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+    sender.clan = 1;
+    world.add_character(sender);
+    let mut ally = login_character(ally_id, &login_block("Bob"), 1, 11, 10);
+    ally.clan = 2;
+    world.add_character(ally);
+    let mut neutral = login_character(neutral_id, &login_block("Eve"), 1, 12, 10);
+    neutral.clan = 3;
+    world.add_character(neutral);
+
+    let relations = world.clan_registry.relations_mut();
+    relations.found_clan(1, 0);
+    relations.found_clan(2, 0);
+    relations.found_clan(3, 0);
+    relations
+        .set_relation(1, 2, ugaris_core::clan::ClanRelation::Alliance, 0)
+        .unwrap();
+    relations
+        .set_relation(2, 1, ugaris_core::clan::ClanRelation::Alliance, 0)
+        .unwrap();
+    relations.update(0);
+    assert_eq!(
+        relations.current_relation(1, 2),
+        ugaris_core::clan::ClanRelation::Alliance
+    );
+
+    let mut runtime = ServerRuntime::default();
+    for (session, id) in [(1, sender_id), (2, ally_id), (3, neutral_id)] {
+        runtime
+            .players
+            .insert(session, PlayerRuntime::connected(session, 0));
+        let player = runtime.players.get_mut(&session).unwrap();
+        player.character_id = Some(id);
+        player.chat_channels = 1_u32 << 11;
+    }
+
+    let result = apply_chat_command(&world, &mut runtime, sender_id, "/clana Secret", 1)
+        .expect("alliance chat command should be recognized");
+
+    let delivered_to: Vec<CharacterId> = result
+        .delivered_message_bytes
+        .iter()
+        .map(|(id, _)| *id)
+        .collect();
+    assert!(delivered_to.contains(&sender_id));
+    assert!(delivered_to.contains(&ally_id));
+    assert!(!delivered_to.contains(&neutral_id));
+}
+
+#[test]
+fn chat_command_skips_spy_forward_for_allied_clan_god_already_in_channel() {
+    // C `chat.c:184-193`: a spying god who is already in the alliance
+    // channel and either shares the sender's clan *or* is allied to it must
+    // not get a duplicate `[SPY/ALLIANCE]` forward - they'd already see the
+    // real message through the normal delivery loop.
+    let mut world = World::default();
+    let sender_id = CharacterId(7);
+    let ally_god_id = CharacterId(8);
+    let mut sender = login_character(sender_id, &login_block("Alice"), 1, 10, 10);
+    sender.clan = 1;
+    world.add_character(sender);
+    let mut ally_god = login_character(ally_god_id, &login_block("God"), 1, 11, 10);
+    ally_god.clan = 2;
+    ally_god
+        .flags
+        .insert(CharacterFlags::GOD | CharacterFlags::SPY);
+    world.add_character(ally_god);
+
+    let relations = world.clan_registry.relations_mut();
+    relations.found_clan(1, 0);
+    relations.found_clan(2, 0);
+    relations
+        .set_relation(1, 2, ugaris_core::clan::ClanRelation::Alliance, 0)
+        .unwrap();
+    relations
+        .set_relation(2, 1, ugaris_core::clan::ClanRelation::Alliance, 0)
+        .unwrap();
+    relations.update(0);
+
+    let mut runtime = ServerRuntime::default();
+    for (session, id) in [(1, sender_id), (2, ally_god_id)] {
+        runtime
+            .players
+            .insert(session, PlayerRuntime::connected(session, 0));
+        let player = runtime.players.get_mut(&session).unwrap();
+        player.character_id = Some(id);
+        player.chat_channels = 1_u32 << 11;
+    }
+
+    let result = apply_chat_command(&world, &mut runtime, sender_id, "/clana Secret", 1)
+        .expect("alliance chat command should be recognized");
+
+    // The allied god sees it once (via the normal alliance-channel delivery
+    // loop), never a second `[SPY/ALLIANCE]` copy.
+    let deliveries: Vec<_> = result
+        .delivered_message_bytes
+        .iter()
+        .filter(|(id, _)| *id == ally_god_id)
+        .collect();
+    assert_eq!(deliveries.len(), 1);
+    assert!(!String::from_utf8_lossy(&deliveries[0].1).contains("[SPY/"));
+}
+
+#[test]
 fn who_command_preserves_legacy_short_prefix_match() {
     let mut world = World::default();
     let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);

@@ -1001,7 +1001,13 @@ pub(crate) fn apply_chat_command(
         if channel_nr == 7 && target.clan != sender_clan {
             continue;
         }
-        if channel_nr == 12 && target.clan != sender_clan {
+        if channel_nr == 12
+            && target.clan != sender_clan
+            && !world
+                .clan_registry
+                .relations()
+                .alliance(sender_clan, target.clan)
+        {
             continue;
         }
         if channel_nr == 8 && area_id == 0 {
@@ -1041,7 +1047,15 @@ pub(crate) fn apply_chat_command(
                 continue;
             }
             let would_see_normally = match channel_nr {
-                7 | 12 => player.chat_channels & bit != 0 && target.clan == sender_clan,
+                7 => player.chat_channels & bit != 0 && target.clan == sender_clan,
+                12 => {
+                    player.chat_channels & bit != 0
+                        && (target.clan == sender_clan
+                            || world
+                                .clan_registry
+                                .relations()
+                                .alliance(sender_clan, target.clan))
+                }
                 8 => player.chat_channels & bit != 0 && area_id != 0,
                 9 => {
                     player.chat_channels & bit != 0

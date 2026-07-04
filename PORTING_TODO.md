@@ -3239,8 +3239,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
   command still doesn't exist either), the `ACHIEVEMENT_CLAN_MEMBER`/
   `ACHIEVEMENT_CLAN_MASTER`/`ACHIEVEMENT_CLUB_MEMBER` award wiring on
   membership change, `clan_trade_bonus` (blocked on the merchant system
-  itself not being ported), clan chat channel gating (channels 5/7/12),
-  clan-hall transport access beyond direct membership, the
+  itself not being ported), clan-hall transport access beyond direct
+  membership (channel 12/ClanA alliance-aware chat gating was closed in
+  iteration 92 - see Progress Log), the
   `set_clan_website`/`set_clan_message` trailing-character-strip quirk
   (deferred to whichever future task wires a real `/clan` command
   parser). Clan-log *read*/*admin-clear* persistence is now ported
@@ -3517,6 +3518,37 @@ Unlocks every quest NPC. Do these before any P4 area work.
     `clan_trade_bonus`, chat channel gating, clan-hall transport beyond
     direct membership, and the treasury/dungeon economy all still need
     their own slices.
+  - 2026-07-04 (iteration 92): closed the "clan chat channel gating"
+    REMAINING item for channel 12 (`ClanA`, alliance chat). Channels 5/7
+    needed no change (5 has no clan-specific gating in C beyond the
+    ordinary join-channel-first rule already ported; 7 is exact-clan-only
+    and was already correct), but channel 12's delivery loop and its
+    spy-forward `would_see_normally` check in
+    `crates/ugaris-server/src/commands_chat.rs::apply_chat_command` were
+    both exact-clan-match only (`target.clan != sender_clan` with no
+    allied-clan fallback), diverging from C's
+    `cnr != get_char_clan(n) && !clan_alliance(cnr, get_char_clan(n))`
+    (`chat.c:284`) and its spy-forward twin (`chat.c:184-193`). Wired both
+    call sites to `world.clan_registry.relations().alliance(sender_clan,
+    target.clan)` (the `ClanRelations::alliance` primitive ported in a
+    much earlier iteration, previously only exercised by
+    `do_action`/combat tests, never by chat). 2 new tests in
+    `crates/ugaris-server/src/tests/commands_chat.rs`
+    (`chat_command_delivers_alliance_channel_to_allied_clan_not_just_own_clan`
+    proves an allied-but-different-clan player now receives `/clana`
+    chat, a neutral-clan player still doesn't;
+    `chat_command_skips_spy_forward_for_allied_clan_god_already_in_channel`
+    proves a spying god in an allied clan who's already joined channel 12
+    gets exactly one delivery of the real message, not a duplicate
+    `[SPY/ALLIANCE]` copy). `cargo fmt --all`, `cargo test --workspace`
+    (1458 ugaris-core + 47 db + 3 net + 37 protocol + 518 server [+2], all
+    green, zero failures), `cargo build -p ugaris-server` clean with zero
+    warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+    panics. REMAINING otherwise unchanged: `add_member`/`found_clan`
+    command wiring (and then wiring `add_clanlog` into it),
+    achievement-on-join wiring, `clan_trade_bonus`, clan-hall transport
+    beyond direct membership, and the treasury/dungeon economy all still
+    need their own slices.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission
