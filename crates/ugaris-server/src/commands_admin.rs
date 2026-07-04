@@ -1784,7 +1784,7 @@ pub(crate) fn apply_admin_character_command(
             if (0..LEGACY_MAX_CLAN).contains(&nr) {
                 character.clan = nr as u16;
                 character.clan_rank = 4;
-                character.clan_serial = 0;
+                character.clan_serial = world.clan_registry.serial(nr as u16);
             }
         } else if (0..LEGACY_MAX_CLUB).contains(&nr) {
             character.clan = (nr + LEGACY_CLUB_OFFSET) as u16;
@@ -1793,6 +1793,67 @@ pub(crate) fn apply_admin_character_command(
         }
         return Some(KeyringCommandResult {
             name_changed: true,
+            ..Default::default()
+        });
+    }
+
+    // C `killclan` (`src/system/command.c:6468-6482`): sets the target
+    // clan's debt sky-high (`kill_clan`, `clan.c:1413-1416`) so the next
+    // weekly `update_treasure` tick (`clan.c:1154-1160`, `debt >= 2000`)
+    // deletes it. `update_treasure`/the whole treasury economy isn't
+    // ported (see the clan task's REMAINING notes), so this deletes the
+    // clan immediately via [`ClanRegistry::delete_clan`] - the eventual
+    // real-world outcome of C's `kill_clan`, without the week-long delay.
+    // C emits no player feedback for this command; matched exactly (no
+    // messages either way).
+    if lower == "killclan" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let nr = legacy_atoi_prefix(rest.trim_start());
+        if (1..LEGACY_MAX_CLAN).contains(&nr) {
+            world.clan_registry.delete_clan(nr as u16);
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `cmd_renclan` (`src/system/command.c:4497-4531`), dispatched at
+    // `command.c:9646` gated on `CF_STAFF | CF_GOD`. Renames an existing
+    // clan; only usable while standing in Aston (`areaID == 3`).
+    if lower == "renclan" {
+        if !character
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        if area_id != 3 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Sorry, this command only works in Aston.".to_string()],
+                ..Default::default()
+            });
+        }
+        let rest = rest.trim_start();
+        let nr = legacy_atoi_prefix(rest);
+        let name = rest
+            .trim_start_matches(|ch: char| ch.is_ascii_digit())
+            .trim_start();
+        if !(1..LEGACY_MAX_CLAN).contains(&nr) {
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Clan number must be between 1 and {}.",
+                    LEGACY_MAX_CLAN - 1
+                )],
+                ..Default::default()
+            });
+        }
+        let name: String = name.chars().take(78).collect();
+        let messages = match world.clan_registry.set_name(nr as u16, &name) {
+            Ok(()) => vec![format!("Clan {nr} name changed to \"{name}\".")],
+            Err(_) => vec![format!("No clan by that number ({nr}).")],
+        };
+        return Some(KeyringCommandResult {
+            messages,
             ..Default::default()
         });
     }

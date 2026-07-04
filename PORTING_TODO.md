@@ -3233,8 +3233,12 @@ Unlocks every quest NPC. Do these before any P4 area work.
   persistent `crates/ugaris-db/src/clan.rs` repository + migration (no DB
   table exists yet - `ClanRegistry` is in-memory only and does not survive
   a restart), calling `add_member`/`remove_member`/`found_clan` from an
-  actual `/clan` or GM command (only the pre-existing `/joinclan` cheat
-  mutates the fields directly, bypassing the new registry), clan-log
+  actual `/clan` or GM command (`/killclan`/`/renclan` are now wired onto
+  `delete_clan`/`set_name` as of iteration 88, and `/joinclan` now reads
+  `clan_serial` through the registry, but `add_member`/`found_clan`
+  themselves have no command wiring yet - clan founding is an NPC-dialogue
+  flow, `area/30/clanmaster.c`, not a `/clan` command; a real join/leave
+  command still doesn't exist either), clan-log
   persistence/message formatting (`add_clanlog`), the `ACHIEVEMENT_CLAN_MEMBER`/
   `ACHIEVEMENT_CLAN_MASTER`/`ACHIEVEMENT_CLUB_MEMBER` award wiring on
   membership change, `clan_trade_bonus` (blocked on the merchant system
@@ -3346,8 +3350,47 @@ Unlocks every quest NPC. Do these before any P4 area work.
     attack-policy closures). REMAINING unchanged except the wiring item
     removed above: DB persistence, a real `/clan` command, clan-log,
     achievement-on-join wiring, `clan_trade_bonus`, chat channel gating,
-    clan-hall transport beyond direct membership, and the treasury/
-    dungeon economy all still need their own slices.
+     clan-hall transport beyond direct membership, and the treasury/
+     dungeon economy all still need their own slices.
+  - 2026-07-04 (iteration 88): wired the first two real GM commands onto
+    the registry (previously only `/joinclan`/`/joinclub` mutated
+    `Character` fields directly, bypassing `ClanRegistry` entirely).
+    Added `ClanRegistry::set_name` (`clan_setname`, `clan.c:1419-1423`) -
+    silently truncates to 78 bytes and never rejects an over-long name
+    (unlike every other identity mutator), and requires the clan to
+    already exist (a deliberate deviation from C, which writes into an
+    always-allocated static array regardless of whether the slot has been
+    founded - documented inline). `/killclan <nr>` (`command.c:6468-6482`)
+    now calls `ClanRegistry::delete_clan` directly: since the
+    `update_treasure` weekly bankruptcy tick that C's `kill_clan` actually
+    sets up (via a 9999-jewel debt spike) isn't ported, this produces the
+    eventual real outcome (deletion) immediately instead of after a
+    week-long delay - documented as a deliberate simplification, not a
+    bug. `/renclan <nr> <name>` (`cmd_renclan`, `command.c:4497-4531`,
+    `CF_STAFF|CF_GOD`-gated, Aston-area-3-only per C) now calls
+    `ClanRegistry::set_name`. Also fixed `/joinclan` to read
+    `clan_serial` via `world.clan_registry.serial(nr)` instead of a
+    hardcoded `0` (behavior-identical today, since no command yet
+    produces a nonzero serial, but now reads through the registry like
+    C's `clan_serial(nr)` instead of bypassing it). 5 new
+    `tests/commands_admin.rs` tests (killclan deletes an existing clan
+    with no feedback message matching C exactly; killclan requires GOD
+    and is a silent no-op for `nr <= 0` or `nr >= MAXCLAN`; renclan
+    renames in Aston with the exact C confirmation string; renclan is
+    rejected outside Aston and for an unknown clan number with C's exact
+    strings; renclan requires STAFF or GOD) plus 3 new `clan.rs` unit
+    tests for `set_name` (rename, silent truncation, `NotFound` on an
+    unfounded slot). `cargo fmt --all`, `cargo test --workspace` (1449
+    ugaris-core [+3] + 38 db + 3 net + 37 protocol + 494 server [+5], all
+    green, zero failures), `cargo build -p ugaris-server` clean with zero
+    warnings, boot-smoke confirmed "entering Rust game loop" with no
+    panics for 10+ seconds. `add_member`/`found_clan` themselves still
+    have no live command wiring - clan founding is an NPC-dialogue flow
+    (`area/30/clanmaster.c`), not a `/clan` text command, so a real
+    join/leave/found flow needs its own (larger) future slice. REMAINING
+    otherwise unchanged: DB persistence, clan-log, achievement-on-join
+    wiring, `clan_trade_bonus`, chat channel gating, clan-hall transport
+    beyond direct membership, and the treasury/dungeon economy.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

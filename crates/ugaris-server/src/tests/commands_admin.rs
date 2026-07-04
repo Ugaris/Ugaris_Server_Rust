@@ -532,6 +532,139 @@ fn joinclan_and_joinclub_require_exact_god_commands() {
 }
 
 #[test]
+fn god_killclan_command_deletes_an_existing_clan_immediately() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    let nr = world.clan_registry.found_clan("Doomed", 0).unwrap();
+    assert!(world.clan_registry.exists(nr));
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/killclan {nr}"),
+        1,
+    )
+    .expect("god killclan command should be recognized");
+    assert!(result.messages.is_empty(), "C emits no feedback either");
+    assert!(!world.clan_registry.exists(nr));
+}
+
+#[test]
+fn killclan_requires_god_and_ignores_out_of_range_numbers() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/killclan 1",
+        1
+    )
+    .is_none());
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+    let nr = world.clan_registry.found_clan("Safe", 0).unwrap();
+    apply_admin_character_command(&mut world, &mut runtime, character_id, "/killclan 0", 1)
+        .expect("still recognized, just a no-op for out-of-range numbers");
+    assert!(world.clan_registry.exists(nr));
+}
+
+#[test]
+fn staff_renclan_command_renames_an_existing_clan_in_aston() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::STAFF);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    let nr = world.clan_registry.found_clan("Old Name", 0).unwrap();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/renclan {nr} New Name"),
+        3,
+    )
+    .expect("staff renclan command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![format!("Clan {nr} name changed to \"New Name\".")]
+    );
+    assert_eq!(world.clan_registry.name(nr), Some("New Name"));
+}
+
+#[test]
+fn renclan_is_rejected_outside_aston_and_for_unknown_clans() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    let nr = world.clan_registry.found_clan("Old Name", 0).unwrap();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/renclan {nr} New Name"),
+        1,
+    )
+    .expect("renclan should still be recognized outside Aston");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, this command only works in Aston."]
+    );
+    assert_eq!(world.clan_registry.name(nr), Some("Old Name"));
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/renclan 9 Ghost Clan",
+        3,
+    )
+    .expect("renclan should still be recognized for unknown clans");
+    assert_eq!(result.messages, vec!["No clan by that number (9)."]);
+}
+
+#[test]
+fn renclan_requires_staff_or_god() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/renclan 1 Name",
+        3,
+    )
+    .is_none());
+}
+
+#[test]
 fn god_setxmas_command_sets_runtime_christmas_override() {
     let mut world = World::default();
     let character_id = CharacterId(7);

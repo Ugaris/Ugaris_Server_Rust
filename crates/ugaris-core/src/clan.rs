@@ -770,6 +770,28 @@ impl ClanRegistry {
         identity.message = message.chars().take(79).collect();
         Ok(())
     }
+
+    /// C `clan_setname` (`clan.c:1419-1423`), the `/renclan` admin rename
+    /// tool: overwrites an existing clan's display name, truncated to 78
+    /// bytes (`strncpy(clan[cnr].name, name, 78); name[78] = 0;` - C never
+    /// rejects an over-long name, it just silently truncates, unlike
+    /// [`ClanRegistry::found_clan`]'s `NameTooLong` rejection).
+    ///
+    /// Deviation from C: C only range-checks `cnr` (`cnr > 0 && cnr <
+    /// MAXCLAN`) and writes directly into the always-allocated static
+    /// `clan[]` array, so it can technically "rename" a slot with no
+    /// identity yet (leaving every other identity/relation field at its
+    /// C zero-value default - an admin-tool quirk, not a normal code
+    /// path). This registry has no such always-allocated slot to write
+    /// into, so - consistently with every other identity mutator
+    /// ([`ClanRegistry::set_rankname`]/[`ClanRegistry::set_website`]/
+    /// [`ClanRegistry::set_message`]) - renaming requires the clan to
+    /// already exist ([`ClanRegistry::found_clan`] first).
+    pub fn set_name(&mut self, cnr: u16, name: &str) -> Result<(), ClanIdentityError> {
+        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
+        identity.name = name.chars().take(78).collect();
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1353,5 +1375,31 @@ mod tests {
         let long = "y".repeat(200);
         registry.set_website(nr, &long).unwrap();
         assert_eq!(registry.identity(nr).unwrap().website.len(), 79);
+    }
+
+    #[test]
+    fn set_name_renames_an_existing_clan() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Old Name", 0).unwrap();
+        registry.set_name(nr, "New Name").unwrap();
+        assert_eq!(registry.name(nr), Some("New Name"));
+    }
+
+    #[test]
+    fn set_name_truncates_to_78_chars_without_error() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Old Name", 0).unwrap();
+        let long = "z".repeat(200);
+        registry.set_name(nr, &long).unwrap();
+        assert_eq!(registry.identity(nr).unwrap().name.len(), 78);
+    }
+
+    #[test]
+    fn set_name_rejects_nonexistent_clan() {
+        let mut registry = ClanRegistry::new();
+        assert_eq!(
+            registry.set_name(5, "Ghost"),
+            Err(ClanIdentityError::NotFound)
+        );
     }
 }
