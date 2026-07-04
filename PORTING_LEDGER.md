@@ -5946,3 +5946,62 @@ REMAINING for "Military ranks": see the itemized list above and
 remaining opaque fields, the mission-offer/accept/complete wrappers, the
 NPC drivers, and the `SV_QUEST_EXT` packet all still need their own
 future slice(s).
+
+- 2026-07-04 (iteration 110): ported the 7 `/mil*` GM admin commands
+  (`cmd_milinfo`/`cmd_milpref`/`cmd_milreset`/`cmd_milpoints`/`cmd_milrec`/
+  `cmd_milstats`/`cmd_milsolve`, `src/system/command.c:5071-5613`,
+  dispatch at `command.c:10085-10138`, all `CF_GOD`-gated, full-word-only
+  - no abbreviation accepted for any of the 7), closing the "admin
+  commands (`cmd_milinfo`/`cmd_forcesolve`)" REMAINING item (the real C
+  name is `cmd_milsolve`, not `cmd_forcesolve` - a stale note, corrected).
+  New in `crates/ugaris-core/src/player.rs`: `military_advisor_last`/
+  `set_military_advisor_last` (`military_ppd::advisor_last[MAXADVISOR]`,
+  `military.h:37`) and `military_reroll_yday`/`set_military_reroll_yday`
+  (`military_ppd::reroll_yday`, `military.h:59`) - the last two opaque
+  `military_ppd` fields this task's REMAINING note had flagged, now typed
+  accessors following the same offset-computed raw-block pattern as every
+  other `military_ppd` field. All 7 commands added to
+  `crates/ugaris-server/src/commands_admin.rs` right after the existing
+  `/milexp` block, following its exact `CF_GOD`-gate/`KeyringCommandResult`
+  pattern: `/milinfo [name]`/`/milreset [name]`/`/milsolve [name]
+  [announce]` self-fallback when no name given (matching C); `/milpref
+  <name> <type> <difficulty>`/`/milpoints <name> <points>`/`/milrec <name>
+  <points>` require an explicit name (C prints a `Usage:` line instead).
+  Confirmed by reading each C function directly that `cmd_milpoints`/
+  `cmd_milsolve` deliberately do **not** call `give_military_pts_no_npc`
+  (unlike `/milexp`): no hardcore bonus, no `give_exp`/`normal_exp` touch
+  from `cmd_milpoints`, a hardcoded `newrank < 25` promotion cap (not
+  `MAX_ARMY_RANK`=40), and their own distinct message text - reused
+  `army_rank_for_points`/`army_rank_name` for the rank math/display (this
+  codebase's established on-the-fly-derivation simplification, documented
+  since the first military-ranks slice) but inlined the C-specific
+  promotion gate/text/broadcast at each of the two call sites rather than
+  reusing `World::give_military_pts`. `/milstats` (`command.c:5456-5489`)
+  always returns C's own "Could not find Military Master NPC." message:
+  no `CDR_MILITARY_MASTER` driver/NPC exists in Rust at all yet (confirmed
+  by grep), so C's own early-exit branch for an unspawned Military Master
+  is the only reachable behavior today - not a shortcut, the exact correct
+  port of the current unported-NPC state. Reproduced one real, verified C
+  quirk in `/milpref` rather than "fixing" it: `diff`'s C-side default
+  value of `-1` is *itself* inside the `diff>=-1 && diff<5` acceptance
+  range, so omitting the difficulty argument silently resets the stored
+  preference to "None" (verified by reading `cmd_milpref` directly, not
+  guessed). 16 new tests in `crates/ugaris-server/src/tests/
+  commands_admin.rs` (one god-gated behavior test plus one full-scenario
+  test per command, covering self-fallback, named-target-not-found, the
+  `/milpref` missing-diff quirk, `/milpoints`/`/milsolve`'s promotion-vs-
+  no-promotion branches and the `newrank<25`/`newrank>9` broadcast gates,
+  and `/milreset`'s all-20-advisor-slot clear) plus 1 new `player.rs` unit
+  test for the two new accessors. `cargo fmt --all`, `cargo test
+  --workspace` (1613 ugaris-core [+1] + 47 db + 3 net + 37 protocol + 553
+  server [+16], all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panics (this iteration adds new command-dispatch branches
+  to the existing per-tick command-processing chain). REMAINING for
+  "Military ranks" unchanged otherwise: `military_ppd`'s
+  `recommend`/`temp_mission_type`/`temp_mission_difficulty` fields are
+  still opaque (not needed by any ported behavior yet); the mission-offer/
+  accept/complete wrappers still have no live NPC call site; the Military
+  Master/Advisor NPC drivers, their `qa[]` table, and storage state
+  machines remain entirely unported; the `SV_QUEST_EXT` mod-packet remains
+  unported (cosmetic-only gap).

@@ -86,6 +86,13 @@ const MILITARY_PPD_MISSION_TYPE_PREFERENCE_OFFSET: usize = MILITARY_PPD_RECOMMEN
 const MILITARY_PPD_MISSION_DIFFICULTY_PREFERENCE_OFFSET: usize =
     MILITARY_PPD_MISSION_TYPE_PREFERENCE_OFFSET + 4;
 const MILITARY_PPD_MISSION_YDAY_OFFSET: usize = MILITARY_PPD_MIS_BASE_OFFSET - 4;
+/// C `military_ppd::advisor_last[MAXADVISOR]` (`military.h:37`): header
+/// offset 24 bytes (6 leading `int`s: `current_pts`/`master_state`/
+/// `current_advisor`/`advisor_state`/`advisor_cost`/`advisor_storage_nr`).
+const MILITARY_PPD_ADVISOR_LAST_BASE_OFFSET: usize = 6 * 4;
+/// C `military_ppd::reroll_yday` (`military.h:59`): the very last field of
+/// the struct, immediately after `temp_mission_difficulty`.
+const MILITARY_PPD_REROLL_YDAY_OFFSET: usize = LEGACY_MILITARY_PPD_SIZE - 4;
 /// C `struct area3_ppd` (`src/area/3/area3.h:18-35` /
 /// `src/system/game/ppd_structs.h:109-127`): 18 `int` fields (`imp_kills,
 /// imp_flags;` declares two on one line). Was previously `17 * 4` (a
@@ -2420,6 +2427,31 @@ impl PlayerRuntime {
 
     pub fn set_mission_yday(&mut self, value: i32) {
         self.write_military_i32(MILITARY_PPD_MISSION_YDAY_OFFSET, value);
+    }
+
+    /// C `military_ppd::advisor_last[idx]` (`military.h:37`,
+    /// `MAXADVISOR` = [`MILITARY_PPD_MAXADVISOR`] = 20): day-of-year each
+    /// advisor slot was last consulted, used by the (still-unported)
+    /// advisor-recommendation cooldown check. Index is clamped to the
+    /// valid range like every other slot accessor in this file.
+    pub fn military_advisor_last(&self, idx: usize) -> i32 {
+        let idx = idx.min(MILITARY_PPD_MAXADVISOR - 1);
+        self.read_military_i32(MILITARY_PPD_ADVISOR_LAST_BASE_OFFSET + idx * 4)
+    }
+
+    pub fn set_military_advisor_last(&mut self, idx: usize, value: i32) {
+        let idx = idx.min(MILITARY_PPD_MAXADVISOR - 1);
+        self.write_military_i32(MILITARY_PPD_ADVISOR_LAST_BASE_OFFSET + idx * 4, value);
+    }
+
+    /// C `military_ppd::reroll_yday` (`military.h:59`): day of the year
+    /// the player last used the (still-unported) mission-reroll option.
+    pub fn military_reroll_yday(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_REROLL_YDAY_OFFSET)
+    }
+
+    pub fn set_military_reroll_yday(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_REROLL_YDAY_OFFSET, value);
     }
 
     /// C `generate_mission_with_preference(cn, ppd, preferred_type)`
@@ -7270,6 +7302,44 @@ mod tests {
         player.set_military_mission(4, mission);
         player.set_mission_yday(200);
         assert_eq!(player.military_mission(4), mission);
+    }
+
+    #[test]
+    fn military_ppd_advisor_last_and_reroll_yday_accessors_round_trip() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        for idx in 0..MILITARY_PPD_MAXADVISOR {
+            assert_eq!(player.military_advisor_last(idx), 0);
+        }
+        assert_eq!(player.military_reroll_yday(), 0);
+
+        player.set_military_advisor_last(0, 10);
+        player.set_military_advisor_last(19, 200);
+        player.set_military_reroll_yday(55);
+
+        assert_eq!(player.military_advisor_last(0), 10);
+        assert_eq!(player.military_advisor_last(19), 200);
+        // Untouched slots stay zeroed.
+        assert_eq!(player.military_advisor_last(5), 0);
+        assert_eq!(player.military_reroll_yday(), 55);
+        // Out-of-range index clamps to the last valid slot, matching
+        // every other slot accessor's guard in this file.
+        assert_eq!(player.military_advisor_last(999), 200);
+
+        // These fields must not disturb the mission-slot/preference
+        // fields exercised by the neighboring tests.
+        let mission = crate::world::SingleMission {
+            mission_type: crate::world::MISSION_TYPE_RATLING,
+            opt1: 3,
+            opt2: 20,
+            pts: 5,
+            exp: 50,
+        };
+        player.set_military_mission(2, mission);
+        player.set_mission_yday(99);
+        assert_eq!(player.military_mission(2), mission);
+        assert_eq!(player.mission_yday(), 99);
+        assert_eq!(player.military_advisor_last(0), 10);
+        assert_eq!(player.military_reroll_yday(), 55);
     }
 
     // C `generate_mission_with_preference(cn, ppd, preferred_type)`

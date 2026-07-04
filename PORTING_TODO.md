@@ -4110,15 +4110,56 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `SV_QUEST_EXT` mod-packet that shows the active mission in the client's
   quest log (so `check_military_solve`'s own `sendquestlog` calls are
   also not reproduced yet - cosmetic only, the progress state itself is
-  correct); and the associated admin commands (`cmd_milinfo`/
-  `cmd_forcesolve`) - this is most of `military.c`'s 2,881 lines and needs
-  its own future slice(s). A player-facing `#rank`-style status command was
+  correct); `military_ppd`'s `recommend`/`temp_mission_type`/
+  `temp_mission_difficulty` fields are still opaque (not needed by any
+  ported behavior yet - `advisor_last[]`/`reroll_yday` gained typed
+  accessors in iteration 110, see Progress Log). The 7 admin commands
+  (`cmd_milinfo`/`cmd_milpref`/`cmd_milreset`/`cmd_milpoints`/`cmd_milrec`/
+  `cmd_milstats`/`cmd_milsolve` - the real C name for the "force-solve"
+  command is `cmd_milsolve`, not `cmd_forcesolve`, a stale note now
+  corrected) were ported in iteration 110 (see Progress Log) - this still
+  leaves the Military Master/Advisor NPC drivers, their `qa[]` dialogue
+  table, and storage state machines (`process_master_storage`/
+  `process_advisor_storage`) plus the `dat->storage_data` quests-given/
+  quests-solved/pts-given/exp-given per-difficulty counters (no Rust
+  `military_master_data` equivalent yet), `handle_specific_mission_request`
+  (the paid-advisor-recommendation flow, `military.c:481-580`), and the
+  wealth-achievement ladder wiring on `complete_mission`'s mercenary gold
+  bonus - this is most of `military.c`'s 2,881 lines and needs its own
+  future slice(s). A player-facing `#rank`-style status command was
   also not added (there is no such command anywhere in the
   current C `command.c` tree either - checked; only the admin-only
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
   correction, not a real gap).
-  Progress Log: ported the next self-contained slice - `accept_mission`/
+  Progress Log (iteration 110): ported the 7 admin commands
+  `cmd_milinfo`/`cmd_milpref`/`cmd_milreset`/`cmd_milpoints`/`cmd_milrec`/
+  `cmd_milstats`/`cmd_milsolve` (`command.c:5071-5613`, dispatch at
+  `command.c:10085-10138`) into `crates/ugaris-server/src/
+  commands_admin.rs`, right after the existing `/milexp` block, plus the
+  two remaining opaque `military_ppd` accessors
+  (`military_advisor_last`/`military_reroll_yday`,
+  `crates/ugaris-core/src/player.rs`). Confirmed by reading the C source
+  directly that `cmd_milpoints`/`cmd_milsolve` deliberately do NOT call
+  `give_military_pts_no_npc` (unlike `/milexp`) - they inline their own
+  simpler promotion logic (no hardcore bonus, hardcoded `newrank < 25`
+  cap instead of `MAX_ARMY_RANK`=40, distinct message text), so those two
+  commands reuse only `army_rank_for_points`/`army_rank_name` for the
+  rank math/name lookup, not `World::give_military_pts` itself.
+  `/milstats` always returns C's own "Could not find Military Master
+  NPC." message since no `CDR_MILITARY_MASTER` driver/NPC exists in Rust
+  yet - the exact correct behavior for the current unported-NPC state,
+  not a shortcut. Reproduced a real, verified C quirk in `/milpref`
+  rather than "fixing" it: omitting the difficulty argument silently
+  resets the stored preference to "None", since C's own default value of
+  `-1` is itself inside the `-1..=4` acceptance range. 16 new
+  `crates/ugaris-server/src/tests/commands_admin.rs` tests plus 1 new
+  `player.rs` accessor test. `cargo fmt --all`, `cargo test --workspace`
+  (1613 ugaris-core [+1] + 47 db + 3 net + 37 protocol + 553 server
+  [+16], all green, zero failures), `cargo build -p ugaris-server` clean
+  with zero warnings, 10s boot-smoke confirmed "entering Rust game loop"
+  with no panics.
+  Earlier progress: ported the next self-contained slice - `accept_mission`/
   `complete_mission` (`military.c:1300-1436`), the remaining ppd-mutating
   state transitions on top of the previous slice's offer-generation half.
   `crates/ugaris-core/src/player.rs` gained the 3 remaining ppd accessors
