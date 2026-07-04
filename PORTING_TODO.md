@@ -4081,18 +4081,59 @@ Unlocks every quest NPC. Do these before any P4 area work.
   on `Character`; port rank thresholds, `#rank` style commands, mission
   PPD (`mission_ppd.h`) and the governor mission flow (`check_military_solve`
   is referenced by the death path - port it there when this lands).
-  REMAINING: the mission PPD/advisor NPC driver (`military_ppd`,
-  `mission_ppd.h`, the whole `military.c` mission-accept/solve/reroll
-  flow and its associated admin commands like `cmd_milinfo`/
-  `cmd_forcesolve`) and the governor mission flow (`check_military_solve`)
-  are unported - this is most of `military.c`'s 2,881 lines and needs its
-  own future slice(s). A player-facing `#rank`-style status command was
+  REMAINING: the `military_ppd` per-character save data (mission slots,
+  advisor state, take/solve tracking - note `military_ppd`'s own
+  `military_pts`/`normal_exp` fields are *not* part of this gap, since
+  their only two C writers are already ported straight onto
+  `Character.military_points`/`.military_normal_exp`, which the
+  `character_json` DB column already persists in full); the ppd-populating
+  wrappers (`generate_demon_mission`/`generate_sewer_mission`/
+  `generate_mine_mission`/`generate_mission_with_preference`) and
+  ppd-mutating state transitions (`accept_mission`/`complete_mission`/
+  `handle_specific_mission_request`) built on top of this iteration's pure
+  generators; `check_military_solve` (`death.c:290-379`, the kill-progress
+  decrement - has a real call site in `kill_char` at
+  `world/death.rs::kill_character_followup`, right where
+  `give_first_kill` is queued, but needs the ppd's `took_mission`/`mis[5]`
+  fields to have anywhere to decrement); the Military Master/Advisor NPC
+  drivers, their `qa[]` dialogue table, and storage state machines; the
+  `SV_QUEST_EXT` mod-packet that shows the active mission in the client's
+  quest log; and the associated admin commands (`cmd_milinfo`/
+  `cmd_forcesolve`) - this is most of `military.c`'s 2,881 lines and needs
+  its own future slice(s). A player-facing `#rank`-style status command was
   also not added this iteration (there is no such command anywhere in the
   current C `command.c` tree either - checked; only the admin-only
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
   correction, not a real gap).
-  Progress Log: closed a real, self-contained gap in `give_first_kill`
+  Progress Log: ported the next self-contained slice - every *pure*
+  mission-generation function `military.c` uses to build a mission offer,
+  with zero character/NPC/storage state: `crates/ugaris-core/src/world/
+  military.rs` gained `SingleMission` (`struct single_mission`),
+  `specific_mission_price` (the paid-advisor price formula, difficulty/type
+  multiplier tables + per-difficulty price floor), the five level/rank
+  scaling helpers behind `calculate_mission_exp`
+  (`get_level_experience_cap`/`get_minimum_expected_rank`/
+  `get_maximum_reasonable_rank`/`get_expected_level_for_rank`/
+  `get_enhanced_level_scaling_factor`, reusing the existing
+  `world::exp::level2exp`), and the three per-difficulty mission-instance
+  generators (`generate_single_demon_mission`/
+  `generate_single_ratling_mission`/`generate_single_silver_mission`),
+  seeded off the existing `legacy_random_below_from_seed` LCG for
+  deterministic tests instead of a bare `rand()` call. Confirmed while
+  reading `military.c` and the DB layer that `military_ppd`'s own
+  `military_pts`/`normal_exp` fields are already fully covered (not a gap)
+  since `Character.military_points`/`.military_normal_exp` round-trip
+  through the `character_json` JSON column already - documented this
+  finding inline so a future iteration doesn't re-derive it. 14 new tests
+  in `crates/ugaris-core/src/world/tests/military.rs` (every price/cap/rank
+  boundary, hand-computed `calculate_mission_exp` values, every mission
+  generator's difficulty table, level-gating rejection for ratling/silver,
+  and rank-scaling for silver's opt1). `cargo fmt --all`, `cargo test
+  --workspace` (1572 ugaris-core + 47 db + 3 net + 37 protocol + 541
+  server, all green, zero failures), `cargo build -p ugaris-server` clean
+  with zero warnings, 10s boot-smoke confirmed no panics.
+  Earlier progress: closed a real, self-contained gap in `give_first_kill`
   (`death.c:196-254`) that a previous iteration's own note here had
   flagged as blocked on this exact task landing: the demon-lord-class
   branch's `if (get_army_rank_int(cn))` check - army ranks are no longer
