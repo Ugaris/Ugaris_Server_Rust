@@ -1018,6 +1018,243 @@ impl QuestLog {
     pub fn count(&self, quest: usize) -> u8 {
         self.quests.get(quest).map_or(0, |entry| entry.done)
     }
+
+    /// Raw mutable access to a quest entry, for the `questlog_init_*`
+    /// ports below which manipulate `quest[qnr].done`/`.flags` directly,
+    /// exactly like the C `struct quest *quest` array they read
+    /// (`src/system/questlog.c:828-1607`).
+    fn entry_mut(&mut self, quest: usize) -> Option<&mut QuestEntry> {
+        self.quests.get_mut(quest)
+    }
+}
+
+/// C's repeated `if (!quest[qnr].done) { quest[qnr].done = 1; }
+/// quest[qnr].flags = QF_DONE;` idiom used throughout `questlog_init_*`
+/// (e.g. `src/system/questlog.c:836-839`): marks a quest done, seeding
+/// `done` to `1` only the first time (never incrementing an existing
+/// completion count).
+fn mark_init_done(quests: &mut QuestLog, quest: usize) {
+    if let Some(entry) = quests.entry_mut(quest) {
+        if entry.done == 0 {
+            entry.done = 1;
+        }
+        entry.flags = QF_DONE;
+    }
+}
+
+fn set_flags(quests: &mut QuestLog, quest: usize, flags: u8) {
+    if let Some(entry) = quests.entry_mut(quest) {
+        entry.flags = flags;
+    }
+}
+
+/// The `area1_ppd` fields consumed by `questlog_init_area1`
+/// (`src/system/questlog.c:828-1039`); a snapshot built by
+/// `PlayerRuntime::area1_quest_state` since this leaf module has no
+/// access to `PlayerRuntime`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Area1QuestState {
+    pub lydia_state: i32,
+    pub gwendy_state: i32,
+    pub yoakin_state: i32,
+    pub nook_state: i32,
+    pub guiwynn_state: i32,
+    pub logain_state: i32,
+    pub reskin_state: i32,
+    pub jessica_state: i32,
+    pub brithildie_state: i32,
+    pub camhermit_state: i32,
+}
+
+// `struct gwendy_ppd`-family NPC state constants
+// (`src/common/npc_states.h`), copied verbatim - only the values
+// `questlog_init_area1` compares against are needed here.
+const GWENDYLON_STATE_ENTRY: i32 = 0;
+const GWENDYLON_STATE_FIRST_SKULL_DONE: i32 = 6;
+const GWENDYLON_STATE_SECOND_SKULL_DONE: i32 = 10;
+const GWENDYLON_STATE_THIRD_SKULL_DONE: i32 = 14;
+const GWENDYLON_STATE_FOUL_MAGICIAN_DONE: i32 = 18;
+const JESSICA_STATE_QUEST1_GIVE_1: i32 = 1;
+const JESSICA_STATE_QUEST1_FINISH: i32 = 7;
+const JESSICA_STATE_QUEST2_GIVE_1: i32 = 8;
+const JESSICA_STATE_QUEST2_FINISH: i32 = 11;
+const BRITHILDIE_STATE_NOMORETALES_QOPEN: i32 = 20;
+const BRITHILDIE_STATE_NOMORETALES_QDONE: i32 = 21;
+const CAMHERMIT_STATE_QUEST1DO: i32 = 5;
+const CAMHERMIT_STATE_QUEST2WAIT: i32 = 6;
+const CAMHERMIT_STATE_QUEST2DO: i32 = 11;
+const CAMHERMIT_STATE_DONE: i32 = 13;
+
+/// C `questlog_init_area1` (`src/system/questlog.c:828-1039`): derives
+/// quest 0 (Lydia), 1-4 (Gwendylon's four skull quests), 5 (Yoakin), 6
+/// (Nook), 7-8 (Guiwynn), 9 (Logain), 17 (Reskin), `QLOG_JESSICA_*`,
+/// `QLOG_BRITHILDIE`, and `QLOG_HERMIT_QUEST1/2` flags from the matching
+/// `area1_ppd` NPC-dialogue state machines. Called once per login via the
+/// `questlog_init` dispatcher (not yet wired - no area1 NPC driver exists
+/// in Rust to advance these states yet).
+pub fn init_area1_quests(quests: &mut QuestLog, ppd: &Area1QuestState) {
+    if ppd.lydia_state >= 6 {
+        mark_init_done(quests, QLOG_LYDIA);
+    } else if ppd.lydia_state > 0 {
+        set_flags(quests, QLOG_LYDIA, QF_OPEN);
+    } else {
+        set_flags(quests, QLOG_LYDIA, 0);
+    }
+
+    if ppd.gwendy_state >= GWENDYLON_STATE_FOUL_MAGICIAN_DONE {
+        mark_init_done(quests, QLOG_GWENDY_FIRST_SKULL);
+        mark_init_done(quests, QLOG_GWENDY_SECOND_SKULL);
+        mark_init_done(quests, QLOG_GWENDY_THIRD_SKULL);
+        mark_init_done(quests, QLOG_GWENDY_FOUL_MAGICIAN);
+    } else if ppd.gwendy_state >= GWENDYLON_STATE_THIRD_SKULL_DONE {
+        mark_init_done(quests, QLOG_GWENDY_FIRST_SKULL);
+        mark_init_done(quests, QLOG_GWENDY_SECOND_SKULL);
+        mark_init_done(quests, QLOG_GWENDY_THIRD_SKULL);
+        set_flags(quests, QLOG_GWENDY_FOUL_MAGICIAN, QF_OPEN);
+    } else if ppd.gwendy_state >= GWENDYLON_STATE_SECOND_SKULL_DONE {
+        mark_init_done(quests, QLOG_GWENDY_FIRST_SKULL);
+        mark_init_done(quests, QLOG_GWENDY_SECOND_SKULL);
+        set_flags(quests, QLOG_GWENDY_THIRD_SKULL, QF_OPEN);
+        set_flags(quests, QLOG_GWENDY_FOUL_MAGICIAN, 0);
+    } else if ppd.gwendy_state >= GWENDYLON_STATE_FIRST_SKULL_DONE {
+        mark_init_done(quests, QLOG_GWENDY_FIRST_SKULL);
+        set_flags(quests, QLOG_GWENDY_SECOND_SKULL, QF_OPEN);
+        set_flags(quests, QLOG_GWENDY_THIRD_SKULL, 0);
+        set_flags(quests, QLOG_GWENDY_FOUL_MAGICIAN, 0);
+    } else if ppd.gwendy_state > GWENDYLON_STATE_ENTRY {
+        set_flags(quests, QLOG_GWENDY_FIRST_SKULL, QF_OPEN);
+        set_flags(quests, QLOG_GWENDY_SECOND_SKULL, 0);
+        set_flags(quests, QLOG_GWENDY_THIRD_SKULL, 0);
+        set_flags(quests, QLOG_GWENDY_FOUL_MAGICIAN, 0);
+    } else {
+        set_flags(quests, QLOG_GWENDY_FIRST_SKULL, 0);
+        set_flags(quests, QLOG_GWENDY_SECOND_SKULL, 0);
+        set_flags(quests, QLOG_GWENDY_THIRD_SKULL, 0);
+        set_flags(quests, QLOG_GWENDY_FOUL_MAGICIAN, 0);
+    }
+
+    if ppd.yoakin_state >= 5 {
+        mark_init_done(quests, 5);
+    } else if ppd.yoakin_state > 0 {
+        set_flags(quests, 5, QF_OPEN);
+    } else {
+        set_flags(quests, 5, 0);
+    }
+
+    if ppd.nook_state >= 12 {
+        mark_init_done(quests, QLOG_NOOK);
+    } else if ppd.nook_state > 0 {
+        set_flags(quests, QLOG_NOOK, QF_OPEN);
+    } else {
+        set_flags(quests, QLOG_NOOK, 0);
+    }
+
+    if ppd.guiwynn_state >= 9 {
+        mark_init_done(quests, 7);
+        mark_init_done(quests, 8);
+    } else if ppd.guiwynn_state >= 6 {
+        mark_init_done(quests, 7);
+        set_flags(quests, 8, QF_OPEN);
+    } else if ppd.guiwynn_state > 0 {
+        set_flags(quests, 7, QF_OPEN);
+        set_flags(quests, 8, 0);
+    } else {
+        set_flags(quests, 7, 0);
+        set_flags(quests, 8, 0);
+    }
+
+    if ppd.logain_state >= 6 {
+        mark_init_done(quests, 9);
+    } else if ppd.logain_state > 0 {
+        set_flags(quests, 9, QF_OPEN);
+    } else {
+        set_flags(quests, 9, 0);
+    }
+
+    if ppd.reskin_state >= 8 {
+        mark_init_done(quests, 17);
+    } else if ppd.reskin_state >= 4 {
+        set_flags(quests, 17, QF_OPEN);
+    } else {
+        set_flags(quests, 17, 0);
+    }
+
+    if ppd.jessica_state >= JESSICA_STATE_QUEST1_FINISH {
+        mark_init_done(quests, QLOG_JESSICA_ROBBER_NOTE);
+    } else if ppd.jessica_state > JESSICA_STATE_QUEST1_GIVE_1 {
+        set_flags(quests, QLOG_JESSICA_ROBBER_NOTE, QF_OPEN);
+    } else {
+        set_flags(quests, QLOG_JESSICA_ROBBER_NOTE, 0);
+    }
+
+    if ppd.jessica_state >= JESSICA_STATE_QUEST2_FINISH {
+        mark_init_done(quests, QLOG_JESSICA_KILL);
+    } else if ppd.jessica_state > JESSICA_STATE_QUEST2_GIVE_1 {
+        set_flags(quests, QLOG_JESSICA_KILL, QF_OPEN);
+    } else {
+        set_flags(quests, QLOG_JESSICA_KILL, 0);
+    }
+
+    if ppd.brithildie_state == BRITHILDIE_STATE_NOMORETALES_QDONE {
+        mark_init_done(quests, QLOG_BRITHILDIE);
+    } else if ppd.brithildie_state == BRITHILDIE_STATE_NOMORETALES_QOPEN {
+        set_flags(quests, QLOG_BRITHILDIE, QF_OPEN);
+    } else {
+        set_flags(quests, QLOG_BRITHILDIE, 0);
+    }
+
+    if ppd.camhermit_state >= CAMHERMIT_STATE_QUEST2WAIT {
+        mark_init_done(quests, QLOG_HERMIT_QUEST1);
+    } else if ppd.camhermit_state == CAMHERMIT_STATE_QUEST1DO {
+        set_flags(quests, QLOG_HERMIT_QUEST1, QF_OPEN);
+    } else {
+        set_flags(quests, QLOG_HERMIT_QUEST1, 0);
+    }
+
+    if ppd.camhermit_state >= CAMHERMIT_STATE_DONE {
+        mark_init_done(quests, QLOG_HERMIT_QUEST2);
+    } else if ppd.camhermit_state == CAMHERMIT_STATE_QUEST2DO {
+        set_flags(quests, QLOG_HERMIT_QUEST2, QF_OPEN);
+    } else {
+        set_flags(quests, QLOG_HERMIT_QUEST2, 0);
+    }
+}
+
+/// The `nomad_ppd.nomad_state[]` array consumed by `questlog_init_nomad`
+/// (`src/system/questlog.c:1571-1607`); a snapshot built by
+/// `PlayerRuntime::nomad_quest_state`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NomadQuestState {
+    pub nomad_state: [i32; 10],
+}
+
+/// C `questlog_init_nomad` (`src/system/questlog.c:1571-1607`): derives
+/// quests 32-34 (Nomad Plains tribe quests) from `nomad_state[1]`,
+/// `nomad_state[4]`, and `nomad_state[5]`.
+pub fn init_nomad_quests(quests: &mut QuestLog, ppd: &NomadQuestState) {
+    if ppd.nomad_state[1] >= 9 {
+        mark_init_done(quests, 32);
+    } else if ppd.nomad_state[1] > 0 {
+        set_flags(quests, 32, QF_OPEN);
+    } else {
+        set_flags(quests, 32, 0);
+    }
+
+    if ppd.nomad_state[4] >= 4 {
+        mark_init_done(quests, 33);
+    } else if ppd.nomad_state[4] > 0 {
+        set_flags(quests, 33, QF_OPEN);
+    } else {
+        set_flags(quests, 33, 0);
+    }
+
+    if ppd.nomad_state[5] >= 4 {
+        mark_init_done(quests, 34);
+    } else if ppd.nomad_state[5] > 0 {
+        set_flags(quests, 34, QF_OPEN);
+    } else {
+        set_flags(quests, 34, 0);
+    }
 }
 
 #[cfg(test)]
@@ -1279,5 +1516,230 @@ mod tests {
         // reset to 0 or anything else).
         log.close(QLOG_LYDIA);
         assert_eq!(log.entries()[QLOG_LYDIA].flags, QF_DONE);
+    }
+
+    #[test]
+    fn init_area1_quests_lydia_branches_match_c() {
+        let mut log = QuestLog::default();
+
+        // done > 0, no flag transition into open until >=6.
+        init_area1_quests(&mut log, &Area1QuestState::default());
+        assert_eq!(log.entries()[QLOG_LYDIA].flags, 0);
+
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                lydia_state: 3,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[QLOG_LYDIA].flags, QF_OPEN);
+
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                lydia_state: 6,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[QLOG_LYDIA].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_LYDIA].done, 1);
+
+        // Calling again with the same state must not bump `done` past 1
+        // (C only seeds `done = 1` when it was previously 0).
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                lydia_state: 6,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[QLOG_LYDIA].done, 1);
+    }
+
+    #[test]
+    fn init_area1_quests_gwendy_series_matches_c_ladder() {
+        let mut log = QuestLog::default();
+
+        // Entry: all four closed.
+        init_area1_quests(&mut log, &Area1QuestState::default());
+        for quest in [
+            QLOG_GWENDY_FIRST_SKULL,
+            QLOG_GWENDY_SECOND_SKULL,
+            QLOG_GWENDY_THIRD_SKULL,
+            QLOG_GWENDY_FOUL_MAGICIAN,
+        ] {
+            assert_eq!(log.entries()[quest].flags, 0);
+        }
+
+        // In progress on first skull.
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                gwendy_state: 3,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[QLOG_GWENDY_FIRST_SKULL].flags, QF_OPEN);
+        assert_eq!(log.entries()[QLOG_GWENDY_SECOND_SKULL].flags, 0);
+
+        // First skull done (>=6), second open.
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                gwendy_state: GWENDYLON_STATE_FIRST_SKULL_DONE,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[QLOG_GWENDY_FIRST_SKULL].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_GWENDY_SECOND_SKULL].flags, QF_OPEN);
+        assert_eq!(log.entries()[QLOG_GWENDY_THIRD_SKULL].flags, 0);
+
+        // Second skull done (>=10), third open.
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                gwendy_state: GWENDYLON_STATE_SECOND_SKULL_DONE,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[QLOG_GWENDY_FIRST_SKULL].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_GWENDY_SECOND_SKULL].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_GWENDY_THIRD_SKULL].flags, QF_OPEN);
+        assert_eq!(log.entries()[QLOG_GWENDY_FOUL_MAGICIAN].flags, 0);
+
+        // Third skull done (>=14), foul magician open.
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                gwendy_state: GWENDYLON_STATE_THIRD_SKULL_DONE,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[QLOG_GWENDY_THIRD_SKULL].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_GWENDY_FOUL_MAGICIAN].flags, QF_OPEN);
+
+        // Foul magician done (>=18): whole series done, `done` seeded to 1.
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                gwendy_state: GWENDYLON_STATE_FOUL_MAGICIAN_DONE,
+                ..Default::default()
+            },
+        );
+        for quest in [
+            QLOG_GWENDY_FIRST_SKULL,
+            QLOG_GWENDY_SECOND_SKULL,
+            QLOG_GWENDY_THIRD_SKULL,
+            QLOG_GWENDY_FOUL_MAGICIAN,
+        ] {
+            assert_eq!(log.entries()[quest].flags, QF_DONE);
+            assert_eq!(log.entries()[quest].done, 1);
+        }
+    }
+
+    #[test]
+    fn init_area1_quests_yoakin_nook_guiwynn_logain_reskin_match_c() {
+        let mut log = QuestLog::default();
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                yoakin_state: 5,
+                nook_state: 12,
+                guiwynn_state: 9,
+                logain_state: 6,
+                reskin_state: 8,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[5].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_NOOK].flags, QF_DONE);
+        assert_eq!(log.entries()[7].flags, QF_DONE);
+        assert_eq!(log.entries()[8].flags, QF_DONE);
+        assert_eq!(log.entries()[9].flags, QF_DONE);
+        assert_eq!(log.entries()[17].flags, QF_DONE);
+
+        let mut log = QuestLog::default();
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                yoakin_state: 2,
+                nook_state: 4,
+                guiwynn_state: 7,
+                logain_state: 3,
+                reskin_state: 5,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[5].flags, QF_OPEN);
+        assert_eq!(log.entries()[QLOG_NOOK].flags, QF_OPEN);
+        assert_eq!(log.entries()[7].flags, QF_DONE);
+        assert_eq!(log.entries()[8].flags, QF_OPEN);
+        assert_eq!(log.entries()[9].flags, QF_OPEN);
+        // reskin_state=5 is >=4 but <8: open, not done.
+        assert_eq!(log.entries()[17].flags, QF_OPEN);
+    }
+
+    #[test]
+    fn init_area1_quests_jessica_brithildie_camhermit_match_c() {
+        let mut log = QuestLog::default();
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                jessica_state: JESSICA_STATE_QUEST1_FINISH,
+                brithildie_state: BRITHILDIE_STATE_NOMORETALES_QOPEN,
+                camhermit_state: CAMHERMIT_STATE_QUEST1DO,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[QLOG_JESSICA_ROBBER_NOTE].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_JESSICA_KILL].flags, 0);
+        assert_eq!(log.entries()[QLOG_BRITHILDIE].flags, QF_OPEN);
+        assert_eq!(log.entries()[QLOG_HERMIT_QUEST1].flags, QF_OPEN);
+        assert_eq!(log.entries()[QLOG_HERMIT_QUEST2].flags, 0);
+
+        let mut log = QuestLog::default();
+        init_area1_quests(
+            &mut log,
+            &Area1QuestState {
+                jessica_state: JESSICA_STATE_QUEST2_FINISH,
+                brithildie_state: BRITHILDIE_STATE_NOMORETALES_QDONE,
+                camhermit_state: CAMHERMIT_STATE_DONE,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[QLOG_JESSICA_ROBBER_NOTE].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_JESSICA_KILL].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_BRITHILDIE].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_HERMIT_QUEST1].flags, QF_DONE);
+        assert_eq!(log.entries()[QLOG_HERMIT_QUEST2].flags, QF_DONE);
+    }
+
+    #[test]
+    fn init_nomad_quests_matches_c_thresholds() {
+        let mut log = QuestLog::default();
+        init_nomad_quests(&mut log, &NomadQuestState::default());
+        assert_eq!(log.entries()[32].flags, 0);
+        assert_eq!(log.entries()[33].flags, 0);
+        assert_eq!(log.entries()[34].flags, 0);
+
+        let mut state = NomadQuestState::default();
+        state.nomad_state[1] = 5;
+        state.nomad_state[4] = 2;
+        state.nomad_state[5] = 1;
+        init_nomad_quests(&mut log, &state);
+        assert_eq!(log.entries()[32].flags, QF_OPEN);
+        assert_eq!(log.entries()[33].flags, QF_OPEN);
+        assert_eq!(log.entries()[34].flags, QF_OPEN);
+
+        let mut state = NomadQuestState::default();
+        state.nomad_state[1] = 9;
+        state.nomad_state[4] = 4;
+        state.nomad_state[5] = 4;
+        init_nomad_quests(&mut log, &state);
+        assert_eq!(log.entries()[32].flags, QF_DONE);
+        assert_eq!(log.entries()[32].done, 1);
+        assert_eq!(log.entries()[33].flags, QF_DONE);
+        assert_eq!(log.entries()[34].flags, QF_DONE);
     }
 }

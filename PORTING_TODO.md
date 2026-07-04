@@ -2216,16 +2216,23 @@ Unlocks every quest NPC. Do these before any P4 area work.
   rewards per quest (`quest_exp.h`). Port the quest table + the
   `questlog_open/done` helpers; wire the already-ported `CL_REOPENQUEST`
   reset side effects per area.
-  REMAINING: `questlog_init` (derives quest flags from `area1_ppd`/
-  `area3_ppd`/`staffer_ppd`/`twocity_ppd`/`nomad_ppd` state machines) and
-  the per-area `questlog_reopen_qN` reset side effects are not ported -
-  they need `area1_ppd`/`nomad_ppd` to become real decoded structs first
-  (currently delete-only stubs in `player.rs`; only `area3_ppd`/
-  `twocity_ppd` are real). `quest_exp.h`'s per-encounter exp/money
-  constants (used by NPC drivers that don't exist yet) are also not
-  ported. No NPC dialogue driver calls `QuestLog::open`/`complete_legacy`
-  yet since the area NPC drivers themselves aren't ported (P4 area
-  content) - this slice only lands the reusable primitives.
+  REMAINING: `questlog_init`'s `area3_ppd`/`staffer_ppd`/`twocity_ppd`
+  sub-functions (`questlog_init_area3/staff/twocity`,
+  `src/system/questlog.c:1040-1470`) and the `questlog_init` top-level
+  dispatcher (the `quest[MAXQUEST-1].done == 55` "already initialized"
+  sentinel + calling all 5 sub-functions) are still not ported, since
+  `area3_ppd`/`staffer_ppd`/`twocity_ppd` only expose a handful of named
+  fields today (not every state those sub-functions read, e.g.
+  `seymour_state`/`astro2_state`/`crypt_state`/`william_state`/
+  `hermit_state`/`carlos_state`/`smugglecom_state`/etc. have no
+  accessors yet). The per-area `questlog_reopen_qN` reset side effects
+  (`src/system/questlog.c:394-828`ish) are also not ported. `quest_exp.h`'s
+  per-encounter exp/money constants (used by NPC drivers that don't exist
+  yet) are also not ported. No NPC dialogue driver calls
+  `QuestLog::open`/`complete_legacy`/`init_area1_quests`/
+  `init_nomad_quests` yet since the area NPC drivers themselves aren't
+  ported (P4 area content) - this slice only lands the reusable
+  primitives.
   Progress Log: ported the C `struct questlog questlog[]` metadata table
   (85 entries, name/level-range/giver/area/nominal-exp/flags incl.
   `QLF_XREPEAT`, copied digit-for-digit including the two trailing-space
@@ -2248,6 +2255,44 @@ Unlocks every quest NPC. Do these before any P4 area work.
   repeatability-flag/table sync, `scale_exp`'s full curve, `taper_exp_by_
   level`'s four level bands, `complete_legacy`'s first/repeat completions
   and out-of-range handling, and the corrected `open`/`close` semantics.
+  Progress Log (iteration 60): promoted `area1_ppd`/`nomad_ppd`
+  (`crates/ugaris-core/src/player.rs`) from delete-only stubs (raw bytes
+  stripped wholesale via `strip_ppd_blocks` in `clear_turn_seyan_ppd`) to
+  real fixed-layout codecs matching the C structs
+  (`struct area1_ppd`, `src/area/1/area1.h:24-75`, 39 ints/156 bytes;
+  `struct nomad_ppd`, `src/common/nomad_ppd.h:9-13`, 25 ints/100 bytes -
+  `nomad_state[10]`/`nomad_win[10]`/4 roll-bet ints/`tribe_member`), with
+  named accessors for the 10 area1 NPC states and the `nomad_state[]`
+  array `questlog_init_area1`/`questlog_init_nomad` need, wired into the
+  full `decode_legacy_ppd_blob`/`encode_legacy_ppd_blob` dispatch (decode
+  match arm, encode match arm, `had_area1`/`had_nomad` append-if-missing)
+  and `clear_turn_seyan_ppd` (now clears the typed fields directly
+  instead of stripping the ids). Ported `questlog_init_area1`
+  (`src/system/questlog.c:828-1039`) and `questlog_init_nomad`
+  (`src/system/questlog.c:1571-1607`) as pure functions
+  (`init_area1_quests`/`init_nomad_quests` in
+  `crates/ugaris-core/src/quest.rs`) taking a plain `Area1QuestState`/
+  `NomadQuestState` snapshot (this leaf module has no access to
+  `PlayerRuntime`; `PlayerRuntime::area1_quest_state`/`nomad_quest_state`
+  build the snapshot), including the required `GWENDYLON_STATE_*`/
+  `JESSICA_STATE_*`/`BRITHILDIE_STATE_*`/`CAMHERMIT_STATE_*` constants
+  from `src/common/npc_states.h` and the `mark_init_done`/`set_flags`
+  helpers matching C's `if (!quest[qnr].done) quest[qnr].done = 1;
+  quest[qnr].flags = QF_DONE;` idiom (seeds `done` once, never
+  increments). Fixed 14 existing `player.rs` tests that reused
+  `22 | PERSISTENT_PLAYER_DATA` (now `DRD_AREA1_PPD`) as a placeholder
+  "unmodeled id" - repointed them at `DRD_RANK_PPD` (still genuinely
+  unmodeled). Added 6 new tests in `player.rs` (area1/nomad fixed-layout
+  round-trip, outer-blob replace/append, snapshot builders, out-of-range
+  index safety) and 6 new tests in `quest.rs` (every `init_area1_quests`
+  branch ladder incl. the Gwendylon 4-quest chain, `init_nomad_quests`
+  thresholds, and the "done seeded once, not incremented" re-init
+  invariant). `cargo fmt --all`, `cargo test --workspace` (1311+36+3+33+
+  406 passed), `cargo build -p ugaris-server` clean with zero warnings,
+  and a 10s boot-smoke showed ticking with no panics (this change doesn't
+  wire `init_area1_quests`/`init_nomad_quests` into any live caller yet -
+  no NPC driver advances these states, so nothing calls them at
+  runtime).
 
 - [ ] **Achievements (`src/module/achievements/achievement.c`)** - runtime
   markers partially exist (chests, transport). Port the achievement

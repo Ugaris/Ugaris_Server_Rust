@@ -40,6 +40,13 @@ pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
 pub const LEGACY_AREA3_PPD_SIZE: usize = 17 * 4;
+/// C `struct area1_ppd` (`src/area/1/area1.h:24-75`): 39 `int` fields.
+pub const LEGACY_AREA1_PPD_SIZE: usize = 39 * 4;
+/// C `struct nomad_ppd` (`src/common/nomad_ppd.h:9-13`):
+/// `nomad_state[MAXNOMAD]` + `nomad_win[MAXNOMAD]` (`MAXNOMAD` = 10) +
+/// `open_roll1/2/3/open_bet` + `tribe_member` = 10+10+4+1 = 25 `int`s.
+pub const LEGACY_NOMAD_PPD_SIZE: usize = 25 * 4;
+pub const NOMAD_PPD_MAXNOMAD: usize = 10;
 pub const LEGACY_CALIGAR_PPD_SIZE: usize = 14 * 4 + 4;
 pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_STAFFER_PPD_SIZE: usize = 25 * 4;
@@ -130,6 +137,12 @@ pub const DEV_ID_MR: u32 = 2;
 pub const DEV_ID_ED: u32 = 59;
 pub const DRD_JUNK_PPD: u32 = make_drd(DEV_ID_DB, 114 | PERSISTENT_PLAYER_DATA);
 pub const DRD_AREA3_PPD: u32 = make_drd(DEV_ID_DB, 40 | PERSISTENT_PLAYER_DATA);
+/// C `#define DRD_AREA1_PPD MAKE_DRD(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA)`
+/// (`src/system/drdata.h`). See `area1_ppd`/`encode_legacy_area1_ppd`.
+pub const DRD_AREA1_PPD: u32 = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+/// C `#define DRD_NOMAD_PPD MAKE_DRD(DEV_ID_DB, 112 | PERSISTENT_PLAYER_DATA)`
+/// (`src/system/drdata.h`). See `nomad_ppd`/`encode_legacy_nomad_ppd`.
+pub const DRD_NOMAD_PPD: u32 = make_drd(DEV_ID_DB, 112 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TREASURE_CHEST_PPD: u32 = make_drd(DEV_ID_DB, 17 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TRANSPORT_PPD: u32 = make_drd(DEV_ID_DB, 44 | PERSISTENT_PLAYER_DATA);
 pub const DRD_PK_PPD: u32 = make_drd(DEV_ID_DB, 47 | PERSISTENT_PLAYER_DATA);
@@ -155,22 +168,23 @@ pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DAT
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_DATA);
-/// The following 11 ids (`src/system/drdata.h`) back systems that are not
-/// modeled on `PlayerRuntime` at all yet (first-kill tracking, area1
-/// progress, army rank, military points, arena, nomad quest, sidestory,
-/// tunnel, strategy game, quest log, and the per-character legacy depot).
-/// They exist here solely so `turn_seyan` (`src/system/tool.c:4278-4389`,
-/// ported at `World::apply_turn_seyan`) can `del_data` them exactly like
-/// C does, via `PlayerRuntime::clear_turn_seyan_ppd`'s raw-block strip -
-/// see `strip_ppd_blocks`. No decode/encode logic backs these ids since
-/// nothing else in this codebase reads or writes them yet.
+/// The following 9 ids (`src/system/drdata.h`) back systems that are not
+/// modeled on `PlayerRuntime` at all yet (first-kill tracking, army rank,
+/// military points, arena, sidestory, tunnel, strategy game, quest log,
+/// and the per-character legacy depot). They exist here solely so
+/// `turn_seyan` (`src/system/tool.c:4278-4389`, ported at
+/// `World::apply_turn_seyan`) can `del_data` them exactly like C does, via
+/// `PlayerRuntime::clear_turn_seyan_ppd`'s raw-block strip - see
+/// `strip_ppd_blocks`. No decode/encode logic backs these ids since
+/// nothing else in this codebase reads or writes them yet. `DRD_AREA1_PPD`
+/// and `DRD_NOMAD_PPD` moved out of this group (see `area1_ppd`/
+/// `nomad_ppd` below) once their questlog-init-required fields got real
+/// accessors.
 pub const DRD_FIRSTKILL_PPD: u32 = make_drd(DEV_ID_DB, 18 | PERSISTENT_PLAYER_DATA);
-pub const DRD_AREA1_PPD: u32 = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RANK_PPD: u32 = make_drd(DEV_ID_DB, 41 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEPOT_PPD: u32 = make_drd(DEV_ID_DB, 67 | PERSISTENT_PLAYER_DATA);
 pub const DRD_MILITARY_PPD: u32 = make_drd(DEV_ID_DB, 72 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ARENA_PPD: u32 = make_drd(DEV_ID_DB, 83 | PERSISTENT_PLAYER_DATA);
-pub const DRD_NOMAD_PPD: u32 = make_drd(DEV_ID_DB, 112 | PERSISTENT_PLAYER_DATA);
 pub const DRD_STRATEGY_PPD: u32 = make_drd(DEV_ID_DB, 121 | PERSISTENT_PLAYER_DATA);
 pub const DRD_SIDESTORY_PPD: u32 = make_drd(DEV_ID_DB, 124 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TUNNEL_PPD: u32 = make_drd(DEV_ID_DB, 154 | PERSISTENT_PLAYER_DATA);
@@ -241,6 +255,25 @@ const AREA3_PPD_KELLY_FOUND2_OFFSET: usize = 4 * 4;
 const AREA3_PPD_KELLY_FOUND3_OFFSET: usize = 5 * 4;
 const AREA3_PPD_CLARA_STATE_OFFSET: usize = 9 * 4;
 const AREA3_PPD_IMP_FLAGS_OFFSET: usize = 12 * 4;
+// `struct area1_ppd` field offsets (`src/area/1/area1.h:24-75`), in
+// declaration order (0-based `int` index * 4). Only the fields consumed by
+// `questlog_init_area1` (`src/system/questlog.c:828-1039`) have named
+// accessors so far; the rest round-trip as opaque bytes.
+const AREA1_PPD_YOAKIN_STATE_OFFSET: usize = 0 * 4;
+const AREA1_PPD_GWENDY_STATE_OFFSET: usize = 2 * 4;
+const AREA1_PPD_NOOK_STATE_OFFSET: usize = 10 * 4;
+const AREA1_PPD_LYDIA_STATE_OFFSET: usize = 11 * 4;
+const AREA1_PPD_GUIWYNN_STATE_OFFSET: usize = 15 * 4;
+const AREA1_PPD_LOGAIN_STATE_OFFSET: usize = 17 * 4;
+const AREA1_PPD_RESKIN_STATE_OFFSET: usize = 19 * 4;
+const AREA1_PPD_BRITHILDIE_STATE_OFFSET: usize = 24 * 4;
+const AREA1_PPD_CAMHERMIT_STATE_OFFSET: usize = 32 * 4;
+const AREA1_PPD_JESSICA_STATE_OFFSET: usize = 35 * 4;
+// `struct nomad_ppd` field offsets (`src/common/nomad_ppd.h:9-13`):
+// `nomad_state[MAXNOMAD]` then `nomad_win[MAXNOMAD]` then the four open-
+// roll/bet ints then `tribe_member`.
+const NOMAD_PPD_STATE_OFFSET: usize = 0;
+const NOMAD_PPD_WIN_OFFSET: usize = NOMAD_PPD_MAXNOMAD * 4;
 const CALIGAR_PPD_WATCH_FLAG_OFFSET: usize = 4 * 4;
 const CALIGAR_PPD_DOOR_FLAG_OFFSET: usize = 14 * 4;
 const CALIGAR_PPD_DOOR_FLAG_COUNT: usize = 4;
@@ -481,6 +514,10 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub area3_ppd: Vec<u8>,
     #[serde(default)]
+    pub area1_ppd: Vec<u8>,
+    #[serde(default)]
+    pub nomad_ppd: Vec<u8>,
+    #[serde(default)]
     pub caligar_ppd: Vec<u8>,
     #[serde(default)]
     pub arkhata_ppd: Vec<u8>,
@@ -640,6 +677,8 @@ impl PlayerRuntime {
             treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
             area3_ppd: Vec::new(),
+            area1_ppd: Vec::new(),
+            nomad_ppd: Vec::new(),
             caligar_ppd: Vec::new(),
             arkhata_ppd: Vec::new(),
             staffer_ppd: Vec::new(),
@@ -2029,6 +2068,199 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_area1_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_AREA1_PPD_SIZE];
+        let copy_len = self.area1_ppd.len().min(LEGACY_AREA1_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.area1_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_area1_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_AREA1_PPD_SIZE {
+            return false;
+        }
+        self.area1_ppd = bytes[..LEGACY_AREA1_PPD_SIZE].to_vec();
+        true
+    }
+
+    fn read_area1_i32(&self, offset: usize) -> i32 {
+        if self.area1_ppd.len() < LEGACY_AREA1_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.area1_ppd, offset)
+    }
+
+    fn write_area1_i32(&mut self, offset: usize, value: i32) {
+        if self.area1_ppd.len() < LEGACY_AREA1_PPD_SIZE {
+            self.area1_ppd.resize(LEGACY_AREA1_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.area1_ppd, offset, value);
+    }
+
+    pub fn area1_yoakin_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_YOAKIN_STATE_OFFSET)
+    }
+
+    pub fn set_area1_yoakin_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_YOAKIN_STATE_OFFSET, state);
+    }
+
+    pub fn area1_gwendy_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_GWENDY_STATE_OFFSET)
+    }
+
+    pub fn set_area1_gwendy_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_GWENDY_STATE_OFFSET, state);
+    }
+
+    pub fn area1_nook_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_NOOK_STATE_OFFSET)
+    }
+
+    pub fn set_area1_nook_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_NOOK_STATE_OFFSET, state);
+    }
+
+    pub fn area1_lydia_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_LYDIA_STATE_OFFSET)
+    }
+
+    pub fn set_area1_lydia_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_LYDIA_STATE_OFFSET, state);
+    }
+
+    pub fn area1_guiwynn_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_GUIWYNN_STATE_OFFSET)
+    }
+
+    pub fn set_area1_guiwynn_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_GUIWYNN_STATE_OFFSET, state);
+    }
+
+    pub fn area1_logain_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_LOGAIN_STATE_OFFSET)
+    }
+
+    pub fn set_area1_logain_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_LOGAIN_STATE_OFFSET, state);
+    }
+
+    pub fn area1_reskin_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_RESKIN_STATE_OFFSET)
+    }
+
+    pub fn set_area1_reskin_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_RESKIN_STATE_OFFSET, state);
+    }
+
+    pub fn area1_brithildie_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_BRITHILDIE_STATE_OFFSET)
+    }
+
+    pub fn set_area1_brithildie_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_BRITHILDIE_STATE_OFFSET, state);
+    }
+
+    pub fn area1_camhermit_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_CAMHERMIT_STATE_OFFSET)
+    }
+
+    pub fn set_area1_camhermit_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_CAMHERMIT_STATE_OFFSET, state);
+    }
+
+    pub fn area1_jessica_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_JESSICA_STATE_OFFSET)
+    }
+
+    pub fn set_area1_jessica_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_JESSICA_STATE_OFFSET, state);
+    }
+
+    /// Snapshot of the `area1_ppd` fields consumed by
+    /// `questlog_init_area1` (`src/system/questlog.c:828-1039`), for
+    /// `crate::quest::init_area1_quests`.
+    pub fn area1_quest_state(&self) -> crate::quest::Area1QuestState {
+        crate::quest::Area1QuestState {
+            lydia_state: self.area1_lydia_state(),
+            gwendy_state: self.area1_gwendy_state(),
+            yoakin_state: self.area1_yoakin_state(),
+            nook_state: self.area1_nook_state(),
+            guiwynn_state: self.area1_guiwynn_state(),
+            logain_state: self.area1_logain_state(),
+            reskin_state: self.area1_reskin_state(),
+            jessica_state: self.area1_jessica_state(),
+            brithildie_state: self.area1_brithildie_state(),
+            camhermit_state: self.area1_camhermit_state(),
+        }
+    }
+
+    pub fn encode_legacy_nomad_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_NOMAD_PPD_SIZE];
+        let copy_len = self.nomad_ppd.len().min(LEGACY_NOMAD_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.nomad_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_nomad_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_NOMAD_PPD_SIZE {
+            return false;
+        }
+        self.nomad_ppd = bytes[..LEGACY_NOMAD_PPD_SIZE].to_vec();
+        true
+    }
+
+    /// C `nomad_state[MAXNOMAD]` element read (`src/common/nomad_ppd.h:10`).
+    pub fn nomad_state(&self, index: usize) -> i32 {
+        if index >= NOMAD_PPD_MAXNOMAD || self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.nomad_ppd, NOMAD_PPD_STATE_OFFSET + index * 4)
+    }
+
+    pub fn set_nomad_state(&mut self, index: usize, value: i32) {
+        if index >= NOMAD_PPD_MAXNOMAD {
+            return;
+        }
+        if self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
+            self.nomad_ppd.resize(LEGACY_NOMAD_PPD_SIZE, 0);
+        }
+        write_i32(
+            &mut self.nomad_ppd,
+            NOMAD_PPD_STATE_OFFSET + index * 4,
+            value,
+        );
+    }
+
+    /// C `nomad_win[MAXNOMAD]` element read (`src/common/nomad_ppd.h:11`).
+    pub fn nomad_win(&self, index: usize) -> i32 {
+        if index >= NOMAD_PPD_MAXNOMAD || self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.nomad_ppd, NOMAD_PPD_WIN_OFFSET + index * 4)
+    }
+
+    pub fn set_nomad_win(&mut self, index: usize, value: i32) {
+        if index >= NOMAD_PPD_MAXNOMAD {
+            return;
+        }
+        if self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
+            self.nomad_ppd.resize(LEGACY_NOMAD_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.nomad_ppd, NOMAD_PPD_WIN_OFFSET + index * 4, value);
+    }
+
+    /// Snapshot of the `nomad_state[]` array consumed by
+    /// `questlog_init_nomad` (`src/system/questlog.c:1571-1607`), for
+    /// `crate::quest::init_nomad_quests`.
+    pub fn nomad_quest_state(&self) -> crate::quest::NomadQuestState {
+        let mut nomad_state = [0i32; NOMAD_PPD_MAXNOMAD];
+        for (index, slot) in nomad_state.iter_mut().enumerate() {
+            *slot = self.nomad_state(index);
+        }
+        crate::quest::NomadQuestState { nomad_state }
+    }
+
     pub fn encode_legacy_caligar_ppd(&self) -> Vec<u8> {
         let mut bytes = vec![0; LEGACY_CALIGAR_PPD_SIZE];
         let copy_len = self.caligar_ppd.len().min(LEGACY_CALIGAR_PPD_SIZE);
@@ -2210,24 +2442,26 @@ impl PlayerRuntime {
 
     /// The `PlayerRuntime` half of `turn_seyan`'s ~22 `del_data` calls
     /// (`src/system/tool.c:4331-4353`; the character-only half is
-    /// `World::apply_turn_seyan`). 14 of the cleared ids have dedicated
+    /// `World::apply_turn_seyan`). 16 of the cleared ids have dedicated
     /// typed fields here - reset each to its empty/default state so
     /// `encode_legacy_ppd_blob` naturally omits the block on next save,
     /// exactly like a character that never touched that system. The
-    /// remaining 10 non-depot ids (`DRD_FIRSTKILL_PPD`, `DRD_AREA1_PPD`,
-    /// `DRD_RANK_PPD`, `DRD_MILITARY_PPD`, `DRD_ARENA_PPD`,
-    /// `DRD_NOMAD_PPD`, `DRD_SIDESTORY_PPD`, `DRD_TUNNEL_PPD`,
-    /// `DRD_STRATEGY_PPD`, `DRD_QUESTLOG_PPD`) have no Rust representation
-    /// at all, so they're stripped straight out of the raw `ppd_blob` via
-    /// `strip_ppd_blocks` (the same byte-level mechanism that already
-    /// round-trips every other still-unmodeled id). `DRD_DEPOT_PPD`'s
-    /// "clear `IF_QUEST` flags from the 80 depot item slots" is a
-    /// documented gap - see `World::apply_turn_seyan`'s doc comment; no
-    /// per-character legacy depot exists in Rust yet (`AccountDepotState`,
-    /// `ugaris-server::depot`, is a distinct, newer system).
+    /// remaining 8 non-depot ids (`DRD_FIRSTKILL_PPD`, `DRD_RANK_PPD`,
+    /// `DRD_MILITARY_PPD`, `DRD_ARENA_PPD`, `DRD_SIDESTORY_PPD`,
+    /// `DRD_TUNNEL_PPD`, `DRD_STRATEGY_PPD`, `DRD_QUESTLOG_PPD`) have no
+    /// Rust representation at all, so they're stripped straight out of the
+    /// raw `ppd_blob` via `strip_ppd_blocks` (the same byte-level
+    /// mechanism that already round-trips every other still-unmodeled
+    /// id). `DRD_DEPOT_PPD`'s "clear `IF_QUEST` flags from the 80 depot
+    /// item slots" is a documented gap - see `World::apply_turn_seyan`'s
+    /// doc comment; no per-character legacy depot exists in Rust yet
+    /// (`AccountDepotState`, `ugaris-server::depot`, is a distinct, newer
+    /// system).
     pub fn clear_turn_seyan_ppd(&mut self) {
         self.chest_last_access_seconds.clear();
         self.area3_ppd.clear();
+        self.area1_ppd.clear();
+        self.nomad_ppd.clear();
         self.random_shrine_used_words = [0; RANDOMSHRINE_USED_WORDS];
         self.random_shrine_continuity = 0;
         self.flowers.clear();
@@ -2253,11 +2487,9 @@ impl PlayerRuntime {
             &self.ppd_blob,
             &[
                 DRD_FIRSTKILL_PPD,
-                DRD_AREA1_PPD,
                 DRD_RANK_PPD,
                 DRD_MILITARY_PPD,
                 DRD_ARENA_PPD,
-                DRD_NOMAD_PPD,
                 DRD_SIDESTORY_PPD,
                 DRD_TUNNEL_PPD,
                 DRD_STRATEGY_PPD,
@@ -2394,6 +2626,16 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_AREA1_PPD => {
+                    if !self.decode_legacy_area1_ppd(block.data) {
+                        return false;
+                    }
+                }
+                DRD_NOMAD_PPD => {
+                    if !self.decode_legacy_nomad_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_CALIGAR_PPD => {
                     if !self.decode_legacy_caligar_ppd(block.data) {
                         return false;
@@ -2487,6 +2729,8 @@ impl PlayerRuntime {
         let mut had_lostcon = false;
         let mut had_flower = false;
         let mut had_area3 = false;
+        let mut had_area1 = false;
+        let mut had_nomad = false;
         let mut had_caligar = false;
         let mut had_arkhata = false;
         let mut had_staffer = false;
@@ -2596,6 +2840,12 @@ impl PlayerRuntime {
             } else if block.id == DRD_AREA3_PPD {
                 had_area3 = true;
                 write_ppd_block(&mut encoded, DRD_AREA3_PPD, &self.encode_legacy_area3_ppd());
+            } else if block.id == DRD_AREA1_PPD {
+                had_area1 = true;
+                write_ppd_block(&mut encoded, DRD_AREA1_PPD, &self.encode_legacy_area1_ppd());
+            } else if block.id == DRD_NOMAD_PPD {
+                had_nomad = true;
+                write_ppd_block(&mut encoded, DRD_NOMAD_PPD, &self.encode_legacy_nomad_ppd());
             } else if block.id == DRD_CALIGAR_PPD {
                 had_caligar = true;
                 write_ppd_block(
@@ -2813,6 +3063,12 @@ impl PlayerRuntime {
         }
         if !had_area3 && (existing_was_valid || existing.is_empty()) && !self.area3_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_AREA3_PPD, &self.encode_legacy_area3_ppd());
+        }
+        if !had_area1 && (existing_was_valid || existing.is_empty()) && !self.area1_ppd.is_empty() {
+            write_ppd_block(&mut encoded, DRD_AREA1_PPD, &self.encode_legacy_area1_ppd());
+        }
+        if !had_nomad && (existing_was_valid || existing.is_empty()) && !self.nomad_ppd.is_empty() {
+            write_ppd_block(&mut encoded, DRD_NOMAD_PPD, &self.encode_legacy_nomad_ppd());
         }
         if !had_caligar
             && (existing_was_valid || existing.is_empty())
@@ -3806,7 +4062,7 @@ mod tests {
 
     #[test]
     fn ppd_blob_replaces_and_appends_saltmine_block() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_saltmine = vec![0; LEGACY_SALTMINE_PPD_SIZE];
         existing_saltmine[0] = LEGACY_SALTMINE_PPD_VERSION;
         write_i32(&mut existing_saltmine, 4, 11);
@@ -3848,6 +4104,8 @@ mod tests {
         let mut player = PlayerRuntime::connected(1, 0);
         player.chest_last_access_seconds.insert(2, 12345);
         player.area3_ppd = vec![1, 2, 3];
+        player.area1_ppd = vec![1, 2, 3];
+        player.nomad_ppd = vec![4, 5, 6];
         player.random_shrine_used_words[0] = 7;
         player.random_shrine_continuity = 9;
         player.flowers.push(FlowerAccess {
@@ -3885,6 +4143,8 @@ mod tests {
 
         assert!(player.chest_last_access_seconds.is_empty());
         assert!(player.area3_ppd.is_empty());
+        assert!(player.area1_ppd.is_empty());
+        assert!(player.nomad_ppd.is_empty());
         assert_eq!(
             player.random_shrine_used_words,
             [0; RANDOMSHRINE_USED_WORDS]
@@ -4445,7 +4705,7 @@ mod tests {
 
     #[test]
     fn keyring_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing = Vec::new();
         write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
         write_ppd_block(&mut existing, DRD_JUNK_PPD, &[9, 9, 9]);
@@ -4514,7 +4774,7 @@ mod tests {
 
     #[test]
     fn randchest_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_randchest = vec![0; LEGACY_RANDCHEST_PPD_SIZE];
         write_i32(
             &mut existing_randchest,
@@ -4585,7 +4845,7 @@ mod tests {
 
     #[test]
     fn ratchest_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_ratchest = vec![0; LEGACY_RATCHEST_PPD_SIZE];
         write_i32(&mut existing_ratchest, RATCHEST_PPD_IDS_OFFSET, 0x0007_0203);
         write_i32(&mut existing_ratchest, RATCHEST_PPD_LAST_USED_OFFSET, 44);
@@ -4720,7 +4980,7 @@ mod tests {
 
     #[test]
     fn lab_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_lab = vec![0; LEGACY_LAB_PPD_SIZE];
         write_u64(&mut existing_lab, 0, 1_u64 << 10);
 
@@ -4762,7 +5022,7 @@ mod tests {
 
     #[test]
     fn teufelrat_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_rat = vec![0; LEGACY_TEUFELRAT_PPD_SIZE];
         write_i32(&mut existing_rat, TEUFELRAT_PPD_KILLS_OFFSET, 5);
         write_i32(&mut existing_rat, TEUFELRAT_PPD_SCORE_OFFSET, 55);
@@ -4984,7 +5244,7 @@ mod tests {
 
     #[test]
     fn pk_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_pk = vec![0; LEGACY_PK_PPD_SIZE];
         write_i32(&mut existing_pk, PK_PPD_KILLS_OFFSET, 1);
         write_i32(&mut existing_pk, PK_PPD_HATE_OFFSET, 999);
@@ -5024,7 +5284,7 @@ mod tests {
 
     #[test]
     fn transport_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_transport = vec![0; LEGACY_TRANSPORT_PPD_SIZE];
         write_u64(&mut existing_transport, 0, 0x0000_0000_0000_0004);
 
@@ -5097,7 +5357,7 @@ mod tests {
 
     #[test]
     fn warp_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_warp = vec![0; LEGACY_WARP_PPD_SIZE];
         write_i32(&mut existing_warp, WARP_PPD_BASE_OFFSET, 40);
         write_i32(&mut existing_warp, WARP_PPD_BONUS_ID_OFFSET, 0x0019_0101);
@@ -5170,7 +5430,7 @@ mod tests {
 
     #[test]
     fn gate_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_gate = vec![0; LEGACY_GATE_PPD_SIZE];
         write_i32(&mut existing_gate, GATE_PPD_WELCOME_STATE_OFFSET, 2);
 
@@ -5211,7 +5471,7 @@ mod tests {
 
     #[test]
     fn lostcon_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_lostcon = vec![0; LEGACY_LOSTCON_PPD_SIZE];
         write_i32(&mut existing_lostcon, LOSTCON_PPD_MAXLAG_OFFSET, 9);
 
@@ -5277,7 +5537,7 @@ mod tests {
 
     #[test]
     fn orbspawn_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_orbspawn = vec![0; LEGACY_ORBSPAWN_PPD_SIZE];
         write_i32(&mut existing_orbspawn, ORBSPAWN_PPD_IDS_OFFSET, 0x0001_0203);
         write_i32(&mut existing_orbspawn, ORBSPAWN_PPD_LAST_USED_OFFSET, 44);
@@ -5344,7 +5604,7 @@ mod tests {
 
     #[test]
     fn demonshrine_ppd_blob_round_trips_with_legacy_block_framing() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_demonshrine = vec![0; LEGACY_DEMONSHRINE_PPD_SIZE];
         write_i32(&mut existing_demonshrine, 0, 0x0001_0203);
 
@@ -5624,6 +5884,152 @@ mod tests {
     }
 
     #[test]
+    fn area1_ppd_codec_matches_legacy_c_layout() {
+        assert_eq!(
+            DRD_AREA1_PPD,
+            make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA)
+        );
+        assert_eq!(LEGACY_AREA1_PPD_SIZE, 156);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_area1_yoakin_state(5);
+        player.set_area1_gwendy_state(18);
+        player.set_area1_nook_state(12);
+        player.set_area1_lydia_state(6);
+        player.set_area1_guiwynn_state(9);
+        player.set_area1_logain_state(6);
+        player.set_area1_reskin_state(8);
+        player.set_area1_brithildie_state(21);
+        player.set_area1_camhermit_state(13);
+        player.set_area1_jessica_state(11);
+
+        let encoded = player.encode_legacy_area1_ppd();
+        assert_eq!(encoded.len(), LEGACY_AREA1_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_YOAKIN_STATE_OFFSET), 5);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_GWENDY_STATE_OFFSET), 18);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_NOOK_STATE_OFFSET), 12);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_LYDIA_STATE_OFFSET), 6);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_GUIWYNN_STATE_OFFSET), 9);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_LOGAIN_STATE_OFFSET), 6);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_RESKIN_STATE_OFFSET), 8);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_BRITHILDIE_STATE_OFFSET), 21);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_CAMHERMIT_STATE_OFFSET), 13);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_JESSICA_STATE_OFFSET), 11);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_area1_ppd(&encoded));
+        assert_eq!(decoded.area1_yoakin_state(), 5);
+        assert_eq!(decoded.area1_gwendy_state(), 18);
+        assert_eq!(decoded.area1_nook_state(), 12);
+        assert_eq!(decoded.area1_lydia_state(), 6);
+        assert_eq!(decoded.area1_guiwynn_state(), 9);
+        assert_eq!(decoded.area1_logain_state(), 6);
+        assert_eq!(decoded.area1_reskin_state(), 8);
+        assert_eq!(decoded.area1_brithildie_state(), 21);
+        assert_eq!(decoded.area1_camhermit_state(), 13);
+        assert_eq!(decoded.area1_jessica_state(), 11);
+
+        let state = decoded.area1_quest_state();
+        assert_eq!(state.yoakin_state, 5);
+        assert_eq!(state.gwendy_state, 18);
+        assert_eq!(state.nook_state, 12);
+        assert_eq!(state.lydia_state, 6);
+        assert_eq!(state.guiwynn_state, 9);
+        assert_eq!(state.logain_state, 6);
+        assert_eq!(state.reskin_state, 8);
+        assert_eq!(state.brithildie_state, 21);
+        assert_eq!(state.camhermit_state, 13);
+        assert_eq!(state.jessica_state, 11);
+    }
+
+    #[test]
+    fn area1_ppd_blob_replaces_and_appends_legacy_block() {
+        let mut existing_area1 = vec![0; LEGACY_AREA1_PPD_SIZE];
+        write_i32(&mut existing_area1, AREA1_PPD_LYDIA_STATE_OFFSET, 3);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, 0x1122_3344, &[1, 2, 3]);
+        write_ppd_block(&mut existing, DRD_AREA1_PPD, &existing_area1);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_area1_lydia_state(6);
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+
+        assert_eq!(read_u32(&encoded, 0), 0x1122_3344);
+        assert_eq!(read_u32(&encoded, 11), DRD_AREA1_PPD);
+        assert_eq!(read_u32(&encoded, 15), LEGACY_AREA1_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 19 + AREA1_PPD_LYDIA_STATE_OFFSET), 6);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.area1_lydia_state(), 6);
+
+        let appended = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended, 0), DRD_AREA1_PPD);
+    }
+
+    #[test]
+    fn nomad_ppd_codec_matches_legacy_c_layout() {
+        assert_eq!(
+            DRD_NOMAD_PPD,
+            make_drd(DEV_ID_DB, 112 | PERSISTENT_PLAYER_DATA)
+        );
+        assert_eq!(LEGACY_NOMAD_PPD_SIZE, 100);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_nomad_state(1, 9);
+        player.set_nomad_state(4, 4);
+        player.set_nomad_state(5, 2);
+        player.set_nomad_win(1, 3);
+
+        let encoded = player.encode_legacy_nomad_ppd();
+        assert_eq!(encoded.len(), LEGACY_NOMAD_PPD_SIZE);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_nomad_ppd(&encoded));
+        assert_eq!(decoded.nomad_state(1), 9);
+        assert_eq!(decoded.nomad_state(4), 4);
+        assert_eq!(decoded.nomad_state(5), 2);
+        assert_eq!(decoded.nomad_win(1), 3);
+        assert_eq!(decoded.nomad_state(9), 0);
+        // Out-of-range indices are ignored/read as 0, never panic.
+        assert_eq!(decoded.nomad_state(10), 0);
+        decoded.set_nomad_state(10, 42);
+        assert_eq!(decoded.nomad_state(10), 0);
+
+        let state = decoded.nomad_quest_state();
+        assert_eq!(state.nomad_state[1], 9);
+        assert_eq!(state.nomad_state[4], 4);
+        assert_eq!(state.nomad_state[5], 2);
+    }
+
+    #[test]
+    fn nomad_ppd_blob_replaces_and_appends_legacy_block() {
+        let mut existing_nomad = vec![0; LEGACY_NOMAD_PPD_SIZE];
+        write_i32(&mut existing_nomad, NOMAD_PPD_STATE_OFFSET + 5 * 4, 1);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, 0x2233_4455, &[9, 8, 7]);
+        write_ppd_block(&mut existing, DRD_NOMAD_PPD, &existing_nomad);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_nomad_state(5, 4);
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+
+        assert_eq!(read_u32(&encoded, 0), 0x2233_4455);
+        assert_eq!(read_u32(&encoded, 11), DRD_NOMAD_PPD);
+        assert_eq!(read_u32(&encoded, 15), LEGACY_NOMAD_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 19 + NOMAD_PPD_STATE_OFFSET + 5 * 4), 4);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.nomad_state(5), 4);
+
+        let appended = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended, 0), DRD_NOMAD_PPD);
+    }
+
+    #[test]
     fn staffer_ppd_tracks_forestbran_done_from_treasure_dig() {
         let mut player = PlayerRuntime::connected(1, 0);
 
@@ -5891,7 +6297,7 @@ mod tests {
 
     #[test]
     fn twocity_ppd_blob_replaces_and_appends_legacy_block() {
-        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
         let mut existing_twocity = vec![0; LEGACY_TWOCITY_PPD_SIZE];
         write_i32(&mut existing_twocity, 0, 777);
         write_i32(&mut existing_twocity, TWOCITY_PPD_GOODTILE_OFFSET, 6);
