@@ -185,6 +185,21 @@
 //! unported for the same reason [`MilitaryMasterStorageRegistry`]'s own
 //! `process_master_storage` was never ported: the in-memory registry
 //! supersedes the state machine entirely.
+//!
+//! This tenth slice closes the wealth-achievement ladder gap
+//! [`World::complete_mission`]'s own doc comment flagged: C's
+//! `complete_mission` pays its mercenary bonus gold through `give_money`
+//! (`military.c:1391`), which (`tool.c:1475-1481`) also tracks
+//! `achievement_add_gold_earned` whenever the payout is positive and the
+//! character is a player - `complete_mission` itself only ports
+//! `give_money`'s inlined gold-add/message half (achievement tracking
+//! needs the DB-backed first-unlock announce, which lives in the server
+//! crate). Wired at `ugaris-server`'s `apply_military_master_nearby_
+//! player`, the one real call site: a `Completed` outcome with
+//! `gold_awarded > 0` now calls the already-existing
+//! `award_swap_money_converted_achievement` helper (same "silver amount,
+//! `CF_PLAYER`-gated, `/100` integer division" shape `swap`'s `IF_MONEY`
+//! branch already uses) with `gold_awarded` as the silver price.
 
 use super::*;
 use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome, MILITARY_QA};
@@ -1354,10 +1369,14 @@ impl World {
     /// quests_solved/pts_given/exp_given[difficulty]` on the Military
     /// Master NPC identified by `master_id` (`military.c:1382,1407,1411`) -
     /// a no-op if `master_id` isn't a live `CDR_MILITARY_MASTER` NPC.
-    /// Skips the wealth-achievement ladder the real `give_money` also
-    /// updates (that needs `add_gold_earned`'s DB-backed first-unlock
-    /// announce, which lives in the server crate - wire it at the same
-    /// time a real Military Master NPC driver call site lands).
+    /// Does *not* itself track the wealth-achievement ladder the real
+    /// `give_money` also updates (`tool.c:1475-1477`) - that needs
+    /// `add_gold_earned`'s DB-backed first-unlock announce, which lives in
+    /// the server crate. The one real call site
+    /// (`ugaris-server`'s `apply_military_master_nearby_player`) wires it
+    /// itself via `award_swap_money_converted_achievement` on
+    /// [`CompletedMission::gold_awarded`] after calling this function -
+    /// see that function's doc comment.
     pub fn complete_mission(
         &mut self,
         character_id: CharacterId,

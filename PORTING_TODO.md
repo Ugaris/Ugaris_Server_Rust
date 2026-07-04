@@ -4171,12 +4171,13 @@ Unlocks every quest NPC. Do these before any P4 area work.
     architectural gap the Arena rankings task's REMAINING note also
     flags is now fully closed for both NPCs' registries, DB persistence
     included.
-   The wealth-achievement ladder the real `give_money` also
-  updates on `complete_mission`'s mercenary gold bonus (needs the DB-
-  backed first-unlock announce, which lives in the server crate - wire
-  `ugaris_core::achievement::add_gold_earned` at the same time; not done
-  this iteration since `complete_mission`'s own text still goes through
-  `queue_system_text` rather than `npc_quiet_say`, see below); the
+   The wealth-achievement ladder the real `give_money` also updates on
+  `complete_mission`'s mercenary gold bonus was wired in iteration 121
+  (see Progress Log) at `apply_military_master_nearby_player`'s call
+  site, via the already-existing `award_swap_money_converted_achievement`
+  helper - `complete_mission`'s own gold-received text still goes
+  through `queue_system_text_bytes` rather than `npc_quiet_say`
+  unaffected by that wiring (see below). The
   `SV_QUEST_EXT` mod-packet that shows the active mission in the client's
   quest log (so `check_military_solve`'s own `sendquestlog` calls are
   also not reproduced yet - cosmetic only, the progress state itself is
@@ -4187,11 +4188,47 @@ Unlocks every quest NPC. Do these before any P4 area work.
   its already-tested behavior - functionally correct, just delivered as
   a system message rather than an NPC speech bubble). A player-facing
   `#rank`-style status command was
-  also not added (there is no such command anywhere in the
-  current C `command.c` tree either - checked; only the admin-only
-   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
-     so there is nothing to port here; dropping this as a documentation
-      correction, not a real gap).
+   also not added (there is no such command anywhere in the
+   current C `command.c` tree either - checked; only the admin-only
+    `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
+      so there is nothing to port here; dropping this as a documentation
+       correction, not a real gap).
+  Progress Log (iteration 121): closed the wealth-achievement ladder gap
+    the previous iteration's REMAINING note flagged - C's `complete_
+    mission` pays its mercenary bonus gold through `give_money`
+    (`military.c:1391`), which (`tool.c:1475-1481`) also tracks
+    `achievement_add_gold_earned` (whole-gold units, `val / 100`) whenever
+    `val > 0` and the character is a player; `World::complete_mission`
+    only ported `give_money`'s inlined gold-add/message half, not this
+    achievement half (by design, since it needs the DB-backed first-unlock
+    announce that lives in the server crate). Wired it at
+    `apply_military_master_nearby_player`'s one real call site
+    (`crates/ugaris-server/src/military.rs`): after `World::
+    complete_mission` returns, a `Completed` outcome with
+    `gold_awarded > 0` now calls the already-existing, already-tested
+    `award_swap_money_converted_achievement` helper (same "silver amount,
+    `CF_PLAYER`-gated, `/100` integer division" shape `swap`'s `IF_MONEY`
+    branch uses) with `gold_awarded` as the silver price. Both
+    `apply_military_master_nearby_player` and its dispatcher
+    `apply_military_master_events` became `async fn` to support the
+    awaited achievement-announce tail (mirroring `apply_clanmaster_events`'s
+    own shape); `main.rs`'s one call site now passes `&achievement_
+    repository` and `.await`s it. 2 new end-to-end tests in new file
+    `crates/ugaris-server/src/tests/military.rs` (registered in `tests/
+    mod.rs`), each driving a real `process_military_master_actions`
+    nearby-player scan (not a hand-built event) into `apply_military_
+    master_events`: one mercenary-profession completion asserting
+    `achievement_stats.gold_earned` and `Character.gold` both land
+    correctly, one non-mercenary completion asserting the wealth ladder
+    stays untouched when `gold_awarded` is 0. `cargo fmt --all`, `cargo
+    test --workspace` (1707 ugaris-core + 55 db + 3 net + 37 protocol +
+    555 server [+2], all green, zero failures), `cargo build -p
+    ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+    "entering Rust game loop" with no panics. REMAINING for the
+    "Military ranks" task overall (unchanged except the wealth-
+    achievement item now closed): the cosmetic `SV_QUEST_EXT` quest-log
+    packet, and `complete_mission`/`promote`'s reward/promotion text
+    still going through `queue_system_text` rather than `npc_quiet_say`.
   Progress Log (iteration 118): closed the DB-persistence gap for
     `MilitaryMasterStorageRegistry` (the last item its own iteration-115
     doc comment flagged as a future slice), mirroring `clan.rs`'s

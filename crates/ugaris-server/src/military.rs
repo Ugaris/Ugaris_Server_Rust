@@ -17,10 +17,11 @@ use ugaris_core::world::{
     adv_favor_desc_lines, adv_introduction_text, army_rank_for_points, army_rank_name,
     calculate_advisor_index, display_mission_text, favor_size_name,
     military_mission_progress_message_should_display, mission_difficulty_name, mission_type_name,
-    offer_missions_text, AcceptMissionOutcome, AdvisorRecommendationOutcome, GreetPlayerOutcome,
-    MilitaryAdvisorEvent, MilitaryMasterEvent, MilitaryMissionKillCheck, MilitaryMissionProgress,
-    MissionRequestOutcome, MissionRerollOutcome, OfferFavorOutcome, ProcessFavorPaymentOutcome,
-    SingleMission, SpecificMissionRequestOutcome, ADVISOR_INFO_FAVOR_NAMES,
+    offer_missions_text, AcceptMissionOutcome, AdvisorRecommendationOutcome, CompleteMissionResult,
+    CompletedMission, GreetPlayerOutcome, MilitaryAdvisorEvent, MilitaryMasterEvent,
+    MilitaryMissionKillCheck, MilitaryMissionProgress, MissionRequestOutcome, MissionRerollOutcome,
+    OfferFavorOutcome, ProcessFavorPaymentOutcome, SingleMission, SpecificMissionRequestOutcome,
+    ADVISOR_INFO_FAVOR_NAMES,
 };
 
 /// C `check_military_solve(co, cn)`'s killer-side (`co`, `check.killer_id`
@@ -85,9 +86,10 @@ pub(crate) fn apply_military_mission_kill_check(
 /// by `World::process_military_master_actions` (see `ugaris-core`'s
 /// `world/military.rs` sixth-slice doc comment for why nearly every
 /// branch needs `PlayerRuntime`, mirroring `apply_bank_events`'s shape).
-pub(crate) fn apply_military_master_events(
+pub(crate) async fn apply_military_master_events(
     world: &mut World,
     runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
     area_id: u16,
 ) -> usize {
     let mut applied = 0;
@@ -98,8 +100,15 @@ pub(crate) fn apply_military_master_events(
                 player_id,
             } => {
                 if apply_military_master_nearby_player(
-                    world, runtime, master_id, player_id, area_id,
-                ) {
+                    world,
+                    runtime,
+                    achievement_repository,
+                    master_id,
+                    player_id,
+                    area_id,
+                )
+                .await
+                {
                     applied += 1;
                 }
             }
@@ -190,9 +199,10 @@ pub(crate) fn apply_military_master_events(
 /// [`World::process_advisor_recommendation`],
 /// [`crate::PlayerRuntime::greet_player`], the `master_state == 1`
 /// rank-follow-up text, and [`World::complete_mission`].
-fn apply_military_master_nearby_player(
+async fn apply_military_master_nearby_player(
     world: &mut World,
     runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
     master_id: CharacterId,
     player_id: CharacterId,
     area_id: u16,
@@ -291,7 +301,29 @@ fn apply_military_master_nearby_player(
     // `World::queue_system_text`/`queue_system_text_bytes` (see that
     // function's doc comment) rather than `npc_quiet_say` from this NPC -
     // a pre-existing simplification, not tightened here.
-    let _ = world.complete_mission(player_id, player, u32::from(area_id), master_id);
+    let outcome = world.complete_mission(player_id, player, u32::from(area_id), master_id);
+
+    // C `complete_mission`'s mercenary bonus gold goes through `give_money`
+    // (`military.c:1391`), which - unlike this port's inlined gold-add -
+    // also tracks the `achievement_add_gold_earned` wealth ladder
+    // (`tool.c:1475-1477`). `World::complete_mission` itself only does the
+    // inlined gold-add/message (matching `give_money`'s non-achievement
+    // half exactly), so replicate the achievement half here, the same way
+    // `award_swap_money_converted_achievement` already does for `swap`'s
+    // `IF_MONEY` branch (identical "silver amount, `CF_PLAYER`-gated,
+    // `/100` integer division" shape).
+    if let CompleteMissionResult::Completed(CompletedMission { gold_awarded, .. }) = outcome {
+        if gold_awarded > 0 {
+            award_swap_money_converted_achievement(
+                world,
+                runtime,
+                achievement_repository,
+                player_id,
+                gold_awarded as u32,
+            )
+            .await;
+        }
+    }
 
     true
 }
