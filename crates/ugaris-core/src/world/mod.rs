@@ -147,8 +147,8 @@ use crate::{
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
-        action, profession, worn_slot, DIST_MAX, INVENTORY_START_INVENTORY, MAX_FIELD, MAX_MAP,
-        SAY_DIST,
+        action, profession, worn_slot, DIST_MAX, INVENTORY_LAST_SPELLS, INVENTORY_START_INVENTORY,
+        INVENTORY_START_SPELLS, MAX_FIELD, MAX_MAP, SAY_DIST,
     },
     light::{
         add_character_light, add_effect_light, add_item_light, compute_dlight, compute_groundlight,

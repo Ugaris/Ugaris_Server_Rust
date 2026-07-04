@@ -89,6 +89,7 @@ use ugaris_core::{
     character_driver::{
         needs_next_lab, CharacterDriverState, CDR_CALIGARSKELLY, CDR_LAB2UNDEAD, CDR_LOSTCON,
         CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT,
+        NTID_GATEKEEPER, NT_NPC,
     },
     direction::Direction,
     do_action::{
@@ -5397,8 +5398,12 @@ async fn main() -> anyhow::Result<()> {
                 // greeter NPC (`src/system/gatekeeper.c`).
                 let gate_welcome_facts = gate_welcome_player_facts(&runtime);
                 let gate_welcome_events = world.process_gate_welcome_actions(&gate_welcome_facts);
-                let gate_welcome_events_applied =
-                    apply_gate_welcome_events(&mut runtime, gate_welcome_events);
+                let gate_welcome_events_applied = apply_gate_welcome_events(
+                    &mut runtime,
+                    &mut world,
+                    &mut zone_loader,
+                    gate_welcome_events,
+                );
                 if gate_welcome_events_applied != 0 {
                     info!(
                         gate_welcome_events_applied,

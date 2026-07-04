@@ -363,7 +363,7 @@ fn gate_welcome_class_choice_says_not_possible_for_invalid_class() {
 }
 
 #[test]
-fn gate_welcome_class_choice_ready_is_currently_a_silent_no_op() {
+fn gate_welcome_class_choice_ready_emits_enter_test_ready_event() {
     let mut world = World::default();
     assert!(world.spawn_character(gate_npc(1), 10, 10));
     let mut paid = player(2, "Godmode");
@@ -374,7 +374,13 @@ fn gate_welcome_class_choice_ready_is_currently_a_silent_no_op() {
         gate.push_driver_text_message(CharacterId(2), "arch warrior");
     }
     let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
-    assert!(events.is_empty());
+    assert_eq!(
+        events,
+        vec![GateWelcomeOutcomeEvent::EnterTestReady {
+            player_id: CharacterId(2),
+            class: 5,
+        }]
+    );
     assert!(world.drain_pending_system_texts().is_empty());
     assert!(world.drain_pending_area_texts().is_empty());
     // `didsay` still fires (updates `current_victim`/`last_talk`), matching
@@ -408,4 +414,134 @@ fn gate_welcome_destroys_item_when_giver_inventory_is_full() {
     world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false));
 
     assert!(world.items.get(&ItemId(900)).is_none());
+}
+
+/// C `enter_room`'s room-clear scan (`gatekeeper.c:233-240`).
+#[test]
+fn gate_room_is_clear_rejects_occupied_and_takeable_item_tiles() {
+    let mut world = World::default();
+    assert!(world.gate_room_is_clear(50, 50));
+
+    assert!(world.spawn_character(character(1), 52, 55));
+    assert!(!world.gate_room_is_clear(50, 50));
+    assert!(world.remove_character(CharacterId(1)).is_some());
+    assert!(world.gate_room_is_clear(50, 50));
+
+    // A takeable item blocks the room...
+    let mut takeable = item(900, ItemFlags::TAKE);
+    takeable.x = 53;
+    takeable.y = 56;
+    world.map.tile_mut(53, 56).unwrap().item = 900;
+    world.items.insert(ItemId(900), takeable);
+    assert!(!world.gate_room_is_clear(50, 50));
+
+    // ...but fixed furniture (no `IF_TAKE`) does not.
+    world.items.get_mut(&ItemId(900)).unwrap().flags = ItemFlags::empty();
+    assert!(world.gate_room_is_clear(50, 50));
+}
+
+/// C `take_money`/`give_money_silent` (`src/system/tool.c:1441-1449,
+/// 3820-3826`).
+#[test]
+fn gate_take_money_and_give_money_silent_match_c() {
+    let mut world = World::default();
+    let mut broke = player(2, "Godmode");
+    broke.gold = 50;
+    assert!(world.spawn_character(broke, 10, 10));
+
+    assert!(!world.gate_take_money(CharacterId(2), 10000));
+    assert_eq!(world.characters[&CharacterId(2)].gold, 50);
+
+    world.characters.get_mut(&CharacterId(2)).unwrap().gold = 10000;
+    assert!(world.gate_take_money(CharacterId(2), 10000));
+    assert_eq!(world.characters[&CharacterId(2)].gold, 0);
+    assert!(world.characters[&CharacterId(2)]
+        .flags
+        .contains(CharacterFlags::ITEMS));
+
+    world.gate_give_money_silent(CharacterId(2), 10000);
+    assert_eq!(world.characters[&CharacterId(2)].gold, 10000);
+}
+
+/// The player-side tail of `enter_room`'s success path (`gatekeeper.c:
+/// 277-303`): teleport, spell-slot stripping, notices, and HP/mana/
+/// endurance/`regen_ticker` reset.
+#[test]
+fn gate_finish_enter_room_teleports_strips_spells_and_resets_resources() {
+    let mut world = World::default();
+    world.tick = Tick(500);
+    let mut hero = player(2, "Godmode");
+    hero.hp = 5 * POWERSCALE;
+    hero.mana = 5 * POWERSCALE;
+    hero.endurance = 5 * POWERSCALE;
+    hero.inventory[12] = Some(ItemId(1));
+    hero.inventory[29] = Some(ItemId(2));
+    hero.inventory[30] = Some(ItemId(3));
+    assert!(world.spawn_character(hero, 10, 10));
+    world.items.insert(ItemId(1), item(1, ItemFlags::empty()));
+    world.items.insert(ItemId(2), item(2, ItemFlags::empty()));
+    world.items.insert(ItemId(3), item(3, ItemFlags::empty()));
+
+    assert!(world.gate_finish_enter_room(CharacterId(2), 186, 196));
+
+    let hero = &world.characters[&CharacterId(2)];
+    assert_eq!((hero.x, hero.y), (190, 200));
+    assert!(hero.inventory[12].is_none());
+    assert!(hero.inventory[29].is_none());
+    // Slot 30 (regular inventory, not a spell slot) is untouched.
+    assert_eq!(hero.inventory[30], Some(ItemId(3)));
+    assert_eq!(hero.hp, POWERSCALE);
+    assert_eq!(hero.mana, POWERSCALE);
+    assert_eq!(hero.endurance, POWERSCALE);
+    assert_eq!(hero.regen_ticker, 500);
+    assert!(world.items.get(&ItemId(1)).is_none());
+    assert!(world.items.get(&ItemId(2)).is_none());
+    assert!(world.items.get(&ItemId(3)).is_some());
+
+    let texts: Vec<String> = world
+        .drain_pending_system_texts()
+        .into_iter()
+        .map(|entry| entry.message)
+        .collect();
+    assert!(texts
+        .iter()
+        .any(|text| text == "All your spells have been removed."));
+    assert!(texts.iter().any(|text| text
+        .contains("use the door to the south-west to enter the room containing your opponent")));
+}
+
+/// C's mana-only-if-nonzero guard (`gatekeeper.c:299-301`): a manaless
+/// character's mana stays `0`.
+#[test]
+fn gate_finish_enter_room_leaves_zero_mana_untouched() {
+    let mut world = World::default();
+    let mut hero = player(2, "Godmode");
+    hero.mana = 0;
+    assert!(world.spawn_character(hero, 10, 10));
+
+    assert!(world.gate_finish_enter_room(CharacterId(2), 186, 196));
+
+    assert_eq!(world.characters[&CharacterId(2)].mana, 0);
+}
+
+/// C `teleport_char_driver`'s "already close enough" guard
+/// (`abs(dx) + abs(dy) < 2`, `drvlib.c:2652-2654`): when the player is
+/// already essentially at the door tile, `enter_room` fails and the
+/// caller must try the next room.
+#[test]
+fn gate_finish_enter_room_fails_when_already_at_target() {
+    let mut world = World::default();
+    let mut hero = player(2, "Godmode");
+    hero.x = 190;
+    hero.y = 200;
+    assert!(world.spawn_character(hero, 190, 200));
+
+    assert!(!world.gate_finish_enter_room(CharacterId(2), 186, 196));
+    assert_eq!(
+        (
+            world.characters[&CharacterId(2)].x,
+            world.characters[&CharacterId(2)].y
+        ),
+        (190, 200)
+    );
 }

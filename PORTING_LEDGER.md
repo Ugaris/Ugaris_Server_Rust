@@ -3922,3 +3922,115 @@ silently bookkept.
   (reuse `world/npc_fight.rs`) including `turn_seyan`; (3) the
   `NTID_GATEKEEPER` cross-NPC message hookup; (4) the idle "return to
   post" `secure_move_driver` safety net.
+
+## Ralph Loop - Gatekeeper NPC `enter_room` Opponent Spawn (Iteration 54, partial)
+
+Continued `PORTING_TODO.md`'s P2 "Gatekeeper NPC" task: ported item (1)
+from iteration 53's REMAINING list - `enter_test`'s success tail /
+`enter_room` (`gatekeeper.c:227-407`), so answering "arch warrior"/"arch
+mage"/"arch seyan'du"/"seyan'du" with a valid, precondition-satisfying
+class choice now actually starts the private-room test instead of being a
+silent no-op.
+
+- `crates/ugaris-core/src/world/gatekeeper.rs` (all `pub` `World`
+  methods, since `ugaris-server` needs to call them):
+  - `gate_room_is_clear(xs, ys)`: C `enter_room`'s 9x17 room-clear scan
+    (`gatekeeper.c:233-240`) - no character on any tile, and any item
+    present must not carry `IF_TAKE` (fixed furniture is fine, pick-up-able
+    clutter blocks the room).
+  - `gate_take_money`/`gate_give_money_silent`: C `take_money`/
+    `give_money_silent` (`src/system/tool.c:3820-3826,1441-1449`). Unlike
+    bank gold, `Character.gold` is a plain field here, so no `PlayerRuntime`
+    PPD indirection was needed (the `dlog`/Macro-Daemon activity-tracking
+    side effects are omitted, matching every other `give_money_silent`
+    call site already in this codebase).
+  - `gate_finish_enter_room(player_id, xs, ys)`: the player-side tail of
+    `enter_room`'s success path once the opponent already exists at
+    `(xs + 4, ys + 13)` - `teleport_char_driver(cn, xs + 4, ys + 4)`
+    including its "already within Manhattan distance 1 of the target"
+    failure short-circuit (`drvlib.c:2652-2654`), stripping spell slots
+    `INVENTORY_START_SPELLS..=INVENTORY_LAST_SPELLS` (`12..=29`) via the
+    existing `destroy_item`, the two `log_char` notices ("All your spells
+    have been removed." and the ten-minute door-direction message, digit-
+    for-digit), and resetting HP/mana/endurance to `POWERSCALE * 1` (mana
+    only if it was already nonzero) plus `regen_ticker = ticker`.
+    `destroy_chareffects(cn)` is a documented no-op: `Character` has no
+    active-spell-effect list modeled yet.
+  - `GateEnterTestOutcome::Ready`'s handling in
+    `gate_welcome_handle_text_message` now pushes a new
+    `GateWelcomeOutcomeEvent::EnterTestReady { player_id, class }` instead
+    of doing nothing, since the opponent's `create_char` needs
+    `ZoneLoader::instantiate_character_template`, which `World` cannot
+    call (mirrors why `spawns.rs` exists at all for every other
+    template-instantiating spawn).
+- `crates/ugaris-server/src/spawns.rs` (new
+  `gate_enter_test_spawn_room`, modeled directly on
+  `spawn_swampspawn_character`): the `GATE_TEST_ROOM_STARTS` constant is
+  C's `room_start[]` (`gatekeeper.c:317`) transcribed digit-for-digit as 7
+  `(xs, ys)` pairs; `gate_test_opponent_template` is `enter_room`'s
+  `switch (class)` template pick (classes `7`/`8` both map to
+  `gatekeeper_s`). The function: calls `gate_take_money` once up front
+  (refusing with "Thou canst pay the price of 100G." on failure, exactly
+  like C, before any room search); for each candidate room, skips busy
+  ones via `gate_room_is_clear`, then instantiates the template, sets the
+  opponent's `hp`/`endurance`/`mana` from `values[0]` (matching every
+  other `spawn_*` function's post-`update_char` stat scaling),
+  `Direction::RightDown` (C's `DX_RIGHTDOWN`), stores the opponent's
+  "return to post" coordinates in `rest_x`/`rest_y` (documented
+  substitution for C's `tmpx`/`tmpy` - `Character` has no dedicated field
+  for that yet, same substitution `respawn_npc_character` already uses
+  for other NPCs), and pushes the `NT_NPC`/`NTID_GATEKEEPER` driver
+  message (`notify_char(co, NT_NPC, NTID_GATEKEEPER, cn, 0)`) before
+  calling `World::spawn_character`; on a successful spawn, calls
+  `gate_finish_enter_room` for the player-side effects, and on success
+  there sets `PlayerRuntime::gate_target_class`/`gate_step` (C's
+  `ppd->target_class = class; ppd->step = 1;`) and returns `true` -
+  otherwise destroys the just-spawned opponent (`World::remove_character`,
+  C's `remove_destroy_char`) and tries the next room. If every room stays
+  busy, refunds the fee via `gate_give_money_silent` and sends the "the
+  gatekeeper is busy at the moment" notice, matching C exactly.
+  `apply_gate_welcome_events` (`world_events.rs`) now also takes `&mut
+  World`/`&mut ZoneLoader` (previously only `&mut ServerRuntime`) so it
+  can call this on the new `EnterTestReady` event; the `main.rs` call site
+  was updated accordingly.
+- Deviations documented in code comments (both gaps already tracked in
+  `PORTING_TODO.md`'s REMAINING note): `destroy_chareffects` no-op, and
+  the opponent's post-position `tmpx`/`tmpy` -> `rest_x`/`rest_y`
+  substitution (only consumed once `gate_fight_driver`, still unported,
+  reads it).
+- Tests:
+  - 6 new tests in `crates/ugaris-core/src/world/tests/gatekeeper.rs`:
+    `gate_room_is_clear_rejects_occupied_and_takeable_item_tiles` (blocked
+    by a character, blocked then unblocked by a takeable item, unblocked
+    by non-takeable furniture), `gate_take_money_and_give_money_silent_
+    match_c`, `gate_finish_enter_room_teleports_strips_spells_and_resets_
+    resources` (teleport target, slot `12`/`29` stripped vs. slot `30`
+    untouched, HP/mana/endurance/`regen_ticker`, both `log_char` texts,
+    and item destruction), `gate_finish_enter_room_leaves_zero_mana_
+    untouched`, `gate_finish_enter_room_fails_when_already_at_target`
+    (the Manhattan-distance-`1` guard), and the pre-existing `Ready`-path
+    test rewritten from asserting a no-op to asserting the new
+    `EnterTestReady` event fires with the correct class code.
+  - 3 new tests in `crates/ugaris-server/src/tests/spawns.rs` (following
+    that file's existing `ZoneLoader::load_character_templates_str`
+    inline-template pattern): `gate_enter_test_spawn_room_success_spawns_
+    opponent_and_resets_player` (full happy path against a real inline
+    `gatekeeper_w` template - opponent identity/position/stats/driver
+    message, player teleport/resources/stripped inventory/destroyed
+    items/notice text, and the `PlayerRuntime` state write),
+    `gate_enter_test_spawn_room_refunds_when_every_room_is_busy` (all 7
+    `GATE_TEST_ROOM_STARTS` blocked by dummy characters), and
+    `gate_enter_test_spawn_room_rejects_when_underfunded`.
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1263
+  `ugaris-core` (6 net new) + 36 db + 3 net + 33 protocol + 401 server (3
+  net new), all green, zero failures. `cargo build -p ugaris-server`
+  clean, zero warnings. A 12s boot-smoke showed "entering Rust game loop"
+  with no panics.
+- Remaining (left `[~]` in `PORTING_TODO.md`, precise notes there,
+  unchanged from iteration 53 minus item (1)): (1) `gate_fight_driver`/
+  `gate_fight_dead` (reuse `world/npc_fight.rs`) including `turn_seyan`;
+  (2) the `NTID_GATEKEEPER` cross-NPC message hookup (the message is now
+  queued onto the opponent, but nothing consumes it until (1) exists);
+  (3) the idle "return to post" `secure_move_driver` safety net for the
+  *welcome* NPC (the opponent's own post position is now stored in
+  `rest_x`/`rest_y`, ready for (1) to consume).

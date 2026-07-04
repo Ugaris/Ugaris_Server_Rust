@@ -29,13 +29,25 @@
 //!   item checks send a private `queue_system_text` (C's `log_char(cn,
 //!   LOG_SYSTEM, ...)`, addressed to the player only), and an invalid
 //!   class choice makes the gatekeeper itself say "That is not a possible
-//!   choice." (C's `say(cn, ...)` in the caller). What's still missing is
-//!   the *success* path (`GateEnterTestOutcome::Ready`): `enter_room`'s
-//!   private-room opponent spawn (`create_char`/`drop_char`/inventory-
-//!   stripping/`take_money`) has no `World` counterpart yet, so a `Ready`
-//!   outcome is currently a silent no-op (no money taken, no room
-//!   entered) instead of starting the test. See `PORTING_TODO.md`'s
-//!   "Gatekeeper NPC" task.
+//!   choice." (C's `say(cn, ...)` in the caller). The *success* path
+//!   (`GateEnterTestOutcome::Ready`) now emits a
+//!   [`GateWelcomeOutcomeEvent::EnterTestReady`] event: the room search's
+//!   own state check (`gate_room_is_clear`) and the player-side of
+//!   `enter_room`'s success tail (`gate_finish_enter_room`: teleport,
+//!   spell-slot stripping, HP/mana/endurance/`regen_ticker` reset) live
+//!   here, but the opponent's `create_char`/`drop_char` (needs
+//!   `ZoneLoader::instantiate_character_template`, which `World` cannot
+//!   call) is handled by `ugaris-server`'s
+//!   `spawns::gate_enter_test_spawn_room`, invoked from
+//!   `apply_gate_welcome_events` the same way other loader-dependent spawns
+//!   are (see `spawns.rs`'s `spawn_swampspawn_character` precedent). Two
+//!   gaps remain, both already called out in `PORTING_TODO.md`: (1)
+//!   `destroy_chareffects(cn)` is a no-op - `Character` has no active-spell-
+//!   effect list yet; (2) the opponent's `tmpx`/`tmpy` "return to post"
+//!   coordinates (consumed once `gate_fight_driver` is ported) reuse
+//!   `rest_x`/`rest_y`, since `Character` has no dedicated `tmpx`/`tmpy`
+//!   field (same substitution `respawn_npc_character` already uses for
+//!   other NPCs).
 //! - The `NT_GIVE` handler's `give_driver` retry-until-adjacent semantics
 //!   (`src/system/drvlib.c::give_driver`, pathfinding toward the giver)
 //!   are simplified to a direct give-or-destroy, matching the
@@ -94,6 +106,13 @@ pub enum GateWelcomeOutcomeEvent {
     /// C `case 9: if (ch[co].flags & CF_GOD) del_data(co, DRD_LAB_PPD);`
     /// (`gatekeeper.c:579-583`).
     ResetLabPpd { player_id: CharacterId },
+    /// `gate_enter_test_precheck` returned `Ready`
+    /// (`gatekeeper.c:571-578`'s call into `enter_test`'s `take_money`/
+    /// `enter_room` tail, `gatekeeper.c:392-407`). The caller must attempt
+    /// the full opponent-spawn side effect
+    /// (`ugaris-server::spawns::gate_enter_test_spawn_room`) since it needs
+    /// `ZoneLoader` access `World` doesn't have.
+    EnterTestReady { player_id: CharacterId, class: i32 },
 }
 
 /// C `enter_test`'s carried-item count (`gatekeeper.c:368-375`): inventory
@@ -409,9 +428,15 @@ impl World {
                             self.npc_say(gate_id, "That is not a possible choice.");
                         }
                         // C's `enter_room` success path (`take_money` +
-                        // opponent spawn) has no `World` counterpart yet -
-                        // see the module doc comment.
-                        GateEnterTestOutcome::Ready => {}
+                        // opponent spawn): deferred to the caller since it
+                        // needs `ZoneLoader` access - see the module doc
+                        // comment.
+                        GateEnterTestOutcome::Ready => {
+                            events.push(GateWelcomeOutcomeEvent::EnterTestReady {
+                                player_id: speaker_id,
+                                class,
+                            });
+                        }
                     }
                 }
                 didsay = true;
@@ -489,6 +514,117 @@ impl World {
         target.flags.insert(CharacterFlags::ITEMS);
         if let Some(item) = self.items.get_mut(&item_id) {
             item.carried_by = Some(target_id);
+        }
+        true
+    }
+
+    /// C `enter_room`'s room-clear scan (`gatekeeper.c:233-240`): every
+    /// tile in the 9x17 room must have no character, and any item present
+    /// must not be `IF_TAKE` (i.e. not pick-up-able - fixed furniture is
+    /// fine).
+    pub fn gate_room_is_clear(&self, xs: u16, ys: u16) -> bool {
+        for x in xs..xs + 9 {
+            for y in ys..ys + 17 {
+                let Some(tile) = self.map.tile(usize::from(x), usize::from(y)) else {
+                    return false;
+                };
+                if tile.character != 0 {
+                    return false;
+                }
+                if tile.item != 0
+                    && self
+                        .items
+                        .get(&ItemId(tile.item))
+                        .is_some_and(|item| item.flags.contains(ItemFlags::TAKE))
+                {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// C `take_money(cn, val)` (`src/system/tool.c:3820-3826`).
+    pub fn gate_take_money(&mut self, player_id: CharacterId, amount: u32) -> bool {
+        let Some(player) = self.characters.get_mut(&player_id) else {
+            return false;
+        };
+        if player.gold < amount {
+            return false;
+        }
+        player.gold -= amount;
+        player.flags.insert(CharacterFlags::ITEMS);
+        true
+    }
+
+    /// C `give_money_silent(cn, val, reason)` (`src/system/tool.c:
+    /// 1441-1449`), minus the `dlog`/Macro-Daemon activity tracking, which
+    /// have no Rust equivalent yet (same omission as every other
+    /// `give_money_silent` call site in this codebase).
+    pub fn gate_give_money_silent(&mut self, player_id: CharacterId, amount: u32) {
+        if let Some(player) = self.characters.get_mut(&player_id) {
+            player.gold = player.gold.saturating_add(amount);
+            player.flags.insert(CharacterFlags::ITEMS);
+        }
+    }
+
+    /// The player-side tail of `enter_room`'s success path
+    /// (`gatekeeper.c:277-303`), once the opponent is already spawned at
+    /// `(xs + 4, ys + 13)`: `teleport_char_driver(cn, xs + 4, ys + 4)`
+    /// (including its "already close enough" failure check),
+    /// `destroy_chareffects` (a documented no-op - see the module doc
+    /// comment), stripping spell slots `12..=29`, the two `log_char`
+    /// notices, and resetting HP/mana/endurance to `POWERSCALE * 1` plus
+    /// `regen_ticker = ticker`. Returns `false` (matching C's
+    /// `teleport_char_driver` failure) when the player was already within
+    /// Manhattan distance `1` of the target tile; the caller must then
+    /// destroy the already-spawned opponent and try the next room.
+    pub fn gate_finish_enter_room(&mut self, player_id: CharacterId, xs: u16, ys: u16) -> bool {
+        let Some(player) = self.characters.get(&player_id) else {
+            return false;
+        };
+        let target_x = xs + 4;
+        let target_y = ys + 4;
+        let dx = i32::from(player.x) - i32::from(target_x);
+        let dy = i32::from(player.y) - i32::from(target_y);
+        if dx.abs() + dy.abs() < 2 {
+            return false;
+        }
+        if !self.teleport_character(player_id, target_x, target_y, false) {
+            return false;
+        }
+
+        // C `destroy_chareffects(cn)` (`gatekeeper.c:281`): no active-spell-
+        // effect list is modeled on `Character` yet, so this is a
+        // documented no-op (see the module doc comment).
+
+        // C `for (n = 12; n < 30; n++) if ((in = ch[cn].item[n]))
+        // { destroy_item(in); ch[cn].item[n] = 0; }` (`gatekeeper.c:
+        // 282-286`).
+        let Some(player) = self.characters.get_mut(&player_id) else {
+            return false;
+        };
+        let stripped_items: Vec<ItemId> = (INVENTORY_START_SPELLS..=INVENTORY_LAST_SPELLS)
+            .filter_map(|slot| player.inventory[slot].take())
+            .collect();
+        for item_id in stripped_items {
+            self.destroy_item(item_id);
+        }
+
+        self.queue_system_text(player_id, "All your spells have been removed.");
+        self.queue_system_text(
+            player_id,
+            "Once you are ready for the test, use the door to the south-west to enter the room containing your opponent. You have ten minutes from now on.",
+        );
+
+        let tick = self.tick.0.min(u64::from(u32::MAX)) as u32;
+        if let Some(player) = self.characters.get_mut(&player_id) {
+            player.hp = POWERSCALE;
+            if player.mana != 0 {
+                player.mana = POWERSCALE;
+            }
+            player.endurance = POWERSCALE;
+            player.regen_ticker = tick;
         }
         true
     }

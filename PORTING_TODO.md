@@ -1872,25 +1872,69 @@ Unlocks every quest NPC. Do these before any P4 area work.
   dialogue/fight driver. The lab item drivers are ported; this is the
   character in front. Depends on text analysis + memory.
   REMAINING: the welcome NPC's greeting/small-talk message loop is wired
-  into the tick loop (iteration 52), and `enter_test`'s class-choice
-  *failure* replies are now wired too (iteration 53 below), but still
-  needed: (1) `enter_test`'s *success* path - `enter_room`'s private-room
-  opponent spawn (`take_money`, spawning the `gatekeeper_w`/`_m`/`_s`
-  opponent via `loader.instantiate_character_template`, modeled on
-  `crates/ugaris-server/src/spawns.rs::spawn_swampspawn_character`, the
-  9-room-slot busy/refund search, teleporting the player and stripping
-  spells/items) has no `World` counterpart yet, so a `GateEnterTestOutcome
-  ::Ready` result is currently a silent no-op; (2) `gate_fight_driver`'s
-  combat loop (reuse `world/npc_fight.rs` helpers) and `gate_fight_dead`'s
-  reward grant, including `turn_seyan` (`src/system/tool.c:4278-4389`, not
-  ported anywhere yet - full character re-roll to a Seyan'Du template,
-  which also needs the still-unported per-character `DRD_DEPOT_PPD` and
-  ~11 other unmodeled `DRD_*` ids it clears - see iteration 52's research
-  notes in this task's git history for the full list); (3) the
-  `NTID_GATEKEEPER` message hookup between the two NPCs; (4) the idle
-  "return to post" `secure_move_driver` safety net
-  (`gatekeeper.c:627-631`) - this NPC's spawn/post position (`tmpx`/
-  `tmpy`) is not modeled on `Character` yet.
+  into the tick loop (iteration 52), `enter_test`'s class-choice *failure*
+  replies are wired too (iteration 53), and `enter_test`'s *success* path
+  (`enter_room`'s private-room opponent spawn: `take_money`, the 7-room
+  busy/refund search, spawning the `gatekeeper_w`/`_m`/`_s` opponent,
+  teleporting the player, and stripping spell-slot items) is now wired
+  (iteration 54) via `GateWelcomeOutcomeEvent::EnterTestReady` +
+  `spawns::gate_enter_test_spawn_room`. Still needed: (1)
+  `gate_fight_driver`'s combat loop (reuse `world/npc_fight.rs` helpers)
+  and `gate_fight_dead`'s reward grant, including `turn_seyan`
+  (`src/system/tool.c:4278-4389`, not ported anywhere yet - full character
+  re-roll to a Seyan'Du template, which also needs the still-unported
+  per-character `DRD_DEPOT_PPD` and ~11 other unmodeled `DRD_*` ids it
+  clears - see iteration 52's research notes in this task's git history
+  for the full list); (2) the `NTID_GATEKEEPER` message hookup between
+  the two NPCs is queued (`gate_enter_test_spawn_room` pushes the
+  `NT_NPC`/`NTID_GATEKEEPER` driver message onto the opponent) but nothing
+  consumes it yet, since `gate_fight_driver` (item 1) doesn't exist; (3)
+  the idle "return to post" `secure_move_driver` safety net
+  (`gatekeeper.c:627-631`) for both NPCs - the opponent's post position is
+  now stored in `rest_x`/`rest_y` (see iteration 54's progress log for why
+  that substitutes for C's `tmpx`/`tmpy`), but the welcome NPC's own post
+  position still isn't modeled on `Character`.
+  Progress Log (iteration 54): ported `enter_test`'s success tail /
+  `enter_room` (`gatekeeper.c:227-407`). Core (`crates/ugaris-core/src/
+  world/gatekeeper.rs`, all new `World` methods): `gate_room_is_clear`
+  (the 9x17 room-clear scan - no character on any tile, and any item
+  present must not be `IF_TAKE`), `gate_take_money`/
+  `gate_give_money_silent` (`src/system/tool.c:3820-3826,1441-1449`, gold
+  is already a plain `Character.gold` field so no PPD indirection is
+  needed here, unlike bank gold), and `gate_finish_enter_room` (the
+  player-side tail once the opponent already exists: `teleport_char_driver`
+  including its "already within Manhattan distance 1" failure check,
+  stripping spell slots `12..=29` via the existing `destroy_item`, the two
+  `log_char` notices, and resetting HP/mana/endurance to `POWERSCALE * 1`
+  plus `regen_ticker`). `GateEnterTestOutcome::Ready` now pushes a new
+  `GateWelcomeOutcomeEvent::EnterTestReady { player_id, class }` instead of
+  a no-op, since the opponent's `create_char` needs
+  `ZoneLoader::instantiate_character_template`, which `World` cannot call.
+  `ugaris-server` (`spawns.rs::gate_enter_test_spawn_room`, modeled on
+  `spawn_swampspawn_character`): the `take_money` guard, the 7-room
+  `GATE_TEST_ROOM_STARTS` search (`gatekeeper.c`'s `room_start[]`,
+  digit-for-digit), the class-to-template map (`gatekeeper_w`/`_m`/`_s`),
+  spawning the opponent (stats from `values[0]`, `Direction::RightDown`,
+  the `NT_NPC`/`NTID_GATEKEEPER` driver message), and the busy-refund
+  fallback; wired from `apply_gate_welcome_events` (now also taking
+  `&mut World`/`&mut ZoneLoader`) on the new event, which sets
+  `PlayerRuntime::gate_target_class`/`gate_step` on success (C's
+  `ppd->target_class`/`step`). Two deviations documented in code comments:
+  `destroy_chareffects` is a no-op (`Character` has no active-spell-effect
+  list yet), and the opponent's `tmpx`/`tmpy` "return to post" coordinates
+  (only consumed once `gate_fight_driver` is ported) reuse `rest_x`/
+  `rest_y`, the same substitution `respawn_npc_character` already uses for
+  other NPCs' post positions. Tests: 6 new core tests in `world/tests/
+  gatekeeper.rs` (room-clear tile/item checks, take/give money, the
+  teleport+strip+reset success tail, the zero-mana guard, the
+  "already-there" teleport-failure guard, and the class-choice `Ready`
+  path now asserting the `EnterTestReady` event instead of "no-op"); 3 new
+  `ugaris-server` tests in `tests/spawns.rs` (full success spawn with a
+  real inline `gatekeeper_w` template, the every-room-busy refund, and the
+  underfunded rejection). `cargo fmt --all`, `cargo test --workspace`
+  (1263+36+3+33+401 passed), `cargo build -p ugaris-server` clean with
+  zero warnings, and a 12s boot-smoke showed "entering Rust game loop"
+  with no panics.
   Progress Log (iteration 53): wired `enter_test`'s validation-failure
   reply text (`gatekeeper.c:320-390`) into
   `World::gate_welcome_handle_text_message` for `analyse_text_driver`

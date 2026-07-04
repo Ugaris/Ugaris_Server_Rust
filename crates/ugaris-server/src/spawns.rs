@@ -612,3 +612,109 @@ pub(crate) fn lq_base_value(character: &Character, value: CharacterValue) -> i16
         .copied()
         .unwrap_or_default()
 }
+
+/// C `enter_test`'s `room_start[]` (`src/system/gatekeeper.c:317`): the
+/// seven candidate private-room top-left corners, tried in order.
+pub(crate) const GATE_TEST_ROOM_STARTS: [(u16, u16); 7] = [
+    (186, 196),
+    (194, 196),
+    (202, 196),
+    (178, 212),
+    (186, 212),
+    (194, 212),
+    (202, 212),
+];
+
+/// C `enter_test`'s `switch (class)` template pick (`gatekeeper.c:
+/// 245-259`): classes `7` (Arch-Seyan'Du) and `8` (Seyan'Du) share the
+/// same `gatekeeper_s` opponent template.
+fn gate_test_opponent_template(class: i32) -> Option<&'static str> {
+    match class {
+        5 => Some("gatekeeper_w"),
+        6 => Some("gatekeeper_m"),
+        7 | 8 => Some("gatekeeper_s"),
+        _ => None,
+    }
+}
+
+/// C `enter_test`'s success tail (`gatekeeper.c:392-407`) plus
+/// `enter_room` (`gatekeeper.c:227-303`): `take_money`, then search the
+/// seven private rooms for one that is empty, spawn the class-appropriate
+/// opponent inside it (`create_char`/`drop_char`), and teleport+reset the
+/// player (`World::gate_finish_enter_room`). Refunds the entry fee and
+/// sends the "gatekeeper is busy" notice if every room is occupied,
+/// matching C exactly. Called from `apply_gate_welcome_events` on
+/// `GateWelcomeOutcomeEvent::EnterTestReady`, since (unlike the rest of
+/// `world/gatekeeper.rs`) this needs `ZoneLoader::instantiate_character_template`
+/// - see that module's doc comment.
+pub(crate) fn gate_enter_test_spawn_room(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    player_id: CharacterId,
+    class: i32,
+) -> bool {
+    const GATE_TEST_PRICE: u32 = 100 * 100;
+
+    let Some(template) = gate_test_opponent_template(class) else {
+        return false;
+    };
+
+    if !world.gate_take_money(player_id, GATE_TEST_PRICE) {
+        world.queue_system_text(player_id, "Thou canst pay the price of 100G.");
+        return false;
+    }
+
+    for (xs, ys) in GATE_TEST_ROOM_STARTS {
+        if !world.gate_room_is_clear(xs, ys) {
+            continue;
+        }
+
+        let character_id = runtime.allocate_character_id();
+        let Ok((mut opponent, inventory_items)) =
+            loader.instantiate_character_template(template, character_id)
+        else {
+            continue;
+        };
+        opponent.dir = Direction::RightDown as u8;
+        opponent.hp = i32::from(opponent.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
+        opponent.endurance =
+            i32::from(opponent.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
+        opponent.mana = i32::from(opponent.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+        // C `ch[co].tmpx/tmpy` (`gatekeeper.c:274-275`): the opponent's
+        // "return to post" coordinates, consumed once `gate_fight_driver`
+        // is ported. No dedicated `tmpx`/`tmpy` field exists on
+        // `Character` yet, so `rest_x`/`rest_y` (already reused for this
+        // purpose by other NPC spawns, e.g. `respawn_npc_character`) stand
+        // in.
+        opponent.rest_x = xs + 4;
+        opponent.rest_y = ys + 13;
+        // C `notify_char(co, NT_NPC, NTID_GATEKEEPER, cn, 0)`
+        // (`gatekeeper.c:277`).
+        opponent.push_driver_message(NT_NPC, NTID_GATEKEEPER, player_id.0 as i32, 0);
+
+        if !world.spawn_character(opponent, usize::from(xs + 4), usize::from(ys + 13)) {
+            continue;
+        }
+        for item in inventory_items {
+            world.items.insert(item.id, item);
+        }
+
+        if world.gate_finish_enter_room(player_id, xs, ys) {
+            if let Some(player) = runtime.player_for_character_mut(player_id) {
+                player.gate_target_class = class;
+                player.gate_step = 1;
+            }
+            return true;
+        }
+
+        world.remove_character(character_id);
+    }
+
+    world.gate_give_money_silent(player_id, GATE_TEST_PRICE);
+    world.queue_system_text(
+        player_id,
+        "Sorry, the gatekeeper is busy at the moment. Please come back later.",
+    );
+    false
+}

@@ -324,3 +324,184 @@ fn teufel_ratnest_random_suffix_noops_for_default_rolls() {
     assert!(rat.description.is_empty());
     assert!(!rat.flags.contains(CharacterFlags::UPDATE));
 }
+
+fn gatekeeper_templates() -> ZoneLoader {
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_character_templates_str(
+            r#"
+                gatekeeper_w:
+                  name="Gatekeeper"
+                  V_HP=50
+                  V_ENDURANCE=50
+                  V_MANA=0
+                ;
+                gatekeeper_m:
+                  name="Gatekeeper"
+                  V_HP=40
+                  V_ENDURANCE=40
+                  V_MANA=60
+                ;
+                gatekeeper_s:
+                  name="Gatekeeper"
+                  V_HP=45
+                  V_ENDURANCE=45
+                  V_MANA=30
+                ;
+            "#,
+        )
+        .unwrap();
+    loader
+}
+
+fn gate_test_player(character_id: CharacterId) -> Character {
+    // Spawned well clear of every `GATE_TEST_ROOM_STARTS` candidate room so
+    // the player's own tile never fails `gate_room_is_clear`.
+    let mut player = login_character(character_id, &login_block("Godmode"), 3, 100, 100);
+    player.gold = 20000;
+    for slot in 12..30 {
+        player.inventory[slot] = Some(ItemId(999));
+    }
+    player
+}
+
+/// C `enter_test`/`enter_room` (`gatekeeper.c:227-407`)'s success path:
+/// the first empty room spawns the class-appropriate opponent, teleports
+/// and resets the player, and takes the 100G fee.
+#[test]
+fn gate_enter_test_spawn_room_success_spawns_opponent_and_resets_player() {
+    let mut world = World::default();
+    let mut loader = gatekeeper_templates();
+    world
+        .items
+        .insert(ItemId(999), test_item(ItemId(999), 1, ItemFlags::empty()));
+    let player = gate_test_player(CharacterId(2));
+    assert!(world.spawn_character(player, 100, 100));
+
+    let mut runtime = ServerRuntime::default();
+    let mut player_runtime = PlayerRuntime::connected(1, 0);
+    player_runtime.character_id = Some(CharacterId(2));
+    runtime.players.insert(1, player_runtime);
+    runtime.set_next_character_id(50);
+
+    assert!(gate_enter_test_spawn_room(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        CharacterId(2),
+        5,
+    ));
+
+    // First candidate room (186, 196): opponent at (190, 209), player
+    // door tile at (190, 200) (`gatekeeper.c:271,285`).
+    let opponent = world.characters.get(&CharacterId(50)).unwrap();
+    assert_eq!(opponent.name, "Gatekeeper");
+    assert_eq!((opponent.x, opponent.y), (190, 209));
+    assert_eq!((opponent.rest_x, opponent.rest_y), (190, 209));
+    assert_eq!(opponent.dir, Direction::RightDown as u8);
+    assert_eq!(opponent.hp, 50 * POWERSCALE);
+    assert_eq!(opponent.driver_messages.len(), 1);
+    assert_eq!(opponent.driver_messages[0].message_type, NT_NPC);
+    assert_eq!(opponent.driver_messages[0].dat1, NTID_GATEKEEPER);
+    assert_eq!(opponent.driver_messages[0].dat2, 2);
+
+    let player = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!((player.x, player.y), (190, 200));
+    assert_eq!(player.gold, 10000);
+    assert_eq!(player.hp, POWERSCALE);
+    assert_eq!(player.endurance, POWERSCALE);
+    assert_eq!(player.mana, POWERSCALE);
+    assert!(player.inventory[12..30].iter().all(Option::is_none));
+    assert!(world.items.get(&ItemId(999)).is_none());
+
+    let system_texts = world.drain_pending_system_texts();
+    assert!(system_texts
+        .iter()
+        .any(|entry| entry.message.contains("All your spells have been removed.")));
+    assert!(system_texts
+        .iter()
+        .any(|entry| entry.message.contains("ten minutes from now on")));
+
+    let stored = runtime.player_for_character_mut(CharacterId(2)).unwrap();
+    assert_eq!(stored.gate_target_class, 5);
+    assert_eq!(stored.gate_step, 1);
+}
+
+/// C `enter_test`'s room-busy refund path (`gatekeeper.c:400-405`): when
+/// every candidate room is occupied, the fee is refunded and no opponent
+/// is spawned.
+#[test]
+fn gate_enter_test_spawn_room_refunds_when_every_room_is_busy() {
+    let mut world = World::default();
+    let mut loader = gatekeeper_templates();
+    let player = gate_test_player(CharacterId(2));
+    assert!(world.spawn_character(player, 100, 100));
+
+    let mut blocker_id = 900_u32;
+    for (xs, ys) in GATE_TEST_ROOM_STARTS {
+        let blocker = login_character(
+            CharacterId(blocker_id),
+            &login_block("Blocker"),
+            3,
+            usize::from(xs),
+            usize::from(ys),
+        );
+        assert!(world.spawn_character(blocker, usize::from(xs), usize::from(ys)));
+        blocker_id += 1;
+    }
+
+    let mut runtime = ServerRuntime::default();
+    let mut player_runtime = PlayerRuntime::connected(1, 0);
+    player_runtime.character_id = Some(CharacterId(2));
+    runtime.players.insert(1, player_runtime);
+    runtime.set_next_character_id(50);
+
+    assert!(!gate_enter_test_spawn_room(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        CharacterId(2),
+        5,
+    ));
+
+    assert!(world.characters.get(&CharacterId(50)).is_none());
+    let player = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!(player.gold, 20000);
+    let system_texts = world.drain_pending_system_texts();
+    assert!(system_texts.iter().any(|entry| entry
+        .message
+        .contains("Sorry, the gatekeeper is busy at the moment. Please come back later.")));
+}
+
+/// C `enter_test`'s `take_money` guard (`gatekeeper.c:392-395`): an
+/// underfunded player is rejected before any room is searched.
+#[test]
+fn gate_enter_test_spawn_room_rejects_when_underfunded() {
+    let mut world = World::default();
+    let mut loader = gatekeeper_templates();
+    let mut player = gate_test_player(CharacterId(2));
+    player.gold = 9999;
+    assert!(world.spawn_character(player, 100, 100));
+
+    let mut runtime = ServerRuntime::default();
+    let mut player_runtime = PlayerRuntime::connected(1, 0);
+    player_runtime.character_id = Some(CharacterId(2));
+    runtime.players.insert(1, player_runtime);
+    runtime.set_next_character_id(50);
+
+    assert!(!gate_enter_test_spawn_room(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        CharacterId(2),
+        5,
+    ));
+
+    assert!(world.characters.get(&CharacterId(50)).is_none());
+    let player = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!(player.gold, 9999);
+    let system_texts = world.drain_pending_system_texts();
+    assert!(system_texts
+        .iter()
+        .any(|entry| entry.message.contains("Thou canst pay the price of 100G.")));
+}

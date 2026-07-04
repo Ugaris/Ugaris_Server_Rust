@@ -554,6 +554,8 @@ pub(crate) fn gate_welcome_player_facts(
 /// `apply_bank_events`'s shape.
 pub(crate) fn apply_gate_welcome_events(
     runtime: &mut ServerRuntime,
+    world: &mut World,
+    loader: &mut ZoneLoader,
     events: Vec<GateWelcomeOutcomeEvent>,
 ) -> usize {
     let mut applied = 0;
@@ -577,6 +579,11 @@ pub(crate) fn apply_gate_welcome_events(
                 player.lab_solved_bits = 0;
                 player.lab_ppd.clear();
                 applied += 1;
+            }
+            GateWelcomeOutcomeEvent::EnterTestReady { player_id, class } => {
+                if gate_enter_test_spawn_room(world, loader, runtime, player_id, class) {
+                    applied += 1;
+                }
             }
         }
     }
