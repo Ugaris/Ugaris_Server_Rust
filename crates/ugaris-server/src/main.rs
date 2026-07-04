@@ -3678,15 +3678,19 @@ async fn main() -> anyhow::Result<()> {
                                                             ));
                                                         }
                                                         Some(4) => {
-                                                            if let Some(character) =
-                                                                world.characters.get_mut(&character_id)
-                                                            {
-                                                                character.gold = character.gold.saturating_add(
-                                                                    reward_level
-                                                                        .saturating_mul(reward_level)
-                                                                        .saturating_mul(10),
-                                                                );
-                                                            }
+                                                            // C `warpbonus_driver` (`area/25/
+                                                            // warped.c:434-436`): `give_money(cn,
+                                                            // level * level * 10, "Warped area
+                                                            // reward")`.
+                                                            achievement::give_money(
+                                                                &mut world,
+                                                                &mut runtime,
+                                                                character_id,
+                                                                reward_level
+                                                                    .saturating_mul(reward_level)
+                                                                    .saturating_mul(10),
+                                                                &mut feedback_bytes,
+                                                            );
                                                         }
                                                         Some(5) => {
                                                             if grant_template_item_smart(

@@ -1014,3 +1014,135 @@ fn award_skill_achievement_is_a_noop_for_characters_without_a_player_runtime() {
     );
     assert!(runtime.player_for_character(character_id).is_none());
 }
+
+// ============================================================================
+// `give_money` (`src/system/tool.c:1459-1483`).
+// ============================================================================
+
+#[test]
+fn give_money_adds_gold_and_formats_message_under_100_silver() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+    let starting_gold = world.characters.get(&character_id).unwrap().gold;
+    let mut feedback_bytes = Vec::new();
+
+    give_money(
+        &mut world,
+        &mut runtime,
+        character_id,
+        42,
+        &mut feedback_bytes,
+    );
+
+    assert_eq!(
+        world.characters.get(&character_id).unwrap().gold,
+        starting_gold + 42
+    );
+    assert!(world
+        .characters
+        .get(&character_id)
+        .unwrap()
+        .flags
+        .contains(CharacterFlags::ITEMS));
+    assert_eq!(feedback_bytes.len(), 1);
+    let (target, message) = &feedback_bytes[0];
+    assert_eq!(*target, character_id);
+    let text = String::from_utf8_lossy(message);
+    assert!(text.starts_with("You received"));
+    assert!(text.contains("42s"));
+    assert!(text.ends_with(". It has been placed in your gold pouch."));
+}
+
+#[test]
+fn give_money_formats_gold_units_at_or_above_100_silver() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+    let mut feedback_bytes = Vec::new();
+
+    give_money(
+        &mut world,
+        &mut runtime,
+        character_id,
+        250,
+        &mut feedback_bytes,
+    );
+
+    let text = String::from_utf8_lossy(&feedback_bytes[0].1);
+    assert!(text.contains("2.50G"));
+}
+
+#[test]
+fn give_money_tracks_gold_earned_achievement_ladder_in_whole_gold_units() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+    let mut feedback_bytes = Vec::new();
+
+    // 10,000 gold units unlocks CoinCollector; the amount passed to
+    // `give_money` is silver, so this needs 1,000,000 silver (matching C's
+    // `(unsigned int)(val / 100)` conversion).
+    give_money(
+        &mut world,
+        &mut runtime,
+        character_id,
+        1_000_000,
+        &mut feedback_bytes,
+    );
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.gold_earned, 10_000);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::CoinCollector));
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads[0][3], AchievementType::CoinCollector as u8);
+}
+
+#[test]
+fn give_money_below_100_silver_bumps_no_gold_earned_stat() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+    let mut feedback_bytes = Vec::new();
+
+    // 99 silver / 100 = 0 whole gold units (integer division), so the
+    // wealth ladder stat stays untouched - matches C exactly.
+    give_money(
+        &mut world,
+        &mut runtime,
+        character_id,
+        99,
+        &mut feedback_bytes,
+    );
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.gold_earned, 0);
+}
+
+#[test]
+fn give_money_still_mutates_gold_and_sends_a_message_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+    let mut feedback_bytes = Vec::new();
+
+    give_money(
+        &mut world,
+        &mut runtime,
+        character_id,
+        500,
+        &mut feedback_bytes,
+    );
+
+    assert_eq!(world.characters.get(&character_id).unwrap().gold, 500);
+    assert_eq!(feedback_bytes.len(), 1);
+    assert!(runtime.player_for_character(character_id).is_none());
+}

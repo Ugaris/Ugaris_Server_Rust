@@ -2768,6 +2768,60 @@ Unlocks every quest NPC. Do these before any P4 area work.
   -p ugaris-server` clean with zero warnings, and a 10s boot-smoke
   confirmed "entering Rust game loop" with no panics (touches the
   item-driver dispatch in `main.rs`'s runtime loop).
+  Progress Log (iteration 75): closed the "wealth beyond chests/trading"
+  gameplay call site - C's `achievement_add_gold_earned` (`achievement.
+  c:1060-1081`) is called from exactly 3 non-header source lines: inside
+  `give_money` (`tool.c:1459-1483`, the general NPC-reward/quest-
+  completion gold-and-message helper - 38 separate call sites across the
+  C tree indirectly reach it this way), inside `swap`'s `IF_MONEY` branch
+  (`do.c:1285`), and inside `give_char_item_smart`'s silent branch
+  (`tool.c:3422`). `give_money` itself had no Rust port at all (confirmed
+  via a fresh grep - no `give_money`/`give_gold` function, no "gold
+  pouch" message text anywhere in the tree); the ~11 existing scattered
+  Rust gold-mutation call sites the previous note worried about are all
+  transfers/fees/resets (bank, auction, merchant trade, GM commands,
+  death) that C's own `give_money`-adjacent functions never touch either,
+  so no refactor of those was needed or done. Added a byte-exact
+  `give_money` port (`crates/ugaris-server/src/achievement.rs`,
+  `pub(crate) fn give_money`): adds silver to `character.gold`
+  (saturating), sets `CF_ITEMS`, builds the exact colored "You received
+  <COL_YELLOW>amount<COL_RESET>. It has been placed in your gold pouch."
+  message (`"%ds"` under 100 silver, `"%.2fG"` at or above, matching
+  `tool.c:1465-1469`) into the existing `feedback_bytes` channel, and (if
+  `amount > 0`) calls `ugaris_core::achievement::add_gold_earned` with
+  the silver-to-whole-gold-unit conversion done via integer division
+  (`amount / 100`, matching C's `(unsigned int)(val / 100)` cast exactly
+  - verified this is a real precision-losing conversion in the original,
+  not a porting error) - a no-op for characters without a live
+  `PlayerRuntime` (mirrors C's `CF_PLAYER` gate), following the exact
+  same pattern as the sibling `award_*_achievement` helpers in the same
+  file. Wired the one call site that already existed in Rust and maps
+  1:1 to a real `give_money` call: `warpbonus_driver`'s reward-kind-4
+  branch (`area/25/warped.c:434-436`, `give_money(cn, level*level*10,
+  "Warped area reward")`) in `main.rs`'s `WarpBonus` outcome match arm,
+  replacing its previous silent, message-less, achievement-less direct
+  `character.gold +=` mutation. `dlog`/Macro-Daemon activity tracking
+  remain unported (same documented omission as `World::
+  gate_give_money_silent`). Still unwired: (3) DB first-unlock/grats
+  announcement; the ~37 other `give_money` call sites, all inside
+  NPC/area dialogue drivers that aren't ported to Rust yet (each is its
+  own P4 area task - `give_money` itself is now ready for them to call
+  once they land); mining reward RNG (`mine.c` cascade unported);
+  professions (`professor.c` unported); exploration beyond transport;
+  clans; military; tunnels (`tunnel.c` unported); arena PvV; pentagram
+  solve reward (`pents.c` unported). Added 5 focused tests in
+  `crates/ugaris-server/src/tests/achievement.rs`: sub-100-silver `"Xs"`
+  formatting, at-or-above-100-silver `"X.XXG"` formatting, the
+  CoinCollector unlock crossing 1,000,000 silver (10,000 gold units),
+  the sub-100-silver no-stat-bump edge case (`99 / 100 == 0`), and the
+  no-`PlayerRuntime` path (gold still mutates and the message still
+  queues, matching C running `log_char` unconditionally - only the
+  achievement call is gated). `cargo fmt --all`, `cargo test --workspace`
+  (1396 ugaris-core + 36 db + 3 net + 37 protocol + 463 server [+5], all
+  green, zero failures), `cargo build -p ugaris-server` clean with zero
+  warnings, and a 10s boot-smoke confirmed "entering Rust game loop" with
+  no panics (touches the item-driver dispatch in `main.rs`'s runtime
+  loop).
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

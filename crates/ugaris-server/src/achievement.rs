@@ -612,6 +612,68 @@ pub(crate) fn award_skill_achievement(
     }
 }
 
+/// C `give_money` (`src/system/tool.c:1459-1483`): adds `amount` silver to
+/// the character's gold pouch, sets `CF_ITEMS`, and sends the "You
+/// received ... It has been placed in your gold pouch." notice (colored
+/// exactly like C's `COL_YELLOW`/`COL_RESET`-wrapped amount, `"%ds"` under
+/// 100 silver, `"%.2fG"` otherwise). If `amount > 0` and the character has
+/// a live `PlayerRuntime` (mirrors C's `CF_PLAYER` gate), also tracks the
+/// `achievement_add_gold_earned` wealth ladder (`CoinCollector`/
+/// `WealthyAdventurer`/`RichNoble`/`Millionaire`) with the silver amount
+/// converted to whole gold units (`amount / 100`, integer division,
+/// exactly like C's `(unsigned int)(val / 100)` cast). `dlog`/Macro-Daemon
+/// activity tracking have no Rust equivalent yet (same omission as
+/// `World::gate_give_money_silent`).
+pub(crate) fn give_money(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    amount: u32,
+    feedback_bytes: &mut Vec<(CharacterId, Vec<u8>)>,
+) {
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return;
+    };
+    character.gold = character.gold.saturating_add(amount);
+    character.flags.insert(CharacterFlags::ITEMS);
+    let name = character.name.clone();
+
+    let gold_str = if amount < 100 {
+        format!("{amount}s")
+    } else {
+        format!("{:.2}G", f64::from(amount) / 100.0)
+    };
+    let mut message = Vec::with_capacity(64);
+    message.extend_from_slice(b"You received");
+    message.extend_from_slice(COL_YELLOW);
+    message.push(b' ');
+    message.extend_from_slice(gold_str.as_bytes());
+    message.extend_from_slice(COL_RESET);
+    message.extend_from_slice(b". It has been placed in your gold pouch.");
+    feedback_bytes.push((character_id, message));
+
+    if amount == 0 {
+        return;
+    }
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::add_gold_earned(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        amount / 100,
+        &name,
+        now,
+    );
+    for ty in unlocked {
+        let payload = achievement_unlock_payload(ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+}
+
 /// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every
 /// achievement (all 127 defs carry a non-empty `steam_id`, so none are
 /// skipped, unlike C's defensive `if (!def->steam_id...) continue;`) into
