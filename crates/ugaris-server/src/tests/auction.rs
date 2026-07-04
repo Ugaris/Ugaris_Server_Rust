@@ -2,11 +2,11 @@ use super::*;
 
 use crate::auction::{
     apply_auction_command, auction_help_lines, auction_value_name, calculate_auction_fee,
-    calculate_min_bid, format_item_details, format_item_modifiers, format_money, format_price,
-    format_time_left, validate_auction_item,
+    calculate_min_bid, format_auction_login_notice, format_item_details, format_item_modifiers,
+    format_money, format_price, format_time_left, validate_auction_item,
 };
 use ugaris_core::entity::MAX_MODIFIERS;
-use ugaris_db::{AuctionRecord, AuctionStatus};
+use ugaris_db::{AuctionRecord, AuctionStatus, DeliverySummary};
 
 fn sample_item(name: &str, min_level: u8) -> Item {
     Item {
@@ -265,4 +265,86 @@ async fn apply_auction_command_defaults_to_help_with_no_subcommand() {
         .await
         .expect("bare /ah should show help");
     assert_eq!(result.messages[0], "Available auction commands:");
+}
+
+fn notice_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+#[test]
+fn format_auction_login_notice_is_none_without_pending_deliveries() {
+    let summary = DeliverySummary {
+        pending_count: 0,
+        total_gold: 5_000,
+        has_items: true,
+    };
+    assert!(format_auction_login_notice(&summary).is_none());
+}
+
+#[test]
+fn format_auction_login_notice_reports_items_and_gold_above_a_gold() {
+    // C `auction_check_deliveries_login`'s `has_items && total_gold > 0`
+    // branch, `total_gold >= 100` sub-case.
+    let summary = DeliverySummary {
+        pending_count: 2,
+        total_gold: 1_234,
+        has_items: true,
+    };
+    let notice = format_auction_login_notice(&summary).expect("expected a notice");
+    assert!(notice.starts_with(COL_YELLOW));
+    assert!(notice.ends_with(COL_RESET));
+    assert!(notice_text(&notice).contains(
+        "You have 2 auction deliveries waiting - items and 12 gold, 34 silver. Type '/ah claim' to receive them."
+    ));
+}
+
+#[test]
+fn format_auction_login_notice_reports_items_and_gold_below_a_gold() {
+    let summary = DeliverySummary {
+        pending_count: 1,
+        total_gold: 50,
+        has_items: true,
+    };
+    let notice = notice_text(&format_auction_login_notice(&summary).unwrap());
+    assert!(notice.contains(
+        "You have 1 auction delivery waiting - items and 50 silver. Type '/ah claim' to receive them."
+    ));
+}
+
+#[test]
+fn format_auction_login_notice_reports_items_only() {
+    let summary = DeliverySummary {
+        pending_count: 3,
+        total_gold: 0,
+        has_items: true,
+    };
+    let notice = notice_text(&format_auction_login_notice(&summary).unwrap());
+    assert!(notice.contains(
+        "You have 3 auction deliveries with items waiting. Type '/ah claim' to receive them."
+    ));
+}
+
+#[test]
+fn format_auction_login_notice_reports_gold_only() {
+    let summary = DeliverySummary {
+        pending_count: 1,
+        total_gold: 250,
+        has_items: false,
+    };
+    let notice = notice_text(&format_auction_login_notice(&summary).unwrap());
+    assert!(notice.contains(
+        "You have 1 auction delivery with 2 gold, 50 silver waiting. Type '/ah claim' to receive them."
+    ));
+}
+
+#[test]
+fn format_auction_login_notice_is_none_when_neither_items_nor_gold_pending() {
+    // C leaves `buf` uninitialized in this unreachable combination; this
+    // port skips the notice instead of replicating the undefined behavior.
+    let summary = DeliverySummary {
+        pending_count: 1,
+        total_gold: 0,
+        has_items: false,
+    };
+    assert!(format_auction_login_notice(&summary).is_none());
 }

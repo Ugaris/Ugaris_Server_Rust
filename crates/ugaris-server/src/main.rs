@@ -128,7 +128,8 @@ use ugaris_core::{
     player::{
         CaligarSkellyDeathResult, CommandAlias, DemonShrineResult, IgnoreToggleResult,
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
-        XmasTreeResult, LEGACY_SWEAR_PPD_SIZE, SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
+        XmasTreeResult, DEFERRED_AUCTION, LEGACY_SWEAR_PPD_SIZE, SWEAR_SENTENCE_COUNT,
+        SWEAR_SENTENCE_LEN,
     },
     quest::{QuestReopenResult, QF_OPEN},
     spell::{
@@ -301,6 +302,15 @@ impl ServerRuntime {
         player.state = PlayerConnectionState::Normal;
         player.character_id = Some(new_character_id);
         player.character_number = new_character_id.0;
+        // C `read_login`'s `!(ch[cn].flags & CF_AREACHANGE)` branch
+        // (`player.c:618-629`): a fresh login (as opposed to a cross-area
+        // transfer, not yet implemented here - see `login.rs`'s
+        // `LoginOutcome::NewArea` comment) defers a login-time auction
+        // delivery notice. C also sets `DEFERRED_ACHIEVEMENTS`/
+        // `DEFERRED_MOTD` here, but those systems aren't ported yet (see
+        // PORTING_TODO.md's dedicated achievements task), so only
+        // `DEFERRED_AUCTION` is set.
+        player.deferred_init |= DEFERRED_AUCTION;
         new_character_id
     }
 
@@ -5444,6 +5454,41 @@ async fn main() -> anyhow::Result<()> {
                             Ok(_) => {}
                             Err(err) => {
                                 warn!(error = %err, "failed to process expired auctions");
+                            }
+                        }
+                    }
+                }
+                // C `tick_player`'s deferred-init sweep (`player.c:3660-
+                // 3685`): `ticks >= 6 && (deferred_init & DEFERRED_AUCTION)`
+                // fires `auction_check_deliveries_login` exactly once,
+                // shortly after login. `DEFERRED_ACHIEVEMENTS`/
+                // `DEFERRED_MOTD`'s own gates are not ported here -
+                // achievements/MOTD don't exist yet (see PORTING_TODO.md).
+                if let Some(repository) = &auction_repository {
+                    let due_auction_notices: Vec<CharacterId> = runtime
+                        .players
+                        .values()
+                        .filter(|player| {
+                            player.deferred_init & DEFERRED_AUCTION != 0
+                                && world.tick.0.saturating_sub(player.login_tick) >= 6
+                        })
+                        .filter_map(|player| player.character_id)
+                        .collect();
+                    for character_id in due_auction_notices {
+                        if let Some(player) = runtime.player_for_character_mut(character_id) {
+                            player.deferred_init &= !DEFERRED_AUCTION;
+                        }
+                        match auction::auction_login_notice(repository, character_id).await {
+                            Ok(Some(message)) => {
+                                let payload = ugaris_protocol::packet::system_text_bytes(&message);
+                                for (session_id, _) in runtime.sessions_for_character(character_id)
+                                {
+                                    runtime.send_to_session(session_id, payload.clone());
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(err) => {
+                                warn!(character_id = character_id.0, error = %err, "failed to check pending auction deliveries");
                             }
                         }
                     }

@@ -3637,3 +3637,56 @@ Recommended next chest steps:
   - `PORTING_TODO.md`'s "Aclerk / auction NPC" REMAINING note narrowed to
     just the login-notification gap above; task stays `[~]` for that one
     remaining item.
+
+### Ralph Loop Iteration 50: Aclerk / auction NPC - login delivery notice (closes the task)
+
+- Closed the last gap on P2 "Aclerk / auction NPC": wired
+  `auction_check_deliveries_login` (`auction_house.c:1206-1270`) to the
+  existing-but-unused `PlayerRuntime::deferred_init`/`DEFERRED_AUCTION`
+  bit (`ugaris-core/src/player.rs:239-241,417`), matching C
+  `tick_player`'s deferred-init sweep (`player.c:3660-3685`).
+  - `ServerRuntime::login` (`crates/ugaris-server/src/main.rs`) now sets
+    `player.deferred_init |= DEFERRED_AUCTION` on every login. C only
+    does this in the `!(ch[cn].flags & CF_AREACHANGE)` branch
+    (`player.c:618-629`), but that branch always holds in the current
+    Rust login path since cross-area transfer isn't implemented yet
+    (`login.rs`'s `LoginOutcome::NewArea` comment already documents
+    this). C's `DEFERRED_ACHIEVEMENTS`/`DEFERRED_MOTD` bits are
+    deliberately left unset - achievements and MOTD aren't ported yet
+    (achievements has its own dedicated P4 task in `PORTING_TODO.md`;
+    MOTD has no task at all and remains untouched).
+  - The game loop gained a new per-tick sweep (next to the existing
+    60-second `cleanup_expired_auctions` maintenance block): for every
+    player with `deferred_init & DEFERRED_AUCTION != 0` and
+    `world.tick.0 - login_tick >= 6` (literal port of C's `ticks >= 6`
+    gate, reusing the tick unit `login_tick` already stores), the bit is
+    cleared and a new `auction::auction_login_notice` is awaited, which
+    calls `AuctionRepository::get_delivery_summary` (already ported in
+    iteration 48) and formats the result via a new
+    `format_auction_login_notice`.
+  - `format_auction_login_notice` (`crates/ugaris-server/src/auction.rs`)
+    reproduces C's four count/items/gold text combinations exactly
+    (items+gold / items-only / gold-only / none), reusing the existing
+    `format_money` helper for the gold/silver split - C's
+    `total_gold >= 100` gold-vs-silver-only branch is exactly
+    `format_money`'s own `gold > 0` check, so no duplicate logic was
+    needed. The `COL_YELLOW`...`COL_RESET`-wrapped result is sent with
+    `ugaris_protocol::packet::system_text_bytes` through the existing
+    `sessions_for_character`/`send_to_session` pattern (the same one
+    already used for ordinary command feedback).
+  - Deviation documented in code comments: C's `count > 0` branch with
+    neither pending items nor gold is unreachable dead code that reads
+    an uninitialized `buf` before calling `log_char`; this port simply
+    returns `None` (no notice) for that combination instead of
+    replicating the undefined behavior.
+  - Tests: 6 new tests in `crates/ugaris-server/src/tests/auction.rs`
+    covering the no-pending-deliveries no-op, all three formatted-text
+    branches, the above/below-a-gold silver-split boundary, and the
+    unreachable-combination no-op.
+  - Verification: `cargo fmt --all` clean. `cargo test --workspace`: 398
+    `ugaris-server` tests (6 net new), zero warnings, zero failures.
+    `cargo build -p ugaris-server` clean, zero warnings. A 12s boot-smoke
+    showed "entering Rust game loop" with no panics.
+  - `PORTING_TODO.md`'s "Aclerk / auction NPC" checkbox flipped to `[x]`:
+    all three slices plus the login-notice gap are now done, and slice
+    (3) stays confirmed N/A per the prior client audit.

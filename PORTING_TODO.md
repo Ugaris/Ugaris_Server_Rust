@@ -1720,22 +1720,19 @@ Unlocks every quest NPC. Do these before any P4 area work.
   zero warnings, and a 12s boot-smoke showed "entering Rust game loop"
   with no panics.
 
-- [~] **Aclerk / auction NPC** - C `merchant.c::aclerk_driver` +
+- [x] **Aclerk / auction NPC** - C `merchant.c::aclerk_driver` +
   `src/system/auction/*.c` + `database_merchant.c`. Big; slice it:
   (1) aclerk dialogue/give handling, (2) auction storage in DB,
   (3) `CL_*` auction client protocol if the community client uses it
   (check client sources first - if the client has no auction UI, mark
   N/A with a note).
-  REMAINING: slices (1)/(2)/the `auction_house.c` business logic and the
-  `/ah` command are all done and wired now (see iteration 49 log below).
-  The one gap left is `auction_check_deliveries_login` - a login-time
-  "you have N auction deliveries waiting" notice - which is not wired to
-  the existing-but-unused `PlayerRuntime::deferred_init`/`DEFERRED_AUCTION`
-  hook in `ugaris-core::player`. Players can still see and claim pending
-  deliveries any time via `/ah claim`; they just aren't proactively
-  reminded at login. Slice (3) `CL_*` auction protocol remains N/A per the
-  client audit noted below (community client `render.c` has no auction UI
-  at all, and `amod.c` only ever handles `SV_MOD1`, never `SV_MOD3`).
+  All three slices are done: (1)/(2)/the `auction_house.c` business logic
+  and the `/ah` command are wired (see iteration 49 log below); the
+  login-time `auction_check_deliveries_login` notice is now wired to
+  `PlayerRuntime::deferred_init`'s `DEFERRED_AUCTION` hook (iteration 50
+  log below); slice (3) `CL_*` auction protocol is N/A per the client
+  audit noted below (community client `render.c` has no auction UI at
+  all, and `amod.c` only ever handles `SV_MOD1`, never `SV_MOD3`).
   Progress Log (iteration 48): ported slice (2), the DB layer of
   `src/system/auction/auction_db.c` (`init_auction_database`,
   `db_create_auction`, `db_update_auction`, `db_get_auction`,
@@ -1843,6 +1840,33 @@ Unlocks every quest NPC. Do these before any P4 area work.
   fmt --all`, `cargo test --workspace` (1228+36+3+33+392 passed), `cargo
   build -p ugaris-server` clean with zero warnings, and a 12s boot-smoke
   showed "entering Rust game loop" with no panics.
+  Progress Log (iteration 50): closed the last gap - wired
+  `auction_check_deliveries_login` (`auction_house.c:1206-1270`) to the
+  existing-but-unused `PlayerRuntime::deferred_init`/`DEFERRED_AUCTION`
+  hook. `ServerRuntime::login` (`main.rs`) now sets `DEFERRED_AUCTION` on
+  every login (C's `!(ch[cn].flags & CF_AREACHANGE)` branch always holds
+  here since cross-area transfer isn't implemented yet - see `login.rs`'s
+  `LoginOutcome::NewArea` comment; C's `DEFERRED_ACHIEVEMENTS`/
+  `DEFERRED_MOTD` bits are intentionally left unset since those systems
+  aren't ported yet). The game loop's new deferred-init sweep (matching
+  C `tick_player`'s `player.c:3660-3685`) fires exactly once, `>= 6`
+  ticks after `login_tick`, calling a new `auction::auction_login_notice`
+  (queries `AuctionRepository::get_delivery_summary`, then
+  `format_auction_login_notice` builds the exact `COL_YELLOW`-wrapped
+  text for all of C's four count/items/gold combinations, reusing
+  `format_money`'s existing `gold > 0` split for C's `total_gold >= 100`
+  gate) and sends it via the same `system_text_bytes` +
+  `sessions_for_character` pattern already used for command feedback.
+  Deviation documented in code comments: C's `count > 0` branch with
+  neither pending items nor gold is unreachable dead code that reads an
+  uninitialized `buf` in C; this port simply skips the notice instead of
+  replicating the undefined behavior. Tests: 6 new tests in
+  `crates/ugaris-server/src/tests/auction.rs` covering all four
+  formatted-message combinations, the above/below-a-gold silver split,
+  and the no-notice cases. `cargo fmt --all`, `cargo test --workspace`
+  (398 passed in `ugaris-server`), `cargo build -p ugaris-server` clean
+  with zero warnings, and a 12s boot-smoke showed "entering Rust game
+  loop" with no panics.
 
 - [ ] **Gatekeeper NPC (`src/system/gatekeeper.c`)** - lab entrance
   dialogue/fight driver. The lab item drivers are ported; this is the

@@ -671,6 +671,59 @@ pub(crate) async fn auction_claim_deliveries(
     Ok((claimed, inventory_full))
 }
 
+/// C `auction_check_deliveries_login` (`auction_house.c:1206-1270`): a
+/// login-time-only "you have N deliveries waiting" notice. `count`/
+/// `total_gold`/`has_items` come straight from `db_get_delivery_summary`
+/// (`DeliverySummary`); returns `None` when there is nothing to report
+/// (matching C's function returning without ever calling `log_char`).
+/// C's `total_gold >= 100` gold-vs-silver split is exactly
+/// `format_money`'s own `gold > 0` branch, so it's reused here rather than
+/// duplicated. Wired to `PlayerRuntime::deferred_init`'s `DEFERRED_AUCTION`
+/// bit in `main.rs`'s game loop (C's `tick_player`, `player.c:3681-3684`).
+pub(crate) fn format_auction_login_notice(summary: &ugaris_db::DeliverySummary) -> Option<Vec<u8>> {
+    if summary.pending_count <= 0 {
+        return None;
+    }
+    let count = summary.pending_count;
+    let noun = if count == 1 { "delivery" } else { "deliveries" };
+    let text = if summary.has_items && summary.total_gold > 0 {
+        format!(
+            "You have {count} auction {noun} waiting - items and {}. Type '/ah claim' to receive them.",
+            format_money(summary.total_gold)
+        )
+    } else if summary.has_items {
+        format!(
+            "You have {count} auction {noun} with items waiting. Type '/ah claim' to receive them."
+        )
+    } else if summary.total_gold > 0 {
+        format!(
+            "You have {count} auction {noun} with {} waiting. Type '/ah claim' to receive them.",
+            format_money(summary.total_gold)
+        )
+    } else {
+        // C leaves `buf` uninitialized in this unreachable combination
+        // (`count > 0` but neither items nor gold pending) and calls
+        // `log_char` with garbage anyway; this port simply skips the
+        // notice instead of replicating the undefined behavior.
+        return None;
+    };
+    let mut out = Vec::with_capacity(COL_YELLOW.len() + text.len() + COL_RESET.len());
+    out.extend_from_slice(COL_YELLOW);
+    out.extend_from_slice(text.as_bytes());
+    out.extend_from_slice(COL_RESET);
+    Some(out)
+}
+
+/// Fetches the delivery summary and formats the login notice in one call,
+/// for `main.rs`'s deferred-init sweep.
+pub(crate) async fn auction_login_notice(
+    repository: &PgAuctionRepository,
+    character_id: CharacterId,
+) -> anyhow::Result<Option<Vec<u8>>> {
+    let summary = repository.get_delivery_summary(character_id).await?;
+    Ok(format_auction_login_notice(&summary))
+}
+
 /// Result of `/ah search`/`/ah list` (C `auction_search`,
 /// `auction_house.c:872-959`), rendered by the command layer into
 /// colored `message_bytes` lines.
