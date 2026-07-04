@@ -268,6 +268,124 @@ fn gate_welcome_gives_item_back_with_flavor_text_once() {
 }
 
 #[test]
+fn gate_welcome_class_choice_rejects_unpaid_player() {
+    let mut world = World::default();
+    assert!(world.spawn_character(gate_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 10, 10));
+
+    if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
+        gate.push_driver_text_message(CharacterId(2), "arch warrior");
+    }
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    // Not paid: C's `enter_test` returns early via `log_char`, not `say`,
+    // so no `UpdateWelcomeState`/area-text event fires.
+    assert!(events.is_empty());
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| text.character_id == CharacterId(2)
+        && text.message == "Sorry, only paying players may take the test."));
+}
+
+#[test]
+fn gate_welcome_class_choice_rejects_unsolved_labyrinth() {
+    let mut world = World::default();
+    assert!(world.spawn_character(gate_npc(1), 10, 10));
+    let mut paid = player(2, "Godmode");
+    paid.flags |= CharacterFlags::PAID;
+    assert!(world.spawn_character(paid, 10, 10));
+
+    if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
+        gate.push_driver_text_message(CharacterId(2), "arch warrior");
+    }
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, true));
+    assert!(events.is_empty());
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| text.character_id == CharacterId(2)
+        && text.message == "Sorry, you may not enter before you have solved the labyrinth."));
+}
+
+#[test]
+fn gate_welcome_class_choice_rejects_noexp_mode() {
+    let mut world = World::default();
+    assert!(world.spawn_character(gate_npc(1), 10, 10));
+    let mut paid = player(2, "Godmode");
+    paid.flags |= CharacterFlags::PAID | CharacterFlags::NOEXP;
+    assert!(world.spawn_character(paid, 10, 10));
+
+    if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
+        gate.push_driver_text_message(CharacterId(2), "arch warrior");
+    }
+    world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| text.character_id == CharacterId(2)
+        && text.message == "Sorry, you may not enter if you have the /noexp mode turned on."));
+}
+
+#[test]
+fn gate_welcome_class_choice_reports_carried_items() {
+    let mut world = World::default();
+    assert!(world.spawn_character(gate_npc(1), 10, 10));
+    let mut paid = player(2, "Godmode");
+    paid.flags |= CharacterFlags::PAID;
+    paid.inventory[INVENTORY_START_INVENTORY] = Some(ItemId(1));
+    assert!(world.spawn_character(paid, 10, 10));
+
+    if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
+        gate.push_driver_text_message(CharacterId(2), "arch warrior");
+    }
+    world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| {
+        text.character_id == CharacterId(2)
+        && text.message
+            == "Sorry, you may not enter while you are carrying items. You currently have 1 items."
+    }));
+}
+
+#[test]
+fn gate_welcome_class_choice_says_not_possible_for_invalid_class() {
+    let mut world = World::default();
+    assert!(world.spawn_character(gate_npc(1), 10, 10));
+    let mut paid = player(2, "Godmode");
+    // Already a mage: "arch warrior" is not a valid choice
+    // (`gatekeeper.c:339`).
+    paid.flags |= CharacterFlags::PAID | CharacterFlags::MAGE;
+    assert!(world.spawn_character(paid, 10, 10));
+
+    if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
+        gate.push_driver_text_message(CharacterId(2), "arch warrior");
+    }
+    world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    let area_texts = world.drain_pending_area_texts();
+    assert!(area_texts
+        .iter()
+        .any(|text| text.message.contains("That is not a possible choice.")));
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+#[test]
+fn gate_welcome_class_choice_ready_is_currently_a_silent_no_op() {
+    let mut world = World::default();
+    assert!(world.spawn_character(gate_npc(1), 10, 10));
+    let mut paid = player(2, "Godmode");
+    paid.flags |= CharacterFlags::PAID;
+    assert!(world.spawn_character(paid, 10, 10));
+
+    if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
+        gate.push_driver_text_message(CharacterId(2), "arch warrior");
+    }
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    assert!(events.is_empty());
+    assert!(world.drain_pending_system_texts().is_empty());
+    assert!(world.drain_pending_area_texts().is_empty());
+    // `didsay` still fires (updates `current_victim`/`last_talk`), matching
+    // C: `enter_test` always returns `1` on this path.
+    assert_eq!(
+        gate_state(&world, CharacterId(1)).current_victim,
+        Some(CharacterId(2))
+    );
+}
+
+#[test]
 fn gate_welcome_destroys_item_when_giver_inventory_is_full() {
     let mut world = World::default();
     assert!(world.spawn_character(gate_npc(1), 10, 10));

@@ -1871,16 +1871,16 @@ Unlocks every quest NPC. Do these before any P4 area work.
 - [~] **Gatekeeper NPC (`src/system/gatekeeper.c`)** - lab entrance
   dialogue/fight driver. The lab item drivers are ported; this is the
   character in front. Depends on text analysis + memory.
-  REMAINING: the welcome NPC's greeting/small-talk message loop is now
-  wired into the tick loop (see iteration 52 below), but still needed:
-  (1) `enter_test`'s class-choice codes (`analyse_text_driver` answer
-  codes `5`-`8`) are bookkept but produce no reply/side effect yet -
-  `enter_room`'s private-room opponent spawn (`take_money`, spawning the
-  `gatekeeper_w`/`_m`/`_s` opponent via
-  `loader.instantiate_character_template`, modeled on
+  REMAINING: the welcome NPC's greeting/small-talk message loop is wired
+  into the tick loop (iteration 52), and `enter_test`'s class-choice
+  *failure* replies are now wired too (iteration 53 below), but still
+  needed: (1) `enter_test`'s *success* path - `enter_room`'s private-room
+  opponent spawn (`take_money`, spawning the `gatekeeper_w`/`_m`/`_s`
+  opponent via `loader.instantiate_character_template`, modeled on
   `crates/ugaris-server/src/spawns.rs::spawn_swampspawn_character`, the
   9-room-slot busy/refund search, teleporting the player and stripping
-  spells/items) has no `World` counterpart yet; (2) `gate_fight_driver`'s
+  spells/items) has no `World` counterpart yet, so a `GateEnterTestOutcome
+  ::Ready` result is currently a silent no-op; (2) `gate_fight_driver`'s
   combat loop (reuse `world/npc_fight.rs` helpers) and `gate_fight_dead`'s
   reward grant, including `turn_seyan` (`src/system/tool.c:4278-4389`, not
   ported anywhere yet - full character re-roll to a Seyan'Du template,
@@ -1891,6 +1891,30 @@ Unlocks every quest NPC. Do these before any P4 area work.
   "return to post" `secure_move_driver` safety net
   (`gatekeeper.c:627-631`) - this NPC's spawn/post position (`tmpx`/
   `tmpy`) is not modeled on `Character` yet.
+  Progress Log (iteration 53): wired `enter_test`'s validation-failure
+  reply text (`gatekeeper.c:320-390`) into
+  `World::gate_welcome_handle_text_message` for `analyse_text_driver`
+  answer codes `5`-`8` (the Arch-Warrior/Arch-Mage/Arch-Seyan'Du/Seyan'Du
+  class choices), reusing the already-ported, previously-unwired
+  `character_driver::gate_enter_test_precheck` pure helper. Added
+  `gate_carried_item_count` (C's `cnt` loop over inventory slots
+  `30..INVENTORYSIZE` plus `citem`) to feed it. Every *failure* outcome
+  now matches C exactly: `NotPaid`/`LabNotSolved`/`NoExpMode`/
+  `CarryingItems`/`CarryingTooManyItems` send a private
+  `World::queue_system_text` (C's `log_char(cn, LOG_SYSTEM, ...)`,
+  addressed to the player only, not spoken by the NPC), and
+  `InvalidClass` makes the gatekeeper itself say "That is not a possible
+  choice." (C's `say(cn, ...)` in the caller, via the existing
+  `World::npc_say`). The `Ready` (success) outcome is intentionally left
+  a no-op for now - see the REMAINING note above and the module doc
+  comment in `world/gatekeeper.rs`, since it needs the unported
+  `enter_room` opponent-spawn side effect. Tests: 6 new tests in
+  `world/tests/gatekeeper.rs` covering each failure message, the
+  invalid-class NPC reply, and the `Ready` no-op (still bookkept as
+  `didsay` per C). `cargo fmt --all`, `cargo test --workspace`
+  (1258+36+3+33+398 passed), `cargo build -p ugaris-server` clean with
+  zero warnings, and a 12s boot-smoke showed "entering Rust game loop"
+  with no panics.
   Progress Log (iteration 52): wired the welcome NPC's message loop into
   `World` (`crates/ugaris-core/src/world/gatekeeper.rs`,
   `World::process_gate_welcome_actions`), modeled on

@@ -3867,3 +3867,58 @@ driver, `turn_seyan`, and the idle "return to post" safety net - see
   message hookup; (4) the idle "return to post" `secure_move_driver`
   safety net (needs a `tmpx`/`tmpy`-equivalent post position on
   `Character`, not modeled yet).
+
+## Ralph Loop - Gatekeeper NPC `enter_test` Failure-Reply Wiring (Iteration 53, partial)
+
+Continued `PORTING_TODO.md`'s P2 "Gatekeeper NPC" task: wired the
+already-ported-but-unused `character_driver::gate_enter_test_precheck`
+pure helper into `World`'s class-choice message handling, so the welcome
+NPC's answer codes `5`-`8` (Arch-Warrior/Arch-Mage/Arch-Seyan'Du/Seyan'Du)
+now produce C's exact validation-failure feedback instead of being
+silently bookkept.
+
+- `crates/ugaris-core/src/world/gatekeeper.rs`:
+  - New free function `gate_carried_item_count(character: &Character) ->
+    u32`, C's `enter_test` `cnt` loop (`gatekeeper.c:368-375`): inventory
+    slots `INVENTORY_START_INVENTORY..INVENTORYSIZE` (`30..110`) plus
+    `ch[cn].citem` (`Character::cursor_item`).
+  - `gate_welcome_handle_text_message`'s `TextAnalysisOutcome::Matched`
+    arm now has a dedicated `5..=8` case: builds a `GateEnterTestPrecheck`
+    from the speaker's `Character::flags` (`PAID`/`GOD`/`NOEXP` all live
+    directly on `Character`, so no new `PlayerRuntime` fact was needed
+    beyond the already-snapshotted `needs_lab`) and the new carried-item
+    count, calls `gate_enter_test_precheck`, then matches every variant:
+    `NotPaid`/`LabNotSolved`/`NoExpMode`/`CarryingItems`/
+    `CarryingTooManyItems` each call `World::queue_system_text` with C's
+    verbatim `log_char(cn, LOG_SYSTEM, ...)` message text (private,
+    addressed to the player only - *not* spoken by the NPC, matching C's
+    distinction between `log_char` and `say`); `InvalidClass` calls
+    `World::npc_say` with C's caller-side "That is not a possible
+    choice." (the one branch where the *NPC* speaks); `Ready` (the
+    success path) is intentionally left a no-op, since `enter_room`'s
+    opponent-spawn side effect has no `World` counterpart yet (documented
+    in the module doc comment and the `PORTING_TODO.md` REMAINING note).
+    `didsay` still fires unconditionally for all of codes `5`-`8`,
+    matching C (`enter_test` always returns `1` except on the
+    class-validation `default`/mismatch case, which is exactly
+    `InvalidClass`).
+- Tests: 6 new tests in `crates/ugaris-core/src/world/tests/
+  gatekeeper.rs` - one per failure message (`NotPaid`, `LabNotSolved`,
+  `NoExpMode`, `CarryingItems`), the `InvalidClass` NPC reply (via
+  `drain_pending_area_texts`, since `npc_say` is audible), and the
+  `Ready` case asserting today's no-op (no system text, no area text, no
+  event) while still confirming `didsay`'s `current_victim` bookkeeping
+  fires.
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1258
+  `ugaris-core` (6 net new) + 36 db + 3 net + 33 protocol + 398 server,
+  all green, zero failures. `cargo build -p ugaris-server` clean, zero
+  warnings. A 12s boot-smoke showed "entering Rust game loop" with no
+  panics.
+- Remaining (left `[~]` in `PORTING_TODO.md`, precise notes there): (1)
+  `enter_test`'s *success* path - `enter_room`'s spawn side effects
+  (`take_money`, `create_char`/`drop_char` for the `gatekeeper_w`/`_m`/
+  `_s` opponent, the 9-room busy/refund search, stripping items,
+  teleporting the player); (2) `gate_fight_driver`/`gate_fight_dead`
+  (reuse `world/npc_fight.rs`) including `turn_seyan`; (3) the
+  `NTID_GATEKEEPER` cross-NPC message hookup; (4) the idle "return to
+  post" `secure_move_driver` safety net.

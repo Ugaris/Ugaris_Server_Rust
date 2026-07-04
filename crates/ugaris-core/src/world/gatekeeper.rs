@@ -22,13 +22,20 @@
 //!
 //! Deviations/gaps (documented, not silent):
 //! - `enter_test`'s class-choice codes (`analyse_text_driver` answer codes
-//!   `5`-`8`) are not wired yet: `enter_room`'s private-room opponent
-//!   spawn (`create_char`/`drop_char`/inventory-stripping) has no `World`
-//!   counterpart yet. A matched class-choice message is bookkept (counts
-//!   as `didsay`, updates `current_victim`/`last_talk`) but produces no
-//!   reply, unlike C's "That is not a possible choice." (shown only when
-//!   `enter_test`'s class-validation fails) or a successful test start.
-//!   See `PORTING_TODO.md`'s "Gatekeeper NPC" task.
+//!   `5`-`8`) now run the full precondition check
+//!   (`crate::character_driver::gate_enter_test_precheck`, ported from
+//!   `enter_test`'s validation half, `gatekeeper.c:316-390`) and reply
+//!   exactly like C on every *failure* path: the paid/lab/noexp/carried-
+//!   item checks send a private `queue_system_text` (C's `log_char(cn,
+//!   LOG_SYSTEM, ...)`, addressed to the player only), and an invalid
+//!   class choice makes the gatekeeper itself say "That is not a possible
+//!   choice." (C's `say(cn, ...)` in the caller). What's still missing is
+//!   the *success* path (`GateEnterTestOutcome::Ready`): `enter_room`'s
+//!   private-room opponent spawn (`create_char`/`drop_char`/inventory-
+//!   stripping/`take_money`) has no `World` counterpart yet, so a `Ready`
+//!   outcome is currently a silent no-op (no money taken, no room
+//!   entered) instead of starting the test. See `PORTING_TODO.md`'s
+//!   "Gatekeeper NPC" task.
 //! - The `NT_GIVE` handler's `give_driver` retry-until-adjacent semantics
 //!   (`src/system/drvlib.c::give_driver`, pathfinding toward the giver)
 //!   are simplified to a direct give-or-destroy, matching the
@@ -43,7 +50,8 @@ use std::collections::HashMap;
 
 use super::*;
 use crate::character_driver::{
-    analyse_text_qa, gate_welcome_dialogue_step, gate_welcome_state_after_repeat,
+    analyse_text_qa, gate_enter_test_precheck, gate_welcome_dialogue_step,
+    gate_welcome_state_after_repeat, GateEnterTestOutcome, GateEnterTestPrecheck,
     GateWelcomeContext, GateWelcomeDriverData, TextAnalysisOutcome, GATEKEEPER_QA,
 };
 use crate::drvlib::offset2dx;
@@ -86,6 +94,18 @@ pub enum GateWelcomeOutcomeEvent {
     /// C `case 9: if (ch[co].flags & CF_GOD) del_data(co, DRD_LAB_PPD);`
     /// (`gatekeeper.c:579-583`).
     ResetLabPpd { player_id: CharacterId },
+}
+
+/// C `enter_test`'s carried-item count (`gatekeeper.c:368-375`): inventory
+/// slots `30..INVENTORYSIZE` plus `ch[cn].citem`.
+fn gate_carried_item_count(character: &Character) -> u32 {
+    let inventory_count = character
+        .inventory
+        .iter()
+        .skip(INVENTORY_START_INVENTORY)
+        .filter(|slot| slot.is_some())
+        .count() as u32;
+    inventory_count + u32::from(character.cursor_item.is_some())
 }
 
 impl World {
@@ -342,9 +362,62 @@ impl World {
                 }
                 didsay = true;
             }
-            // Codes `3`/`4` ("aye"/"nay", unhandled by the switch) and
-            // `5`-`8` (class choice - `enter_test` not wired yet, see the
-            // module doc comment) still count as `didsay` in C.
+            // C `case 5: case 6: case 7: case 8: if (!enter_test(co,
+            // didsay)) say(cn, "That is not a possible choice.");`
+            // (`gatekeeper.c:571-578`), with `enter_test`'s own
+            // preconditions (`gatekeeper.c:316-390`) ported as
+            // `gate_enter_test_precheck`. See the module doc comment for
+            // why `Ready` (the success path) is still a no-op.
+            TextAnalysisOutcome::Matched(class @ 5..=8) => {
+                if let Some(facts) = player_facts.get(&speaker_id) {
+                    let precheck = gate_enter_test_precheck(GateEnterTestPrecheck {
+                        is_paid: speaker.flags.contains(CharacterFlags::PAID),
+                        needs_lab: facts.needs_lab,
+                        is_god: speaker.flags.contains(CharacterFlags::GOD),
+                        is_noexp: speaker.flags.contains(CharacterFlags::NOEXP),
+                        flags: speaker.flags,
+                        carried_item_count: gate_carried_item_count(&speaker),
+                        class,
+                    });
+                    match precheck {
+                        GateEnterTestOutcome::NotPaid => self.queue_system_text(
+                            speaker_id,
+                            "Sorry, only paying players may take the test.",
+                        ),
+                        GateEnterTestOutcome::LabNotSolved => self.queue_system_text(
+                            speaker_id,
+                            "Sorry, you may not enter before you have solved the labyrinth.",
+                        ),
+                        GateEnterTestOutcome::NoExpMode => self.queue_system_text(
+                            speaker_id,
+                            "Sorry, you may not enter if you have the /noexp mode turned on.",
+                        ),
+                        GateEnterTestOutcome::CarryingItems { count } => self.queue_system_text(
+                            speaker_id,
+                            format!(
+                                "Sorry, you may not enter while you are carrying items. You currently have {count} items."
+                            ),
+                        ),
+                        GateEnterTestOutcome::CarryingTooManyItems { count } => self
+                            .queue_system_text(
+                                speaker_id,
+                                format!(
+                                    "Sorry, you may not enter while you are carrying more than three items. You currently have {count} items."
+                                ),
+                            ),
+                        GateEnterTestOutcome::InvalidClass => {
+                            self.npc_say(gate_id, "That is not a possible choice.");
+                        }
+                        // C's `enter_room` success path (`take_money` +
+                        // opponent spawn) has no `World` counterpart yet -
+                        // see the module doc comment.
+                        GateEnterTestOutcome::Ready => {}
+                    }
+                }
+                didsay = true;
+            }
+            // "aye"/"nay" (codes `3`/`4`) are unhandled by C's `switch`
+            // but still count as `didsay`.
             TextAnalysisOutcome::Matched(_) => {
                 didsay = true;
             }

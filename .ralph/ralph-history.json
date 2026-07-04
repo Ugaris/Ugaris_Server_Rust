@@ -1704,21 +1704,50 @@
         "test error::tests::error_constants_match_legacy_header ... ok",
         "test error::tests::error_strings_match_legacy_table ... ok"
       ]
+    },
+    {
+      "iteration": 53,
+      "startedAt": "2026-07-04T03:06:46.613Z",
+      "endedAt": "2026-07-04T03:17:14.087Z",
+      "durationMs": 626959,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/gatekeeper.rs",
+        "crates/ugaris-core/src/world/tests/gatekeeper.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "**What I did:** Wired `enter_test`'s class-choice validation-failure replies (C `gatekeeper.c:316-390`, answer codes `5`-`8` for Arch-Warrior/Arch-Mage/Arch-Seyan'Du/Seyan'Du) into `World::gate_welcom",
+        "test result: ok. 398 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Text: {\"filePath\": \"/home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src",
+        "Error message: JSON Parse error: Property name must be a string literal",
+        "-//!   `enter_test`'s class-validation fails) or a successful test start.",
+        "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 1240 filtered out; finished in 0.00s",
+        "test result: ok. 1258 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
+        "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 57972999,
+  "totalDurationMs": 58599958,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 52,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 53,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 17,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 27,
@@ -1734,8 +1763,8 @@
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
       "Verified: `cargo fmt --all` (clean), `cargo test --workspace` (1035+9+3+31+327 passed, 0 failed), `c": 1,
-      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 14,
-      "Error message: JSON Parse error: Property name must be a string literal": 12,
+      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 15,
+      "Error message: JSON Parse error: Property name must be a string literal": 13,
       "assertion failed: saved.flags.contains(CharacterFlags::ALIVE)": 1,
       "test result: FAILED. 1034 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1035 filtered out; finished in 0.00s": 1,
@@ -1943,7 +1972,7 @@
       "- `cargo fmt --all`, `cargo test --workspace` (1228+36+3+33+374 passing, zero failures), and `cargo ": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error; 1 warning emitted": 1,
       "/// set, and skips (never fails) otherwise so `cargo test --workspace`": 1,
-      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
       "test auction::tests::live::search_filters_by_name_and_level_and_sorts_by_price ... FAILED": 1,
       "test auction::tests::live::deliveries_round_trip_and_summary_matches_pending_rows ... FAILED": 1,
       "test auction::tests::live::create_get_update_and_delete_round_trip ... FAILED": 1,
@@ -1953,7 +1982,7 @@
       "test result: ok. 392 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "pub const COL_ERROR: &[u8] = COL_LIGHT_RED;": 1,
       "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 374 filtered out; finished in 0.00s": 1,
-      "test result: ok. 398 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 3,
+      "test result: ok. 398 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
       "+    `ugaris-server` tests (6 net new), zero warnings, zero failures.": 1,
       "- Added 12 new focused tests (9 in character_driver.rs, 3 in player.rs); full workspace suite (1240+": 1,
       "test result: ok. 102 passed; 0 failed; 0 ignored; 0 measured; 1129 filtered out; finished in 0.00s": 1,
@@ -1961,7 +1990,11 @@
       "test world::tests::gatekeeper::gate_welcome_greets_visible_player_and_advances_state ... FAILED": 1,
       "test world::tests::gatekeeper::gate_welcome_needs_lab_says_labyrinth_message_and_waits ... FAILED": 1,
       "test result: FAILED. 9 passed; 2 failed; 0 ignored; 0 measured; 1240 filtered out; finished in 0.00s": 1,
-      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 1240 filtered out; finished in 0.00s": 1
+      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 1240 filtered out; finished in 0.00s": 1,
+      "**What I did:** Wired `enter_test`'s class-choice validation-failure replies (C `gatekeeper.c:316-39": 1,
+      "-//!   `enter_test`'s class-validation fails) or a successful test start.": 1,
+      "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 1240 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1258 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
