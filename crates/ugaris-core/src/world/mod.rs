@@ -48,6 +48,7 @@ mod teleport;
 mod text;
 mod trader;
 mod traps_hazards;
+mod turn_seyan;
 
 pub use actions::*;
 pub(crate) use area_mech::*;

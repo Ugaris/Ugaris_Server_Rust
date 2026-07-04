@@ -5562,8 +5562,12 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
-                let pk_hate_updates =
-                    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, realtime_seconds);
+                let pk_hate_updates = apply_pk_hate_from_hurt_events(
+                    &mut runtime,
+                    &mut world,
+                    realtime_seconds,
+                    &zone_loader,
+                );
                 if pk_hate_updates != 0 {
                     info!(pk_hate_updates, tick = world.tick.0, "applied PK hate updates from hurt events");
                 }

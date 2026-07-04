@@ -1881,23 +1881,88 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `spawns::gate_enter_test_spawn_room`. `gate_fight_driver`'s combat loop
   and `gate_fight_dead`'s reward grant (item 1 below) are now wired too
   (iteration 56), via the new `world::gate_fight` module and
-  `world_events::apply_gate_fight_death_from_hurt_event`. Still needed:
-  (1) `turn_seyan` (`src/system/tool.c:4278-4389`, still not ported
-  anywhere - full character re-roll to a Seyan'Du template, which also
-  needs the still-unported per-character `DRD_DEPOT_PPD` and ~11 other
-  unmodeled `DRD_*` ids it clears - see iteration 52's research notes in
-  this task's git history for the full list). `gate_fight_dead`'s class-8
-  (plain Seyan'Du) case is a documented gap in `world/gate_fight.rs`: it
-  still teleports the killer out (matching C's unconditional post-`switch`
-  teleport for that case) but skips the flag mutation and the misleading
-  "You are a Seyan'Du now." text, sending an honest placeholder instead;
-  (2) the idle "return to post" `secure_move_driver` safety net
-  (`gatekeeper.c:627-631`) for the welcome NPC is now wired (iteration 55),
-  reusing `rest_x`/`rest_y` (already populated for every zone-spawned
-  character, including this one, by the zone loader's `pop_create_char`
-  substitution) as its post position; the fight opponent's own
-  "return to post" tail (now wired in iteration 56 too, same `rest_x`/
-  `rest_y` substitution) is also in place.
+  `world_events::apply_gate_fight_death_from_hurt_event`. `turn_seyan`
+  (`src/system/tool.c:4278-4389`) is now ported too (iteration 57) at
+  `World::apply_turn_seyan` (`world/turn_seyan.rs`) plus
+  `PlayerRuntime::clear_turn_seyan_ppd` (`player.rs`), and wired into
+  `gate_fight_dead`'s class-8 case (`World::apply_gate_fight_reward`),
+  which now actually turns the killer into a Seyan'Du (stat/exp/level
+  reset, profession clear, item strip, flag set, `update_char` tail, ~22
+  `del_data` calls) instead of the old placeholder message. Two documented
+  gaps remain inside that port: `destroy_chareffects` is a no-op (no
+  active-effect list modeled yet, same precedent as elsewhere) and
+  `DRD_DEPOT_PPD`'s "strip `IF_QUEST` flags from the 80 depot slots" isn't
+  ported (no per-character legacy depot exists in Rust at all yet -
+  `ugaris-server::depot`'s `AccountDepotState` is a distinct, newer,
+  account-wide system - so this has no observable effect until that depot
+  is built). Still needed: the idle "return to post" `secure_move_driver`
+  safety net (`gatekeeper.c:627-631`) for the welcome NPC is now wired
+  (iteration 55), reusing `rest_x`/`rest_y` (already populated for every
+  zone-spawned character, including this one, by the zone loader's
+  `pop_create_char` substitution) as its post position; the fight
+  opponent's own "return to post" tail (now wired in iteration 56 too,
+  same `rest_x`/`rest_y` substitution) is also in place. At this point the
+  whole gatekeeper.c file (welcome dialogue, test entry/success/failure,
+  the fight driver, and the reward tail including `turn_seyan`) is
+  believed fully ported; a full re-read of `gatekeeper.c` end-to-end
+  against the Rust port to confirm nothing was missed would be a good use
+  of the next iteration before marking this task `[x]`.
+  Progress Log (iteration 57): ported `turn_seyan`
+  (`src/system/tool.c:4278-4389`). Character-only half at
+  `World::apply_turn_seyan` (new `crates/ugaris-core/src/world/
+  turn_seyan.rs` module): copies the `"seyan_m"` template's `value[1][]`
+  onto the target (caller-supplied, since `World` has no `ZoneLoader`
+  reference - matches C's own `create_char("seyan_m", 0)` +
+  `destroy_char(co)` without ever registering a throwaway character),
+  resets exp/exp_used/level/lifeshield, clears professions, un-equips worn
+  items into the first free inventory slot at/past 30 (destroying them
+  instead if inventory is full, exactly matching C's persistent-cursor
+  scan), destroys spell-slot items 12-29, sets `CF_MAGE|CF_WARRIOR|
+  CF_ITEMS`, recomputes hp/endurance/mana from the (deliberately stale,
+  matching C's exact ordering) `value[0]` before calling
+  `World::update_character` (C's `update_char`, whose own clamp settles
+  the real final value), then strips `IF_QUEST`-flagged items from the
+  remaining inventory. `destroy_chareffects` is a documented no-op (no
+  active-effect list modeled yet, same precedent as `world/gatekeeper.rs`
+  and `world/death.rs`). PPD half at new `PlayerRuntime::
+  clear_turn_seyan_ppd` (`player.rs`): resets the 14 `del_data`d ids that
+  have dedicated typed fields (treasure chest, area3, flower, randchest,
+  demonshrine, farmy, randomshrine, twocity, orbspawn, rune, lab,
+  ratchest, staffer, arkhata) to their empty/default state, and strips the
+  other 10 non-depot ids that have zero Rust representation
+  (`DRD_FIRSTKILL_PPD`, `DRD_AREA1_PPD`, `DRD_RANK_PPD`,
+  `DRD_MILITARY_PPD`, `DRD_ARENA_PPD`, `DRD_NOMAD_PPD`,
+  `DRD_SIDESTORY_PPD`, `DRD_TUNNEL_PPD`, `DRD_STRATEGY_PPD`,
+  `DRD_QUESTLOG_PPD` - all newly added as delete-only constants, no
+  decode/encode logic) straight out of the raw `ppd_blob` via a new
+  `strip_ppd_blocks` helper (mirrors the existing `DRD_JUNK_PPD`-skip
+  precedent in `encode_legacy_ppd_blob`). `DRD_DEPOT_PPD`'s "clear
+  `IF_QUEST` flags from the 80 depot slots" is a documented gap: no
+  per-character legacy depot exists in Rust (`ugaris-server::depot`'s
+  `AccountDepotState` is a distinct, newer, account-wide system), so
+  nothing can put quest items there yet anyway. Wired into
+  `World::apply_gate_fight_reward`'s class-8 case (`gate_fight.rs`,
+  signature now takes `seyan_base_values: Option<&[i16]>`) and
+  `ugaris-server::world_events::apply_gate_fight_death_from_hurt_event`
+  (looks up `"seyan_m"` in the `ZoneLoader` passed down from `main.rs`'s
+  tick loop through the now-threaded `loader` parameter on
+  `apply_pk_hate_from_hurt_events`, then calls `clear_turn_seyan_ppd` once
+  the reroll succeeds); falls back to the old honest placeholder message
+  if the template can't be resolved. Tests: 9 new tests in
+  `crates/ugaris-core/src/world/tests/turn_seyan.rs` (stat/exp/profession
+  reset, flag set, worn-item move vs. destroy-when-full, spell-slot
+  destruction, quest-item stripping, hp/endurance/mana clamp via
+  `update_character`, missing-character and mismatched-length-guard
+  failures), 2 new tests in `crates/ugaris-core/src/player.rs` (typed-field
+  reset, unmapped-id raw-block strip), 1 rewritten + 1 new test in
+  `crates/ugaris-core/src/world/tests/gate_fight.rs` (class-8 success
+  reroll plus the renamed no-template fallback test), and 1 new test in
+  `crates/ugaris-server/src/tests/world_events.rs` (full hurt-event ->
+  reward -> reroll -> PPD-clear pipeline with a real `ZoneLoader`-backed
+  `"seyan_m"` template). `cargo fmt --all`, `cargo test --workspace`
+  (1292+36+3+33+404 passed), `cargo build -p ugaris-server` clean with
+  zero warnings, and a 12s boot-smoke showed "entering Rust game loop"
+  with no panics.
   Progress Log (iteration 56): ported `gate_fight_driver`
   (`gatekeeper.c:641-696`) and `gate_fight_dead` (`gatekeeper.c:705-763`)
   into a new `crates/ugaris-core/src/world/gate_fight.rs` module plus a

@@ -36,6 +36,7 @@ mod spells;
 mod teleport;
 mod text;
 mod trader;
+mod turn_seyan;
 mod world_misc;
 
 use crate::{

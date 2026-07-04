@@ -2,6 +2,7 @@ use super::*;
 use crate::character_driver::{
     GateFightDriverData, CDR_GATE_FIGHT, NTID_GATEKEEPER, NT_CREATE, NT_NPC,
 };
+use crate::entity::CHARACTER_VALUE_COUNT;
 
 const SELF_DESTRUCT: u64 = TICKS_PER_SECOND * 60 * 10;
 
@@ -178,7 +179,7 @@ fn apply_gate_fight_reward_arch_warrior_success() {
     killer.flags |= CharacterFlags::PLAYER;
     assert!(world.spawn_character(killer, 10, 10));
 
-    let applied = world.apply_gate_fight_reward(CharacterId(2), 5);
+    let applied = world.apply_gate_fight_reward(CharacterId(2), 5, None);
 
     assert!(applied);
     let killer = world.characters.get(&CharacterId(2)).unwrap();
@@ -205,7 +206,7 @@ fn apply_gate_fight_reward_arch_warrior_rejected_when_already_mage() {
     killer.flags |= CharacterFlags::PLAYER | CharacterFlags::MAGE;
     assert!(world.spawn_character(killer, 10, 10));
 
-    world.apply_gate_fight_reward(CharacterId(2), 5);
+    world.apply_gate_fight_reward(CharacterId(2), 5, None);
 
     let killer = world.characters.get(&CharacterId(2)).unwrap();
     assert!(!killer.flags.contains(CharacterFlags::ARCH));
@@ -223,7 +224,7 @@ fn apply_gate_fight_reward_arch_mage_success() {
     killer.flags |= CharacterFlags::PLAYER;
     assert!(world.spawn_character(killer, 10, 10));
 
-    world.apply_gate_fight_reward(CharacterId(2), 6);
+    world.apply_gate_fight_reward(CharacterId(2), 6, None);
 
     let killer = world.characters.get(&CharacterId(2)).unwrap();
     assert!(killer.flags.contains(CharacterFlags::ARCH));
@@ -241,7 +242,7 @@ fn apply_gate_fight_reward_arch_seyandu_requires_both_classes() {
     killer.flags |= CharacterFlags::PLAYER | CharacterFlags::WARRIOR;
     assert!(world.spawn_character(killer, 10, 10));
 
-    world.apply_gate_fight_reward(CharacterId(2), 7);
+    world.apply_gate_fight_reward(CharacterId(2), 7, None);
 
     let killer = world.characters.get(&CharacterId(2)).unwrap();
     assert!(!killer.flags.contains(CharacterFlags::ARCH));
@@ -256,7 +257,7 @@ fn apply_gate_fight_reward_arch_seyandu_success() {
     killer.flags |= CharacterFlags::PLAYER | CharacterFlags::WARRIOR | CharacterFlags::MAGE;
     assert!(world.spawn_character(killer, 10, 10));
 
-    world.apply_gate_fight_reward(CharacterId(2), 7);
+    world.apply_gate_fight_reward(CharacterId(2), 7, None);
 
     let killer = world.characters.get(&CharacterId(2)).unwrap();
     assert!(killer.flags.contains(CharacterFlags::ARCH));
@@ -267,17 +268,18 @@ fn apply_gate_fight_reward_arch_seyandu_success() {
 }
 
 #[test]
-fn apply_gate_fight_reward_seyandu_class_still_teleports_without_reroll() {
-    // C `case 8` calls the still-unported `turn_seyan` and always falls
-    // through to the teleport (no early `return`, unlike cases 5-7's
-    // guards) - see `world::gate_fight`'s module doc comment for the
-    // documented gap.
+fn apply_gate_fight_reward_seyandu_class_still_teleports_without_template() {
+    // C `case 8` calls `turn_seyan` and always falls through to the
+    // teleport (no early `return`, unlike cases 5-7's guards). When the
+    // caller can't resolve the `"seyan_m"` template (`seyan_base_values:
+    // None`), the reroll is skipped and an honest placeholder message is
+    // sent instead - see `world::gate_fight`'s module doc comment.
     let mut world = World::default();
     let mut killer = character(2);
     killer.flags |= CharacterFlags::PLAYER;
     assert!(world.spawn_character(killer, 10, 10));
 
-    world.apply_gate_fight_reward(CharacterId(2), 8);
+    world.apply_gate_fight_reward(CharacterId(2), 8, None);
 
     let killer = world.characters.get(&CharacterId(2)).unwrap();
     assert!(!killer.flags.contains(CharacterFlags::ARCH));
@@ -291,12 +293,58 @@ fn apply_gate_fight_reward_seyandu_class_still_teleports_without_reroll() {
 }
 
 #[test]
+fn apply_gate_fight_reward_seyandu_class_rerolls_character_when_template_supplied() {
+    // C `case 8`'s two guard checks are commented out in C, so this always
+    // runs regardless of the killer's current flags (unlike cases 5-7).
+    let mut world = World::default();
+    let mut killer = character(2);
+    killer.name = "Godmode".into();
+    killer.flags |= CharacterFlags::PLAYER | CharacterFlags::ARCH;
+    killer.level = 40;
+    killer.exp = 500_000;
+    killer.professions[0] = 5;
+    killer.values[1][CharacterValue::Hp as usize] = 200;
+    let sword = item(50, ItemFlags::empty());
+    killer.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(50));
+    world.items.insert(ItemId(50), sword);
+    assert!(world.spawn_character(killer, 10, 10));
+
+    let seyan_base_values = {
+        let mut values = vec![0i16; CHARACTER_VALUE_COUNT];
+        values[CharacterValue::Hp as usize] = 10;
+        values
+    };
+    let applied = world.apply_gate_fight_reward(CharacterId(2), 8, Some(&seyan_base_values));
+
+    assert!(applied);
+    let killer = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(killer.flags.contains(CharacterFlags::MAGE));
+    assert!(killer.flags.contains(CharacterFlags::WARRIOR));
+    assert!(killer.flags.contains(CharacterFlags::ITEMS));
+    assert_eq!(killer.level, 1);
+    assert_eq!(killer.exp, 0);
+    assert_eq!(killer.values[1][CharacterValue::Hp as usize], 10);
+    assert_eq!(killer.professions[0], 0);
+    // the weapon was moved out of its worn slot (not destroyed, since
+    // there was free inventory space).
+    assert_eq!(killer.inventory[worn_slot::RIGHT_HAND], None);
+    assert!(killer.inventory.contains(&Some(ItemId(50))));
+    assert_eq!((killer.x, killer.y), (181, 198));
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|t| t.message == "You are a Seyan'Du now."));
+    let broadcasts = world.drain_pending_channel_broadcasts();
+    assert!(String::from_utf8_lossy(&broadcasts[0].message_bytes)
+        .contains("Grats: Godmode is a Seyan'Du now!"));
+}
+
+#[test]
 fn apply_gate_fight_reward_unmatched_class_still_teleports() {
     let mut world = World::default();
     let killer = character(2);
     assert!(world.spawn_character(killer, 10, 10));
 
-    world.apply_gate_fight_reward(CharacterId(2), 0);
+    world.apply_gate_fight_reward(CharacterId(2), 0, None);
 
     let killer = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!((killer.x, killer.y), (181, 198));

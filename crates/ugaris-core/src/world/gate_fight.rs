@@ -24,16 +24,15 @@
 //!   invisible" reuses `secure_move_driver` toward the victim's last known
 //!   position instead of C's dedicated `pathfinder`-based
 //!   `fight_driver_follow_invisible`.
-//! - `gate_fight_dead`'s case `8` (plain Seyan'Du) needs `turn_seyan`
-//!   (`src/system/tool.c:4278-4389`: a full character re-roll to a new
-//!   template, requiring the still-unported `DRD_DEPOT_PPD` and ~11 other
-//!   unmodeled `DRD_*` ids it clears - see `PORTING_TODO.md`'s Gatekeeper
-//!   task). This port still performs C's unconditional post-`switch`
-//!   `teleport_char_driver(co, 181, 198)` for this case (so the player is
-//!   never stuck in the private room), but skips the flag/value mutation
-//!   and sends an honest placeholder message instead of C's "You are a
-//!   Seyan'Du now."/`server_chat` grats text, which would otherwise lie
-//!   about the character's actual state.
+//! - `gate_fight_dead`'s case `8` (plain Seyan'Du) now calls `turn_seyan`
+//!   (`src/system/tool.c:4278-4389`, ported at `World::apply_turn_seyan`,
+//!   `world/turn_seyan.rs`) when the caller can supply the `"seyan_m"`
+//!   template's base values; see that module's doc comment for its own
+//!   documented gaps (`destroy_chareffects` no-op, `DRD_DEPOT_PPD` quest-
+//!   flag stripping not ported). Falls back to an honest placeholder
+//!   message (instead of a possibly-untrue "You are a Seyan'Du now.") if
+//!   the template lookup or reroll fails, while still performing C's
+//!   unconditional post-`switch` `teleport_char_driver(co, 181, 198)`.
 
 use super::*;
 use crate::character_driver::GateFightDriverData;
@@ -212,9 +211,18 @@ impl World {
     /// `log_char(co, LOG_SYSTEM, 0, "Well done.")` before the `switch`);
     /// applies the class-specific Arch flag/grats broadcast for classes
     /// 5-7 unless the guard fails (matching C's early `return` that also
-    /// skips the final teleport); class 8 is a documented gap (see module
-    /// doc comment).
-    pub fn apply_gate_fight_reward(&mut self, killer_id: CharacterId, target_class: i32) -> bool {
+    /// skips the final teleport). Class 8 needs `"seyan_m"`'s template
+    /// base values (`World::apply_turn_seyan`, `world/turn_seyan.rs`) to
+    /// do the reroll - `seyan_base_values` is `Some` only when the caller
+    /// (which owns the `ZoneLoader`) could look that template up; falls
+    /// back to an honest placeholder message otherwise, same as when
+    /// `apply_turn_seyan` itself fails (e.g. `killer_id` vanished).
+    pub fn apply_gate_fight_reward(
+        &mut self,
+        killer_id: CharacterId,
+        target_class: i32,
+        seyan_base_values: Option<&[i16]>,
+    ) -> bool {
         let Some(killer) = self.characters.get(&killer_id).cloned() else {
             return false;
         };
@@ -270,13 +278,21 @@ impl World {
                     self.queue_gate_fight_grats(&killer.name, "an Arch-Seyan'Du");
                 }
             }
-            // C `case 8: // seyan'du` (`gatekeeper.c:742-748`): needs
-            // `turn_seyan` - documented gap, see module doc comment.
+            // C `case 8: // seyan'du` (`gatekeeper.c:742-748`): note both
+            // guard checks are commented out in C, so this always runs
+            // unconditionally (no `skip_teleport` case for 8).
             8 => {
-                self.queue_system_text(
-                    killer_id,
-                    "Turning into a Seyan'Du is not supported on this server build yet; you have been returned safely.",
-                );
+                let turned = seyan_base_values
+                    .is_some_and(|base_values| self.apply_turn_seyan(killer_id, base_values));
+                if turned {
+                    self.queue_system_text(killer_id, "You are a Seyan'Du now.");
+                    self.queue_gate_fight_grats(&killer.name, "a Seyan'Du");
+                } else {
+                    self.queue_system_text(
+                        killer_id,
+                        "Turning into a Seyan'Du is not supported on this server build yet; you have been returned safely.",
+                    );
+                }
             }
             _ => {}
         }

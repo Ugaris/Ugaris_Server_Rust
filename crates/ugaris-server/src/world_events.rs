@@ -64,6 +64,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
     runtime: &mut ServerRuntime,
     world: &mut World,
     realtime_seconds: u64,
+    loader: &ZoneLoader,
 ) -> usize {
     let mut applied = 0;
     let events = world.drain_legacy_hurt_events();
@@ -75,7 +76,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_teufel_rat_death_from_hurt_event(runtime, world, event);
         apply_caligar_skelly_death_from_hurt_event(runtime, world, event);
         apply_lab2_undead_death_from_hurt_event(runtime, world, event);
-        apply_gate_fight_death_from_hurt_event(runtime, world, event);
+        apply_gate_fight_death_from_hurt_event(runtime, world, event, loader);
 
         let eligible = match (
             world.characters.get(&event.target_id),
@@ -271,10 +272,20 @@ pub(crate) fn apply_teufel_rat_death_from_hurt_event(
 /// killer). Mirrors `apply_swamp_monster_death_from_hurt_event`'s shape:
 /// the killer's `gate_ppd.target_class` (`PlayerRuntime::gate_target_class`)
 /// is the one fact `World::apply_gate_fight_reward` cannot read itself.
+/// Class 8 (plain Seyan'Du) needs two more things `World` can't reach
+/// either: the `"seyan_m"` template's base values (looked up here via
+/// `loader`, matching C's own `create_char("seyan_m", 0)`) for
+/// `World::apply_turn_seyan`, and `PlayerRuntime::clear_turn_seyan_ppd`
+/// for `turn_seyan`'s `del_data` tail once the reroll actually happened
+/// (`apply_gate_fight_reward` returning `true` for target_class 8 with a
+/// resolved template means `apply_turn_seyan` succeeded - the same
+/// `killer_id` lookup that gates the whole function also gates that call,
+/// so it cannot fail in between within one single-threaded tick).
 pub(crate) fn apply_gate_fight_death_from_hurt_event(
     runtime: &mut ServerRuntime,
     world: &mut World,
     event: LegacyHurtEvent,
+    loader: &ZoneLoader,
 ) -> bool {
     if !event.outcome.killed {
         return false;
@@ -297,7 +308,20 @@ pub(crate) fn apply_gate_fight_death_from_hurt_event(
         return false;
     };
 
-    world.apply_gate_fight_reward(event.cause_id, target_class)
+    let seyan_base_values = (target_class == 8)
+        .then(|| loader.character_templates.get("seyan_m"))
+        .flatten()
+        .map(|template| template.base_values.as_slice());
+
+    let applied = world.apply_gate_fight_reward(event.cause_id, target_class, seyan_base_values);
+
+    if applied && target_class == 8 && seyan_base_values.is_some() {
+        if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+            player.clear_turn_seyan_ppd();
+        }
+    }
+
+    applied
 }
 
 pub(crate) fn apply_player_fightback_from_hurt_event(

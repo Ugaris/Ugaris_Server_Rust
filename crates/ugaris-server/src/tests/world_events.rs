@@ -363,7 +363,7 @@ fn hurt_events_add_pk_hate_and_clear_lag_for_valid_player_hit() {
     world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
 
     assert_eq!(
-        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 123),
+        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 123, &ZoneLoader::new()),
         1
     );
     assert!(runtime
@@ -405,7 +405,7 @@ fn lethal_teufel_rat_hurt_updates_legacy_rat_ppd_score() {
         0,
     );
     assert_eq!(
-        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0),
+        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new()),
         0
     );
 
@@ -444,7 +444,7 @@ fn lethal_caligar_skelly_hurt_marks_killer_door_lock_ppd() {
         0,
     );
     assert_eq!(
-        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0),
+        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new()),
         0
     );
 
@@ -490,7 +490,7 @@ fn lethal_caligar_skelly_hurt_reports_completed_and_repeated_locks() {
             0,
             0,
         );
-        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0);
+        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
     }
 
     assert!(runtime
@@ -524,7 +524,7 @@ fn hurt_events_start_legacy_player_fightback_for_nearby_attacker() {
 
     world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
     assert_eq!(
-        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0),
+        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new()),
         0
     );
 
@@ -550,7 +550,7 @@ fn hurt_events_defer_legacy_player_fightback_while_busy() {
     runtime.players.insert(1, player);
 
     world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
-    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0);
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
 
     let player = runtime.player_for_character(CharacterId(1)).unwrap();
     assert_eq!(player.action.action, PlayerActionCode::Move);
@@ -612,7 +612,7 @@ fn hurt_events_respect_legacy_pk_hate_level_gate() {
     world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
 
     assert_eq!(
-        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 123),
+        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 123, &ZoneLoader::new()),
         0
     );
     assert!(!runtime
@@ -651,7 +651,7 @@ fn lethal_pk_hurt_events_update_kill_and_death_counters() {
     world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 1_000, 1, 0, 0);
 
     assert_eq!(
-        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 12_345),
+        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 12_345, &ZoneLoader::new()),
         1
     );
     let target_player = runtime.player_for_character(CharacterId(1)).unwrap();
@@ -687,7 +687,7 @@ fn lethal_gate_fight_hurt_grants_arch_warrior_and_teleports_killer() {
         0,
         0,
     );
-    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0);
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
 
     let killer = world.characters.get(&CharacterId(2)).unwrap();
     assert!(killer.flags.contains(CharacterFlags::ARCH));
@@ -720,10 +720,71 @@ fn lethal_gate_fight_hurt_by_non_player_does_not_grant_reward() {
         0,
         0,
     );
-    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0);
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
 
     let other_npc = world.characters.get(&CharacterId(2)).unwrap();
     assert!(!other_npc.flags.contains(CharacterFlags::ARCH));
     let texts = world.drain_pending_system_texts();
     assert!(!texts.iter().any(|text| text.message == "Well done."));
+}
+
+#[test]
+fn lethal_gate_fight_hurt_class_eight_turns_killer_seyan_and_clears_turn_seyan_ppd() {
+    let mut world = World::default();
+    let mut opponent = login_character(CharacterId(1), &login_block("Gatekeeper"), 1, 190, 200);
+    opponent.flags.remove(CharacterFlags::PLAYER);
+    opponent.driver = CDR_GATE_FIGHT;
+    opponent.hp = POWERSCALE;
+    let mut killer = login_character(CharacterId(2), &login_block("Godmode"), 40, 191, 200);
+    killer.flags.insert(CharacterFlags::ARCH);
+    killer.exp = 500_000;
+    world.add_character(opponent);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.gate_target_class = 8;
+    player.demonshrines.push(77);
+    runtime.players.insert(1, player);
+
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_character_templates_str(
+            r#"
+                seyan_m:
+                  name="Seyan'Du"
+                  description="A Seyan'Du"
+                  V_HP=10
+                  V_ENDURANCE=8
+                  V_MANA=6
+                ;
+            "#,
+        )
+        .unwrap();
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &loader);
+
+    let killer = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!(killer.level, 1);
+    assert_eq!(killer.exp, 0);
+    assert!(killer.flags.contains(CharacterFlags::MAGE));
+    assert!(killer.flags.contains(CharacterFlags::WARRIOR));
+    assert_eq!((killer.x, killer.y), (181, 198));
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message == "You are a Seyan'Du now."));
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert!(player.demonshrines.is_empty());
 }

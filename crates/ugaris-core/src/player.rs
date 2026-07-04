@@ -155,6 +155,26 @@ pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DAT
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_DATA);
+/// The following 11 ids (`src/system/drdata.h`) back systems that are not
+/// modeled on `PlayerRuntime` at all yet (first-kill tracking, area1
+/// progress, army rank, military points, arena, nomad quest, sidestory,
+/// tunnel, strategy game, quest log, and the per-character legacy depot).
+/// They exist here solely so `turn_seyan` (`src/system/tool.c:4278-4389`,
+/// ported at `World::apply_turn_seyan`) can `del_data` them exactly like
+/// C does, via `PlayerRuntime::clear_turn_seyan_ppd`'s raw-block strip -
+/// see `strip_ppd_blocks`. No decode/encode logic backs these ids since
+/// nothing else in this codebase reads or writes them yet.
+pub const DRD_FIRSTKILL_PPD: u32 = make_drd(DEV_ID_DB, 18 | PERSISTENT_PLAYER_DATA);
+pub const DRD_AREA1_PPD: u32 = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+pub const DRD_RANK_PPD: u32 = make_drd(DEV_ID_DB, 41 | PERSISTENT_PLAYER_DATA);
+pub const DRD_DEPOT_PPD: u32 = make_drd(DEV_ID_DB, 67 | PERSISTENT_PLAYER_DATA);
+pub const DRD_MILITARY_PPD: u32 = make_drd(DEV_ID_DB, 72 | PERSISTENT_PLAYER_DATA);
+pub const DRD_ARENA_PPD: u32 = make_drd(DEV_ID_DB, 83 | PERSISTENT_PLAYER_DATA);
+pub const DRD_NOMAD_PPD: u32 = make_drd(DEV_ID_DB, 112 | PERSISTENT_PLAYER_DATA);
+pub const DRD_STRATEGY_PPD: u32 = make_drd(DEV_ID_DB, 121 | PERSISTENT_PLAYER_DATA);
+pub const DRD_SIDESTORY_PPD: u32 = make_drd(DEV_ID_DB, 124 | PERSISTENT_PLAYER_DATA);
+pub const DRD_TUNNEL_PPD: u32 = make_drd(DEV_ID_DB, 154 | PERSISTENT_PLAYER_DATA);
+pub const DRD_QUESTLOG_PPD: u32 = make_drd(DEV_ID_DB, 158 | PERSISTENT_PLAYER_DATA);
 /// C `#define DRD_BANK_PPD MAKE_DRD(DEV_ID_DB, 38 | PERSISTENT_PLAYER_DATA)`
 /// (`src/system/drdata.h:100`).
 pub const DRD_BANK_PPD: u32 = make_drd(DEV_ID_DB, 38 | PERSISTENT_PLAYER_DATA);
@@ -2188,6 +2208,64 @@ impl PlayerRuntime {
         (self.teufel_rat_kills, self.teufel_rat_score)
     }
 
+    /// The `PlayerRuntime` half of `turn_seyan`'s ~22 `del_data` calls
+    /// (`src/system/tool.c:4331-4353`; the character-only half is
+    /// `World::apply_turn_seyan`). 14 of the cleared ids have dedicated
+    /// typed fields here - reset each to its empty/default state so
+    /// `encode_legacy_ppd_blob` naturally omits the block on next save,
+    /// exactly like a character that never touched that system. The
+    /// remaining 10 non-depot ids (`DRD_FIRSTKILL_PPD`, `DRD_AREA1_PPD`,
+    /// `DRD_RANK_PPD`, `DRD_MILITARY_PPD`, `DRD_ARENA_PPD`,
+    /// `DRD_NOMAD_PPD`, `DRD_SIDESTORY_PPD`, `DRD_TUNNEL_PPD`,
+    /// `DRD_STRATEGY_PPD`, `DRD_QUESTLOG_PPD`) have no Rust representation
+    /// at all, so they're stripped straight out of the raw `ppd_blob` via
+    /// `strip_ppd_blocks` (the same byte-level mechanism that already
+    /// round-trips every other still-unmodeled id). `DRD_DEPOT_PPD`'s
+    /// "clear `IF_QUEST` flags from the 80 depot item slots" is a
+    /// documented gap - see `World::apply_turn_seyan`'s doc comment; no
+    /// per-character legacy depot exists in Rust yet (`AccountDepotState`,
+    /// `ugaris-server::depot`, is a distinct, newer system).
+    pub fn clear_turn_seyan_ppd(&mut self) {
+        self.chest_last_access_seconds.clear();
+        self.area3_ppd.clear();
+        self.random_shrine_used_words = [0; RANDOMSHRINE_USED_WORDS];
+        self.random_shrine_continuity = 0;
+        self.flowers.clear();
+        self.random_chests.clear();
+        self.demonshrines.clear();
+        self.farmy_ppd.clear();
+        self.twocity_ppd.clear();
+        self.twocity_goodtile = [0; 5];
+        self.twocity_solved_library = false;
+        self.orb_spawns.clear();
+        self.rune_used_words = [0; RUNE_USED_WORDS];
+        self.rune_special_exec = [0; RUNE_SPECIAL_EXEC_COUNT];
+        self.lab_solved_bits = 0;
+        self.lab_ppd.clear();
+        self.rat_chests.clear();
+        self.rat_chest_treasure_x = 0;
+        self.rat_chest_treasure_y = 0;
+        self.rat_chest_last_treasure_seconds = 0;
+        self.staffer_ppd.clear();
+        self.arkhata_ppd.clear();
+
+        self.ppd_blob = strip_ppd_blocks(
+            &self.ppd_blob,
+            &[
+                DRD_FIRSTKILL_PPD,
+                DRD_AREA1_PPD,
+                DRD_RANK_PPD,
+                DRD_MILITARY_PPD,
+                DRD_ARENA_PPD,
+                DRD_NOMAD_PPD,
+                DRD_SIDESTORY_PPD,
+                DRD_TUNNEL_PPD,
+                DRD_STRATEGY_PPD,
+                DRD_QUESTLOG_PPD,
+            ],
+        );
+    }
+
     pub fn arkhata_clerk_state(&self) -> i32 {
         if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
             return 0;
@@ -3514,6 +3592,28 @@ fn write_ppd_block(bytes: &mut Vec<u8>, id: u32, data: &[u8]) {
     bytes.extend_from_slice(data);
 }
 
+/// `del_data`-style block removal for DRD ids that have no dedicated typed
+/// field on `PlayerRuntime` (so there's nothing to reset in memory - the
+/// only representation of that data is the raw bytes carried in
+/// `ppd_blob`). Parses `bytes` into blocks and re-emits every block whose
+/// id is not in `remove_ids`, preserving order; stops re-emitting (like
+/// `encode_legacy_ppd_blob`'s own `existing_was_valid` handling) once
+/// parsing hits malformed trailing bytes, since nothing past that point is
+/// safely recoverable anyway.
+fn strip_ppd_blocks(bytes: &[u8], remove_ids: &[u32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for block in LegacyPpdBlocks::parse(bytes) {
+        let Some(block) = block else {
+            break;
+        };
+        if remove_ids.contains(&block.id) {
+            continue;
+        }
+        write_ppd_block(&mut out, block.id, block.data);
+    }
+    out
+}
+
 fn write_i32(bytes: &mut [u8], offset: usize, value: i32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
@@ -3741,6 +3841,99 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].id, DRD_SALTMINE_PPD);
         assert_eq!(read_i32(blocks[0].data, 4 + 3 * 4), 77);
+    }
+
+    #[test]
+    fn clear_turn_seyan_ppd_resets_every_typed_field_it_covers() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.chest_last_access_seconds.insert(2, 12345);
+        player.area3_ppd = vec![1, 2, 3];
+        player.random_shrine_used_words[0] = 7;
+        player.random_shrine_continuity = 9;
+        player.flowers.push(FlowerAccess {
+            location_id: 1,
+            last_used_seconds: 1,
+        });
+        player.random_chests.push(RandomChestAccess {
+            location_id: 1,
+            last_used_seconds: 1,
+        });
+        player.demonshrines.push(42);
+        player.farmy_ppd = vec![4, 5, 6];
+        player.twocity_ppd = vec![7, 8, 9];
+        player.twocity_goodtile = [1, 2, 3, 4, 5];
+        player.twocity_solved_library = true;
+        player.orb_spawns.push(OrbSpawnAccess {
+            location_id: 1,
+            last_used_seconds: 1,
+        });
+        player.rune_used_words[0] = 3;
+        player.rune_special_exec[0] = 11;
+        player.lab_solved_bits = 0xFF;
+        player.lab_ppd = vec![10, 11];
+        player.rat_chests.push(RatChestAccess {
+            location_id: 1,
+            last_used_seconds: 1,
+        });
+        player.rat_chest_treasure_x = 5;
+        player.rat_chest_treasure_y = 6;
+        player.rat_chest_last_treasure_seconds = 100;
+        player.staffer_ppd = vec![12, 13];
+        player.arkhata_ppd = vec![14, 15];
+
+        player.clear_turn_seyan_ppd();
+
+        assert!(player.chest_last_access_seconds.is_empty());
+        assert!(player.area3_ppd.is_empty());
+        assert_eq!(
+            player.random_shrine_used_words,
+            [0; RANDOMSHRINE_USED_WORDS]
+        );
+        assert_eq!(player.random_shrine_continuity, 0);
+        assert!(player.flowers.is_empty());
+        assert!(player.random_chests.is_empty());
+        assert!(player.demonshrines.is_empty());
+        assert!(player.farmy_ppd.is_empty());
+        assert!(player.twocity_ppd.is_empty());
+        assert_eq!(player.twocity_goodtile, [0; 5]);
+        assert!(!player.twocity_solved_library);
+        assert!(player.orb_spawns.is_empty());
+        assert_eq!(player.rune_used_words, [0; RUNE_USED_WORDS]);
+        assert_eq!(player.rune_special_exec, [0; RUNE_SPECIAL_EXEC_COUNT]);
+        assert_eq!(player.lab_solved_bits, 0);
+        assert!(player.lab_ppd.is_empty());
+        assert!(player.rat_chests.is_empty());
+        assert_eq!(player.rat_chest_treasure_x, 0);
+        assert_eq!(player.rat_chest_treasure_y, 0);
+        assert_eq!(player.rat_chest_last_treasure_seconds, 0);
+        assert!(player.staffer_ppd.is_empty());
+        assert!(player.arkhata_ppd.is_empty());
+    }
+
+    #[test]
+    fn clear_turn_seyan_ppd_strips_unmapped_ids_but_keeps_other_raw_blocks() {
+        let unrelated_unknown_id = make_drd(DEV_ID_DB, 999 | PERSISTENT_PLAYER_DATA);
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, DRD_FIRSTKILL_PPD, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_DEPOT_PPD, &[5, 6]);
+        write_ppd_block(&mut existing, unrelated_unknown_id, &[7, 8, 9]);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.ppd_blob = existing;
+
+        player.clear_turn_seyan_ppd();
+
+        let blocks: Vec<_> = LegacyPpdBlocks::parse(&player.ppd_blob)
+            .map(|block| block.unwrap())
+            .collect();
+        // `DRD_FIRSTKILL_PPD` is one of `turn_seyan`'s del_data targets and
+        // is gone; `DRD_DEPOT_PPD` (the documented gap) and any other
+        // still-unrelated id round-trip untouched.
+        assert!(!blocks.iter().any(|block| block.id == DRD_FIRSTKILL_PPD));
+        assert!(blocks.iter().any(|block| block.id == DRD_DEPOT_PPD));
+        assert!(blocks
+            .iter()
+            .any(|block| block.id == unrelated_unknown_id && block.data == [7, 8, 9]));
     }
 
     #[test]

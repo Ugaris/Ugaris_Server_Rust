@@ -591,7 +591,7 @@ fn lab2_undead_death_marks_opener_grave_cleared_with_serial_guard() {
 
     world.apply_legacy_hurt(CharacterId(20), Some(actor_id), 1000, 1, 0, 0);
     assert_eq!(
-        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0),
+        apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new()),
         0
     );
     assert!(runtime
