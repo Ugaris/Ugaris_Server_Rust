@@ -2853,6 +2853,70 @@ Unlocks every quest NPC. Do these before any P4 area work.
   build -p ugaris-server` clean with zero warnings, and a 10s boot-smoke
   confirmed "entering Rust game loop" with no panics (touches the
   TAKE-completion loop in `main.rs`'s runtime loop).
+  Progress Log (iteration 77): closed the DB/announce half of gap (3) -
+  C `achievement_award`'s tail (`achievement.c:610-631`): `subscriber_id
+  = get_subscriberId_from_character(cn); if (subscriber_id > 0) is_first
+  = db_achievement_record_unlock(type, def->name, subscriber_id,
+  ch[cn].name); if (is_first) achievement_announce_first(ch[cn].name,
+  def->name);` (`achievement_announce_first` builds `"0000000000"
+  COL_MAUVE "Grats: %s is the FIRST to unlock %s!"` and calls
+  `server_chat(6, buf)`). Ported the DB half as a new `ugaris-db`
+  repository: `migrations/0007_achievement_firsts.sql` (`achievement_
+  firsts`/`achievement_history` tables - keyed by `character_id` instead
+  of `subscriber_id` since this codebase has no live multi-character-
+  per-account model yet, the same documented compromise `DRD_ACHIEVEMENT_
+  DATA`'s per-character `subscriber_blob` persistence already makes) and
+  `crates/ugaris-db/src/achievement.rs`'s `AchievementRepository::
+  record_unlock` (`PgAchievementRepository`, wired into `Database::
+  achievements()` alongside the sibling repositories). C detects "first
+  insert" via `mysql_affected_rows() == 1` from `INSERT ... ON DUPLICATE
+  KEY UPDATE`; Postgres has no equivalent for `ON CONFLICT DO UPDATE`, so
+  the port uses the standard `RETURNING (xmax = 0) AS is_first` idiom
+  instead (documented inline). Confirmed via a fresh full-C-tree grep
+  that `db_achievement_get_first`/`_get_unlock_count`/
+  `_get_recent_firsts` (the file's other 3 exported functions) have zero
+  call sites anywhere else in C - dead code in C itself (same shape as
+  `auction_db.c`'s `db_get_character_name`) - so only `record_unlock` was
+  ported. Added `record_achievement_firsts_and_announce` (`crates/
+  ugaris-server/src/achievement.rs`, async: awaits the new repository
+  method, then queues the `Grats: NAME is the FIRST to unlock ACH!`
+  channel-6 broadcast via the existing `World::queue_channel_broadcast`
+  + `send_pending_world_channel_broadcasts` pipeline `check_levelup`'s
+  own level-milestone grats message already uses - no new broadcast
+  plumbing needed), a no-op when `--database-url` was not configured.
+  Wired it at 2 of the ~6 unlock call sites (both already inside
+  `main.rs`'s async tick-loop body, so no sync-to-async refactor of the
+  surrounding function was needed): the login-triggered achievement
+  sweep (`StartedUgaris`/`check_level`/`check_exploration`/
+  `check_login_streak`, the highest-traffic site) and the questlog-
+  reopen `Quester` award. `achievement_repository` added alongside
+  `character_repository`/`merchant_repository`/`auction_repository` in
+  `main()`'s startup `Option` tuple. Added 2 tests to `achievement.rs`'s
+  `send_tests` (no-op with no repository configured; no-op for an empty
+  `unlocked` slice) plus 2 to the new `ugaris-db` module (a static-SQL
+  guard covering the `ON CONFLICT`/`xmax` idiom without needing a
+  database, and a `DATABASE_URL`-gated live round trip proving the first
+  call for a fresh achievement id reports `is_first = true`, the second
+  reports `false`, and both `total_unlocks`/`achievement_history` land
+  correctly - skips, never fails, without Postgres present, matching
+  `merchant.rs`/`auction.rs`'s `live` test convention). Still unwired:
+  the other ~4 unlock call sites (`award_play_time_minute`/
+  `award_enemy_killed_achievement`/`award_gathering_achievement`/
+  `award_potion_brewed_achievement`/`award_skill_achievement`/
+  `award_stone_pickup_achievement`/`give_money`'s gold-earned award/
+  `chests.rs`'s chest-opened award, plus the `/achgive` GM command) each
+  build their own unlock-payload send loop inline and would need either
+  an `async fn` signature change (touching their existing sync unit
+  tests) or an equivalent per-site `.await` splice - left for a future
+  slice; the ~37 other `give_money` call sites (P4 area tasks); mining
+  reward RNG (`mine.c` unported); professions (`professor.c` unported);
+  exploration beyond transport; clans; tunnels (`tunnel.c` unported);
+  pentagram solve reward (`pents.c` unported). `cargo fmt --all`, `cargo
+  test --workspace` (1396 ugaris-core + 38 db [+2] + 3 net + 37 protocol
+  + 470 server [+2], all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, and a 10s boot-smoke confirmed
+  "entering Rust game loop" with no panics (touches DB startup wiring
+  and the tick loop's achievement-sweep/questlog-reopen paths).
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

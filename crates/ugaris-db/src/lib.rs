@@ -1,3 +1,4 @@
+pub mod achievement;
 pub mod anticheat;
 pub mod area;
 pub mod auction;
@@ -6,6 +7,7 @@ pub mod merchant;
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
+pub use achievement::{AchievementRepository, PgAchievementRepository};
 pub use anticheat::{
     AntiCheatCounters, AntiCheatEvent, AntiCheatFingerprint, AntiCheatRepository,
     AntiCheatSessionCreate, PgAntiCheatRepository,
@@ -65,5 +67,9 @@ impl Database {
 
     pub fn auctions(&self) -> PgAuctionRepository {
         PgAuctionRepository::new(self.pool.clone())
+    }
+
+    pub fn achievements(&self) -> PgAchievementRepository {
+        PgAchievementRepository::new(self.pool.clone())
     }
 }

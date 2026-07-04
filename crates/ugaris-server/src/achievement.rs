@@ -27,6 +27,7 @@ use ugaris_core::achievement::{
     achievement_def, AccountAchievements, Achievement, AchievementStats, AchievementType,
     ACHIEVEMENT_TYPE_COUNT, MAX_ACHIEVEMENTS,
 };
+use ugaris_db::AchievementRepository;
 use ugaris_protocol::mod_achievements::{
     ach_sync_batch, ach_unlock, AchSyncEntry, ACHIEVEMENT_MAX_PER_SYNC,
 };
@@ -773,6 +774,70 @@ pub(crate) fn achievement_sync_payloads(
     payloads
 }
 
+/// C `achievement_award`'s DB-tracking + cross-server announce tail
+/// (`src/module/achievements/achievement.c:610-631`): `subscriber_id =
+/// get_subscriberId_from_character(cn); if (subscriber_id > 0) is_first =
+/// db_achievement_record_unlock(type, def->name, subscriber_id,
+/// ch[cn].name); if (is_first) achievement_announce_first(ch[cn].name,
+/// def->name);`. This codebase has no live subscriber/account model
+/// (`db_achievement_record_unlock`'s `subscriber_id` param is filled with
+/// `character_id` instead - see `migrations/0007_achievement_firsts.sql`),
+/// so the `subscriber_id > 0` gate is dropped (always "true" here).
+///
+/// A no-op when no `--database-url` was configured (`repository is
+/// None`), matching the rest of this codebase's "persistence is optional"
+/// convention - C always has a database connection, so there is no direct
+/// analog to "gate skipped" here, just "feature unavailable".
+///
+/// Called once per newly-unlocked achievement in `unlocked`, in order,
+/// after the caller has already queued/sent the `SV_ACH_UNLOCK` packet(s)
+/// for them (this function only handles the DB record + the
+/// `achievement_announce_first` broadcast, not the client packet).
+pub(crate) async fn record_achievement_firsts_and_announce(
+    world: &mut World,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    character_id: CharacterId,
+    character_name: &str,
+    unlocked: &[AchievementType],
+) {
+    let Some(repository) = repository else {
+        return;
+    };
+    for &ty in unlocked {
+        let def = achievement_def(ty);
+        let is_first = match repository
+            .record_unlock(ty as i32, def.name, character_id, character_name)
+            .await
+        {
+            Ok(is_first) => is_first,
+            Err(err) => {
+                tracing::warn!(
+                    character = character_name,
+                    achievement = def.name,
+                    error = %err,
+                    "failed to record achievement-firsts DB row"
+                );
+                continue;
+            }
+        };
+        if is_first {
+            // C `achievement_announce_first` (`achievement.c:540-549`):
+            // `"0000000000" COL_MAUVE "Grats: %s is the FIRST to unlock
+            // %s!"` on channel 6.
+            let mut message = b"0000000000".to_vec();
+            message.extend_from_slice(COL_MAUVE);
+            message.extend_from_slice(
+                format!(
+                    "Grats: {character_name} is the FIRST to unlock {}!",
+                    def.name
+                )
+                .as_bytes(),
+            );
+            world.queue_channel_broadcast(6, message);
+        }
+    }
+}
+
 #[cfg(test)]
 mod send_tests {
     use super::*;
@@ -814,5 +879,33 @@ mod send_tests {
         let entry0 = &first_batch[5..5 + 56];
         assert_eq!(entry0[0], AchievementType::StartedUgaris as u8);
         assert_eq!(entry0[2], 1); // unlocked
+    }
+
+    #[tokio::test]
+    async fn record_achievement_firsts_and_announce_is_a_no_op_without_database() {
+        let mut world = World::default();
+        record_achievement_firsts_and_announce(
+            &mut world,
+            &None,
+            CharacterId(1),
+            "Hero",
+            &[AchievementType::StartedUgaris, AchievementType::Quester],
+        )
+        .await;
+        assert!(world.drain_pending_channel_broadcasts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn record_achievement_firsts_and_announce_is_a_no_op_for_empty_unlock_list() {
+        // Guards against a future refactor accidentally awaiting/looping
+        // when there is nothing to record, even with a `Some` repository
+        // (can't construct a live `PgAchievementRepository` without a
+        // pool here, but an empty `unlocked` slice must short-circuit
+        // before ever touching it).
+        let mut world = World::default();
+        let empty: [AchievementType; 0] = [];
+        record_achievement_firsts_and_announce(&mut world, &None, CharacterId(1), "Hero", &empty)
+            .await;
+        assert!(world.drain_pending_channel_broadcasts().is_empty());
     }
 }

@@ -2432,21 +2432,53 @@
         "Error message: JSON Parse error: Property name must be a string literal",
         "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
       ]
+    },
+    {
+      "iteration": 77,
+      "startedAt": "2026-07-04T10:17:18.660Z",
+      "endedAt": "2026-07-04T10:37:38.837Z",
+      "durationMs": 1219605,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-db/src/lib.rs",
+        "crates/ugaris-server/src/achievement.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-db/src/achievement.rs",
+        "migrations/0007_achievement_firsts.sql"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "/// set, and skips (never fails) otherwise so `cargo test --workspace`",
+        "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error; 1 warning emitted",
+        "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Text: {\"filePath\": \"/home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src",
+        "Error message: JSON Parse error: Property name must be a string literal",
+        "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 83714193,
+  "totalDurationMs": 84933798,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 76,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 77,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 27,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 28,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 31,
@@ -2462,8 +2494,8 @@
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
       "Verified: `cargo fmt --all` (clean), `cargo test --workspace` (1035+9+3+31+327 passed, 0 failed), `c": 1,
-      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 27,
-      "Error message: JSON Parse error: Property name must be a string literal": 23,
+      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 28,
+      "Error message: JSON Parse error: Property name must be a string literal": 24,
       "assertion failed: saved.flags.contains(CharacterFlags::ALIVE)": 1,
       "test result: FAILED. 1034 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1035 filtered out; finished in 0.00s": 1,
@@ -2670,7 +2702,7 @@
       "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 1215 filtered out; finished in 0.00": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (1228+36+3+33+374 passing, zero failures), and `cargo ": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error; 1 warning emitted": 1,
-      "/// set, and skips (never fails) otherwise so `cargo test --workspace`": 1,
+      "/// set, and skips (never fails) otherwise so `cargo test --workspace`": 2,
       "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
       "test auction::tests::live::search_filters_by_name_and_level_and_sorts_by_price ... FAILED": 1,
       "test auction::tests::live::deliveries_round_trip_and_summary_matches_pending_rows ... FAILED": 1,
@@ -2784,9 +2816,12 @@
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && git status --short | head ": 1,
       "4. **Verification**: `cargo fmt --all`, `cargo test --workspace` (1396+36+3+37+468, all green, zero ": 1,
       "test result: ok. 463 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 1,
-      "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
+      "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
+      "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error; 1 warning em": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

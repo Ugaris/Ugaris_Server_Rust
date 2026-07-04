@@ -149,7 +149,7 @@ use ugaris_core::{
     tell::tell_not_listening_message,
     text::{
         runtime_color, COL_DARK_GRAY, COL_LIGHT_BLUE, COL_LIGHT_GREEN, COL_LIGHT_RED,
-        COL_LIGHT_VIOLET, COL_ORANGE, COL_RESET, COL_VIOLET, COL_YELLOW,
+        COL_LIGHT_VIOLET, COL_MAUVE, COL_ORANGE, COL_RESET, COL_VIOLET, COL_YELLOW,
     },
     tick::TICKS_PER_SECOND,
     world::{
@@ -603,7 +603,7 @@ async fn main() -> anyhow::Result<()> {
         ..ServerConfig::default()
     };
 
-    let (character_repository, merchant_repository, auction_repository) =
+    let (character_repository, merchant_repository, auction_repository, achievement_repository) =
         if let Some(database_url) = args.database_url.as_deref() {
             let db = ugaris_db::Database::connect(database_url, 8).await?;
             db.ping().await?;
@@ -616,10 +616,15 @@ async fn main() -> anyhow::Result<()> {
             if let Err(err) = auctions.cleanup_expired_auctions().await {
                 warn!(error = %err, "failed to clean up expired auctions at startup");
             }
-            (Some(db.characters()), Some(db.merchants()), Some(auctions))
+            (
+                Some(db.characters()),
+                Some(db.merchants()),
+                Some(auctions),
+                Some(db.achievements()),
+            )
         } else {
             warn!("DATABASE_URL not set; starting without persistence");
-            (None, None, None)
+            (None, None, None, None)
         };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
@@ -1618,6 +1623,14 @@ async fn main() -> anyhow::Result<()> {
                                             {
                                                 runtime.send_to_session(sid, payload.clone());
                                             }
+                                            record_achievement_firsts_and_announce(
+                                                &mut world,
+                                                &achievement_repository,
+                                                character_id,
+                                                &name,
+                                                &[AchievementType::Quester],
+                                            )
+                                            .await;
                                         }
                                     }
                                 }
@@ -5726,6 +5739,16 @@ async fn main() -> anyhow::Result<()> {
                                     &name,
                                     now,
                                 ));
+                                if !unlocked.is_empty() {
+                                    record_achievement_firsts_and_announce(
+                                        &mut world,
+                                        &achievement_repository,
+                                        character_id,
+                                        &name,
+                                        &unlocked,
+                                    )
+                                    .await;
+                                }
                                 for ty in unlocked {
                                     payloads.push(achievement_unlock_payload(ty, now));
                                 }
