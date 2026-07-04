@@ -1,3 +1,4 @@
+pub mod achievement;
 pub mod area_section;
 pub mod area_sound;
 pub mod attack;

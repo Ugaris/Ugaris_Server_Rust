@@ -2483,10 +2483,31 @@ Unlocks every quest NPC. Do these before any P4 area work.
   ticking with no panics (data-only change, doesn't touch the runtime
   loop/login/map sync/protocol).
 
-- [ ] **Achievements (`src/module/achievements/achievement.c`)** - runtime
+- [~] **Achievements (`src/module/achievements/achievement.c`)** - runtime
   markers partially exist (chests, transport). Port the achievement
   table, progress PPD, `SV_*` packets the community client expects
   (check client), and the grant/announce path. Wire existing markers.
+  REMAINING: this iteration ported the full core data model and
+  stat-driven award logic as a standalone leaf module
+  (`crates/ugaris-core/src/achievement.rs`) - the 127-entry
+  `AchievementType` enum + `achievement_defs` table, `Achievement`/
+  `AccountAchievements`/`AchievementStats` structs, `award`/
+  `add_progress`/`get_stat_progress`, and every `achievement_add_*`/
+  `achievement_check_*` stat-update function - but nothing wires it into
+  a live call site yet. Still to do: (1) persistence - no PPD/DB column
+  exists for `AccountAchievements`/`AchievementStats`; `crate::player`'s
+  pre-existing `AchievementState` (chests + transport markers only) is
+  untouched, so the two models coexist unwired; (2) protocol - the
+  `SV_ACH_UNLOCK`/`SV_ACH_PROGRESS`/`SV_ACH_SYNC`/`SV_ACH_STATS` mod
+  packets (`mod_achievements.h`) have no Rust definitions; (3) DB "first
+  player globally" tracking + cross-server grats announcement
+  (`database_achievement.c`) is unported; (4) the `/achievements`/
+  `/achstats`/`/achfix`/`/achclear`/`/achsync`/`/achgive` commands are
+  still help-text-only stubs in `commands_player.rs` with no dispatch
+  logic; (5) no call site anywhere (chest opens, gathering, combat,
+  mining, quests, clans, etc.) invokes the new `add_*`/`check_*`
+  functions yet - each needs wiring at its own C-identified call site
+  (`ACHIEVEMENT_STATUS.txt`'s file list) once (1)-(4) land.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository
@@ -2899,3 +2920,33 @@ Add one line per completed task: date, task, ledger section touched.
   wiring (room spawning, `turn_seyan`, fight driver, tick-loop dispatch)
   remains - see the task's REMAINING note. Ledger section "Gatekeeper
   NPC".
+- 2026-07-04: Achievements (P3, iteration 65, `[~]`) - ported the core
+  data model and stat-driven award logic from
+  `src/module/achievements/achievement.c`/`achievement.h` as a new
+  standalone leaf module `crates/ugaris-core/src/achievement.rs`: the
+  full 127-entry `AchievementType` enum and `achievement_defs` table
+  (Steam ids, names, descriptions, categories, progress targets - copied
+  digit for digit via a source-parsing script to avoid transcription
+  error, then spot-checked against the C source), `PentArea`/`AchCategory`
+  enums, `Achievement`/`AccountAchievements`/`AchievementStats` structs,
+  `AccountAchievements::award`/`add_progress`/`is_unlocked`/
+  `get_progress`, `get_stat_progress` (the full stat-to-progress switch
+  incl. u64->u32 saturating casts for demon/silver/gold/wealth counters),
+  `area_to_pent_index`, and every `achievement_add_*`/`achievement_check_*`
+  function (flowers/mushrooms/berries/potions/demons/pents/chests/stones/
+  enemy_killed/pvp_kill/military_mission/tunnel_level/silver_mined/
+  gold_mined/gold_earned/play_time/login_streak/level/skill/profession/
+  exploration/clear_all), each returning the list of newly-unlocked
+  achievements for a future caller to route through logging/Steam-sync/DB
+  side effects this leaf module has no access to. 41 new tests covering
+  the table's integrity and digit-for-digit content, every threshold
+  ladder, the per-pent-area/hardcore/profession branch tables, login
+  streak day-rollover semantics (first login/same-day/consecutive/gap),
+  and the achieved-by name truncation to the C struct's 40-byte buffer.
+  Not wired into any live call site yet (no persistence, no protocol
+  packets, no command dispatch, no gameplay call sites) - see the task's
+  REMAINING note for the itemized follow-up list. `cargo fmt --all`,
+  `cargo test --workspace` (1386 core [+41] + 36 db + 3 net + 33 protocol
+  + 406 server, all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, and a 10s boot-smoke showed ticking with no
+  panics. Ledger section "Ralph Loop - Achievements Core Data Model".

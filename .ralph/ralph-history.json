@@ -2075,21 +2075,50 @@
         "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 65,
+      "startedAt": "2026-07-04T07:00:04.851Z",
+      "endedAt": "2026-07-04T07:22:35.971Z",
+      "durationMs": 1350255,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/lib.rs",
+        "crates/ugaris-core/src/achievement.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All 41 tests pass. Now let's run the full workspace test suite and build to confirm zero warnings/failures.",
+        "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` (1386+36+3+33+406, all green, zero failures), `cargo build -p ugaris-server` clean with zero warnings, 10s boot-smoke ticking with n",
+        "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "KeyError: '500 demons\"'",
+        "test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 1345 filtered out; finished in 0.00s",
+        "test result: ok. 1386 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
+        "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 71922957,
+  "totalDurationMs": 73273212,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 64,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 65,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 21,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 22,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 30,
@@ -2187,7 +2216,7 @@
       "All verification gates passed: `cargo fmt --all` clean, `cargo test --workspace` (1474 tests, 0 fail": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 2 previous errors": 1,
       "test result: ok. 1078 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
-      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 10,
+      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
       "- **Verification**: `cargo fmt --all`, `cargo test --workspace` (1090+9+3+33+340 = 1475 tests, 0 fai": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1086 filtered out; finished in 0.00s": 1,
       "test result: ok. 1090 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
@@ -2314,7 +2343,7 @@
       "- `cargo fmt --all`, `cargo test --workspace` (1228+36+3+33+374 passing, zero failures), and `cargo ": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error; 1 warning emitted": 1,
       "/// set, and skips (never fails) otherwise so `cargo test --workspace`": 1,
-      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "test auction::tests::live::search_filters_by_name_and_level_and_sorts_by_price ... FAILED": 1,
       "test auction::tests::live::deliveries_round_trip_and_summary_matches_pending_rows ... FAILED": 1,
       "test auction::tests::live::create_get_update_and_delete_round_trip ... FAILED": 1,
@@ -2364,7 +2393,7 @@
       "test result: ok. 404 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "whole gatekeeper.c file (welcome dialogue, test entry/success/failure,": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 2 previous errors": 1,
-      "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 7,
+      "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 8,
       "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 1286 filtered out; finished in 0.00s": 1,
       "test result: ok. 1302 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 2,
       "All green: 1311+36+3+33+406 tests passing, zero failures. Now let's check for warnings with clippy-s": 1,
@@ -2386,7 +2415,12 @@
       "test player::tests::reopen_quest_legacy_silent_no_effect_for_unimplemented_case ... FAILED": 1,
       "test player::tests::reopen_quest_legacy_smugglecom_state_five_clears_bits ... FAILED": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1344 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1345 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
+      "test result: ok. 1345 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
+      "All 41 tests pass. Now let's run the full workspace test suite and build to confirm zero warnings/fa": 1,
+      "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` (1386+36+3+33+406, all green, ze": 1,
+      "KeyError: '500 demons\"'": 1,
+      "test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 1345 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1386 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
