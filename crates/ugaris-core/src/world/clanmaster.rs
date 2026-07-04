@@ -11,12 +11,14 @@
 //! GM cheats - see `PORTING_TODO.md`'s "Clan system" task).
 //!
 //! `rank:`/`fire:` (leader rank-management text commands, `clanmaster.c:
-//! 446-547`) are ported for *online* targets only - C's own fallback for
-//! an unmatched name (`task_set_clan_rank`/`task_fire_from_clan`, an
-//! async DB-task queue that schedules the same mutation for whenever that
-//! player next logs in) has no equivalent subsystem in this codebase at
-//! all (no persistent name index, no task queue), so that branch is left
-//! unported and documented, not silently dropped - see
+//! 446-547`) are fully ported, including C's offline-name fallback
+//! (`task_set_clan_rank`/`task_fire_from_clan`, an async DB-task queue
+//! that schedules the same mutation for whenever that player next logs
+//! in): since `World` has no DB handle, an unmatched online name is
+//! queued as [`ClanmasterEvent::OfflineRankLookup`]/[`ClanmasterEvent::
+//! OfflineFire`] and resolved against the DB synchronously in
+//! `ugaris-server`'s `apply_clanmaster_events` instead of via a real task
+//! queue - see those variants' doc comments and
 //! `clanmaster_handle_rank_command`/`clanmaster_handle_fire_command`.
 //!
 //! Deliberately out of scope for this slice (documented in that task's
@@ -138,6 +140,33 @@ pub enum ClanmasterEvent {
         member_id: CharacterId,
         clan_nr: u16,
         firer_name: String,
+    },
+    /// C `rank:`'s offline-name fallback (`clanmaster.c:481-499`):
+    /// `lookup_name` resolves `target_name` against the DB rather than an
+    /// online character, so C schedules `task_set_clan_rank` for its
+    /// async DB-task queue worker (`set_clan_rank`, `task.c:87-115,
+    /// 333-345`). This codebase has no task queue, so `ugaris-server`'s
+    /// `apply_clanmaster_events` resolves the DB lookup, validation,
+    /// mutation, and feedback synchronously instead (same tick, just
+    /// after `World`'s own online-target branch) - meaning, unlike C,
+    /// this always resolves definitively (found-and-updated, found-
+    /// but-rejected, or genuinely no such player), never leaving C's
+    /// ambiguous "still resolving" `uID == 0` case unaddressed.
+    OfflineRankLookup {
+        clanmaster_id: CharacterId,
+        clan_nr: u16,
+        target_name: String,
+        rank: u8,
+        setter_name: String,
+    },
+    /// Same shape as [`ClanmasterEvent::OfflineRankLookup`] but for
+    /// `fire:`'s offline fallback (`clanmaster.c:525-546`,
+    /// `task_fire_from_clan`/`fire_from_clan`, `task.c:117-133,347-356`).
+    OfflineFire {
+        clanmaster_id: CharacterId,
+        clan_nr: u16,
+        target_name: String,
+        setter_name: String,
     },
 }
 
@@ -554,11 +583,9 @@ impl World {
     }
 
     /// C `clanmaster_driver`'s `rank:` handler (`clanmaster.c:446-500`).
-    /// Only the online-target branch is ported: an unmatched name falls
-    /// through to C's `lookup_name`/`task_set_clan_rank` async DB-task
-    /// fallback, which has no equivalent subsystem in this codebase (no
-    /// persistent name index, no task queue) - see the module doc
-    /// comment.
+    /// An unmatched online name is queued as
+    /// [`ClanmasterEvent::OfflineRankLookup`] for `ugaris-server` to
+    /// resolve against the DB - see the module doc comment.
     fn clanmaster_handle_rank_command(
         &mut self,
         clanmaster_id: CharacterId,
@@ -589,6 +616,17 @@ impl World {
         let rank = rank as u8;
 
         let Some(target_id) = self.find_online_player_by_name(&target_name) else {
+            // C: falls through to `lookup_name`/`task_set_clan_rank`
+            // (`clanmaster.c:487-499`) - see
+            // `ClanmasterEvent::OfflineRankLookup`'s doc comment.
+            self.pending_clanmaster_events
+                .push(ClanmasterEvent::OfflineRankLookup {
+                    clanmaster_id,
+                    clan_nr,
+                    target_name,
+                    rank,
+                    setter_name: speaker_name,
+                });
             return;
         };
         let target_display_name = self
@@ -633,9 +671,9 @@ impl World {
     }
 
     /// C `clanmaster_driver`'s `fire:` handler (`clanmaster.c:503-547`).
-    /// Only the online-target branch is ported - see
-    /// `clanmaster_handle_rank_command`'s doc comment/the module doc
-    /// comment for why the offline `task_fire_from_clan` fallback isn't.
+    /// An unmatched online name is queued as
+    /// [`ClanmasterEvent::OfflineFire`] for `ugaris-server` to resolve
+    /// against the DB - see the module doc comment.
     fn clanmaster_handle_fire_command(
         &mut self,
         clanmaster_id: CharacterId,
@@ -657,6 +695,16 @@ impl World {
             return;
         }
         let Some(target_id) = self.find_online_player_by_name(&target_name) else {
+            // C: falls through to `lookup_name`/`task_fire_from_clan`
+            // (`clanmaster.c:530-545`) - see
+            // `ClanmasterEvent::OfflineFire`'s doc comment.
+            self.pending_clanmaster_events
+                .push(ClanmasterEvent::OfflineFire {
+                    clanmaster_id,
+                    clan_nr,
+                    target_name,
+                    setter_name: speaker_name,
+                });
             return;
         };
         if self.char_clan_if_leader(target_id, 0) != Some(clan_nr) {

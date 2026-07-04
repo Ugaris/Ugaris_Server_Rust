@@ -5685,6 +5685,7 @@ async fn main() -> anyhow::Result<()> {
                     &mut runtime,
                     &achievement_repository,
                     &clan_log_repository,
+                    &character_repository,
                     current_unix_time(),
                 )
                 .await;

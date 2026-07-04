@@ -713,15 +713,15 @@ fn rank_command_sets_rank_and_queues_clan_log_event() {
 }
 
 #[test]
-fn rank_command_ignores_unmatched_offline_name() {
+fn rank_command_queues_offline_lookup_for_unmatched_name() {
     // C falls back to `lookup_name`/`task_set_clan_rank` (an async
     // DB-task queue) for a name that doesn't match anyone currently
-    // online - no equivalent subsystem exists here, so this is a no-op,
-    // not a crash or a bogus "not found" message (C itself sends no
-    // player feedback on this path either, aside from a would-be
-    // "Sorry, no player by the name %s found." that only fires for a
-    // *resolved-but-unknown* name, a case this codebase can't distinguish
-    // without a persistent name index).
+    // online. This codebase has no task queue, so `World` queues a
+    // `ClanmasterEvent::OfflineRankLookup` for `ugaris-server` to resolve
+    // against the DB instead - see that variant's doc comment. No
+    // immediate area text is emitted here (C's own "Update scheduled"/
+    // "Sorry, no player found" feedback depends on the DB lookup
+    // outcome, which only `ugaris-server` can determine).
     let mut world = World::default();
     let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
     assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
@@ -736,7 +736,17 @@ fn rank_command_ignores_unmatched_offline_name() {
     world.process_clanmaster_actions(0, 0);
 
     assert!(world.drain_pending_area_texts().is_empty());
-    assert!(world.drain_pending_clanmaster_events().is_empty());
+    let events = world.drain_pending_clanmaster_events();
+    assert_eq!(
+        events,
+        vec![ClanmasterEvent::OfflineRankLookup {
+            clanmaster_id: CharacterId(1),
+            clan_nr: nr,
+            target_name: "Ghost".into(),
+            rank: 2,
+            setter_name: "Alice".into(),
+        }]
+    );
 }
 
 #[test]
@@ -827,7 +837,10 @@ fn fire_command_removes_membership_and_queues_clan_log_event() {
 }
 
 #[test]
-fn fire_command_ignores_unmatched_offline_name() {
+fn fire_command_queues_offline_lookup_for_unmatched_name() {
+    // Same shape as `rank_command_queues_offline_lookup_for_unmatched_name`
+    // but for `fire:`'s offline fallback - see
+    // `ClanmasterEvent::OfflineFire`'s doc comment.
     let mut world = World::default();
     let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
     assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
@@ -842,5 +855,14 @@ fn fire_command_ignores_unmatched_offline_name() {
     world.process_clanmaster_actions(0, 0);
 
     assert!(world.drain_pending_area_texts().is_empty());
-    assert!(world.drain_pending_clanmaster_events().is_empty());
+    let events = world.drain_pending_clanmaster_events();
+    assert_eq!(
+        events,
+        vec![ClanmasterEvent::OfflineFire {
+            clanmaster_id: CharacterId(1),
+            clan_nr: nr,
+            target_name: "Ghost".into(),
+            setter_name: "Alice".into(),
+        }]
+    );
 }

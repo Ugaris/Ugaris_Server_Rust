@@ -3249,12 +3249,18 @@ Unlocks every quest NPC. Do these before any P4 area work.
   alchemy-potion economy) and the `buy`/`use` dungeon-guard commands
   (C's own `buy` is unconditionally disabled dead code so that part is
   actually done; `use` needs the still-unported dungeon-guard economy's
-  cost/budget functions). The clanmaster NPC's `rank:`/`fire:` text
-  commands (leader rank-management) were ported in iteration 97 for
-  *online* targets only - see Progress Log; the offline-player
-  `task_set_clan_rank`/`task_fire_from_clan` async DB-task fallback (a
-  whole separate subsystem this codebase has no equivalent of) remains
-  unported. The `ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLAN_MASTER`/
+   cost/budget functions). The clanmaster NPC's `rank:`/`fire:` text
+   commands (leader rank-management) were ported in iteration 97 for
+   *online* targets only; the offline-player `task_set_clan_rank`/
+   `task_fire_from_clan` async DB-task fallback was closed in iteration
+   100 (see Progress Log) - since `World` has no DB handle, an unmatched
+   online name is queued as a `ClanmasterEvent::OfflineRankLookup`/
+   `OfflineFire` and resolved against the DB synchronously in
+   `ugaris-server`'s `apply_clanmaster_events` (name lookup, online-
+   elsewhere guard, clan-membership/paid validation, guarded save,
+   clan-log write, feedback) instead of via a real task queue - a
+   simplification documented inline at each new type/function. The
+   `ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLAN_MASTER`/
   `ACHIEVEMENT_CLUB_MEMBER` award wiring for the club variant (clubs
   aren't founded/joined anywhere - `club.c` itself isn't ported), and
   `clan_trade_bonus` (blocked on the merchant system itself not being
@@ -3901,6 +3907,65 @@ Unlocks every quest NPC. Do these before any P4 area work.
     dungeon-guard economy proper (guard counts/potions - `use`/`buy`'s
     real logic, and the alchemy-potion economy that would actually
     populate `alc_pot`/`simple_pot`).
+  - 2026-07-04 (iteration 100): ported the offline-player `rank:`/`fire:`
+    DB-task fallback (`task_set_clan_rank`/`task_fire_from_clan`,
+    `set_clan_rank`/`fire_from_clan`, `task.c:87-133,213-295,333-356`),
+    closing iteration 97/98/99's last-listed REMAINING item for this
+    task. Confirmed via a fresh `CharacterRepository`/DB-primitives audit
+    that this codebase already has every building block C's task queue
+    needs (name->ID lookup via `find_login_target`, online-elsewhere
+    check via `current_area`, full snapshot load via
+    `load_character_snapshot`, and a guarded compare-and-swap save via
+    `CharacterSaveMode::Backup`'s `expected_current_area`/
+    `expected_current_mirror` WHERE clause) - no new DB method, SQL, or
+    schema migration needed, so this reduces to wiring rather than new
+    infrastructure. Added `ClanmasterEvent::OfflineRankLookup`/
+    `OfflineFire` to `crates/ugaris-core/src/world/clanmaster.rs`,
+    queued by `clanmaster_handle_rank_command`/
+    `clanmaster_handle_fire_command`'s previously-no-op "no online
+    match" branch. Added `apply_offline_clan_rank`/
+    `apply_offline_clan_fire` to `crates/ugaris-server/src/
+    world_events.rs::apply_clanmaster_events` (now taking a
+    `character_repository` parameter, wired at its one call site in
+    `main.rs`): resolves the DB row directly (this codebase's
+    synchronous stand-in for C's cached `lookup_name` + async
+    task-worker, so - unlike C - it always resolves definitively found-
+    and-updated/found-but-rejected/no-such-player, never C's ambiguous
+    "still resolving" `uID == 0` case), sends the "Update scheduled"/
+    "Sorry, no player by the name %s found." feedback exactly like C,
+    silently no-ops on the "online somewhere else" guard (matching C's
+    own silent `xlog`-only branch), replicates `set_clan_rank`/
+    `fire_from_clan`'s clan-membership (via `ClanRegistry::get_char_clan`'s
+    existing stale-reference self-heal, reused as-is against the loaded
+    offline snapshot) and paid-status validation and their exact
+    `tell_chat` wording, mutates `clan_rank` or clears `clan`/
+    `clan_rank`/`clan_serial`, writes the same prio-30/prio-15 clan-log
+    entries `RankSet`/`MemberFired` already use, and reuses
+    `World::npc_quiet_say` (nearby-only) for feedback delivery in place
+    of C's `tell_chat`'s inter-mirror chat-channel relay (documented as
+    a deliberate simplification, consistent with every other message
+    this driver already sends). Updated the two existing "ignores
+    unmatched offline name" tests (now `..._queues_offline_lookup_for_
+    unmatched_name`) to assert the new event payload instead of a no-op,
+    updated the module/task doc comments accordingly. No new DB-side
+    test coverage for `apply_offline_clan_rank`/`_fire` themselves (no
+    fake `CharacterRepository` exists in this codebase yet - same gap as
+    every other DB-touching `apply_*_events` function, e.g.
+    `apply_trader_events`/`apply_bank_events`, none of which have direct
+    unit tests either); covered instead at the `World` layer (event
+    payload correctness) plus a full boot-smoke. `cargo fmt --all`,
+    `cargo test --workspace` (1541 ugaris-core [2 tests renamed, no net
+    change] + 47 db + 3 net + 37 protocol + 536 server, all green, zero
+    failures), `cargo build -p ugaris-server` clean with zero warnings,
+    10s boot-smoke confirmed "entering Rust game loop" with no panics.
+    REMAINING for the "Clan system" task overall (updated above): only
+    club-variant achievement wiring, `clan_trade_bonus`, and the
+    dungeon-guard economy proper (guard counts/potions - `use`/`buy`'s
+    real logic, and the alchemy-potion economy that would actually
+    populate `alc_pot`/`simple_pot`) - all three blocked on other
+    unported systems (club.c, the merchant system, and the dungeon/raid
+    + alchemy-potion systems respectively), not self-contained slices of
+    this task anymore.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

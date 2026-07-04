@@ -721,12 +721,16 @@ pub(crate) fn apply_gate_welcome_events(
 /// `add_member`/`remove_member` perform internally, which the pure
 /// `ClanRegistry` methods leave to the caller (see `crate::world_events`'s
 /// module doc comment shape, mirroring `apply_trader_events`/
-/// `apply_bank_events`).
+/// `apply_bank_events`), plus (for `OfflineRankLookup`/`OfflineFire`) the
+/// DB-backed offline-target lookup/validation/mutation C performs via its
+/// `task_set_clan_rank`/`task_fire_from_clan` async DB-task queue - see
+/// [`apply_offline_clan_rank`]/[`apply_offline_clan_fire`].
 pub(crate) async fn apply_clanmaster_events(
     world: &mut World,
     runtime: &mut ServerRuntime,
     achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
     clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
     now_unix: i64,
 ) -> usize {
     let mut applied = 0;
@@ -881,9 +885,246 @@ pub(crate) async fn apply_clanmaster_events(
                 .await;
                 applied += 1;
             }
+            ClanmasterEvent::OfflineRankLookup {
+                clanmaster_id,
+                clan_nr,
+                target_name,
+                rank,
+                setter_name,
+            } => {
+                apply_offline_clan_rank(
+                    world,
+                    character_repository,
+                    clan_log_repository,
+                    clanmaster_id,
+                    clan_nr,
+                    &target_name,
+                    rank,
+                    &setter_name,
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+            ClanmasterEvent::OfflineFire {
+                clanmaster_id,
+                clan_nr,
+                target_name,
+                setter_name,
+            } => {
+                apply_offline_clan_fire(
+                    world,
+                    character_repository,
+                    clan_log_repository,
+                    clanmaster_id,
+                    clan_nr,
+                    &target_name,
+                    &setter_name,
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
         }
     }
     applied
+}
+
+/// C `clanmaster_driver`'s `rank:` offline fallback
+/// (`clanmaster.c:481-499`, `task_set_clan_rank`/`set_clan_rank`,
+/// `task.c:87-101,213-295,333-345`): resolves `target_name` against the
+/// DB directly (this codebase's synchronous stand-in for C's cached
+/// `lookup_name` + async task-queue worker - see
+/// `ClanmasterEvent::OfflineRankLookup`'s doc comment), then mirrors
+/// `set_clan_rank`'s validation/mutation/clan-log/feedback exactly:
+/// - no DB row at all -> "Sorry, no player by the name %s found."
+///   (`uID == -1`).
+/// - a row found -> immediate "Update scheduled (%s,%d)." feedback
+///   (`clanmaster.c:497`), matching C's fire-and-forget
+///   `task_set_clan_rank` semantics (sent regardless of whether the
+///   mutation below actually succeeds).
+/// - target already online elsewhere -> silent no-op (C's `set_task`
+///   "online somewhere else" guard, `task.c:238-243`, only `xlog`s).
+/// - target not a member of `clan_nr` / not paid for rank > 1 -> the
+///   same rejection messages `set_clan_rank` sends via `tell_chat`.
+/// - otherwise -> mutate, guarded save (`CharacterSaveMode::Backup`
+///   with `expected_current_area`/`expected_current_mirror` pinned to
+///   the loaded snapshot's own offline `0`/`0`, so a concurrent login
+///   between the load and the save aborts the write exactly like C's
+///   `UPDATE ... WHERE current_area = ...`), clan-log entry, and "Set
+///   %s's rank to %d." feedback.
+async fn apply_offline_clan_rank(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    clanmaster_id: CharacterId,
+    clan_nr: u16,
+    target_name: &str,
+    rank: u8,
+    setter_name: &str,
+    now_unix: i64,
+) {
+    let Some(repository) = character_repository else {
+        return;
+    };
+    let Ok(Some(summary)) = repository.find_login_target(target_name).await else {
+        world.npc_quiet_say(
+            clanmaster_id,
+            &format!("Sorry, no player by the name {target_name} found."),
+        );
+        return;
+    };
+    world.npc_quiet_say(
+        clanmaster_id,
+        &format!("Update scheduled ({target_name},{rank})."),
+    );
+
+    let Ok(Some(snapshot)) = repository.load_character_snapshot(summary.id).await else {
+        return;
+    };
+    // C `set_task`'s "online somewhere else" guard (`task.c:238-243`):
+    // silent no-op (only an `xlog`, no player-facing message).
+    if snapshot.current_area != 0 {
+        return;
+    }
+
+    let mut character = snapshot.character;
+    if world.clan_registry.get_char_clan(&mut character) != Some(clan_nr) {
+        world.npc_quiet_say(
+            clanmaster_id,
+            &format!(
+                "{} is not a member of your clan, you cannot set the rank.",
+                character.name
+            ),
+        );
+        return;
+    }
+    if !character.flags.contains(CharacterFlags::PAID) && rank > 1 {
+        world.npc_quiet_say(
+            clanmaster_id,
+            &format!(
+                "{} is not a paying player, you cannot set the rank higher than 1.",
+                character.name
+            ),
+        );
+        return;
+    }
+    character.clan_rank = rank;
+    let target_id = character.id;
+    let target_display_name = character.name.clone();
+
+    let request = ugaris_db::CharacterSaveRequest {
+        character,
+        items: snapshot.items,
+        ppd_blob: snapshot.ppd_blob,
+        subscriber_blob: snapshot.subscriber_blob,
+        mode: ugaris_db::CharacterSaveMode::Backup {
+            expected_current_area: snapshot.current_area,
+            expected_current_mirror: snapshot.current_mirror,
+            mirror: snapshot.mirror,
+        },
+    };
+    if !matches!(repository.save_character_snapshot(request).await, Ok(true)) {
+        return;
+    }
+
+    let serial = world.clan_registry.serial(clan_nr);
+    crate::clan_log::write_clan_log_entry(
+        clan_log_repository,
+        clan_nr,
+        serial,
+        target_id,
+        30,
+        format!("{target_display_name} rank was set to {rank} by {setter_name}"),
+        now_unix,
+    )
+    .await;
+    world.npc_quiet_say(
+        clanmaster_id,
+        &format!("Set {target_display_name}'s rank to {rank}."),
+    );
+}
+
+/// Same shape as [`apply_offline_clan_rank`] but for `fire:`'s offline
+/// fallback (`clanmaster.c:525-546`, `task_fire_from_clan`/
+/// `fire_from_clan`, `task.c:117-133,347-356`): "Update scheduled (%s)."
+/// carries no rank, and a successful mutation clears `clan`/`clan_rank`
+/// (`remove_member`'s effect) rather than setting a rank, with the
+/// clan-log prio-15 "was fired from clan by" shape (matching
+/// `ClanmasterEvent::MemberFired`).
+async fn apply_offline_clan_fire(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    clanmaster_id: CharacterId,
+    clan_nr: u16,
+    target_name: &str,
+    setter_name: &str,
+    now_unix: i64,
+) {
+    let Some(repository) = character_repository else {
+        return;
+    };
+    let Ok(Some(summary)) = repository.find_login_target(target_name).await else {
+        world.npc_quiet_say(
+            clanmaster_id,
+            &format!("Sorry, no player by the name {target_name} found."),
+        );
+        return;
+    };
+    world.npc_quiet_say(clanmaster_id, &format!("Update scheduled ({target_name})."));
+
+    let Ok(Some(snapshot)) = repository.load_character_snapshot(summary.id).await else {
+        return;
+    };
+    if snapshot.current_area != 0 {
+        return;
+    }
+
+    let mut character = snapshot.character;
+    if world.clan_registry.get_char_clan(&mut character) != Some(clan_nr) {
+        world.npc_quiet_say(
+            clanmaster_id,
+            &format!(
+                "{} is not a member of your clan, you cannot fire him/her.",
+                character.name
+            ),
+        );
+        return;
+    }
+    character.clan = 0;
+    character.clan_rank = 0;
+    character.clan_serial = 0;
+    let target_id = character.id;
+    let target_display_name = character.name.clone();
+
+    let request = ugaris_db::CharacterSaveRequest {
+        character,
+        items: snapshot.items,
+        ppd_blob: snapshot.ppd_blob,
+        subscriber_blob: snapshot.subscriber_blob,
+        mode: ugaris_db::CharacterSaveMode::Backup {
+            expected_current_area: snapshot.current_area,
+            expected_current_mirror: snapshot.current_mirror,
+            mirror: snapshot.mirror,
+        },
+    };
+    if !matches!(repository.save_character_snapshot(request).await, Ok(true)) {
+        return;
+    }
+
+    let serial = world.clan_registry.serial(clan_nr);
+    crate::clan_log::write_clan_log_entry(
+        clan_log_repository,
+        clan_nr,
+        serial,
+        target_id,
+        15,
+        format!("{target_display_name} was fired from clan by {setter_name}"),
+        now_unix,
+    )
+    .await;
+    world.npc_quiet_say(clanmaster_id, &format!("Fired {target_display_name}."));
 }
 
 /// Applies each [`ClanclerkEvent`] queued by `World::process_clanclerk_actions`:
