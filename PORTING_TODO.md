@@ -3239,9 +3239,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
   command still doesn't exist either), the `ACHIEVEMENT_CLAN_MEMBER`/
   `ACHIEVEMENT_CLAN_MASTER`/`ACHIEVEMENT_CLUB_MEMBER` award wiring on
   membership change, `clan_trade_bonus` (blocked on the merchant system
-  itself not being ported), clan-hall transport access beyond direct
-  membership (channel 12/ClanA alliance-aware chat gating was closed in
-  iteration 92 - see Progress Log), the
+  itself not being ported) - channel 12/ClanA alliance-aware chat gating
+  was closed in iteration 92 and clan-hall transport access beyond direct
+  membership was closed in iteration 93 (see Progress Log) - the
   `set_clan_website`/`set_clan_message` trailing-character-strip quirk
   (deferred to whichever future task wires a real `/clan` command
   parser). Clan-log *read*/*admin-clear* persistence is now ported
@@ -3549,6 +3549,42 @@ Unlocks every quest NPC. Do these before any P4 area work.
     achievement-on-join wiring, `clan_trade_bonus`, clan-hall transport
     beyond direct membership, and the treasury/dungeon economy all still
     need their own slices.
+  - 2026-07-04 (iteration 93): closed the "clan-hall transport access
+    beyond direct membership" REMAINING item. C's `may_enter_clan`
+    (`clan.c:881-905`, called from `transport.c:185,192,199,206,223`) was
+    already fully ported as `ClanRelations::may_enter` (own-clan always
+    allowed, non-members always rejected, a never-founded/deleted clan
+    hall admits nobody, otherwise only an `Alliance` relation from the
+    target clan's perspective) but `crates/ugaris-server/src/
+    transport.rs`'s own `may_enter_clan` helper never called it - it only
+    ever checked `character.clan == clan` (direct membership), so an
+    allied (non-member) player's clan-hall bit in the `SV_TELEPORT`
+    access mask and the actual travel command were both always denied,
+    unlike C. Changed `may_enter_clan`'s signature to take `&World` and
+    delegate to `world.clan_registry.relations().may_enter(character.
+    clan, clan)`; both call sites (`transport_clan_access`'s per-bit
+    mask loop and `resolve_transport_travel_with_random`'s travel-time
+    gate) updated to pass `world` through, matching iteration 92's
+    `ClanRelations::alliance`-via-chat wiring pattern one-for-one. 2 new
+    tests in `crates/ugaris-server/src/tests/transport.rs`
+    (`transport_clan_travel_allows_allied_clan_hall_not_just_direct_member`
+    proves a clan-1 traveler now reaches clan 17's hall once the two
+    clans are set to `Alliance`;
+    `transport_clan_travel_blocks_merely_neutral_clan_hall` proves the
+    same two clans left at the default `Neutral` relation still block
+    travel with C's exact `"You may not enter (17)."` text) - the
+    existing `transport_clan_access_marks_direct_member_byte` and
+    `transport_clan_travel_uses_legacy_hall_coordinates`/
+    `transport_clan_travel_rejects_non_member_with_legacy_text` tests
+    were unaffected since own-clan membership is still the first,
+    unconditional `may_enter` branch. `cargo fmt --all`, `cargo test
+    --workspace` (1458 ugaris-core + 47 db + 3 net + 37 protocol + 520
+    server [+2], all green, zero failures), `cargo build -p
+    ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+    "entering Rust game loop" with no panics. REMAINING otherwise
+    unchanged: `add_member`/`found_clan` command wiring (and then wiring
+    `add_clanlog` into it), achievement-on-join wiring, `clan_trade_bonus`,
+    and the treasury/dungeon economy all still need their own slices.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

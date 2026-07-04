@@ -2944,15 +2944,44 @@
         "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 488 filtered out; finished in 0.01s",
         "test result: ok. 518 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s"
       ]
+    },
+    {
+      "iteration": 93,
+      "startedAt": "2026-07-04T14:37:58.085Z",
+      "endedAt": "2026-07-04T14:46:51.710Z",
+      "durationMs": 532976,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/tests/transport.rs",
+        "crates/ugaris-server/src/transport.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All green: 1458 ugaris-core + 47 db + 3 net + 37 protocol + 520 server tests, zero failures, zero warnings, boot-smoke confirmed.",
+        "- **Verification**: `cargo fmt --all`, `cargo test --workspace` (1458 + 47 + 3 + 37 + 520 = all green, zero failures), `cargo build -p ugaris-server` clean with zero warnings, 10s boot-smoke confirmed",
+        "test result: ok. 518 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "return Err(ClanRelationError::InvalidClan(clan));",
+        "return Err(ClanRelationError::InvalidClan(other));",
+        "return Err(ClanRelationError::InvalidRelation);",
+        "test result: ok. 520 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -i \"transport_clan_travel_blocks_merely_neutral\\|FAILED\\|error\"",
+        "test error::tests::error_constants_match_legacy_header ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 99283266,
+  "totalDurationMs": 99816242,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 92,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 93,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -2961,8 +2990,8 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 32,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 32,
-      "test error::tests::error_constants_match_legacy_header ... ok": 19,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 33,
+      "test error::tests::error_constants_match_legacy_header ... ok": 20,
       "test error::tests::error_strings_match_legacy_table ... ok": 16,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 11,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
@@ -3371,12 +3400,15 @@
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1458 filtered out; finished in 0.00s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.00s": 1,
       "test result: ok. 516 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "return Err(ClanRelationError::InvalidClan(clan));": 1,
-      "return Err(ClanRelationError::InvalidClan(other));": 1,
-      "return Err(ClanRelationError::InvalidRelation);": 1,
+      "return Err(ClanRelationError::InvalidClan(clan));": 2,
+      "return Err(ClanRelationError::InvalidClan(other));": 2,
+      "return Err(ClanRelationError::InvalidRelation);": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 516 filtered out; finished in 0.00s": 1,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 488 filtered out; finished in 0.01s": 1,
-      "test result: ok. 518 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
+      "test result: ok. 518 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 2,
+      "All green: 1458 ugaris-core + 47 db + 3 net + 37 protocol + 520 server tests, zero failures, zero wa": 1,
+      "- **Verification**: `cargo fmt --all`, `cargo test --workspace` (1458 + 47 + 3 + 37 + 520 = all gree": 1,
+      "test result: ok. 520 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

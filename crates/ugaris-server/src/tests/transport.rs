@@ -147,6 +147,66 @@ fn transport_clan_travel_uses_legacy_hall_coordinates() {
     assert_eq!((character.x, character.y), (28, 58));
 }
 
+/// `may_enter_clan` (`transport.rs`) is wired to `ClanRelations::may_enter`
+/// (`clan.c:881-905`, called from `transport.c:185-223`): an allied clan's
+/// hall must be reachable even though the traveler is not a direct member,
+/// while a merely-neutral clan's hall must stay blocked.
+#[test]
+fn transport_clan_travel_allows_allied_clan_hall_not_just_direct_member() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(300, 300);
+    let mut character = login_character(CharacterId(1), &login_block("Ralph"), 3, 10, 10);
+    character.clan = 1;
+    assert!(world.spawn_character(character, 10, 10));
+
+    let relations = world.clan_registry.relations_mut();
+    relations.found_clan(1, 0);
+    relations.found_clan(17, 0);
+    relations
+        .set_relation(17, 1, ugaris_core::clan::ClanRelation::Alliance, 0)
+        .unwrap();
+    relations
+        .set_relation(1, 17, ugaris_core::clan::ClanRelation::Alliance, 0)
+        .unwrap();
+    relations.update(0);
+
+    let player = PlayerRuntime::connected(1, 0);
+
+    // clan hall 17 (`nr = 81`, `81 - 63 = 18` -> hall index 17, 1-based clan 17)
+    let result = apply_transport_travel(&mut world, &player, CharacterId(1), 3, 81 + 2 * 256);
+
+    assert_eq!(
+        result,
+        TransportTravelResult::SameArea {
+            x: 28,
+            y: 58,
+            mirror: 2,
+        }
+    );
+}
+
+#[test]
+fn transport_clan_travel_blocks_merely_neutral_clan_hall() {
+    let mut world = World::default();
+    let mut character = login_character(CharacterId(1), &login_block("Ralph"), 3, 10, 10);
+    character.clan = 1;
+    world.add_character(character);
+
+    let relations = world.clan_registry.relations_mut();
+    relations.found_clan(1, 0);
+    relations.found_clan(17, 0);
+    // left at the default Neutral relation - no Alliance set.
+
+    let player = PlayerRuntime::connected(1, 0);
+
+    let result = resolve_transport_travel(&world, &player, CharacterId(1), 3, 81);
+
+    assert_eq!(
+        result,
+        TransportTravelResult::Blocked("You may not enter (17).".to_string())
+    );
+}
+
 #[test]
 fn transport_clan_travel_rejects_non_member_with_legacy_text() {
     let world = World::default();

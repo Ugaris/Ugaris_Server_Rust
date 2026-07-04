@@ -362,8 +362,18 @@ pub(crate) const LEGACY_TRANSPORT_CLAN_DESTINATIONS: [TransportDestination; 32] 
     },
 ];
 
-pub(crate) fn may_enter_clan(character: &Character, clan: u16) -> bool {
-    (1..=32).contains(&clan) && character.clan == clan
+/// C `may_enter_clan` (`clan.c:881-905`), called from `transport.c:185-223`.
+/// Delegates to `ClanRelations::may_enter`: own-clan entry is always
+/// allowed, non-members are always rejected, a never-founded/deleted clan
+/// hall admits nobody, and otherwise only an `Alliance` relation (from the
+/// target clan's perspective, matching C's
+/// `clan[nr].status.current_relation[cnr]`) grants access.
+pub(crate) fn may_enter_clan(world: &World, character: &Character, clan: u16) -> bool {
+    (1..=32).contains(&clan)
+        && world
+            .clan_registry
+            .relations()
+            .may_enter(character.clan, clan)
 }
 
 pub(crate) fn transport_clan_access(world: &World, character_id: CharacterId) -> [u8; 4] {
@@ -372,7 +382,7 @@ pub(crate) fn transport_clan_access(world: &World, character_id: CharacterId) ->
     };
     let mut access = [0_u8; 4];
     for clan in 1..=32_u16 {
-        if may_enter_clan(character, clan) {
+        if may_enter_clan(world, character, clan) {
             let index = (clan - 1) as usize;
             access[index / 8] |= 1_u8 << (index % 8);
         }
@@ -434,7 +444,7 @@ pub(crate) fn resolve_transport_travel_with_random(
         if !world
             .characters
             .get(&character_id)
-            .is_some_and(|character| may_enter_clan(character, clan))
+            .is_some_and(|character| may_enter_clan(world, character, clan))
         {
             return TransportTravelResult::Blocked(format!("You may not enter ({}).", clan));
         }
