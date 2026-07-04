@@ -888,8 +888,30 @@ pub struct QuestCompletion {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuestReopenResult {
+    /// C `questlog_reopen`'s `if (ret) { quest[qnr].flags = QF_OPEN; ...
+    /// }` branch (`src/system/questlog.c:818-824`): the per-quest
+    /// `questlog_reopen_qN` helper ran and left `ret` truthy.
     Reopened,
+    /// The per-quest switch was reached (all generic preconditions
+    /// passed) but its helper reported "cannot re-open more than one
+    /// quest from a series" (e.g. `questlog_reopen_q1`,
+    /// `src/system/questlog.c:359-363`) - C still calls `sendquestlog`
+    /// afterwards, it just never sets `QF_OPEN`.
+    SeriesConflict,
+    /// The per-quest switch was reached but its `case` forces `ret = 0`
+    /// with no helper call (either genuinely unimplemented, like case 6,
+    /// or the helper call is dead/commented-out C, like case 18/19) - a
+    /// silent no-op in C: no log message, `sendquestlog` still fires,
+    /// the quest stays `QF_DONE`.
+    NoEffect,
+    /// C's generic `quest[qnr].done > 9` or "table flags are zero"
+    /// precondition failure (`src/system/questlog.c:624-631`) -
+    /// `log_char` shows "You cannot open this quest again." and
+    /// `questlog_reopen` returns *before* `sendquestlog`.
     CannotOpenAgain,
+    /// C's generic `!(quest[qnr].flags & QF_DONE)` precondition failure
+    /// (`src/system/questlog.c:632-635`) - "You cannot open this quest at
+    /// the moment.", also returns before `sendquestlog`.
     CannotOpenNow,
     InvalidQuest,
 }
@@ -994,19 +1016,54 @@ impl QuestLog {
         }
     }
 
-    pub fn try_reopen_legacy(&mut self, quest: usize) -> QuestReopenResult {
-        let Some(entry) = self.quests.get_mut(quest) else {
-            return QuestReopenResult::InvalidQuest;
+    /// C `questlog_reopen`'s generic preconditions
+    /// (`src/system/questlog.c:617-635`), shared by `try_reopen_legacy`
+    /// and `PlayerRuntime::reopen_quest_legacy`'s per-quest dispatch.
+    /// Returns `Err` with the matching reject result, or `Ok(())` once
+    /// every generic check has passed (mirrors reaching the C `switch`).
+    pub(crate) fn reopen_precheck(&self, quest: usize) -> Result<(), QuestReopenResult> {
+        let Some(entry) = self.quests.get(quest) else {
+            return Err(QuestReopenResult::InvalidQuest);
         };
-        if entry.done > 9 || (QUESTLOG_FLAGS[quest] & QLF_REPEATABLE) == 0 {
-            return QuestReopenResult::CannotOpenAgain;
+        if entry.done > 9 {
+            return Err(QuestReopenResult::CannotOpenAgain);
+        }
+        // C: `if ((!questlog[qnr].flags & QLF_REPEATABLE))` - `!` binds
+        // tighter than `&` in C, so this is actually `(!flags) &
+        // QLF_REPEATABLE`, which is nonzero only when `flags == 0`. This
+        // is a genuine operator-precedence bug: it really tests "the
+        // table row has *no* flags at all" rather than "is missing the
+        // REPEATABLE bit" specifically, so `QLF_XREPEAT`-only rows (25-28)
+        // pass this check too, despite lacking `QLF_REPEATABLE`.
+        if QUESTLOG_FLAGS[quest] == 0 {
+            return Err(QuestReopenResult::CannotOpenAgain);
         }
         if (entry.flags & QF_DONE) == 0 {
-            return QuestReopenResult::CannotOpenNow;
+            return Err(QuestReopenResult::CannotOpenNow);
+        }
+        Ok(())
+    }
+
+    pub fn try_reopen_legacy(&mut self, quest: usize) -> QuestReopenResult {
+        if let Err(result) = self.reopen_precheck(quest) {
+            return result;
         }
 
+        let entry = self
+            .quests
+            .get_mut(quest)
+            .expect("reopen_precheck already validated the index");
         entry.flags = (entry.flags | QF_OPEN) & !QF_DONE;
         QuestReopenResult::Reopened
+    }
+
+    /// C `quest[qnr].flags & QF_OPEN` read, used by the series-exclusivity
+    /// checks in `questlog_reopen_qN` (e.g. `questlog_reopen_q1`,
+    /// `src/system/questlog.c:359-363`).
+    pub fn is_open(&self, quest: usize) -> bool {
+        self.quests
+            .get(quest)
+            .is_some_and(|entry| (entry.flags & QF_OPEN) != 0)
     }
 
     pub fn is_done(&self, quest: usize) -> bool {
@@ -1095,19 +1152,23 @@ pub struct Area1QuestState {
 // `struct gwendy_ppd`-family NPC state constants
 // (`src/common/npc_states.h`), copied verbatim - only the values
 // `questlog_init_area1` compares against are needed here.
-const GWENDYLON_STATE_ENTRY: i32 = 0;
-const GWENDYLON_STATE_FIRST_SKULL_DONE: i32 = 6;
-const GWENDYLON_STATE_SECOND_SKULL_DONE: i32 = 10;
-const GWENDYLON_STATE_THIRD_SKULL_DONE: i32 = 14;
+pub(crate) const GWENDYLON_STATE_ENTRY: i32 = 0;
+pub(crate) const GWENDYLON_STATE_FIRST_SKULL_DONE: i32 = 6;
+pub(crate) const GWENDYLON_STATE_SECOND_SKULL_DONE: i32 = 10;
+pub(crate) const GWENDYLON_STATE_THIRD_SKULL_DONE: i32 = 14;
 const GWENDYLON_STATE_FOUL_MAGICIAN_DONE: i32 = 18;
-const JESSICA_STATE_QUEST1_GIVE_1: i32 = 1;
+pub(crate) const JESSICA_STATE_QUEST1_GIVE_1: i32 = 1;
 const JESSICA_STATE_QUEST1_FINISH: i32 = 7;
-const JESSICA_STATE_QUEST2_GIVE_1: i32 = 8;
+pub(crate) const JESSICA_STATE_QUEST2_GIVE_1: i32 = 8;
 const JESSICA_STATE_QUEST2_FINISH: i32 = 11;
 const BRITHILDIE_STATE_NOMORETALES_QOPEN: i32 = 20;
 const BRITHILDIE_STATE_NOMORETALES_QDONE: i32 = 21;
 const CAMHERMIT_STATE_QUEST1DO: i32 = 5;
 const CAMHERMIT_STATE_QUEST2WAIT: i32 = 6;
+/// C `CAMHERMIT_STATE_QUEST2_1` (`src/common/npc_states.h:17`), used by
+/// `questlog_reopen_q83` (`src/system/questlog.c:586-594`) - not read by
+/// `questlog_init_area1`, so it wasn't needed until the reopen dispatch.
+pub(crate) const CAMHERMIT_STATE_QUEST2_1: i32 = 7;
 const CAMHERMIT_STATE_QUEST2DO: i32 = 11;
 const CAMHERMIT_STATE_DONE: i32 = 13;
 

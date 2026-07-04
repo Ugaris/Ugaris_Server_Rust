@@ -1523,19 +1523,39 @@ async fn main() -> anyhow::Result<()> {
                             }
                         }
                         ClientAction::ReopenQuest { quest } => {
+                            // C `questlog_reopen` (`src/system/questlog.c:613-826`):
+                            // `sendquestlog` fires unconditionally once the
+                            // generic preconditions pass (`Reopened`,
+                            // `SeriesConflict`, and `NoEffect` all reach the
+                            // per-quest switch), even when the switch leaves
+                            // `ret` falsy and nothing actually reopens.
                             let result_and_payload = runtime.players.get_mut(&session_id).map(|player| {
-                                let result = player.quest_log.try_reopen_legacy(quest as usize);
-                                let payload = (result == QuestReopenResult::Reopened)
-                                    .then(|| legacy_questlog_payload(player));
+                                let result = player.reopen_quest_legacy(quest as usize);
+                                let payload = (!matches!(
+                                    result,
+                                    QuestReopenResult::CannotOpenAgain
+                                        | QuestReopenResult::CannotOpenNow
+                                        | QuestReopenResult::InvalidQuest
+                                ))
+                                .then(|| legacy_questlog_payload(player));
                                 (result, payload)
                             });
                             if let Some((result, payload)) = result_and_payload {
+                                if let Some(payload) = payload {
+                                    runtime.send_to_session(session_id, payload);
+                                }
                                 match result {
-                                    QuestReopenResult::Reopened => {
-                                        if let Some(payload) = payload {
-                                            runtime.send_to_session(session_id, payload);
-                                        }
-                                    }
+                                    // C also awards the QUESTER achievement
+                                    // here (`achievement_award(cn,
+                                    // ACHIEVEMENT_QUESTER, 1)`); skipped
+                                    // pending the achievement system port
+                                    // (see PORTING_TODO.md's "Achievements").
+                                    QuestReopenResult::Reopened | QuestReopenResult::NoEffect => {}
+                                    QuestReopenResult::SeriesConflict => command_feedback.push((
+                                        character_id,
+                                        "Cannot re-open more than one quest from a series."
+                                            .to_string(),
+                                    )),
                                     QuestReopenResult::CannotOpenAgain => command_feedback.push((
                                         character_id,
                                         "You cannot open this quest again.".to_string(),
@@ -5753,6 +5773,17 @@ async fn main() -> anyhow::Result<()> {
                                 // starting equipment is in place.
                                 world.update_character(character_id);
                             }
+                        }
+                        // C `login_ok` (`src/system/player.c:659`):
+                        // `questlog_init(cn)` runs unconditionally on every
+                        // successful login (new character, DB-loaded, or
+                        // reclaimed lostcon), lazily seeding any area's
+                        // questlog entries that haven't been initialized yet.
+                        // Idempotent via the `quest[MAXQUEST-1].done == 55`
+                        // sentinel, so calling it every login (not just the
+                        // very first) matches C exactly.
+                        if let Some(player) = runtime.players.get_mut(&id.0) {
+                            player.init_questlog();
                         }
                         let view_distance = runtime
                             .players

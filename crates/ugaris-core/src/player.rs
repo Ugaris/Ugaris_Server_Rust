@@ -273,6 +273,8 @@ const AREA3_PPD_KELLY_FOUND3_OFFSET: usize = 5 * 4;
 const AREA3_PPD_ASTRO2_STATE_OFFSET: usize = 6 * 4;
 const AREA3_PPD_CRYPT_STATE_OFFSET: usize = 7 * 4;
 const AREA3_PPD_CLARA_STATE_OFFSET: usize = 9 * 4;
+const AREA3_PPD_IMP_STATE_OFFSET: usize = 10 * 4;
+const AREA3_PPD_IMP_KILLS_OFFSET: usize = 11 * 4;
 const AREA3_PPD_IMP_FLAGS_OFFSET: usize = 12 * 4;
 const AREA3_PPD_WILLIAM_STATE_OFFSET: usize = 13 * 4;
 const AREA3_PPD_HERMIT_STATE_OFFSET: usize = 14 * 4;
@@ -282,6 +284,7 @@ const AREA3_PPD_HERMIT_STATE_OFFSET: usize = 14 * 4;
 // accessors so far; the rest round-trip as opaque bytes.
 const AREA1_PPD_YOAKIN_STATE_OFFSET: usize = 0 * 4;
 const AREA1_PPD_GWENDY_STATE_OFFSET: usize = 2 * 4;
+const AREA1_PPD_JAMES_STATE_OFFSET: usize = 5 * 4;
 const AREA1_PPD_NOOK_STATE_OFFSET: usize = 10 * 4;
 const AREA1_PPD_LYDIA_STATE_OFFSET: usize = 11 * 4;
 const AREA1_PPD_GUIWYNN_STATE_OFFSET: usize = 15 * 4;
@@ -305,6 +308,7 @@ pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 // fields consumed by `questlog_init_staff` (`src/system/questlog.c:1203-
 // 1394`) plus the two pre-existing named fields below have accessors.
 const STAFFER_PPD_SMUGGLECOM_STATE_OFFSET: usize = 0 * 4;
+const STAFFER_PPD_SMUGGLECOM_BITS_OFFSET: usize = 1 * 4;
 const STAFFER_PPD_CARLOS_STATE_OFFSET: usize = 2 * 4;
 const STAFFER_PPD_COUNTBRAN_STATE_OFFSET: usize = 3 * 4;
 const STAFFER_PPD_COUNTBRAN_BITS_OFFSET: usize = 4 * 4;
@@ -676,6 +680,16 @@ pub enum IgnoreToggleResult {
     Added,
     Removed,
     Full,
+}
+
+/// Per-quest outcome of the `questlog_reopen_qN` switch dispatch inside
+/// `PlayerRuntime::reopen_quest_legacy` (`src/system/questlog.c:637-817`),
+/// before it's translated into the public `QuestReopenResult`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReopenOutcome {
+    Open,
+    SeriesConflict,
+    NoEffect,
 }
 
 impl PlayerRuntime {
@@ -2169,6 +2183,26 @@ impl PlayerRuntime {
         self.write_area3_i32(AREA3_PPD_WILLIAM_STATE_OFFSET, state);
     }
 
+    /// C `struct area3_ppd::imp_state` (`src/area/3/area3.h:29`), reset by
+    /// `questlog_reopen_q22` (`src/system/questlog.c:464-477`).
+    pub fn area3_imp_state(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_IMP_STATE_OFFSET)
+    }
+
+    pub fn set_area3_imp_state(&mut self, state: i32) {
+        self.write_area3_i32(AREA3_PPD_IMP_STATE_OFFSET, state);
+    }
+
+    /// C `struct area3_ppd::imp_kills` (`src/area/3/area3.h:30`), reset by
+    /// `questlog_reopen_q22` (`src/system/questlog.c:464-477`).
+    pub fn area3_imp_kills(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_IMP_KILLS_OFFSET)
+    }
+
+    pub fn set_area3_imp_kills(&mut self, kills: i32) {
+        self.write_area3_i32(AREA3_PPD_IMP_KILLS_OFFSET, kills);
+    }
+
     pub fn area3_hermit_state(&self) -> i32 {
         self.read_area3_i32(AREA3_PPD_HERMIT_STATE_OFFSET)
     }
@@ -2265,6 +2299,16 @@ impl PlayerRuntime {
 
     pub fn set_area1_gwendy_state(&mut self, state: i32) {
         self.write_area1_i32(AREA1_PPD_GWENDY_STATE_OFFSET, state);
+    }
+
+    /// C `struct area1_ppd::james_state` (`src/area/1/area1.h:33`), reset by
+    /// `questlog_reopen_q0` (`src/system/questlog.c:342-351`).
+    pub fn area1_james_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_JAMES_STATE_OFFSET)
+    }
+
+    pub fn set_area1_james_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_JAMES_STATE_OFFSET, state);
     }
 
     pub fn area1_nook_state(&self) -> i32 {
@@ -2413,6 +2457,251 @@ impl PlayerRuntime {
         crate::quest::init_nomad_quests(&mut self.quest_log, &nomad);
 
         self.quest_log.mark_init_complete();
+    }
+
+    /// C `questlog_reopen(cn, qnr)` (`src/system/questlog.c:613-826`): the
+    /// live `CL_REOPENQUEST` handler dispatch. Runs the generic
+    /// preconditions (`QuestLog::reopen_precheck`), then the per-quest
+    /// `questlog_reopen_qN` switch - each arm's area-PPD side effect plus
+    /// the "cannot re-open more than one quest from a series"
+    /// exclusivity check against sibling quest numbers' `QF_OPEN` flags -
+    /// before finally opening the quest (`quest[qnr].flags = QF_OPEN`)
+    /// only when the switch's `ret` stayed truthy, exactly matching C
+    /// (including the switch's unimplemented/dead-code cases that force
+    /// `ret = 0` and silently fail to reopen despite passing every
+    /// precondition, and `case 36`'s missing `break;` that falls through
+    /// into `case 37`'s helper call).
+    pub fn reopen_quest_legacy(&mut self, qnr: usize) -> crate::quest::QuestReopenResult {
+        use crate::quest::QuestReopenResult;
+
+        if let Err(result) = self.quest_log.reopen_precheck(qnr) {
+            return result;
+        }
+
+        match self.reopen_dispatch(qnr) {
+            ReopenOutcome::Open => {
+                self.quest_log.open(qnr);
+                QuestReopenResult::Reopened
+            }
+            ReopenOutcome::SeriesConflict => QuestReopenResult::SeriesConflict,
+            ReopenOutcome::NoEffect => QuestReopenResult::NoEffect,
+        }
+    }
+
+    /// The `switch (qnr)` body of C `questlog_reopen`
+    /// (`src/system/questlog.c:637-817`), with no precondition gating -
+    /// split out from `reopen_quest_legacy` purely so tests can exercise
+    /// individual arms (including ones that are unreachable in practice
+    /// because `QuestLog::reopen_precheck` rejects their quest number
+    /// first, like the dead `case 6`/`case 22`/`case 36` arms below,
+    /// whose table row has no `QLF_REPEATABLE`/`QLF_XREPEAT` flags at
+    /// all) directly.
+    fn reopen_dispatch(&mut self, qnr: usize) -> ReopenOutcome {
+        match qnr {
+            0 => {
+                // `questlog_reopen_q0` (`questlog.c:342-351`).
+                self.set_area1_james_state(0);
+                self.set_area1_lydia_state(0);
+                ReopenOutcome::Open
+            }
+            1 => self.reopen_gwendy(crate::quest::GWENDYLON_STATE_ENTRY),
+            2 => self.reopen_gwendy(crate::quest::GWENDYLON_STATE_FIRST_SKULL_DONE),
+            3 => self.reopen_gwendy(crate::quest::GWENDYLON_STATE_SECOND_SKULL_DONE),
+            4 => self.reopen_gwendy(crate::quest::GWENDYLON_STATE_THIRD_SKULL_DONE),
+            5 => {
+                // `questlog_reopen_q5` (`questlog.c:369-377`).
+                self.set_area1_yoakin_state(0);
+                ReopenOutcome::Open
+            }
+            7 => self.reopen_guiwynn(0),
+            8 => self.reopen_guiwynn(6),
+            9 => {
+                // `questlog_reopen_q9` (`questlog.c:404-412`).
+                self.set_area1_logain_state(0);
+                ReopenOutcome::Open
+            }
+            12 => self.reopen_seymour(),
+            13 => {
+                // `questlog_reopen_q13` (`questlog.c:427-433`).
+                self.set_area3_kelly_state(0);
+                ReopenOutcome::Open
+            }
+            16 => {
+                // `questlog_reopen_q16` (`questlog.c:435-441`).
+                self.set_area3_astro2_state(0);
+                ReopenOutcome::Open
+            }
+            20 => {
+                // `questlog_reopen_q20` (`questlog.c:456-462`).
+                self.set_staffer_carlos_state(0);
+                ReopenOutcome::Open
+            }
+            22 => self.reopen_william(),
+            30 => {
+                // `questlog_reopen_q30` (`questlog.c:479-485`).
+                self.set_twocity_skelly_state(0);
+                ReopenOutcome::Open
+            }
+            31 => {
+                // `questlog_reopen_q31` (`questlog.c:487-493`).
+                self.set_twocity_alchemist_state(0);
+                ReopenOutcome::Open
+            }
+            35 => self.reopen_smugglecom(0),
+            // C `questlog_reopen`'s `case 36` has no `break;`
+            // (`questlog.c:746-750`), so it falls through into `case
+            // 37`'s `questlog_reopen_q35(cn, 7, quest)` instead of doing
+            // nothing - faithfully reproduced rather than "fixed".
+            36 | 37 => self.reopen_smugglecom(7),
+            38 => {
+                // `questlog_reopen_q38` (`questlog.c:511-517`).
+                self.set_staffer_aristocrat_state(0);
+                ReopenOutcome::Open
+            }
+            39 => {
+                // `questlog_reopen_q39` (`questlog.c:519-525`).
+                self.set_staffer_yoatin_state(0);
+                ReopenOutcome::Open
+            }
+            40 => {
+                // `questlog_reopen_q40` (`questlog.c:527-534`).
+                self.set_staffer_countbran_state(0);
+                let bits = self.staffer_countbran_bits();
+                self.set_staffer_countbran_bits(bits & !(1 | 2 | 4));
+                ReopenOutcome::Open
+            }
+            41 => self.reopen_brennethbran(0),
+            42 => self.reopen_brennethbran(5),
+            43 => self.reopen_brennethbran(9),
+            44 => {
+                // `questlog_reopen_q44` (`questlog.c:548-554`).
+                self.set_staffer_spiritbran_state(0);
+                ReopenOutcome::Open
+            }
+            45 => self.reopen_broklin(0),
+            crate::quest::QLOG_JESSICA_ROBBER_NOTE => self.reopen_jessica_note(),
+            crate::quest::QLOG_HERMIT_QUEST2 => {
+                // `questlog_reopen_q83` (`questlog.c:586-594`).
+                self.set_area1_camhermit_state(crate::quest::CAMHERMIT_STATE_QUEST2_1);
+                ReopenOutcome::Open
+            }
+            crate::quest::QLOG_JESSICA_KILL => self.reopen_jessica_kill(),
+            // Every other `case` in the C switch either has no arm at
+            // all (falls to the implicit `switch` default) or explicitly
+            // sets `ret = 0` with no helper call (cases 6, 10, 11, 14,
+            // 15, 17-19, 21, 23-29, 32-34, 46-54, 80, 81) - a silent
+            // no-op in C.
+            _ => ReopenOutcome::NoEffect,
+        }
+    }
+
+    /// `questlog_reopen_q1` (`src/system/questlog.c:353-367`): shared by
+    /// reopen cases 1-4 (Gwendylon's skull-hunt series).
+    fn reopen_gwendy(&mut self, state: i32) -> ReopenOutcome {
+        if self
+            .quest_log
+            .is_open(crate::quest::QLOG_GWENDY_FIRST_SKULL)
+            || self
+                .quest_log
+                .is_open(crate::quest::QLOG_GWENDY_SECOND_SKULL)
+            || self
+                .quest_log
+                .is_open(crate::quest::QLOG_GWENDY_THIRD_SKULL)
+            || self
+                .quest_log
+                .is_open(crate::quest::QLOG_GWENDY_FOUL_MAGICIAN)
+        {
+            return ReopenOutcome::SeriesConflict;
+        }
+        self.set_area1_gwendy_state(state);
+        ReopenOutcome::Open
+    }
+
+    /// `questlog_reopen_q7` (`src/system/questlog.c:389-402`): shared by
+    /// reopen cases 7-8 (Guiwynn's "Mages Gone Berserk" series).
+    fn reopen_guiwynn(&mut self, state: i32) -> ReopenOutcome {
+        if self.quest_log.is_open(7) || self.quest_log.is_open(8) {
+            return ReopenOutcome::SeriesConflict;
+        }
+        self.set_area1_guiwynn_state(state);
+        ReopenOutcome::Open
+    }
+
+    /// `questlog_reopen_q10` (`src/system/questlog.c:414-425`): only ever
+    /// reached via reopen case 12, always with `state = 12`.
+    fn reopen_seymour(&mut self) -> ReopenOutcome {
+        if self.quest_log.is_open(10) || self.quest_log.is_open(11) || self.quest_log.is_open(12) {
+            return ReopenOutcome::SeriesConflict;
+        }
+        self.set_area3_seymour_state(12);
+        ReopenOutcome::Open
+    }
+
+    /// `questlog_reopen_q22` (`src/system/questlog.c:464-477`).
+    fn reopen_william(&mut self) -> ReopenOutcome {
+        if self.quest_log.is_open(22) || self.quest_log.is_open(23) {
+            return ReopenOutcome::SeriesConflict;
+        }
+        self.set_area3_william_state(0);
+        self.set_area3_imp_state(0);
+        self.set_area3_imp_kills(0);
+        ReopenOutcome::Open
+    }
+
+    /// `questlog_reopen_q35` (`src/system/questlog.c:495-509`): shared by
+    /// reopen cases 35, 36 (via the case-36 fallthrough), and 37.
+    fn reopen_smugglecom(&mut self, state: i32) -> ReopenOutcome {
+        if self.quest_log.is_open(35) || self.quest_log.is_open(36) || self.quest_log.is_open(37) {
+            return ReopenOutcome::SeriesConflict;
+        }
+        if state == 5 {
+            self.set_staffer_smugglecom_bits(0);
+        }
+        self.set_staffer_smugglecom_state(state);
+        ReopenOutcome::Open
+    }
+
+    /// `questlog_reopen_q41` (`src/system/questlog.c:536-546`): shared by
+    /// reopen cases 41-43.
+    fn reopen_brennethbran(&mut self, state: i32) -> ReopenOutcome {
+        if self.quest_log.is_open(41) || self.quest_log.is_open(42) || self.quest_log.is_open(43) {
+            return ReopenOutcome::SeriesConflict;
+        }
+        self.set_staffer_brennethbran_state(state);
+        ReopenOutcome::Open
+    }
+
+    /// `questlog_reopen_q45` (`src/system/questlog.c:556-566`): only ever
+    /// reached via reopen case 45, always with `state = 0`.
+    fn reopen_broklin(&mut self, state: i32) -> ReopenOutcome {
+        if self.quest_log.is_open(45) || self.quest_log.is_open(46) {
+            return ReopenOutcome::SeriesConflict;
+        }
+        self.set_staffer_broklin_state(state);
+        ReopenOutcome::Open
+    }
+
+    /// `questlog_reopen_q79` (`src/system/questlog.c:569-583`): Jessica's
+    /// "collect the robber's note" reopen.
+    fn reopen_jessica_note(&mut self) -> ReopenOutcome {
+        if self.quest_log.is_open(crate::quest::QLOG_JESSICA_KILL) {
+            return ReopenOutcome::SeriesConflict;
+        }
+        self.set_area1_jessica_state(crate::quest::JESSICA_STATE_QUEST1_GIVE_1);
+        ReopenOutcome::Open
+    }
+
+    /// `questlog_reopen_q84` (`src/system/questlog.c:597-611`): Jessica's
+    /// "kill the robber boss" reopen.
+    fn reopen_jessica_kill(&mut self) -> ReopenOutcome {
+        if self
+            .quest_log
+            .is_open(crate::quest::QLOG_JESSICA_ROBBER_NOTE)
+        {
+            return ReopenOutcome::SeriesConflict;
+        }
+        self.set_area1_jessica_state(crate::quest::JESSICA_STATE_QUEST2_GIVE_1);
+        ReopenOutcome::Open
     }
 
     /// C `nomad_state[MAXNOMAD]` element read (`src/common/nomad_ppd.h:10`).
@@ -2566,6 +2855,17 @@ impl PlayerRuntime {
 
     pub fn set_staffer_smugglecom_state(&mut self, state: i32) {
         self.write_staffer_i32(STAFFER_PPD_SMUGGLECOM_STATE_OFFSET, state);
+    }
+
+    /// C `struct staffer_ppd::smugglecom_bits` (`src/common/staffer_ppd.h:15`),
+    /// cleared by `questlog_reopen_q35` when reopening at state `5`
+    /// (`src/system/questlog.c:495-509`).
+    pub fn staffer_smugglecom_bits(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_SMUGGLECOM_BITS_OFFSET)
+    }
+
+    pub fn set_staffer_smugglecom_bits(&mut self, bits: i32) {
+        self.write_staffer_i32(STAFFER_PPD_SMUGGLECOM_BITS_OFFSET, bits);
     }
 
     pub fn staffer_carlos_state(&self) -> i32 {
@@ -6517,6 +6817,412 @@ mod tests {
             .entries()
             .iter()
             .all(|entry| entry.done == 0 && entry.flags == 0));
+    }
+
+    /// Puts `quest` into the `QF_DONE` state `reopen_quest_legacy`'s
+    /// generic preconditions require, without going through the full
+    /// `complete_legacy` exp-reward path.
+    fn mark_reopenable(player: &mut PlayerRuntime, quest: usize) {
+        player.quest_log.mark_done(quest);
+    }
+
+    #[test]
+    fn reopen_quest_legacy_q0_resets_james_and_lydia_state() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_area1_james_state(4);
+        player.set_area1_lydia_state(6);
+        mark_reopenable(&mut player, crate::quest::QLOG_LYDIA);
+
+        assert_eq!(
+            player.reopen_quest_legacy(crate::quest::QLOG_LYDIA),
+            crate::quest::QuestReopenResult::Reopened
+        );
+        assert_eq!(player.area1_james_state(), 0);
+        assert_eq!(player.area1_lydia_state(), 0);
+        assert!(player.quest_log.is_open(crate::quest::QLOG_LYDIA));
+    }
+
+    #[test]
+    fn reopen_quest_legacy_gwendy_series_rejects_when_sibling_open() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        mark_reopenable(&mut player, crate::quest::QLOG_GWENDY_FIRST_SKULL);
+        // Simulate quest 2 (second skull) already open.
+        player
+            .quest_log
+            .open(crate::quest::QLOG_GWENDY_SECOND_SKULL);
+
+        assert_eq!(
+            player.reopen_quest_legacy(crate::quest::QLOG_GWENDY_FIRST_SKULL),
+            crate::quest::QuestReopenResult::SeriesConflict
+        );
+        // Series conflict must not touch the gwendy_state or open flags.
+        assert_eq!(player.area1_gwendy_state(), 0);
+        assert!(!player
+            .quest_log
+            .is_open(crate::quest::QLOG_GWENDY_FIRST_SKULL));
+    }
+
+    #[test]
+    fn reopen_quest_legacy_gwendy_series_succeeds_when_no_conflict() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        mark_reopenable(&mut player, crate::quest::QLOG_GWENDY_THIRD_SKULL);
+
+        assert_eq!(
+            player.reopen_quest_legacy(crate::quest::QLOG_GWENDY_THIRD_SKULL),
+            crate::quest::QuestReopenResult::Reopened
+        );
+        assert_eq!(
+            player.area1_gwendy_state(),
+            crate::quest::GWENDYLON_STATE_SECOND_SKULL_DONE
+        );
+        assert!(player
+            .quest_log
+            .is_open(crate::quest::QLOG_GWENDY_THIRD_SKULL));
+    }
+
+    #[test]
+    fn reopen_quest_legacy_rejects_zero_flag_quest_even_when_done() {
+        // Quest 6 (Nook, "A Fool's Request") has table `flags == 0` (no
+        // `QLF_REPEATABLE`, no `QLF_XREPEAT`) - C's `!questlog[qnr].flags
+        // & QLF_REPEATABLE` precedence bug (see `QuestLog::reopen_precheck`)
+        // means this is the one shape that's genuinely rejected as "not
+        // repeatable", so the switch's `case 6:` arm (a no-op anyway) is
+        // dead code, unreachable through the public API - confirmed by
+        // `reopen_dispatch_case_6_is_a_documented_dead_noop_arm` below.
+        let mut player = PlayerRuntime::connected(1, 0);
+        mark_reopenable(&mut player, crate::quest::QLOG_NOOK);
+
+        assert_eq!(
+            player.reopen_quest_legacy(crate::quest::QLOG_NOOK),
+            crate::quest::QuestReopenResult::CannotOpenAgain
+        );
+    }
+
+    #[test]
+    fn reopen_dispatch_case_36_falls_through_into_case_37_like_c() {
+        // C `questlog_reopen`'s `case 36` is missing a `break;`
+        // (`src/system/questlog.c:746-750`), so it falls into `case 37`'s
+        // `questlog_reopen_q35(cn, 7, quest)` instead of doing nothing.
+        // Quest 36 ("Contraband") has table `flags == 0` though, so this
+        // arm is unreachable through the public `reopen_quest_legacy` API
+        // (confirmed below) - exercised directly via `reopen_dispatch` to
+        // prove the switch body itself faithfully reproduces the bug.
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(player.reopen_dispatch(36), ReopenOutcome::Open);
+        assert_eq!(player.staffer_smugglecom_state(), 7);
+
+        // Confirm the dead-code claim: the live, precondition-gated path
+        // never reaches the switch for quest 36 at all.
+        let mut gated = PlayerRuntime::connected(2, 0);
+        mark_reopenable(&mut gated, 36);
+        assert_eq!(
+            gated.reopen_quest_legacy(36),
+            crate::quest::QuestReopenResult::CannotOpenAgain
+        );
+    }
+
+    #[test]
+    fn reopen_smugglecom_state_five_clears_bits() {
+        // `questlog_reopen_q35`'s `if (state == 5) ppd->smugglecom_bits =
+        // 0;` branch (`src/system/questlog.c:503-505`) is unreachable
+        // through the live switch (no reachable case ever passes `state
+        // == 5` - the one that once did, case 36, is both `ret = 0;`
+        // with the call commented out *and* gated out by quest 36's
+        // zero table flags) but the helper still faithfully implements
+        // it for completeness; exercised directly.
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_staffer_smugglecom_bits(7);
+
+        assert_eq!(player.reopen_smugglecom(5), ReopenOutcome::Open);
+        assert_eq!(player.staffer_smugglecom_state(), 5);
+        assert_eq!(player.staffer_smugglecom_bits(), 0);
+    }
+
+    #[test]
+    fn reopen_william_resets_area3_imp_fields() {
+        // Quest 22 ("Impish Bear Hunt") has table `flags == 0`, so
+        // `reopen_quest_legacy(22)` can never reach the switch (confirmed
+        // below) - the helper is exercised directly to verify the C
+        // `questlog_reopen_q22` (`src/system/questlog.c:464-477`) side
+        // effect is faithfully implemented regardless.
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_area3_william_state(3);
+        player.set_area3_imp_state(2);
+        player.set_area3_imp_kills(5);
+
+        assert_eq!(player.reopen_william(), ReopenOutcome::Open);
+        assert_eq!(player.area3_william_state(), 0);
+        assert_eq!(player.area3_imp_state(), 0);
+        assert_eq!(player.area3_imp_kills(), 0);
+
+        let mut gated = PlayerRuntime::connected(2, 0);
+        mark_reopenable(&mut gated, 22);
+        assert_eq!(
+            gated.reopen_quest_legacy(22),
+            crate::quest::QuestReopenResult::CannotOpenAgain
+        );
+    }
+
+    #[test]
+    fn reopen_quest_legacy_simple_single_state_reset_cases() {
+        // Reopen cases whose only side effect is zeroing one PPD field
+        // (`questlog_reopen_q5/q9/q13/q16/q20/q30/q31/q38/q39/q44`) - each
+        // exercised end-to-end through the public, precondition-gated
+        // `reopen_quest_legacy` API since every one of these quest
+        // numbers is genuinely `QLF_REPEATABLE` in the table.
+        let cases: &[(
+            usize,
+            fn(&PlayerRuntime) -> i32,
+            fn(&mut PlayerRuntime, i32),
+        )] = &[
+            (
+                5,
+                PlayerRuntime::area1_yoakin_state,
+                PlayerRuntime::set_area1_yoakin_state,
+            ),
+            (
+                9,
+                PlayerRuntime::area1_logain_state,
+                PlayerRuntime::set_area1_logain_state,
+            ),
+            (
+                13,
+                PlayerRuntime::area3_kelly_state,
+                PlayerRuntime::set_area3_kelly_state,
+            ),
+            (
+                16,
+                PlayerRuntime::area3_astro2_state,
+                PlayerRuntime::set_area3_astro2_state,
+            ),
+            (
+                20,
+                PlayerRuntime::staffer_carlos_state,
+                PlayerRuntime::set_staffer_carlos_state,
+            ),
+            (
+                30,
+                PlayerRuntime::twocity_skelly_state,
+                PlayerRuntime::set_twocity_skelly_state,
+            ),
+            (
+                31,
+                PlayerRuntime::twocity_alchemist_state,
+                PlayerRuntime::set_twocity_alchemist_state,
+            ),
+            (
+                38,
+                PlayerRuntime::staffer_aristocrat_state,
+                PlayerRuntime::set_staffer_aristocrat_state,
+            ),
+            (
+                39,
+                PlayerRuntime::staffer_yoatin_state,
+                PlayerRuntime::set_staffer_yoatin_state,
+            ),
+            (
+                44,
+                PlayerRuntime::staffer_spiritbran_state,
+                PlayerRuntime::set_staffer_spiritbran_state,
+            ),
+        ];
+
+        for (qnr, getter, setter) in cases.iter().copied() {
+            let mut player = PlayerRuntime::connected(1, 0);
+            setter(&mut player, 7);
+            mark_reopenable(&mut player, qnr);
+
+            assert_eq!(
+                player.reopen_quest_legacy(qnr),
+                crate::quest::QuestReopenResult::Reopened,
+                "quest {qnr} should reopen"
+            );
+            assert_eq!(
+                getter(&player),
+                0,
+                "quest {qnr} should reset its state to 0"
+            );
+            assert!(player.quest_log.is_open(qnr));
+        }
+    }
+
+    #[test]
+    fn reopen_quest_legacy_guiwynn_series() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        mark_reopenable(&mut player, 7);
+        player.quest_log.open(8);
+
+        assert_eq!(
+            player.reopen_quest_legacy(7),
+            crate::quest::QuestReopenResult::SeriesConflict
+        );
+
+        let mut player = PlayerRuntime::connected(2, 0);
+        mark_reopenable(&mut player, 8);
+
+        assert_eq!(
+            player.reopen_quest_legacy(8),
+            crate::quest::QuestReopenResult::Reopened
+        );
+        assert_eq!(player.area1_guiwynn_state(), 6);
+    }
+
+    #[test]
+    fn reopen_quest_legacy_seymour_case_12() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        mark_reopenable(&mut player, 12);
+        player.quest_log.open(11);
+
+        assert_eq!(
+            player.reopen_quest_legacy(12),
+            crate::quest::QuestReopenResult::SeriesConflict
+        );
+
+        let mut player = PlayerRuntime::connected(2, 0);
+        mark_reopenable(&mut player, 12);
+
+        assert_eq!(
+            player.reopen_quest_legacy(12),
+            crate::quest::QuestReopenResult::Reopened
+        );
+        assert_eq!(player.area3_seymour_state(), 12);
+    }
+
+    #[test]
+    fn reopen_quest_legacy_brennethbran_series() {
+        for (qnr, expected_state) in [(41, 0), (42, 5), (43, 9)] {
+            let mut player = PlayerRuntime::connected(1, 0);
+            mark_reopenable(&mut player, qnr);
+
+            assert_eq!(
+                player.reopen_quest_legacy(qnr),
+                crate::quest::QuestReopenResult::Reopened,
+                "quest {qnr}"
+            );
+            assert_eq!(player.staffer_brennethbran_state(), expected_state);
+        }
+
+        let mut player = PlayerRuntime::connected(4, 0);
+        mark_reopenable(&mut player, 41);
+        player.quest_log.open(43);
+        assert_eq!(
+            player.reopen_quest_legacy(41),
+            crate::quest::QuestReopenResult::SeriesConflict
+        );
+    }
+
+    #[test]
+    fn reopen_quest_legacy_broklin_case_45() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        mark_reopenable(&mut player, 45);
+        player.quest_log.open(46);
+
+        assert_eq!(
+            player.reopen_quest_legacy(45),
+            crate::quest::QuestReopenResult::SeriesConflict
+        );
+
+        let mut player = PlayerRuntime::connected(2, 0);
+        mark_reopenable(&mut player, 45);
+
+        assert_eq!(
+            player.reopen_quest_legacy(45),
+            crate::quest::QuestReopenResult::Reopened
+        );
+        assert_eq!(player.staffer_broklin_state(), 0);
+    }
+
+    #[test]
+    fn reopen_quest_legacy_countbran_clears_only_low_three_bits() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_staffer_countbran_state(9);
+        player.set_staffer_countbran_bits(1 | 2 | 4 | 8);
+        mark_reopenable(&mut player, 40);
+
+        assert_eq!(
+            player.reopen_quest_legacy(40),
+            crate::quest::QuestReopenResult::Reopened
+        );
+        assert_eq!(player.staffer_countbran_state(), 0);
+        // Only bits 1|2|4 are cleared; bit 8 survives (C:
+        // `ppd->countbran_bits &= ~(1 | 2 | 4);`).
+        assert_eq!(player.staffer_countbran_bits(), 8);
+    }
+
+    #[test]
+    fn reopen_quest_legacy_jessica_series_conflict_both_directions() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        mark_reopenable(&mut player, crate::quest::QLOG_JESSICA_ROBBER_NOTE);
+        player.quest_log.open(crate::quest::QLOG_JESSICA_KILL);
+
+        assert_eq!(
+            player.reopen_quest_legacy(crate::quest::QLOG_JESSICA_ROBBER_NOTE),
+            crate::quest::QuestReopenResult::SeriesConflict
+        );
+
+        let mut player = PlayerRuntime::connected(2, 0);
+        mark_reopenable(&mut player, crate::quest::QLOG_JESSICA_KILL);
+        player
+            .quest_log
+            .open(crate::quest::QLOG_JESSICA_ROBBER_NOTE);
+
+        assert_eq!(
+            player.reopen_quest_legacy(crate::quest::QLOG_JESSICA_KILL),
+            crate::quest::QuestReopenResult::SeriesConflict
+        );
+    }
+
+    #[test]
+    fn reopen_quest_legacy_hermit_quest2_sets_camhermit_quest2_entry_state() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        mark_reopenable(&mut player, crate::quest::QLOG_HERMIT_QUEST2);
+
+        assert_eq!(
+            player.reopen_quest_legacy(crate::quest::QLOG_HERMIT_QUEST2),
+            crate::quest::QuestReopenResult::Reopened
+        );
+        assert_eq!(
+            player.area1_camhermit_state(),
+            crate::quest::CAMHERMIT_STATE_QUEST2_1
+        );
+    }
+
+    #[test]
+    fn reopen_quest_legacy_rejects_xrepeat_only_quest_with_c_precedence_bug() {
+        // Quest 25 has only `QLF_XREPEAT`, not `QLF_REPEATABLE`, but C's
+        // `!questlog[qnr].flags & QLF_REPEATABLE` operator-precedence bug
+        // (see `QuestLog::reopen_precheck`) treats "any flags at all" as
+        // repeatable, so this quest passes the generic precondition and
+        // reaches the switch - where its `case 25: ret = 0;` arm then
+        // silently refuses to reopen anyway.
+        let mut player = PlayerRuntime::connected(1, 0);
+        mark_reopenable(&mut player, 25);
+
+        assert_eq!(
+            player.reopen_quest_legacy(25),
+            crate::quest::QuestReopenResult::NoEffect
+        );
+    }
+
+    #[test]
+    fn reopen_quest_legacy_rejects_never_done_quest_before_reaching_switch() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(
+            player.reopen_quest_legacy(crate::quest::QLOG_GWENDY_FIRST_SKULL),
+            crate::quest::QuestReopenResult::CannotOpenNow
+        );
+    }
+
+    #[test]
+    fn reopen_quest_legacy_rejects_invalid_quest_number() {
+        let mut player = PlayerRuntime::connected(1, 0);
+
+        assert_eq!(
+            player.reopen_quest_legacy(9999),
+            crate::quest::QuestReopenResult::InvalidQuest
+        );
     }
 
     #[test]

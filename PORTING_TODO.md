@@ -2216,18 +2216,20 @@ Unlocks every quest NPC. Do these before any P4 area work.
   rewards per quest (`quest_exp.h`). Port the quest table + the
   `questlog_open/done` helpers; wire the already-ported `CL_REOPENQUEST`
   reset side effects per area.
-  REMAINING: `questlog_init`'s dispatcher and `DRD_QUESTLOG_PPD` codec are
-  now ported (see iteration 62 log below), but nothing calls
-  `PlayerRuntime::init_questlog` from the login/character-load path yet
-  (no seam exists for "run once per login" side effects outside a
-  character driver), and `init_area1_quests`/`init_area3_quests`/
-  `init_staff_quests`/`init_twocity_quests`/`init_nomad_quests` still
-  can't observe real state changes since the area NPC drivers themselves
-  aren't ported (P4 area content). The per-area `questlog_reopen_qN` reset
-  side effects (`src/system/questlog.c:394-828`ish) are also not ported.
-  `quest_exp.h`'s per-encounter exp/money constants (used by NPC drivers
-  that don't exist yet) are also not ported. No NPC dialogue driver calls
-  `QuestLog::open`/`complete_legacy` yet either, for the same reason.
+  REMAINING: `questlog_init` is now called unconditionally on every login
+  (new character, DB-loaded, and reclaimed-lostcon paths all converge on
+  one call site in `main.rs`'s `SessionEvent::Login` handler, matching C
+  `login_ok`'s unconditional `questlog_init(cn)`), and the full
+  `questlog_reopen`/`questlog_reopen_qN` per-area reset side-effect switch
+  is now ported too (see iteration 63 log below) - but
+  `init_area1_quests`/`init_area3_quests`/`init_staff_quests`/
+  `init_twocity_quests`/`init_nomad_quests` still can't observe real state
+  changes since the area NPC drivers themselves aren't ported (P4 area
+  content). `quest_exp.h`'s per-encounter exp/money constants (used by NPC
+  drivers that don't exist yet) are also not ported. No NPC dialogue
+  driver calls `QuestLog::open`/`complete_legacy` yet either, for the same
+  reason. The `ACHIEVEMENT_QUESTER` award on successful `CL_REOPENQUEST`
+  is skipped pending the separate "Achievements" P3 task below.
   Progress Log: ported the C `struct questlog questlog[]` metadata table
   (85 entries, name/level-range/giver/area/nominal-exp/flags incl.
   `QLF_XREPEAT`, copied digit-for-digit including the two trailing-space
@@ -2363,6 +2365,75 @@ Unlocks every quest NPC. Do these before any P4 area work.
   log). `cargo fmt --all`, `cargo test --workspace` (1326+36+3+33+406
   passed), `cargo build -p ugaris-server` clean with zero warnings, and a
   10s boot-smoke showed ticking with no panics.
+  Progress Log (iteration 63): closed both remaining gaps from the
+  REMAINING note above. (1) Wired `PlayerRuntime::init_questlog` into the
+  live login path: added one call site in `crates/ugaris-server/src/
+  main.rs`'s `SessionEvent::Login` handler, right after the DB-snapshot/
+  scaffold-spawn branch (so it runs after `apply_character_snapshot`'s PPD
+  decode for existing characters, and after `login_character_from_template`
+  for brand-new ones), matching C `login_ok`'s unconditional
+  `questlog_init(cn)` call (`src/system/player.c:659`) - safe to call on
+  every login rather than only "first ever" since it's already idempotent
+  via the sentinel. (2) Ported the full `questlog_reopen`/
+  `questlog_reopen_qN` per-quest switch (`src/system/questlog.c:342-826`)
+  as `PlayerRuntime::reopen_quest_legacy` (`crates/ugaris-core/src/
+  player.rs`), replacing the old generic-only `try_reopen_legacy` call in
+  `main.rs`'s `CL_REOPENQUEST` handler: every `questlog_reopen_qN` helper
+  (q0/q1/q5/q7/q9/q10/q13/q16/q20/q22/q30/q31/q35/q38/q39/q40/q41/q45/q79/
+  q83/q84) is ported as a small `reopen_*` method doing the area-PPD side
+  effect plus (where applicable) the "cannot re-open more than one quest
+  from a series" sibling-`QF_OPEN` exclusivity check, dispatched from a
+  `reopen_dispatch` match on `qnr`. Added the missing PPD accessors these
+  needed: `area1_james_state`, `area3_imp_state`/`area3_imp_kills`,
+  `staffer_smugglecom_bits`, and the `CAMHERMIT_STATE_QUEST2_1` constant
+  (promoted to `pub(crate)` alongside the other NPC-state constants
+  `reopen_quest_legacy` needed from `quest.rs`). Split `QuestLog::
+  try_reopen_legacy`'s generic preconditions into a shared `reopen_precheck`
+  (`done > 9`, "table flags nonzero", `QF_DONE` bit) reused by both the
+  old leaf-only method (kept, unchanged behavior, for its existing tests)
+  and the new dispatch. Fixed a genuine latent bug found while doing this:
+  the precondition's "is this quest repeatable" check was written as
+  `(QUESTLOG_FLAGS[quest] & QLF_REPEATABLE) == 0`, the "obviously correct"
+  reading - but C's actual code is `!questlog[qnr].flags & QLF_REPEATABLE`,
+  where `!` binds tighter than `&`, making the real condition "table flags
+  are exactly zero" (not "missing the REPEATABLE bit specifically"), a
+  genuine C operator-precedence bug that lets `QLF_XREPEAT`-only quests
+  (25-28) also pass the check; replicated verbatim per the porting rule to
+  preserve legacy quirks rather than keep the "fixed" version. Added a new
+  `QuestReopenResult::SeriesConflict` variant ("Cannot re-open more than
+  one quest from a series.") and `NoEffect` variant (the switch's several
+  explicit `ret = 0` arms/dead-code cases - reached the switch but nothing
+  changes, no message) alongside the existing `Reopened`/`CannotOpenAgain`/
+  `CannotOpenNow`/`InvalidQuest`; updated `main.rs`'s `CL_REOPENQUEST`
+  handler to resend `SV_QUESTLOG` for every outcome except the three
+  precondition-rejection variants (matching C's unconditional
+  `sendquestlog` once the switch is reached) and to show the new
+  `SeriesConflict` message. Faithfully reproduced C's `case 36` missing
+  `break;` (falls through into `case 37`'s helper call with `state = 7`
+  instead of doing nothing) - though this arm turns out to be dead code in
+  practice since quest 36's table row has zero flags (an independent,
+  separate real bug: its "repeatable" table entry is missing entirely, so
+  the live precondition-gated path rejects it before ever reaching the
+  switch) - tested directly against the internal `reopen_dispatch` split
+  to prove the switch body itself is faithful, plus a companion test
+  confirming the public API path is unreachable for that quest number.
+  Same "reachable via precondition but not through the live switch"
+  situation applies to case 22 (`william`/`imp` reset) and the smugglecom
+  `state == 5` bit-clear branch (no live case ever passes `state == 5`) -
+  both verified via direct calls to their private helper methods.
+  `ACHIEVEMENT_QUESTER` award on success is noted but skipped (achievement
+  system unported, separate P3 task below). Added 18 new tests in
+  `crates/ugaris-core/src/player.rs` covering: the simple single-state-
+  reset cases (q0, q5/q9/q13/q16/q20/q30/q31/q38/q39/q44), every series-
+  exclusivity family (Gwendylon, Guiwynn, Seymour, William, Brenneth,
+  Broklin, Jessica, smugglecom's case-36-fallthrough), the countbran
+  bitmask-preserving clear, the camhermit hermit-quest2 entry state, the
+  XREPEAT-precedence-bug quirk, the zero-table-flags rejection quirk, and
+  the generic `CannotOpenNow`/`InvalidQuest` precondition paths. `cargo
+  fmt --all`, `cargo test --workspace` (1344 ugaris-core [+18] + 36 db + 3
+  net + 33 protocol + 406 server, all green, zero failures), `cargo build
+  -p ugaris-server` clean with zero warnings, and a 10s boot-smoke showed
+  "entering Rust game loop" with no panics.
 
 - [ ] **Achievements (`src/module/achievements/achievement.c`)** - runtime
   markers partially exist (chests, transport). Port the achievement
