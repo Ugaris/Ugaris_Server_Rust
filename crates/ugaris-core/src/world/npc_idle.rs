@@ -446,7 +446,8 @@ impl World {
                 | CharacterDriverState::Lostcon(_)
                 | CharacterDriverState::Bank(_)
                 | CharacterDriverState::Trader(_)
-                | CharacterDriverState::Janitor(_) => None,
+                | CharacterDriverState::Janitor(_)
+                | CharacterDriverState::GateWelcome(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

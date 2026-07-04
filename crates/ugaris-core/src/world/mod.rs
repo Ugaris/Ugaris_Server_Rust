@@ -23,6 +23,7 @@ mod doors;
 mod effect_tick;
 mod effects;
 mod exp;
+mod gatekeeper;
 mod helpers;
 mod hurt;
 mod item_outcomes;
@@ -60,6 +61,7 @@ pub(crate) use effect_tick::*;
 #[allow(unused_imports)]
 pub(crate) use effects::*;
 pub use exp::*;
+pub use gatekeeper::*;
 pub(crate) use helpers::*;
 pub use hurt::*;
 #[allow(unused_imports)]
@@ -103,10 +105,10 @@ use crate::{
         remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, BankDriverData,
         CharacterDriverMessage, CharacterDriverOutcome, CharacterDriverState, Lab2UndeadDriverData,
         LostconDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_ACLERK, CDR_BANK,
-        CDR_JANITOR, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_MERCHANT, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
-        CDR_TRADER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH,
-        NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC,
-        NT_SEEHIT, NT_SPELL, NT_TEXT,
+        CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_MERCHANT, CDR_SIMPLEBADDY,
+        CDR_SWAMPMONSTER, CDR_TRADER, FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK,
+        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT,
+        NT_ITEM, NT_NPC, NT_SEEHIT, NT_SPELL, NT_TEXT,
     },
     direction::Direction,
     do_action::{

@@ -522,3 +522,63 @@ pub(crate) fn pk_hate_prerequisites(source: &Character, target: &Character) -> b
             .contains(CharacterFlags::PLAYER | CharacterFlags::PK)
         && source.level.abs_diff(target.level) <= 3
 }
+
+/// `World::process_gate_welcome_actions`'s input half: snapshots the two
+/// `PlayerRuntime`-owned facts (`gate_ppd.welcome_state`,
+/// `teleport_next_lab`'s truthiness) the gate-welcome greeting dialogue
+/// needs, for every currently-spawned player, mirroring
+/// `PkRelationSnapshot::from_runtime`'s shape (see `world/gatekeeper.rs`'s
+/// module doc comment for why `World` cannot read these itself).
+pub(crate) fn gate_welcome_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, GateWelcomePlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                GateWelcomePlayerFacts {
+                    welcome_state: player.gate_welcome_state,
+                    needs_lab: needs_next_lab(player.lab_solved_bits),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// `World::process_gate_welcome_actions`'s output half: applies each
+/// [`GateWelcomeOutcomeEvent`] (see `world/gatekeeper.rs`'s module doc
+/// comment) to the matching player's `PlayerRuntime`, mirroring
+/// `apply_bank_events`'s shape.
+pub(crate) fn apply_gate_welcome_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<GateWelcomeOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            GateWelcomeOutcomeEvent::UpdateWelcomeState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.gate_welcome_state = new_state;
+                applied += 1;
+            }
+            GateWelcomeOutcomeEvent::ResetLabPpd { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                // C `del_data(co, DRD_LAB_PPD)`: fully clears the block.
+                player.lab_solved_bits = 0;
+                player.lab_ppd.clear();
+                applied += 1;
+            }
+        }
+    }
+    applied
+}

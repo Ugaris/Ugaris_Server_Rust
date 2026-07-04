@@ -1871,20 +1871,60 @@ Unlocks every quest NPC. Do these before any P4 area work.
 - [~] **Gatekeeper NPC (`src/system/gatekeeper.c`)** - lab entrance
   dialogue/fight driver. The lab item drivers are ported; this is the
   character in front. Depends on text analysis + memory.
-  REMAINING: `World`/tick-loop wiring is not done yet (no NPC actually
-  talks in-game). Specifically still needed: (1) `enter_room`/`enter_test`
-  side effects - `take_money`, spawning the `gatekeeper_w`/`_m`/`_s`
-  opponent via `loader.instantiate_character_template` (modeled on
-  `crates/ugaris-server/src/spawns.rs::spawn_swampspawn_character`), the
+  REMAINING: the welcome NPC's greeting/small-talk message loop is now
+  wired into the tick loop (see iteration 52 below), but still needed:
+  (1) `enter_test`'s class-choice codes (`analyse_text_driver` answer
+  codes `5`-`8`) are bookkept but produce no reply/side effect yet -
+  `enter_room`'s private-room opponent spawn (`take_money`, spawning the
+  `gatekeeper_w`/`_m`/`_s` opponent via
+  `loader.instantiate_character_template`, modeled on
+  `crates/ugaris-server/src/spawns.rs::spawn_swampspawn_character`, the
   9-room-slot busy/refund search, teleporting the player and stripping
-  spells/items; (2) `World::process_gate_welcome_actions()` (modeled on
-  `World::process_trader_actions`) to actually call
-  `gate_welcome_dialogue_step`/`GATEKEEPER_QA` from the tick loop and
-  `say()` the result; (3) `gate_fight_driver`'s combat loop (reuse
-  `world/npc_fight.rs` helpers) and `gate_fight_dead`'s reward grant,
-  including `turn_seyan` (`src/system/tool.c:4278-4353`, not ported
-  anywhere yet - full character re-roll to a Seyan'Du template); (4) the
-  `NTID_GATEKEEPER` message hookup between the two NPCs.
+  spells/items) has no `World` counterpart yet; (2) `gate_fight_driver`'s
+  combat loop (reuse `world/npc_fight.rs` helpers) and `gate_fight_dead`'s
+  reward grant, including `turn_seyan` (`src/system/tool.c:4278-4389`, not
+  ported anywhere yet - full character re-roll to a Seyan'Du template,
+  which also needs the still-unported per-character `DRD_DEPOT_PPD` and
+  ~11 other unmodeled `DRD_*` ids it clears - see iteration 52's research
+  notes in this task's git history for the full list); (3) the
+  `NTID_GATEKEEPER` message hookup between the two NPCs; (4) the idle
+  "return to post" `secure_move_driver` safety net
+  (`gatekeeper.c:627-631`) - this NPC's spawn/post position (`tmpx`/
+  `tmpy`) is not modeled on `Character` yet.
+  Progress Log (iteration 52): wired the welcome NPC's message loop into
+  `World` (`crates/ugaris-core/src/world/gatekeeper.rs`,
+  `World::process_gate_welcome_actions`), modeled on
+  `world/trader.rs::process_trader_actions`: `NT_CHAR` greeting (calls the
+  existing `gate_welcome_dialogue_step`), `NT_TEXT` small talk
+  (`GATEKEEPER_QA` via `analyse_text_qa`, plus the "repeat"/"restart"
+  dialogue reset and the god-only "reset" lab-ppd clear), and `NT_GIVE`
+  give-back-or-destroy (matching `world/trader.rs`'s
+  `trader_give_char_item` simplification of `give_driver`'s pathfinding).
+  Added a new pure helper, `character_driver::needs_next_lab`, which
+  proves `teleport_next_lab(cn, 0)`'s truthiness reduces to "not all of
+  lab checkpoints 10/15/20/25/30 are solved" (reusing
+  `item_driver::legacy_lab_destination`'s table) - this let the greeting
+  dialogue's `needs_lab` input be computed without porting
+  `teleport_next_lab`'s map/`change_area` side effects at all. Since the
+  dialogue needs two `PlayerRuntime`-owned facts (`gate_welcome_state`,
+  `needs_lab`) that `World` cannot see, and `World` cannot apply
+  `PlayerRuntime` writes either, added a snapshot-in/events-out split
+  (`GateWelcomePlayerFacts`, `GateWelcomeOutcomeEvent`) mirroring
+  `world/bank.rs`'s `BankEvent` pattern, plumbed through
+  `ugaris-server/src/world_events.rs` (`gate_welcome_player_facts`,
+  `apply_gate_welcome_events`) and called each tick in `main.rs` right
+  before `process_janitor_actions`. Added the `GateWelcome` variant to
+  `CharacterDriverState` (wired into `zone.rs`'s template-init and every
+  exhaustive match in `npc_messages.rs`/`npc_fight.rs`/`npc_idle.rs`).
+  Tests: 1 new test for `needs_next_lab` in `character_driver.rs`; 12 new
+  tests in `world/tests/gatekeeper.rs` covering the greeting
+  distance/visibility/throttle rules (including the "different victim
+  within the 10-tick window" C quirk), the labyrinth-still-needed wait,
+  QA small talk, the repeat/reset text codes (god-gated), and the
+  give-back-or-destroy paths. `cargo fmt --all`, `cargo test --workspace`
+  (1252+36+3+33+398 passed), `cargo build -p ugaris-server` clean with
+  zero warnings, and a 12s boot-smoke showed "entering Rust game loop"
+  with no panics.
   Progress Log (iteration 51): ported the pure, fully-tested logic slice:
   `CDR_GATE_WELCOME`/`CDR_GATE_FIGHT` driver-id constants; `GATEKEEPER_QA`
   (the verbatim `qa[]` small-talk + class-choice-code table, reusing the

@@ -3773,3 +3773,97 @@ established by `clara_dialogue_step` (Area 15).
   unequip, several unrelated PPD deletes); (4) the `NTID_GATEKEEPER`
   cross-NPC message hookup connecting the welcome NPC to its spawned
   opponent.
+
+## Ralph Loop - Gatekeeper NPC Welcome Dialogue Tick-Loop Wiring (Iteration 52, partial)
+
+Continued `PORTING_TODO.md`'s P2 "Gatekeeper NPC" task: wired iteration
+51's pure dialogue/QA logic into `World`'s message loop and the server
+tick loop, so the welcome NPC now actually greets and small-talks players
+in-game (remaining gaps: `enter_test`'s class-choice spawn, the fight
+driver, `turn_seyan`, and the idle "return to post" safety net - see
+`PORTING_TODO.md`'s updated notes).
+
+- `crates/ugaris-core/src/character_driver.rs`:
+  - `GateWelcomeDriverData` (`last_talk`/`current_victim`/`amgivingback`,
+    C `struct gate_welcome_driver_data`, `gatekeeper.c:411-415`) and a new
+    `CharacterDriverState::GateWelcome` variant, wired into every
+    exhaustive match (`npc_messages.rs`, `npc_fight.rs`, `npc_idle.rs`,
+    and `apply_simple_baddy_create_message`'s driver-data-reuse match) and
+    into `zone.rs`'s per-template driver-state initialization (default,
+    like `CDR_TRADER` - C never parses zone-file args into this struct).
+  - `needs_next_lab(lab_solved_bits: u64) -> bool` - a new pure helper
+    that avoids porting `teleport_next_lab` (`src/system/lab.c:94-104`)
+    at all for the welcome dialogue's `needs_lab` input: with
+    `do_teleport = 0`, `teleport_lab`'s `!do_teleport || change_area(...)`
+    always short-circuits true without touching the map, so the C
+    function's *truthiness* (not its exact return code, which the
+    dialogue doesn't need) reduces to "at least one of the five known lab
+    checkpoint bits (10/15/20/25/30) is unsolved" - reusing the existing
+    `item_driver::legacy_lab_destination` table (already ported for
+    `IDR_LABENTRANCE`) instead of duplicating it. A player's `level` only
+    changes *which* nonzero value `teleport_next_lab` would return, never
+    whether it returns nonzero, so it's provably irrelevant here.
+- `crates/ugaris-core/src/world/gatekeeper.rs` (new file):
+  `World::process_gate_welcome_actions`, modeled directly on
+  `world/trader.rs::process_trader_messages`: drains the welcome NPC's
+  `driver_messages` and handles `NT_CHAR` (the greeting - calls
+  `gate_welcome_dialogue_step`), `NT_TEXT` (`GATEKEEPER_QA` via
+  `analyse_text_qa`; answer code `2` "repeat"/"restart" via
+  `gate_welcome_state_after_repeat`; code `9` "reset" via a god-flag check
+  - `Character::flags` is directly visible to `World`, unlike
+  `PlayerRuntime`; codes `3`/`4`/`5`-`8` are bookkept as `didsay` like C
+  but produce no reply yet, see remaining gaps), and `NT_GIVE`
+  (give-back-or-destroy, reusing `world/trader.rs::trader_give_char_item`'s
+  shape rather than porting `give_driver`'s pathfinding-retry, matching
+  that module's own documented simplification). Faithfully reproduces
+  several exact-tick throttle rules (`last_talk + TICKS*5`,
+  `last_talk + TICKS*10` combined with a "current victim" lock that both
+  the `NT_CHAR` and `NT_TEXT` branches read/write) and the C oddity that
+  `dat->amgivingback` resets to `0` unconditionally every tick
+  (`gatekeeper.c:621`), not just after a successful give-back, so the
+  give-back flavor text can repeat across separate ticks.
+  - Because the dialogue needs two facts that live in
+    `crate::player::PlayerRuntime` (owned by `ugaris-server`, not
+    `World`) - `gate_welcome_state` and `needs_next_lab`'s input - and
+    because writing the result back also touches `PlayerRuntime`, added a
+    snapshot-in/events-out split mirroring `world/bank.rs`'s `BankEvent`
+    pattern exactly: `GateWelcomePlayerFacts` (caller-supplied, per
+    player) in, `Vec<GateWelcomeOutcomeEvent>` (`UpdateWelcomeState`,
+    `ResetLabPpd`) out.
+- `crates/ugaris-server/src/world_events.rs`: `gate_welcome_player_facts`
+  (snapshots every online player's two facts from `ServerRuntime.players`,
+  mirroring `PkRelationSnapshot::from_runtime`'s shape) and
+  `apply_gate_welcome_events` (writes `gate_welcome_state` back, or clears
+  `lab_solved_bits`/`lab_ppd` for the god-only "reset" - the C
+  `del_data(co, DRD_LAB_PPD)` equivalent, since there's no generic
+  `del_data` - mirroring `apply_bank_events`'s shape).
+- `crates/ugaris-server/src/main.rs`: calls
+  `gate_welcome_player_facts` → `world.process_gate_welcome_actions` →
+  `apply_gate_welcome_events` once per tick, right before
+  `process_janitor_actions`.
+- Tests: 1 new test for `needs_next_lab` in `character_driver.rs`
+  (checkpoint-bit boundary cases, including that non-checkpoint bits never
+  matter); 12 new tests in the new `crates/ugaris-core/src/world/tests/
+  gatekeeper.rs` (greeting distance/visibility/throttle including the
+  "different victim within the 10-tick window" C quirk, the
+  labyrinth-still-needed wait and its state transition, QA small talk,
+  the "repeat" reset and god-only "reset" text codes plus a non-god
+  negative case, and both give-back and destroy-on-full-inventory `NT_GIVE`
+  paths).
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1252
+  `ugaris-core` (12 net new) + 36 db + 3 net + 33 protocol + 398 server,
+  all green, zero failures. `cargo build -p ugaris-server` clean, zero
+  warnings. A 12s boot-smoke showed "entering Rust game loop" with no
+  panics.
+- Remaining (left `[~]` in `PORTING_TODO.md`, precise notes there): (1)
+  `enter_test`'s class-choice codes `5`-`8` still need `enter_room`'s
+  spawn side effects (`take_money`, `create_char`/`drop_char` for the
+  `gatekeeper_w`/`_m`/`_s` opponent, the 9-room busy/refund search,
+  stripping items, teleporting the player); (2) `gate_fight_driver`/
+  `gate_fight_dead` (reuse `world/npc_fight.rs`) including `turn_seyan`
+  (`src/system/tool.c:4278-4389` - confirmed this iteration to also need
+  the still-unported per-character `DRD_DEPOT_PPD` plus roughly 11 other
+  unmodeled `DRD_*` ids it clears); (3) the `NTID_GATEKEEPER` cross-NPC
+  message hookup; (4) the idle "return to post" `secure_move_driver`
+  safety net (needs a `tmpx`/`tmpy`-equivalent post position on
+  `Character`, not modeled yet).

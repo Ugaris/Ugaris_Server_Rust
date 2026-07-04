@@ -87,8 +87,8 @@ use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{
-        CharacterDriverState, CDR_CALIGARSKELLY, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC,
-        CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT,
+        needs_next_lab, CharacterDriverState, CDR_CALIGARSKELLY, CDR_LAB2UNDEAD, CDR_LOSTCON,
+        CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT,
     },
     direction::Direction,
     do_action::{
@@ -146,8 +146,9 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::{
         exp2level, legacy_save_number, level2exp, level_value, merchant_buy_price,
-        merchant_sales_price, BankEvent, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
-        RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        merchant_sales_price, BankEvent, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts,
+        LegacyHurtEvent, LookMapRequest, MerchantTradeResult, RaiseSkillOutcome, StoreWare,
+        TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -5391,6 +5392,19 @@ async fn main() -> anyhow::Result<()> {
                 let trader_events_applied = apply_trader_events(&mut world);
                 if trader_events_applied != 0 {
                     info!(trader_events_applied, tick = world.tick.0, "applied trader item-look events");
+                }
+                // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
+                // greeter NPC (`src/system/gatekeeper.c`).
+                let gate_welcome_facts = gate_welcome_player_facts(&runtime);
+                let gate_welcome_events = world.process_gate_welcome_actions(&gate_welcome_facts);
+                let gate_welcome_events_applied =
+                    apply_gate_welcome_events(&mut runtime, gate_welcome_events);
+                if gate_welcome_events_applied != 0 {
+                    info!(
+                        gate_welcome_events_applied,
+                        tick = world.tick.0,
+                        "applied gate-welcome dialogue state updates"
+                    );
                 }
                 // C `janitor_driver`: lamp-lighting/item-tidying NPC
                 // (`src/module/base.c`).

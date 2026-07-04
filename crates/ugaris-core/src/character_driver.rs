@@ -106,6 +106,7 @@ pub enum CharacterDriverState {
     Bank(BankDriverData),
     Trader(TraderDriverData),
     Janitor(JanitorDriverData),
+    GateWelcome(GateWelcomeDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -353,6 +354,18 @@ pub struct TraderDriverData {
     pub memory_clear_tick: u64,
     #[serde(default)]
     pub last_talk: u64,
+}
+
+/// C `struct gate_welcome_driver_data` (`src/system/gatekeeper.c:411-415`):
+/// the gatekeeper-welcome NPC's own driver memory (`CDR_GATE_WELCOME`,
+/// distinct from the per-player `gate_ppd` in `crate::player::PlayerRuntime`
+/// - see `world::gatekeeper`'s module doc comment for the split).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GateWelcomeDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub current_victim: Option<CharacterId>,
+    pub amgivingback: i32,
 }
 
 /// C `struct janitor_data` from `src/module/base.c`'s `janitor_driver`
@@ -1264,7 +1277,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Lostcon(_)
             | CharacterDriverState::Bank(_)
             | CharacterDriverState::Trader(_)
-            | CharacterDriverState::Janitor(_),
+            | CharacterDriverState::Janitor(_)
+            | CharacterDriverState::GateWelcome(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -2006,6 +2020,23 @@ pub fn gate_welcome_state_after_repeat(welcome_state: i32) -> i32 {
     } else {
         welcome_state
     }
+}
+
+/// C `teleport_next_lab(cn, 0)` truthiness (`src/system/lab.c:94-104`).
+/// With `do_teleport = 0`, `teleport_lab`'s `!do_teleport ||
+/// change_area(...)` always short-circuits true without touching the map,
+/// so the loop's outcome depends only on whether every known lab
+/// checkpoint bit (`src/system/lab.c:40-83`'s `teleport_lab` switch -
+/// levels 10/15/20/25/30, i.e. `crate::item_driver::legacy_lab_destination`)
+/// is already solved; the character's level only changes *which* nonzero
+/// value would be returned (`1` vs `-required_level`), never the
+/// truthiness this needs.
+pub fn needs_next_lab(lab_solved_bits: u64) -> bool {
+    (0..64_u8).any(|lab_level| {
+        let bit = 1_u64 << lab_level;
+        lab_solved_bits & bit == 0
+            && crate::item_driver::legacy_lab_destination(lab_level).is_some()
+    })
 }
 
 /// C `enter_test`'s class-choice/item-carrying preconditions
@@ -3626,6 +3657,21 @@ mod tests {
         assert_eq!(gate_welcome_state_after_repeat(0), 0);
         assert_eq!(gate_welcome_state_after_repeat(6), 0);
         assert_eq!(gate_welcome_state_after_repeat(7), 7);
+    }
+
+    #[test]
+    fn needs_next_lab_is_true_until_every_checkpoint_is_solved() {
+        // Nothing solved: level 10 is the first checkpoint bit checked.
+        assert!(needs_next_lab(0));
+        // All five checkpoints solved: no lab needed anymore.
+        let all_solved = (1_u64 << 10) | (1 << 15) | (1 << 20) | (1 << 25) | (1 << 30);
+        assert!(!needs_next_lab(all_solved));
+        // Missing just the last checkpoint still counts as needing a lab.
+        let all_but_last = (1_u64 << 10) | (1 << 15) | (1 << 20) | (1 << 25);
+        assert!(needs_next_lab(all_but_last));
+        // Bits outside the known checkpoints (e.g. bit 0) never matter.
+        assert!(needs_next_lab(1));
+        assert!(!needs_next_lab(all_solved | 1));
     }
 
     #[test]
