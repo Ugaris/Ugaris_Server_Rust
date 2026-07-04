@@ -28,6 +28,7 @@ mod login;
 mod lostcon;
 mod map_sync;
 mod merchants;
+mod military;
 mod player_actions;
 mod resource_sync;
 mod rng;
@@ -57,6 +58,7 @@ pub(crate) use login::*;
 pub(crate) use lostcon::*;
 pub(crate) use map_sync::*;
 pub(crate) use merchants::*;
+pub(crate) use military::*;
 pub(crate) use player_actions::*;
 pub(crate) use resource_sync::*;
 pub(crate) use rng::*;
@@ -990,6 +992,10 @@ async fn main() -> anyhow::Result<()> {
                         check,
                     )
                     .await;
+                }
+                // C kill_char check_military_solve.
+                for check in world.drain_pending_military_mission_checks() {
+                    apply_military_mission_kill_check(&mut world, &mut runtime, check);
                 }
                 let timer_feedback = timer_outcome_feedback(&timer_outcomes);
                 if !timer_feedback.is_empty() {
@@ -6039,6 +6045,12 @@ async fn main() -> anyhow::Result<()> {
                 let world_text_sessions = send_pending_world_system_texts(&mut runtime, &mut world);
                 if world_text_sessions != 0 {
                     info!(world_text_sessions, tick = world.tick.0, "queued world system text feedback");
+                }
+
+                let world_text_bytes_sessions =
+                    send_pending_world_system_text_bytes(&mut runtime, &mut world);
+                if world_text_bytes_sessions != 0 {
+                    info!(world_text_bytes_sessions, tick = world.tick.0, "queued world system text byte feedback");
                 }
 
                 let channel_broadcast_sessions =

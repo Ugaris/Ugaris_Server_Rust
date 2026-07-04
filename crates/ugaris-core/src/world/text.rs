@@ -12,6 +12,17 @@ pub struct WorldSystemText {
     pub message: String,
 }
 
+/// Byte-payload sibling of [`WorldSystemText`] for `log_char` calls whose C
+/// text embeds a raw color-marker prefix (`COLOR_MARKER` = `\xb0`, e.g.
+/// `COL_DARK_GRAY "Mission kill, %d to go."`, `military.c`'s
+/// `check_military_solve` callers) that cannot round-trip through a Rust
+/// `String` (`\xb0` alone is not valid UTF-8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorldSystemTextBytes {
+    pub character_id: CharacterId,
+    pub message: Vec<u8>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorldAreaText {
     pub x: u16,
@@ -337,6 +348,19 @@ impl World {
 
     pub fn drain_pending_system_texts(&mut self) -> Vec<WorldSystemText> {
         self.pending_system_texts.drain(..).collect()
+    }
+
+    /// Byte-payload sibling of [`Self::queue_system_text`] - see
+    /// [`WorldSystemTextBytes`].
+    pub fn queue_system_text_bytes(&mut self, character_id: CharacterId, message: Vec<u8>) {
+        self.pending_system_text_bytes.push(WorldSystemTextBytes {
+            character_id,
+            message,
+        });
+    }
+
+    pub fn drain_pending_system_text_bytes(&mut self) -> Vec<WorldSystemTextBytes> {
+        self.pending_system_text_bytes.drain(..).collect()
     }
 
     pub fn drain_pending_area_texts(&mut self) -> Vec<WorldAreaText> {

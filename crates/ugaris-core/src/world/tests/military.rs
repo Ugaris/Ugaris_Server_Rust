@@ -319,3 +319,62 @@ fn generate_single_silver_mission_scales_opt1_with_military_rank() {
     assert!((90..=170).contains(&high_rank.opt1));
     assert!(high_rank.opt1 > low_rank.opt1);
 }
+
+// C `check_military_solve`'s pent-demon class guard (`death.c:310-316`).
+#[test]
+fn is_pent_demon_mission_class_matches_every_disjoint_c_range() {
+    // Normal pent demon ranges.
+    assert!(is_pent_demon_mission_class(52));
+    assert!(is_pent_demon_mission_class(84));
+    assert!(!is_pent_demon_mission_class(85)); // sewer ratling range starts here
+    assert!(is_pent_demon_mission_class(107));
+    assert!(is_pent_demon_mission_class(170));
+    assert!(is_pent_demon_mission_class(388));
+    assert!(is_pent_demon_mission_class(403));
+    assert!(!is_pent_demon_mission_class(404)); // demon lord range, not a mission target
+                                                // Elite/lesser demon palette-swap ranges.
+    assert!(is_pent_demon_mission_class(ELITE_DEMON_CLASS_BASE));
+    assert!(is_pent_demon_mission_class(ELITE_DEMON_CLASS_BASE + 47));
+    assert!(!is_pent_demon_mission_class(ELITE_DEMON_CLASS_BASE + 48));
+    assert!(is_pent_demon_mission_class(LESSER_DEMON_CLASS_BASE));
+    assert!(is_pent_demon_mission_class(LESSER_DEMON_CLASS_BASE + 47));
+    assert!(!is_pent_demon_mission_class(LESSER_DEMON_CLASS_BASE + 48));
+    // Well outside any range.
+    assert!(!is_pent_demon_mission_class(0));
+    assert!(!is_pent_demon_mission_class(1000));
+}
+
+// C `check_military_solve`'s sewer-ratling class guard (`death.c:358`).
+#[test]
+fn is_sewer_ratling_mission_class_matches_the_c_range() {
+    assert!(!is_sewer_ratling_mission_class(84));
+    assert!(is_sewer_ratling_mission_class(85));
+    assert!(is_sewer_ratling_mission_class(100));
+    assert!(!is_sewer_ratling_mission_class(101));
+}
+
+// C `get_demon_mission_value` (`death.c:281-288`): elite demons count for
+// 10, everything else (including lesser demons and normal pents) for 1.
+#[test]
+fn get_demon_mission_value_matches_c_elite_vs_everything_else() {
+    assert_eq!(get_demon_mission_value(ELITE_DEMON_CLASS_BASE), 10);
+    assert_eq!(get_demon_mission_value(ELITE_DEMON_CLASS_BASE + 47), 10);
+    assert_eq!(get_demon_mission_value(ELITE_DEMON_CLASS_BASE + 48), 1);
+    assert_eq!(get_demon_mission_value(LESSER_DEMON_CLASS_BASE), 1);
+    assert_eq!(get_demon_mission_value(52), 1);
+}
+
+// C `check_military_solve`'s progress-message display gate
+// (`death.c:339-341` / `:369-370`): only echo every 5th/10th kill once
+// the remaining count reaches double digits, but always echo below 10.
+#[test]
+fn military_mission_progress_message_should_display_matches_c_threshold() {
+    assert!(military_mission_progress_message_should_display(9));
+    assert!(military_mission_progress_message_should_display(1));
+    assert!(!military_mission_progress_message_should_display(11));
+    assert!(military_mission_progress_message_should_display(15)); // <100 and %5==0
+    assert!(!military_mission_progress_message_should_display(17));
+    assert!(military_mission_progress_message_should_display(20)); // %10==0
+    assert!(military_mission_progress_message_should_display(110)); // >=100, %10==0
+    assert!(!military_mission_progress_message_should_display(115)); // >=100, not %10==0
+}

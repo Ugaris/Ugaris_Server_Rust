@@ -55,6 +55,30 @@ const ARENA_PPD_LASTFIGHT_OFFSET: usize = 4 * 4;
 /// C `score_fight`'s first-fight seed score (`arena.c:437,441`): a brand
 /// new arena record starts at -2000, not 0.
 pub const ARENA_PPD_NEWCOMER_SCORE: i32 = -2000;
+/// C `struct military_ppd` (`src/module/military.h:28-60`): 6 flat header
+/// `int`s (`current_pts`/`master_state`/`current_advisor`/`advisor_state`/
+/// `advisor_cost`/`advisor_storage_nr`), `advisor_last[MAXADVISOR]`
+/// (`MAXADVISOR` = 20), `military_pts`/`normal_exp`/`mission_yday` (3),
+/// `mis[5]` (5 `struct single_mission`, 5 `int`s each), `took_mission`/
+/// `took_yday`/`solved_mission`/`solved_yday`/`recommend`/
+/// `mission_type_preference`/`mission_difficulty_preference`/
+/// `temp_mission_type`/`temp_mission_difficulty`/`reroll_yday` (10) = 6 +
+/// 20 + 3 + 25 + 10 = 64 `int`s, 256 bytes. Only the mission-progress
+/// fields this iteration's `check_military_solve` port needs
+/// (`mis[5]`/`took_mission`/`solved_mission`) have named accessors below;
+/// the rest of the struct round-trips as opaque bytes until the mission-
+/// offer/accept/complete wrappers land (see `PORTING_TODO.md`'s "Military
+/// ranks" entry).
+pub const LEGACY_MILITARY_PPD_SIZE: usize = 64 * 4;
+pub const MILITARY_PPD_MAXADVISOR: usize = 20;
+const MILITARY_PPD_MISSION_COUNT: usize = 5;
+const MILITARY_PPD_MIS_BASE_OFFSET: usize = (6 + MILITARY_PPD_MAXADVISOR + 3) * 4;
+const MILITARY_PPD_MIS_ENTRY_SIZE: usize = 5 * 4;
+const MILITARY_PPD_TOOK_MISSION_OFFSET: usize =
+    MILITARY_PPD_MIS_BASE_OFFSET + MILITARY_PPD_MISSION_COUNT * MILITARY_PPD_MIS_ENTRY_SIZE;
+// took_yday (offset TOOK_MISSION+4) has no accessor yet - not needed until
+// the mission-accept/reroll wrappers land.
+const MILITARY_PPD_SOLVED_MISSION_OFFSET: usize = MILITARY_PPD_TOOK_MISSION_OFFSET + 8;
 /// C `struct area3_ppd` (`src/area/3/area3.h:18-35` /
 /// `src/system/game/ppd_structs.h:109-127`): 18 `int` fields (`imp_kills,
 /// imp_flags;` declares two on one line). Was previously `17 * 4` (a
@@ -585,6 +609,13 @@ pub struct PlayerRuntime {
     /// (not yet ported) `score_fight` win/loss recording.
     #[serde(default)]
     pub arena_ppd: Vec<u8>,
+    /// C `struct military_ppd` (`src/module/military.h:28-60`,
+    /// `DRD_MILITARY_PPD`): mission-giver/advisor state plus the 5-slot
+    /// mission offer table (`mis[5]`) and active-mission progress
+    /// (`took_mission`/`solved_mission`). See
+    /// [`LEGACY_MILITARY_PPD_SIZE`] for the byte layout.
+    #[serde(default)]
+    pub military_ppd: Vec<u8>,
     #[serde(default)]
     pub area3_ppd: Vec<u8>,
     #[serde(default)]
@@ -775,6 +806,7 @@ impl PlayerRuntime {
             misc_ppd: Vec::new(),
             first_kill_ppd: Vec::new(),
             arena_ppd: Vec::new(),
+            military_ppd: Vec::new(),
             area3_ppd: Vec::new(),
             area1_ppd: Vec::new(),
             nomad_ppd: Vec::new(),
@@ -2232,6 +2264,154 @@ impl PlayerRuntime {
             + (404..=411).filter(|&c| is_set(c)).count() as u32
     }
 
+    pub fn encode_legacy_military_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_MILITARY_PPD_SIZE];
+        let copy_len = self.military_ppd.len().min(LEGACY_MILITARY_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.military_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_military_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_MILITARY_PPD_SIZE {
+            return false;
+        }
+        self.military_ppd = bytes[..LEGACY_MILITARY_PPD_SIZE].to_vec();
+        true
+    }
+
+    fn read_military_i32(&self, offset: usize) -> i32 {
+        if self.military_ppd.len() < LEGACY_MILITARY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.military_ppd, offset)
+    }
+
+    fn write_military_i32(&mut self, offset: usize, value: i32) {
+        if self.military_ppd.len() < LEGACY_MILITARY_PPD_SIZE {
+            self.military_ppd.resize(LEGACY_MILITARY_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.military_ppd, offset, value);
+    }
+
+    fn military_mission_offset(idx: usize) -> usize {
+        MILITARY_PPD_MIS_BASE_OFFSET
+            + idx.min(MILITARY_PPD_MISSION_COUNT - 1) * MILITARY_PPD_MIS_ENTRY_SIZE
+    }
+
+    /// C `military_ppd::mis[idx]` (`military.h:43`), one of the 5 offered
+    /// missions (easy/normal/hard/impossible/insane, index 0..=4).
+    pub fn military_mission(&self, idx: usize) -> crate::world::SingleMission {
+        let base = Self::military_mission_offset(idx);
+        crate::world::SingleMission {
+            mission_type: self.read_military_i32(base),
+            opt1: self.read_military_i32(base + 4),
+            opt2: self.read_military_i32(base + 8),
+            pts: self.read_military_i32(base + 12),
+            exp: self.read_military_i32(base + 16),
+        }
+    }
+
+    pub fn set_military_mission(&mut self, idx: usize, mission: crate::world::SingleMission) {
+        let base = Self::military_mission_offset(idx);
+        self.write_military_i32(base, mission.mission_type);
+        self.write_military_i32(base + 4, mission.opt1);
+        self.write_military_i32(base + 8, mission.opt2);
+        self.write_military_i32(base + 12, mission.pts);
+        self.write_military_i32(base + 16, mission.exp);
+    }
+
+    fn set_military_mission_opt1(&mut self, idx: usize, opt1: i32) {
+        let base = Self::military_mission_offset(idx) + 4;
+        self.write_military_i32(base, opt1);
+    }
+
+    /// C `military_ppd::took_mission` (`military.h:45`): 0 = no active
+    /// mission, else `1 + difficulty` (the offered mission's index this
+    /// player accepted).
+    pub fn military_took_mission(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_TOOK_MISSION_OFFSET)
+    }
+
+    pub fn set_military_took_mission(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_TOOK_MISSION_OFFSET, value);
+    }
+
+    /// C `military_ppd::solved_mission` (`military.h:47`).
+    pub fn military_solved_mission(&self) -> bool {
+        self.read_military_i32(MILITARY_PPD_SOLVED_MISSION_OFFSET) != 0
+    }
+
+    pub fn set_military_solved_mission(&mut self, value: bool) {
+        self.write_military_i32(MILITARY_PPD_SOLVED_MISSION_OFFSET, i32::from(value));
+    }
+
+    /// C `check_military_solve(cn, co)` (`src/system/death.c:290-383`):
+    /// fired from `kill_char` whenever a player (`cn`, `self` here) kills
+    /// anything (`co`), decrementing the active mission's remaining-kill
+    /// count (`mis[nr].opt1`) if the victim's class/level matches the
+    /// mission's type/target, and flipping `solved_mission` once it
+    /// reaches 0. `victim_class`/`victim_level` are C's `ch[co].class`/
+    /// `ch[co].level`. A no-op ([`crate::world::MilitaryMissionProgress::
+    /// NoMatch`]) if there's no active unsolved mission (`!ppd->took_
+    /// mission || ppd->solved_mission`) or the victim doesn't match the
+    /// active mission's type/class/level target - C's outer `if` plus
+    /// `switch` both have no `else`/`default` branch, so every mismatch
+    /// silently does nothing.
+    pub fn check_military_solve(
+        &mut self,
+        victim_class: i32,
+        victim_level: i32,
+    ) -> crate::world::MilitaryMissionProgress {
+        use crate::world::{
+            get_demon_mission_value, is_pent_demon_mission_class, is_sewer_ratling_mission_class,
+            MilitaryMissionProgress, MISSION_TYPE_DEMON, MISSION_TYPE_RATLING,
+        };
+
+        let took_mission = self.military_took_mission();
+        if took_mission == 0 || self.military_solved_mission() {
+            return MilitaryMissionProgress::NoMatch;
+        }
+        let nr = (took_mission - 1) as usize;
+        if nr >= MILITARY_PPD_MISSION_COUNT {
+            return MilitaryMissionProgress::NoMatch;
+        }
+        let mission = self.military_mission(nr);
+
+        let level_matches = |target_level: i32| {
+            victim_level == target_level
+                || victim_level == target_level - 1
+                || victim_level == target_level + 1
+        };
+
+        let elite_count = match mission.mission_type {
+            MISSION_TYPE_DEMON => {
+                if !is_pent_demon_mission_class(victim_class) || !level_matches(mission.opt2) {
+                    return MilitaryMissionProgress::NoMatch;
+                }
+                get_demon_mission_value(victim_class)
+            }
+            MISSION_TYPE_RATLING => {
+                if !is_sewer_ratling_mission_class(victim_class) || !level_matches(mission.opt2) {
+                    return MilitaryMissionProgress::NoMatch;
+                }
+                1
+            }
+            _ => return MilitaryMissionProgress::NoMatch,
+        };
+
+        let remaining = (mission.opt1 - elite_count).max(0);
+        self.set_military_mission_opt1(nr, remaining);
+        if remaining == 0 {
+            self.set_military_solved_mission(true);
+            MilitaryMissionProgress::Solved
+        } else {
+            MilitaryMissionProgress::Progress {
+                remaining,
+                elite_count,
+            }
+        }
+    }
+
     pub fn decode_legacy_demonshrine_ppd(&mut self, bytes: &[u8]) -> bool {
         if bytes.len() < LEGACY_DEMONSHRINE_PPD_SIZE {
             return false;
@@ -3354,12 +3534,15 @@ impl PlayerRuntime {
     /// (`DRD_QUESTLOG_PPD` resets `quest_log` to its default, which
     /// re-triggers `init_questlog`'s "not yet initialized" sentinel on
     /// next load - matching C's del+re-`questlog_init` behavior). The
-    /// remaining 5 non-depot ids (`DRD_RANK_PPD`,
-    /// `DRD_MILITARY_PPD`, `DRD_SIDESTORY_PPD`,
+    /// remaining 4 non-depot ids (`DRD_RANK_PPD`, `DRD_SIDESTORY_PPD`,
     /// `DRD_TUNNEL_PPD`, `DRD_STRATEGY_PPD`) have no Rust representation
     /// at all, so they're stripped straight out of the raw `ppd_blob` via
     /// `strip_ppd_blocks` (the same byte-level mechanism that already
-    /// round-trips every other still-unmodeled id). `DRD_DEPOT_PPD`'s
+    /// round-trips every other still-unmodeled id). `DRD_MILITARY_PPD`
+    /// graduated from that stripped-raw list to a real
+    /// `self.military_ppd.clear()` once `military_ppd` gained a typed
+    /// Rust representation, matching how `first_kill_ppd`/`arena_ppd`
+    /// made the same transition earlier. `DRD_DEPOT_PPD`'s
     /// "clear `IF_QUEST` flags from the 80 depot item slots" is a
     /// documented gap - see `World::apply_turn_seyan`'s doc comment; no
     /// per-character legacy depot exists in Rust yet (`AccountDepotState`,
@@ -3392,12 +3575,12 @@ impl PlayerRuntime {
         self.quest_log = QuestLog::default();
         self.first_kill_ppd.clear();
         self.arena_ppd.clear();
+        self.military_ppd.clear();
 
         self.ppd_blob = strip_ppd_blocks(
             &self.ppd_blob,
             &[
                 DRD_RANK_PPD,
-                DRD_MILITARY_PPD,
                 DRD_SIDESTORY_PPD,
                 DRD_TUNNEL_PPD,
                 DRD_STRATEGY_PPD,
@@ -3608,6 +3791,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_MILITARY_PPD => {
+                    if !self.decode_legacy_military_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_RUNE_PPD => {
                     if !self.decode_legacy_rune_ppd(block.data) {
                         return false;
@@ -3666,6 +3854,7 @@ impl PlayerRuntime {
         let mut had_misc = false;
         let mut had_firstkill = false;
         let mut had_arena = false;
+        let mut had_military = false;
         let mut had_rune = false;
         let mut had_alias = false;
         let mut had_ignore = false;
@@ -3846,6 +4035,13 @@ impl PlayerRuntime {
             } else if block.id == DRD_ARENA_PPD {
                 had_arena = true;
                 write_ppd_block(&mut encoded, DRD_ARENA_PPD, &self.encode_legacy_arena_ppd());
+            } else if block.id == DRD_MILITARY_PPD {
+                had_military = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_MILITARY_PPD,
+                    &self.encode_legacy_military_ppd(),
+                );
             } else if block.id == DRD_RUNE_PPD {
                 had_rune = true;
                 write_ppd_block(&mut encoded, DRD_RUNE_PPD, &self.encode_legacy_rune_ppd());
@@ -4125,6 +4321,16 @@ impl PlayerRuntime {
         }
         if !had_arena && (existing_was_valid || existing.is_empty()) && !self.arena_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_ARENA_PPD, &self.encode_legacy_arena_ppd());
+        }
+        if !had_military
+            && (existing_was_valid || existing.is_empty())
+            && !self.military_ppd.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_MILITARY_PPD,
+                &self.encode_legacy_military_ppd(),
+            );
         }
         if !had_rune && (existing_was_valid || existing.is_empty()) {
             if self.rune_used_words.iter().any(|word| *word != 0)
@@ -6844,6 +7050,248 @@ mod tests {
         winner.clear_turn_seyan_ppd();
         assert!(winner.arena_ppd.is_empty());
         assert_eq!(winner.arena_score(), ARENA_PPD_NEWCOMER_SCORE);
+    }
+
+    #[test]
+    fn military_ppd_mission_slot_and_progress_accessors_round_trip() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.military_took_mission(), 0);
+        assert!(!player.military_solved_mission());
+
+        let mission = crate::world::SingleMission {
+            mission_type: crate::world::MISSION_TYPE_DEMON,
+            opt1: 5,
+            opt2: 40,
+            pts: 10,
+            exp: 200,
+        };
+        player.set_military_mission(1, mission);
+        assert_eq!(player.military_mission(1), mission);
+        // Untouched slots stay zeroed.
+        assert!(player.military_mission(0).is_empty());
+
+        player.set_military_took_mission(2);
+        assert_eq!(player.military_took_mission(), 2);
+        player.set_military_solved_mission(true);
+        assert!(player.military_solved_mission());
+    }
+
+    #[test]
+    fn military_ppd_blob_round_trips_through_encode_decode() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let mission = crate::world::SingleMission {
+            mission_type: crate::world::MISSION_TYPE_RATLING,
+            opt1: 3,
+            opt2: 15,
+            pts: 2,
+            exp: 40,
+        };
+        player.set_military_mission(0, mission);
+        player.set_military_took_mission(1);
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        let mut round_tripped = PlayerRuntime::connected(1, 0);
+        assert!(round_tripped.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(round_tripped.military_ppd, player.military_ppd);
+        assert_eq!(round_tripped.military_mission(0), mission);
+        assert_eq!(round_tripped.military_took_mission(), 1);
+    }
+
+    #[test]
+    fn clear_turn_seyan_ppd_clears_military_ppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_military_took_mission(1);
+        assert!(!player.military_ppd.is_empty());
+
+        player.clear_turn_seyan_ppd();
+        assert!(player.military_ppd.is_empty());
+        assert_eq!(player.military_took_mission(), 0);
+    }
+
+    // C `check_military_solve` (`src/system/death.c:290-383`).
+    #[test]
+    fn check_military_solve_no_active_mission_is_no_match() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(
+            player.check_military_solve(700, 40),
+            crate::world::MilitaryMissionProgress::NoMatch
+        );
+    }
+
+    #[test]
+    fn check_military_solve_already_solved_is_no_match() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_military_mission(
+            0,
+            crate::world::SingleMission {
+                mission_type: crate::world::MISSION_TYPE_DEMON,
+                opt1: 1,
+                opt2: 40,
+                pts: 1,
+                exp: 1,
+            },
+        );
+        player.set_military_took_mission(1);
+        player.set_military_solved_mission(true);
+        assert_eq!(
+            player.check_military_solve(700, 40),
+            crate::world::MilitaryMissionProgress::NoMatch
+        );
+    }
+
+    #[test]
+    fn check_military_solve_demon_mission_wrong_class_is_no_match() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_military_mission(
+            0,
+            crate::world::SingleMission {
+                mission_type: crate::world::MISSION_TYPE_DEMON,
+                opt1: 5,
+                opt2: 40,
+                pts: 1,
+                exp: 1,
+            },
+        );
+        player.set_military_took_mission(1);
+        // Class 200 is neither a pent demon nor a ratling.
+        assert_eq!(
+            player.check_military_solve(200, 40),
+            crate::world::MilitaryMissionProgress::NoMatch
+        );
+        // opt1 must stay untouched on a non-match.
+        assert_eq!(player.military_mission(0).opt1, 5);
+    }
+
+    #[test]
+    fn check_military_solve_demon_mission_wrong_level_is_no_match() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_military_mission(
+            0,
+            crate::world::SingleMission {
+                mission_type: crate::world::MISSION_TYPE_DEMON,
+                opt1: 5,
+                opt2: 40,
+                pts: 1,
+                exp: 1,
+            },
+        );
+        player.set_military_took_mission(1);
+        // Level 38 is more than 1 away from target level 40.
+        assert_eq!(
+            player.check_military_solve(52, 38),
+            crate::world::MilitaryMissionProgress::NoMatch
+        );
+    }
+
+    #[test]
+    fn check_military_solve_demon_mission_accepts_adjacent_levels() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_military_mission(
+            0,
+            crate::world::SingleMission {
+                mission_type: crate::world::MISSION_TYPE_DEMON,
+                opt1: 5,
+                opt2: 40,
+                pts: 1,
+                exp: 1,
+            },
+        );
+        player.set_military_took_mission(1);
+        // Level 39 (target - 1) matches.
+        assert_eq!(
+            player.check_military_solve(52, 39),
+            crate::world::MilitaryMissionProgress::Progress {
+                remaining: 4,
+                elite_count: 1
+            }
+        );
+    }
+
+    #[test]
+    fn check_military_solve_elite_demon_counts_as_ten() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_military_mission(
+            0,
+            crate::world::SingleMission {
+                mission_type: crate::world::MISSION_TYPE_DEMON,
+                opt1: 15,
+                opt2: 40,
+                pts: 1,
+                exp: 1,
+            },
+        );
+        player.set_military_took_mission(1);
+        let elite_class = crate::world::ELITE_DEMON_CLASS_BASE;
+        assert_eq!(
+            player.check_military_solve(elite_class, 40),
+            crate::world::MilitaryMissionProgress::Progress {
+                remaining: 5,
+                elite_count: 10
+            }
+        );
+        assert_eq!(player.military_mission(0).opt1, 5);
+    }
+
+    #[test]
+    fn check_military_solve_ratling_mission_progress_and_solve() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_military_mission(
+            2,
+            crate::world::SingleMission {
+                mission_type: crate::world::MISSION_TYPE_RATLING,
+                opt1: 2,
+                opt2: 20,
+                pts: 4,
+                exp: 80,
+            },
+        );
+        player.set_military_took_mission(3); // slot index 2 (took_mission - 1)
+
+        assert_eq!(
+            player.check_military_solve(90, 20),
+            crate::world::MilitaryMissionProgress::Progress {
+                remaining: 1,
+                elite_count: 1
+            }
+        );
+        assert!(!player.military_solved_mission());
+
+        assert_eq!(
+            player.check_military_solve(90, 21),
+            crate::world::MilitaryMissionProgress::Solved
+        );
+        assert!(player.military_solved_mission());
+        assert_eq!(player.military_mission(2).opt1, 0);
+
+        // Once solved, further kills are a no-op even if they'd otherwise
+        // match.
+        assert_eq!(
+            player.check_military_solve(90, 20),
+            crate::world::MilitaryMissionProgress::NoMatch
+        );
+    }
+
+    #[test]
+    fn check_military_solve_never_underflows_opt1_below_zero() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_military_mission(
+            0,
+            crate::world::SingleMission {
+                mission_type: crate::world::MISSION_TYPE_DEMON,
+                opt1: 3,
+                opt2: 40,
+                pts: 1,
+                exp: 1,
+            },
+        );
+        player.set_military_took_mission(1);
+        // An elite kill (worth 10) against a remaining count of 3 must
+        // clamp at 0, not go negative, and still solve the mission.
+        assert_eq!(
+            player.check_military_solve(crate::world::ELITE_DEMON_CLASS_BASE, 40),
+            crate::world::MilitaryMissionProgress::Solved
+        );
+        assert_eq!(player.military_mission(0).opt1, 0);
     }
 
     #[test]

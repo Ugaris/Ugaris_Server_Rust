@@ -578,6 +578,24 @@ pub(crate) fn send_pending_world_system_texts(
     sent
 }
 
+/// Byte-payload sibling of [`send_pending_world_system_texts`] - see
+/// `WorldSystemTextBytes`.
+pub(crate) fn send_pending_world_system_text_bytes(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+) -> usize {
+    let mut sent = 0;
+    for event in world.drain_pending_system_text_bytes() {
+        let payload = ugaris_protocol::packet::system_text_bytes(&event.message);
+        for (session_id, _) in runtime.sessions_for_character(event.character_id) {
+            if runtime.send_to_session(session_id, payload.clone()) {
+                sent += 1;
+            }
+        }
+    }
+    sent
+}
+
 pub(crate) fn send_pending_world_area_texts(
     runtime: &mut ServerRuntime,
     world: &mut World,

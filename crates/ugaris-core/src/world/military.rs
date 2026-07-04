@@ -18,30 +18,44 @@
 //! any character/NPC state yet - it's exercised purely by value in/value
 //! out, same as this file's first slice.
 //!
-//! REMAINING (unported, needs the below first): the `military_ppd`
-//! per-character save data (`military_ppd.h`'s `struct military_ppd`,
-//! `DRD_MILITARY_PPD`) - note its own `military_pts`/`normal_exp` fields
-//! are *not* a gap, since C's only two writers of those fields
-//! (`give_military_pts`/`give_military_pts_no_npc`) are already ported
-//! above writing straight to `Character.military_points`/
-//! `.military_normal_exp`, which this crate's `character_json` DB column
-//! already persists in full - the ppd struct's remaining fields (mission
-//! slots, advisor state, take/solve tracking) have no Rust storage yet);
-//! `generate_demon_mission`/`generate_sewer_mission`/`generate_mine_mission`/
+//! This third slice ports the `military_ppd` per-character save data's
+//! mission-progress fields (`PlayerRuntime::military_ppd`, see
+//! `player.rs`'s `LEGACY_MILITARY_PPD_SIZE`/`military_mission`/
+//! `military_took_mission`/`military_solved_mission`) and, on top of
+//! that, `check_military_solve` (`death.c:290-383`, the kill-progress
+//! decrement) as `PlayerRuntime::check_military_solve` - the pure state
+//! mutation plus [`MilitaryMissionProgress`] outcome, this file's
+//! [`get_demon_mission_value`]/[`is_pent_demon_mission_class`]/
+//! [`is_sewer_ratling_mission_class`]/
+//! [`military_mission_progress_message_should_display`] helpers, and the
+//! `[World::kill_character_followup]` call site
+//! (`MilitaryMissionKillCheck`, queued right where `FirstKillCheck` is,
+//! drained and applied by `ugaris-server`'s
+//! `apply_military_mission_kill_check`, `crates/ugaris-server/src/
+//! military.rs`, sending the exact `COL_DARK_GRAY "Mission kill, %d to
+//! go."` / `"Elite demon slain! ..."` / `"You solved your mission. ..."`
+//! `log_char` text). `military_ppd`'s remaining fields (advisor state,
+//! `mission_yday`/`took_yday`/`solved_yday`, `recommend`, mission type/
+//! difficulty preference, temp mission selection, `reroll_yday`) still
+//! round-trip as opaque bytes - no accessors yet, not needed until the
+//! mission-offer/accept/reroll wrappers below land.
+//!
+//! REMAINING (unported, needs the above): `generate_demon_mission`/
+//! `generate_sewer_mission`/`generate_mine_mission`/
 //! `generate_mission_with_preference` (the ppd-populating wrappers around
-//! this file's per-instance generators); `accept_mission`/
-//! `complete_mission`/`handle_specific_mission_request` (ppd-mutating
-//! state transitions); `check_military_solve` (`death.c:290-379`, the
-//! kill-progress decrement - has a real call site in `kill_char` at
-//! `world/death.rs::kill_character_followup`, right where
-//! `give_first_kill` is queued, but needs the ppd's `took_mission`/
-//! `mis[5]` fields to have anywhere to decrement); the Military
+//! this file's per-instance generators, writing into `mis[5]` plus
+//! `mission_yday`); `accept_mission`/`complete_mission`/
+//! `handle_specific_mission_request` (the remaining ppd-mutating state
+//! transitions - taking/completing/paying for a mission, as opposed to
+//! this slice's read-only progress-tracking half); the Military
 //! Master/Advisor NPC drivers and their `qa[]` dialogue table
 //! (`analyse_text_driver`), storage state machines
 //! (`process_master_storage`/`process_advisor_storage`), and the
 //! `SV_QUEST_EXT` mod-packet (`mod_send_questlog_ext`,
 //! `common/mod_packet.c:351-397`) that shows the active mission in the
-//! client's quest log.
+//! client's quest log (the `sendquestlog` calls inside `check_military_
+//! solve` itself are consequently also not reproduced yet - a cosmetic
+//! gap only, since the mission-progress state itself is already correct).
 
 use super::*;
 
@@ -553,4 +567,69 @@ pub fn generate_single_silver_mission(
         pts,
         exp: calculate_mission_exp(military_pts, pts, level),
     }
+}
+
+/// C `death.h:21`/`pents.h:24`'s `LESSER_DEMON_CLASS_BASE`.
+pub const LESSER_DEMON_CLASS_BASE: i32 = 600;
+/// C `death.h:26`/`pents.h:25`'s `ELITE_DEMON_CLASS_BASE`.
+pub const ELITE_DEMON_CLASS_BASE: i32 = 700;
+
+/// C `check_military_solve`'s pent-demon class guard (`death.c:310-316`):
+/// normal pent demons (three disjoint `ch.class` ranges left over from
+/// incremental area content additions), plus the elite/lesser demon
+/// palette-swap ranges (`ELITE_DEMON_CLASS_BASE`/`LESSER_DEMON_CLASS_BASE`,
+/// each +48 wide).
+pub fn is_pent_demon_mission_class(class: i32) -> bool {
+    matches!(class, 52..=84 | 107..=170 | 388..=403)
+        || (ELITE_DEMON_CLASS_BASE..ELITE_DEMON_CLASS_BASE + 48).contains(&class)
+        || (LESSER_DEMON_CLASS_BASE..LESSER_DEMON_CLASS_BASE + 48).contains(&class)
+}
+
+/// C `check_military_solve`'s sewer-ratling class guard (`death.c:358`).
+pub fn is_sewer_ratling_mission_class(class: i32) -> bool {
+    (85..=100).contains(&class)
+}
+
+/// C `get_demon_mission_value(character_id)` (`src/system/death.c:281-288`,
+/// identically duplicated at `src/area/4/pents.c:255-262`): elite demons
+/// count for 10 mission kills each (`ELITE_DEMON_CLASS_BASE` +0..48
+/// range), everything else - including lesser demons - for 1. `character_
+/// id` in C is only ever used to read `ch[character_id].class`, so this
+/// takes the class directly.
+pub fn get_demon_mission_value(victim_class: i32) -> i32 {
+    if (ELITE_DEMON_CLASS_BASE..ELITE_DEMON_CLASS_BASE + 48).contains(&victim_class) {
+        10
+    } else {
+        1
+    }
+}
+
+/// C `check_military_solve`'s progress-message display gate
+/// (`death.c:339-341` demon / `:369-370` ratling, identical condition
+/// both places): given the mission's new (already decremented, still
+/// nonzero) `opt1` remaining count, whether C bothers to `log_char` a
+/// "N to go" update this kill (large remaining counts only echo every
+/// 5th/10th kill to avoid log spam).
+pub fn military_mission_progress_message_should_display(remaining: i32) -> bool {
+    remaining < 10 || (remaining < 100 && remaining % 5 == 0) || remaining % 10 == 0
+}
+
+/// Outcome of [`crate::PlayerRuntime::check_military_solve`], mirroring C
+/// `check_military_solve`'s three observable branches (`death.c:290-383`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MilitaryMissionProgress {
+    /// No active unsolved mission, or the kill didn't match its type/
+    /// class/level target - `check_military_solve` is a silent no-op in
+    /// C for all of these (no `else` branch on the outer `if`, and the
+    /// `switch`'s default falls through to nothing).
+    NoMatch,
+    /// The mission's remaining count (`mis[nr].opt1`) was decremented and
+    /// is still above zero. `remaining` is the new count; `elite_count`
+    /// is C's `count_value` (`get_demon_mission_value`'s result, only
+    /// ever >1 for elite demons - ratling missions always decrement by
+    /// exactly 1).
+    Progress { remaining: i32, elite_count: i32 },
+    /// The mission's remaining count reached zero this kill -
+    /// `solved_mission` just flipped from false to true.
+    Solved,
 }

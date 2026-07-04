@@ -4081,32 +4081,87 @@ Unlocks every quest NPC. Do these before any P4 area work.
   on `Character`; port rank thresholds, `#rank` style commands, mission
   PPD (`mission_ppd.h`) and the governor mission flow (`check_military_solve`
   is referenced by the death path - port it there when this lands).
-  REMAINING: the `military_ppd` per-character save data (mission slots,
-  advisor state, take/solve tracking - note `military_ppd`'s own
-  `military_pts`/`normal_exp` fields are *not* part of this gap, since
-  their only two C writers are already ported straight onto
-  `Character.military_points`/`.military_normal_exp`, which the
-  `character_json` DB column already persists in full); the ppd-populating
-  wrappers (`generate_demon_mission`/`generate_sewer_mission`/
-  `generate_mine_mission`/`generate_mission_with_preference`) and
-  ppd-mutating state transitions (`accept_mission`/`complete_mission`/
-  `handle_specific_mission_request`) built on top of this iteration's pure
-  generators; `check_military_solve` (`death.c:290-379`, the kill-progress
-  decrement - has a real call site in `kill_char` at
-  `world/death.rs::kill_character_followup`, right where
-  `give_first_kill` is queued, but needs the ppd's `took_mission`/`mis[5]`
-  fields to have anywhere to decrement); the Military Master/Advisor NPC
-  drivers, their `qa[]` dialogue table, and storage state machines; the
+  REMAINING: `military_ppd`'s own `mission_yday`/advisor state
+  (`current_advisor`/`advisor_state`/`advisor_cost`/`advisor_storage_nr`/
+  `advisor_last[20]`)/`took_yday`/`solved_yday`/`recommend`/mission type-
+  difficulty preference/temp mission selection/`reroll_yday` fields still
+  round-trip as opaque bytes (no accessors yet - the mission-slot table
+  `mis[5]` and the progress-tracking `took_mission`/`solved_mission`
+  fields this iteration needed now have typed accessors, see Progress
+  Log); the ppd-populating wrappers (`generate_demon_mission`/
+  `generate_sewer_mission`/`generate_mine_mission`/
+  `generate_mission_with_preference`) and ppd-mutating state transitions
+  (`accept_mission`/`complete_mission`/`handle_specific_mission_request`)
+  built on top of this file's pure generators - these still have nowhere
+  to write until they land; the Military Master/Advisor NPC drivers,
+  their `qa[]` dialogue table, and storage state machines; the
   `SV_QUEST_EXT` mod-packet that shows the active mission in the client's
-  quest log; and the associated admin commands (`cmd_milinfo`/
+  quest log (so `check_military_solve`'s own `sendquestlog` calls are
+  also not reproduced yet - cosmetic only, the progress state itself is
+  correct); and the associated admin commands (`cmd_milinfo`/
   `cmd_forcesolve`) - this is most of `military.c`'s 2,881 lines and needs
   its own future slice(s). A player-facing `#rank`-style status command was
-  also not added this iteration (there is no such command anywhere in the
+  also not added (there is no such command anywhere in the
   current C `command.c` tree either - checked; only the admin-only
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
   correction, not a real gap).
-  Progress Log: ported the next self-contained slice - every *pure*
+  Progress Log: ported the next self-contained slice - `military_ppd`'s
+  mission-progress fields plus `check_military_solve` on top of them,
+  closing the exact gap the previous iteration's note flagged
+  ("`check_military_solve` ... needs the ppd's `took_mission`/`mis[5]`
+  fields to have anywhere to decrement"). `crates/ugaris-core/src/
+  player.rs` gained `PlayerRuntime::military_ppd: Vec<u8>`
+  (`LEGACY_MILITARY_PPD_SIZE` = 256 bytes, `military.h:28-60`'s 64 `int`
+  fields) with the same raw-block-with-offset-accessor pattern as
+  `arena_ppd`: `military_mission`/`set_military_mission` (the `mis[5]`
+  slot table, reusing `world::SingleMission`), `military_took_mission`/
+  `set_military_took_mission`, `military_solved_mission`/
+  `set_military_solved_mission`, wired into `decode_legacy_ppd_blob`/
+  `encode_legacy_ppd_blob`'s per-id match arms and graduated out of
+  `clear_turn_seyan_ppd`'s stripped-raw-bytes list into a real
+  `self.military_ppd.clear()` (matching how `arena_ppd`/`first_kill_ppd`
+  made the same transition earlier). `crates/ugaris-core/src/world/
+  military.rs` gained `ELITE_DEMON_CLASS_BASE`/`LESSER_DEMON_CLASS_BASE`,
+  `is_pent_demon_mission_class`/`is_sewer_ratling_mission_class`
+  (`check_military_solve`'s class-range guards), `get_demon_mission_value`
+  (`death.c:281-288`'s elite-demons-count-as-10 rule), and
+  `military_mission_progress_message_should_display` (the "only echo
+  every 5th/10th kill" log-spam gate). `PlayerRuntime::
+  check_military_solve(victim_class, victim_level)` ports the actual
+  `death.c:290-383` state machine as a pure mutation + `Military
+  MissionProgress` outcome enum (`NoMatch`/`Progress{remaining,
+  elite_count}`/`Solved`), correctly clamping `opt1` at 0 (C's own
+  `if (opt1 < 0) opt1 = 0` guard) and refusing to re-trigger once
+  `solved_mission` is set. Wired the real call site: `world/death.rs`
+  gained `MilitaryMissionKillCheck` (queued in `kill_character_followup`
+  right alongside `FirstKillCheck`, same `killer_is_player` guard as C's
+  own `CF_PLAYER` check, but - matching C - no victim-class-range
+  restriction), `crates/ugaris-server/src/military.rs` (new file)
+  `apply_military_mission_kill_check` drains it, calls the above, and
+  sends the exact `COL_DARK_GRAY "Mission kill, %d to go."`/`"Elite demon
+  slain! Counts as %d. %d to go."`/(uncolored) `"You solved your mission.
+  Talk to the governor to claim your reward."` `log_char` text - which
+  needed a new small plumbing addition since `COL_DARK_GRAY`'s raw
+  `\xb0c1` marker bytes aren't valid UTF-8 and can't round-trip through
+  the existing `String`-only `World::queue_system_text`:
+  `WorldSystemTextBytes`/`World::queue_system_text_bytes`/
+  `drain_pending_system_text_bytes` (`world/text.rs`) plus
+  `send_pending_world_system_text_bytes` (`world_events.rs`), wired into
+  the tick loop next to the existing string variant. 20 new tests: 8 in
+  `crates/ugaris-core/src/world/tests/military.rs` (every class-range
+  boundary for both guard helpers, elite-vs-other mission value, every
+  message-display threshold), 12 in `crates/ugaris-core/src/player.rs`
+  (mission-slot/progress accessor round-trip, full PPD blob encode/decode
+  round-trip, `clear_turn_seyan_ppd` clearing, and every
+  `check_military_solve` branch: no active mission, already solved, wrong
+  class, wrong level, adjacent-level acceptance, elite-demon 10x count,
+  full ratling progress-then-solve sequence, and the opt1-underflow
+  clamp). `cargo fmt --all`, `cargo test --workspace` (1587 ugaris-core +
+  47 db + 3 net + 37 protocol + 541 server, all green, zero failures),
+  `cargo build -p ugaris-server` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panics.
+  Earlier progress: ported the next self-contained slice - every *pure*
   mission-generation function `military.c` uses to build a mission offer,
   with zero character/NPC/storage state: `crates/ugaris-core/src/world/
   military.rs` gained `SingleMission` (`struct single_mission`),

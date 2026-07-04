@@ -68,6 +68,18 @@ pub struct FirstKillCheck {
     pub victim_name: String,
 }
 
+/// Queued `check_military_solve(cn, co)` check (`death.c:290-383`), fired
+/// for every kill by a player character (no class-range restriction,
+/// unlike [`FirstKillCheck`] - C's own guard is only `CF_PLAYER` on the
+/// killer). Server-side (which owns `PlayerRuntime::military_ppd`) drains
+/// this and applies `PlayerRuntime::check_military_solve`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MilitaryMissionKillCheck {
+    pub killer_id: CharacterId,
+    pub victim_class: i32,
+    pub victim_level: u32,
+}
+
 impl World {
     /// C `kill_char(cn, co)` follow-up run once `hurt` marked the character
     /// dead: death-driver dispatch and NT_DEAD fan-out already happened in
@@ -150,6 +162,18 @@ impl World {
                         victim_name: target_name,
                     });
                 }
+
+                // C `check_military_solve(co, cn)` (`death.c:416`): runs
+                // unconditionally alongside `give_first_kill` in the same
+                // `if (co && ch[cn].flags)` block - no class-range gate of
+                // its own (`check_military_solve`'s only guard is
+                // `CF_PLAYER` on the killer, already ensured above).
+                self.pending_military_mission_checks
+                    .push(MilitaryMissionKillCheck {
+                        killer_id: cause_id,
+                        victim_class: target_class,
+                        victim_level: target_level,
+                    });
             }
         }
 
@@ -229,6 +253,12 @@ impl World {
     /// Drain queued `give_first_kill` checks for the server achievement path.
     pub fn drain_pending_first_kill_checks(&mut self) -> Vec<FirstKillCheck> {
         std::mem::take(&mut self.pending_first_kill_checks)
+    }
+
+    /// Drain queued `check_military_solve` checks for the server mission
+    /// progress path.
+    pub fn drain_pending_military_mission_checks(&mut self) -> Vec<MilitaryMissionKillCheck> {
+        std::mem::take(&mut self.pending_military_mission_checks)
     }
 
     /// Schedule item destruction, mirroring C `set_expire` for bodies.
