@@ -4907,3 +4907,96 @@ model added in iteration 65.
 - Still `[~]`: gaps (2) protocol packets, (3) DB first-unlock tracking,
   (4) command dispatch, (5) gameplay call sites remain - see
   `PORTING_TODO.md`'s task REMAINING note.
+
+## Ralph Loop - Achievements Steam-Sync Protocol + Login Trigger (Iteration 67, partial)
+
+Resumed the `[~]` "Achievements" P3 task and closed REMAINING gap (2),
+the Steam-achievement mod packets, plus wired the C login-time
+sync/award trigger end to end.
+
+- **Where the wire layout actually lives**: `mod_achievements.h` is not
+  part of the `Ugaris_Server` C source tree (`grep`ping for
+  `SV_ACH_UNLOCK`'s `#define` in that repo finds only its *use*, in
+  `achievement.c`/`mod_packet.c`, never its definition). The header lives
+  in the sibling `Ugaris_Protocol` repo
+  (`include/ugaris/protocol/mod_achievements.h`), which is the shared
+  client/server protocol header both the client and (via a vendored
+  copy, implied by the `#include <ugaris/protocol/mod_achievements.h>`
+  in `CLIENT_ACHIEVEMENTS_GUIDE.md`) the C server build against. Byte
+  layouts below were copied from that header, cross-checked against the
+  C server's actual packing code in `achievement.c:1291-1415`.
+- **New `crates/ugaris-protocol/src/mod_achievements.rs`**: `SV_ACH_
+  UNLOCK` (0x30)/`_PROGRESS` (0x31)/`_SYNC` (0x32)/`_STATS` (0x33)
+  subtype constants (`SV_MOD3` subtype range), `ACHIEVEMENT_MAX_
+  STEAM_ID` (40)/`ACHIEVEMENT_MAX_PER_SYNC` (16) constants, `ach_unlock`
+  (51-byte fixed array: `type(1)+len(1)+subtype(1)+achievement_id(1)+
+  category(1)+steam_api_name(40)+timestamp(4)+show_notification(1)+
+  reserved(1)`, `len` = C's `PACKET_LEN` = `sizeof(pkt)-2` = 49) and
+  `AchSyncEntry`/`ach_sync_batch` (5-byte header
+  `type+len+subtype+count+is_final` followed by N 56-byte
+  `achievement_id+category+unlocked+has_progress+steam_api_name(40)+
+  timestamp(4)+progress_current(4)+progress_target(4)` entries) matching
+  the C `struct sv_ach_unlock_packet`/`struct ach_sync_entry`/`struct
+  sv_ach_sync_packet` sizes exactly (51/56/5 bytes, verified by
+  `_Static_assert`s in the C header). 4 new tests cover exact byte
+  offsets for both packet kinds, Steam-id truncation to the 39-usable-
+  byte buffer, and the empty-final-packet edge case.
+- **New send-side functions in `crates/ugaris-server/src/achievement.rs`**
+  (previously persistence-only): `achievement_unlock_payload` ports C
+  `achievement_send_to_client` (`achievement.c:1291-1324`) - always
+  `show_notification = 1`, matching every C call site. `achievement_
+  sync_payloads` ports C `achievement_sync_all` (`achievement.c:1329-
+  1415`) - iterates all 127 `AchievementType::ALL` defs in order (none
+  have an empty `steam_id` today, so C's defensive skip never actually
+  triggers, but is still checked for parity), batches by
+  `ACHIEVEMENT_MAX_PER_SYNC` (16) into `SV_ACH_SYNC` packets via
+  `ach_sync_batch`, sets `is_final` on the last batch, and reproduces
+  C's edge case of sending a trailing *empty* final packet when the
+  achievement count is an exact multiple of the batch size (it isn't,
+  127 isn't a multiple of 16, but the code path is still exercised by a
+  dedicated unit test). `progress_current` comes from `ugaris_core::
+  achievement::get_stat_progress`, `progress_target` from the def's
+  `target` (0 for instant/one-time achievements, matching C's
+  `has_progress = def->target > 0`). 3 new tests cover the unlock
+  packet's exact bytes, the 127-achievement batching math (7 full
+  batches of 16 + 1 partial batch of 15, `is_final` only on the last),
+  and unlocked/progress-from-stats reflection.
+- **Login trigger wiring in `main.rs`**: C `read_login` sets `deferred_
+  init = DEFERRED_ACHIEVEMENTS` unconditionally right after login
+  (`player.c:576-578`); `ServerRuntime::login` previously only set
+  `DEFERRED_AUCTION` (per the iteration-66 note that achievements weren't
+  wired yet) - now sets both. Added a new tick-loop sweep, next to the
+  existing `DEFERRED_AUCTION` login-notice sweep, mirroring C `tick_
+  player`'s `ticks >= 2 && (deferred_init & DEFERRED_ACHIEVEMENTS)` gate
+  (`player.c:3668-3674`): clears the flag, builds the `SV_ACH_SYNC`
+  batch from the player's *current* (pre-award) `achievement_data`/
+  `achievement_stats` (matching C's call order - `achievement_sync_all`
+  runs before the awards below it), then awards `ACHIEVEMENT_STARTED_
+  UGARIS` and runs `check_level`/`check_exploration`/`check_login_
+  streak` (fed `world.area_id` for the exploration check, since this is
+  a one-area-per-process server so the C `areaID` global maps directly
+  to it), collecting every newly-unlocked `AchievementType` into
+  `SV_ACH_UNLOCK` payloads (mirrors C `achievement_award`'s inline call
+  to `achievement_send_to_client`). All payloads (sync batches +
+  per-unlock packets) are sent via the existing `sessions_for_
+  character`/`send_to_session` fan-out, the same pattern the adjacent
+  auction sweep already established.
+- **Not in scope for this slice** (still open, per the task's REMAINING
+  note): (3) DB "first player globally" tracking + cross-server grats
+  announcement (`database_achievement.c`) - `achievement_award`'s
+  `is_first`/`achievement_announce_first` path has no Rust equivalent,
+  so newly-unlocked achievements aren't yet checked against a
+  first-globally-unlocked table or broadcast; (4) the `/achievements`-
+  family commands remain help-text-only stubs; (5) no gameplay call site
+  (chests, gathering, combat, mining, quests, clans) yet calls the
+  `add_*`/`check_*` stat functions - `check_level`/`check_exploration`/
+  `check_login_streak` are now wired, but that's only 3 of the ~20
+  stat-update functions in `achievement.rs`.
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1389
+  ugaris-core + 36 db + 3 net + 37 protocol (+4) + 420 server (+3), all
+  green, zero failures. `cargo build -p ugaris-server` clean, zero
+  warnings. A 10s boot-smoke showed "entering Rust game loop" with no
+  panics (this change touches `ServerRuntime::login` and the tick loop).
+- Still `[~]`: gaps (3) DB first-unlock tracking, (4) command dispatch,
+  (5) the remaining ~17 gameplay call sites remain - see
+  `PORTING_TODO.md`'s task REMAINING note.

@@ -2505,18 +2505,32 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (offsets verified against `achievement.h` with a throwaway C
   `sizeof`/`offsetof` probe), wired into `apply_character_snapshot`/
   `character_save_request` (`crates/ugaris-server/src/snapshots.rs`)
-  alongside the existing `DRD_ACCOUNT_WIDE_DEPOT` block. Still to do:
-  (2) protocol - the `SV_ACH_UNLOCK`/`SV_ACH_PROGRESS`/`SV_ACH_SYNC`/
-  `SV_ACH_STATS` mod packets (`mod_achievements.h`) have no Rust
-  definitions; (3) DB "first player globally" tracking + cross-server
-  grats announcement (`database_achievement.c`) is unported; (4) the
-  `/achievements`/`/achstats`/`/achfix`/`/achclear`/`/achsync`/
-  `/achgive` commands are still help-text-only stubs in
-  `commands_player.rs` with no dispatch logic; (5) no call site anywhere
-  (chest opens, gathering, combat, mining, quests, clans, etc.) invokes
-  the new `add_*`/`check_*` functions yet - each needs wiring at its own
-  C-identified call site (`ACHIEVEMENT_STATUS.txt`'s file list) once
-  (2)-(4) land. Note: the C `DRD_ACHIEVEMENT_DATA`/`_STATS` ids are
+  alongside the existing `DRD_ACCOUNT_WIDE_DEPOT` block. Iteration 67
+  closed gap (2), protocol + the login sync/award trigger: added
+  `crates/ugaris-protocol/src/mod_achievements.rs` (`SV_ACH_UNLOCK`/
+  `_PROGRESS`/`_SYNC`/`_STATS` subtype constants, `ach_unlock`/
+  `ach_sync_batch` byte-exact packet builders matching the sibling
+  `Ugaris_Protocol` repo's `mod_achievements.h` layout - `Ugaris_Server`
+  itself doesn't carry that header, only the C `achievement.c` call
+  sites that build these exact byte layouts inline); added
+  `achievement_unlock_payload`/`achievement_sync_payloads` send-side
+  functions to `crates/ugaris-server/src/achievement.rs`; wired
+  `player::DEFERRED_ACHIEVEMENTS` into `login()` (previously only
+  `DEFERRED_AUCTION` was set) and a new tick-loop sweep in `main.rs`
+  mirroring C `tick_player`'s `ticks >= 2` gate (`player.c:3668-3674`):
+  sends the batched `SV_ACH_SYNC` payloads, then awards
+  `ACHIEVEMENT_STARTED_UGARIS` and runs `check_level`/
+  `check_exploration`/`check_login_streak`, sending an `SV_ACH_UNLOCK`
+  for each newly-unlocked achievement. Still to do: (3) DB "first player
+  globally" tracking + cross-server grats announcement
+  (`database_achievement.c`) is unported; (4) the `/achievements`/
+  `/achstats`/`/achfix`/`/achclear`/`/achsync`/`/achgive` commands are
+  still help-text-only stubs in `commands_player.rs` with no dispatch
+  logic; (5) no call site anywhere else (chest opens, gathering, combat,
+  mining, quests, clans, etc.) invokes the `add_*`/`check_*` functions
+  yet - each needs wiring at its own C-identified call site
+  (`ACHIEVEMENT_STATUS.txt`'s file list) once (3)-(4) land. Note: the C
+  `DRD_ACHIEVEMENT_DATA`/`_STATS` ids are
   `PERSISTENT_SUBSCRIBER_DATA` (account-wide); this port persists them
   per-character in `subscriber_blob` for now (same scoping compromise
   `DRD_ACCOUNT_WIDE_DEPOT` already makes) pending a real
@@ -2993,3 +3007,37 @@ Add one line per completed task: date, task, ledger section touched.
   ugaris-server` clean with zero warnings, and a 10s boot-smoke showed
   "entering Rust game loop" with no panics. Ledger section "Ralph Loop -
   Achievements Core Data Model" extended.
+- 2026-07-04 (iteration 67): Achievements (P3, still `[~]`) - closed
+  REMAINING gap (2), the Steam-achievement mod packets. New
+  `crates/ugaris-protocol/src/mod_achievements.rs`: `SV_ACH_UNLOCK`
+  (0x30)/`_PROGRESS` (0x31)/`_SYNC` (0x32)/`_STATS` (0x33) subtype
+  constants, `ach_unlock` (51-byte packet) and `AchSyncEntry`/
+  `ach_sync_batch` (5-byte header + 56-byte entries) builders, byte
+  layout copied from the sibling `Ugaris_Protocol` repo's
+  `include/ugaris/protocol/mod_achievements.h` (the actual header C
+  `achievement.c:1291-1415` builds against; not part of the
+  `Ugaris_Server` source tree itself). New `achievement_unlock_payload`/
+  `achievement_sync_payloads` functions in
+  `crates/ugaris-server/src/achievement.rs`, porting `achievement_
+  send_to_client`/`achievement_sync_all` (`achievement.c:1291-1415`)
+  including the batching-by-16 and the empty-trailing-final-packet edge
+  case. Wired the login trigger: `player::DEFERRED_ACHIEVEMENTS` is now
+  set in `ServerRuntime::login` (`main.rs`, previously only
+  `DEFERRED_AUCTION` was set there), and a new tick-loop sweep mirrors C
+  `tick_player`'s `ticks >= 2 && (deferred_init & DEFERRED_ACHIEVEMENTS)`
+  gate (`player.c:3668-3674`): sends the batched sync payloads, then
+  awards `ACHIEVEMENT_STARTED_UGARIS` and runs `check_level`/
+  `check_exploration`/`check_login_streak`, queuing an `SV_ACH_UNLOCK`
+  for each newly-unlocked achievement via the existing `sessions_for_
+  character`/`send_to_session` fan-out (same pattern the auction
+  login-notice sweep next to it uses). 10 new tests (4 protocol
+  byte-layout + 3 server send-payload + wiring covered indirectly by the
+  boot-smoke). Left `[~]`: gaps (3) DB first-unlock tracking/cross-server
+  announce, (4) `/achievements`-family command dispatch, and (5) the
+  ~15 real gameplay call sites (chests, gathering, combat, mining,
+  quests, clans) are still unstarted. `cargo fmt --all`, `cargo test
+  --workspace` (1389 core + 36 db + 3 net + 37 protocol [+4] + 420
+  server [+3], all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, and a 10s boot-smoke showed "entering Rust
+  game loop" with no panics. Ledger section "Ralph Loop - Achievements
+  Core Data Model" extended.

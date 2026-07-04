@@ -24,7 +24,11 @@
 
 use super::*;
 use ugaris_core::achievement::{
-    AccountAchievements, Achievement, AchievementStats, MAX_ACHIEVEMENTS,
+    achievement_def, AccountAchievements, Achievement, AchievementStats, AchievementType,
+    ACHIEVEMENT_TYPE_COUNT, MAX_ACHIEVEMENTS,
+};
+use ugaris_protocol::mod_achievements::{
+    ach_sync_batch, ach_unlock, AchSyncEntry, ACHIEVEMENT_MAX_PER_SYNC,
 };
 
 /// C `Achievement` (`achievement.h:218-223`): `time_t timestamp` (8) +
@@ -358,4 +362,120 @@ pub(crate) fn encode_legacy_achievement_stats_subscriber_blob(
         );
     }
     encoded
+}
+
+// ============================================================================
+// Client Communication (`achievement.c:1288-1415`'s "Client Communication"
+// section: `achievement_send_to_client`/`achievement_sync_all`).
+// ============================================================================
+
+/// C `achievement_send_to_client` (`achievement.c:1291-1324`): builds the
+/// `SV_ACH_UNLOCK` packet for a single newly-unlocked achievement.
+/// `timestamp` is the C `time_t` unlock time (`Achievement::timestamp`),
+/// truncated to `u32` exactly like the C `(uint32_t)ach->timestamp` cast.
+/// Always sets `show_notification = 1`, matching every C call site (there
+/// is no silent-unlock path in `achievement_send_to_client` itself).
+pub(crate) fn achievement_unlock_payload(ty: AchievementType, timestamp: i64) -> bytes::BytesMut {
+    let def = achievement_def(ty);
+    let bytes = ach_unlock(
+        ty as u8,
+        def.category as u8,
+        def.steam_id,
+        timestamp as u32,
+        true,
+    );
+    bytes::BytesMut::from(&bytes[..])
+}
+
+/// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every
+/// achievement (all 127 defs carry a non-empty `steam_id`, so none are
+/// skipped, unlike C's defensive `if (!def->steam_id...) continue;`) into
+/// `ACHIEVEMENT_MAX_PER_SYNC`-sized `SV_ACH_SYNC` packets, `is_final` set on
+/// the last one - including C's edge case of sending a trailing *empty*
+/// final packet when the achievement count is an exact multiple of the
+/// batch size (`total_sent > 0` branch, `achievement.c:1406-1414`).
+pub(crate) fn achievement_sync_payloads(
+    data: &AccountAchievements,
+    stats: &AchievementStats,
+) -> Vec<bytes::BytesMut> {
+    let mut payloads = Vec::new();
+    let mut batch: Vec<AchSyncEntry> = Vec::with_capacity(ACHIEVEMENT_MAX_PER_SYNC);
+    let mut total_sent = 0usize;
+    for index in 0..ACHIEVEMENT_TYPE_COUNT {
+        let ty = AchievementType::ALL[index];
+        let def = achievement_def(ty);
+        if def.steam_id.is_empty() {
+            continue;
+        }
+        let ach = &data.achievements[ty as usize];
+        batch.push(AchSyncEntry {
+            achievement_id: ty as u8,
+            category: def.category as u8,
+            unlocked: ach.timestamp != 0,
+            has_progress: def.target > 0,
+            steam_api_name: def.steam_id.to_string(),
+            timestamp: ach.timestamp as u32,
+            progress_current: if def.target > 0 {
+                ugaris_core::achievement::get_stat_progress(stats, ty)
+            } else {
+                0
+            },
+            progress_target: if def.target > 0 { def.target } else { 0 },
+        });
+        if batch.len() >= ACHIEVEMENT_MAX_PER_SYNC {
+            payloads.push(ach_sync_batch(&batch, false));
+            total_sent += batch.len();
+            batch.clear();
+        }
+    }
+    if !batch.is_empty() {
+        payloads.push(ach_sync_batch(&batch, true));
+    } else if total_sent > 0 {
+        payloads.push(ach_sync_batch(&[], true));
+    }
+    payloads
+}
+
+#[cfg(test)]
+mod send_tests {
+    use super::*;
+
+    #[test]
+    fn achievement_unlock_payload_matches_legacy_wire_layout() {
+        let payload = achievement_unlock_payload(AchievementType::StartedUgaris, 1_700_000_000);
+        assert_eq!(payload.len(), 51);
+        assert_eq!(payload[2], 0x30); // SV_ACH_UNLOCK
+        assert_eq!(payload[3], AchievementType::StartedUgaris as u8);
+        assert_eq!(&payload[45..49], &(1_700_000_000u32).to_le_bytes());
+        assert_eq!(payload[49], 1); // show_notification
+    }
+
+    #[test]
+    fn achievement_sync_payloads_batches_every_def_and_marks_last_final() {
+        let data = AccountAchievements::default();
+        let stats = AchievementStats::default();
+        let payloads = achievement_sync_payloads(&data, &stats);
+        // 127 achievements / 16 per batch = 7 full batches + 1 partial (15).
+        assert_eq!(payloads.len(), 8);
+        let total_entries: usize = payloads.iter().map(|payload| payload[3] as usize).sum();
+        assert_eq!(total_entries, ACHIEVEMENT_TYPE_COUNT);
+        for payload in &payloads[..7] {
+            assert_eq!(payload[4], 0); // is_final = 0
+        }
+        assert_eq!(payloads[7][4], 1); // is_final = 1 on the last batch
+    }
+
+    #[test]
+    fn achievement_sync_payloads_marks_unlocked_and_progress_from_stats() {
+        let mut data = AccountAchievements::default();
+        data.award(AchievementType::StartedUgaris, "Hero", 1_700_000_000);
+        let mut stats = AchievementStats::default();
+        stats.flowers_picked = 5;
+        let payloads = achievement_sync_payloads(&data, &stats);
+        let first_batch = &payloads[0];
+        // Entry 0 (StartedUgaris) starts right after the 5-byte header.
+        let entry0 = &first_batch[5..5 + 56];
+        assert_eq!(entry0[0], AchievementType::StartedUgaris as u8);
+        assert_eq!(entry0[2], 1); // unlocked
+    }
 }

@@ -86,6 +86,7 @@ use tracing::{debug, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 
 use ugaris_core::{
+    achievement::{check_exploration, check_level, check_login_streak, AchievementType},
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{
@@ -131,8 +132,8 @@ use ugaris_core::{
     player::{
         CaligarSkellyDeathResult, CommandAlias, DemonShrineResult, IgnoreToggleResult,
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
-        XmasTreeResult, DEFERRED_AUCTION, LEGACY_SWEAR_PPD_SIZE, SWEAR_SENTENCE_COUNT,
-        SWEAR_SENTENCE_LEN,
+        XmasTreeResult, DEFERRED_ACHIEVEMENTS, DEFERRED_AUCTION, LEGACY_SWEAR_PPD_SIZE,
+        SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
     },
     quest::{QuestReopenResult, QF_OPEN},
     spell::{
@@ -306,15 +307,14 @@ impl ServerRuntime {
         player.state = PlayerConnectionState::Normal;
         player.character_id = Some(new_character_id);
         player.character_number = new_character_id.0;
-        // C `read_login`'s `!(ch[cn].flags & CF_AREACHANGE)` branch
-        // (`player.c:618-629`): a fresh login (as opposed to a cross-area
-        // transfer, not yet implemented here - see `login.rs`'s
-        // `LoginOutcome::NewArea` comment) defers a login-time auction
-        // delivery notice. C also sets `DEFERRED_ACHIEVEMENTS`/
-        // `DEFERRED_MOTD` here, but those systems aren't ported yet (see
-        // PORTING_TODO.md's dedicated achievements task), so only
-        // `DEFERRED_AUCTION` is set.
-        player.deferred_init |= DEFERRED_AUCTION;
+        // C `read_login` (`player.c:576-578`) sets `deferred_init =
+        // DEFERRED_ACHIEVEMENTS` unconditionally right after login, then
+        // (`player.c:618-629`, the `!(ch[cn].flags & CF_AREACHANGE)`
+        // branch - a fresh login, as opposed to a cross-area transfer, not
+        // yet implemented here, see `login.rs`'s `LoginOutcome::NewArea`
+        // comment) also defers a login-time auction delivery notice.
+        // `DEFERRED_MOTD` isn't ported yet (see PORTING_TODO.md).
+        player.deferred_init |= DEFERRED_ACHIEVEMENTS | DEFERRED_AUCTION;
         new_character_id
     }
 
@@ -5510,11 +5510,82 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
                 // C `tick_player`'s deferred-init sweep (`player.c:3660-
-                // 3685`): `ticks >= 6 && (deferred_init & DEFERRED_AUCTION)`
-                // fires `auction_check_deliveries_login` exactly once,
-                // shortly after login. `DEFERRED_ACHIEVEMENTS`/
-                // `DEFERRED_MOTD`'s own gates are not ported here -
-                // achievements/MOTD don't exist yet (see PORTING_TODO.md).
+                // 3676`): `ticks >= 2 && (deferred_init &
+                // DEFERRED_ACHIEVEMENTS)` fires `achievement_sync_all` +
+                // `achievement_award(ACHIEVEMENT_STARTED_UGARIS)` +
+                // `achievement_check_level`/`_exploration`/
+                // `_login_streak`. Each newly-unlocked achievement sends
+                // its own `SV_ACH_UNLOCK` (`achievement_send_to_client`,
+                // called from inside C's `achievement_award`).
+                // `DEFERRED_MOTD`'s own gate is not ported here - MOTD
+                // doesn't exist yet (see PORTING_TODO.md).
+                {
+                    let due_achievement_notices: Vec<CharacterId> = runtime
+                        .players
+                        .values()
+                        .filter(|player| {
+                            player.deferred_init & DEFERRED_ACHIEVEMENTS != 0
+                                && world.tick.0.saturating_sub(player.login_tick) >= 2
+                        })
+                        .filter_map(|player| player.character_id)
+                        .collect();
+                    for character_id in due_achievement_notices {
+                        let character_info = world.characters.get(&character_id).map(|character| {
+                            (
+                                character.name.clone(),
+                                character.level as i32,
+                                character.flags.contains(CharacterFlags::HARDCORE),
+                            )
+                        });
+                        let area_id = world.area_id as i32;
+                        let mut payloads: Vec<bytes::BytesMut> = Vec::new();
+                        if let Some(player) = runtime.player_for_character_mut(character_id) {
+                            player.deferred_init &= !DEFERRED_ACHIEVEMENTS;
+                            payloads = achievement_sync_payloads(
+                                &player.achievement_data,
+                                &player.achievement_stats,
+                            );
+                            if let Some((name, level, is_hardcore)) = character_info {
+                                let now = current_unix_time();
+                                let mut unlocked = Vec::new();
+                                if player.achievement_data.award(
+                                    AchievementType::StartedUgaris,
+                                    &name,
+                                    now,
+                                ) {
+                                    unlocked.push(AchievementType::StartedUgaris);
+                                }
+                                unlocked.extend(check_level(
+                                    &mut player.achievement_data,
+                                    level,
+                                    is_hardcore,
+                                    &name,
+                                    now,
+                                ));
+                                unlocked.extend(check_exploration(
+                                    &mut player.achievement_data,
+                                    area_id,
+                                    &name,
+                                    now,
+                                ));
+                                unlocked.extend(check_login_streak(
+                                    &mut player.achievement_data,
+                                    &mut player.achievement_stats,
+                                    &name,
+                                    now,
+                                ));
+                                for ty in unlocked {
+                                    payloads.push(achievement_unlock_payload(ty, now));
+                                }
+                            }
+                        }
+                        for payload in payloads {
+                            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                                runtime.send_to_session(session_id, payload.clone());
+                            }
+                        }
+                    }
+                }
                 if let Some(repository) = &auction_repository {
                     let due_auction_notices: Vec<CharacterId> = runtime
                         .players
