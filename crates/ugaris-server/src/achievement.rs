@@ -568,6 +568,50 @@ pub(crate) fn award_potion_brewed_achievement(
     }
 }
 
+/// C `raise_value`/`raise_value_exp` (`src/system/skill.c:204-266`,
+/// `:311-373`): both end with `if (ch[cn].flags & CF_PLAYER) {
+/// achievement_check_skill(cn, v, ch[cn].value[1][v]); }` after
+/// successfully raising a skill's bare value - `raise_value` is `CL_RAISE`
+/// (spends already-earned exp), `raise_value_exp` is the scroll/shrine path
+/// (`StatScrollUsed`, grants fresh exp); both call the exact same
+/// achievement check with the post-raise bare value. `skill_type` is the
+/// legacy `V_*` index (`ugaris_core::achievement::V_DAGGER` etc.),
+/// `skill_level` is the new bare value (`character.values[1][value]`
+/// after the raise). A no-op if the character has no live `PlayerRuntime`
+/// (mirrors C's `CF_PLAYER` gate).
+pub(crate) fn award_skill_achievement(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    skill_type: i32,
+    skill_level: i32,
+) {
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::check_skill(
+        &mut player.achievement_data,
+        skill_type,
+        skill_level,
+        &name,
+        now,
+    );
+    for ty in unlocked {
+        let payload = achievement_unlock_payload(ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+}
+
 /// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every
 /// achievement (all 127 defs carry a non-empty `steam_id`, so none are
 /// skipped, unlike C's defensive `if (!def->steam_id...) continue;`) into

@@ -846,3 +846,171 @@ fn award_potion_brewed_achievement_is_a_noop_for_characters_without_a_player_run
     award_potion_brewed_achievement(&world, &mut runtime, character_id);
     assert!(runtime.player_for_character(character_id).is_none());
 }
+
+// ============================================================================
+// `award_skill_achievement` (`src/system/skill.c:256-259`/`:365-368`,
+// `raise_value`/`raise_value_exp`'s shared `achievement_check_skill` call).
+// ============================================================================
+
+#[test]
+fn award_skill_achievement_unlocks_weapon_novice_at_bare_10_for_dagger() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_skill_achievement(
+        &world,
+        &mut runtime,
+        character_id,
+        ugaris_core::achievement::V_DAGGER,
+        10,
+    );
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::WeaponNovice));
+    assert!(!player
+        .achievement_data
+        .is_unlocked(AchievementType::MasterOfArms));
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads[0][3], AchievementType::WeaponNovice as u8);
+}
+
+#[test]
+fn award_skill_achievement_unlocks_master_of_arms_at_bare_110_for_twohand() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_data
+        .award(AchievementType::WeaponNovice, "Tester", 1);
+
+    award_skill_achievement(
+        &world,
+        &mut runtime,
+        character_id,
+        ugaris_core::achievement::V_TWOHAND,
+        110,
+    );
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::MasterOfArms));
+}
+
+#[test]
+fn award_skill_achievement_unlocks_magic_ladder_for_fire_and_flash() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_skill_achievement(
+        &world,
+        &mut runtime,
+        character_id,
+        ugaris_core::achievement::V_FIRE,
+        50,
+    );
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::ApprenticeMagic));
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::IntermediateMagic));
+    assert!(!player
+        .achievement_data
+        .is_unlocked(AchievementType::MasterOfMagic));
+
+    award_skill_achievement(
+        &world,
+        &mut runtime,
+        character_id,
+        ugaris_core::achievement::V_FLASH,
+        110,
+    );
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::MasterOfMagic));
+}
+
+#[test]
+fn award_skill_achievement_unlocks_fighting_ladder_for_attack_and_parry() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_skill_achievement(
+        &world,
+        &mut runtime,
+        character_id,
+        ugaris_core::achievement::V_ATTACK,
+        10,
+    );
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::ApprenticeFighting));
+
+    award_skill_achievement(
+        &world,
+        &mut runtime,
+        character_id,
+        ugaris_core::achievement::V_PARRY,
+        110,
+    );
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::MasterOfFighting));
+}
+
+#[test]
+fn award_skill_achievement_ignores_unrelated_skill_types_and_sub_threshold_levels() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    // Unrelated skill index (e.g. barter) never triggers any of these.
+    award_skill_achievement(&world, &mut runtime, character_id, 25, 999);
+    // Weapon skill below the novice threshold.
+    award_skill_achievement(
+        &world,
+        &mut runtime,
+        character_id,
+        ugaris_core::achievement::V_DAGGER,
+        9,
+    );
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(!player
+        .achievement_data
+        .is_unlocked(AchievementType::WeaponNovice));
+    assert!(runtime.tick_out.get(&1).is_none());
+}
+
+#[test]
+fn award_skill_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    award_skill_achievement(
+        &world,
+        &mut runtime,
+        character_id,
+        ugaris_core::achievement::V_DAGGER,
+        10,
+    );
+    assert!(runtime.player_for_character(character_id).is_none());
+}

@@ -2724,6 +2724,50 @@ Unlocks every quest NPC. Do these before any P4 area work.
   -p ugaris-server` clean with zero warnings, and a 10s boot-smoke
   showed ticking with no panics (item-driver-only change; doesn't touch
   login/map sync/protocol).
+  Progress Log (iteration 74): closed the weapon/magic/fighting skill-
+  mastery gameplay call sites - C `raise_value` (`src/system/
+  skill.c:204-266`, the `CL_RAISE` path) and `raise_value_exp`
+  (`skill.c:311-373`, the `IDR_STAT_SCROLL` path) both end with `if
+  (ch[cn].flags & CF_PLAYER) { achievement_check_skill(cn, v,
+  ch[cn].value[1][v]); }` after a successful raise; `ugaris_core::
+  achievement::check_skill` (weapon novice/master-of-arms,
+  apprentice/intermediate/master magic, apprentice/intermediate/master
+  fighting ladders) already existed and was fully tested but had no
+  live call site. Added `award_skill_achievement(world, runtime,
+  character_id, skill_type, skill_level)` (`crates/ugaris-server/src/
+  achievement.rs`), mirroring the existing `award_potion_brewed_
+  achievement`/`award_play_time_minute` no-op-without-`PlayerRuntime`
+  pattern exactly; wired it into `main.rs`'s `ClientAction::Raise`
+  handler (using `RaiseSkillOutcome::Raised`'s `bare` field as the
+  post-raise level) and split `ItemDriverOutcome::StatScrollUsed` out
+  of its previous catch-all `executed += 1`-only match arm into its own
+  arm that reads the post-charge bare value straight from `world.
+  characters` (already mutated by `raise_value_exp` before the outcome
+  reaches `main.rs`) and calls the same helper. Confirmed via C
+  `professor.c`/`skill.c` grep that professions themselves
+  (`learn_prof`/`improve_prof`, which would call the sibling
+  `achievement_check_profession`) are not ported to Rust at all yet
+  (no `learn_profession`/`improve_profession` exists anywhere in the
+  tree - a prerequisite for wiring that specific stat-check, left for a
+  future "Common NPCs - professor.c" task), so professions were
+  correctly left out of this slice. Added 6 focused tests in
+  `tests/achievement.rs` (weapon-novice unlock at bare 10, master-of-
+  arms at bare 110, the full magic ladder across `V_FIRE`/`V_FLASH`,
+  the full fighting ladder across `V_ATTACK`/`V_PARRY`, an unrelated-
+  skill-type-and-sub-threshold no-op, and the no-`PlayerRuntime` no-op
+  path). Still unwired: (3) DB first-unlock/grats announcement, and
+  ~8 remaining gameplay call sites (mining reward RNG - `mine.c`'s
+  `handle_silver_find`/`handle_gold_find` cascade itself isn't ported,
+  only the dig mechanic; professions - `professor.c` unported;
+  wealth beyond chests/trading - `tool.c`/`do.c` `achievement_add_
+  gold_earned`; exploration beyond transport; clans; military;
+  tunnels - `tunnel.c` area unported; arena PvP; pentagram solve
+  reward - `pents.c` reward mechanic unported). `cargo fmt --all`,
+  `cargo test --workspace` (1396 ugaris-core + 36 db + 3 net + 37
+  protocol + 458 server [+6], all green, zero failures), `cargo build
+  -p ugaris-server` clean with zero warnings, and a 10s boot-smoke
+  confirmed "entering Rust game loop" with no panics (touches the
+  item-driver dispatch in `main.rs`'s runtime loop).
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

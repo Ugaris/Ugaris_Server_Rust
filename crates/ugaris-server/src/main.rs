@@ -1510,6 +1510,17 @@ async fn main() -> anyhow::Result<()> {
                                     .exp(exp)
                                     .exp_used(exp_used);
                                 runtime.send_to_session(session_id, builder.into_payload());
+                                // C `raise_value` (`src/system/skill.c:256-
+                                // 259`): `if (ch[cn].flags & CF_PLAYER) {
+                                // achievement_check_skill(cn, v,
+                                // ch[cn].value[1][v]); }`.
+                                award_skill_achievement(
+                                    &world,
+                                    &mut runtime,
+                                    character_id,
+                                    value as i32,
+                                    bare as i32,
+                                );
                             }
                         }
                         ClientAction::LookCharacter { character } => {
@@ -3842,8 +3853,37 @@ async fn main() -> anyhow::Result<()> {
                                                 failed += 1;
                                             }
                                         }
+                                        ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed {
+                                            character_id,
+                                            value,
+                                            ..
+                                        } => {
+                                            // C `raise_value_exp` (`src/
+                                            // system/skill.c:311-373`,
+                                            // called by the `IDR_STAT_SCROLL`
+                                            // driver): `if (ch[cn].flags &
+                                            // CF_PLAYER) {
+                                            // achievement_check_skill(cn, v,
+                                            // ch[cn].value[1][v]); }` after
+                                            // each successful raise - use the
+                                            // post-charge bare value already
+                                            // applied to `world.characters`.
+                                            if let Some(level) = world
+                                                .characters
+                                                .get(&character_id)
+                                                .map(|character| character.values[1][value as usize])
+                                            {
+                                                award_skill_achievement(
+                                                    &world,
+                                                    &mut runtime,
+                                                    character_id,
+                                                    value as i32,
+                                                    level as i32,
+                                                );
+                                            }
+                                            executed += 1;
+                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::StatScrollUsed { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoubleDoorToggle { .. }

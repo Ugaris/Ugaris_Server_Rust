@@ -2345,21 +2345,48 @@
         "+protocol + 452 server [+8], all green, zero failures - 8 new tests,",
         "-protocol + 452 server [+8], all green, zero failures - 8 new tests,"
       ]
+    },
+    {
+      "iteration": 74,
+      "startedAt": "2026-07-04T09:35:19.856Z",
+      "endedAt": "2026-07-04T09:52:39.553Z",
+      "durationMs": 1039144,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/achievement.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/achievement.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 452 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 458 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
+        "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 81205275,
+  "totalDurationMs": 82244419,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 73,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 74,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 26,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 27,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 31,
@@ -2584,7 +2611,7 @@
       "- `cargo fmt --all`, `cargo test --workspace` (1228+36+3+33+374 passing, zero failures), and `cargo ": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error; 1 warning emitted": 1,
       "/// set, and skips (never fails) otherwise so `cargo test --workspace`": 1,
-      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
+      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
       "test auction::tests::live::search_filters_by_name_and_level_and_sorts_by_price ... FAILED": 1,
       "test auction::tests::live::deliveries_round_trip_and_summary_matches_pending_rows ... FAILED": 1,
       "test auction::tests::live::create_get_update_and_delete_round_trip ... FAILED": 1,
@@ -2677,7 +2704,7 @@
       "test result: ok. 420 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 1343 filtered out; finished in 0.00s": 1,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
-      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
+      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
       "- `cargo test --workspace` — 1393/36/3/37/431 all green, zero failures (unchanged counts; no new tes": 1,
       "test result: ok. 431 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
@@ -2685,13 +2712,14 @@
       "test result: ok. 439 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"test result|FAILED|error\\[\"": 1,
       "test result: ok. 444 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
-      "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
+      "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 2,
       "3873:## Ralph Loop - Gatekeeper NPC `enter_test` Failure-Reply Wiring (Iteration 53, partial)": 1,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo fmt --all && cargo t": 1,
-      "test result: ok. 452 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 452 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "\u001b[91m\u001b[1mError: \u001b[0mCould not find oldString in the file. It must match exactly, including whitespac": 1,
       "+protocol + 452 server [+8], all green, zero failures - 8 new tests,": 1,
-      "-protocol + 452 server [+8], all green, zero failures - 8 new tests,": 1
+      "-protocol + 452 server [+8], all green, zero failures - 8 new tests,": 1,
+      "test result: ok. 458 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
