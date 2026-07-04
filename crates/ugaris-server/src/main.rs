@@ -9,6 +9,7 @@
 //! startup loading.
 
 mod area_apply;
+mod auction;
 mod chests;
 mod commands_admin;
 mod commands_chat;
@@ -138,8 +139,8 @@ use ugaris_core::{
     },
     tell::tell_not_listening_message,
     text::{
-        runtime_color, COL_DARK_GRAY, COL_LIGHT_BLUE, COL_LIGHT_GREEN, COL_LIGHT_RED, COL_ORANGE,
-        COL_RESET,
+        runtime_color, COL_DARK_GRAY, COL_LIGHT_BLUE, COL_LIGHT_GREEN, COL_LIGHT_RED,
+        COL_LIGHT_VIOLET, COL_ORANGE, COL_RESET, COL_VIOLET, COL_YELLOW,
     },
     tick::TICKS_PER_SECOND,
     world::{
@@ -152,8 +153,9 @@ use ugaris_core::{
 };
 
 use ugaris_db::{
-    CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
-    LoginRequest, MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot,
+    AuctionRepository, CharacterRepository, CharacterSaveMode, CharacterSaveRequest,
+    CharacterSnapshot, LoginOutcome, LoginRequest, MerchantRepository, MerchantStoreSnapshot,
+    MerchantWareSnapshot,
 };
 
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
@@ -583,15 +585,23 @@ async fn main() -> anyhow::Result<()> {
         ..ServerConfig::default()
     };
 
-    let (character_repository, merchant_repository) =
+    let (character_repository, merchant_repository, auction_repository) =
         if let Some(database_url) = args.database_url.as_deref() {
             let db = ugaris_db::Database::connect(database_url, 8).await?;
             db.ping().await?;
             info!("connected to PostgreSQL");
-            (Some(db.characters()), Some(db.merchants()))
+            let auctions = db.auctions();
+            // C `init_auction_house` (`auction_house.c:37-47`): clean up
+            // any auctions that expired while the server was down, before
+            // the game loop (and its periodic `update_auction_house`
+            // equivalent, below) starts.
+            if let Err(err) = auctions.cleanup_expired_auctions().await {
+                warn!(error = %err, "failed to clean up expired auctions at startup");
+            }
+            (Some(db.characters()), Some(db.merchants()), Some(auctions))
         } else {
             warn!("DATABASE_URL not set; starting without persistence");
-            (None, None)
+            (None, None, None)
         };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
@@ -1265,6 +1275,29 @@ async fn main() -> anyhow::Result<()> {
                             if let Some(result) = apply_keyring_command(&mut world, &mut zone_loader, player, character_id, &command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
+                                }
+                                if result.inventory_changed {
+                                    command_inventory_refresh.push(character_id);
+                                }
+                                continue;
+                            }
+                            if let Some(result) = auction::apply_auction_command(
+                                &mut world,
+                                &auction_repository,
+                                character_id,
+                                current_unix_time(),
+                                &command,
+                            )
+                            .await
+                            {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                for message in result.message_bytes {
+                                    command_feedback_bytes.push((character_id, message));
+                                }
+                                for (target_id, message) in result.other_messages {
+                                    command_feedback.push((target_id, message));
                                 }
                                 if result.inventory_changed {
                                     command_inventory_refresh.push(character_id);
@@ -5398,6 +5431,23 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                 }
+                // C `maintenance_60s_task` (`server.c:197-210`):
+                // `update_auction_house()` delivers expired auctions'
+                // items/gold to their winners (or returns them to the
+                // seller if unsold) roughly once a minute, not every tick.
+                if world.tick.0 % (TICKS_PER_SECOND * 60) == 0 {
+                    if let Some(repository) = &auction_repository {
+                        match repository.cleanup_expired_auctions().await {
+                            Ok(processed) if processed > 0 => {
+                                info!(processed, tick = world.tick.0, "processed expired auctions");
+                            }
+                            Ok(_) => {}
+                            Err(err) => {
+                                warn!(error = %err, "failed to process expired auctions");
+                            }
+                        }
+                    }
+                }
                 {
                     let mut merchant_view_updates: Vec<(CharacterId, Option<bytes::BytesMut>)> =
                         Vec::new();
@@ -5753,6 +5803,14 @@ async fn main() -> anyhow::Result<()> {
                 info!("shutdown requested");
                 break;
             }
+        }
+    }
+
+    // C `shutdown_auction_house` (`auction_house.c:1334-1340`): one last
+    // expired-auction sweep before exit.
+    if let Some(repository) = &auction_repository {
+        if let Err(err) = repository.cleanup_expired_auctions().await {
+            warn!(error = %err, "failed to clean up expired auctions at shutdown");
         }
     }
 

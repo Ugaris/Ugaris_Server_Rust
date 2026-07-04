@@ -3520,3 +3520,120 @@ Recommended next chest steps:
     the `auction_house.c` business logic and `/ah` command state machine
     in `auction_cmd.c` still need a future slice to actually call this
     repository; slice (3) stays N/A per the prior client audit.
+
+### Ralph Loop Iteration 49: Aclerk / auction NPC - business logic + `/ah` command
+
+- Ported the remaining pieces of P2 "Aclerk / auction NPC":
+  `src/system/auction/auction_house.c` (fee/bid math, buy/bid/buyout/
+  cancel/claim/search orchestration, `init_auction_house`/
+  `update_auction_house`/`shutdown_auction_house`) and
+  `src/system/auction/auction_cmd.c` (the `/ah` text command state
+  machine), on top of the DB layer from iteration 48
+  (`ugaris_db::auction`).
+  - New `crates/ugaris-server/src/auction.rs` (~1,300 lines):
+    - `AuctionError` mirrors `auction_house.h`'s error codes (1-10;
+      `AUCTION_SUCCESS` maps to Rust `Ok(())`/`Ok(value)` instead of a
+      variant).
+    - Pure helpers: `format_money` (unifies C's two byte-identical
+      `format_money_string`/`format_money`), `validate_auction_item`,
+      `calculate_auction_fee` (5%, floored at 100 = 1 gold),
+      `calculate_min_bid` (5% increment, 1-copper floor,
+      `saturating_add` standing in for C's manual `ULLONG_MAX` overflow
+      check), `format_time_left`/`format_price`/`format_item_details`/
+      `format_item_modifiers` (colored, using the existing
+      `ugaris_core::text::COL_*` legacy color-marker bytes), and a local
+      `AUCTION_VALUE_ABBREV` table reproducing `get_value_name`'s short
+      lowercase abbreviations (`"hp"`, `"m-shield"`, `"armor skill"`,
+      etc.) - deliberately separate from `entity::CHARACTER_VALUE_NAMES`
+      (unrelated Title-Case convention used by `legacy_item_look_text`,
+      which is reused as-is for `/ah info`'s item lookup instead of
+      reimplementing C's `look_item`).
+    - Async orchestration functions (`auction_create`/`auction_bid`/
+      `auction_buyout`/`auction_cancel`/`auction_claim_deliveries`/
+      `auction_search`) take `&PgAuctionRepository` plus `&mut World`
+      (concrete-type dependency injection, matching the existing
+      `merchants.rs`/`world_events.rs` convention rather than a generic
+      trait bound + mock, since nothing else in `ugaris-server` does
+      that). `auction_create` validates the cursor item against C's six
+      `IF_*` flag checks, then (DB insert succeeds first, matching C's
+      "commit before consuming the item" ordering) deducts the fee and
+      calls `World::destroy_item` (C's `consume_item`). `auction_bid`
+      creates an `Outbid` delivery for the previous bidder before
+      updating the auction row and returns their id so the caller can
+      notify them if online. `auction_claim_deliveries` credits gold via
+      `saturating_add` unconditionally (matching C's `ch[cn].gold +=`
+      happening outside the DB transaction) and only marks an item
+      delivery claimed if `give_item_to_character` actually placed it
+      (leaving a full-inventory delivery pending for retry, like C's
+      `GIVE_ITEM_FULL` case).
+    - `apply_auction_command` is the `/ah`/`/auctionhouse` dispatcher
+      (`auction_process_command` + `command.c`'s `cmdcmp(ptr, "ah", 2)`/
+      `cmdcmp(ptr, "auctionhouse", 10)`), reusing the existing
+      `legacy_cmd_prefix` helper for both the outer verb and each
+      subcommand's abbreviation-length floor from C's `commands[]`
+      table. `/ah help`/bare `/ah` work even without a repository;
+      every other subcommand replies "The auction house is currently
+      unavailable." when `--database-url` wasn't given, since (unlike
+      merchant/bank/trader) auctions have zero in-memory `World` state -
+      they're DB-only by the iteration-48 design decision.
+  - Wired into `crates/ugaris-server/src/main.rs`: a new
+    `auction_repository: Option<PgAuctionRepository>` alongside
+    `merchant_repository`; the `/ah` dispatch call inside
+    `ClientAction::Text`'s command chain; a startup
+    `cleanup_expired_auctions` sweep (C `init_auction_house`); a
+    60-real-second periodic sweep gated on `world.tick.0 %
+    (TICKS_PER_SECOND * 60) == 0` (C's `maintenance_60s_task` calling
+    `update_auction_house` - note this is wall-clock-ish via the tick
+    counter, not a real timer, so it drifts with tick-rate changes, same
+    class of simplification as other tick-gated periodic code in this
+    file); and a shutdown sweep after the `ctrl_c` branch breaks the main
+    loop (C `shutdown_auction_house`).
+  - Deviation documented in the module's doc comment: C's
+    `auction_bid`/`auction_buyout`/`auction_cancel` call `log_char`
+    directly for most error cases, and `auction_cmd.c`'s command
+    wrappers *also* log a second, usually near-duplicate message from
+    their own `switch` on the status code - e.g. self-bidding shows two
+    "you cannot bid on your own auction"-style lines back to back in C.
+    This port keeps exactly one message per error, picking whichever of
+    the two C messages is more specific: `cmd_auction_buy`/
+    `cmd_auction_cancel` gained explicit match arms for
+    `AUCTION_ERROR_INVALID_PRICE`/`AUCTION_ERROR_CANT_BID_OWN`
+    respectively (using the low-level function's specific text - C's own
+    `switch` in those two command wrappers has no case for them and
+    would otherwise fall through to a generic "Failed to ..." message,
+    silently dropping the more useful text a player actually sees in
+    C); `cmd_auction_bid`'s `AUCTION_ERROR_BID_TOO_LOW` re-fetches the
+    auction to recompute and show the exact minimum bid amount (C's
+    `auction_bid` message) instead of only the generic "5% increment"
+    text (C's `cmd_auction_bid` message).
+  - Remaining gap: `auction_check_deliveries_login` (a login-time "you
+    have N auction deliveries waiting" notice, `auction_house.c:1212-
+    1272`) is not wired to the existing-but-unused
+    `PlayerRuntime::deferred_init`/`DEFERRED_AUCTION` bit
+    (`ugaris-core/src/player.rs:239-241,417`) - login is a large,
+    heavily-tested, high-risk code path and this was judged out of scope
+    for this slice. Players can still discover and claim pending
+    deliveries any time via `/ah claim`.
+  - Tests: 18 new tests in `crates/ugaris-server/src/tests/auction.rs`
+    covering money formatting, fee/min-bid math (including the overflow
+    saturation and the sub-20-copper 1-copper floor), item validation
+    against all six disqualifying flags, the `get_value_name`
+    abbreviation table (including an out-of-range fallback), modifier/
+    requirement splitting, item-detail color tiers, time-left color
+    tiers (including "Ended"), price color/buyout-suffix formatting,
+    full help text, and `apply_auction_command`'s verb
+    routing/repository-unavailable/bare-`/ah`-defaults-to-help/long-form-
+    alias behavior. DB-touching command bodies (sell/buy/bid/cancel/
+    search/info/claim's actual repository calls) are exercised only by
+    type-checking plus the DB layer's own iteration-48 live tests against
+    a real Postgres container - `ugaris-server` has no
+    `DATABASE_URL`-gated test convention yet, matching every other
+    repository-backed command in this crate (merchant, bank, trader).
+  - Verification: `cargo fmt --all` clean. `cargo test --workspace`:
+    1228 core + 36 db + 3 net + 33 protocol + 392 server (18 net new),
+    zero warnings, zero failures. `cargo build -p ugaris-server` clean,
+    zero warnings. A 12s boot-smoke showed "entering Rust game loop" with
+    no panics.
+  - `PORTING_TODO.md`'s "Aclerk / auction NPC" REMAINING note narrowed to
+    just the login-notification gap above; task stays `[~]` for that one
+    remaining item.

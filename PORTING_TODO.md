@@ -1726,12 +1726,16 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (3) `CL_*` auction client protocol if the community client uses it
   (check client sources first - if the client has no auction UI, mark
   N/A with a note).
-  REMAINING: slice (2) is now a CRUD/search DB repository only - the
-  `auction_house.c` business logic (fee/bid math, expiry processing
-  orchestration) and the `/ah` text command state machine in
-  `auction_cmd.c` are not ported, so nothing calls this repository yet.
-  Slice (3) `CL_*` auction protocol remains N/A per the client audit noted
-  below (community client `render.c` has no auction UI at all).
+  REMAINING: slices (1)/(2)/the `auction_house.c` business logic and the
+  `/ah` command are all done and wired now (see iteration 49 log below).
+  The one gap left is `auction_check_deliveries_login` - a login-time
+  "you have N auction deliveries waiting" notice - which is not wired to
+  the existing-but-unused `PlayerRuntime::deferred_init`/`DEFERRED_AUCTION`
+  hook in `ugaris-core::player`. Players can still see and claim pending
+  deliveries any time via `/ah claim`; they just aren't proactively
+  reminded at login. Slice (3) `CL_*` auction protocol remains N/A per the
+  client audit noted below (community client `render.c` has no auction UI
+  at all, and `amod.c` only ever handles `SV_MOD1`, never `SV_MOD3`).
   Progress Log (iteration 48): ported slice (2), the DB layer of
   `src/system/auction/auction_db.c` (`init_auction_database`,
   `db_create_auction`, `db_update_auction`, `db_get_auction`,
@@ -1793,6 +1797,52 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cargo test --workspace` (1228+27+3+33+374 passed), `cargo build
   -p ugaris-server` clean with zero warnings, and a 12s boot-smoke showed
   "entering Rust game loop" with no panics.
+  Progress Log (iteration 49): ported the `auction_house.c` business logic
+  and the `/ah` text command as new `crates/ugaris-server/src/auction.rs`
+  (`AuctionError`, `format_money`/`format_time_left`/`format_price`/
+  `format_item_details`/`format_item_modifiers` matching
+  `format_money_string`/`format_time_left`/`format_price`/
+  `format_item_details`/`format_item_modifiers`, `validate_auction_item`,
+  `calculate_auction_fee`, `calculate_min_bid`, and async
+  `auction_create`/`auction_bid`/`auction_buyout`/`auction_cancel`/
+  `auction_claim_deliveries`/`auction_search` orchestrating
+  `ugaris_db::PgAuctionRepository` plus `World` item/gold mutation) and
+  `apply_auction_command` (the `/ah`/`/auctionhouse` dispatcher, matching
+  `auction_process_command`'s `commands[]` abbreviation table), wired into
+  `main.rs`'s `ClientAction::Text` chain (new `auction_repository: Option
+  <PgAuctionRepository>` alongside `merchant_repository`), a 60-real-
+  second periodic `cleanup_expired_auctions` sweep matching C's
+  `maintenance_60s_task`, and startup/shutdown sweeps matching
+  `init_auction_house`/`shutdown_auction_house`. Since auctions have no
+  in-memory `World` state at all (DB-only by design per the slice-2 doc
+  comment), `/ah` is unavailable without `--database-url`, unlike
+  merchant/bank/trader. Deviations documented in the module's doc
+  comment: C's business-logic functions (`auction_bid`/`auction_buyout`/
+  `auction_cancel`) call `log_char` directly for most errors *and*
+  `auction_cmd.c`'s command wrappers log a second, usually near-duplicate
+  message from their own `switch` - e.g. a self-bid attempt shows two
+  "you cannot bid on your own auction"-style lines back to back in C. This
+  port keeps one message per error, picking whichever C message is more
+  specific (e.g. `auction_bid`'s exact minimum-bid amount over
+  `cmd_auction_bid`'s generic "5% increment" text - re-fetching the
+  auction on that error path to compute it). `get_value_name`'s short
+  lowercase abbreviations (`auction_house.c:512-643`) are reproduced
+  verbatim in a local `AUCTION_VALUE_ABBREV` table (separate from
+  `entity::CHARACTER_VALUE_NAMES`'s unrelated Title-Case display
+  convention used by `legacy_item_look_text`, reused as-is for
+  `/ah info`'s item lookup). One gap remains: `auction_check_deliveries_
+  login` (login-time pending-delivery notice) is not wired to the
+  existing `DEFERRED_AUCTION` hook - noted above and in
+  `PORTING_LEDGER.md`. Tests: 18 new tests in
+  `crates/ugaris-server/src/tests/auction.rs` covering money/fee/bid-
+  increment math, item validation, value-name mapping, modifier/detail/
+  time/price formatting and coloring, help text, and command-verb
+  dispatch/fallback behavior (DB-touching command bodies are exercised
+  only by type-checking + the DB-layer's own live tests, matching this
+  crate's existing convention of no `DATABASE_URL`-gated tests). `cargo
+  fmt --all`, `cargo test --workspace` (1228+36+3+33+392 passed), `cargo
+  build -p ugaris-server` clean with zero warnings, and a 12s boot-smoke
+  showed "entering Rust game loop" with no panics.
 
 - [ ] **Gatekeeper NPC (`src/system/gatekeeper.c`)** - lab entrance
   dialogue/fight driver. The lab item drivers are ported; this is the

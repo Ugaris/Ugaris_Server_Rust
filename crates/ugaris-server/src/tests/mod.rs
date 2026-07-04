@@ -1,6 +1,7 @@
 use super::*;
 
 mod area_apply;
+mod auction;
 mod chests;
 mod commands_admin;
 mod commands_chat;
