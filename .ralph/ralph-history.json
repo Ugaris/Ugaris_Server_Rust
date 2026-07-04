@@ -3235,15 +3235,49 @@
         "902-            return Err(ClanFoundError::NameTooLong);",
         "test result: ok. 539 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s"
       ]
+    },
+    {
+      "iteration": 102,
+      "startedAt": "2026-07-04T17:49:08.707Z",
+      "endedAt": "2026-07-04T18:10:24.990Z",
+      "durationMs": 1275714,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-server/src/commands_admin.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/commands_admin.rs",
+        "crates/ugaris-core/src/world/military.rs",
+        "crates/ugaris-core/src/world/tests/military.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 539 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "crates/ugaris-core/src/clan.rs:2343:        assert_eq!(registry.add_jewel(5), Err(ClanIdentityError::NotFound));",
+        "error: could not compile `ugaris-core` (lib test) due to 18 previous errors",
+        "test world::tests::military::give_military_pts_adds_points_and_exp_without_promotion_below_threshold ... FAILED",
+        "assertion failed: !award.promoted()",
+        "test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 1541 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1541 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E 'test result:|FAILED|error'"
+      ]
     }
   ],
-  "totalDurationMs": 110721945,
+  "totalDurationMs": 111997659,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 101,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 102,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -3252,7 +3286,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 34,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 34,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 35,
       "test error::tests::error_constants_match_legacy_header ... ok": 20,
       "test error::tests::error_strings_match_legacy_table ... ok": 16,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 11,
@@ -3260,7 +3294,7 @@
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 7,
       "test result: FAILED. 1019 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 15,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 16,
       "test result: ok. 1030 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
@@ -3696,7 +3730,13 @@
       "355-            return Err(ClanRelationError::InvalidClan(other));": 1,
       "358-            return Err(ClanRelationError::InvalidRelation);": 1,
       "902-            return Err(ClanFoundError::NameTooLong);": 1,
-      "test result: ok. 539 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
+      "test result: ok. 539 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 2,
+      "crates/ugaris-core/src/clan.rs:2343:        assert_eq!(registry.add_jewel(5), Err(ClanIdentityError:": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 18 previous errors": 1,
+      "test world::tests::military::give_military_pts_adds_points_and_exp_without_promotion_below_threshold": 1,
+      "assertion failed: !award.promoted()": 1,
+      "test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 1541 filtered out; finished in 0.00s": 1,
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1541 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

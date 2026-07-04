@@ -4039,10 +4039,54 @@ Unlocks every quest NPC. Do these before any P4 area work.
     (club.c, the merchant system, the dungeon/raid + alchemy-potion
     systems).
 
-- [ ] **Military ranks (`src/module/military.c`)** - military points exist
+- [~] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission
   PPD (`mission_ppd.h`) and the governor mission flow (`check_military_solve`
   is referenced by the death path - port it there when this lands).
+  REMAINING: the mission PPD/advisor NPC driver (`military_ppd`,
+  `mission_ppd.h`, the whole `military.c` mission-accept/solve/reroll
+  flow and its associated admin commands like `cmd_milinfo`/
+  `cmd_forcesolve`) and the governor mission flow (`check_military_solve`)
+  are unported - this is most of `military.c`'s 2,881 lines and needs its
+  own future slice(s). A player-facing `#rank`-style status command was
+  also not added this iteration (no existing Rust command reads military
+  state at all yet, so there was nothing to extend).
+  Progress Log: ported the rank-threshold table + point-award/promotion
+  helper as a first self-contained slice: `crates/ugaris-core/src/world/
+  military.rs` - `ARMY_RANK_NAMES` (C `tool.c:1868-1907`'s `rankname[]`,
+  all 41 entries letter for letter), `army_rank_for_points`
+  (`get_army_rank_int`'s `cbrt(military_pts)` formula, clamped to
+  `MAX_ARMY_RANK`=40; deliberately derived on the fly from
+  `Character.military_points` instead of adding a second persisted
+  `army_rank` field, since C's own `set_army_rank` is only ever called
+  with exactly this formula's output - documented inline, including the
+  one narrow C off-by-one quirk this simplification doesn't reproduce),
+  `army_rank_name`, and `World::give_military_pts` (the shared port of
+  C's `give_military_pts_no_npc`, `tool.c:3279-3306`: awards exp via
+  `give_exp`, records raw exp onto `military_normal_exp`, applies the
+  hardcore *military* bonus to points, and queues the "You've been
+  promoted..." system text plus the above-Sergeant-Major server-wide
+  "Grats:" channel-6 broadcast on promotion). Wired both existing
+  `military_points`-mutating call sites onto it, closing a real gap in
+  each (neither previously did any rank promotion or feedback at all):
+  `crates/ugaris-server/src/commands_admin.rs`'s `/milexp` admin command,
+  and the Area 25 `warpbonus_driver` `Some(3)` reward case in `main.rs`.
+  While wiring `/milexp`, found and fixed a pre-existing inconsistency
+  blocking correct behavior: `hardcore_military_exp_bonus` lived only on
+  `ServerRuntime` (unreachable from `ugaris-core`, unlike its siblings
+  `exp_modifier`/`hardcore_exp_bonus`, which already live on
+  `world.settings`) - moved it onto `world.settings` (removing the now-
+  redundant `ServerRuntime` field and updating `/sethardcoremilexpbonus`
+  and its tests accordingly) so `World::give_military_pts` can read the
+  live-tunable value directly. 8 new tests in `crates/ugaris-core/src/
+  world/tests/military.rs` (rank-table formula/name lookups, no-op below
+  threshold, promotion feedback text, above-rank-9 broadcast, hardcore
+  bonus applied only to points not recorded exp, unknown-character no-op)
+  plus 2 existing `ugaris-server` tests updated for the settings move.
+  `cargo fmt --all`, `cargo test --workspace` (1549 ugaris-core + 47 db +
+  3 net + 37 protocol + 539 server, all green, zero failures), `cargo
+  build -p ugaris-server` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panics.
 
 - [ ] **Arena rankings (`src/system/arena.c`)** - toplist formatter is
   ported but rankings are never stored. Port `DRD_ARENA_PPD`, win/loss

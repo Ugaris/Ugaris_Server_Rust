@@ -1190,8 +1190,14 @@ pub(crate) fn apply_admin_character_command(
 
         let value = legacy_atof_prefix(rest);
         if (0.1..=1000.0).contains(&value) {
-            let old_value = runtime.hardcore_military_exp_bonus;
-            runtime.hardcore_military_exp_bonus = value;
+            // C's `hardcore_military_exp_bonus` global is a single value
+            // read directly by `give_military_pts`/`give_military_pts_no_npc`
+            // (`tool.c:3249-3306`); stored on `world.settings` (like
+            // `exp_modifier`/`hardcore_exp_bonus`) instead of `ServerRuntime`
+            // so `World::give_military_pts` (`ugaris-core`, no `ServerRuntime`
+            // access) can read the live-tunable value directly.
+            let old_value = world.settings.hardcore_military_exp_bonus;
+            world.settings.hardcore_military_exp_bonus = value;
             return Some(KeyringCommandResult {
                 messages: vec![format!(
                     "Hardcore military experience bonus changed from {old_value:.2} to {value:.2}"
@@ -1453,18 +1459,17 @@ pub(crate) fn apply_admin_character_command(
             // amount (goes to `military_points`, hardcore-multiplied by
             // `hardcore_military_exp_bonus`), while `exps` is a *fixed* `1`
             // that routes through `give_exp` (and `normal_exp`), regardless
-            // of the typed amount.
-            world.give_exp(target_id, 1, area_id);
-            let Some(target) = world.characters.get_mut(&target_id) else {
+            // of the typed amount. `World::give_military_pts` (`crates/
+            // ugaris-core/src/world/military.rs`) is the shared port of
+            // `give_military_pts_no_npc` itself, including the rank-
+            // promotion feedback text and the above-Sergeant-Major
+            // server-wide "Grats:" broadcast that this call site previously
+            // skipped entirely.
+            let points = exp.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+            world.give_military_pts(target_id, points, 1, area_id);
+            let Some(target) = world.characters.get(&target_id) else {
                 return Some(KeyringCommandResult::default());
             };
-            target.military_normal_exp = target.military_normal_exp.saturating_add(1);
-            let mut points = exp.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
-            if target.flags.contains(CharacterFlags::HARDCORE) {
-                points = (f64::from(points) * runtime.hardcore_military_exp_bonus) as i32;
-            }
-            target.military_points = target.military_points.saturating_add(points);
-            target.flags.insert(CharacterFlags::UPDATE);
             return Some(KeyringCommandResult {
                 messages: vec![format!("Gave {} {} military exp.", target.name, exp)],
                 inventory_changed: true,

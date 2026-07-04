@@ -1485,7 +1485,7 @@ fn god_sethardcore_bonus_commands_match_legacy_ranges_and_feedback() {
         1,
     )
     .expect("god hardcore military exp bonus command should be recognized");
-    assert_eq!(runtime.hardcore_military_exp_bonus, 1.5);
+    assert_eq!(world.settings.hardcore_military_exp_bonus, 1.5);
     assert_eq!(
         milexp.messages,
         vec!["Hardcore military experience bonus changed from 1.10 to 1.50"]
@@ -2228,7 +2228,7 @@ fn god_milexp_command_reports_and_grants_military_points() {
 }
 
 #[test]
-fn milexp_routes_its_fixed_one_exp_through_give_exp_and_honors_runtime_military_bonus() {
+fn milexp_routes_its_fixed_one_exp_through_give_exp_and_honors_military_bonus() {
     // C `cmd_milexp` -> `give_military_pts_no_npc(co, val, 1)`
     // (`command.c:3048`, `tool.c:3281-3299`): the exp side is always a
     // fixed `1` through `give_exp` (so `exp_modifier`/`hardcore_exp_bonus`
@@ -2246,7 +2246,7 @@ fn milexp_routes_its_fixed_one_exp_through_give_exp_and_honors_runtime_military_
     world.add_character(god);
     world.add_character(target);
     let mut runtime = ServerRuntime::default();
-    runtime.hardcore_military_exp_bonus = 2.0;
+    world.settings.hardcore_military_exp_bonus = 2.0;
 
     apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp Target 50", 1)
         .expect("god milexp target grant should be recognized");

@@ -224,7 +224,6 @@ struct ServerRuntime {
     next_character_id: u32,
     dlight_override: i32,
     show_attack: bool,
-    hardcore_military_exp_bonus: f64,
     hardcore_kill_exp_bonus: f64,
     xmas_special_override: Option<i32>,
     item_decay_time: i32,
@@ -263,7 +262,6 @@ impl Default for ServerRuntime {
             next_character_id: 0,
             dlight_override: 0,
             show_attack: false,
-            hardcore_military_exp_bonus: settings.hardcore_military_exp_bonus,
             hardcore_kill_exp_bonus: settings.hardcore_kill_exp_bonus,
             xmas_special_override: None,
             item_decay_time: settings.item_decay_time,
@@ -3813,17 +3811,28 @@ async fn main() -> anyhow::Result<()> {
                                                             }
                                                         }
                                                         Some(3) => {
-                                                            if let Some(character) =
-                                                                world.characters.get_mut(&character_id)
-                                                            {
-                                                                character.military_points = character
-                                                                    .military_points
-                                                                    .saturating_add(reward_level as i32);
-                                                            }
+                                                            // C `warpbonus_driver` (`area/25/
+                                                            // warped.c:432-434`): `log_char(cn, ...,
+                                                            // "You received military rank.");
+                                                            // give_military_pts_no_npc(cn, level, 0);`
+                                                            // - the fixed message first, then the
+                                                            // shared point-award/promotion helper
+                                                            // (`World::give_military_pts`, `crates/
+                                                            // ugaris-core/src/world/military.rs`),
+                                                            // which queues its own "You've been
+                                                            // promoted..." feedback (and the above-
+                                                            // Sergeant-Major server broadcast) if the
+                                                            // grant crosses a rank threshold.
                                                             feedback.push((
                                                                 character_id,
                                                                 "You received military rank.".to_string(),
                                                             ));
+                                                            world.give_military_pts(
+                                                                character_id,
+                                                                reward_level as i32,
+                                                                0,
+                                                                u32::from(args.area_id),
+                                                            );
                                                         }
                                                         Some(4) => {
                                                             // C `warpbonus_driver` (`area/25/

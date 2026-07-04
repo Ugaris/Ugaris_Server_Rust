@@ -26,6 +26,7 @@ mod light;
 mod lostcon;
 mod lq;
 mod merchant;
+mod military;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;

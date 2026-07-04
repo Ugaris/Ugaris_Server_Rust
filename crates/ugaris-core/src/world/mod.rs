@@ -37,6 +37,7 @@ mod light;
 mod lostcon;
 mod lq;
 mod merchant;
+mod military;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;
@@ -78,6 +79,7 @@ pub(crate) use lab2_undead::*;
 pub(crate) use light::*;
 pub use lq::*;
 pub use merchant::*;
+pub use military::*;
 pub(crate) use npc_fight::*;
 #[allow(unused_imports)]
 pub(crate) use npc_idle::*;
