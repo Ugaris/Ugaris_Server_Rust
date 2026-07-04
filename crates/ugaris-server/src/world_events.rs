@@ -77,6 +77,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_caligar_skelly_death_from_hurt_event(runtime, world, event);
         apply_lab2_undead_death_from_hurt_event(runtime, world, event);
         apply_gate_fight_death_from_hurt_event(runtime, world, event, loader);
+        apply_gate_welcome_death_from_hurt_event(world, event);
 
         let eligible = match (
             world.characters.get(&event.target_id),
@@ -322,6 +323,39 @@ pub(crate) fn apply_gate_fight_death_from_hurt_event(
     }
 
     applied
+}
+
+/// C `ch_died_driver`/`CDR_GATE_WELCOME` dispatch (`gatekeeper.c:810-811`)
+/// routes any death of the welcome NPC to `immortal_dead(cn, co)`
+/// (`gatekeeper.c:701-703`), which just writes a server-log-only line via
+/// `charlog` (`co`, the killer, is unused). In practice this NPC template
+/// carries `CF_IMMORTAL`, so `hurt()` already suppresses lethal damage to
+/// it and this path should be unreachable through normal combat - ported
+/// anyway for fidelity, matching the `debug!`-as-`charlog` precedent used
+/// for `ClientAction::Log` (`main.rs`'s `cl_log` port).
+pub(crate) fn apply_gate_welcome_death_from_hurt_event(
+    world: &World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(target) = world.characters.get(&event.target_id) else {
+        return false;
+    };
+    if target.driver != CDR_GATE_WELCOME {
+        return false;
+    }
+    debug!(
+        target: "client_log",
+        "{}",
+        format_client_log_message(
+            &target.name,
+            target.id.0,
+            "I JUST DIED! I'M SUPPOSED TO BE IMMORTAL!"
+        )
+    );
+    true
 }
 
 pub(crate) fn apply_player_fightback_from_hurt_event(

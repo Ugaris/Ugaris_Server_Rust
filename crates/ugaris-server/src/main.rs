@@ -87,9 +87,9 @@ use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{
-        needs_next_lab, CharacterDriverState, CDR_CALIGARSKELLY, CDR_GATE_FIGHT, CDR_LAB2UNDEAD,
-        CDR_LOSTCON, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT,
-        NTID_GATEKEEPER, NT_NPC,
+        needs_next_lab, CharacterDriverState, CDR_CALIGARSKELLY, CDR_GATE_FIGHT, CDR_GATE_WELCOME,
+        CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY,
+        CDR_SWAMPMONSTER, CDR_TEUFELRAT, NTID_GATEKEEPER, NT_NPC,
     },
     direction::Direction,
     do_action::{

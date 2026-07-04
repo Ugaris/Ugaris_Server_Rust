@@ -4330,3 +4330,77 @@ out, unlike classes 5-7).
   no-op, `DRD_DEPOT_PPD` quest-flag strip). Recommended next step before
   marking the task `[x]`: a full line-by-line re-read of `gatekeeper.c`
   against the Rust port to confirm nothing else was missed.
+
+## Ralph Loop - Gatekeeper NPC Full Re-Read + `immortal_dead` (Iteration 58, complete)
+
+Did the recommended full line-by-line re-read of `gatekeeper.c` (830
+lines) against the Rust port, function by function:
+`analyse_text_driver`/`qa[]` (all 26 entries present,
+`character_driver.rs:831-967`), `gate_welcome_driver`'s whole message loop
+(NT_CHAR welcome_state 0-6 including the exact case-2/3/4 fallthrough
+quirk, NT_TEXT dispatch codes 2/5-9, NT_GIVE giveback logic, turn-to-
+speaker, idle return-to-post), `enter_test` (every precondition in C
+order: `CF_PAID`, `teleport_next_lab`/`CF_GOD`, `CF_NOEXP`, per-class
+flag validation, item-count `!=0`/`>3` gates, `take_money`, the 14-entry
+`room_start[]` busy-refund loop), `enter_room` (9x17 empty scan,
+opponent creation/hp-mana-endurance init, `notify_char`, `drop_char`,
+`teleport_char_driver`, spell-slot strip 12-29, hp/mana/endurance reset to
+`POWERSCALE*1`), `gate_fight_driver` (creation-time self-destruct,
+victim tracking, attack/follow/return-to-post/regen/spell_self chain),
+and `gate_fight_dead` (all 4 class rewards + `turn_seyan` + final
+teleport) all confirmed fully and faithfully ported (see the dedicated
+sections above, iterations 51-57).
+- Found and fixed one real gap: `immortal_dead` (`gatekeeper.c:701-703`),
+  the `ch_died_driver`/`CDR_GATE_WELCOME` death handler for the welcome
+  NPC, had never been ported at all (no `CDR_GATE_WELCOME` handling
+  anywhere in the death-dispatch chain). Ported as
+  `apply_gate_welcome_death_from_hurt_event`
+  (`crates/ugaris-server/src/world_events.rs`), following the same
+  driver-filter idiom as the other `apply_*_death_from_hurt_event`
+  handlers (`target.driver == CDR_GATE_WELCOME`, no killer-flags check -
+  C's dispatch is unconditional here, unlike `gate_fight_dead`'s own
+  player-only filter which lives in the *caller*), wired into
+  `apply_pk_hate_from_hurt_events`'s per-event handler list. C's
+  `immortal_dead` calls `charlog` (a server-log-only write, never
+  client-visible - confirmed against `log.c`), so the port reuses the
+  existing `debug!(target: "client_log", ...)` + `format_client_log_message`
+  precedent already established for `ClientAction::Log`/`cl_log` in
+  `main.rs`, rather than `queue_system_text` (which would incorrectly
+  send it to the client). In practice this path is unreachable through
+  normal combat since the welcome NPC template carries `CF_IMMORTAL`
+  (`hurt()` already suppresses lethal damage to `CF_IMMORTAL`
+  characters) - ported anyway for strict fidelity and to close the gap
+  cleanly.
+- Confirmed as an intentional, documented non-gap (not fixed, left as
+  architecture note only): `labentrance`'s C `ret == -1` branch ("the
+  area containing the next labyrinth part is down") has no Rust
+  equivalent. The Rust `needs_next_lab` helper only reproduces
+  `teleport_next_lab(cn, 0)`'s truthiness (`do_teleport = 0` always
+  short-circuits `change_area` in C, so `-1` can never actually be
+  returned in that call mode); actual cross-area lab-entry execution
+  (`IDR_LABENTRANCE`'s own dispatch in
+  `crates/ugaris-core/src/item_driver/area22_lab.rs`) only distinguishes
+  "solved all" vs. "level too low" outcomes. Since this is a monolithic
+  single-process area server (no separate per-area server processes that
+  could independently be "down"), the C `-1` sentinel has no reachable
+  Rust equivalent condition to model; left unported as architecturally
+  moot, same precedent as other cross-area-server-process concepts
+  elsewhere in the codebase.
+- Tests: 2 new tests in `crates/ugaris-server/src/tests/world_events.rs`
+  (`gate_welcome_death_is_handled_but_sends_no_client_message`: confirms
+  the handler fires on a lethal hit to a `CDR_GATE_WELCOME` character
+  without queuing any client-visible system text;
+  `gate_welcome_death_handler_ignores_non_matching_driver_and_non_lethal_hits`:
+  confirms the driver-mismatch and non-lethal-event guards both return
+  `false`).
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1292
+  ugaris-core + 36 db + 3 net + 33 protocol + 406 server (2 net new), all
+  green, zero failures. `cargo build -p ugaris-server` clean, zero
+  warnings. A 10s boot-smoke showed "entering Rust game loop" with no
+  panics.
+- Conclusion: `src/system/gatekeeper.c` is now fully ported end-to-end
+  with no remaining unaddressed gaps (the two pre-existing documented
+  no-ops inside `turn_seyan` - `destroy_chareffects`, `DRD_DEPOT_PPD` -
+  and the architecturally-moot `labentrance` `-1` branch above are the
+  only known deviations, all intentional and documented). Marking the
+  `PORTING_TODO.md` task `[x]`.

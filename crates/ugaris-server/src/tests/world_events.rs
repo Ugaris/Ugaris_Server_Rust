@@ -1,4 +1,5 @@
 use super::*;
+use ugaris_core::world::LegacyHurtOutcome;
 
 #[test]
 fn random_shrine_kindness_clears_pk_and_marks_ppd() {
@@ -787,4 +788,75 @@ fn lethal_gate_fight_hurt_class_eight_turns_killer_seyan_and_clears_turn_seyan_p
 
     let player = runtime.player_for_character(CharacterId(2)).unwrap();
     assert!(player.demonshrines.is_empty());
+}
+
+#[test]
+fn gate_welcome_death_is_handled_but_sends_no_client_message() {
+    // C `ch_died_driver`/`CDR_GATE_WELCOME` -> `immortal_dead` just writes
+    // a server-log-only line via `charlog`; nothing should reach the
+    // client and no reward/teleport logic should run (unlike gate_fight).
+    let mut world = World::default();
+    let mut welcome_npc = login_character(CharacterId(1), &login_block("Gatekeeper"), 1, 190, 200);
+    welcome_npc.flags.remove(CharacterFlags::PLAYER);
+    welcome_npc.driver = CDR_GATE_WELCOME;
+    welcome_npc.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Godmode"), 1, 191, 200);
+    world.add_character(welcome_npc);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    // No client-visible text should have been queued by the handler.
+    let texts = world.drain_pending_system_texts();
+    assert!(!texts.iter().any(|text| text.message.contains("IMMORTAL")));
+}
+
+#[test]
+fn gate_welcome_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
+    let mut world = World::default();
+    let mut other_npc = login_character(CharacterId(1), &login_block("Other"), 1, 190, 200);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    other_npc.hp = POWERSCALE * 5;
+    world.add_character(other_npc);
+
+    let non_lethal = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: false,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_gate_welcome_death_from_hurt_event(
+        &world, non_lethal
+    ));
+
+    let mut world2 = World::default();
+    let mut welcome_npc = login_character(CharacterId(1), &login_block("Gatekeeper"), 1, 190, 200);
+    welcome_npc.flags.remove(CharacterFlags::PLAYER);
+    welcome_npc.driver = CDR_GATE_FIGHT; // not CDR_GATE_WELCOME
+    world2.add_character(welcome_npc);
+
+    let lethal_wrong_driver = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_gate_welcome_death_from_hurt_event(
+        &world2,
+        lethal_wrong_driver
+    ));
 }

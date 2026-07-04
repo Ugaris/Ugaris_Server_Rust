@@ -1868,10 +1868,24 @@ Unlocks every quest NPC. Do these before any P4 area work.
   with zero warnings, and a 12s boot-smoke showed "entering Rust game
   loop" with no panics.
 
-- [~] **Gatekeeper NPC (`src/system/gatekeeper.c`)** - lab entrance
+- [x] **Gatekeeper NPC (`src/system/gatekeeper.c`)** - lab entrance
   dialogue/fight driver. The lab item drivers are ported; this is the
   character in front. Depends on text analysis + memory.
-  REMAINING: the welcome NPC's greeting/small-talk message loop is wired
+  Iteration 58 did the recommended full line-by-line re-read of the whole
+  830-line C file against the Rust port and confirmed everything else
+  (welcome dialogue, `enter_test`, `enter_room`, `gate_fight_driver`,
+  `gate_fight_dead`, `turn_seyan`) was already faithfully ported; it found
+  and fixed the one remaining real gap, `immortal_dead`
+  (`gatekeeper.c:701-703`, the welcome NPC's death handler), now ported as
+  `apply_gate_welcome_death_from_hurt_event`
+  (`crates/ugaris-server/src/world_events.rs`). The only remaining
+  deviations are the pre-existing documented no-ops inside `turn_seyan`
+  (`destroy_chareffects`, `DRD_DEPOT_PPD` strip) and the architecturally-
+  moot `labentrance` C `-1` "area is down" branch (impossible to reach in
+  this monolithic single-process server). See Progress Log (iteration 58)
+  and `PORTING_LEDGER.md` for full details. Historical remaining-work
+  notes from earlier iterations, kept for context:
+  the welcome NPC's greeting/small-talk message loop is wired
   into the tick loop (iteration 52), `enter_test`'s class-choice *failure*
   replies are wired too (iteration 53), and `enter_test`'s *success* path
   (`enter_room`'s private-room opponent spawn: `take_money`, the 7-room
@@ -1963,6 +1977,41 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (1292+36+3+33+404 passed), `cargo build -p ugaris-server` clean with
   zero warnings, and a 12s boot-smoke showed "entering Rust game loop"
   with no panics.
+  Progress Log (iteration 58): full line-by-line re-read of
+  `gatekeeper.c` (all 830 lines) against the Rust port, confirming
+  `analyse_text_driver`/`qa[]` (all 26 entries), `gate_welcome_driver`'s
+  whole message loop, `enter_test`, `enter_room`, `gate_fight_driver`, and
+  `gate_fight_dead` were all already faithfully ported (iterations
+  51-57). Found and ported the one remaining gap: `immortal_dead`
+  (`gatekeeper.c:701-703`), the `ch_died_driver`/`CDR_GATE_WELCOME` death
+  handler for the welcome NPC (just a server-log-only `charlog` write,
+  never client-visible). New `apply_gate_welcome_death_from_hurt_event`
+  (`crates/ugaris-server/src/world_events.rs`) follows the existing
+  `apply_*_death_from_hurt_event` driver-filter idiom (`target.driver ==
+  CDR_GATE_WELCOME`, no killer-flags check since C's dispatch here is
+  unconditional), wired into `apply_pk_hate_from_hurt_events`'s handler
+  list; reuses the `debug!(target: "client_log", ...)` +
+  `format_client_log_message` precedent from `ClientAction::Log`/`cl_log`
+  instead of `queue_system_text` (matching `charlog`'s log-file-only,
+  non-client-visible C semantics). In practice unreachable through normal
+  combat since the welcome NPC template carries `CF_IMMORTAL` (`hurt()`
+  already suppresses lethal damage to it) - ported anyway for strict
+  fidelity. Also confirmed and documented (not fixed, architecturally
+  moot) that `labentrance`'s C `ret == -1` "area is down" branch has no
+  reachable Rust equivalent: `needs_next_lab` only reproduces
+  `teleport_next_lab(cn, 0)`'s truthiness, which in C's own `do_teleport =
+  0` mode can never actually return `-1` (the `change_area` call that
+  produces it is always short-circuited away), and this is a monolithic
+  single-process area server with no separate per-area processes that
+  could independently be "down" anyway. Tests: 2 new tests in
+  `crates/ugaris-server/src/tests/world_events.rs`
+  (`gate_welcome_death_is_handled_but_sends_no_client_message`,
+  `gate_welcome_death_handler_ignores_non_matching_driver_and_non_lethal_hits`).
+  `cargo fmt --all`, `cargo test --workspace` (1292+36+3+33+406 passed, 2
+  net new), `cargo build -p ugaris-server` clean with zero warnings, and a
+  10s boot-smoke showed "entering Rust game loop" with no panics. Task
+  marked `[x]`: `gatekeeper.c` is now believed fully ported end-to-end
+  with no remaining unaddressed gaps.
   Progress Log (iteration 56): ported `gate_fight_driver`
   (`gatekeeper.c:641-696`) and `gate_fight_dead` (`gatekeeper.c:705-763`)
   into a new `crates/ugaris-core/src/world/gate_fight.rs` module plus a
