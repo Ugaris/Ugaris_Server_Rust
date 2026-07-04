@@ -484,6 +484,266 @@ pub fn specific_mission_price(level: i32, difficulty: i32, mission_type: i32) ->
     price.max(min_price)
 }
 
+/// C `offer_favor`'s favor-size name table (`military.c:2373-2378`
+/// switch, used both in the offer text and [`ProcessFavorPaymentOutcome`]
+/// rendering).
+pub fn favor_size_name(favor_size: i32) -> &'static str {
+    match favor_size {
+        0 => "small",
+        1 => "medium",
+        2 => "big",
+        3 => "huge",
+        _ => "vast",
+    }
+}
+
+/// C `handle_specific_mission_request`/`process_favor_payment`'s
+/// mission-type name table (`military.c:521-533`, `2429-2440`).
+pub fn mission_type_name(mission_type: i32) -> &'static str {
+    match mission_type {
+        1 => "demon-slaying",
+        2 => "ratling-hunting",
+        3 => "silver-mining",
+        _ => "unknown",
+    }
+}
+
+/// C `adv_introduction` (`military.c:2262-2281`): the Advisor NPC's
+/// initial greeting, varying by `dat->storage_ID % 4`.
+pub fn adv_introduction_text(storage_id: i32, player_name: &str) -> String {
+    let template = match storage_id.rem_euclid(4) {
+        0 => {
+            "I could do you a favor, {name}, I could mention your name to the military governor \
+             of Aston. I'm sure that'd help you get that promotion early!"
+        }
+        1 => {
+            "Say, {name}, would you like to speed up your way up the rank ladder? I could speak \
+             to the military governor of Aston if you want me to do you that favor."
+        }
+        2 => {
+            "Not getting promoted as fast as you want, {name}? I could do you the favor of \
+             talking to the military governor of Aston about you."
+        }
+        _ => "Need a favor, {name}?",
+    };
+    template.replace("{name}", player_name)
+}
+
+/// C `adv_favor_desc` (`military.c:2296-2308`): the two-line "favor
+/// sizes"/"specific missions" explanation, sent as two separate
+/// `quiet_say` calls.
+pub fn adv_favor_desc_lines() -> [&'static str; 2] {
+    [
+        "My favors come in five sizes, small, medium, big, huge and vast.",
+        "I can also recommend you for specific missions. Just tell me the difficulty and type \
+         like easy demon or insane mining.",
+    ]
+}
+
+/// [`World::offer_favor`]'s outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfferFavorOutcome {
+    /// C: `ppd->advisor_last[idx] == yday + 1` -> "Mentioning your name
+    /// twice a day won't accomplish much, %s.".
+    AlreadyUsedToday,
+    /// C's own `default: return 0;` bail-out for an out-of-range
+    /// `favor_size` - unreachable via [`crate::character_driver::
+    /// MILITARY_QA`]'s fixed qa-code mapping, ported defensively anyway.
+    InvalidFavorSize,
+    /// The offer was made: `ppd->advisor_cost`/`advisor_state`/
+    /// `advisor_storage_nr` were stamped. `cost` is in gold cents (100 =
+    /// 1G).
+    Offered { favor_size: i32, cost: i32 },
+}
+
+/// [`World::handle_specific_mission_request`]'s outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpecificMissionRequestOutcome {
+    /// C: `ppd->advisor_last[idx] == yday + 1` -> "I've already used my
+    /// influence for you today, %s. Come back tomorrow.".
+    AlreadyUsedToday,
+    /// C: `mission_type < 1 || mission_type > 3` -> "I don't know about
+    /// that type of mission, %s.".
+    InvalidMissionType,
+    /// C: `difficulty < 0 || difficulty > 4` -> "I don't know that
+    /// difficulty level, %s.".
+    InvalidDifficulty,
+    /// C: ratling missions need `level` odd in `9..=39` -> "Ratling
+    /// missions are only available at odd levels between 9 and 39, %s.".
+    RatlingLevelGate,
+    /// C: silver missions need `level >= 12` -> "Silver missions are
+    /// only available at level 12 and above, %s.".
+    SilverLevelGate,
+    /// The offer was made: `ppd->advisor_cost`/`advisor_state`/
+    /// `advisor_storage_nr`/`temp_mission_type`/`temp_mission_difficulty`
+    /// were stamped. `already_completed_today`/`has_active_mission` carry
+    /// the two non-terminal warnings C emits *before* the offer text
+    /// (both can be true simultaneously, matching C's `if`/`if` - not
+    /// `if`/`else if` - chain).
+    Offered {
+        difficulty: i32,
+        mission_type: i32,
+        cost: i32,
+        already_completed_today: bool,
+        has_active_mission: bool,
+    },
+}
+
+/// [`World::process_favor_payment`]'s outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessFavorPaymentOutcome {
+    /// C: `ppd->current_advisor != dat->storage_ID || ppd->advisor_state
+    /// != 2` -> "Pay for what? We haven't agreed on anything yet.",
+    /// resets `advisor_state = 1`.
+    NothingAgreed,
+    /// C: `ch[co].gold < ppd->advisor_cost` -> "Alas, you do not have
+    /// enough money.".
+    InsufficientGold,
+    /// C: `ppd->temp_mission_type > 0` branch - a specific mission
+    /// recommendation was arranged; `mission_type_preference`/
+    /// `mission_difficulty_preference` were stamped and the temp fields
+    /// cleared.
+    SpecificMissionArranged { mission_type: i32, difficulty: i32 },
+    /// C's `else` branch - a plain favor was arranged;
+    /// `ppd->current_pts` gained `2 + favor_size * 2`.
+    FavorArranged { favor_size: i32 },
+}
+
+impl World {
+    /// C `offer_favor(cn, co, ppd, idx, favor_size)` (`military.c:2339-
+    /// 2382`). The sales-economy `struct cost_data` bookkeeping
+    /// `process_favor_payment` records on acceptance is deliberately out
+    /// of scope (no Rust storage-blob equivalent yet - see this module's
+    /// doc comment); this only stamps the payment-confirmation state.
+    pub fn offer_favor(
+        &self,
+        character_id: CharacterId,
+        player: &mut PlayerRuntime,
+        idx: usize,
+        favor_size: i32,
+        yday: i32,
+    ) -> OfferFavorOutcome {
+        if player.military_advisor_last(idx) == yday + 1 {
+            return OfferFavorOutcome::AlreadyUsedToday;
+        }
+        let Some(character) = self.characters.get(&character_id) else {
+            return OfferFavorOutcome::InvalidFavorSize;
+        };
+        let Some(cost) = offer_favor_cost(character.level as i32, favor_size) else {
+            return OfferFavorOutcome::InvalidFavorSize;
+        };
+        player.set_advisor_cost(cost);
+        player.set_advisor_state(2);
+        player.set_advisor_storage_nr(favor_size);
+        OfferFavorOutcome::Offered { favor_size, cost }
+    }
+
+    /// C `handle_specific_mission_request(cn, co, ppd, dat, idx,
+    /// difficulty, mission_type)` (`military.c:481-566`).
+    pub fn handle_specific_mission_request(
+        &self,
+        character_id: CharacterId,
+        player: &mut PlayerRuntime,
+        idx: usize,
+        difficulty: i32,
+        mission_type: i32,
+        yday: i32,
+    ) -> SpecificMissionRequestOutcome {
+        if player.military_advisor_last(idx) == yday + 1 {
+            return SpecificMissionRequestOutcome::AlreadyUsedToday;
+        }
+        if !(1..=3).contains(&mission_type) {
+            return SpecificMissionRequestOutcome::InvalidMissionType;
+        }
+        if !(0..=4).contains(&difficulty) {
+            return SpecificMissionRequestOutcome::InvalidDifficulty;
+        }
+
+        let Some(character) = self.characters.get(&character_id) else {
+            return SpecificMissionRequestOutcome::InvalidMissionType;
+        };
+        let level = character.level as i32;
+
+        if mission_type == 2 && (level < 9 || level > 39 || level % 2 == 0) {
+            return SpecificMissionRequestOutcome::RatlingLevelGate;
+        }
+        if mission_type == 3 && level < 12 {
+            return SpecificMissionRequestOutcome::SilverLevelGate;
+        }
+
+        let already_completed_today = player.military_solved_yday() == yday + 1;
+        let has_active_mission = player.military_took_mission() != 0;
+        let cost = specific_mission_price(level, difficulty, mission_type);
+
+        player.set_advisor_cost(cost);
+        player.set_advisor_state(2);
+        player.set_advisor_storage_nr(difficulty);
+        player.set_temp_mission_type(mission_type);
+        player.set_temp_mission_difficulty(difficulty);
+
+        SpecificMissionRequestOutcome::Offered {
+            difficulty,
+            mission_type,
+            cost,
+            already_completed_today,
+            has_active_mission,
+        }
+    }
+
+    /// C `process_favor_payment(cn, co, ppd, dat, idx)` (`military.c:
+    /// 2402-2474`). The `add_cost`/`update_advisor_storage` sales-economy
+    /// bookkeeping on a successful payment is deliberately out of scope
+    /// (no Rust storage-blob equivalent yet - see this module's doc
+    /// comment); the gold deduction and `ppd` state transition (the part
+    /// that matters for gameplay) are ported in full.
+    pub fn process_favor_payment(
+        &mut self,
+        character_id: CharacterId,
+        player: &mut PlayerRuntime,
+        idx: usize,
+        storage_id: i32,
+        yday: i32,
+    ) -> ProcessFavorPaymentOutcome {
+        if player.current_advisor() != storage_id || player.advisor_state() != 2 {
+            player.set_advisor_state(1);
+            return ProcessFavorPaymentOutcome::NothingAgreed;
+        }
+
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            player.set_advisor_state(1);
+            return ProcessFavorPaymentOutcome::NothingAgreed;
+        };
+        let advisor_cost = player.advisor_cost().max(0) as u32;
+        if character.gold < advisor_cost {
+            return ProcessFavorPaymentOutcome::InsufficientGold;
+        }
+        character.gold -= advisor_cost;
+        character.flags.insert(CharacterFlags::ITEMS);
+
+        let outcome = if player.temp_mission_type() > 0 {
+            let mission_type = player.temp_mission_type();
+            let difficulty = player.temp_mission_difficulty();
+            player.set_mission_type_preference(mission_type);
+            player.set_mission_difficulty_preference(difficulty);
+            player.set_temp_mission_type(0);
+            player.set_temp_mission_difficulty(-1);
+            ProcessFavorPaymentOutcome::SpecificMissionArranged {
+                mission_type,
+                difficulty,
+            }
+        } else {
+            let favor_size = player.advisor_storage_nr();
+            player.set_military_current_pts(player.military_current_pts() + 2 + favor_size * 2);
+            ProcessFavorPaymentOutcome::FavorArranged { favor_size }
+        };
+
+        player.set_advisor_state(1);
+        player.set_military_advisor_last(idx, yday + 1);
+
+        outcome
+    }
+}
+
 /// C `get_level_experience_cap(player_level)` (`military.c:580-609`): caps
 /// a mission's exp reward at 15% of the exp needed to reach the next
 /// level, itself clamped to `[1000, 1_000_000]`.
@@ -1701,4 +1961,311 @@ impl World {
             self.process_military_master_tick_action(master_id, area_id);
         }
     }
+}
+
+/// This seventh slice ports `CDR_MILITARY_ADVISOR`'s own driver
+/// (`military_advisor_driver`, `military.c:2607-2699`), the paid
+/// mission-recommendation NPC the previous slice's doc comment listed as
+/// entirely unported: [`World::offer_favor`]/[`World::
+/// handle_specific_mission_request`]/[`World::process_favor_payment`]
+/// (the ppd-mutating halves of `offer_favor`/`handle_specific_mission_
+/// request`/`process_favor_payment`), [`adv_introduction_text`]/
+/// [`adv_favor_desc_lines`] (the dialogue-rendering halves of
+/// `adv_introduction`/`adv_favor_desc`), and finally the driver itself:
+/// [`MilitaryAdvisorEvent`]/[`World::process_military_advisor_actions`],
+/// mirroring [`MilitaryMasterEvent`]/`process_military_master_actions`'s
+/// shape exactly (same `World`/`PlayerRuntime` split, same periodic
+/// nearby-player-scan simplification for `NT_CHAR`, same shared
+/// [`crate::character_driver::MILITARY_QA`] table via
+/// `analyse_text_qa`). Applied by `ugaris-server`'s
+/// `apply_military_advisor_events`.
+///
+/// Deliberately out of scope for this slice (documented here, not
+/// silently dropped - see the "Military ranks" task in
+/// `PORTING_TODO.md`):
+/// - The admin-only qa code 18 (`info`, `military.c:2525-2538`) - needs
+///   the still-unported `dat->storage_data` sales-economy counters (same
+///   architectural gap `military_master_data.storage_data` and the Arena
+///   rankings task's REMAINING note both flag).
+/// - `update_advisor_storage`/`process_advisor_storage` (the periodic
+///   `military_advisor_data.storage_data` persistence tick) and
+///   `add_cost`'s sales-economy bookkeeping inside `process_favor_
+///   payment` - no Rust storage-blob equivalent exists (see above).
+impl World {
+    /// Reads the Advisor NPC's `storage_ID` (`military.c:369-375`'s
+    /// `struct military_advisor_data`, stored via zone-file `storage=N;`
+    /// parsing at spawn time - see `crate::zone`) out of its
+    /// `driver_state`, defaulting to `0` for a not-yet-initialized or
+    /// mismatched driver state (shouldn't happen for a real
+    /// `CDR_MILITARY_ADVISOR` character, but mirrors every other
+    /// `driver_state`-reading helper's defensive fallback in this
+    /// codebase).
+    pub fn advisor_storage_id(&self, advisor_id: CharacterId) -> i32 {
+        self.characters
+            .get(&advisor_id)
+            .and_then(|character| character.driver_state.clone())
+            .map(|state| match state {
+                CharacterDriverState::MilitaryAdvisor(data) => data.storage_id,
+                _ => 0,
+            })
+            .unwrap_or(0)
+    }
+
+    pub fn drain_pending_military_advisor_events(&mut self) -> Vec<MilitaryAdvisorEvent> {
+        self.pending_military_advisor_events.drain(..).collect()
+    }
+
+    /// C `military_advisor_driver`'s `NT_TEXT`/`NT_GIVE` message loop
+    /// (`military.c:2678-2691`), via `handle_advisor_message`
+    /// (`military.c:2481-2605`). `NT_CHAR` is handled separately by
+    /// [`Self::greet_nearby_military_advisor_players`] (matching
+    /// `process_military_master_messages`'s split).
+    fn process_military_advisor_messages(&mut self, advisor_id: CharacterId) {
+        let Some(advisor) = self.characters.get(&advisor_id).cloned() else {
+            return;
+        };
+        let messages = {
+            let Some(advisor_mut) = self.characters.get_mut(&advisor_id) else {
+                return;
+            };
+            std::mem::take(&mut advisor_mut.driver_messages)
+        };
+
+        let mut destroy_cursor = false;
+        let mut replies: Vec<String> = Vec::new();
+        let mut events: Vec<MilitaryAdvisorEvent> = Vec::new();
+
+        for message in messages {
+            match message.message_type {
+                NT_TEXT => {
+                    let speaker_id = CharacterId(message.dat3 as u32);
+                    if speaker_id == advisor_id {
+                        continue;
+                    }
+                    let Some(text) = message.text.as_deref() else {
+                        continue;
+                    };
+                    let Some(speaker) = self.characters.get(&speaker_id) else {
+                        continue;
+                    };
+                    if !speaker.flags.contains(CharacterFlags::PLAYER) {
+                        continue;
+                    }
+                    if char_dist(&advisor, speaker) > MILITARY_MASTER_TEXT_DISTANCE {
+                        continue;
+                    }
+                    if !char_see_char(&advisor, speaker, &self.map, self.date.daylight) {
+                        continue;
+                    }
+                    let speaker_name = speaker.name.clone();
+
+                    match analyse_text_qa(text, &advisor.name, &speaker_name, MILITARY_QA) {
+                        TextAnalysisOutcome::Said(reply) => replies.push(reply),
+                        // C: `answer_code == 1` -> `quiet_say(cn, "I'm
+                        // %s.", ch[cn].name)`.
+                        TextAnalysisOutcome::Matched(1) => {
+                            replies.push(format!("I'm {}.", advisor.name));
+                        }
+                        TextAnalysisOutcome::Matched(2) => {
+                            events.push(MilitaryAdvisorEvent::Repeat {
+                                advisor_id,
+                                player_id: speaker_id,
+                            });
+                        }
+                        TextAnalysisOutcome::Matched(3) => {
+                            events.push(MilitaryAdvisorEvent::FavorDesc {
+                                advisor_id,
+                                player_id: speaker_id,
+                            });
+                        }
+                        TextAnalysisOutcome::Matched(code @ 4..=8) => {
+                            events.push(MilitaryAdvisorEvent::Favor {
+                                advisor_id,
+                                player_id: speaker_id,
+                                favor_size: (code - 4),
+                            });
+                        }
+                        TextAnalysisOutcome::Matched(9) => {
+                            events.push(MilitaryAdvisorEvent::Pay {
+                                advisor_id,
+                                player_id: speaker_id,
+                            });
+                        }
+                        TextAnalysisOutcome::Matched(code @ 30..=44) => {
+                            let offset = code - 30;
+                            let mission_type = 1 + offset / 5;
+                            let difficulty = offset % 5;
+                            events.push(MilitaryAdvisorEvent::SpecificMissionRequest {
+                                advisor_id,
+                                player_id: speaker_id,
+                                difficulty,
+                                mission_type,
+                            });
+                        }
+                        // Master-only codes (10-17, 22), the admin-only
+                        // "info" code (18, deferred - see this module's
+                        // doc comment), unused admin codes (19-21), and
+                        // any unmatched text: no handling, matches C's
+                        // own `default: return 0`.
+                        TextAnalysisOutcome::Matched(_) | TextAnalysisOutcome::NoMatch => {}
+                    }
+                }
+                NT_GIVE => {
+                    destroy_cursor = true;
+                    replies.push("That's junk.".to_string());
+                }
+                _ => {}
+            }
+        }
+
+        if destroy_cursor {
+            let cursor = self
+                .characters
+                .get_mut(&advisor_id)
+                .and_then(|advisor| advisor.cursor_item.take());
+            if let Some(item_id) = cursor {
+                self.destroy_item(item_id);
+            }
+        }
+
+        for reply in replies {
+            self.npc_quiet_say(advisor_id, &reply);
+        }
+
+        self.pending_military_advisor_events.extend(events);
+    }
+
+    /// C `military_advisor_driver`'s `NT_CHAR` greeting branch
+    /// (`military.c:2639-2661`), ported as the same periodic
+    /// nearby-player-scan simplification
+    /// [`Self::greet_nearby_military_master_players`] already
+    /// established.
+    fn greet_nearby_military_advisor_players(&mut self, advisor_id: CharacterId) {
+        let Some(advisor) = self.characters.get(&advisor_id).cloned() else {
+            return;
+        };
+
+        let mut nearby: Vec<CharacterId> = Vec::new();
+        for character in self.characters.values() {
+            if character.id == advisor_id || !character.flags.contains(CharacterFlags::PLAYER) {
+                continue;
+            }
+            if char_dist(&advisor, character) > MILITARY_MASTER_GREET_DISTANCE {
+                continue;
+            }
+            if !char_see_char(&advisor, character, &self.map, self.date.daylight) {
+                continue;
+            }
+            nearby.push(character.id);
+        }
+
+        self.pending_military_advisor_events
+            .extend(
+                nearby
+                    .into_iter()
+                    .map(|player_id| MilitaryAdvisorEvent::NearbyPlayer {
+                        advisor_id,
+                        player_id,
+                    }),
+            );
+    }
+
+    /// C `military_advisor_driver`'s movement section (`military.c:
+    /// 2696-2699`): stationary NPC returning to its `rest_x`/`rest_y`
+    /// spawn tile, facing `DX_RIGHT` - unlike the Military Master's
+    /// `DX_DOWN`, a genuine (if arbitrary) C difference between the two
+    /// drivers, preserved verbatim.
+    fn process_military_advisor_tick_action(&mut self, advisor_id: CharacterId, area_id: u16) {
+        let Some(advisor) = self.characters.get(&advisor_id).cloned() else {
+            return;
+        };
+        if self.setup_walk_toward(
+            advisor_id,
+            usize::from(advisor.rest_x),
+            usize::from(advisor.rest_y),
+            0,
+            area_id,
+            false,
+        ) {
+            return;
+        }
+        if advisor.dir != MILITARY_ADVISOR_REST_DIRECTION {
+            if let Some(advisor_mut) = self.characters.get_mut(&advisor_id) {
+                let _ = turn(advisor_mut, MILITARY_ADVISOR_REST_DIRECTION);
+            }
+        }
+    }
+
+    /// Military Advisor NPC tick: process messages, greet scan, and the
+    /// movement fallback. Ports the per-tick body of C
+    /// `military_advisor_driver` (minus the deferred admin "info" code
+    /// and storage-blob persistence - see this module's doc comment).
+    pub fn process_military_advisor_actions(&mut self, area_id: u16) {
+        let advisor_ids: Vec<CharacterId> = self
+            .characters
+            .values()
+            .filter(|character| {
+                character.driver == CDR_MILITARY_ADVISOR
+                    && character.flags.contains(CharacterFlags::USED)
+                    && !character.flags.contains(CharacterFlags::DEAD)
+            })
+            .map(|character| character.id)
+            .collect();
+
+        for advisor_id in advisor_ids {
+            self.process_military_advisor_messages(advisor_id);
+            self.greet_nearby_military_advisor_players(advisor_id);
+            self.process_military_advisor_tick_action(advisor_id, area_id);
+        }
+    }
+}
+
+/// C `DX_RIGHT` (`common/direction.h:21`): the Military Advisor's fixed
+/// resting facing (C's own `secure_move_driver(cn, ch[cn].tmpx,
+/// ch[cn].tmpy, DX_RIGHT, ret, lastact)`, `military.c:2698`).
+const MILITARY_ADVISOR_REST_DIRECTION: u8 = 4;
+
+/// A `military_advisor_driver` outcome that needs `PlayerRuntime`'s
+/// `military_ppd` to finish applying - see this module's seventh-slice
+/// doc comment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MilitaryAdvisorEvent {
+    /// C `military_advisor_driver`'s `NT_CHAR` branch (`military.c:
+    /// 2639-2661`): the initial-greeting/`current_advisor` stamp.
+    NearbyPlayer {
+        advisor_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa code 2 ("repeat"): `ppd->advisor_state = 0;`, no text.
+    Repeat {
+        advisor_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa code 3 ("favor"): [`adv_favor_desc_lines`], gated on
+    /// `advisor_last[idx]`.
+    FavorDesc {
+        advisor_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa codes 4-8 ("small".."vast"): [`World::offer_favor`].
+    /// `favor_size` is `0..=4`.
+    Favor {
+        advisor_id: CharacterId,
+        player_id: CharacterId,
+        favor_size: i32,
+    },
+    /// qa code 9 ("pay"): [`World::process_favor_payment`].
+    Pay {
+        advisor_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa codes 30-44 (e.g. "easy demon".."insane silver"):
+    /// [`World::handle_specific_mission_request`]. `difficulty` is
+    /// `0..=4`, `mission_type` is `1..=3`.
+    SpecificMissionRequest {
+        advisor_id: CharacterId,
+        player_id: CharacterId,
+        difficulty: i32,
+        mission_type: i32,
+    },
 }

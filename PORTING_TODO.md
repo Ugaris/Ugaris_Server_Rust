@@ -4110,24 +4110,23 @@ Unlocks every quest NPC. Do these before any P4 area work.
   gap flagged below) and the admin-only qa codes 18-21 (`info`/`reset`/
   `raise`/`promote` - `info` needs the same storage-blob counters;
   `/milinfo`/`/milpoints`/`/milstats` already cover admin needs). The
-  Military *Advisor* NPC (`CDR_MILITARY_ADVISOR`) remains entirely
-  unported: `handle_specific_mission_request` (the paid-advisor-
-  recommendation flow, `military.c:481-580`), `adv_introduction`/
-  `adv_favor_desc`/`offer_favor`'s dialogue-rendering halves (the pure
-  cost math - `calculate_advisor_index`/`advisor_price`/
-  `offer_favor_cost` - is already ported, see Progress Log, but nothing
-  calls it from a live NPC yet), `process_favor_payment`,
-  `handle_advisor_message`, and `military_advisor_driver` itself (its
-  `qa[]` table is already ported as the shared `MILITARY_QA` - see
-  Progress Log - since C's `qa[]` is one global table used by both
-  drivers via `analyse_text_driver`). Both drivers' storage state
+  Military *Advisor* NPC (`CDR_MILITARY_ADVISOR`) was ported in
+  iteration 113 (see Progress Log): `handle_specific_mission_request`/
+  `offer_favor`/`process_favor_payment` (the ppd-mutating halves),
+  `adv_introduction`/`adv_favor_desc`'s dialogue-rendering halves, and
+  `military_advisor_driver` itself, reusing the same shared
+  `MILITARY_QA` table and `World`/`PlayerRuntime`-split pattern the
+  Master driver established. REMAINING for the Advisor driver: only its
+  own admin-only qa code 18 (`info`) - needs the same unported
+  storage-blob counters below. Both drivers' storage state
   machines (`process_master_storage`/`process_advisor_storage`) plus the
   `dat->storage_data` quests-given/quests-solved/pts-given/exp-given
-  per-difficulty counters they own (no Rust `military_master_data`/
-  `military_advisor_data` equivalent yet - this shares the same "no
-  generic storage-blob persistence concept in `ugaris-db` yet"
-  architectural gap the Arena rankings task's REMAINING note also
-  flags); the wealth-achievement ladder the real `give_money` also
+  per-difficulty counters (Master) and sales-economy `struct cost_data`
+  counters (Advisor's `add_cost`/`update_advisor_storage`) they own (no
+  Rust `military_master_data`/`military_advisor_data` equivalent yet -
+  this shares the same "no generic storage-blob persistence concept in
+  `ugaris-db` yet" architectural gap the Arena rankings task's REMAINING
+  note also flags); the wealth-achievement ladder the real `give_money` also
   updates on `complete_mission`'s mercenary gold bonus (needs the DB-
   backed first-unlock announce, which lives in the server crate - wire
   `ugaris_core::achievement::add_gold_earned` at the same time; not done
@@ -4148,6 +4147,67 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
   correction, not a real gap).
+  Progress Log (iteration 113): ported `CDR_MILITARY_ADVISOR`'s own driver
+  (`military_advisor_driver`, `military.c:2607-2699`), the paid
+  mission-recommendation NPC the previous iteration's REMAINING note
+  listed as entirely unported - the last major gap in this task besides
+  the two storage-blob economies. `crates/ugaris-core/src/
+  character_driver.rs` gained `CDR_MILITARY_ADVISOR = 43`,
+  `MilitaryAdvisorDriverData`/`parse_military_advisor_driver_args`
+  (`military_advisor_parse`, the `storage=N;` zone-file arg, same shape
+  as the Master's), and a new `CharacterDriverState::MilitaryAdvisor`
+  variant (plus the 5 now-non-exhaustive match sites that needed a new
+  arm - `character_driver.rs` itself,
+  `world/npc_messages.rs`/`npc_fight.rs`/`npc_idle.rs`, and `zone.rs`'s
+  new parse-wiring block next to `CDR_MILITARY_MASTER`).
+  `crates/ugaris-core/src/world/military.rs` gained the ppd-mutating
+  halves of `handle_specific_mission_request`/`offer_favor`/
+  `process_favor_payment` (`military.c:481-566,2339-2474`) as
+  `World::handle_specific_mission_request`/`offer_favor`/
+  `process_favor_payment` (reusing the already-ported pure cost math -
+  `calculate_advisor_index`/`advisor_price`/`offer_favor_cost`/
+  `specific_mission_price` - from earlier iterations, plus their
+  `SpecificMissionRequestOutcome`/`OfferFavorOutcome`/
+  `ProcessFavorPaymentOutcome` result enums), `adv_introduction_text`/
+  `adv_favor_desc_lines` (the dialogue-rendering halves of
+  `adv_introduction`/`adv_favor_desc`, `military.c:2262-2308`),
+  `favor_size_name`/`mission_type_name` (the two small name tables both
+  the offer and payment-confirmation text need), and finally
+  `MilitaryAdvisorEvent`/`World::process_military_advisor_actions`
+  (mirroring `MilitaryMasterEvent`/`process_military_master_actions`'s
+  exact shape: same periodic `NT_CHAR` nearby-player-scan
+  simplification, same shared `MILITARY_QA` table via `analyse_text_qa`,
+  same `World`/`PlayerRuntime` split since nearly every branch touches
+  `military_ppd`). Verified against the C source that the Advisor's
+  `DX_RIGHT` resting facing (vs. the Master's `DX_DOWN`) is a genuine,
+  if arbitrary, difference between the two drivers and preserved it
+  verbatim. `crates/ugaris-server/src/military.rs` gained
+  `apply_military_advisor_events` (mirroring `apply_military_master_
+  events`'s shape) rendering every outcome into the exact C text
+  (dropping `COL_LIGHT_BLUE`/`COL_RESET` color markers, matching this
+  codebase's established `quiet_say`-text convention), wired into the
+  tick loop in `main.rs` right after the Master's own call site.
+  Deliberately out of scope (documented inline, not silently dropped):
+  the admin-only qa code 18 (`info`) and `update_advisor_storage`/
+  `process_advisor_storage`'s sales-economy `struct cost_data` counters -
+  both need the same unported NPC-scoped storage-blob concept the Master
+  driver's own REMAINING note and the Arena rankings task both flag; no
+  Rust `military_advisor_data.storage_data` equivalent exists.
+  46 new tests: 28 in `crates/ugaris-core/src/world/tests/military.rs`
+  (driver-arg parsing, `advisor_storage_id`'s driver-state read,
+  `favor_size_name`/`mission_type_name`/`adv_introduction_text`
+  (all 4 rotating variants plus the modulo-4 wraparound)/
+  `adv_favor_desc_lines` text, every `offer_favor`/
+  `handle_specific_mission_request`/`process_favor_payment` gate and
+  success path including the simultaneous already-completed/active-
+  mission warning flags, and the driver-level greet-scan/qa-code-to-
+  event mapping covering all 5 favor sizes and all 15 specific-mission
+  keyword combinations plus the Master-only/admin-only codes staying
+  silent and the `NT_GIVE` destroy-plus-reply path). `cargo fmt --all`,
+  `cargo test --workspace` (1681 ugaris-core [+28] + 47 db + 3 net + 37
+  protocol + 553 server, all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, 12s boot-smoke confirmed
+  "entering Rust game loop" with no panics.
   Progress Log (iteration 112): ported `CDR_MILITARY_MASTER`'s own driver
   (`military_master_driver`, `military.c:2108-2206`), the first real call
   site for every function the previous 4 iterations left dangling.

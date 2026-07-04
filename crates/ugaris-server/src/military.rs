@@ -7,14 +7,20 @@
 //! Also wires the `CDR_MILITARY_MASTER` NPC driver
 //! ([`apply_military_master_events`], see `ugaris-core`'s `world/
 //! military.rs` sixth-slice doc comment for the `World`/`PlayerRuntime`
-//! split this mirrors from `apply_bank_events`).
+//! split this mirrors from `apply_bank_events`), and the
+//! `CDR_MILITARY_ADVISOR` NPC driver ([`apply_military_advisor_events`],
+//! see `ugaris-core`'s `world/military.rs` seventh-slice doc comment -
+//! same shape).
 
 use super::*;
 use ugaris_core::world::{
-    army_rank_for_points, army_rank_name, display_mission_text,
-    military_mission_progress_message_should_display, offer_missions_text, AcceptMissionOutcome,
-    GreetPlayerOutcome, MilitaryMasterEvent, MilitaryMissionKillCheck, MilitaryMissionProgress,
-    MissionRequestOutcome, MissionRerollOutcome, SingleMission,
+    adv_favor_desc_lines, adv_introduction_text, army_rank_for_points, army_rank_name,
+    calculate_advisor_index, display_mission_text, favor_size_name,
+    military_mission_progress_message_should_display, mission_difficulty_name, mission_type_name,
+    offer_missions_text, AcceptMissionOutcome, GreetPlayerOutcome, MilitaryAdvisorEvent,
+    MilitaryMasterEvent, MilitaryMissionKillCheck, MilitaryMissionProgress, MissionRequestOutcome,
+    MissionRerollOutcome, OfferFavorOutcome, ProcessFavorPaymentOutcome, SingleMission,
+    SpecificMissionRequestOutcome,
 };
 
 /// C `check_military_solve(co, cn)`'s killer-side (`co`, `check.killer_id`
@@ -494,6 +500,356 @@ fn apply_military_master_reroll(
                     world.npc_quiet_say(master_id, &line);
                 }
             }
+        }
+    }
+    true
+}
+
+/// C `military_advisor_driver`'s message-handling body (`src/module/
+/// military.c:2607-2699`), applying each [`MilitaryAdvisorEvent`] queued
+/// by `World::process_military_advisor_actions` (mirrors
+/// `apply_military_master_events`'s shape).
+pub(crate) fn apply_military_advisor_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+) -> usize {
+    let mut applied = 0;
+    for event in world.drain_pending_military_advisor_events() {
+        match event {
+            MilitaryAdvisorEvent::NearbyPlayer {
+                advisor_id,
+                player_id,
+            } => {
+                if apply_military_advisor_nearby_player(world, runtime, advisor_id, player_id) {
+                    applied += 1;
+                }
+            }
+            MilitaryAdvisorEvent::Repeat { player_id, .. } => {
+                if let Some(player) = runtime.player_for_character_mut(player_id) {
+                    // C qa code 2 ("repeat"): `ppd->advisor_state = 0;`,
+                    // no text (`military.c:2610-2612`).
+                    player.set_advisor_state(0);
+                    applied += 1;
+                }
+            }
+            MilitaryAdvisorEvent::FavorDesc {
+                advisor_id,
+                player_id,
+            } => {
+                if apply_military_advisor_favor_desc(world, runtime, advisor_id, player_id) {
+                    applied += 1;
+                }
+            }
+            MilitaryAdvisorEvent::Favor {
+                advisor_id,
+                player_id,
+                favor_size,
+            } => {
+                if apply_military_advisor_favor(world, runtime, advisor_id, player_id, favor_size) {
+                    applied += 1;
+                }
+            }
+            MilitaryAdvisorEvent::Pay {
+                advisor_id,
+                player_id,
+            } => {
+                if apply_military_advisor_pay(world, runtime, advisor_id, player_id) {
+                    applied += 1;
+                }
+            }
+            MilitaryAdvisorEvent::SpecificMissionRequest {
+                advisor_id,
+                player_id,
+                difficulty,
+                mission_type,
+            } => {
+                if apply_military_advisor_specific_mission_request(
+                    world,
+                    runtime,
+                    advisor_id,
+                    player_id,
+                    difficulty,
+                    mission_type,
+                ) {
+                    applied += 1;
+                }
+            }
+        }
+    }
+    applied
+}
+
+/// C `military_advisor_driver`'s `NT_CHAR` greeting branch
+/// (`military.c:2639-2661`): the "already recommended today"/fresh-
+/// introduction pair, gated on `ppd->advisor_state == 0 ||
+/// ppd->current_advisor != dat->storage_ID`.
+fn apply_military_advisor_nearby_player(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    advisor_id: CharacterId,
+    player_id: CharacterId,
+) -> bool {
+    let yday = world.date.yday as i32;
+    let storage_id = world.advisor_storage_id(advisor_id);
+    let idx = calculate_advisor_index(storage_id);
+    let Some(player_name) = world.characters.get(&player_id).map(|c| c.name.clone()) else {
+        return false;
+    };
+    let Some(player) = runtime.player_for_character_mut(player_id) else {
+        return false;
+    };
+
+    if player.advisor_state() == 0 || player.current_advisor() != storage_id {
+        if player.military_advisor_last(idx) == yday + 1 {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!("Ah, {player_name}. I haven't forgotten you."),
+            );
+        } else {
+            let text = adv_introduction_text(storage_id, &player_name);
+            world.npc_quiet_say(advisor_id, &text);
+        }
+        if let Some(player) = runtime.player_for_character_mut(player_id) {
+            player.set_advisor_state(1);
+            player.set_current_advisor(storage_id);
+        }
+    }
+    true
+}
+
+/// C qa code 3 ("favor"): [`adv_favor_desc_lines`], gated on the same
+/// "already recommended today" check every favor/mission-request path
+/// shares (`military.c:2494-2499`).
+fn apply_military_advisor_favor_desc(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    advisor_id: CharacterId,
+    player_id: CharacterId,
+) -> bool {
+    let yday = world.date.yday as i32;
+    let storage_id = world.advisor_storage_id(advisor_id);
+    let idx = calculate_advisor_index(storage_id);
+    let Some(player_name) = world.characters.get(&player_id).map(|c| c.name.clone()) else {
+        return false;
+    };
+    let Some(player) = runtime.player_for_character(player_id) else {
+        return false;
+    };
+
+    if player.military_advisor_last(idx) == yday + 1 {
+        world.npc_quiet_say(
+            advisor_id,
+            &format!("Mentioning your name twice a day won't accomplish much, {player_name}."),
+        );
+    } else {
+        for line in adv_favor_desc_lines() {
+            world.npc_quiet_say(advisor_id, line);
+        }
+    }
+    true
+}
+
+/// C qa codes 4-8 ("small".."vast"): [`World::offer_favor`].
+fn apply_military_advisor_favor(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    advisor_id: CharacterId,
+    player_id: CharacterId,
+    favor_size: i32,
+) -> bool {
+    let yday = world.date.yday as i32;
+    let storage_id = world.advisor_storage_id(advisor_id);
+    let idx = calculate_advisor_index(storage_id);
+    let Some(player_name) = world.characters.get(&player_id).map(|c| c.name.clone()) else {
+        return false;
+    };
+    let Some(player) = runtime.player_for_character_mut(player_id) else {
+        return false;
+    };
+
+    match world.offer_favor(player_id, player, idx, favor_size, yday) {
+        OfferFavorOutcome::AlreadyUsedToday => {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!("Mentioning your name twice a day won't accomplish much, {player_name}."),
+            );
+        }
+        // C's own `default: return 0;` bail-out - no text at all,
+        // unreachable via the fixed qa-code mapping.
+        OfferFavorOutcome::InvalidFavorSize => {}
+        OfferFavorOutcome::Offered { favor_size, cost } => {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!(
+                    "You can get a {} favor for the humble fee of {}G, {}S, {player_name}. Say \
+                     pay if you want it.",
+                    favor_size_name(favor_size),
+                    cost / 100,
+                    cost % 100
+                ),
+            );
+        }
+    }
+    true
+}
+
+/// C qa code 9 ("pay"): [`World::process_favor_payment`].
+fn apply_military_advisor_pay(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    advisor_id: CharacterId,
+    player_id: CharacterId,
+) -> bool {
+    let yday = world.date.yday as i32;
+    let storage_id = world.advisor_storage_id(advisor_id);
+    let idx = calculate_advisor_index(storage_id);
+    let Some(player_name) = world.characters.get(&player_id).map(|c| c.name.clone()) else {
+        return false;
+    };
+    let Some(player) = runtime.player_for_character_mut(player_id) else {
+        return false;
+    };
+
+    match world.process_favor_payment(player_id, player, idx, storage_id, yday) {
+        ProcessFavorPaymentOutcome::NothingAgreed => {
+            world.npc_quiet_say(
+                advisor_id,
+                "Pay for what? We haven't agreed on anything yet.",
+            );
+        }
+        ProcessFavorPaymentOutcome::InsufficientGold => {
+            world.npc_quiet_say(advisor_id, "Alas, you do not have enough money.");
+        }
+        ProcessFavorPaymentOutcome::SpecificMissionArranged {
+            mission_type,
+            difficulty,
+        } => {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!(
+                    "Excellent! I've arranged an {} {} mission for you. The military governor \
+                     will have your orders ready at daybreak.",
+                    mission_difficulty_name(difficulty as usize),
+                    mission_type_name(mission_type)
+                ),
+            );
+        }
+        ProcessFavorPaymentOutcome::FavorArranged { .. } => {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!(
+                    "Alright, I'll mention your name to the military governor, {player_name}."
+                ),
+            );
+        }
+    }
+    true
+}
+
+/// C qa codes 30-44 ("easy demon".."insane silver"):
+/// [`World::handle_specific_mission_request`].
+fn apply_military_advisor_specific_mission_request(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    advisor_id: CharacterId,
+    player_id: CharacterId,
+    difficulty: i32,
+    mission_type: i32,
+) -> bool {
+    let yday = world.date.yday as i32;
+    let storage_id = world.advisor_storage_id(advisor_id);
+    let idx = calculate_advisor_index(storage_id);
+    let Some(player_name) = world.characters.get(&player_id).map(|c| c.name.clone()) else {
+        return false;
+    };
+    let Some(player) = runtime.player_for_character_mut(player_id) else {
+        return false;
+    };
+
+    match world.handle_specific_mission_request(
+        player_id,
+        player,
+        idx,
+        difficulty,
+        mission_type,
+        yday,
+    ) {
+        SpecificMissionRequestOutcome::AlreadyUsedToday => {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!(
+                    "I've already used my influence for you today, {player_name}. Come back \
+                     tomorrow."
+                ),
+            );
+        }
+        SpecificMissionRequestOutcome::InvalidMissionType => {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!("I don't know about that type of mission, {player_name}."),
+            );
+        }
+        SpecificMissionRequestOutcome::InvalidDifficulty => {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!("I don't know that difficulty level, {player_name}."),
+            );
+        }
+        SpecificMissionRequestOutcome::RatlingLevelGate => {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!(
+                    "Ratling missions are only available at odd levels between 9 and 39, \
+                     {player_name}."
+                ),
+            );
+        }
+        SpecificMissionRequestOutcome::SilverLevelGate => {
+            world.npc_quiet_say(
+                advisor_id,
+                &format!(
+                    "Silver missions are only available at level 12 and above, {player_name}."
+                ),
+            );
+        }
+        SpecificMissionRequestOutcome::Offered {
+            difficulty,
+            mission_type,
+            cost,
+            already_completed_today,
+            has_active_mission,
+        } => {
+            if already_completed_today {
+                world.npc_quiet_say(
+                    advisor_id,
+                    &format!(
+                        "I should warn you, {player_name} - you've already completed a mission \
+                         today. My recommendation will carry over to tomorrow, but you won't be \
+                         able to use it until then."
+                    ),
+                );
+            }
+            if has_active_mission {
+                world.npc_quiet_say(
+                    advisor_id,
+                    &format!(
+                        "Keep in mind, {player_name}, you already have an active mission. \
+                         You'll need to complete or abandon it before you can take the one I \
+                         recommend."
+                    ),
+                );
+            }
+            world.npc_quiet_say(
+                advisor_id,
+                &format!(
+                    "I can recommend you for an {} {} mission for {}G, {}S. Say pay if you want \
+                     it.",
+                    mission_difficulty_name(difficulty as usize),
+                    mission_type_name(mission_type),
+                    cost / 100,
+                    cost % 100
+                ),
+            );
         }
     }
     true

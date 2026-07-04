@@ -5729,6 +5729,19 @@ async fn main() -> anyhow::Result<()> {
                         "applied military master mission-dialogue events"
                     );
                 }
+                // C `military_advisor_driver`: the paid mission-
+                // recommendation Military Advisor NPC
+                // (`src/module/military.c`).
+                world.process_military_advisor_actions(config.area_id);
+                let military_advisor_events_applied =
+                    apply_military_advisor_events(&mut world, &mut runtime);
+                if military_advisor_events_applied != 0 {
+                    info!(
+                        military_advisor_events_applied,
+                        tick = world.tick.0,
+                        "applied military advisor favor/mission-recommendation events"
+                    );
+                }
                 if clanclerk_events_applied != 0 {
                     info!(
                         clanclerk_events_applied,

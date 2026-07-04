@@ -54,10 +54,12 @@ pub const CDR_CLANCLERK: u16 = 28;
 pub const CDR_GATE_FIGHT: u16 = 40;
 /// C `#define CDR_MILITARY_MASTER 42` (`src/system/drvlib.h`): the
 /// mission-giving Military Master NPC (`src/module/military.c::
-/// military_master_driver`). `CDR_MILITARY_ADVISOR` (43, the paid
-/// mission-recommendation NPC) is not ported yet - see the "Military
-/// ranks" task in `PORTING_TODO.md`.
+/// military_master_driver`).
 pub const CDR_MILITARY_MASTER: u16 = 42;
+/// C `#define CDR_MILITARY_ADVISOR 43` (`src/system/drvlib.h`): the paid
+/// mission-recommendation NPC (`src/module/military.c::
+/// military_advisor_driver`).
+pub const CDR_MILITARY_ADVISOR: u16 = 43;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
@@ -132,6 +134,7 @@ pub enum CharacterDriverState {
     ClanFound(ClanFoundData),
     Clanclerk(ClanclerkDriverData),
     MilitaryMaster(MilitaryMasterDriverData),
+    MilitaryAdvisor(MilitaryAdvisorDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -488,6 +491,32 @@ pub struct MilitaryMasterDriverData {
 /// arg this driver reads is `storage=N;`.
 pub fn parse_military_master_driver_args(args: &str) -> MilitaryMasterDriverData {
     let mut data = MilitaryMasterDriverData::default();
+    let mut rest = args;
+    while let Some((name, value, next)) = next_legacy_name_value(rest) {
+        if name == "storage" {
+            data.storage_id = value.parse::<i32>().unwrap_or(0);
+        }
+        rest = next;
+    }
+    data
+}
+
+/// C `struct military_advisor_data`'s zone-file-parsed half
+/// (`src/module/military.c:369-375`) - just the `storage_ID` used by
+/// [`crate::world::calculate_advisor_index`] and `adv_introduction`'s
+/// `storage_ID % 4` greeting-variant selector. The `struct cost_data
+/// storage_data[5]` sales-economy counters are out of scope for this
+/// slice - see the "Military ranks" task in `PORTING_TODO.md`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MilitaryAdvisorDriverData {
+    pub storage_id: i32,
+}
+
+/// C `military_advisor_parse` (`military.c:2221-2230`): the only
+/// zone-file arg this driver reads is `storage=N;`, same shape as
+/// [`parse_military_master_driver_args`].
+pub fn parse_military_advisor_driver_args(args: &str) -> MilitaryAdvisorDriverData {
+    let mut data = MilitaryAdvisorDriverData::default();
     let mut rest = args;
     while let Some((name, value, next)) = next_legacy_name_value(rest) {
         if name == "storage" {
@@ -1872,7 +1901,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Clanmaster(_)
             | CharacterDriverState::ClanFound(_)
             | CharacterDriverState::Clanclerk(_)
-            | CharacterDriverState::MilitaryMaster(_),
+            | CharacterDriverState::MilitaryMaster(_)
+            | CharacterDriverState::MilitaryAdvisor(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
