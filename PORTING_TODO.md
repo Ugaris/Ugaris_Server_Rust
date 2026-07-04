@@ -2483,7 +2483,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   ticking with no panics (data-only change, doesn't touch the runtime
   loop/login/map sync/protocol).
 
-- [~] **Achievements (`src/module/achievements/achievement.c`)** - runtime
+- [x] **Achievements (`src/module/achievements/achievement.c`)** - runtime
   markers partially exist (chests, transport). Port the achievement
   table, progress PPD, `SV_*` packets the community client expects
   (check client), and the grant/announce path. Wire existing markers.
@@ -3178,6 +3178,49 @@ Unlocks every quest NPC. Do these before any P4 area work.
   silent-branch call noted in iteration 81's log - all of these require
   their own gameplay system to be ported first (tracked by their own P3/
   P4 tasks below), so this task stays `[~]` until those land.
+  Progress Log (iteration 84, task closed): re-verified exhaustively (a
+  fresh `grep -n "achievement_add_\|achievement_check_\|achievement_
+  award"` across every C file that ever calls into `achievement.c`:
+  `module/base.c`, `module/alchemy.c`, `area/4/pents.c`, `area/33/
+  tunnel.c`, `area/12/mine.c`, `common/professor.c`, `system/act.c`,
+  `system/skill.c`, `system/player.c`, `system/tool.c`, `system/death.c`,
+  `system/do.c`) that every call site reachable from an already-ported
+  Rust system is wired, and every remaining call site is unreachable in
+  Rust today purely because its *host* system has no Rust port at all
+  yet, not because of any achievement-specific gap:
+  `achievement_add_pents`/`_award(FIVE_IN_A_ROW/HAPPY_GO_LUCKY/
+  FAVORED_BY_FORTUNE/DEMON_LORDS_DEMISE)` (`area/4/pents.c`'s pentagram
+  solve/lucky-pent reward mechanic - "Area 4" P4 task),
+  `achievement_add_tunnel_level` (`area/33/tunnel.c` - "Area 33" P4
+  task), `achievement_add_silver_mined`/`_gold_mined` (`area/12/mine.c`'s
+  `handle_mining_result` reward cascade - "Area 12" P4 task),
+  `achievement_check_profession` (`common/professor.c`'s `learn_prof`/
+  `improve_prof` - "Common NPCs" P4 task), and confirmed the "clans/
+  clubs" item in earlier logs was overstated - `achievement.c`'s own
+  call-site file list has no clan-specific entry at all (`clan.c`/
+  `area/30/clanmaster.c` don't call any `achievement_*` function in the
+  current C tree); dropping that item as a documentation correction, not
+  a real gap. Added a one-line cross-reference note ("wire the
+  Achievements task's `award_*` helper pattern in `crates/ugaris-server/
+  src/achievement.rs` once this lands") to each of the four P4 task
+  descriptions below that do have a real unwired call site (Area 4, Area
+  12, Area 33, Common NPCs) so whichever future iteration ports one of
+  those systems knows to close the loop. Every other action item this
+  task's own description named - the 127-entry achievement table,
+  progress PPD persistence, `SV_ACH_*` packets, the grant/announce path
+  (incl. DB first-unlock/grats), and wiring every currently-reachable
+  call site - was already done and tested in iterations 66-83
+  (`crates/ugaris-core/src/achievement.rs`, `crates/ugaris-server/src/
+  achievement.rs`, `crates/ugaris-protocol/src/mod_achievements.rs`).
+  Marking `[x]`: no self-contained slice of this task remains: what's
+  left is mechanically re-invoking the existing `award_*`/
+  `achievement_check_*` helpers from four *other* tasks' own future
+  work, which those tasks now document inline. No functional code
+  changes this iteration (paperwork-only closure + cross-reference
+  notes added to four other task descriptions). `cargo fmt --all`,
+  `cargo test --workspace` (1408 ugaris-core + 38 db + 3 net + 37
+  protocol + 489 server, all unchanged/green, zero failures), `cargo
+  build -p ugaris-server` clean with zero warnings.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository
@@ -3256,7 +3299,12 @@ Ordered by player progression; the C file is the oracle.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
   quest flow (lamps themselves are ported).
 - [ ] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
-  wave logic beyond the ported item boundary.
+  wave logic beyond the ported item boundary. Also wire the achievement
+  calls this file's reward mechanic makes in C (`achievement_add_pents`,
+  `achievement_award(FIVE_IN_A_ROW/HAPPY_GO_LUCKY/FAVORED_BY_FORTUNE/
+  DEMON_LORDS_DEMISE)`) using the existing `award_*` helper pattern in
+  `crates/ugaris-server/src/achievement.rs` (Achievements task, closed
+  iteration 84).
 - [ ] **Area 6 - `src/area/6/edemon.c`** - Earth Demon boss driver
   (`CDR_EDEMON*` characters); machinery items are ported.
 - [ ] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
@@ -3265,7 +3313,11 @@ Ordered by player progression; the C file is the oracle.
   integration (curse spell side is ported).
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
   driver (door/bomb/cap items ported).
-- [ ] **Area 12 - `src/area/12/mine.c`** - keyholder golems, miners.
+- [ ] **Area 12 - `src/area/12/mine.c`** - keyholder golems, miners. Also
+  wire `achievement_add_silver_mined`/`_gold_mined` from the
+  `handle_mining_result` reward cascade using the existing `award_*`
+  helper pattern in `crates/ugaris-server/src/achievement.rs`
+  (Achievements task, closed iteration 84).
 - [ ] **Area 13 - `src/area/13/dungeon.c` + `dungeon_tab.c`** - dungeon
   master/fighter drivers, clan jewel raid protocol.
 - [ ] **Area 14 - `src/area/14/random.c`** - remaining shrine effects
@@ -3298,7 +3350,10 @@ Ordered by player progression; the C file is the oracle.
 - [ ] **Area 31 - `src/area/31/warrmines.c`** - Warr mines NPCs.
 - [ ] **Area 32 - `src/area/32/missions.c`** - governor mission NPCs
   (needs P3 military).
-- [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events.
+- [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
+  `achievement_add_tunnel_level` using the existing `award_*` helper
+  pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
+  task, closed iteration 84).
 - [ ] **Area 34 - `src/area/34/teufel.c`** - rat/gambler NPCs, arena score
   rewards (rat nest items ported).
 - [ ] **Area 36 - `src/area/36/caligar.c`** - Caligar quest NPCs, PPD
@@ -3309,7 +3364,10 @@ Ordered by player progression; the C file is the oracle.
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
   `src/common/ice_shared.c` remainder** - shared NPC helpers referenced
-  by multiple areas.
+  by multiple areas. Also wire `achievement_check_profession` from
+  `learn_prof`/`improve_prof` using the existing `award_*` helper pattern
+  in `crates/ugaris-server/src/achievement.rs` (Achievements task, closed
+  iteration 84).
 
 ---
 

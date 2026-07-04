@@ -2673,15 +2673,41 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 84,
+      "startedAt": "2026-07-04T12:24:38.516Z",
+      "endedAt": "2026-07-04T12:30:39.229Z",
+      "durationMs": 360111,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- **Verification**: `cargo fmt --all`, `cargo test --workspace` (all green, zero failures), `cargo build -p ugaris-server` (clean, zero warnings). No boot-smoke needed since no runtime/login/map-sync/",
+        "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[91m\u001b[1mError: \u001b[0mCould not find oldString in the file. It must match exactly, including whitespace, indentation, and line endings.",
+        "69:| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-c",
+        "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris",
+        "252:- `IDR_FLASK` finished-potion use now follows the C `mixer_use` application path instead of the Rust-only unported feedback: shaken alchemy flasks with an empty cursor check item requirements, ins",
+        "-| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris-se",
+        "+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris-se"
+      ]
     }
   ],
-  "totalDurationMs": 91325492,
+  "totalDurationMs": 91685603,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 83,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 84,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -2812,7 +2838,7 @@
       "All green: 1110 + 9 + 3 + 33 + 342 = 1497 tests pass, zero failures, build clean. Let's check git st": 1,
       "**Verification:** `cargo fmt --all` (no diffs), `cargo test --workspace` (1497 tests, 0 failures), `": 1,
       "test result: ok. 1110 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
-      "69:| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `": 5,
+      "69:| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `": 6,
       "**Verification:** `cargo fmt --all` (clean), `cargo test --workspace` (1112/9/3/33/342 passed, 0 fai": 1,
       "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 1091 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s": 2,
@@ -3017,7 +3043,7 @@
       "3873:## Ralph Loop - Gatekeeper NPC `enter_test` Failure-Reply Wiring (Iteration 53, partial)": 1,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo fmt --all && cargo t": 1,
       "test result: ok. 452 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
-      "\u001b[91m\u001b[1mError: \u001b[0mCould not find oldString in the file. It must match exactly, including whitespac": 1,
+      "\u001b[91m\u001b[1mError: \u001b[0mCould not find oldString in the file. It must match exactly, including whitespac": 2,
       "+protocol + 452 server [+8], all green, zero failures - 8 new tests,": 1,
       "-protocol + 452 server [+8], all green, zero failures - 8 new tests,": 1,
       "test result: ok. 458 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
@@ -3026,7 +3052,7 @@
       "4. **Verification**: `cargo fmt --all`, `cargo test --workspace` (1396+36+3+37+468, all green, zero ": 1,
       "test result: ok. 463 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
-      "+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 1,
+      "+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 2,
       "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
       "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s": 1,
@@ -3044,7 +3070,7 @@
       "test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.01s": 1,
       "test result: ok. 473 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievemen": 1,
+      "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievemen": 2,
       "295:- `IDR_XMASMAKER = 143` now dispatches from the base item-driver path for C `xmasmaker`: zero-ch": 1,
       "test result: ok. 479 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
@@ -3054,7 +3080,11 @@
       "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 1382 filtered out; finished in 0.00s": 1,
       "test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 414 filtered out; finished in 0.01s": 1,
       "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "test result: ok. 1408 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
+      "test result: ok. 1408 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
+      "- **Verification**: `cargo fmt --all`, `cargo test --workspace` (all green, zero failures), `cargo b": 1,
+      "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
+      "252:- `IDR_FLASK` finished-potion use now follows the C `mixer_use` application path instead of the ": 1,
+      "-| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
