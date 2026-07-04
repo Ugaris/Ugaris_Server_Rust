@@ -2,6 +2,7 @@ use super::*;
 use crate::character_driver::{
     mem_add_driver, parse_merchant_driver_args, MerchantDriverData, CDR_MERCHANT,
 };
+use crate::clan::CLAN_BONUS_MERCHANT;
 use crate::world::merchant::MERCHANT_TALK_INTERVAL_TICKS;
 
 fn merchant_npc(id: u32, pricemulti: i32) -> Character {
@@ -34,6 +35,61 @@ fn merchant_prices_match_c_store_formulas() {
     assert_eq!(merchant_buy_price(1000, false, 100, 0), 500);
     assert_eq!(merchant_buy_price(1000, false, 250, 0), 800);
     assert_eq!(merchant_buy_price(1000, true, 0, 0), 1000);
+}
+
+#[test]
+fn clan_trade_bonus_reads_merchant_bonus_level_times_seven_point_five() {
+    // C `clan_trade_bonus` (`clan.c:1545-1552`): `get_clan_bonus(cnr, 2) * 7.5`.
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Traders", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(nr, CLAN_BONUS_MERCHANT, 2)
+        .unwrap();
+    assert!(world.spawn_character(player(2, 0), 10, 10));
+    {
+        let character = world.characters.get_mut(&CharacterId(2)).unwrap();
+        world.clan_registry.add_member(character, nr).unwrap();
+    }
+
+    assert_eq!(world.clan_trade_bonus(CharacterId(2)), 15);
+}
+
+#[test]
+fn clan_trade_bonus_is_zero_for_non_clan_members() {
+    let mut world = World::default();
+    assert!(world.spawn_character(player(2, 0), 10, 10));
+    assert_eq!(world.clan_trade_bonus(CharacterId(2)), 0);
+}
+
+#[test]
+fn merchant_store_buy_price_folds_in_clan_trade_bonus() {
+    // C `salesprice`: barter term includes `+ clan_trade_bonus(co)`.
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Traders", 0).unwrap();
+    world
+        .clan_registry
+        .set_bonus_level(nr, CLAN_BONUS_MERCHANT, 2)
+        .unwrap();
+    let mut merchant = merchant_npc(1, 400);
+    merchant.inventory[30] = Some(ItemId(900));
+    assert!(world.spawn_character(merchant, 10, 10));
+    let mut ware = item(900, ItemFlags::TAKE);
+    ware.value = 1000;
+    ware.carried_by = Some(CharacterId(1));
+    world.items.insert(ItemId(900), ware);
+    let mut buyer = player(2, 100);
+    buyer.gold = 5000;
+    assert!(world.spawn_character(buyer, 11, 10));
+    {
+        let character = world.characters.get_mut(&CharacterId(2)).unwrap();
+        world.clan_registry.add_member(character, nr).unwrap();
+    }
+    world.ensure_merchant_store(CharacterId(1));
+
+    // barter=100, bonus=15 -> divisor=215; scaled=1000*400/215=1860.46; max(1250, ..)=1860.
+    let result = world.merchant_store_buy(CharacterId(1), CharacterId(2), 0);
+    assert_eq!(result, MerchantTradeResult::Traded(1860));
 }
 
 #[test]

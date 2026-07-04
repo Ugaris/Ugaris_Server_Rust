@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::character_driver::{mem_add_driver, mem_check_driver, mem_erase_driver};
+use crate::clan::CLAN_BONUS_MERCHANT;
 use crate::world::text::hisname;
 
 /// C `STORESIZE` from `src/module/merchants/store.h`.
@@ -100,12 +101,31 @@ fn store_items_equal(a: &Item, b: &Item) -> bool {
 }
 
 impl World {
-    fn merchant_barter_and_trader(&self, character_id: CharacterId) -> (i32, i32) {
+    /// C `clan_trade_bonus` (`src/system/clan.c:1545-1552`): a clan
+    /// member's Merchant bonus level (`get_clan_bonus(cnr, 2)`) times 7.5,
+    /// folded into the barter term everywhere store prices are computed.
+    /// Reads through `get_char_clan`, so a stale clan reference on the
+    /// character is cleared as a side effect, exactly like any other
+    /// `get_char_clan` call site. Characterless clan numbers or non-clan
+    /// members read as `0`, matching C's `!(cnr = get_char_clan(cn))`
+    /// early return.
+    pub fn clan_trade_bonus(&mut self, character_id: CharacterId) -> i32 {
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return 0;
+        };
+        let Some(cnr) = self.clan_registry.get_char_clan(character) else {
+            return 0;
+        };
+        (f64::from(self.clan_registry.bonus_level(cnr, CLAN_BONUS_MERCHANT)) * 7.5) as i32
+    }
+
+    fn merchant_barter_and_trader(&mut self, character_id: CharacterId) -> (i32, i32) {
+        let bonus = self.clan_trade_bonus(character_id);
         self.characters
             .get(&character_id)
             .map(|character| {
                 (
-                    i32::from(character.values[0][CharacterValue::Barter as usize]),
+                    i32::from(character.values[0][CharacterValue::Barter as usize]) + bonus,
                     character
                         .professions
                         .get(profession::TRADER)

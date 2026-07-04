@@ -1860,7 +1860,7 @@ async fn main() -> anyhow::Result<()> {
                             .get(&character_id)
                             .is_some_and(|character| character.merchant.is_some())
                         {
-                            merchant_store_payload(&world, character_id)
+                            merchant_store_payload(&mut world, character_id)
                         } else {
                             if !check_current_container(&mut world, character_id) {
                                 continue;
@@ -6001,7 +6001,7 @@ async fn main() -> anyhow::Result<()> {
                                 runtime.merchant_views.insert(character_id, merchant_id);
                                 merchant_view_updates.push((
                                     character_id,
-                                    merchant_store_payload(&world, character_id),
+                                    merchant_store_payload(&mut world, character_id),
                                 ));
                             }
                             (None, Some(_)) => {

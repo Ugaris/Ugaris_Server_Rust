@@ -3225,7 +3225,8 @@ Unlocks every quest NPC. Do these before any P4 area work.
 - [~] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository
   (`crates/ugaris-db/src/clan.rs`), clan trade bonus (merchants call
-  `clan_trade_bonus` - currently 0), clan-vs-clan attack policy in
+  `clan_trade_bonus` - ported iteration 103, see Progress Log),
+  clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
   (transport module has the seam). REMAINING: the dungeon-guard economy
   proper (`struct clan_dungeon`'s guard counts/potions and
@@ -3267,9 +3268,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
    simplification documented inline at each new type/function. The
    `ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLAN_MASTER`/
   `ACHIEVEMENT_CLUB_MEMBER` award wiring for the club variant (clubs
-  aren't founded/joined anywhere - `club.c` itself isn't ported), and
-  `clan_trade_bonus` (blocked on the merchant system itself not being
-  ported) - channel 12/ClanA alliance-aware chat gating was closed in
+  aren't founded/joined anywhere - `club.c` itself isn't ported) -
+  `clan_trade_bonus` was ported in iteration 103 (see Progress Log) -
+  channel 12/ClanA alliance-aware chat gating was closed in
   iteration 92, clan-hall transport access beyond direct membership was
   closed in iteration 93, and `add_member`/`found_clan`/`remove_member`
   now have real call site wiring, clan-log *write* persistence, and
@@ -4037,6 +4038,43 @@ Unlocks every quest NPC. Do these before any P4 area work.
     achievement wiring, `clan_trade_bonus`, and the dungeon-guard economy
     proper - all three genuinely blocked on other unported systems
     (club.c, the merchant system, the dungeon/raid + alchemy-potion
+    systems).
+  - 2026-07-04 (iteration 103): ported `clan_trade_bonus` (`clan.c:1545-
+    1552`), closing the last of the three items in the note directly
+    above that was actually unblocked - the merchant store system landed
+    a while ago (this repo's own P1 "Merchant store DB persistence"),
+    the note above was simply stale. Added `World::clan_trade_bonus`
+    (`crates/ugaris-core/src/world/merchant.rs`): resolves the caller's
+    clan via `ClanRegistry::get_char_clan` and returns
+    `get_clan_bonus(cnr, 2) * 7.5` truncated to `i32`, `0` for non-
+    members. Folded it into the barter term at every one of the three
+    places C's `salesprice`/`buyprice` do
+    (`ware_value * multi / (barter + 100 + trader*5 + clan_trade_bonus)`):
+    `World::merchant_barter_and_trader` (feeds both
+    `merchant_store_buy`/`merchant_store_sell`) and
+    `crates/ugaris-server/src/merchants.rs::merchant_store_payload`'s
+    per-slot/per-inventory-slot/cursor price display (which computed
+    barter/trader inline rather than reusing the core helper) - changed
+    its signature from `&World` to `&mut World` (both call sites in
+    `main.rs` already held a mutable `world` binding, so this was a
+    signature-only change, no new borrow-checker gymnastics needed since
+    `get_char_clan` requires `&mut Character` to self-heal stale clan
+    references, same as every other call site in this codebase). 3 new
+    tests in `crates/ugaris-core/src/world/tests/merchant.rs`
+    (`clan_trade_bonus_reads_merchant_bonus_level_times_seven_point_
+    five`, `clan_trade_bonus_is_zero_for_non_clan_members`,
+    `merchant_store_buy_price_folds_in_clan_trade_bonus` - end-to-end
+    through `merchant_store_buy` with a bonus-level-2 clan member,
+    verified against the hand-computed C formula). `cargo fmt --all`,
+    `cargo test --workspace` (1552 ugaris-core [+3] + 47 db + 3 net + 37
+    protocol + 539 server, all green, zero failures), `cargo build -p
+    ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+    "entering Rust game loop" with no panics. REMAINING for the "Clan
+    system" task overall: club-variant achievement wiring and the
+    dungeon-guard economy proper (guard counts/potions, `use`/`buy`'s
+    real logic, and the alchemy-potion economy that would populate
+    `alc_pot`/`simple_pot`) - both still genuinely blocked on other
+    unported systems (club.c, the dungeon/raid + alchemy-potion
     systems).
 
 - [~] **Military ranks (`src/module/military.c`)** - military points exist

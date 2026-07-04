@@ -22,17 +22,18 @@
 //! dungeon training-score decay - `update_treasure`, `update_training`,
 //! `add_jewel`, `swap_jewels`, `cnt_jewels`, `get_clan_bonus`,
 //! `set_clan_bonus`, `get_bonus_name`, `get_clan_money`,
-//! `clan_money_change`, `clan.c:494-544,1105-1182,222-244`).
+//! `clan_money_change`, `clan.c:494-544,1105-1182,222-244`), and the
+//! merchant trade bonus (`clan_trade_bonus`, `clan.c:1545-1552` - see
+//! [`crate::world::World::clan_trade_bonus`], wired into every merchant
+//! price computation in `crate::world::merchant`).
 //!
 //! NOT ported yet (left for follow-up slices): the dungeon-guard economy
 //! proper (guard counts/potions/raid flags - the rest of `struct
 //! clan_dungeon` beyond `training_score`/`last_training_update`, and
 //! `get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost`/
 //! `set_clan_raid` - meaningless without the unported dungeon/raid
-//! system itself), `clan_trade_bonus` (blocked on the merchant system
-//! not being ported - the underlying primitive `get_clan_bonus` this
-//! needs is now available as [`ClanRegistry::bonus_level`]), the
-//! `doraid` raid-toggle clamp inside `update_relations`/`set_clan_bonus`
+//! system itself), the `doraid` raid-toggle clamp inside
+//! `update_relations`/`set_clan_bonus`
 //! (dead in practice once a clan's first tick has run - see the comment
 //! on [`ClanRelations::update`] - and meaningless without the dungeon/
 //! raid system, so intentionally skipped in both places),

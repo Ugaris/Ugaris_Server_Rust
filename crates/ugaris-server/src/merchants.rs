@@ -9,16 +9,18 @@ use super::*;
 /// C store view: container type 2 with the merchant name, ware sprites,
 /// per-slot sale prices, and per-inventory-slot buy prices.
 pub(crate) fn merchant_store_payload(
-    world: &World,
+    world: &mut World,
     character_id: CharacterId,
 ) -> Option<bytes::BytesMut> {
+    let clan_bonus = world.clan_trade_bonus(character_id);
     let character = world.characters.get(&character_id)?;
     let merchant_id = character.merchant?;
     let merchant = world.characters.get(&merchant_id)?;
     let store = world.merchant_stores.get(&merchant_id)?;
 
     let (barter, trader) = (
-        i32::from(character.values[0][ugaris_core::entity::CharacterValue::Barter as usize]),
+        i32::from(character.values[0][ugaris_core::entity::CharacterValue::Barter as usize])
+            + clan_bonus,
         character
             .professions
             .get(ugaris_core::legacy::profession::TRADER)
