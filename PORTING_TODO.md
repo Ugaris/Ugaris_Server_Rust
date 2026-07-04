@@ -4102,14 +4102,23 @@ Unlocks every quest NPC. Do these before any P4 area work.
   "mission" keyword handler, `military.c:1842-1896`) and the mission-
   rendering text (`describe_mission`/`display_mission`/`offer_missions`,
   `military.c:1194-1246`) were ported alongside it since nothing else
-  needed them before. REMAINING for the Master driver itself:
-  `process_clan_recommendation`/`process_advisor_recommendation`
-  (`military.c:1654-1755`, the clan-points-funded/advisor-recommendation-
-  on-sight greeting variants - need `military_master_data.storage_data.
-  clan_pts[]`/`ppd->recommend`, the same unported NPC-scoped storage-blob
-  gap flagged below) and the admin-only qa codes 18-21 (`info`/`reset`/
-  `raise`/`promote` - `info` needs the same storage-blob counters;
-  `/milinfo`/`/milpoints`/`/milstats` already cover admin needs). The
+  needed them before. `process_advisor_recommendation`
+  (`military.c:1685-1755`, the paid-advisor specific-mission-recommendation
+  on-sight greeting) was ported in iteration 114 (see Progress Log) as
+  `World::process_advisor_recommendation`, wired into the Master driver's
+  `NearbyPlayer` event handler right before `greet_player` (matching C's
+  own call order - `greet_player`'s existing `AdvisorRecommendationAlready
+  Shown` short-circuit was written for exactly this call order back when
+  it was first ported, so no changes needed there). REMAINING for the
+  Master driver itself: `process_clan_recommendation` (`military.c:
+  1654-1683`, the clan-points-funded recommendation variant - needs
+  `military_master_data.storage_data.clan_pts[]`, the unported NPC-scoped
+  storage-blob gap flagged below - and `update_clan_points`,
+  `military.c:1810-1830`, which feeds it from `get_clan_bonus`, already
+  ported as `ClanRegistry::bonus_level`) and the admin-only qa codes 18-21
+  (`info`/`reset`/`raise`/`promote` - `info` needs the same storage-blob
+  counters; `/milinfo`/`/milpoints`/`/milstats` already cover admin
+  needs). The
   Military *Advisor* NPC (`CDR_MILITARY_ADVISOR`) was ported in
   iteration 113 (see Progress Log): `handle_specific_mission_request`/
   `offer_favor`/`process_favor_payment` (the ppd-mutating halves),
@@ -4147,6 +4156,55 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
   correction, not a real gap).
+  Progress Log (iteration 114): ported `process_advisor_recommendation`
+  (`military.c:1685-1755`) as `World::process_advisor_recommendation`
+  (`crates/ugaris-core/src/world/military.rs`) - the last entirely-unported
+  gap in the Military Master driver besides the two storage-blob
+  economies (researched this iteration: confirmed via the C source
+  (`src/system/database/database_storage.c`) that the generic `storage`
+  table mechanism is narrow - only 4 C files/6 blobs use it at all
+  (military master/advisor, arena toplist/fighter, weather cross-mirror
+  sync, clan's whole-array save) - so the right-sized fix when someone
+  picks that up is a small typed-struct-per-consumer table/repository in
+  `ugaris-db`, not a generic byte-blob framework; left as a note for
+  whichever future iteration closes that gap rather than implemented
+  this iteration, to keep this slice self-contained). New:
+  `AdvisorRecommendationOutcome` (mirrors every distinct C `say()`
+  branch: `AlreadyProcessed`/`SpecificMission { greeting, description,
+  followup }`/`StandardRecommendations(Vec<String>)`) and
+  `advisor_recommendation_difficulty_text` (C's own `pref == 0 ?
+  "easy" : ... : "insane"` ternary embedded in this function's text -
+  verified this is a distinct, less-forgiving fallback than
+  `mission_difficulty_name`'s out-of-range clamp to `"easy"`: C's ternary
+  here falls through to `"insane"` for anything other than `0..=3`, not
+  just `4`, so a shared helper would have been wrong - kept separate on
+  purpose). Reuses `handle_mission_request`'s exact rank-cubed
+  `military_pts` floor / level-7 floor / `PlayerRuntime::
+  apply_mission_offer` sequence for the `mission_yday != yday + 1`
+  regeneration branch (verified against C's own `generate_mission_with_
+  preference(co, ppd, ppd->mission_type_preference)` call at
+  `military.c:1712-1714` - confirmed this is the *full* ppd-mutating C
+  function of that name, not the pure table-builder Rust function of the
+  same name, and that it performs exactly that floor/clamp/stamp
+  sequence internally). Wired into `crates/ugaris-server/src/military.rs`'s
+  `apply_military_master_nearby_player` right before
+  `PlayerRuntime::greet_player`, matching C's own `military_master_
+  driver` call order exactly (`process_advisor_recommendation(cn, co,
+  ppd)` then `greet_player(cn, co, ppd)`, `military.c:2150-2151`) -
+  renders `SpecificMission`'s 2-3 lines and every `StandardRecommendations`
+  line via `npc_quiet_say`, matching this NPC's established convention.
+  10 new tests in `crates/ugaris-core/src/world/tests/military.rs`:
+  already-processed-today no-op, empty/populated `StandardRecommendations`
+  (including a stale non-today `advisor_last` entry correctly excluded),
+  the specific-mission branch's regenerate-vs-reuse-todays-table paths,
+  both blocking follow-up messages (already-completed-today, active-
+  mission-conflict) beating the accept prompt, and the difficulty-text
+  ternary's `4`/out-of-range fall-through to `"insane"` (distinct from
+  `mission_difficulty_name`). `cargo fmt --all`, `cargo test --workspace`
+  (1689 ugaris-core [+8] + 47 db + 3 net + 37 protocol + 553 server, all
+  green, zero failures), `cargo build -p ugaris-server` clean with zero
+  warnings, 12s boot-smoke confirmed "entering Rust game loop" with no
+  panics.
   Progress Log (iteration 113): ported `CDR_MILITARY_ADVISOR`'s own driver
   (`military_advisor_driver`, `military.c:2607-2699`), the paid
   mission-recommendation NPC the previous iteration's REMAINING note

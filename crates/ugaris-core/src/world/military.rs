@@ -1704,6 +1704,156 @@ impl World {
     }
 }
 
+/// C `process_advisor_recommendation`'s own difficulty-name ternary
+/// (`military.c:1706-1710`), embedded in the greeting/accept-prompt
+/// text: `pref == 0 ? "easy" : pref == 1 ? "normal" : pref == 2 ? "hard" :
+/// pref == 3 ? "impossible" : "insane"`. Deliberately distinct from
+/// [`mission_difficulty_name`]'s out-of-range fallback (`"easy"`, via
+/// `get_colored_difficulty_name`'s own clamp) - this ternary instead
+/// falls through to `"insane"` for anything other than `0..=3`, matching
+/// C exactly (the caller already guards `mission_difficulty_preference
+/// >= 0`, so only the upper side of the range can differ from
+/// `mission_difficulty_name`).
+fn advisor_recommendation_difficulty_text(preference: i32) -> &'static str {
+    match preference {
+        0 => "easy",
+        1 => "normal",
+        2 => "hard",
+        3 => "impossible",
+        _ => "insane",
+    }
+}
+
+/// Outcome of [`World::process_advisor_recommendation`] (C
+/// `process_advisor_recommendation`, `military.c:1685-1755`), mirroring
+/// every distinct `say()` branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdvisorRecommendationOutcome {
+    /// C: `ppd->recommend == yday + 1` -> already processed today, no
+    /// text at all.
+    AlreadyProcessed,
+    /// C: `mission_type_preference > 0 && mission_difficulty_preference
+    /// >= 0` branch - a paid-favor specific-mission recommendation.
+    SpecificMission {
+        /// The initial "Be greeted... oddly specific request..." line.
+        greeting: String,
+        /// [`describe_mission_text`]'s own text for the freshly
+        /// (re)generated preferred slot - `None` if the mission slot
+        /// ended up empty/unrecognized, matching C's own `describe_
+        /// mission` silently returning `0` in that case (no text at
+        /// all, not even a fallback line).
+        description: Option<String>,
+        /// The trailing conditional line: already-completed-today /
+        /// active-mission-conflict / the "say X to accept" prompt.
+        followup: String,
+    },
+    /// C: the `else` branch - one line per matching `advisor_last[n]`
+    /// entry (`military.c:1748-1752`), possibly empty if none matched
+    /// today, matching C's own unconditional loop (no "nothing to
+    /// report" fallback line either).
+    StandardRecommendations(Vec<String>),
+}
+
+impl World {
+    /// C `process_advisor_recommendation(cn, co, ppd)`
+    /// (`military.c:1685-1755`): the Military Master driver's per-visit
+    /// paid-advisor-recommendation greeting, called just before
+    /// [`crate::PlayerRuntime::greet_player`] in C's own `NT_CHAR`
+    /// handler (`military.c:2150-2151`) - [`crate::PlayerRuntime::
+    /// greet_player`]'s own `military_recommend() == yday + 1 &&
+    /// mission_type_preference() > 0 && mission_difficulty_preference()
+    /// >= 0` short-circuit (`GreetPlayerOutcome::
+    /// AdvisorRecommendationAlreadyShown`) exists specifically to detect
+    /// that this function already greeted the player this same call,
+    /// matching C's own back-to-back `process_advisor_recommendation`/
+    /// `greet_player` call order.
+    ///
+    /// Reuses [`handle_mission_request`]'s own rank-cubed `military_pts`
+    /// floor / level-7 floor / [`crate::PlayerRuntime::
+    /// apply_mission_offer`] pattern for the `mission_yday != yday + 1`
+    /// regeneration branch (C's own `generate_mission_with_preference(co,
+    /// ppd, ppd->mission_type_preference)` call, `military.c:1712-1714`,
+    /// is the *full* ppd-mutating function - not the pure table-builder
+    /// of the same name in this module - which does exactly that floor/
+    /// clamp/stamp sequence internally).
+    pub fn process_advisor_recommendation(
+        &self,
+        character_id: CharacterId,
+        player: &mut PlayerRuntime,
+        yday: i32,
+        rng_seed: &mut u32,
+        player_name: &str,
+    ) -> AdvisorRecommendationOutcome {
+        if player.military_recommend() == yday + 1 {
+            return AdvisorRecommendationOutcome::AlreadyProcessed;
+        }
+
+        let outcome = if player.mission_type_preference() > 0
+            && player.mission_difficulty_preference() >= 0
+        {
+            let preferred_type = player.mission_type_preference();
+            let diff_pref = player.mission_difficulty_preference();
+            let diff_text = advisor_recommendation_difficulty_text(diff_pref);
+            let greeting = format!(
+                "Be greeted, {player_name}. You have been recommended by my trusty advisor, with \
+                 an oddly specific request for {diff_text} {}. Alas, thine wish be granted.",
+                mission_type_name(preferred_type)
+            );
+
+            if player.mission_yday() != yday + 1 {
+                if let Some(character) = self.characters.get(&character_id) {
+                    let rank = army_rank_for_points(character.military_points);
+                    let rank_cubed = rank.saturating_mul(rank).saturating_mul(rank);
+                    if rank_cubed > player.military_pts() {
+                        player.set_military_pts(rank_cubed);
+                    }
+                    let level = (character.level as i32).max(7);
+                    let military_pts = player.military_pts();
+                    player.apply_mission_offer(level, military_pts, preferred_type, yday, rng_seed);
+                }
+            }
+
+            let diff_idx = diff_pref.max(0) as usize;
+            let mission = player.military_mission(diff_idx);
+            let description = describe_mission_text(&mission, diff_idx, player_name);
+
+            let followup = if player.military_solved_yday() == yday + 1 {
+                format!(
+                    "However, you've already completed a mission today, {player_name}. Come \
+                     back tomorrow and this mission will be waiting for you."
+                )
+            } else if player.military_took_mission() != 0 {
+                format!(
+                    "However, you already have an active mission, {player_name}. Complete or \
+                     abandon it first, then come back to accept this one."
+                )
+            } else {
+                format!("Say {diff_text} to accept this mission.")
+            };
+
+            AdvisorRecommendationOutcome::SpecificMission {
+                greeting,
+                description,
+                followup,
+            }
+        } else {
+            let mut lines = Vec::new();
+            for n in 0..crate::player::MILITARY_PPD_MAXADVISOR {
+                if player.military_advisor_last(n) == yday + 1 {
+                    lines.push(format!(
+                        "Be greeted, {player_name}. You have been recommended by my trusty \
+                         advisor {n}"
+                    ));
+                }
+            }
+            AdvisorRecommendationOutcome::StandardRecommendations(lines)
+        };
+
+        player.set_military_recommend(yday + 1);
+        outcome
+    }
+}
+
 /// A `military_master_driver` outcome that needs `PlayerRuntime`'s
 /// `military_ppd` (owned by `ugaris-server`'s session layer, outside
 /// `World`'s visibility) to finish applying - see this module's sixth-

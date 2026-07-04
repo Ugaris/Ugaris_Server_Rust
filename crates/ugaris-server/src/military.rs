@@ -17,10 +17,10 @@ use ugaris_core::world::{
     adv_favor_desc_lines, adv_introduction_text, army_rank_for_points, army_rank_name,
     calculate_advisor_index, display_mission_text, favor_size_name,
     military_mission_progress_message_should_display, mission_difficulty_name, mission_type_name,
-    offer_missions_text, AcceptMissionOutcome, GreetPlayerOutcome, MilitaryAdvisorEvent,
-    MilitaryMasterEvent, MilitaryMissionKillCheck, MilitaryMissionProgress, MissionRequestOutcome,
-    MissionRerollOutcome, OfferFavorOutcome, ProcessFavorPaymentOutcome, SingleMission,
-    SpecificMissionRequestOutcome,
+    offer_missions_text, AcceptMissionOutcome, AdvisorRecommendationOutcome, GreetPlayerOutcome,
+    MilitaryAdvisorEvent, MilitaryMasterEvent, MilitaryMissionKillCheck, MilitaryMissionProgress,
+    MissionRequestOutcome, MissionRerollOutcome, OfferFavorOutcome, ProcessFavorPaymentOutcome,
+    SingleMission, SpecificMissionRequestOutcome,
 };
 
 /// C `check_military_solve(co, cn)`'s killer-side (`co`, `check.killer_id`
@@ -160,10 +160,11 @@ pub(crate) fn apply_military_master_events(
 }
 
 /// C `military_master_driver`'s `NT_CHAR` branch (`military.c:2153-2177`,
-/// minus the still-unported clan/advisor recommendation calls - see this
-/// module's parent doc comment): [`crate::PlayerRuntime::greet_player`],
-/// the `master_state == 1` rank-follow-up text, and
-/// [`World::complete_mission`].
+/// minus the still-unported `process_clan_recommendation` call - needs
+/// the NPC-scoped `clan_pts[]` storage-blob economy, see this module's
+/// parent doc comment): [`World::process_advisor_recommendation`],
+/// [`crate::PlayerRuntime::greet_player`], the `master_state == 1`
+/// rank-follow-up text, and [`World::complete_mission`].
 fn apply_military_master_nearby_player(
     world: &mut World,
     runtime: &mut ServerRuntime,
@@ -182,6 +183,32 @@ fn apply_military_master_nearby_player(
     let Some(player) = runtime.player_for_character_mut(player_id) else {
         return false;
     };
+
+    // C `process_advisor_recommendation(cn, co, ppd)` (`military.c:
+    // 1685-1755`), called right before `greet_player` in C's own
+    // `NT_CHAR` handler.
+    let mut rng_seed = world.legacy_random_seed;
+    match world.process_advisor_recommendation(player_id, player, yday, &mut rng_seed, &player_name)
+    {
+        AdvisorRecommendationOutcome::AlreadyProcessed => {}
+        AdvisorRecommendationOutcome::SpecificMission {
+            greeting,
+            description,
+            followup,
+        } => {
+            world.npc_quiet_say(master_id, &greeting);
+            if let Some(description) = description {
+                world.npc_quiet_say(master_id, &description);
+            }
+            world.npc_quiet_say(master_id, &followup);
+        }
+        AdvisorRecommendationOutcome::StandardRecommendations(lines) => {
+            for line in lines {
+                world.npc_quiet_say(master_id, &line);
+            }
+        }
+    }
+    world.legacy_random_seed = rng_seed;
 
     match player.greet_player(has_army_rank, yday) {
         GreetPlayerOutcome::AlreadyGreeted

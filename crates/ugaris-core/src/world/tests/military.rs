@@ -1293,6 +1293,217 @@ fn handle_mission_request_advisor_recommendation_short_circuits() {
     assert!(prompt.contains("saying normal"));
 }
 
+// C `process_advisor_recommendation` (`military.c:1685-1755`): already
+// processed today (`ppd->recommend == yday + 1`) is a total no-op.
+#[test]
+fn process_advisor_recommendation_skips_when_already_processed_today() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_recommend(101);
+    let mut rng = 42u32;
+
+    let outcome =
+        world.process_advisor_recommendation(CharacterId(1), &mut player, 100, &mut rng, "Godmode");
+
+    assert_eq!(outcome, AdvisorRecommendationOutcome::AlreadyProcessed);
+    // Untouched - C's own guard returns before the trailing `ppd->recommend
+    // = yday + 1` stamp too.
+    assert_eq!(player.military_recommend(), 101);
+}
+
+// C: no specific-mission preference and no matching `advisor_last[n]` ->
+// an empty `StandardRecommendations` list, but `recommend` is still
+// stamped (C's own unconditional trailing assignment).
+#[test]
+fn process_advisor_recommendation_standard_branch_empty_when_nothing_matched() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut player = PlayerRuntime::connected(1, 0);
+    let mut rng = 42u32;
+
+    let outcome =
+        world.process_advisor_recommendation(CharacterId(1), &mut player, 100, &mut rng, "Godmode");
+
+    assert_eq!(
+        outcome,
+        AdvisorRecommendationOutcome::StandardRecommendations(Vec::new())
+    );
+    assert_eq!(player.military_recommend(), 101);
+}
+
+// C: the standard branch reports every `advisor_last[n]` entry stamped
+// today, by index.
+#[test]
+fn process_advisor_recommendation_standard_branch_reports_every_matching_advisor() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_advisor_last(0, 101);
+    player.set_military_advisor_last(3, 101);
+    player.set_military_advisor_last(5, 50); // Not today - excluded.
+    let mut rng = 42u32;
+
+    let outcome =
+        world.process_advisor_recommendation(CharacterId(1), &mut player, 100, &mut rng, "Godmode");
+
+    let AdvisorRecommendationOutcome::StandardRecommendations(lines) = outcome else {
+        panic!("expected StandardRecommendations, got {outcome:?}");
+    };
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].contains("advisor 0"));
+    assert!(lines[1].contains("advisor 3"));
+}
+
+// C: a specific-mission preference short-circuits into the paid-favor
+// greeting, regenerating a fresh offer table for today
+// (`mission_yday != yday + 1`), describing the preferred slot, and
+// prompting "say <difficulty>" since nothing blocks acceptance.
+#[test]
+fn process_advisor_recommendation_specific_mission_regenerates_and_prompts_accept() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.level = 21;
+    character_data.military_points = 1000;
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_type_preference(MISSION_TYPE_RATLING);
+    player.set_mission_difficulty_preference(1);
+    let mut rng = 42u32;
+
+    let outcome =
+        world.process_advisor_recommendation(CharacterId(1), &mut player, 100, &mut rng, "Godmode");
+
+    let AdvisorRecommendationOutcome::SpecificMission {
+        greeting,
+        description,
+        followup,
+    } = outcome
+    else {
+        panic!("expected SpecificMission, got {outcome:?}");
+    };
+    assert!(greeting.contains("oddly specific request for normal ratling-hunting"));
+    assert!(description.unwrap().contains("ratlings in the Sewers"));
+    assert!(followup.contains("Say normal to accept this mission"));
+    assert_eq!(player.mission_yday(), 101);
+    assert_eq!(player.military_recommend(), 101);
+}
+
+// C: reuses today's already-generated offer table instead of
+// regenerating (`mission_yday == yday + 1` guard) - still describes
+// whatever is already sitting in the preferred slot.
+#[test]
+fn process_advisor_recommendation_specific_mission_reuses_todays_offer_table() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.level = 21;
+    character_data.military_points = 1000;
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_type_preference(MISSION_TYPE_RATLING);
+    player.set_mission_difficulty_preference(1);
+    player.set_mission_yday(101);
+    player.set_military_mission(
+        1,
+        SingleMission {
+            mission_type: MISSION_TYPE_RATLING,
+            opt1: 7,
+            opt2: 9,
+            pts: 1,
+            exp: 10,
+        },
+    );
+    let mut rng = 42u32;
+
+    let outcome =
+        world.process_advisor_recommendation(CharacterId(1), &mut player, 100, &mut rng, "Godmode");
+
+    let AdvisorRecommendationOutcome::SpecificMission { description, .. } = outcome else {
+        panic!("expected SpecificMission, got {outcome:?}");
+    };
+    assert!(description.unwrap().contains("slay 7 level 9 ratlings"));
+}
+
+// C: the already-completed-today follow-up line wins over the accept
+// prompt.
+#[test]
+fn process_advisor_recommendation_specific_mission_already_completed_today_followup() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.level = 21;
+    character_data.military_points = 1000;
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_type_preference(MISSION_TYPE_RATLING);
+    player.set_mission_difficulty_preference(1);
+    player.set_military_solved_yday(101);
+    let mut rng = 42u32;
+
+    let outcome =
+        world.process_advisor_recommendation(CharacterId(1), &mut player, 100, &mut rng, "Godmode");
+
+    let AdvisorRecommendationOutcome::SpecificMission { followup, .. } = outcome else {
+        panic!("expected SpecificMission, got {outcome:?}");
+    };
+    assert!(followup.contains("you've already completed a mission today"));
+}
+
+// C: the active-mission-conflict follow-up line wins over the accept
+// prompt when the player already took a (different) mission.
+#[test]
+fn process_advisor_recommendation_specific_mission_active_mission_conflict_followup() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.level = 21;
+    character_data.military_points = 1000;
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_type_preference(MISSION_TYPE_RATLING);
+    player.set_mission_difficulty_preference(1);
+    player.set_military_took_mission(3);
+    let mut rng = 42u32;
+
+    let outcome =
+        world.process_advisor_recommendation(CharacterId(1), &mut player, 100, &mut rng, "Godmode");
+
+    let AdvisorRecommendationOutcome::SpecificMission { followup, .. } = outcome else {
+        panic!("expected SpecificMission, got {outcome:?}");
+    };
+    assert!(followup.contains("you already have an active mission"));
+}
+
+// C: the difficulty-name ternary used in this function's own text falls
+// through to "insane" for any preference other than 0-3 (unlike
+// `mission_difficulty_name`'s out-of-range clamp to "easy") - exercised
+// here via preference `4` ("insane" itself, the highest real difficulty)
+// to also confirm the description embeds the demon-mission text (no
+// type preference set, so C's `describe_mission` falls back on whatever
+// was last generated - here nothing, so `None`).
+#[test]
+fn process_advisor_recommendation_difficulty_text_falls_through_to_insane() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.level = 21;
+    character_data.military_points = 1000;
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_type_preference(MISSION_TYPE_RATLING);
+    player.set_mission_difficulty_preference(4);
+    let mut rng = 42u32;
+
+    let outcome =
+        world.process_advisor_recommendation(CharacterId(1), &mut player, 100, &mut rng, "Godmode");
+
+    let AdvisorRecommendationOutcome::SpecificMission {
+        greeting, followup, ..
+    } = outcome
+    else {
+        panic!("expected SpecificMission, got {outcome:?}");
+    };
+    assert!(greeting.contains("oddly specific request for insane ratling-hunting"));
+    assert!(followup.contains("Say insane to accept this mission"));
+}
+
 // C `military_master_driver`'s `NT_CHAR` branch (`military.c:2153-2177`),
 // ported as a periodic nearby-player scan.
 #[test]
