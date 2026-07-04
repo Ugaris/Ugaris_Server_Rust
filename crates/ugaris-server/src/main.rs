@@ -154,9 +154,9 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::{
         exp2level, legacy_save_number, level2exp, level_value, merchant_buy_price,
-        merchant_sales_price, BankEvent, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts,
-        LegacyHurtEvent, LookMapRequest, MerchantTradeResult, RaiseSkillOutcome, StoreWare,
-        TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        merchant_sales_price, BankEvent, FirstKillCheck, GateWelcomeOutcomeEvent,
+        GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
+        RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -932,6 +932,17 @@ async fn main() -> anyhow::Result<()> {
                         award.killer_id,
                         award.area_id,
                         award.target_is_demon,
+                    )
+                    .await;
+                }
+                // C kill_char give_first_kill.
+                for check in world.drain_pending_first_kill_checks() {
+                    apply_first_kill_check(
+                        &mut world,
+                        &mut runtime,
+                        &achievement_repository,
+                        i32::from(args.area_id),
+                        check,
                     )
                     .await;
                 }

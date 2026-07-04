@@ -53,6 +53,21 @@ pub struct KillAchievementAward {
     pub target_is_demon: bool,
 }
 
+/// Queued `give_first_kill(cn, co)` check (`death.c:196-254`), fired when a
+/// player kills an NPC whose `ch.class` is set (`1..=1023`). Server-side
+/// (which owns `PlayerRuntime::first_kill_ppd`) drains this, bit-tests/sets
+/// the class via `PlayerRuntime::mark_first_kill`, and on a genuine first
+/// kill grants the `kill_score * 5` exp bonus, sends the matching congrats
+/// text, and checks the Slayer of Demon Lords achievement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirstKillCheck {
+    pub killer_id: CharacterId,
+    pub victim_class: i32,
+    pub victim_level: u32,
+    pub victim_has_name: bool,
+    pub victim_name: String,
+}
+
 impl World {
     /// C `kill_char(cn, co)` follow-up run once `hurt` marked the character
     /// dead: death-driver dispatch and NT_DEAD fan-out already happened in
@@ -69,6 +84,9 @@ impl World {
         let target_level = target.level;
         let target_is_player = target.flags.contains(CharacterFlags::PLAYER);
         let target_is_demon = target.flags.contains(CharacterFlags::DEMON);
+        let target_class = target.class;
+        let target_has_name = target.flags.contains(CharacterFlags::HASNAME);
+        let target_name = target.name.clone();
 
         // C: if (ch[cn].flags & CF_RESPAWN) set_timer(ticker + ch[cn].respawn, respawn_callback, ...)
         if target.flags.contains(CharacterFlags::RESPAWN) && !target.template_key.is_empty() {
@@ -118,6 +136,20 @@ impl World {
                     area_id: i32::from(self.area_id),
                     target_is_demon,
                 });
+
+                // C `give_first_kill(co, cn)` guard (`death.c:196-203`):
+                // `if (!(ch[cn].flags & CF_PLAYER)) return;` (already
+                // ensured by `killer_is_player`) and `if (ch[co].class < 1
+                // || ch[co].class > 1023) return;`.
+                if (1..=1023).contains(&target_class) {
+                    self.pending_first_kill_checks.push(FirstKillCheck {
+                        killer_id: cause_id,
+                        victim_class: target_class,
+                        victim_level: target_level,
+                        victim_has_name: target_has_name,
+                        victim_name: target_name,
+                    });
+                }
             }
         }
 
@@ -192,6 +224,11 @@ impl World {
     /// Drain queued kill achievement awards for the server achievement path.
     pub fn drain_pending_kill_achievements(&mut self) -> Vec<KillAchievementAward> {
         std::mem::take(&mut self.pending_kill_achievements)
+    }
+
+    /// Drain queued `give_first_kill` checks for the server achievement path.
+    pub fn drain_pending_first_kill_checks(&mut self) -> Vec<FirstKillCheck> {
+        std::mem::take(&mut self.pending_first_kill_checks)
     }
 
     /// Schedule item destruction, mirroring C `set_expire` for bodies.

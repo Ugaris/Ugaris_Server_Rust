@@ -3874,6 +3874,7 @@ mod tests {
             driver_state: None,
             driver_messages: Vec::new(),
             driver_memory: DriverMemory::default(),
+            class: 0,
         }
     }
 

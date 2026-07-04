@@ -2466,6 +2466,7 @@ mod tests {
             driver_state: None,
             driver_messages: Vec::new(),
             driver_memory: crate::character_driver::DriverMemory::default(),
+            class: 0,
         }
     }
 

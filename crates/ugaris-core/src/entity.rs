@@ -398,6 +398,13 @@ pub struct Character {
     /// currently trading with.
     #[serde(default)]
     pub merchant: Option<CharacterId>,
+    /// C `ch.class`: the NPC monster-type id from its zone template
+    /// (`ARMY_*`/pentagram/palace/mine class ranges used by
+    /// `give_first_kill`'s congrats-message class-range checks and
+    /// `get_army_rank_int`). Always 0 for players (never set from a zone
+    /// template).
+    #[serde(default)]
+    pub class: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -600,6 +607,7 @@ mod tests {
             driver_state: None,
             driver_messages: Vec::new(),
             driver_memory: crate::character_driver::DriverMemory::default(),
+            class: 0,
         };
 
         character.push_driver_message(crate::character_driver::NT_CREATE, 1, 2, 3);

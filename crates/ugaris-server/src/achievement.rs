@@ -800,16 +800,17 @@ pub(crate) async fn award_stone_pickup_achievement(
     record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
-/// Shared helper for [`award_trader_deal_achievement`]: awards `ty` to a
-/// single character via `AccountAchievements::award` (the same generic
-/// primitive `main.rs`'s `Quester` award call site uses - there is no
-/// stat-based `add_*` helper for `TrustButVerify` in C either, just a bare
-/// `achievement_award` call), sends the unlock packet to every session for
-/// that character, and records the DB first-unlock/grats-announce tail.
-/// A no-op if the character has no live `PlayerRuntime` (mirrors C's
-/// `CF_PLAYER` gate - `find_char_byID` returning nothing is C's equivalent
-/// no-op path).
-async fn award_single_trader_achievement(
+/// Shared helper for every call site that mirrors C calling the bare
+/// `achievement_award` primitive directly (no stat-based `add_*` helper
+/// exists in C for these - `TrustButVerify`, `SlayerOfDemonLords` - just a
+/// direct `achievement_award(cn, TYPE, 1)` call), matching `main.rs`'s
+/// `Quester` award call site's shape too: awards `ty` to a single
+/// character via `AccountAchievements::award`, sends the unlock packet to
+/// every session for that character, and records the DB
+/// first-unlock/grats-announce tail. A no-op if the character has no live
+/// `PlayerRuntime` (mirrors C's `CF_PLAYER` gate - `find_char_byID`
+/// returning nothing is C's equivalent no-op path).
+async fn award_bare_achievement(
     world: &mut World,
     runtime: &mut ServerRuntime,
     repository: &Option<ugaris_db::PgAchievementRepository>,
@@ -843,7 +844,7 @@ async fn award_single_trader_achievement(
 /// `achievement_award(c2_trader, ACHIEVEMENT_TRUST_BUT_VERIFY, 1)` fire
 /// independently for both traders (C guards each with its own
 /// `find_char_byID` null check - our per-character no-op inside
-/// `award_single_trader_achievement` is the equivalent). Consumes a
+/// `award_bare_achievement` is the equivalent). Consumes a
 /// `TraderEvent::DealCompleted` queued by `World::process_trader_actions`.
 pub(crate) async fn award_trader_deal_achievement(
     world: &mut World,
@@ -852,7 +853,7 @@ pub(crate) async fn award_trader_deal_achievement(
     c1_id: CharacterId,
     c2_id: CharacterId,
 ) {
-    award_single_trader_achievement(
+    award_bare_achievement(
         world,
         runtime,
         repository,
@@ -860,7 +861,7 @@ pub(crate) async fn award_trader_deal_achievement(
         AchievementType::TrustButVerify,
     )
     .await;
-    award_single_trader_achievement(
+    award_bare_achievement(
         world,
         runtime,
         repository,
@@ -868,6 +869,122 @@ pub(crate) async fn award_trader_deal_achievement(
         AchievementType::TrustButVerify,
     )
     .await;
+}
+
+/// C `give_first_kill`'s class-range congrats-message dispatch
+/// (`death.c:213-253`). `has_name` gates on `ch[co].flags & CF_HASNAME`
+/// (checked before any class range); the two subsequent `else if` chains
+/// are mutually exclusive class-id ranges copied digit-for-digit from the
+/// C source, and anything matching neither falls through to the generic
+/// "first kill" message.
+fn is_named_monster_first_kill_class(class: i32) -> bool {
+    matches!(
+        class,
+        52..=84
+            | 85..=100
+            | 101..=106
+            | 107..=138
+            | 139..=170
+            | 172..=181
+            | 183..=202
+            | 204..=214
+            | 215..=220
+            | 221..=228
+            | 229..=236
+            | 237..=244
+            | 336..=365
+            | 388..=403
+    )
+}
+
+/// C `give_first_kill`'s demon-lord class ranges (`death.c:238`): Earth/
+/// Fire/Ice demon lords (`258..=305`) and Hell demon lords (`404..=411`) -
+/// the same ranges `count_demon_lord_kills` sums over.
+fn is_demon_lord_first_kill_class(class: i32) -> bool {
+    matches!(class, 258..=305 | 404..=411)
+}
+
+/// C `give_first_kill`'s `log_char` congrats text (`death.c:213-253`).
+/// The `get_army_rank_int(cn)` branch inside the demon-lord case always
+/// takes the "no army rank" text here and never grants the accompanying
+/// `give_military_pts_no_npc` bonus - army ranks are an unported system
+/// (see the "Military ranks" P3 `PORTING_TODO.md` task); this is a
+/// documented, deliberate simplification, not a bug.
+fn first_kill_congrats_message(class: i32, has_name: bool, level: u32, name: &str) -> String {
+    if has_name {
+        format!("You just killed {name} for the first time. Congratulations!")
+    } else if is_named_monster_first_kill_class(class) {
+        format!("You just killed your first level {level} {name}. Congratulations!")
+    } else if is_demon_lord_first_kill_class(class) {
+        format!("You just killed your first level {level} {name}!")
+    } else {
+        format!("You just killed your first {name}. Congratulations!")
+    }
+}
+
+/// C `give_first_kill` (`src/system/death.c:196-254`): the killer-side
+/// (`cn`) half of `kill_char`'s first-kill tracking, queued as a
+/// [`FirstKillCheck`] by `World::kill_character_followup` whenever a
+/// player kills an NPC with `ch.class` in `1..=1023` (the guard clauses -
+/// `CF_PLAYER`, the class range - already ran there; this only re-runs the
+/// bit-test/set + reward/message + achievement tail, which needs the
+/// server-owned `PlayerRuntime::first_kill_ppd`). A no-op if the killer
+/// has no live `PlayerRuntime`, or if this class was already recorded
+/// (`PlayerRuntime::mark_first_kill` returning `false`, C's `if (ppd->
+/// kill[index] & mask) return;`).
+pub(crate) async fn apply_first_kill_check(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    area_id: i32,
+    check: FirstKillCheck,
+) {
+    let Some(killer_level) = world
+        .characters
+        .get(&check.killer_id)
+        .map(|character| character.level)
+    else {
+        return;
+    };
+    let demon_lord_kills = {
+        let Some(player) = runtime.player_for_character_mut(check.killer_id) else {
+            return;
+        };
+        if !player.mark_first_kill(check.victim_class) {
+            return;
+        }
+        player.count_demon_lord_kills()
+    };
+
+    // C: give_exp(cn, kill_score(co, cn) * 5);
+    let bonus_exp = i64::from(ugaris_core::attack::kill_score_level(
+        check.victim_level,
+        killer_level,
+    )) * 5;
+    world.give_exp(check.killer_id, bonus_exp, area_id as u32);
+
+    let message = first_kill_congrats_message(
+        check.victim_class,
+        check.victim_has_name,
+        check.victim_level,
+        &check.victim_name,
+    );
+    world.queue_system_text(check.killer_id, message);
+
+    // C: `if (count_demon_lord_kills(ppd) >= 20) achievement_award(cn,
+    // ACHIEVEMENT_SLAYER_OF_DEMON_LORDS, 1);` - only reachable inside the
+    // demon-lord class-range branch in C (`death.c:238-247`), so the class
+    // check is required here too, not just the count.
+    if is_demon_lord_first_kill_class(check.victim_class) && demon_lord_kills >= 20 {
+        award_bare_achievement(
+            world,
+            runtime,
+            repository,
+            check.killer_id,
+            AchievementType::SlayerOfDemonLords,
+        )
+        .await;
+    }
 }
 
 /// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every

@@ -1546,3 +1546,197 @@ async fn award_swap_money_converted_achievement_is_a_no_op_without_a_player_runt
     assert!(runtime.player_for_character(character_id).is_none());
     assert!(runtime.tick_out.get(&1).is_none());
 }
+
+// ============================================================================
+// `apply_first_kill_check` (`src/system/death.c:196-254`, `give_first_kill`).
+// ============================================================================
+
+fn first_kill_check(killer_id: CharacterId, victim_class: i32) -> FirstKillCheck {
+    FirstKillCheck {
+        killer_id,
+        victim_class,
+        victim_level: 40,
+        victim_has_name: false,
+        victim_name: "Grubber".to_string(),
+    }
+}
+
+#[tokio::test]
+async fn apply_first_kill_check_grants_exp_bonus_and_generic_congrats_on_first_kill() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+    let exp_before = world.characters.get(&character_id).unwrap().exp;
+
+    // Class 900 falls outside every named-monster/demon-lord range, so C's
+    // fallback "You just killed your first %s. Congratulations!" applies.
+    apply_first_kill_check(
+        &mut world,
+        &mut runtime,
+        &None,
+        1,
+        first_kill_check(character_id, 900),
+    )
+    .await;
+
+    let exp_after = world.characters.get(&character_id).unwrap().exp;
+    assert!(
+        exp_after > exp_before,
+        "kill_score * 5 exp bonus should apply"
+    );
+    let texts = world.drain_pending_system_texts();
+    // `give_exp`'s own level-up feedback may also queue a system text
+    // (matches C running `check_levelup` as part of `give_exp`), so only
+    // assert the first-kill congrats line is present, not that it's the
+    // only queued text.
+    assert!(texts.iter().any(|text| text.character_id == character_id
+        && text.message == "You just killed your first Grubber. Congratulations!"));
+    assert!(runtime
+        .player_for_character(character_id)
+        .unwrap()
+        .first_kill_ppd
+        .iter()
+        .any(|byte| *byte != 0));
+}
+
+#[tokio::test]
+async fn apply_first_kill_check_is_a_noop_on_repeat_kill_of_the_same_class() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    apply_first_kill_check(
+        &mut world,
+        &mut runtime,
+        &None,
+        1,
+        first_kill_check(character_id, 900),
+    )
+    .await;
+    world.drain_pending_system_texts();
+    let exp_after_first = world.characters.get(&character_id).unwrap().exp;
+
+    apply_first_kill_check(
+        &mut world,
+        &mut runtime,
+        &None,
+        1,
+        first_kill_check(character_id, 900),
+    )
+    .await;
+
+    let exp_after_second = world.characters.get(&character_id).unwrap().exp;
+    assert_eq!(exp_after_first, exp_after_second);
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+#[tokio::test]
+async fn apply_first_kill_check_uses_named_monster_congrats_message_for_class_ranges() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    // Class 60 is inside the C pentagram-demon range (52..=84).
+    apply_first_kill_check(
+        &mut world,
+        &mut runtime,
+        &None,
+        1,
+        first_kill_check(character_id, 60),
+    )
+    .await;
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(
+        |text| text.message == "You just killed your first level 40 Grubber. Congratulations!"
+    ));
+}
+
+#[tokio::test]
+async fn apply_first_kill_check_uses_hasname_congrats_message_regardless_of_class() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+    let mut check = first_kill_check(character_id, 60);
+    check.victim_has_name = true;
+
+    apply_first_kill_check(&mut world, &mut runtime, &None, 1, check).await;
+
+    let texts = world.drain_pending_system_texts();
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.message
+                == "You just killed Grubber for the first time. Congratulations!")
+    );
+}
+
+#[tokio::test]
+async fn apply_first_kill_check_unlocks_slayer_of_demon_lords_at_twenty_unique_kills() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    // 19 unique Earth/Fire/Ice demon lord classes (258..=305) first.
+    for class in 258..277 {
+        apply_first_kill_check(
+            &mut world,
+            &mut runtime,
+            &None,
+            1,
+            first_kill_check(character_id, class),
+        )
+        .await;
+    }
+    assert!(!runtime
+        .player_for_character(character_id)
+        .unwrap()
+        .achievement_data
+        .is_unlocked(AchievementType::SlayerOfDemonLords));
+
+    // The 20th unique demon lord class unlocks the achievement.
+    apply_first_kill_check(
+        &mut world,
+        &mut runtime,
+        &None,
+        1,
+        first_kill_check(character_id, 277),
+    )
+    .await;
+
+    assert!(runtime
+        .player_for_character(character_id)
+        .unwrap()
+        .achievement_data
+        .is_unlocked(AchievementType::SlayerOfDemonLords));
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert!(payloads
+        .iter()
+        .any(|payload| payload[3] == AchievementType::SlayerOfDemonLords as u8));
+}
+
+#[tokio::test]
+async fn apply_first_kill_check_is_a_noop_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+    let exp_before = world.characters.get(&character_id).unwrap().exp;
+
+    apply_first_kill_check(
+        &mut world,
+        &mut runtime,
+        &None,
+        1,
+        first_kill_check(character_id, 60),
+    )
+    .await;
+
+    assert_eq!(world.characters.get(&character_id).unwrap().exp, exp_before);
+    assert!(world.drain_pending_system_texts().is_empty());
+    assert!(runtime.player_for_character(character_id).is_none());
+}

@@ -3087,15 +3087,53 @@ Unlocks every quest NPC. Do these before any P4 area work.
   unlock in whole-gold units, sub-100-silver no stat bump, and the
   no-`PlayerRuntime` no-op path) - 6 new tests total mirroring `give_
   money`'s existing test shapes. Still unwired: (5)'s remaining ~12
-  gameplay call sites gated on unported systems (mining reward RNG,
-  professions, exploration beyond transport, clans/clubs, military,
-  tunnels, arena, pentagram solve/lucky-pent reward), plus `give_char_
-  item_smart`'s silent-branch achievement call noted above. `cargo fmt
-  --all`, `cargo test --workspace` (1397 ugaris-core + 38 db + 3 net + 37
-  protocol + 479 server [+6], all green, zero failures), `cargo build -p
-  ugaris-server` clean with zero warnings, and a 10s boot-smoke confirmed
-  "entering Rust game loop" with no panics (touches the tick loop's
-  inventory-swap-action call site).
+   gameplay call sites gated on unported systems (mining reward RNG,
+   professions, exploration beyond transport, clans/clubs, military,
+   tunnels, arena, pentagram solve/lucky-pent reward), plus `give_char_
+   item_smart`'s silent-branch achievement call noted above. `cargo fmt
+   --all`, `cargo test --workspace` (1397 ugaris-core + 38 db + 3 net + 37
+   protocol + 479 server [+6], all green, zero failures), `cargo build -p
+   ugaris-server` clean with zero warnings, and a 10s boot-smoke confirmed
+   "entering Rust game loop" with no panics (touches the tick loop's
+   inventory-swap-action call site).
+  Progress Log (iteration 82): wired `ACHIEVEMENT_SLAYER_OF_DEMON_LORDS`,
+  the one remaining achievement call site that wasn't actually gated on
+  a whole unported gameplay system - C `give_first_kill` (`death.c:196-
+  254`) itself had zero Rust port. Ported it: added `Character::class`
+  (`entity.rs`, populated from the zone `CharacterTemplate.class` field
+  at NPC spawn - that field existed and was parsed but silently dropped
+  before now), `PlayerRuntime::first_kill_ppd` as the real typed
+  `DRD_FIRSTKILL_PPD` backing (moved out of the "9 unmodeled, del_data-
+  only" ids group into its own codec: `mark_first_kill`/`count_demon_
+  lord_kills`/encode/decode, a flat 128-byte bitmask equivalent to C's
+  `kill[32]`), a new `FirstKillCheck` queued by `World::kill_character_
+  followup` alongside the existing `KillAchievementAward`, and `crates/
+  ugaris-server/src/achievement.rs::apply_first_kill_check` (drains it:
+  bit-test/set, `kill_score * 5` bonus exp, the four-way `CF_HASNAME`/
+  named-monster-range/demon-lord-range/generic congrats message copied
+  digit-for-digit, and the `count_demon_lord_kills >= 20` achievement
+  award via a newly-generalized `award_bare_achievement` - renamed from
+  the trader-only `award_single_trader_achievement`, now shared by both
+  call sites). The `get_army_rank_int` message variant + military-points
+  grant inside the demon-lord branch always takes the "no rank" path -
+  army ranks are the separate unported "Military ranks" P3 task; this is
+  a documented simplification, not a bug. Wired into `main.rs`'s tick
+  loop next to the existing kill-achievement drain. 13 pre-existing
+  test-only `Character { .. }` literals across the workspace needed a
+  mechanical `class: 0,` field added. Added 9 new `ugaris-core` tests
+  (`first_kill_ppd` bit ops/round-trip/`clear_turn_seyan_ppd`, `World`
+  queuing) and 7 new `ugaris-server` tests (congrats message variants,
+  repeat-kill no-op, the 20th-demon-lord unlock + its `SV_ACH_UNLOCK`
+  packet, no-`PlayerRuntime` no-op). `cargo fmt --all`, `cargo test
+  --workspace` (1404 ugaris-core [+7] + 38 db + 3 net + 37 protocol + 485
+  server [+7], all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, and a 10s boot-smoke confirmed "entering Rust
+  game loop" with no panics (touches the tick loop's kill-achievement-
+  drain call site). Still unwired: gameplay call sites gated on wholly
+  unported systems (mining reward RNG, professions, exploration beyond
+  transport, clans/clubs, military, tunnels, arena, pentagram solve/
+  lucky-pent reward), plus `give_char_item_smart`'s silent-branch call
+  noted in iteration 81's log.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

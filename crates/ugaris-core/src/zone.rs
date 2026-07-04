@@ -446,6 +446,7 @@ impl ZoneLoader {
                 .unwrap_or(crate::game_settings::GameSettings::default().npc_respawn_timer as u32),
             merchant: None,
             driver_memory: crate::character_driver::DriverMemory::default(),
+            class: template.class,
         };
 
         if template.driver == CDR_SIMPLEBADDY {

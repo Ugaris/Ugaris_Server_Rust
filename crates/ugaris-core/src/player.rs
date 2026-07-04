@@ -40,6 +40,10 @@ pub const LEGACY_RANDOMSHRINE_PPD_SIZE: usize = RANDOMSHRINE_USED_WORDS * 4 + 1;
 pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
+/// C `struct firstkill_ppd` (`src/system/death.c:164-167`): `unsigned int
+/// kill[32]` - a flat 1024-bit (0..1023 `ch.class` range) bitmask, one bit
+/// per unique NPC class this character has ever killed.
+pub const LEGACY_FIRSTKILL_PPD_SIZE: usize = 32 * 4;
 /// C `struct area3_ppd` (`src/area/3/area3.h:18-35` /
 /// `src/system/game/ppd_structs.h:109-127`): 18 `int` fields (`imp_kills,
 /// imp_flags;` declares two on one line). Was previously `17 * 4` (a
@@ -178,19 +182,21 @@ pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DAT
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_DATA);
-/// The following 9 ids (`src/system/drdata.h`) back systems that are not
-/// modeled on `PlayerRuntime` at all yet (first-kill tracking, army rank,
-/// military points, arena, sidestory, tunnel, strategy game, quest log,
-/// and the per-character legacy depot). They exist here solely so
-/// `turn_seyan` (`src/system/tool.c:4278-4389`, ported at
-/// `World::apply_turn_seyan`) can `del_data` them exactly like C does, via
+/// The following 8 ids (`src/system/drdata.h`) back systems that are not
+/// modeled on `PlayerRuntime` at all yet (army rank, military points,
+/// arena, sidestory, tunnel, strategy game, quest log, and the
+/// per-character legacy depot). They exist here solely so `turn_seyan`
+/// (`src/system/tool.c:4278-4389`, ported at `World::apply_turn_seyan`)
+/// can `del_data` them exactly like C does, via
 /// `PlayerRuntime::clear_turn_seyan_ppd`'s raw-block strip - see
 /// `strip_ppd_blocks`. No decode/encode logic backs these ids since
 /// nothing else in this codebase reads or writes them yet. `DRD_AREA1_PPD`
 /// and `DRD_NOMAD_PPD` moved out of this group (see `area1_ppd`/
 /// `nomad_ppd` below) once their questlog-init-required fields got real
 /// accessors; `DRD_QUESTLOG_PPD` moved out the same way once `quest_log`
-/// got a real PPD codec (see below).
+/// got a real PPD codec (see below); `DRD_FIRSTKILL_PPD` moved out the
+/// same way once `first_kill_ppd` got a real codec (see
+/// `encode_legacy_firstkill_ppd`/`decode_legacy_firstkill_ppd` below).
 pub const DRD_FIRSTKILL_PPD: u32 = make_drd(DEV_ID_DB, 18 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RANK_PPD: u32 = make_drd(DEV_ID_DB, 41 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEPOT_PPD: u32 = make_drd(DEV_ID_DB, 67 | PERSISTENT_PLAYER_DATA);
@@ -555,6 +561,12 @@ pub struct PlayerRuntime {
     pub treasure_dig_last_seconds: [u64; TREASURE_DIG_PPD_ENTRIES],
     #[serde(default)]
     pub misc_ppd: Vec<u8>,
+    /// C `struct firstkill_ppd`'s `kill[32]` bitmask
+    /// (`DRD_FIRSTKILL_PPD`): one bit per unique NPC `ch.class` (0..1023)
+    /// this character has ever killed for the first time, backing
+    /// `give_first_kill`'s per-class congrats gate.
+    #[serde(default)]
+    pub first_kill_ppd: Vec<u8>,
     #[serde(default)]
     pub area3_ppd: Vec<u8>,
     #[serde(default)]
@@ -743,6 +755,7 @@ impl PlayerRuntime {
             random_shrine_continuity: 0,
             treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
+            first_kill_ppd: Vec::new(),
             area3_ppd: Vec::new(),
             area1_ppd: Vec::new(),
             nomad_ppd: Vec::new(),
@@ -1969,6 +1982,60 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_firstkill_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_FIRSTKILL_PPD_SIZE];
+        let copy_len = self.first_kill_ppd.len().min(LEGACY_FIRSTKILL_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.first_kill_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_firstkill_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_FIRSTKILL_PPD_SIZE {
+            return false;
+        }
+        self.first_kill_ppd = bytes[..LEGACY_FIRSTKILL_PPD_SIZE].to_vec();
+        true
+    }
+
+    /// C `give_first_kill`'s bit-test/set (`death.c:196-222`): `index =
+    /// ch[co].class / 32; offset = ch[co].class & 31; mask = 1 << offset;
+    /// if (ppd->kill[index] & mask) return; ppd->kill[index] |= mask;` -
+    /// reworked here as a flat byte/bit-in-byte pair (`class / 8`, `class %
+    /// 8`), which addresses the exact same bit in a little-endian `u32[32]`
+    /// laid out as 128 raw bytes. Returns `true` the first time `class` is
+    /// killed (and records it), `false` on every repeat.
+    pub fn mark_first_kill(&mut self, class: i32) -> bool {
+        if !(1..=1023).contains(&class) {
+            return false;
+        }
+        if self.first_kill_ppd.len() < LEGACY_FIRSTKILL_PPD_SIZE {
+            self.first_kill_ppd.resize(LEGACY_FIRSTKILL_PPD_SIZE, 0);
+        }
+        let class = class as usize;
+        let byte = class / 8;
+        let bit = 1u8 << (class % 8);
+        if self.first_kill_ppd[byte] & bit != 0 {
+            return false;
+        }
+        self.first_kill_ppd[byte] |= bit;
+        true
+    }
+
+    /// C `count_demon_lord_kills` (`death.c:169-190`): counts unique
+    /// first-killed classes in `258..=305` (Earth/Fire/Ice demon lords) and
+    /// `404..=411` (Hell demon lords).
+    pub fn count_demon_lord_kills(&self) -> u32 {
+        if self.first_kill_ppd.is_empty() {
+            return 0;
+        }
+        let is_set = |class: usize| -> bool {
+            let byte = class / 8;
+            byte < self.first_kill_ppd.len() && self.first_kill_ppd[byte] & (1 << (class % 8)) != 0
+        };
+        (258..=305).filter(|&c| is_set(c)).count() as u32
+            + (404..=411).filter(|&c| is_set(c)).count() as u32
+    }
+
     pub fn decode_legacy_demonshrine_ppd(&mut self, bytes: &[u8]) -> bool {
         if bytes.len() < LEGACY_DEMONSHRINE_PPD_SIZE {
             return false;
@@ -3091,7 +3158,7 @@ impl PlayerRuntime {
     /// (`DRD_QUESTLOG_PPD` resets `quest_log` to its default, which
     /// re-triggers `init_questlog`'s "not yet initialized" sentinel on
     /// next load - matching C's del+re-`questlog_init` behavior). The
-    /// remaining 7 non-depot ids (`DRD_FIRSTKILL_PPD`, `DRD_RANK_PPD`,
+    /// remaining 6 non-depot ids (`DRD_RANK_PPD`,
     /// `DRD_MILITARY_PPD`, `DRD_ARENA_PPD`, `DRD_SIDESTORY_PPD`,
     /// `DRD_TUNNEL_PPD`, `DRD_STRATEGY_PPD`) have no Rust representation
     /// at all, so they're stripped straight out of the raw `ppd_blob` via
@@ -3127,11 +3194,11 @@ impl PlayerRuntime {
         self.staffer_ppd.clear();
         self.arkhata_ppd.clear();
         self.quest_log = QuestLog::default();
+        self.first_kill_ppd.clear();
 
         self.ppd_blob = strip_ppd_blocks(
             &self.ppd_blob,
             &[
-                DRD_FIRSTKILL_PPD,
                 DRD_RANK_PPD,
                 DRD_MILITARY_PPD,
                 DRD_ARENA_PPD,
@@ -3335,6 +3402,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_FIRSTKILL_PPD => {
+                    if !self.decode_legacy_firstkill_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_RUNE_PPD => {
                     if !self.decode_legacy_rune_ppd(block.data) {
                         return false;
@@ -3391,6 +3463,7 @@ impl PlayerRuntime {
         let mut had_saltmine = false;
         let mut had_treasure_dig = false;
         let mut had_misc = false;
+        let mut had_firstkill = false;
         let mut had_rune = false;
         let mut had_alias = false;
         let mut had_ignore = false;
@@ -3561,6 +3634,13 @@ impl PlayerRuntime {
             } else if block.id == DRD_MISC_PPD {
                 had_misc = true;
                 write_ppd_block(&mut encoded, DRD_MISC_PPD, &self.encode_legacy_misc_ppd());
+            } else if block.id == DRD_FIRSTKILL_PPD {
+                had_firstkill = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_FIRSTKILL_PPD,
+                    &self.encode_legacy_firstkill_ppd(),
+                );
             } else if block.id == DRD_RUNE_PPD {
                 had_rune = true;
                 write_ppd_block(&mut encoded, DRD_RUNE_PPD, &self.encode_legacy_rune_ppd());
@@ -3827,6 +3907,16 @@ impl PlayerRuntime {
         }
         if !had_misc && (existing_was_valid || existing.is_empty()) && !self.misc_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_MISC_PPD, &self.encode_legacy_misc_ppd());
+        }
+        if !had_firstkill
+            && (existing_was_valid || existing.is_empty())
+            && !self.first_kill_ppd.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_FIRSTKILL_PPD,
+                &self.encode_legacy_firstkill_ppd(),
+            );
         }
         if !had_rune && (existing_was_valid || existing.is_empty()) {
             if self.rune_used_words.iter().any(|word| *word != 0)
@@ -4845,7 +4935,7 @@ mod tests {
     fn clear_turn_seyan_ppd_strips_unmapped_ids_but_keeps_other_raw_blocks() {
         let unrelated_unknown_id = make_drd(DEV_ID_DB, 999 | PERSISTENT_PLAYER_DATA);
         let mut existing = Vec::new();
-        write_ppd_block(&mut existing, DRD_FIRSTKILL_PPD, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_RANK_PPD, &[1, 2, 3, 4]);
         write_ppd_block(&mut existing, DRD_DEPOT_PPD, &[5, 6]);
         write_ppd_block(&mut existing, unrelated_unknown_id, &[7, 8, 9]);
 
@@ -4857,14 +4947,33 @@ mod tests {
         let blocks: Vec<_> = LegacyPpdBlocks::parse(&player.ppd_blob)
             .map(|block| block.unwrap())
             .collect();
-        // `DRD_FIRSTKILL_PPD` is one of `turn_seyan`'s del_data targets and
+        // `DRD_RANK_PPD` is one of `turn_seyan`'s del_data targets and
         // is gone; `DRD_DEPOT_PPD` (the documented gap) and any other
         // still-unrelated id round-trip untouched.
-        assert!(!blocks.iter().any(|block| block.id == DRD_FIRSTKILL_PPD));
+        assert!(!blocks.iter().any(|block| block.id == DRD_RANK_PPD));
         assert!(blocks.iter().any(|block| block.id == DRD_DEPOT_PPD));
         assert!(blocks
             .iter()
             .any(|block| block.id == unrelated_unknown_id && block.data == [7, 8, 9]));
+    }
+
+    #[test]
+    fn clear_turn_seyan_ppd_clears_first_kill_bitmask() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.mark_first_kill(60));
+        assert!(!player.first_kill_ppd.is_empty());
+
+        player.clear_turn_seyan_ppd();
+
+        assert!(player.first_kill_ppd.is_empty());
+        // Re-encoding after the clear should not emit a
+        // `DRD_FIRSTKILL_PPD` block at all (matches the same "empty
+        // means omitted" convention every other typed PPD in this file
+        // follows).
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert!(!LegacyPpdBlocks::parse(&encoded)
+            .map(|block| block.unwrap())
+            .any(|block| block.id == DRD_FIRSTKILL_PPD));
     }
 
     #[test]
@@ -6380,6 +6489,50 @@ mod tests {
     }
 
     #[test]
+    fn mark_first_kill_returns_true_only_on_the_first_kill_of_a_class() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert!(player.mark_first_kill(60));
+        assert!(!player.mark_first_kill(60));
+        // A different class in the same byte-adjacent word is unaffected.
+        assert!(player.mark_first_kill(61));
+        // Out-of-range classes (C: `< 1 || > 1023`) never record anything.
+        assert!(!player.mark_first_kill(0));
+        assert!(!player.mark_first_kill(1024));
+        assert!(!player.mark_first_kill(-1));
+    }
+
+    #[test]
+    fn count_demon_lord_kills_only_counts_the_c_class_ranges() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.count_demon_lord_kills(), 0);
+        for class in [258, 305, 404, 411] {
+            assert!(player.mark_first_kill(class));
+        }
+        assert_eq!(player.count_demon_lord_kills(), 4);
+        // Classes outside 258..=305 / 404..=411 (e.g. a regular pentagram
+        // demon) never contribute to the count.
+        assert!(player.mark_first_kill(60));
+        assert_eq!(player.count_demon_lord_kills(), 4);
+    }
+
+    #[test]
+    fn firstkill_ppd_blob_round_trips_through_encode_decode() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        for class in [60, 258, 404] {
+            player.mark_first_kill(class);
+        }
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        let mut round_tripped = PlayerRuntime::connected(1, 0);
+        assert!(round_tripped.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(round_tripped.first_kill_ppd, player.first_kill_ppd);
+        assert_eq!(round_tripped.count_demon_lord_kills(), 2);
+        assert!(!round_tripped.mark_first_kill(60));
+        assert!(!round_tripped.mark_first_kill(258));
+        assert!(round_tripped.mark_first_kill(61));
+    }
+
+    #[test]
     fn flower_ppd_codec_matches_legacy_fixed_arrays() {
         let mut player = PlayerRuntime::connected(1, 0);
         player.mark_flower_used(0x001f_2030, 1234);
@@ -7887,6 +8040,7 @@ mod tests {
             driver_state: None,
             driver_messages: Vec::new(),
             driver_memory: crate::character_driver::DriverMemory::default(),
+            class: 0,
         }
     }
 }

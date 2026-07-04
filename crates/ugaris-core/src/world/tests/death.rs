@@ -131,6 +131,64 @@ fn kill_achievement_award_is_not_queued_for_non_player_killer() {
 }
 
 #[test]
+fn kill_queues_first_kill_check_for_player_killer_when_victim_class_is_set() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.hp = POWERSCALE;
+    target.level = 42;
+    target.class = 258; // demon lord range.
+    target.name = "Demon Lord".to_string();
+    assert!(world.spawn_character(target, 10, 10));
+    let mut killer = character(2);
+    killer.flags |= CharacterFlags::PLAYER;
+    assert!(world.spawn_character(killer, 11, 10));
+
+    lethal_hurt(&mut world, 1, 2);
+
+    assert_eq!(
+        world.drain_pending_first_kill_checks(),
+        vec![FirstKillCheck {
+            killer_id: CharacterId(2),
+            victim_class: 258,
+            victim_level: 42,
+            victim_has_name: false,
+            victim_name: "Demon Lord".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn kill_does_not_queue_first_kill_check_when_victim_class_is_unset() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.hp = POWERSCALE;
+    // `class` defaults to 0, matching C's `ch.class < 1` no-op guard.
+    assert!(world.spawn_character(target, 10, 10));
+    let mut killer = character(2);
+    killer.flags |= CharacterFlags::PLAYER;
+    assert!(world.spawn_character(killer, 11, 10));
+
+    lethal_hurt(&mut world, 1, 2);
+
+    assert!(world.drain_pending_first_kill_checks().is_empty());
+}
+
+#[test]
+fn kill_does_not_queue_first_kill_check_for_non_player_killer() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.hp = POWERSCALE;
+    target.class = 60;
+    assert!(world.spawn_character(target, 10, 10));
+    let killer = character(2); // no CF_PLAYER flag.
+    assert!(world.spawn_character(killer, 11, 10));
+
+    lethal_hurt(&mut world, 1, 2);
+
+    assert!(world.drain_pending_first_kill_checks().is_empty());
+}
+
+#[test]
 fn kill_score_level_matches_c_taper_table() {
     assert_eq!(crate::attack::kill_score_level(20, 0), 20);
     assert_eq!(crate::attack::kill_score_level(20, 15), 20);
