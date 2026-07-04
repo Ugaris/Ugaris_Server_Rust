@@ -5995,13 +5995,75 @@ future slice(s).
   test for the two new accessors. `cargo fmt --all`, `cargo test
   --workspace` (1613 ugaris-core [+1] + 47 db + 3 net + 37 protocol + 553
   server [+16], all green, zero failures), `cargo build -p ugaris-server`
-  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
-  loop" with no panics (this iteration adds new command-dispatch branches
-  to the existing per-tick command-processing chain). REMAINING for
-  "Military ranks" unchanged otherwise: `military_ppd`'s
-  `recommend`/`temp_mission_type`/`temp_mission_difficulty` fields are
-  still opaque (not needed by any ported behavior yet); the mission-offer/
-  accept/complete wrappers still have no live NPC call site; the Military
-  Master/Advisor NPC drivers, their `qa[]` table, and storage state
-  machines remain entirely unported; the `SV_QUEST_EXT` mod-packet remains
-  unported (cosmetic-only gap).
+clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+loop" with no panics (this iteration adds new command-dispatch branches
+to the existing per-tick command-processing chain). REMAINING for
+"Military ranks" unchanged otherwise: `military_ppd`'s
+`recommend`/`temp_mission_type`/`temp_mission_difficulty` fields are
+still opaque (not needed by any ported behavior yet); the mission-offer/
+accept/complete wrappers still have no live NPC call site; the Military
+Master/Advisor NPC drivers, their `qa[]` table, and storage state
+machines remain entirely unported; the `SV_QUEST_EXT` mod-packet remains
+unported (cosmetic-only gap).
+
+- 2026-07-04 (iteration 111): closed the "`military_ppd`'s `recommend`/
+  `temp_mission_type`/`temp_mission_difficulty` fields are still opaque"
+  REMAINING item and the 5 remaining header fields alongside it - every
+  one of `military_ppd`'s 64 `int` fields now has a typed accessor in
+  `crates/ugaris-core/src/player.rs`: `master_state`/`current_advisor`/
+  `advisor_state`/`advisor_cost`/`advisor_storage_nr` (the 5 header ints
+  that weren't already covered), `military_pts`/`military_normal_exp_ppd`
+  (right after `advisor_last[20]`), `military_recommend`, and
+  `temp_mission_type`/`temp_mission_difficulty`. Also ported the next
+  self-contained slice of pure driver logic on top of them, still with no
+  live NPC call site (`military_master_driver`/`military_advisor_driver`
+  themselves need their own future slice, and their storage-blob
+  persistence shares the same "no generic storage-blob concept in
+  `ugaris-db` yet" architectural gap the Arena rankings task's own
+  REMAINING note flags): `crates/ugaris-core/src/world/military.rs`
+  gained `calculate_advisor_index(storage_id)` (`military.c:2239-2249`,
+  the two-disjoint-linear-band mapping onto `advisor_last[]`'s 20 slots,
+  out-of-range falls back to slot 0), `advisor_price(level)`
+  (`military.c:2288-2299`, the 5 flat level-banded base prices), and
+  `offer_favor_cost(level, favor_size)` (`military.c:2318-2372`'s cost
+  half, the 5 favor-size multipliers, `None` for C's own invalid-size
+  `return 0`). `player.rs` gained `PlayerRuntime::greet_player(has_army_
+  rank, yday)` (C `greet_player`, `military.c:1764-1798`, the Military
+  Master driver's `NT_CHAR` dialogue-state machine as a
+  `GreetPlayerOutcome`-returning pure mutation), reproducing two exact C
+  quirks: the stale `master_state == 10` confirmation state resets to 0
+  *then* falls through to the rest of the function fresh (C's `!= 0`
+  guard runs after the reset, not as an `else`), and an advisor's
+  already-shown specific-mission recommendation takes priority over every
+  other greeting branch (matches C's `if`/`else if` chain order). `world/
+  military.rs` gained `World::mission_reroll(character_id, player, yday,
+  rng_seed)` (C `handle_mission_reroll`, `military.c:1889-1936`, the paid
+  two-step reroll-confirmation flow: already-rerolled-today/has-active-
+  mission/insufficient-200-gold gates, a first call that only stamps
+  `master_state = 10` and asks for confirmation, and a confirmed second
+  call that deducts the gold, stamps `reroll_yday`/resets `mission_yday`,
+  and calls the existing `PlayerRuntime::apply_mission_offer` to
+  regenerate the offer table) - also reproduces `generate_mission_with_
+  preference`'s own rank-cubed `military_pts` floor-up ("Adjust military
+  exp for rank if the player gained a rank elsewhere") at this call site,
+  since that clamp lives in the C caller, not the already-ported pure
+  generator functions. 17 new tests (16 in `world/tests/military.rs`
+  covering the advisor index/price/favor-cost math, every `greet_player`
+  branch including both quirks above, and every `mission_reroll` gate
+  plus the two-step confirm flow and the rank-cubed floor-up; 1 in
+  `player.rs` for the 8 new accessors round-tripping without disturbing
+  neighboring fields). `cargo fmt --all`, `cargo test --workspace` (1630
+  ugaris-core [+17] + 47 db + 3 net + 37 protocol + 553 server, all
+  green, zero failures), `cargo build -p ugaris-server` clean with zero
+  warnings. No runtime-loop/login/map-sync/protocol changes this
+  iteration (pure `ugaris-core` additions with no call site yet), so
+  boot-smoke was not required per the recipe and was not re-run.
+  REMAINING for "Military ranks": the Military Master/Advisor NPC
+  drivers themselves (their `NT_CHAR`/`NT_TEXT`/`NT_GIVE` message loops
+  and dialogue-rendering halves), their `qa[]` dialogue table (not yet
+  added to `character_driver.rs`'s `TextQaEntry` tables), the storage
+  state machines + `dat->storage_data` per-difficulty counters (needs the
+  storage-blob architectural decision shared with Arena rankings),
+  `handle_specific_mission_request` and `process_clan_recommendation`/
+  `process_advisor_recommendation`, the wealth-achievement ladder wiring,
+  and `SV_QUEST_EXT`.

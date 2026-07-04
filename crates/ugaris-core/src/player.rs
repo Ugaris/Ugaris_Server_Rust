@@ -90,6 +90,31 @@ const MILITARY_PPD_MISSION_YDAY_OFFSET: usize = MILITARY_PPD_MIS_BASE_OFFSET - 4
 /// offset 24 bytes (6 leading `int`s: `current_pts`/`master_state`/
 /// `current_advisor`/`advisor_state`/`advisor_cost`/`advisor_storage_nr`).
 const MILITARY_PPD_ADVISOR_LAST_BASE_OFFSET: usize = 6 * 4;
+/// C `military_ppd::master_state` (`military.h:29`): second header field.
+const MILITARY_PPD_MASTER_STATE_OFFSET: usize = 1 * 4;
+/// C `military_ppd::current_advisor` (`military.h:31`): "re-using storage
+/// ID" per its own comment - the advisor NPC's `storage_ID` that most
+/// recently interacted with this player.
+const MILITARY_PPD_CURRENT_ADVISOR_OFFSET: usize = 2 * 4;
+/// C `military_ppd::advisor_state` (`military.h:32`).
+const MILITARY_PPD_ADVISOR_STATE_OFFSET: usize = 3 * 4;
+/// C `military_ppd::advisor_cost` (`military.h:33`).
+const MILITARY_PPD_ADVISOR_COST_OFFSET: usize = 4 * 4;
+/// C `military_ppd::advisor_storage_nr` (`military.h:34`).
+const MILITARY_PPD_ADVISOR_STORAGE_NR_OFFSET: usize = 5 * 4;
+/// C `military_ppd::military_pts` (`military.h:39`): exp gained towards
+/// ranks, immediately after `advisor_last[MAXADVISOR]`.
+const MILITARY_PPD_MILITARY_PTS_OFFSET: usize =
+    MILITARY_PPD_ADVISOR_LAST_BASE_OFFSET + MILITARY_PPD_MAXADVISOR * 4;
+/// C `military_ppd::normal_exp` (`military.h:40`): exp given out.
+const MILITARY_PPD_NORMAL_EXP_OFFSET: usize = MILITARY_PPD_MILITARY_PTS_OFFSET + 4;
+/// C `military_ppd::temp_mission_type` (`military.h:56`), immediately
+/// after `mission_difficulty_preference`.
+const MILITARY_PPD_TEMP_MISSION_TYPE_OFFSET: usize =
+    MILITARY_PPD_MISSION_DIFFICULTY_PREFERENCE_OFFSET + 4;
+/// C `military_ppd::temp_mission_difficulty` (`military.h:57`).
+const MILITARY_PPD_TEMP_MISSION_DIFFICULTY_OFFSET: usize =
+    MILITARY_PPD_TEMP_MISSION_TYPE_OFFSET + 4;
 /// C `military_ppd::reroll_yday` (`military.h:59`): the very last field of
 /// the struct, immediately after `temp_mission_difficulty`.
 const MILITARY_PPD_REROLL_YDAY_OFFSET: usize = LEGACY_MILITARY_PPD_SIZE - 4;
@@ -2454,6 +2479,116 @@ impl PlayerRuntime {
         self.write_military_i32(MILITARY_PPD_REROLL_YDAY_OFFSET, value);
     }
 
+    /// C `military_ppd::master_state` (`military.h:29`): the Military
+    /// Master driver's own dialogue-state machine (`greet_player`'s
+    /// `0`=fresh/`1`=greeted-once/`2`=ready-for-mission-talk states plus
+    /// `handle_mission_reroll`'s `10`=awaiting-confirmation state).
+    pub fn master_state(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_MASTER_STATE_OFFSET)
+    }
+
+    pub fn set_master_state(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_MASTER_STATE_OFFSET, value);
+    }
+
+    /// C `military_ppd::current_advisor` (`military.h:31`, "re-using
+    /// storage ID" per its own comment): the advisor NPC's `storage_ID`
+    /// most recently talked to.
+    pub fn current_advisor(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_CURRENT_ADVISOR_OFFSET)
+    }
+
+    pub fn set_current_advisor(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_CURRENT_ADVISOR_OFFSET, value);
+    }
+
+    /// C `military_ppd::advisor_state` (`military.h:32`): the Military
+    /// Advisor driver's own dialogue-state machine (`offer_favor`'s
+    /// `2`=awaiting-payment state).
+    pub fn advisor_state(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_ADVISOR_STATE_OFFSET)
+    }
+
+    pub fn set_advisor_state(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_ADVISOR_STATE_OFFSET, value);
+    }
+
+    /// C `military_ppd::advisor_cost` (`military.h:33`): the gold cost
+    /// (100 = 1G) of the favor/specific-mission request currently
+    /// awaiting payment.
+    pub fn advisor_cost(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_ADVISOR_COST_OFFSET)
+    }
+
+    pub fn set_advisor_cost(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_ADVISOR_COST_OFFSET, value);
+    }
+
+    /// C `military_ppd::advisor_storage_nr` (`military.h:34`): the favor
+    /// size (`0..=4`, small/medium/big/huge/vast) currently awaiting
+    /// payment.
+    pub fn advisor_storage_nr(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_ADVISOR_STORAGE_NR_OFFSET)
+    }
+
+    pub fn set_advisor_storage_nr(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_ADVISOR_STORAGE_NR_OFFSET, value);
+    }
+
+    /// C `military_ppd::military_pts` (`military.h:39`): "exp gained
+    /// towards ranks" per its own comment - the rank-cubed-floored value
+    /// `generate_mission_with_preference` feeds into every mission
+    /// generator as their shared difficulty-scaling input (distinct from
+    /// `Character.military_points`, the real promotion-rank score).
+    pub fn military_pts(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_MILITARY_PTS_OFFSET)
+    }
+
+    pub fn set_military_pts(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_MILITARY_PTS_OFFSET, value);
+    }
+
+    /// C `military_ppd::normal_exp` (`military.h:40`): exp given out.
+    pub fn military_normal_exp_ppd(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_NORMAL_EXP_OFFSET)
+    }
+
+    pub fn set_military_normal_exp_ppd(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_NORMAL_EXP_OFFSET, value);
+    }
+
+    /// C `military_ppd::recommend` (`military.h:53`): "to remember if we
+    /// mentioned a recommendation already" per its own comment - stamped
+    /// `yday + 1` by `process_advisor_recommendation`/`process_clan_
+    /// recommendation`.
+    pub fn military_recommend(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_RECOMMEND_OFFSET)
+    }
+
+    pub fn set_military_recommend(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_RECOMMEND_OFFSET, value);
+    }
+
+    /// C `military_ppd::temp_mission_type` (`military.h:56`): "New
+    /// temporary fields for mission selection before payment" per the
+    /// struct's own comment.
+    pub fn temp_mission_type(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_TEMP_MISSION_TYPE_OFFSET)
+    }
+
+    pub fn set_temp_mission_type(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_TEMP_MISSION_TYPE_OFFSET, value);
+    }
+
+    /// C `military_ppd::temp_mission_difficulty` (`military.h:57`).
+    pub fn temp_mission_difficulty(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_TEMP_MISSION_DIFFICULTY_OFFSET)
+    }
+
+    pub fn set_temp_mission_difficulty(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_TEMP_MISSION_DIFFICULTY_OFFSET, value);
+    }
+
     /// C `generate_mission_with_preference(cn, ppd, preferred_type)`
     /// (`military.c:1036-1131`)'s ppd-mutating half: builds the 5-slot
     /// mission offer table via [`crate::world::generate_mission_with_
@@ -2609,6 +2744,53 @@ impl PlayerRuntime {
         self.set_mission_difficulty_preference(-1);
 
         AcceptMissionOutcome::Accepted(mission)
+    }
+
+    /// C `greet_player(cn, co, ppd)` (`military.c:1764-1798`): the
+    /// Military Master driver's own `NT_CHAR`-triggered dialogue-state
+    /// machine, deciding what to say (if anything) the first time a
+    /// player comes into view this visit. `has_army_rank` is C's
+    /// `get_army_rank_int(co)` (nonzero = enrolled). `yday` is C's global
+    /// `yday` (`World.date.yday`). The stale confirmation state (`10`,
+    /// left behind by an interrupted `handle_mission_reroll` from a
+    /// previous visit) is reset to `0` first, exactly like C - note this
+    /// means a stale `10` always falls through to the rest of the
+    /// function afresh (C's guard is `if (ppd->master_state != 0) return;`,
+    /// checked *after* the reset, not `else`).
+    pub fn greet_player(
+        &mut self,
+        has_army_rank: bool,
+        yday: i32,
+    ) -> crate::world::GreetPlayerOutcome {
+        use crate::world::GreetPlayerOutcome;
+
+        if self.master_state() == 10 {
+            self.set_master_state(0);
+        }
+        if self.master_state() != 0 {
+            return GreetPlayerOutcome::AlreadyGreeted;
+        }
+        if self.military_recommend() == yday + 1
+            && self.mission_type_preference() > 0
+            && self.mission_difficulty_preference() >= 0
+        {
+            self.set_master_state(2);
+            return GreetPlayerOutcome::AdvisorRecommendationAlreadyShown;
+        }
+
+        if self.military_took_mission() != 0 {
+            self.set_master_state(2);
+            GreetPlayerOutcome::HasActiveMission
+        } else if self.military_solved_yday() == yday + 1 {
+            self.set_master_state(2);
+            GreetPlayerOutcome::AlreadyCompletedToday
+        } else if has_army_rank {
+            self.set_master_state(2);
+            GreetPlayerOutcome::HasRank
+        } else {
+            self.set_master_state(1);
+            GreetPlayerOutcome::NewPlayer
+        }
     }
 
     pub fn decode_legacy_demonshrine_ppd(&mut self, bytes: &[u8]) -> bool {
@@ -7340,6 +7522,57 @@ mod tests {
         assert_eq!(player.mission_yday(), 99);
         assert_eq!(player.military_advisor_last(0), 10);
         assert_eq!(player.military_reroll_yday(), 55);
+    }
+
+    #[test]
+    fn military_ppd_remaining_opaque_fields_gained_accessors_round_trip() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.master_state(), 0);
+        assert_eq!(player.current_advisor(), 0);
+        assert_eq!(player.advisor_state(), 0);
+        assert_eq!(player.advisor_cost(), 0);
+        assert_eq!(player.advisor_storage_nr(), 0);
+        assert_eq!(player.military_pts(), 0);
+        assert_eq!(player.military_normal_exp_ppd(), 0);
+        assert_eq!(player.military_recommend(), 0);
+        assert_eq!(player.temp_mission_type(), 0);
+        assert_eq!(player.temp_mission_difficulty(), 0);
+
+        player.set_master_state(2);
+        player.set_current_advisor(31);
+        player.set_advisor_state(2);
+        player.set_advisor_cost(1200);
+        player.set_advisor_storage_nr(4);
+        player.set_military_pts(1000);
+        player.set_military_normal_exp_ppd(42);
+        player.set_military_recommend(101);
+        player.set_temp_mission_type(2);
+        player.set_temp_mission_difficulty(3);
+
+        assert_eq!(player.master_state(), 2);
+        assert_eq!(player.current_advisor(), 31);
+        assert_eq!(player.advisor_state(), 2);
+        assert_eq!(player.advisor_cost(), 1200);
+        assert_eq!(player.advisor_storage_nr(), 4);
+        assert_eq!(player.military_pts(), 1000);
+        assert_eq!(player.military_normal_exp_ppd(), 42);
+        assert_eq!(player.military_recommend(), 101);
+        assert_eq!(player.temp_mission_type(), 2);
+        assert_eq!(player.temp_mission_difficulty(), 3);
+
+        // These fields must not disturb the existing header/tail fields
+        // (`current_pts`, `advisor_last`, `reroll_yday`) already
+        // exercised by neighboring tests.
+        player.set_military_current_pts(77);
+        player.set_military_advisor_last(0, 10);
+        player.set_military_reroll_yday(55);
+        assert_eq!(player.military_current_pts(), 77);
+        assert_eq!(player.military_advisor_last(0), 10);
+        assert_eq!(player.military_reroll_yday(), 55);
+        assert_eq!(player.master_state(), 2);
+        assert_eq!(player.current_advisor(), 31);
+        assert_eq!(player.military_pts(), 1000);
+        assert_eq!(player.temp_mission_difficulty(), 3);
     }
 
     // C `generate_mission_with_preference(cn, ppd, preferred_type)`

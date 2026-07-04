@@ -4081,58 +4081,115 @@ Unlocks every quest NPC. Do these before any P4 area work.
   on `Character`; port rank thresholds, `#rank` style commands, mission
   PPD (`mission_ppd.h`) and the governor mission flow (`check_military_solve`
   is referenced by the death path - port it there when this lands).
-  REMAINING: `military_ppd`'s own advisor state (`current_advisor`/
-  `advisor_state`/`advisor_cost`/`advisor_storage_nr`/`advisor_last[20]`)/
-  `recommend`/temp mission selection (`temp_mission_type`/
-  `temp_mission_difficulty`)/`reroll_yday` fields still round-trip as
-  opaque bytes (no accessors yet - `current_pts`/`took_yday`/`solved_yday`
-  gained typed accessors this iteration, see Progress Log); the
-  ppd-populating wrappers (`generate_demon_mission`/`generate_sewer_
-  mission`/`generate_mine_mission`/`generate_mission_with_preference`/
-  `generate_mission`) plus `accept_mission`/`complete_mission` are now all
+  REMAINING: every `military_ppd` field now has a typed accessor (this
+  iteration closed the last 8 opaque ones - `master_state`/
+  `current_advisor`/`advisor_state`/`advisor_cost`/`advisor_storage_nr`/
+  `military_pts`/`normal_exp`/`recommend`/`temp_mission_type`/
+  `temp_mission_difficulty`, see Progress Log; only `temp_mission_type`/
+  `temp_mission_difficulty` still have no real reader/writer beyond the
+  accessor itself - C's own `military.c` tree never reads either field
+  either, only ever zero-initializing them, so there is nothing further
+  to port there). The ppd-populating wrappers (`generate_demon_mission`/
+  `generate_sewer_mission`/`generate_mine_mission`/`generate_mission_
+  with_preference`/`generate_mission`) plus `accept_mission`/
+  `complete_mission`/`greet_player`/`handle_mission_reroll` are now all
   ported as pure/`PlayerRuntime`/`World` functions (`PlayerRuntime::
-  apply_mission_offer`/`accept_mission`, `World::complete_mission`, see
-  Progress Log) but have no real call site yet - they need the
-  rank-cubed-floored `military_pts`/level-7-floored level inputs resolved
-  from `Character` and the current `World.date.yday`, which only the
-  still-unported Military Master/Advisor NPC driver would actually
-  supply; `handle_specific_mission_request` (the paid-advisor-
-  recommendation flow, `military.c:481-580`) remains unported; the
-  Military Master/Advisor NPC drivers, their `qa[]` dialogue table, and
-  storage state machines (`process_master_storage`/`process_advisor_
-  storage`) plus the `dat->storage_data` quests-given/quests-solved/
-  pts-given/exp-given per-difficulty counters they own (no Rust
-  `military_master_data` equivalent yet); the wealth-achievement ladder
-  the real `give_money` also updates on `complete_mission`'s mercenary
-  gold bonus (needs the DB-backed first-unlock announce, which lives in
-  the server crate - wire `ugaris_core::achievement::add_gold_earned` at
-  the same time a real driver call site lands); the
+  apply_mission_offer`/`accept_mission`/`greet_player`, `World::
+  complete_mission`/`mission_reroll`, see Progress Log) but have no real
+  call site yet - they need the Military Master/Advisor NPC driver to
+  actually invoke them with resolved `Character`/`World.date.yday`
+  inputs; `handle_specific_mission_request` (the paid-advisor-
+  recommendation flow, `military.c:481-580`) and `process_clan_
+  recommendation`/`process_advisor_recommendation`
+  (`military.c:1663-1750`, the advisor-recommendation-on-sight logic)
+  remain unported; the Military Master/Advisor NPC drivers themselves
+  (`military_master_driver`/`military_advisor_driver`, their `NT_CHAR`/
+  `NT_TEXT`/`NT_GIVE` message loops, and `adv_introduction`/
+  `adv_favor_desc`/`offer_favor`'s dialogue-rendering halves - the pure
+  cost math (`calculate_advisor_index`/`advisor_price`/
+  `offer_favor_cost`) is now ported, see Progress Log, but nothing calls
+  it from a live NPC yet), their `qa[]` dialogue table (`analyse_text_
+  driver`, not yet added to `character_driver.rs`'s `TextQaEntry` tables
+  the way `MERCHANT_QA`/`BANK_QA`/`GATEKEEPER_QA` were), and the storage
+  state machines (`process_master_storage`/`process_advisor_storage`)
+  plus the `dat->storage_data` quests-given/quests-solved/pts-given/
+  exp-given per-difficulty counters they own (no Rust `military_master_
+  data` equivalent yet - this shares the same "no generic storage-blob
+  persistence concept in `ugaris-db` yet" architectural gap the Arena
+  rankings task's REMAINING note also flags); the wealth-achievement
+  ladder the real `give_money` also updates on `complete_mission`'s
+  mercenary gold bonus (needs the DB-backed first-unlock announce, which
+  lives in the server crate - wire `ugaris_core::achievement::add_gold_
+  earned` at the same time a real driver call site lands); the
   `SV_QUEST_EXT` mod-packet that shows the active mission in the client's
   quest log (so `check_military_solve`'s own `sendquestlog` calls are
   also not reproduced yet - cosmetic only, the progress state itself is
-  correct); `military_ppd`'s `recommend`/`temp_mission_type`/
-  `temp_mission_difficulty` fields are still opaque (not needed by any
-  ported behavior yet - `advisor_last[]`/`reroll_yday` gained typed
-  accessors in iteration 110, see Progress Log). The 7 admin commands
-  (`cmd_milinfo`/`cmd_milpref`/`cmd_milreset`/`cmd_milpoints`/`cmd_milrec`/
-  `cmd_milstats`/`cmd_milsolve` - the real C name for the "force-solve"
-  command is `cmd_milsolve`, not `cmd_forcesolve`, a stale note now
-  corrected) were ported in iteration 110 (see Progress Log) - this still
-  leaves the Military Master/Advisor NPC drivers, their `qa[]` dialogue
-  table, and storage state machines (`process_master_storage`/
-  `process_advisor_storage`) plus the `dat->storage_data` quests-given/
-  quests-solved/pts-given/exp-given per-difficulty counters (no Rust
-  `military_master_data` equivalent yet), `handle_specific_mission_request`
-  (the paid-advisor-recommendation flow, `military.c:481-580`), and the
-  wealth-achievement ladder wiring on `complete_mission`'s mercenary gold
-  bonus - this is most of `military.c`'s 2,881 lines and needs its own
-  future slice(s). A player-facing `#rank`-style status command was
+  correct). A player-facing `#rank`-style status command was
   also not added (there is no such command anywhere in the
   current C `command.c` tree either - checked; only the admin-only
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
   correction, not a real gap).
-  Progress Log (iteration 110): ported the 7 admin commands
+  Progress Log (iteration 111): ported the next self-contained slice on
+  top of the offer/accept/complete-mission trio, still with no NPC driver
+  call site (the driver itself needs its own future slice - see
+  REMAINING - and its storage-blob persistence needs an architectural
+  decision shared with the Arena rankings task). `crates/ugaris-core/src/
+  player.rs` gained the last 8 typed `military_ppd` accessors so the
+  entire 256-byte struct now round-trips field-by-field instead of
+  partially as opaque bytes: `master_state`/`current_advisor`/
+  `advisor_state`/`advisor_cost`/`advisor_storage_nr` (the 5 remaining
+  header ints, offsets 4/8/12/16/20), `military_pts`/
+  `military_normal_exp_ppd` (offsets 104/108, right after
+  `advisor_last[20]`), `military_recommend` (reusing the existing
+  `MILITARY_PPD_RECOMMEND_OFFSET` const that had no accessor yet), and
+  `temp_mission_type`/`temp_mission_difficulty` (between `mission_
+  difficulty_preference` and `reroll_yday`). `crates/ugaris-core/src/
+  world/military.rs` gained 3 pure functions matching the corresponding
+  C 1:1 - `calculate_advisor_index(storage_id)` (`military.c:2239-2249`,
+  the two-disjoint-linear-band `storage_ID` -> `advisor_last[]` slot
+  mapping, out-of-range falls back to slot 0 exactly like C),
+  `advisor_price(level)` (`military.c:2288-2299`, the 5 flat level-banded
+  base prices), and `offer_favor_cost(level, favor_size)`
+  (`military.c:2318-2372`'s cost half, the 5 favor-size multipliers over
+  `advisor_price`, `None` for C's own `default: return 0` invalid-size
+  bail-out) - plus `GreetPlayerOutcome`
+  (`crate::PlayerRuntime::greet_player`'s outcome enum) and
+  `MissionRerollOutcome`/`World::mission_reroll` (see below). `player.rs`
+  gained `PlayerRuntime::greet_player(has_army_rank, yday)` (C
+  `greet_player`, `military.c:1764-1798`): the Military Master driver's
+  own `NT_CHAR` dialogue-state machine, reproducing the exact stale-`10`-
+  confirmation-state reset-then-fall-through quirk (C's guard is checked
+  *after* the reset, not `else`, so an interrupted reroll confirmation
+  from a previous visit always re-greets fresh rather than being treated
+  as "already greeted") and the advisor-recommendation-already-shown
+  branch taking priority over every other greeting (matches C's own
+  `if`/`else if` chain order exactly). `world/military.rs` gained
+  `World::mission_reroll(character_id, player, yday, rng_seed)` (C
+  `handle_mission_reroll`, `military.c:1889-1936`): the paid two-step
+  reroll-confirmation flow (already-rerolled-today / has-active-mission /
+  insufficient-200-gold gates, then a first call that only stamps
+  `master_state = 10` and asks for confirmation without spending
+  anything, and a second confirmed call that deducts the gold, stamps
+  `reroll_yday`/resets `mission_yday`, and calls the existing
+  `PlayerRuntime::apply_mission_offer` to regenerate the offer table) -
+  also reproduces `generate_mission_with_preference`'s own "Adjust
+  military exp for rank if the player gained a rank elsewhere" rank-
+  cubed `military_pts` floor-up at the call site, since that clamp lives
+  in the C caller, not the pure generator functions already ported. 17
+  new tests across `crates/ugaris-core/src/world/tests/military.rs` (advisor
+  index/price/favor-cost math, every `greet_player` branch including the
+  stale-confirmation-reset and advisor-recommendation-priority quirks,
+  every `mission_reroll` gate plus the two-step confirm flow and the
+  rank-cubed floor-up) and `player.rs` (the 8 new accessors round-
+  tripping without disturbing neighboring fields). `cargo fmt --all`,
+  `cargo test --workspace` (1630 ugaris-core [+17] + 47 db + 3 net + 37
+  protocol + 553 server, all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings. No runtime-loop/login/map-
+  sync/protocol changes this iteration (pure `ugaris-core` additions with
+  no call site yet), so boot-smoke was not required per the recipe and
+  was not re-run.
+  Earlier progress (iteration 110): ported the 7 admin commands
   `cmd_milinfo`/`cmd_milpref`/`cmd_milreset`/`cmd_milpoints`/`cmd_milrec`/
   `cmd_milstats`/`cmd_milsolve` (`command.c:5071-5613`, dispatch at
   `command.c:10085-10138`) into `crates/ugaris-server/src/

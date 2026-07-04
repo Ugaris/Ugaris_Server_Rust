@@ -757,3 +757,246 @@ fn complete_mission_promotes_and_queues_feedback() {
         .any(|t| t.message.contains("You've been promoted")));
     assert!(world.drain_pending_channel_broadcasts().is_empty());
 }
+
+// C `calculate_advisor_index` (`military.c:2239-2249`): two disjoint
+// linear bands (below/above `storage_id` 27) both mapping onto
+// `0..MAXADVISOR`, with out-of-range results falling back to slot 0.
+#[test]
+fn calculate_advisor_index_matches_c_bands() {
+    // Below-27 band: idx = storage_id - 7.
+    assert_eq!(calculate_advisor_index(7), 0);
+    assert_eq!(calculate_advisor_index(26), 19);
+    // storage_id 6 -> idx -1 -> out of range -> falls back to 0.
+    assert_eq!(calculate_advisor_index(6), 0);
+    // storage_id 0 -> idx -7 -> out of range -> falls back to 0.
+    assert_eq!(calculate_advisor_index(0), 0);
+
+    // At-or-above-27 band: idx = storage_id - 31 + 3 = storage_id - 28.
+    assert_eq!(calculate_advisor_index(28), 0);
+    assert_eq!(calculate_advisor_index(47), 19);
+    // storage_id 27 -> idx -1 -> out of range -> falls back to 0.
+    assert_eq!(calculate_advisor_index(27), 0);
+    // storage_id 48 -> idx 20 -> out of range (>= MAXADVISOR) -> 0.
+    assert_eq!(calculate_advisor_index(48), 0);
+}
+
+// C `advisor_price(level)` (`military.c:2288-2299`): 5 flat level bands.
+#[test]
+fn advisor_price_matches_c_level_bands() {
+    assert_eq!(advisor_price(1), 400);
+    assert_eq!(advisor_price(24), 400);
+    assert_eq!(advisor_price(25), 800);
+    assert_eq!(advisor_price(44), 800);
+    assert_eq!(advisor_price(45), 1200);
+    assert_eq!(advisor_price(64), 1200);
+    assert_eq!(advisor_price(65), 1500);
+    assert_eq!(advisor_price(84), 1500);
+    assert_eq!(advisor_price(85), 2000);
+    assert_eq!(advisor_price(200), 2000);
+}
+
+// C `offer_favor`'s 5 favor-size multipliers (`military.c:2318-2372`),
+// applied on top of `advisor_price`.
+#[test]
+fn offer_favor_cost_applies_size_multiplier_over_advisor_price() {
+    // level 1 -> advisor_price == 400.
+    assert_eq!(offer_favor_cost(1, 0), Some(400)); // small: x1
+    assert_eq!(offer_favor_cost(1, 1), Some(1200)); // medium: x3
+    assert_eq!(offer_favor_cost(1, 2), Some(4000)); // big: x10
+    assert_eq!(offer_favor_cost(1, 3), Some(8000)); // huge: x20
+    assert_eq!(offer_favor_cost(1, 4), Some(14000)); // vast: x35
+    assert_eq!(offer_favor_cost(1, 5), None); // invalid size -> C's `return 0`
+}
+
+// C `greet_player` (`military.c:1764-1798`): fresh player, never greeted.
+#[test]
+fn greet_player_new_player_sets_state_one() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    let outcome = player.greet_player(false, 100);
+    assert_eq!(outcome, GreetPlayerOutcome::NewPlayer);
+    assert_eq!(player.master_state(), 1);
+}
+
+// C: `ppd->master_state != 0` (after the stale-10 reset, checked before
+// any of the other branches) -> silent no-op.
+#[test]
+fn greet_player_already_greeted_is_silent_no_op() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_master_state(2);
+    let outcome = player.greet_player(true, 100);
+    assert_eq!(outcome, GreetPlayerOutcome::AlreadyGreeted);
+    assert_eq!(player.master_state(), 2);
+}
+
+// C: a stale `master_state == 10` (interrupted reroll confirmation from a
+// previous visit) is reset to 0 first, then falls through to the rest of
+// the function afresh - NOT treated as "already greeted".
+#[test]
+fn greet_player_resets_stale_reroll_confirmation_state_and_falls_through() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_master_state(10);
+    let outcome = player.greet_player(true, 100);
+    assert_eq!(outcome, GreetPlayerOutcome::HasRank);
+    assert_eq!(player.master_state(), 2);
+}
+
+#[test]
+fn greet_player_has_active_mission() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_took_mission(1);
+    let outcome = player.greet_player(true, 100);
+    assert_eq!(outcome, GreetPlayerOutcome::HasActiveMission);
+    assert_eq!(player.master_state(), 2);
+}
+
+#[test]
+fn greet_player_already_completed_today() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_solved_yday(101);
+    let outcome = player.greet_player(true, 100);
+    assert_eq!(outcome, GreetPlayerOutcome::AlreadyCompletedToday);
+    assert_eq!(player.master_state(), 2);
+}
+
+#[test]
+fn greet_player_has_rank() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    let outcome = player.greet_player(true, 100);
+    assert_eq!(outcome, GreetPlayerOutcome::HasRank);
+    assert_eq!(player.master_state(), 2);
+}
+
+// C: an advisor's specific-mission recommendation already rendered the
+// greeting text this visit - takes priority over every other branch
+// (checked right after the `master_state != 0` guard).
+#[test]
+fn greet_player_advisor_recommendation_already_shown_takes_priority() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_recommend(101);
+    player.set_mission_type_preference(2);
+    player.set_mission_difficulty_preference(3);
+    // Would otherwise be `HasActiveMission`/`HasRank` - the advisor
+    // branch must win.
+    player.set_military_took_mission(1);
+    let outcome = player.greet_player(true, 100);
+    assert_eq!(
+        outcome,
+        GreetPlayerOutcome::AdvisorRecommendationAlreadyShown
+    );
+    assert_eq!(player.master_state(), 2);
+}
+
+// C `handle_mission_reroll` (`military.c:1889-1936`): already used today.
+#[test]
+fn mission_reroll_already_rerolled_today_is_a_no_op() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_reroll_yday(101);
+    let mut rng = 42u32;
+
+    let outcome = world.mission_reroll(CharacterId(1), &mut player, 100, &mut rng);
+
+    assert_eq!(outcome, MissionRerollOutcome::AlreadyRerolledToday);
+}
+
+#[test]
+fn mission_reroll_blocked_by_active_mission() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_took_mission(1);
+    let mut rng = 42u32;
+
+    let outcome = world.mission_reroll(CharacterId(1), &mut player, 100, &mut rng);
+
+    assert_eq!(outcome, MissionRerollOutcome::HasActiveMission);
+}
+
+#[test]
+fn mission_reroll_blocked_by_insufficient_gold() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.gold = 100;
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    let mut rng = 42u32;
+
+    let outcome = world.mission_reroll(CharacterId(1), &mut player, 100, &mut rng);
+
+    assert_eq!(outcome, MissionRerollOutcome::InsufficientGold);
+    assert_eq!(world.characters[&CharacterId(1)].gold, 100);
+}
+
+// First `reroll` says: sets `master_state = 10` and asks for confirmation
+// without spending any gold yet.
+#[test]
+fn mission_reroll_first_call_requests_confirmation_without_spending_gold() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.gold = 20_000;
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    let mut rng = 42u32;
+
+    let outcome = world.mission_reroll(CharacterId(1), &mut player, 100, &mut rng);
+
+    assert_eq!(outcome, MissionRerollOutcome::ConfirmationRequested);
+    assert_eq!(player.master_state(), 10);
+    assert_eq!(world.characters[&CharacterId(1)].gold, 20_000);
+}
+
+// Second `reroll` (with `master_state` already `10`) confirms: spends the
+// 200 gold, stamps `reroll_yday`/resets `mission_yday`, generates a fresh
+// offer table, and returns to `master_state = 2`.
+#[test]
+fn mission_reroll_confirmed_spends_gold_and_generates_new_missions() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.gold = 20_000;
+    character_data.level = 20;
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_master_state(10);
+    let mut rng = 42u32;
+
+    let outcome = world.mission_reroll(CharacterId(1), &mut player, 100, &mut rng);
+
+    assert_eq!(outcome, MissionRerollOutcome::Rerolled);
+    assert_eq!(world.characters[&CharacterId(1)].gold, 0);
+    assert!(world.characters[&CharacterId(1)]
+        .flags
+        .contains(CharacterFlags::ITEMS));
+    assert_eq!(player.military_reroll_yday(), 101);
+    assert_eq!(player.master_state(), 2);
+    // A fresh 5-slot offer table was generated (matches `generate_
+    // mission`'s baseline "no preference" shape: `generate_demon_mission`
+    // fills every slot, then the default branch's unconditional
+    // `generate_mine_mission` call may overwrite one slot with a silver
+    // mission at this level - every slot is still non-empty either way).
+    for idx in 0..5 {
+        assert_ne!(player.military_mission(idx).mission_type, 0);
+    }
+}
+
+// The rank-cubed `military_pts` floor-up (`generate_mission_with_
+// preference`'s "Adjust military exp for rank if the player gained a
+// rank elsewhere" comment) is applied here at the `mission_reroll` call
+// site, matching that comment's intent exactly.
+#[test]
+fn mission_reroll_floors_military_pts_to_rank_cubed() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.gold = 20_000;
+    character_data.level = 20;
+    character_data.military_points = 1000; // rank 10 (cbrt(1000) = 10)
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_master_state(10);
+    player.set_military_pts(5); // stale, far below rank^3 = 1000
+    let mut rng = 42u32;
+
+    world.mission_reroll(CharacterId(1), &mut player, 100, &mut rng);
+
+    assert_eq!(player.military_pts(), 1000);
+}

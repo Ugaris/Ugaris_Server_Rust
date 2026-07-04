@@ -169,6 +169,34 @@ pub fn army_rank_name(rank: i32) -> &'static str {
     ARMY_RANK_NAMES[rank.clamp(0, MAX_ARMY_RANK) as usize]
 }
 
+/// Outcome of [`crate::PlayerRuntime::greet_player`] (C `greet_player`,
+/// `military.c:1764-1798`), mirroring every distinct `say()` branch (plus
+/// the silent no-op ones).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GreetPlayerOutcome {
+    /// C: `ppd->master_state != 0` (after the stale-`10` reset) - already
+    /// greeted this visit, no text.
+    AlreadyGreeted,
+    /// C: an advisor's specific-mission recommendation already rendered
+    /// the greeting text this visit (`process_advisor_recommendation`,
+    /// still unported) - no additional text here, just the `master_state
+    /// = 2` stamp.
+    AdvisorRecommendationAlreadyShown,
+    /// C: `ppd->took_mission` nonzero -> "Ah, hello %s. Any luck with
+    /// your mission? Or would you like to hear it again? Or have you
+    /// failed to complete it?".
+    HasActiveMission,
+    /// C: `ppd->solved_yday == yday + 1` -> "I don't have another
+    /// mission for you today, %s.".
+    AlreadyCompletedToday,
+    /// C: `get_army_rank_int(co)` nonzero -> "Hello, %s. I might have a
+    /// mission for you. If you don't like the available missions, you
+    /// can reroll for 200 gold.".
+    HasRank,
+    /// C: none of the above -> "Greetings, %s.".
+    NewPlayer,
+}
+
 /// Outcome of [`World::give_military_pts`]: lets callers observe whether a
 /// promotion happened without re-deriving the rank themselves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -290,6 +318,65 @@ impl SingleMission {
 /// tests. `below` must be positive; C's own callers never pass 0 here.
 fn mission_random(seed: &mut u32, below: i32) -> i32 {
     legacy_random_below_from_seed(seed, below.max(1) as u32) as i32
+}
+
+/// C `calculate_advisor_index(storage_id)` (`military.c:2231-2244`):
+/// maps an Advisor NPC's `storage_ID` (a compact-but-non-contiguous
+/// numbering scheme - IDs below 27 count from 7, IDs 27 and above skip a
+/// 4-wide gap and count from 31) to a `0..MAXADVISOR` (20) slot index
+/// into `military_ppd::advisor_last[]`. Out-of-range results (either
+/// branch going negative or `>= MAXADVISOR`) fall back to slot `0`,
+/// matching C's own `if (idx < 0 || idx >= MAXADVISOR) idx = 0;` exactly.
+pub fn calculate_advisor_index(storage_id: i32) -> usize {
+    let idx = if storage_id < 27 {
+        storage_id - 7
+    } else {
+        storage_id - 31 + 3
+    };
+    if !(0..MILITARY_PPD_MAXADVISOR_I32).contains(&idx) {
+        0
+    } else {
+        idx as usize
+    }
+}
+
+/// `MAXADVISOR` (`military.h:17`) as `i32`, for [`calculate_advisor_index`]'s
+/// range check (the accessor-side constant, [`crate::player::
+/// MILITARY_PPD_MAXADVISOR`], is a private-module `usize`).
+const MILITARY_PPD_MAXADVISOR_I32: i32 = 20;
+
+/// C `advisor_price(level)` (`military.c:2288-2299`): the base gold price
+/// (100 = 1G) an Advisor NPC's "favor" costs before the size multiplier
+/// ([`offer_favor_cost`]) is applied, banded by player level.
+pub fn advisor_price(level: i32) -> i32 {
+    if level < 25 {
+        400
+    } else if level < 45 {
+        800
+    } else if level < 65 {
+        1200
+    } else if level < 85 {
+        1500
+    } else {
+        2000
+    }
+}
+
+/// C `offer_favor`'s cost calculation (`military.c:2318-2372`): the 5
+/// favor sizes (small/medium/big/huge/vast, `favor_size` `0..=4`) each
+/// apply a multiplier to [`advisor_price`]'s level-banded base price.
+/// Returns `None` for an invalid `favor_size` (C's own `default: return
+/// 0;` bail-out).
+pub fn offer_favor_cost(level: i32, favor_size: i32) -> Option<i32> {
+    let multiplier = match favor_size {
+        0 => 1.0,
+        1 => 3.0,
+        2 => 10.0,
+        3 => 20.0,
+        4 => 35.0,
+        _ => return None,
+    };
+    Some((f64::from(advisor_price(level)) * multiplier) as i32)
 }
 
 /// C `specific_mission_price(level, difficulty, mission_type)`
@@ -988,5 +1075,100 @@ impl World {
             gold_awarded,
             promoted_to,
         })
+    }
+}
+
+/// Outcome of [`World::mission_reroll`] (C `handle_mission_reroll`,
+/// `military.c:1889-1936`), mirroring every distinct `say()` branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MissionRerollOutcome {
+    /// C: `ppd->reroll_yday == yday + 1` -> "I've already offered you a
+    /// different set of missions today, %s. Come back tomorrow if you
+    /// want more options.".
+    AlreadyRerolledToday,
+    /// C: `ppd->took_mission` nonzero -> "You already accepted a mission,
+    /// %s. You must either complete it or report your failure before
+    /// requesting new missions.".
+    HasActiveMission,
+    /// C: `ch[co].gold < 20000` -> "Generating new mission plans costs
+    /// 200 gold, %s, which you don't seem to have.".
+    InsufficientGold,
+    /// C: `ppd->master_state != 10` (not yet confirmed) -> "I can prepare
+    /// a different set of missions for you, %s, but it will cost 200
+    /// gold. Say reroll again to confirm.", stamps `master_state = 10`.
+    ConfirmationRequested,
+    /// Confirmed; 200 gold spent and a fresh 5-slot offer table
+    /// generated (now in `ppd->mis[]`), matching C's "Very well, %s.
+    /// Here are your new mission options:" plus its `offer_missions`
+    /// call - callers should read the mission table back via
+    /// [`crate::PlayerRuntime::military_mission`] to render it, same as
+    /// every other offer-table consumer in this module.
+    Rerolled,
+}
+
+impl World {
+    /// C `handle_mission_reroll(cn, co, ppd)` (`military.c:1889-1936`):
+    /// the paid mission-reroll confirmation flow. `yday` is C's global
+    /// `yday` (`World.date.yday`); `rng_seed` is caller-supplied, same as
+    /// [`crate::PlayerRuntime::apply_mission_offer`] (no Rust call site
+    /// yet resolves either - see this module's doc comment). Reproduces
+    /// C's own rank-cubed `military_pts` floor-up (`generate_mission_
+    /// with_preference`'s "Adjust military exp for rank if the player
+    /// gained a rank elsewhere" comment) here at the call site, exactly
+    /// like that comment describes, since `military_pts` isn't otherwise
+    /// kept in sync with `Character.military_points` between mission
+    /// generations.
+    pub fn mission_reroll(
+        &mut self,
+        character_id: CharacterId,
+        player: &mut PlayerRuntime,
+        yday: i32,
+        rng_seed: &mut u32,
+    ) -> MissionRerollOutcome {
+        if player.military_reroll_yday() == yday + 1 {
+            return MissionRerollOutcome::AlreadyRerolledToday;
+        }
+        if player.military_took_mission() != 0 {
+            return MissionRerollOutcome::HasActiveMission;
+        }
+        let Some(character) = self.characters.get(&character_id) else {
+            return MissionRerollOutcome::InsufficientGold;
+        };
+        if character.gold < 20_000 {
+            return MissionRerollOutcome::InsufficientGold;
+        }
+        if player.master_state() != 10 {
+            player.set_master_state(10);
+            return MissionRerollOutcome::ConfirmationRequested;
+        }
+
+        let (level, rank) = {
+            let character = self
+                .characters
+                .get_mut(&character_id)
+                .expect("checked above");
+            character.gold -= 20_000;
+            character.flags.insert(CharacterFlags::ITEMS);
+            (
+                character.level as i32,
+                army_rank_for_points(character.military_points),
+            )
+        };
+
+        let rank_cubed = rank.saturating_mul(rank).saturating_mul(rank);
+        if rank_cubed > player.military_pts() {
+            player.set_military_pts(rank_cubed);
+        }
+
+        player.set_military_reroll_yday(yday + 1);
+        player.set_mission_yday(0);
+
+        let preferred_type = player.mission_type_preference();
+        let military_pts = player.military_pts();
+        player.apply_mission_offer(level, military_pts, preferred_type, yday, rng_seed);
+
+        player.set_master_state(2);
+
+        MissionRerollOutcome::Rerolled
     }
 }
