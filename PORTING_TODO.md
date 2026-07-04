@@ -4087,9 +4087,37 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cmd_forcesolve`) and the governor mission flow (`check_military_solve`)
   are unported - this is most of `military.c`'s 2,881 lines and needs its
   own future slice(s). A player-facing `#rank`-style status command was
-  also not added this iteration (no existing Rust command reads military
-  state at all yet, so there was nothing to extend).
-  Progress Log: ported the rank-threshold table + point-award/promotion
+  also not added this iteration (there is no such command anywhere in the
+  current C `command.c` tree either - checked; only the admin-only
+  `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
+  so there is nothing to port here; dropping this as a documentation
+  correction, not a real gap).
+  Progress Log: closed a real, self-contained gap in `give_first_kill`
+  (`death.c:196-254`) that a previous iteration's own note here had
+  flagged as blocked on this exact task landing: the demon-lord-class
+  branch's `if (get_army_rank_int(cn))` check - army ranks are no longer
+  unported (the previous slice below already added
+  `army_rank_for_points`/`World::give_military_pts`) - is now wired at
+  its one real call site, `crates/ugaris-server/src/achievement.rs`'s
+  `apply_first_kill_check`/`first_kill_congrats_message`: a killer who
+  already holds any army rank (`army_rank_for_points(character.
+  military_points) > 0`) on a first-ever demon-lord-class kill (classes
+  `258..=305`/`404..=411`) now gets the "...! The Governor will be proud
+  of you." message variant (matching the non-generic exclamation-point
+  text digit-for-digit) and the `give_military_pts_no_npc(cn, min(ch[co].
+  level / 3, 10), kill_score(co, cn) * 15)` points/exp bonus via
+  `World::give_military_pts`, evaluated *before* that same kill's bonus
+  is applied (matching C's evaluation order exactly). Unranked killers
+  keep the previous plain-exclamation message and no bonus, matching C's
+  `else` branch. 2 new tests in `crates/ugaris-server/src/tests/
+  achievement.rs` (unranked killer gets the plain message and no points
+  change; ranked killer gets the Governor message and the exact
+  `min(level/3,10)` point bonus on top of their existing points).
+  `cargo fmt --all`, `cargo test --workspace` (1558 ugaris-core + 47 db +
+  3 net + 37 protocol + 541 server, all green, zero failures), `cargo
+  build -p ugaris-server` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panics.
+  Earlier progress: ported the rank-threshold table + point-award/promotion
   helper as a first self-contained slice: `crates/ugaris-core/src/world/
   military.rs` - `ARMY_RANK_NAMES` (C `tool.c:1868-1907`'s `rankname[]`,
   all 41 entries letter for letter), `army_rank_for_points`

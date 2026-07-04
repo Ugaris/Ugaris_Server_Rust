@@ -3329,21 +3329,51 @@
         "assertion `left == right` failed: diff=-8000",
         "test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 1536 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 105,
+      "startedAt": "2026-07-04T18:39:43.554Z",
+      "endedAt": "2026-07-04T18:49:51.989Z",
+      "durationMs": 607820,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/achievement.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/achievement.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 539 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; finished in 0.00s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 533 filtered out; finished in 0.00s",
+        "test result: ok. 1558 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s",
+        "test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris"
+      ]
     }
   ],
-  "totalDurationMs": 113742730,
+  "totalDurationMs": 114350550,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 104,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 105,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 34,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 35,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 35,
@@ -3661,7 +3691,7 @@
       "test result: ok. 420 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 1343 filtered out; finished in 0.00s": 1,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
-      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
+      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 10,
       "- `cargo test --workspace` — 1393/36/3/37/431 all green, zero failures (unchanged counts; no new tes": 1,
       "test result: ok. 431 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
@@ -3700,7 +3730,7 @@
       "test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.01s": 1,
       "test result: ok. 473 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievemen": 3,
+      "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievemen": 4,
       "295:- `IDR_XMASMAKER = 143` now dispatches from the base item-driver path for C `xmasmaker`: zero-ch": 1,
       "test result: ok. 479 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
@@ -3751,7 +3781,7 @@
       "+            Err(ClanFoundError::NameTooLong)": 1,
       "+            Err(ClanIdentityError::NotFound)": 1,
       "elog(\"MySQL query failed: %s\", mysql_error(conn));": 1,
-      "test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
+      "test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
       "test result: ok. 516 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1458 filtered out; finished in 0.00s": 1,
       "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.00s": 1,
@@ -3790,7 +3820,7 @@
       "355-            return Err(ClanRelationError::InvalidClan(other));": 1,
       "358-            return Err(ClanRelationError::InvalidRelation);": 1,
       "902-            return Err(ClanFoundError::NameTooLong);": 1,
-      "test result: ok. 539 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 4,
+      "test result: ok. 539 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 5,
       "crates/ugaris-core/src/clan.rs:2343:        assert_eq!(registry.add_jewel(5), Err(ClanIdentityError:": 1,
       "error: could not compile `ugaris-core` (lib test) due to 18 previous errors": 1,
       "test world::tests::military::give_military_pts_adds_points_and_exp_without_promotion_below_threshold": 1,
@@ -3805,7 +3835,11 @@
       "test item_driver::tests::area34_teufel::beyond_potion_blocks_failed_requirements_and_teufelheim_aren": 1,
       "test player::tests::arena_fight_worth_matches_every_c_ladder_boundary ... FAILED": 1,
       "assertion `left == right` failed: diff=-8000": 1,
-      "test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 1536 filtered out; finished in 0.00": 1
+      "test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 1536 filtered out; finished in 0.00": 1,
+      "test result: ok. 541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; finished in 0.00s": 1,
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 533 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1558 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

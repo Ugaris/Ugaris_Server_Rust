@@ -985,19 +985,29 @@ fn is_demon_lord_first_kill_class(class: i32) -> bool {
     matches!(class, 258..=305 | 404..=411)
 }
 
-/// C `give_first_kill`'s `log_char` congrats text (`death.c:213-253`).
-/// The `get_army_rank_int(cn)` branch inside the demon-lord case always
-/// takes the "no army rank" text here and never grants the accompanying
-/// `give_military_pts_no_npc` bonus - army ranks are an unported system
-/// (see the "Military ranks" P3 `PORTING_TODO.md` task); this is a
-/// documented, deliberate simplification, not a bug.
-fn first_kill_congrats_message(class: i32, has_name: bool, level: u32, name: &str) -> String {
+/// C `give_first_kill`'s `log_char` congrats text (`death.c:213-253`). The
+/// demon-lord branch's `get_army_rank_int(cn)` check is `has_army_rank`
+/// here (the killer's rank, derived from `Character.military_points` via
+/// `army_rank_for_points` at the call site - see `apply_first_kill_check`).
+fn first_kill_congrats_message(
+    class: i32,
+    has_name: bool,
+    level: u32,
+    name: &str,
+    has_army_rank: bool,
+) -> String {
     if has_name {
         format!("You just killed {name} for the first time. Congratulations!")
     } else if is_named_monster_first_kill_class(class) {
         format!("You just killed your first level {level} {name}. Congratulations!")
     } else if is_demon_lord_first_kill_class(class) {
-        format!("You just killed your first level {level} {name}!")
+        if has_army_rank {
+            format!(
+                "You just killed your first level {level} {name}! The Governor will be proud of you."
+            )
+        } else {
+            format!("You just killed your first level {level} {name}!")
+        }
     } else {
         format!("You just killed your first {name}. Congratulations!")
     }
@@ -1020,10 +1030,13 @@ pub(crate) async fn apply_first_kill_check(
     area_id: i32,
     check: FirstKillCheck,
 ) {
-    let Some(killer_level) = world
-        .characters
-        .get(&check.killer_id)
-        .map(|character| character.level)
+    let Some((killer_level, killer_army_rank)) =
+        world.characters.get(&check.killer_id).map(|character| {
+            (
+                character.level,
+                army_rank_for_points(character.military_points),
+            )
+        })
     else {
         return;
     };
@@ -1049,8 +1062,21 @@ pub(crate) async fn apply_first_kill_check(
         check.victim_has_name,
         check.victim_level,
         &check.victim_name,
+        killer_army_rank > 0,
     );
     world.queue_system_text(check.killer_id, message);
+
+    // C: `if (get_army_rank_int(cn)) { ...; give_military_pts_no_npc(cn,
+    // min(ch[co].level / 3, 10), kill_score(co, cn) * 15); }` - only
+    // reachable inside the demon-lord class-range branch (`death.c:
+    // 238-244`), gated on the killer already holding a rank above
+    // "nobody".
+    if is_demon_lord_first_kill_class(check.victim_class) && killer_army_rank > 0 {
+        let pts = (check.victim_level / 3).min(10) as i32;
+        let exps =
+            ugaris_core::attack::kill_score_level(check.victim_level, killer_level) as i32 * 15;
+        world.give_military_pts(check.killer_id, pts, exps, area_id as u32);
+    }
 
     // C: `if (count_demon_lord_kills(ppd) >= 20) achievement_award(cn,
     // ACHIEVEMENT_SLAYER_OF_DEMON_LORDS, 1);` - only reachable inside the

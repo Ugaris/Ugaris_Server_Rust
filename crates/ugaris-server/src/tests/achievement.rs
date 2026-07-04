@@ -1724,6 +1724,72 @@ async fn apply_first_kill_check_uses_named_monster_congrats_message_for_class_ra
 }
 
 #[tokio::test]
+async fn apply_first_kill_check_uses_plain_demon_lord_congrats_message_without_army_rank() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+    // military_points defaults to 0 -> army_rank_for_points(0) == 0, so C's
+    // `get_army_rank_int(cn)` branch is false.
+    let military_points_before = world.characters.get(&character_id).unwrap().military_points;
+    assert_eq!(military_points_before, 0);
+
+    // Class 260 is inside the C Earth/Fire/Ice demon lord range (258..=305).
+    apply_first_kill_check(
+        &mut world,
+        &mut runtime,
+        &None,
+        1,
+        first_kill_check(character_id, 260),
+    )
+    .await;
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message == "You just killed your first level 40 Grubber!"));
+    assert!(!texts.iter().any(|text| text.message.contains("Governor")));
+    // No `give_military_pts_no_npc` bonus without an existing army rank.
+    assert_eq!(
+        world.characters.get(&character_id).unwrap().military_points,
+        0
+    );
+}
+
+#[tokio::test]
+async fn apply_first_kill_check_grants_army_rank_bonus_message_and_military_points_when_ranked() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+    // Give the killer an existing army rank (`army_rank_for_points(50) > 0`)
+    // before the kill, mirroring C's pre-existing `DRD_RANK_PPD` state.
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .military_points = 50;
+    assert!(army_rank_for_points(50) > 0);
+
+    // Class 260 is inside the C Earth/Fire/Ice demon lord range (258..=305).
+    apply_first_kill_check(
+        &mut world,
+        &mut runtime,
+        &None,
+        1,
+        first_kill_check(character_id, 260),
+    )
+    .await;
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| text.message
+        == "You just killed your first level 40 Grubber! The Governor will be proud of you."));
+    // C: `give_military_pts_no_npc(cn, min(ch[co].level / 3, 10), kill_score(co, cn) * 15)`
+    // - victim_level 40 -> pts = min(40/3, 10) = 10, added on top of the
+    // pre-set 50 points.
+    assert_eq!(
+        world.characters.get(&character_id).unwrap().military_points,
+        60
+    );
+}
+
+#[tokio::test]
 async fn apply_first_kill_check_uses_hasname_congrats_message_regardless_of_class() {
     let character_id = CharacterId(7);
     let (mut world, mut runtime) = connected_player(character_id, 1);
