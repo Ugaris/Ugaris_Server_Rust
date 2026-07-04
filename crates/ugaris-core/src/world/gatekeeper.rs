@@ -55,8 +55,12 @@
 //!   `trader_return_or_destroy_cursor_item`) - the giver is already known
 //!   to be adjacent/visible since the give action itself required it.
 //! - The idle "return to post" `secure_move_driver` safety net
-//!   (`gatekeeper.c:627-631`) is not ported: this NPC's spawn/post
-//!   position (`ch[cn].tmpx`/`tmpy`) is not modeled on `Character` yet.
+//!   (`gatekeeper.c:627-631`) reuses `rest_x`/`rest_y` as the NPC's post
+//!   position (C's `tmpx`/`tmpy`), the same substitution already used for
+//!   the opponent's post position and other stationary NPCs (`world::
+//!   bank`, `respawn_npc_character`). `ret`/`lastact` are always passed as
+//!   `0`, matching the simplification already accepted for this class of
+//!   driver (see `process_gate_welcome_actions`'s caller).
 
 use std::collections::HashMap;
 
@@ -80,6 +84,8 @@ const GATE_WELCOME_TALK_MIN_TICKS: u64 = TICKS_PER_SECOND * 5;
 const GATE_WELCOME_TALK_VICTIM_TICKS: u64 = TICKS_PER_SECOND * 10;
 /// C `dat->amgivingback < 20` (`gatekeeper.c:605`).
 const GATE_WELCOME_GIVEBACK_LIMIT: i32 = 20;
+/// C `TICKS * 30` (`gatekeeper.c:627`): idle "return to post" threshold.
+const GATE_WELCOME_RETURN_TO_POST_TICKS: u64 = TICKS_PER_SECOND * 30;
 
 /// Per-player facts [`World::process_gate_welcome_actions`] needs from
 /// `crate::player::PlayerRuntime`, which `World` cannot see. See the
@@ -128,12 +134,11 @@ fn gate_carried_item_count(character: &Character) -> u32 {
 }
 
 impl World {
-    /// C `gate_welcome_driver`'s per-tick body (`gatekeeper.c:417-634`),
-    /// minus the idle "return to post" safety net (see the module doc
-    /// comment).
+    /// C `gate_welcome_driver`'s per-tick body (`gatekeeper.c:417-634`).
     pub fn process_gate_welcome_actions(
         &mut self,
         player_facts: &HashMap<CharacterId, GateWelcomePlayerFacts>,
+        area_id: u16,
     ) -> Vec<GateWelcomeOutcomeEvent> {
         let gate_ids: Vec<CharacterId> = self
             .characters
@@ -148,7 +153,7 @@ impl World {
 
         let mut events = Vec::new();
         for gate_id in gate_ids {
-            self.process_gate_welcome_messages(gate_id, player_facts, &mut events);
+            self.process_gate_welcome_messages(gate_id, player_facts, area_id, &mut events);
         }
         events
     }
@@ -157,6 +162,7 @@ impl World {
         &mut self,
         gate_id: CharacterId,
         player_facts: &HashMap<CharacterId, GateWelcomePlayerFacts>,
+        area_id: u16,
         events: &mut Vec<GateWelcomeOutcomeEvent>,
     ) {
         let Some(gate_name) = self.characters.get(&gate_id).map(|gate| gate.name.clone()) else {
@@ -218,6 +224,33 @@ impl World {
                     let _ = turn(gate_mut, direction as u8);
                 }
             }
+        }
+
+        // C `if (dat->last_talk + TICKS*30 < ticker)
+        // { if (secure_move_driver(cn, ch[cn].tmpx, ch[cn].tmpy, DX_UP, ret,
+        // lastact)) return; }` (`gatekeeper.c:627-631`). The NPC's post
+        // position (C's `tmpx`/`tmpy`) reuses `rest_x`/`rest_y`, the same
+        // substitution `respawn_npc_character`/`world::bank` already use
+        // for other stationary NPCs' spawn tiles. `ret`/`lastact` are
+        // always `0` here: like `world::trader`/`world::bank`, this driver
+        // doesn't thread the C driver dispatcher's own last-action/return
+        // code through (those only matter to avoid re-attempting a move
+        // immediately after a same-tick door-use), a simplification
+        // already accepted for this class of stationary NPC driver.
+        let last_talk = if let Some(gate) = self.characters.get(&gate_id) {
+            match gate.driver_state.as_ref() {
+                Some(CharacterDriverState::GateWelcome(data)) => data.last_talk,
+                _ => return,
+            }
+        } else {
+            return;
+        };
+        if last_talk + GATE_WELCOME_RETURN_TO_POST_TICKS < self.tick.0 {
+            let Some(gate) = self.characters.get(&gate_id) else {
+                return;
+            };
+            let (post_x, post_y) = (gate.rest_x, gate.rest_y);
+            self.secure_move_driver(gate_id, post_x, post_y, Direction::Up as u8, 0, 0, area_id);
         }
     }
 

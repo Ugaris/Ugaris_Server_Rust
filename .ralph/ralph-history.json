@@ -1767,15 +1767,45 @@
         "error: test failed, to rerun pass `-p ugaris-core --lib`",
         "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error"
       ]
+    },
+    {
+      "iteration": 55,
+      "startedAt": "2026-07-04T03:40:48.884Z",
+      "endedAt": "2026-07-04T03:53:13.214Z",
+      "durationMs": 743313,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/gatekeeper.rs",
+        "crates/ugaris-core/src/world/tests/gatekeeper.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 401 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "into the tick loop (iteration 52), `enter_test`'s class-choice *failure*",
+        "Progress Log (iteration 53): wired `enter_test`'s validation-failure",
+        "`world/tests/gatekeeper.rs` covering each failure message, the",
+        "Err(ZoneError::UnknownCharacter(_)) => continue,",
+        ".ok_or(ZoneError::MapOutOfBounds {",
+        "Err(ZoneError::UnknownItem(_)) => continue,",
+        "test world::tests::gatekeeper::gate_finish_enter_room_fails_when_already_at_target ... ok",
+        "test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 1240 filtered out; finished in 0.01s"
+      ]
     }
   ],
-  "totalDurationMs": 60007186,
+  "totalDurationMs": 60750499,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 54,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 55,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -2030,11 +2060,18 @@
       "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 1240 filtered out; finished in 0.00s": 1,
       "test result: ok. 1258 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
       "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` (1263+36+3+33+401 passed, zero f": 1,
-      "Progress Log (iteration 53): wired `enter_test`'s validation-failure": 1,
-      "`world/tests/gatekeeper.rs` covering each failure message, the": 1,
+      "Progress Log (iteration 53): wired `enter_test`'s validation-failure": 2,
+      "`world/tests/gatekeeper.rs` covering each failure message, the": 2,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 4 previous errors": 1,
       "assertion failed: events.is_empty()": 1,
-      "test result: FAILED. 1257 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
+      "test result: FAILED. 1257 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
+      "test result: ok. 401 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "into the tick loop (iteration 52), `enter_test`'s class-choice *failure*": 1,
+      "Err(ZoneError::UnknownCharacter(_)) => continue,": 1,
+      ".ok_or(ZoneError::MapOutOfBounds {": 1,
+      "Err(ZoneError::UnknownItem(_)) => continue,": 1,
+      "test world::tests::gatekeeper::gate_finish_enter_room_fails_when_already_at_target ... ok": 1,
+      "test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 1240 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

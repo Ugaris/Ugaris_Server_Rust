@@ -5397,7 +5397,8 @@ async fn main() -> anyhow::Result<()> {
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
                 // greeter NPC (`src/system/gatekeeper.c`).
                 let gate_welcome_facts = gate_welcome_player_facts(&runtime);
-                let gate_welcome_events = world.process_gate_welcome_actions(&gate_welcome_facts);
+                let gate_welcome_events =
+                    world.process_gate_welcome_actions(&gate_welcome_facts, config.area_id);
                 let gate_welcome_events_applied = apply_gate_welcome_events(
                     &mut runtime,
                     &mut world,

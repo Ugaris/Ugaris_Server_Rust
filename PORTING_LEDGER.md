@@ -4034,3 +4034,64 @@ silent no-op.
   (3) the idle "return to post" `secure_move_driver` safety net for the
   *welcome* NPC (the opponent's own post position is now stored in
   `rest_x`/`rest_y`, ready for (1) to consume).
+
+## Ralph Loop - Gatekeeper Welcome NPC Idle Return-To-Post (Iteration 55)
+
+Closed remaining item (3) from iteration 54's gatekeeper slice: the
+welcome NPC's own idle "return to post" safety net
+(`gatekeeper.c:627-631`, `if (dat->last_talk + TICKS*30 < ticker) { if
+(secure_move_driver(cn, ch[cn].tmpx, ch[cn].tmpy, DX_UP, ret, lastact))
+return; }`).
+
+- `crates/ugaris-core/src/world/gatekeeper.rs`:
+  - New `GATE_WELCOME_RETURN_TO_POST_TICKS` (`TICKS * 30`).
+  - `process_gate_welcome_actions`/`process_gate_welcome_messages` now
+    take an `area_id: u16` parameter (needed by `secure_move_driver` ->
+    `setup_walk_toward`), threaded from `ugaris-server`'s
+    `config.area_id` the same way `process_bank_actions`/
+    `process_janitor_actions` already do.
+  - After the per-message loop and the `talkdir` turn, added the C tail:
+    when `data.last_talk + GATE_WELCOME_RETURN_TO_POST_TICKS < tick`, call
+    the existing (unchanged) `secure_move_driver` (`world/npc_idle.rs`)
+    toward `(gate.rest_x, gate.rest_y)` with `Direction::Up as u8` (C's
+    `DX_UP`) and `ret = 0, lastact = 0`.
+  - Confirmed no new `Character` field was needed: every zone-spawned
+    character (including this NPC) already has its spawn tile captured in
+    `rest_x`/`rest_y` by `zone.rs`'s `MapDirective::Character` handler
+    (the existing "C `pop_create_char` stores the spawn tile in
+    `ch.tmpx/tmpy`" substitution used elsewhere for NPC post positions,
+    e.g. `world::bank`, `respawn_npc_character`). `ret`/`lastact` are
+    always `0`: like `world::trader`/`world::bank`, this driver class
+    doesn't thread the C dispatcher's own per-character last-action/return
+    code through the tick loop - a simplification already accepted
+    elsewhere in this codebase, since that pair only changes behavior
+    right after a same-tick door-use action, which this stationary
+    greeter NPC never performs.
+  - Updated the module doc comment's gap list and the function doc
+    comment to drop the now-closed "not ported" note.
+- `crates/ugaris-server/src/main.rs`: updated the
+  `process_gate_welcome_actions` call site to pass `config.area_id`.
+- `crates/ugaris-core/src/world/tests/gatekeeper.rs`: added a local
+  `RETURN_TO_POST` tick constant and updated all 17 existing
+  `process_gate_welcome_actions` call sites for the new `area_id`
+  parameter (passing `0`, matching this file's single-area test world
+  convention). New tests:
+  `gate_welcome_returns_to_post_after_thirty_seconds_idle` (spawns the
+  gate NPC away from its `rest_x`/`rest_y`, advances the tick past the
+  30s threshold, and asserts `secure_move_driver`'s walk-toward branch
+  fired: `action::WALK` and `tox`/`toy` stepped one tile toward the
+  post), `gate_welcome_stays_put_shortly_after_talking` (same setup but
+  with `last_talk` set to the current tick, asserting no movement/action
+  change).
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1265
+  `ugaris-core` (2 net new) + 36 db + 3 net + 33 protocol + 401 server,
+  all green, zero failures. `cargo build -p ugaris-server` clean, zero
+  warnings. A 12s boot-smoke showed "entering Rust game loop" with no
+  panics.
+- Remaining (left `[~]` in `PORTING_TODO.md`, updated notes there): (1)
+  `gate_fight_driver`/`gate_fight_dead` (reuse `world/npc_fight.rs`)
+  including `turn_seyan`; (2) the `NTID_GATEKEEPER` cross-NPC message
+  hookup (queued onto the opponent, but nothing consumes it until (1)
+  exists); the opponent side of the idle "return to post" net (also
+  inside `gate_fight_driver`) is bundled with (1) since that driver
+  doesn't exist yet.

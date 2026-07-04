@@ -1890,10 +1890,33 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `NT_NPC`/`NTID_GATEKEEPER` driver message onto the opponent) but nothing
   consumes it yet, since `gate_fight_driver` (item 1) doesn't exist; (3)
   the idle "return to post" `secure_move_driver` safety net
-  (`gatekeeper.c:627-631`) for both NPCs - the opponent's post position is
-  now stored in `rest_x`/`rest_y` (see iteration 54's progress log for why
-  that substitutes for C's `tmpx`/`tmpy`), but the welcome NPC's own post
-  position still isn't modeled on `Character`.
+  (`gatekeeper.c:627-631`) for the welcome NPC is now wired (iteration 55),
+  reusing `rest_x`/`rest_y` (already populated for every zone-spawned
+  character, including this one, by the zone loader's `pop_create_char`
+  substitution) as its post position; the opponent side of this same net
+  (inside `gate_fight_driver`, item 1) still doesn't exist since that
+  driver isn't ported yet.
+  Progress Log (iteration 55): wired `gate_welcome_driver`'s idle
+  "return to post" tail (`gatekeeper.c:627-631`) into
+  `World::process_gate_welcome_actions`: once `TICKS*30` pass without the
+  NPC speaking (`dat->last_talk`, already tracked), it calls the existing
+  `secure_move_driver` (`world/npc_idle.rs`, unchanged) toward `rest_x`/
+  `rest_y` with `DX_UP`/`ret=0`/`lastact=0` (this driver class, like
+  `world::trader`/`world::bank`, doesn't thread the C dispatcher's own
+  last-action/return code through - a simplification already accepted
+  elsewhere, since it only matters right after a same-tick door-use).
+  Confirmed the welcome NPC's spawn tile is already captured in `rest_x`/
+  `rest_y` by the zone loader (`zone.rs`'s `pop_create_char` substitution),
+  so no new `Character` field was needed; `gate_npc`'s tick-loop caller in
+  `ugaris-server` now passes `config.area_id` (new parameter on
+  `process_gate_welcome_actions`). Tests: 2 new tests in `world/tests/
+  gatekeeper.rs` (`gate_welcome_returns_to_post_after_thirty_seconds_idle`
+  asserting the walk starts toward the post tile past the 30s threshold,
+  `gate_welcome_stays_put_shortly_after_talking` asserting no movement
+  when `last_talk` is recent). `cargo fmt --all`, `cargo test --workspace`
+  (1265+36+3+33+401 passed), `cargo build -p ugaris-server` clean with
+  zero warnings, and a 12s boot-smoke showed "entering Rust game loop"
+  with no panics.
   Progress Log (iteration 54): ported `enter_test`'s success tail /
   `enter_room` (`gatekeeper.c:227-407`). Core (`crates/ugaris-core/src/
   world/gatekeeper.rs`, all new `World` methods): `gate_room_is_clear`

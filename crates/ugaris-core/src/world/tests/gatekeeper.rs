@@ -6,6 +6,7 @@ use crate::world::gatekeeper::{GateWelcomeOutcomeEvent, GateWelcomePlayerFacts};
 
 const TALK_MIN: u64 = TICKS_PER_SECOND * 5;
 const TALK_VICTIM: u64 = TICKS_PER_SECOND * 10;
+const RETURN_TO_POST: u64 = TICKS_PER_SECOND * 30;
 
 fn gate_npc(id: u32) -> Character {
     let mut gate = character(id);
@@ -63,7 +64,7 @@ fn gate_welcome_greets_visible_player_and_advances_state() {
         gate.push_driver_message(NT_CHAR, 2, 0, 0);
     }
 
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false), 0);
     assert_eq!(
         events,
         vec![GateWelcomeOutcomeEvent::UpdateWelcomeState {
@@ -93,7 +94,7 @@ fn gate_welcome_ignores_players_out_of_range() {
         gate.push_driver_message(NT_CHAR, 2, 0, 0);
     }
 
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false), 0);
     assert!(events.is_empty());
     assert!(world.drain_pending_area_texts().is_empty());
 }
@@ -115,7 +116,7 @@ fn gate_welcome_throttles_repeated_greetings() {
     }
     world.tick = Tick(TALK_MIN - 1);
 
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false), 0);
     assert!(events.is_empty());
     assert!(world.drain_pending_area_texts().is_empty());
 }
@@ -141,7 +142,7 @@ fn gate_welcome_ignores_a_different_player_while_a_victim_conversation_is_fresh(
     }
     assert!(TALK_MIN < TALK_VICTIM);
 
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(3), 0, false));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(3), 0, false), 0);
     assert!(events.is_empty());
     assert!(world.drain_pending_area_texts().is_empty());
 }
@@ -158,7 +159,7 @@ fn gate_welcome_needs_lab_says_labyrinth_message_and_waits() {
         gate.push_driver_message(NT_CHAR, 2, 0, 0);
     }
 
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 2, true));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 2, true), 0);
     assert_eq!(
         events,
         vec![GateWelcomeOutcomeEvent::UpdateWelcomeState {
@@ -181,7 +182,7 @@ fn gate_welcome_replies_to_small_talk_keyword() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "hello");
     }
-    world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false));
+    world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false), 0);
 
     let texts = world.drain_pending_area_texts();
     assert!(texts
@@ -198,7 +199,7 @@ fn gate_welcome_repeat_resets_welcome_state_below_seven() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "repeat");
     }
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false), 0);
     assert_eq!(
         events,
         vec![GateWelcomeOutcomeEvent::UpdateWelcomeState {
@@ -219,7 +220,7 @@ fn gate_welcome_god_reset_clears_lab_ppd() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "reset");
     }
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false), 0);
     assert_eq!(
         events,
         vec![GateWelcomeOutcomeEvent::ResetLabPpd {
@@ -237,7 +238,7 @@ fn gate_welcome_non_god_reset_is_ignored() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "reset");
     }
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false), 0);
     assert!(events.is_empty());
 }
 
@@ -252,7 +253,7 @@ fn gate_welcome_gives_item_back_with_flavor_text_once() {
         gate.push_driver_message(NT_GIVE, 2, 900, 0);
     }
 
-    world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false));
+    world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false), 0);
 
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text
@@ -276,7 +277,7 @@ fn gate_welcome_class_choice_rejects_unpaid_player() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "arch warrior");
     }
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false), 0);
     // Not paid: C's `enter_test` returns early via `log_char`, not `say`,
     // so no `UpdateWelcomeState`/area-text event fires.
     assert!(events.is_empty());
@@ -296,7 +297,7 @@ fn gate_welcome_class_choice_rejects_unsolved_labyrinth() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "arch warrior");
     }
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, true));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, true), 0);
     assert!(events.is_empty());
     let texts = world.drain_pending_system_texts();
     assert!(texts.iter().any(|text| text.character_id == CharacterId(2)
@@ -314,7 +315,7 @@ fn gate_welcome_class_choice_rejects_noexp_mode() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "arch warrior");
     }
-    world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false), 0);
     let texts = world.drain_pending_system_texts();
     assert!(texts.iter().any(|text| text.character_id == CharacterId(2)
         && text.message == "Sorry, you may not enter if you have the /noexp mode turned on."));
@@ -332,7 +333,7 @@ fn gate_welcome_class_choice_reports_carried_items() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "arch warrior");
     }
-    world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false), 0);
     let texts = world.drain_pending_system_texts();
     assert!(texts.iter().any(|text| {
         text.character_id == CharacterId(2)
@@ -354,7 +355,7 @@ fn gate_welcome_class_choice_says_not_possible_for_invalid_class() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "arch warrior");
     }
-    world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false), 0);
     let area_texts = world.drain_pending_area_texts();
     assert!(area_texts
         .iter()
@@ -373,7 +374,7 @@ fn gate_welcome_class_choice_ready_emits_enter_test_ready_event() {
     if let Some(gate) = world.characters.get_mut(&CharacterId(1)) {
         gate.push_driver_text_message(CharacterId(2), "arch warrior");
     }
-    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false));
+    let events = world.process_gate_welcome_actions(&facts(CharacterId(2), 6, false), 0);
     assert_eq!(
         events,
         vec![GateWelcomeOutcomeEvent::EnterTestReady {
@@ -411,7 +412,7 @@ fn gate_welcome_destroys_item_when_giver_inventory_is_full() {
         gate.push_driver_message(NT_GIVE, 2, 900, 0);
     }
 
-    world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false));
+    world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false), 0);
 
     assert!(world.items.get(&ItemId(900)).is_none());
 }
@@ -544,4 +545,51 @@ fn gate_finish_enter_room_fails_when_already_at_target() {
         ),
         (190, 200)
     );
+}
+
+/// C `gate_welcome_driver`'s idle "return to post" safety net
+/// (`gatekeeper.c:627-631`): once `TICKS * 30` have passed since the last
+/// time the NPC spoke, it walks back toward its spawn tile (`rest_x`/
+/// `rest_y`, substituting C's `tmpx`/`tmpy`).
+#[test]
+fn gate_welcome_returns_to_post_after_thirty_seconds_idle() {
+    let mut world = World::default();
+    let mut gate = gate_npc(1);
+    gate.rest_x = 10;
+    gate.rest_y = 10;
+    gate.values[0][CharacterValue::Speed as usize] = 50;
+    assert!(world.spawn_character(gate, 12, 10));
+    world.tick = Tick(RETURN_TO_POST + 1);
+
+    world.process_gate_welcome_actions(&HashMap::new(), 0);
+
+    let gate = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(gate.action, action::WALK);
+    assert_eq!((gate.tox, gate.toy), (11, 10));
+}
+
+/// The same idle check must not fire while `last_talk` is recent (C's
+/// `dat->last_talk + TICKS*30 < ticker` guard).
+#[test]
+fn gate_welcome_stays_put_shortly_after_talking() {
+    let mut world = World::default();
+    let mut gate = gate_npc(1);
+    gate.rest_x = 10;
+    gate.rest_y = 10;
+    gate.values[0][CharacterValue::Speed as usize] = 50;
+    assert!(world.spawn_character(gate, 12, 10));
+    world.tick = Tick(RETURN_TO_POST + 1);
+    if let Some(CharacterDriverState::GateWelcome(data)) = world
+        .characters
+        .get_mut(&CharacterId(1))
+        .and_then(|c| c.driver_state.as_mut())
+    {
+        data.last_talk = world.tick.0;
+    }
+
+    world.process_gate_welcome_actions(&HashMap::new(), 0);
+
+    let gate = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(gate.action, 0);
+    assert_eq!((gate.x, gate.y), (12, 10));
 }
