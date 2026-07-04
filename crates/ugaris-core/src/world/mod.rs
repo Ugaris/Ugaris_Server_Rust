@@ -113,6 +113,7 @@ use crate::{
         NT_CREATE, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC, NT_SEEHIT, NT_SPELL,
         NT_TEXT,
     },
+    clan::ClanRegistry,
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
@@ -221,6 +222,18 @@ pub struct World {
     pub area_id: u16,
     pub tick: Tick,
     pub date: GameDate,
+    /// Clan identity/membership/relation registry (`src/system/clan.c`).
+    /// Not yet persisted (`ClanRegistry`'s own doc comment) and not yet
+    /// mutated by any live `/clan` command - see the "Clan system" P3
+    /// task in `PORTING_TODO.md`. Wired into combat's
+    /// [`crate::do_action::ClanAttackPolicy`] via
+    /// `world::combat::RuntimePlayerAttackPolicy` so `can_attack`'s
+    /// clan-relation checks reflect real founded clans once that command
+    /// exists; today every character's `clan` field defaults
+    /// to `0` (no clan), which this registry treats as "not a member of
+    /// any clan pair", so this wiring is a behavior no-op until clans are
+    /// actually founded.
+    pub clan_registry: ClanRegistry,
     pub show_attack_debug: bool,
     pub timers: TimerQueue,
     pub scheduler: TaskScheduler,

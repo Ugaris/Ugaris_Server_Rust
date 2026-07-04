@@ -165,6 +165,96 @@ fn world_kill_setup_proceeds_when_target_serial_matches() {
     assert_eq!(attacker.action, action::ATTACK1);
 }
 
+/// `World::clan_registry` is wired into the live `player_can_attack_target`/
+/// `apply_player_action_setup` clan-policy check (`do_action.rs`'s
+/// `can_attack_internal`, `attacker.clan != 0 && defender.clan != 0`
+/// branch, `clan.c:907-925`'s `clan_can_attack_outside`): a clan feud
+/// exempts two `PLAYER`-flagged, non-`PK` characters from the normal
+/// PK-flag requirement that would otherwise block `PAC_KILL` between two
+/// players entirely, matching the legacy "clan war overrides PK" rule.
+#[test]
+fn world_kill_setup_allows_clan_feud_attack_without_pk_flags() {
+    let mut world = World::default();
+    world.clan_registry.relations_mut().found_clan(1, 0);
+    world.clan_registry.relations_mut().found_clan(2, 0);
+    world
+        .clan_registry
+        .relations_mut()
+        .set_relation(1, 2, ClanRelation::Feud, 0)
+        .unwrap();
+    world
+        .clan_registry
+        .relations_mut()
+        .set_relation(2, 1, ClanRelation::Feud, 0)
+        .unwrap();
+    world.clan_registry.relations_mut().update(0);
+
+    let mut attacker = character(1);
+    attacker.flags.insert(CharacterFlags::PLAYER);
+    attacker.clan = 1;
+    attacker.x = 10;
+    attacker.y = 10;
+    let mut target = character(2);
+    target.flags.insert(CharacterFlags::PLAYER);
+    target.clan = 2;
+    target.x = 11;
+    target.y = 10;
+    world.map.tile_mut(11, 10).unwrap().character = 2;
+    world.add_character(attacker);
+    world.add_character(target);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+    player.action = QueuedAction {
+        action: PlayerActionCode::Kill,
+        arg1: 2,
+        arg2: 2,
+    };
+
+    assert!(world.apply_player_action_setup(&mut player, 2));
+
+    let attacker = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(attacker.action, action::ATTACK1);
+}
+
+/// Sibling of `world_kill_setup_allows_clan_feud_attack_without_pk_flags`:
+/// with the same two founded clans left at the default `Neutral`
+/// relation (no feud/war requested), the clan-policy branch does not
+/// apply and the normal player-vs-player `PK`-flag requirement blocks the
+/// attack, aborting `PAC_KILL` setup back to idle.
+#[test]
+fn world_kill_setup_blocks_neutral_clan_attack_without_pk_flags() {
+    let mut world = World::default();
+    world.clan_registry.relations_mut().found_clan(1, 0);
+    world.clan_registry.relations_mut().found_clan(2, 0);
+
+    let mut attacker = character(1);
+    attacker.flags.insert(CharacterFlags::PLAYER);
+    attacker.clan = 1;
+    attacker.x = 10;
+    attacker.y = 10;
+    let mut target = character(2);
+    target.flags.insert(CharacterFlags::PLAYER);
+    target.clan = 2;
+    target.x = 11;
+    target.y = 10;
+    world.map.tile_mut(11, 10).unwrap().character = 2;
+    world.add_character(attacker);
+    world.add_character(target);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+    player.action = QueuedAction {
+        action: PlayerActionCode::Kill,
+        arg1: 2,
+        arg2: 2,
+    };
+
+    assert!(world.apply_player_action_setup(&mut player, 2));
+
+    let attacker = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(attacker.action, action::IDLE);
+    assert_eq!(player.action.action, PlayerActionCode::Idle);
+}
+
 #[test]
 fn world_removes_stale_pk_hate_when_pvp_level_check_fails() {
     let mut world = World::default();

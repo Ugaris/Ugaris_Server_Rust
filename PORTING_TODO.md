@@ -3232,13 +3232,10 @@ Unlocks every quest NPC. Do these before any P4 area work.
   jewels, cost-per-week/debt, bonuses, dungeon guard counts, potions), a
   persistent `crates/ugaris-db/src/clan.rs` repository + migration (no DB
   table exists yet - `ClanRegistry` is in-memory only and does not survive
-  a restart), wiring `ClanRegistry`/`ClanRelations` as the live
-  `ClanAttackPolicy` in the actual game loop/`World` (currently only
-  available as an impl, not constructed/used anywhere outside tests) and
-  calling `add_member`/`remove_member`/`found_clan` from an actual `/clan`
-  or GM command (only the pre-existing `/joinclan` cheat mutates the
-  fields directly, bypassing the new registry), clan-log persistence/
-  message formatting (`add_clanlog`), the `ACHIEVEMENT_CLAN_MEMBER`/
+  a restart), calling `add_member`/`remove_member`/`found_clan` from an
+  actual `/clan` or GM command (only the pre-existing `/joinclan` cheat
+  mutates the fields directly, bypassing the new registry), clan-log
+  persistence/message formatting (`add_clanlog`), the `ACHIEVEMENT_CLAN_MEMBER`/
   `ACHIEVEMENT_CLAN_MASTER`/`ACHIEVEMENT_CLUB_MEMBER` award wiring on
   membership change, `clan_trade_bonus` (blocked on the merchant system
   itself not being ported), clan chat channel gating (channels 5/7/12),
@@ -3314,6 +3311,43 @@ Unlocks every quest NPC. Do these before any P4 area work.
     build -p ugaris-server` clean with zero warnings. No runtime-loop/
     protocol/login changes this iteration, so boot-smoke was not required
     per the recipe and was not re-run.
+  - 2026-07-04 (iteration 87): wired `World::clan_registry` (a new
+    `ClanRegistry` field, `crates/ugaris-core/src/world/mod.rs`) as the
+    live `ClanAttackPolicy` at all four real combat call sites that
+    previously always used `NoClanAttackPolicy`'s always-false stubs:
+    `World::player_can_attack_target` (`world/combat.rs`) and the
+    `PAC_KILL` setup path (`world/actions.rs`), both via
+    `world::combat::RuntimePlayerAttackPolicy` gaining a
+    `clan_relations: &ClanRelations` field alongside its existing PK-hate
+    field and delegating `are_allied`/`can_attack_inside_clan_area`/
+    `can_attack_outside_clan_area` to it; and the two spell/effect-tick
+    attack-policy closures in `ugaris-server/src/main.rs`
+    (`tick_effects_with_attack_policy`/`tick_basic_actions_with_attack_policy`),
+    whose own `RuntimePlayerAttackPolicy` copy (`world_events.rs`) got the
+    same treatment - these clone `world.clan_registry.relations()` once
+    before the tick call since the closures cannot hold a live `&World`
+    borrow while `World` itself is mutably borrowed for the tick. This is
+    a behavior no-op today (every character's `clan` field defaults to
+    `0`, which `ClanRelations` treats as "no pair"), but is exercised and
+    load-bearing the moment a future `/clan` command starts calling
+    `found_clan`/`add_member`. Added two focused tests in
+    `world/tests/combat.rs` proving the wiring is real, not just
+    plumbing: `world_kill_setup_allows_clan_feud_attack_without_pk_flags`
+    (two `PLAYER`-flagged, non-`PK` characters in different clans at
+    `Feud` can attack each other - the clan-war branch exempts the normal
+    PK-flag requirement, matching `clan.c`'s intent) and
+    `world_kill_setup_blocks_neutral_clan_attack_without_pk_flags` (same
+    two clans left at the default `Neutral` relation still block the
+    attack via the ordinary PK-flag check). `cargo fmt --all`, `cargo
+    test --workspace` (1446 ugaris-core + 38 db + 3 net + 37 protocol +
+    489 server, all green, zero failures), `cargo build -p ugaris-server`
+    clean with zero warnings, boot-smoke confirmed "entering Rust game
+    loop" with no panics (this iteration touches the runtime tick loop's
+    attack-policy closures). REMAINING unchanged except the wiring item
+    removed above: DB persistence, a real `/clan` command, clan-log,
+    achievement-on-join wiring, `clan_trade_bonus`, chat channel gating,
+    clan-hall transport beyond direct membership, and the treasury/
+    dungeon economy all still need their own slices.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

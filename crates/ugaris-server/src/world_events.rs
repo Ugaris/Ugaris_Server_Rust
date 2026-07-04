@@ -1,7 +1,15 @@
 use super::*;
 
+/// Mirrors `ugaris_core::world::combat::RuntimePlayerAttackPolicy`'s shape
+/// (see that struct's doc comment) - a separate copy is needed here
+/// because these call sites go through `World::tick_effects_with_attack_policy`/
+/// `tick_basic_actions_with_attack_policy`'s `FnMut` closures, which cannot
+/// hold a live `&World` borrow (the tick call itself needs `&mut World`);
+/// callers must clone `world.clan_registry.relations()` before the tick
+/// call and move the clone into the closure (see `main.rs`).
 pub(crate) struct RuntimePlayerAttackPolicy<'a> {
     pub(crate) attacker_runtime: &'a PlayerRuntime,
+    pub(crate) clan_relations: &'a ClanRelations,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -34,6 +42,20 @@ impl PkRelationSnapshot {
 impl ClanAttackPolicy for RuntimePlayerAttackPolicy<'_> {
     fn has_pk_hate(&self, _attacker: &Character, defender: &Character) -> bool {
         self.attacker_runtime.has_pk_hate_for(defender.id.0)
+    }
+
+    fn are_allied(&self, attacker_clan: u16, defender_clan: u16) -> bool {
+        self.clan_relations.alliance(attacker_clan, defender_clan)
+    }
+
+    fn can_attack_inside_clan_area(&self, attacker_clan: u16, defender_clan: u16) -> bool {
+        self.clan_relations
+            .can_attack_inside(attacker_clan, defender_clan)
+    }
+
+    fn can_attack_outside_clan_area(&self, attacker_clan: u16, defender_clan: u16) -> bool {
+        self.clan_relations
+            .can_attack_outside(attacker_clan, defender_clan)
     }
 }
 

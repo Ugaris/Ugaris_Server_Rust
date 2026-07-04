@@ -1,12 +1,38 @@
 use super::*;
+use crate::clan::ClanRelations;
 
+/// Combines the two independent facts `can_attack`'s clan-policy check
+/// needs that `World` cannot answer alone: live PK-hate state (owned by
+/// `PlayerRuntime`, see `RuntimePlayerAttackPolicy`'s original doc intent)
+/// and the founded-clan relation state machine (`ClanRegistry::relations`,
+/// `src/system/clan.c`'s `clan_can_attack_inside`/`_outside`/
+/// `clan_alliance`). Both attacker and defender pass through `World`'s own
+/// single `clan_registry`, so only one `ClanRelations` reference is needed
+/// here (a clan pair's relation is the same regardless of which side is
+/// "attacker" for lookup purposes - `ClanRelations::current_relation` is
+/// asymmetric only in *value*, not in which registry answers it).
 pub(crate) struct RuntimePlayerAttackPolicy<'a> {
     pub(crate) attacker_runtime: &'a PlayerRuntime,
+    pub(crate) clan_relations: &'a ClanRelations,
 }
 
 impl ClanAttackPolicy for RuntimePlayerAttackPolicy<'_> {
     fn has_pk_hate(&self, _attacker: &Character, defender: &Character) -> bool {
         self.attacker_runtime.has_pk_hate_for(defender.id.0)
+    }
+
+    fn are_allied(&self, attacker_clan: u16, defender_clan: u16) -> bool {
+        self.clan_relations.alliance(attacker_clan, defender_clan)
+    }
+
+    fn can_attack_inside_clan_area(&self, attacker_clan: u16, defender_clan: u16) -> bool {
+        self.clan_relations
+            .can_attack_inside(attacker_clan, defender_clan)
+    }
+
+    fn can_attack_outside_clan_area(&self, attacker_clan: u16, defender_clan: u16) -> bool {
+        self.clan_relations
+            .can_attack_outside(attacker_clan, defender_clan)
     }
 }
 
@@ -134,6 +160,7 @@ impl World {
         };
         let attack_policy = RuntimePlayerAttackPolicy {
             attacker_runtime: player,
+            clan_relations: self.clan_registry.relations(),
         };
         let can_attack = can_attack_in_area_with_clan_policy(
             attacker,

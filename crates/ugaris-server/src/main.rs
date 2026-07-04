@@ -98,6 +98,7 @@ use ugaris_core::{
         CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY,
         CDR_SWAMPMONSTER, CDR_TEUFELRAT, NTID_GATEKEEPER, NT_NPC,
     },
+    clan::ClanRelations,
     direction::Direction,
     do_action::{
         can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy, ItemUseRequest,
@@ -749,9 +750,13 @@ async fn main() -> anyhow::Result<()> {
                     }
                     info!(expired_count, tick = world.tick.0, "despawned expired lostcon characters");
                 }
+                let clan_relations: ClanRelations = world.clan_registry.relations().clone();
                 world.tick_effects_with_attack_policy(|caster_id, caster, target, map| {
                     if let Some(player) = runtime.player_for_character_mut(caster_id) {
-                        let attack_policy = RuntimePlayerAttackPolicy { attacker_runtime: &*player };
+                        let attack_policy = RuntimePlayerAttackPolicy {
+                            attacker_runtime: &*player,
+                            clan_relations: &clan_relations,
+                        };
                         let can_attack = can_attack_in_area_with_clan_policy(
                             caster,
                             target,
@@ -1851,9 +1856,13 @@ async fn main() -> anyhow::Result<()> {
                     }
                     info!(look_sessions, tick = world.tick.0, "queued look-map feedback");
                 }
+                let clan_relations: ClanRelations = world.clan_registry.relations().clone();
                 let mut completed_actions = world.tick_basic_actions_with_attack_policy(|caster_id, caster, target, map| {
                     if let Some(player) = runtime.player_for_character_mut(caster_id) {
-                        let attack_policy = RuntimePlayerAttackPolicy { attacker_runtime: &*player };
+                        let attack_policy = RuntimePlayerAttackPolicy {
+                            attacker_runtime: &*player,
+                            clan_relations: &clan_relations,
+                        };
                         let can_attack = can_attack_in_area_with_clan_policy(
                             caster,
                             target,

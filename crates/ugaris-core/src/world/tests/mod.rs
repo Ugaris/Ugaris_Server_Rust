@@ -45,6 +45,7 @@ use crate::{
         FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_GLADIATOR, NTID_LAB2_DEAMONCHECK,
         NTID_LABGNOMETORCH, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_NPC, NT_SEEHIT,
     },
+    clan::ClanRelation,
     direction::Direction,
     entity::{CharacterFlags, CharacterValue, ItemFlags, SpeedMode, MAX_MODIFIERS, POWERSCALE},
     item_driver::{

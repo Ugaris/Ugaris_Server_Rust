@@ -532,6 +532,7 @@ impl World {
                 };
                 let attack_policy = RuntimePlayerAttackPolicy {
                     attacker_runtime: player,
+                    clan_relations: self.clan_registry.relations(),
                 };
                 if !can_attack_in_area_with_clan_policy(
                     attacker,
