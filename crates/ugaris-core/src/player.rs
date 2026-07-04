@@ -39,7 +39,13 @@ pub const LEGACY_RANDOMSHRINE_PPD_SIZE: usize = RANDOMSHRINE_USED_WORDS * 4 + 1;
 pub const TREASURE_DIG_PPD_ENTRIES: usize = 5;
 pub const LEGACY_TREASURE_DIG_PPD_SIZE: usize = TREASURE_DIG_PPD_ENTRIES * 4;
 pub const LEGACY_MISC_PPD_SIZE: usize = 36;
-pub const LEGACY_AREA3_PPD_SIZE: usize = 17 * 4;
+/// C `struct area3_ppd` (`src/area/3/area3.h:18-35` /
+/// `src/system/game/ppd_structs.h:109-127`): 18 `int` fields (`imp_kills,
+/// imp_flags;` declares two on one line). Was previously `17 * 4` (a
+/// missing-field size bug that happened to go unnoticed because
+/// `kassim_item_wait_starttime`, the 18th/last field, had no accessor
+/// yet); fixed while adding the `questlog_init_area3` accessors below.
+pub const LEGACY_AREA3_PPD_SIZE: usize = 18 * 4;
 /// C `struct area1_ppd` (`src/area/1/area1.h:24-75`): 39 `int` fields.
 pub const LEGACY_AREA1_PPD_SIZE: usize = 39 * 4;
 /// C `struct nomad_ppd` (`src/common/nomad_ppd.h:9-13`):
@@ -249,12 +255,17 @@ const ORBSPAWN_PPD_IDS_OFFSET: usize = 0;
 const ORBSPAWN_PPD_LAST_USED_OFFSET: usize = ORBSPAWN_PPD_IDS_OFFSET + ORBSPAWN_MAX_ENTRIES * 4;
 const FLOWER_PPD_IDS_OFFSET: usize = 0;
 const FLOWER_PPD_LAST_USED_OFFSET: usize = FLOWER_PPD_IDS_OFFSET + FLOWER_MAX_ENTRIES * 4;
+const AREA3_PPD_SEYMOUR_STATE_OFFSET: usize = 0 * 4;
 const AREA3_PPD_KELLY_STATE_OFFSET: usize = 1 * 4;
 const AREA3_PPD_KELLY_FOUND1_OFFSET: usize = 3 * 4;
 const AREA3_PPD_KELLY_FOUND2_OFFSET: usize = 4 * 4;
 const AREA3_PPD_KELLY_FOUND3_OFFSET: usize = 5 * 4;
+const AREA3_PPD_ASTRO2_STATE_OFFSET: usize = 6 * 4;
+const AREA3_PPD_CRYPT_STATE_OFFSET: usize = 7 * 4;
 const AREA3_PPD_CLARA_STATE_OFFSET: usize = 9 * 4;
 const AREA3_PPD_IMP_FLAGS_OFFSET: usize = 12 * 4;
+const AREA3_PPD_WILLIAM_STATE_OFFSET: usize = 13 * 4;
+const AREA3_PPD_HERMIT_STATE_OFFSET: usize = 14 * 4;
 // `struct area1_ppd` field offsets (`src/area/1/area1.h:24-75`), in
 // declaration order (0-based `int` index * 4). Only the fields consumed by
 // `questlog_init_area1` (`src/system/questlog.c:828-1039`) have named
@@ -279,7 +290,22 @@ const CALIGAR_PPD_DOOR_FLAG_OFFSET: usize = 14 * 4;
 const CALIGAR_PPD_DOOR_FLAG_COUNT: usize = 4;
 pub const ARKHATA_PPD_CLERK_STATE_OFFSET: usize = 16 * 4;
 pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
+// `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /
+// `src/system/game/ppd_structs.h:566-`), in declaration order. Only the
+// fields consumed by `questlog_init_staff` (`src/system/questlog.c:1203-
+// 1394`) plus the two pre-existing named fields below have accessors.
+const STAFFER_PPD_SMUGGLECOM_STATE_OFFSET: usize = 0 * 4;
+const STAFFER_PPD_CARLOS_STATE_OFFSET: usize = 2 * 4;
+const STAFFER_PPD_COUNTBRAN_STATE_OFFSET: usize = 3 * 4;
+const STAFFER_PPD_COUNTBRAN_BITS_OFFSET: usize = 4 * 4;
+const STAFFER_PPD_SPIRITBRAN_STATE_OFFSET: usize = 7 * 4;
+const STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET: usize = 9 * 4;
+const STAFFER_PPD_BROKLIN_STATE_OFFSET: usize = 12 * 4;
+const STAFFER_PPD_ARISTOCRAT_STATE_OFFSET: usize = 13 * 4;
+const STAFFER_PPD_YOATIN_STATE_OFFSET: usize = 14 * 4;
 const STAFFER_PPD_SHANRA_STATE_OFFSET: usize = 16 * 4;
+const STAFFER_PPD_DWARFCHIEF_STATE_OFFSET: usize = 18 * 4;
+const STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET: usize = 19 * 4;
 const FARMY_PPD_BOSS_STAGE_OFFSET: usize = 0;
 const TEUFELRAT_PPD_KILLS_OFFSET: usize = 0;
 const TEUFELRAT_PPD_SCORE_OFFSET: usize = 4;
@@ -288,6 +314,9 @@ const TWOCITY_PPD_GOODTILE_OFFSET: usize = 19 * 4;
 const TWOCITY_PPD_SOLVED_LIBRARY_OFFSET: usize = 24 * 4;
 const TWOCITY_PPD_THIEF_STATE_OFFSET: usize = 8 * 4;
 const TWOCITY_PPD_THIEF_KILLED_OFFSET: usize = 10 * 4;
+const TWOCITY_PPD_SANWYN_STATE_OFFSET: usize = 16 * 4;
+const TWOCITY_PPD_SKELLY_STATE_OFFSET: usize = 27 * 4;
+const TWOCITY_PPD_ALCHEMIST_STATE_OFFSET: usize = 28 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 const LOSTCON_PPD_AUTOTURN_OFFSET: usize = 16 * 4;
@@ -814,6 +843,66 @@ impl PlayerRuntime {
             &self.twocity_ppd,
             TWOCITY_PPD_THIEF_KILLED_OFFSET + index * 4,
         )
+    }
+
+    pub fn twocity_sanwyn_state(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_SANWYN_STATE_OFFSET)
+    }
+
+    pub fn set_twocity_sanwyn_state(&mut self, state: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_SANWYN_STATE_OFFSET,
+            state,
+        );
+    }
+
+    pub fn twocity_skelly_state(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_SKELLY_STATE_OFFSET)
+    }
+
+    pub fn set_twocity_skelly_state(&mut self, state: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_SKELLY_STATE_OFFSET,
+            state,
+        );
+    }
+
+    pub fn twocity_alchemist_state(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_ALCHEMIST_STATE_OFFSET)
+    }
+
+    pub fn set_twocity_alchemist_state(&mut self, state: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_ALCHEMIST_STATE_OFFSET,
+            state,
+        );
+    }
+
+    /// Snapshot of the `twocity_ppd` fields consumed by
+    /// `questlog_init_twocity` (`src/system/questlog.c:1470-1546`), for
+    /// `crate::quest::init_twocity_quests`.
+    pub fn twocity_quest_state(&self) -> crate::quest::TwocityQuestState {
+        crate::quest::TwocityQuestState {
+            thief_state: self.twocity_thief_state(),
+            sanwyn_state: self.twocity_sanwyn_state(),
+            skelly_state: self.twocity_skelly_state(),
+            alchemist_state: self.twocity_alchemist_state(),
+        }
     }
 
     pub fn mark_twocity_burndown_kill(&mut self) -> bool {
@@ -2038,6 +2127,61 @@ impl PlayerRuntime {
         self.write_area3_i32(AREA3_PPD_CLARA_STATE_OFFSET, state);
     }
 
+    pub fn area3_seymour_state(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_SEYMOUR_STATE_OFFSET)
+    }
+
+    pub fn set_area3_seymour_state(&mut self, state: i32) {
+        self.write_area3_i32(AREA3_PPD_SEYMOUR_STATE_OFFSET, state);
+    }
+
+    pub fn area3_astro2_state(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_ASTRO2_STATE_OFFSET)
+    }
+
+    pub fn set_area3_astro2_state(&mut self, state: i32) {
+        self.write_area3_i32(AREA3_PPD_ASTRO2_STATE_OFFSET, state);
+    }
+
+    pub fn area3_crypt_state(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_CRYPT_STATE_OFFSET)
+    }
+
+    pub fn set_area3_crypt_state(&mut self, state: i32) {
+        self.write_area3_i32(AREA3_PPD_CRYPT_STATE_OFFSET, state);
+    }
+
+    pub fn area3_william_state(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_WILLIAM_STATE_OFFSET)
+    }
+
+    pub fn set_area3_william_state(&mut self, state: i32) {
+        self.write_area3_i32(AREA3_PPD_WILLIAM_STATE_OFFSET, state);
+    }
+
+    pub fn area3_hermit_state(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_HERMIT_STATE_OFFSET)
+    }
+
+    pub fn set_area3_hermit_state(&mut self, state: i32) {
+        self.write_area3_i32(AREA3_PPD_HERMIT_STATE_OFFSET, state);
+    }
+
+    /// Snapshot of the `area3_ppd` fields consumed by
+    /// `questlog_init_area3` (`src/system/questlog.c:1040-1203`), for
+    /// `crate::quest::init_area3_quests`.
+    pub fn area3_quest_state(&self) -> crate::quest::Area3QuestState {
+        crate::quest::Area3QuestState {
+            seymour_state: self.area3_seymour_state(),
+            kelly_state: self.area3_kelly_state(),
+            astro2_state: self.area3_astro2_state(),
+            crypt_state: self.area3_crypt_state(),
+            clara_state: self.area3_clara_state(),
+            william_state: self.area3_william_state(),
+            hermit_state: self.area3_hermit_state(),
+        }
+    }
+
     fn read_area3_i32(&self, offset: usize) -> i32 {
         if self.area3_ppd.len() < LEGACY_AREA3_PPD_SIZE {
             return 0;
@@ -2339,6 +2483,127 @@ impl PlayerRuntime {
         }
         write_i32(&mut self.staffer_ppd, STAFFER_PPD_SHANRA_STATE_OFFSET, 3);
         true
+    }
+
+    fn read_staffer_i32(&self, offset: usize) -> i32 {
+        if self.staffer_ppd.len() < LEGACY_STAFFER_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.staffer_ppd, offset)
+    }
+
+    fn write_staffer_i32(&mut self, offset: usize, value: i32) {
+        if self.staffer_ppd.len() < LEGACY_STAFFER_PPD_SIZE {
+            self.staffer_ppd.resize(LEGACY_STAFFER_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.staffer_ppd, offset, value);
+    }
+
+    pub fn staffer_smugglecom_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_SMUGGLECOM_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_smugglecom_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_SMUGGLECOM_STATE_OFFSET, state);
+    }
+
+    pub fn staffer_carlos_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_CARLOS_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_carlos_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_CARLOS_STATE_OFFSET, state);
+    }
+
+    pub fn staffer_countbran_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_COUNTBRAN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_countbran_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_COUNTBRAN_STATE_OFFSET, state);
+    }
+
+    pub fn staffer_countbran_bits(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_COUNTBRAN_BITS_OFFSET)
+    }
+
+    pub fn set_staffer_countbran_bits(&mut self, bits: i32) {
+        self.write_staffer_i32(STAFFER_PPD_COUNTBRAN_BITS_OFFSET, bits);
+    }
+
+    pub fn staffer_spiritbran_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_SPIRITBRAN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_spiritbran_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_SPIRITBRAN_STATE_OFFSET, state);
+    }
+
+    pub fn staffer_brennethbran_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_brennethbran_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET, state);
+    }
+
+    pub fn staffer_broklin_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_BROKLIN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_broklin_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_BROKLIN_STATE_OFFSET, state);
+    }
+
+    pub fn staffer_aristocrat_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_ARISTOCRAT_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_aristocrat_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_ARISTOCRAT_STATE_OFFSET, state);
+    }
+
+    pub fn staffer_yoatin_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_YOATIN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_yoatin_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_YOATIN_STATE_OFFSET, state);
+    }
+
+    pub fn staffer_dwarfchief_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_DWARFCHIEF_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_dwarfchief_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_DWARFCHIEF_STATE_OFFSET, state);
+    }
+
+    pub fn staffer_dwarfshaman_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_dwarfshaman_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET, state);
+    }
+
+    /// Snapshot of the `staffer_ppd` fields consumed by
+    /// `questlog_init_staff` (`src/system/questlog.c:1203-1394`), for
+    /// `crate::quest::init_staff_quests`.
+    pub fn staff_quest_state(&self) -> crate::quest::StaffQuestState {
+        crate::quest::StaffQuestState {
+            carlos_state: self.staffer_carlos_state(),
+            smugglecom_state: self.staffer_smugglecom_state(),
+            aristocrat_state: self.staffer_aristocrat_state(),
+            yoatin_state: self.staffer_yoatin_state(),
+            countbran_state: self.staffer_countbran_state(),
+            countbran_bits: self.staffer_countbran_bits(),
+            brennethbran_state: self.staffer_brennethbran_state(),
+            spiritbran_state: self.staffer_spiritbran_state(),
+            broklin_state: self.staffer_broklin_state(),
+            dwarfchief_state: self.staffer_dwarfchief_state(),
+            dwarfshaman_state: self.staffer_dwarfshaman_state(),
+        }
     }
 
     pub fn encode_legacy_farmy_ppd(&self) -> Vec<u8> {
@@ -5866,6 +6131,40 @@ mod tests {
     }
 
     #[test]
+    fn area3_ppd_exposes_seymour_astro2_crypt_william_hermit_states() {
+        assert_eq!(LEGACY_AREA3_PPD_SIZE, 72);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_area3_seymour_state(16);
+        player.set_area3_astro2_state(5);
+        player.set_area3_crypt_state(15);
+        player.set_area3_william_state(7);
+        player.set_area3_hermit_state(5);
+
+        let encoded = player.encode_legacy_area3_ppd();
+        assert_eq!(read_i32(&encoded, AREA3_PPD_SEYMOUR_STATE_OFFSET), 16);
+        assert_eq!(read_i32(&encoded, AREA3_PPD_ASTRO2_STATE_OFFSET), 5);
+        assert_eq!(read_i32(&encoded, AREA3_PPD_CRYPT_STATE_OFFSET), 15);
+        assert_eq!(read_i32(&encoded, AREA3_PPD_WILLIAM_STATE_OFFSET), 7);
+        assert_eq!(read_i32(&encoded, AREA3_PPD_HERMIT_STATE_OFFSET), 5);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_area3_ppd(&encoded));
+        assert_eq!(decoded.area3_seymour_state(), 16);
+        assert_eq!(decoded.area3_astro2_state(), 5);
+        assert_eq!(decoded.area3_crypt_state(), 15);
+        assert_eq!(decoded.area3_william_state(), 7);
+        assert_eq!(decoded.area3_hermit_state(), 5);
+
+        let state = decoded.area3_quest_state();
+        assert_eq!(state.seymour_state, 16);
+        assert_eq!(state.astro2_state, 5);
+        assert_eq!(state.crypt_state, 15);
+        assert_eq!(state.william_state, 7);
+        assert_eq!(state.hermit_state, 5);
+    }
+
+    #[test]
     fn area3_ppd_tracks_forest_chest_imp_flags() {
         let mut player = PlayerRuntime::connected(1, 0);
 
@@ -6045,6 +6344,54 @@ mod tests {
         let mut decoded = PlayerRuntime::connected(2, 0);
         assert!(decoded.decode_legacy_staffer_ppd(&encoded));
         assert_eq!(decoded.forestbran_done(), 3);
+    }
+
+    #[test]
+    fn staffer_ppd_exposes_quest_npc_states_for_questlog_init() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_staffer_carlos_state(6);
+        player.set_staffer_smugglecom_state(10);
+        player.set_staffer_aristocrat_state(8);
+        player.set_staffer_yoatin_state(9);
+        player.set_staffer_countbran_state(1);
+        player.set_staffer_countbran_bits(1 | 2 | 4);
+        player.set_staffer_brennethbran_state(12);
+        player.set_staffer_spiritbran_state(5);
+        player.set_staffer_broklin_state(11);
+        player.set_staffer_dwarfchief_state(14);
+        player.set_staffer_dwarfshaman_state(9);
+
+        let encoded = player.encode_legacy_staffer_ppd();
+        assert_eq!(encoded.len(), LEGACY_STAFFER_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_CARLOS_STATE_OFFSET), 6);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_SMUGGLECOM_STATE_OFFSET), 10);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_ARISTOCRAT_STATE_OFFSET), 8);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_YOATIN_STATE_OFFSET), 9);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_COUNTBRAN_STATE_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_COUNTBRAN_BITS_OFFSET), 7);
+        assert_eq!(
+            read_i32(&encoded, STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET),
+            12
+        );
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_SPIRITBRAN_STATE_OFFSET), 5);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_BROKLIN_STATE_OFFSET), 11);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_DWARFCHIEF_STATE_OFFSET), 14);
+        assert_eq!(read_i32(&encoded, STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET), 9);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_staffer_ppd(&encoded));
+        let state = decoded.staff_quest_state();
+        assert_eq!(state.carlos_state, 6);
+        assert_eq!(state.smugglecom_state, 10);
+        assert_eq!(state.aristocrat_state, 8);
+        assert_eq!(state.yoatin_state, 9);
+        assert_eq!(state.countbran_state, 1);
+        assert_eq!(state.countbran_bits, 7);
+        assert_eq!(state.brennethbran_state, 12);
+        assert_eq!(state.spiritbran_state, 5);
+        assert_eq!(state.broklin_state, 11);
+        assert_eq!(state.dwarfchief_state, 14);
+        assert_eq!(state.dwarfshaman_state, 9);
     }
 
     #[test]
@@ -6267,6 +6614,36 @@ mod tests {
         assert!(decoded.twocity_solved_library);
         assert_eq!(read_i32(&decoded.twocity_ppd, 0), 1234);
         assert!(!decoded.decode_legacy_twocity_ppd(&encoded[..LEGACY_TWOCITY_PPD_SIZE - 1]));
+    }
+
+    #[test]
+    fn twocity_ppd_exposes_sanwyn_skelly_alchemist_quest_states() {
+        assert_eq!(TWOCITY_PPD_SANWYN_STATE_OFFSET, 64);
+        assert_eq!(TWOCITY_PPD_SKELLY_STATE_OFFSET, 108);
+        assert_eq!(TWOCITY_PPD_ALCHEMIST_STATE_OFFSET, 112);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_twocity_thief_state(20);
+        player.set_twocity_sanwyn_state(8);
+        player.set_twocity_skelly_state(3);
+        player.set_twocity_alchemist_state(5);
+
+        let encoded = player.encode_legacy_twocity_ppd();
+        assert_eq!(read_i32(&encoded, TWOCITY_PPD_SANWYN_STATE_OFFSET), 8);
+        assert_eq!(read_i32(&encoded, TWOCITY_PPD_SKELLY_STATE_OFFSET), 3);
+        assert_eq!(read_i32(&encoded, TWOCITY_PPD_ALCHEMIST_STATE_OFFSET), 5);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_twocity_ppd(&encoded));
+        assert_eq!(decoded.twocity_sanwyn_state(), 8);
+        assert_eq!(decoded.twocity_skelly_state(), 3);
+        assert_eq!(decoded.twocity_alchemist_state(), 5);
+
+        let state = decoded.twocity_quest_state();
+        assert_eq!(state.thief_state, 20);
+        assert_eq!(state.sanwyn_state, 8);
+        assert_eq!(state.skelly_state, 3);
+        assert_eq!(state.alchemist_state, 5);
     }
 
     #[test]

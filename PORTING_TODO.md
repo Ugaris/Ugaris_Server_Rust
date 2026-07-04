@@ -2216,23 +2216,19 @@ Unlocks every quest NPC. Do these before any P4 area work.
   rewards per quest (`quest_exp.h`). Port the quest table + the
   `questlog_open/done` helpers; wire the already-ported `CL_REOPENQUEST`
   reset side effects per area.
-  REMAINING: `questlog_init`'s `area3_ppd`/`staffer_ppd`/`twocity_ppd`
-  sub-functions (`questlog_init_area3/staff/twocity`,
-  `src/system/questlog.c:1040-1470`) and the `questlog_init` top-level
-  dispatcher (the `quest[MAXQUEST-1].done == 55` "already initialized"
-  sentinel + calling all 5 sub-functions) are still not ported, since
-  `area3_ppd`/`staffer_ppd`/`twocity_ppd` only expose a handful of named
-  fields today (not every state those sub-functions read, e.g.
-  `seymour_state`/`astro2_state`/`crypt_state`/`william_state`/
-  `hermit_state`/`carlos_state`/`smugglecom_state`/etc. have no
-  accessors yet). The per-area `questlog_reopen_qN` reset side effects
-  (`src/system/questlog.c:394-828`ish) are also not ported. `quest_exp.h`'s
-  per-encounter exp/money constants (used by NPC drivers that don't exist
-  yet) are also not ported. No NPC dialogue driver calls
-  `QuestLog::open`/`complete_legacy`/`init_area1_quests`/
-  `init_nomad_quests` yet since the area NPC drivers themselves aren't
-  ported (P4 area content) - this slice only lands the reusable
-  primitives.
+  REMAINING: the `questlog_init` top-level dispatcher (the
+  `quest[MAXQUEST-1].done == 55` "already initialized" sentinel + calling
+  all 5 sub-functions) is still not ported - `DRD_QUESTLOG_PPD` (the
+  `struct quest[MAXQUEST]` PPD array itself, distinct from the
+  in-memory `QuestLog`) has no Rust representation, and nothing calls
+  `init_area1_quests`/`init_area3_quests`/`init_staff_quests`/
+  `init_twocity_quests`/`init_nomad_quests` yet since the area NPC
+  drivers themselves aren't ported (P4 area content) - this slice only
+  lands the reusable primitives. The per-area `questlog_reopen_qN` reset
+  side effects (`src/system/questlog.c:394-828`ish) are also not ported.
+  `quest_exp.h`'s per-encounter exp/money constants (used by NPC drivers
+  that don't exist yet) are also not ported. No NPC dialogue driver calls
+  `QuestLog::open`/`complete_legacy` yet either, for the same reason.
   Progress Log: ported the C `struct questlog questlog[]` metadata table
   (85 entries, name/level-range/giver/area/nominal-exp/flags incl.
   `QLF_XREPEAT`, copied digit-for-digit including the two trailing-space
@@ -2293,6 +2289,46 @@ Unlocks every quest NPC. Do these before any P4 area work.
   wire `init_area1_quests`/`init_nomad_quests` into any live caller yet -
   no NPC driver advances these states, so nothing calls them at
   runtime).
+  Progress Log (iteration 61): ported the remaining three
+  `questlog_init_*` sub-functions - `questlog_init_area3`
+  (`src/system/questlog.c:1040-1203`), `questlog_init_staff`
+  (`:1203-1394`), `questlog_init_twocity` (`:1470-1546`) - as
+  `init_area3_quests`/`init_staff_quests`/`init_twocity_quests` in
+  `crates/ugaris-core/src/quest.rs`, taking plain `Area3QuestState`/
+  `StaffQuestState`/`TwocityQuestState` snapshots built by the new
+  `PlayerRuntime::area3_quest_state`/`staff_quest_state`/
+  `twocity_quest_state` (`crates/ugaris-core/src/player.rs`). Added the
+  missing named field accessors these functions need on the existing
+  `area3_ppd`/`staffer_ppd`/`twocity_ppd` raw-byte blocks (`seymour`/
+  `astro2`/`crypt`/`william`/`hermit` states for area3; `carlos`/
+  `smugglecom`/`aristocrat`/`yoatin`/`countbran` state+bits/
+  `brennethbran`/`spiritbran`/`broklin`/`dwarfchief`/`dwarfshaman`
+  states for staffer; `sanwyn`/`skelly`/`alchemist` states for twocity -
+  `thief_state`/`kelly_state`/`clara_state`/etc. already had accessors).
+  Fixed a genuine pre-existing size bug found while doing this:
+  `LEGACY_AREA3_PPD_SIZE` was `17 * 4` but C `struct area3_ppd`
+  (`src/area/3/area3.h:18-35`) has 18 `int` fields (`imp_kills,
+  imp_flags;` on one line) = 72 bytes, not 68 - corrected to `18 * 4`
+  (every use went through the symbolic constant, so this was a safe,
+  test-verified fix; the missing byte only mattered for the unused-until-
+  now `kassim_item_wait_starttime` tail field). Faithfully reproduced two
+  legacy C quirks instead of "fixing" them: the `william_state` ladder
+  has no final `else` (`:1177-1191`), so quests 22/23 are left untouched
+  (not reset to `0`) when `william_state <= 0`, unlike every other
+  ladder in this function; and the `yoatin_state` ladder's "open" branch
+  tests `ppd->aristocrat_state > 0` instead of `ppd->yoatin_state > 0`
+  (`:1284-1290`), a copy-paste bug in the original C - both are covered
+  by dedicated regression tests documenting the quirk. Added 8 new tests
+  in `quest.rs` (every branch ladder for all three functions, plus
+  dedicated tests for the two preserved C quirks) and 3 new tests in
+  `player.rs` (fixed-layout round-trip + snapshot-builder coverage for
+  area3/staffer/twocity's new fields). `cargo fmt --all`, `cargo test
+  --workspace` (1322+36+3+33+406 passed), `cargo build -p ugaris-server`
+  clean with zero warnings, and a 10s boot-smoke showed ticking with no
+  panics (this change doesn't wire the three new `init_*_quests`
+  functions into any live caller yet, same as the area1/nomad ones from
+  the previous iteration - the `questlog_init` dispatcher itself, which
+  would call all five, is also still unported; see REMAINING above).
 
 - [ ] **Achievements (`src/module/achievements/achievement.c`)** - runtime
   markers partially exist (chests, transport). Port the achievement

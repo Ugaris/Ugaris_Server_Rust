@@ -1257,6 +1257,384 @@ pub fn init_nomad_quests(quests: &mut QuestLog, ppd: &NomadQuestState) {
     }
 }
 
+/// The `area3_ppd` fields consumed by `questlog_init_area3`
+/// (`src/system/questlog.c:1040-1203`); a snapshot built by
+/// `PlayerRuntime::area3_quest_state` since this leaf module has no
+/// access to `PlayerRuntime`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Area3QuestState {
+    pub seymour_state: i32,
+    pub kelly_state: i32,
+    pub astro2_state: i32,
+    pub crypt_state: i32,
+    pub clara_state: i32,
+    pub william_state: i32,
+    pub hermit_state: i32,
+}
+
+/// C `questlog_init_area3` (`src/system/questlog.c:1040-1203`): derives
+/// quests 10-12 (Seymour), 13-15 (Kelly), 16 (astro2/Gerassimo), 18-19
+/// (Sir Jones' crypt monster), 21 (Clara), 22-23 (William/Imp), and 24
+/// (Hermit) from the matching `area3_ppd` NPC-dialogue state machines.
+///
+/// Faithfully reproduces the C `william_state` ladder's missing final
+/// `else` (`src/system/questlog.c:1177-1191`): when `william_state <= 0`
+/// quests 22/23 are left untouched instead of reset to `0`, unlike every
+/// other ladder in this function.
+pub fn init_area3_quests(quests: &mut QuestLog, ppd: &Area3QuestState) {
+    if ppd.seymour_state >= 16 {
+        mark_init_done(quests, 10);
+        mark_init_done(quests, 11);
+        mark_init_done(quests, 12);
+    } else if ppd.seymour_state >= 12 {
+        mark_init_done(quests, 10);
+        mark_init_done(quests, 11);
+        set_flags(quests, 12, QF_OPEN);
+    } else if ppd.seymour_state >= 10 {
+        mark_init_done(quests, 10);
+        set_flags(quests, 11, QF_OPEN);
+        set_flags(quests, 12, 0);
+    } else if ppd.seymour_state > 0 {
+        set_flags(quests, 10, QF_OPEN);
+        set_flags(quests, 11, 0);
+        set_flags(quests, 12, 0);
+    } else {
+        set_flags(quests, 10, 0);
+        set_flags(quests, 11, 0);
+        set_flags(quests, 12, 0);
+    }
+
+    if ppd.kelly_state >= 16 {
+        mark_init_done(quests, 13);
+        mark_init_done(quests, 14);
+        mark_init_done(quests, 15);
+    } else if ppd.kelly_state >= 14 {
+        mark_init_done(quests, 13);
+        mark_init_done(quests, 14);
+        set_flags(quests, 15, QF_OPEN);
+    } else if ppd.kelly_state >= 6 {
+        mark_init_done(quests, 13);
+        set_flags(quests, 14, QF_OPEN);
+        set_flags(quests, 15, 0);
+    } else if ppd.kelly_state >= 2 {
+        set_flags(quests, 13, QF_OPEN);
+        set_flags(quests, 14, 0);
+        set_flags(quests, 15, 0);
+    } else {
+        set_flags(quests, 13, 0);
+        set_flags(quests, 14, 0);
+        set_flags(quests, 15, 0);
+    }
+
+    if ppd.astro2_state >= 5 {
+        mark_init_done(quests, 16);
+    } else if ppd.astro2_state > 0 {
+        set_flags(quests, 16, QF_OPEN);
+    } else {
+        set_flags(quests, 16, 0);
+    }
+
+    if ppd.crypt_state >= 15 {
+        mark_init_done(quests, 18);
+        mark_init_done(quests, 19);
+    } else if ppd.crypt_state >= 12 {
+        mark_init_done(quests, 18);
+        set_flags(quests, 19, QF_OPEN);
+    } else if ppd.crypt_state > 0 {
+        set_flags(quests, 18, QF_OPEN);
+        set_flags(quests, 19, 0);
+    } else {
+        set_flags(quests, 18, 0);
+        set_flags(quests, 19, 0);
+    }
+
+    if ppd.clara_state >= 15 {
+        mark_init_done(quests, 21);
+    } else if ppd.clara_state >= 6 {
+        set_flags(quests, 21, QF_OPEN);
+    } else {
+        set_flags(quests, 21, 0);
+    }
+
+    // C has no final `else` here (`src/system/questlog.c:1177-1191`):
+    // when `william_state <= 0` quests 22/23 keep whatever flags they
+    // already had.
+    if ppd.william_state >= 7 {
+        mark_init_done(quests, 22);
+        mark_init_done(quests, 23);
+    } else if ppd.william_state >= 3 {
+        mark_init_done(quests, 22);
+        set_flags(quests, 23, QF_OPEN);
+    } else if ppd.william_state > 0 {
+        set_flags(quests, 22, QF_OPEN);
+        set_flags(quests, 23, 0);
+    }
+
+    if ppd.hermit_state >= 5 {
+        mark_init_done(quests, 24);
+    } else if ppd.hermit_state > 0 {
+        set_flags(quests, 24, QF_OPEN);
+    } else {
+        set_flags(quests, 24, 0);
+    }
+}
+
+/// The `staffer_ppd` fields consumed by `questlog_init_staff`
+/// (`src/system/questlog.c:1203-1394`); a snapshot built by
+/// `PlayerRuntime::staff_quest_state`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StaffQuestState {
+    pub carlos_state: i32,
+    pub smugglecom_state: i32,
+    pub aristocrat_state: i32,
+    pub yoatin_state: i32,
+    pub countbran_state: i32,
+    pub countbran_bits: i32,
+    pub brennethbran_state: i32,
+    pub spiritbran_state: i32,
+    pub broklin_state: i32,
+    pub dwarfchief_state: i32,
+    pub dwarfshaman_state: i32,
+}
+
+/// C `questlog_init_staff` (`src/system/questlog.c:1203-1394`): derives
+/// quest 20 (Carlos), 35-37 (smuggler commander), 38 (Aristocrat), 39
+/// (Yoatin), 40 (Count Brannington), 41-43 (Brenneth), 44 (Spirit), 45-46
+/// (Broklin), and 47-53 (Dwarven Chief/Shaman) from the matching
+/// `staffer_ppd` NPC-dialogue state machines.
+///
+/// Faithfully reproduces the C `yoatin_state` ladder's copy-paste bug
+/// (`src/system/questlog.c:1284-1290`): the "open" branch tests
+/// `ppd->aristocrat_state > 0`, not `ppd->yoatin_state > 0`.
+pub fn init_staff_quests(quests: &mut QuestLog, ppd: &StaffQuestState) {
+    if ppd.carlos_state >= 6 {
+        mark_init_done(quests, 20);
+    } else if ppd.carlos_state > 0 {
+        set_flags(quests, 20, QF_OPEN);
+    } else {
+        set_flags(quests, 20, 0);
+    }
+
+    if ppd.smugglecom_state >= 10 {
+        mark_init_done(quests, 35);
+        mark_init_done(quests, 36);
+        mark_init_done(quests, 37);
+    } else if ppd.smugglecom_state >= 7 {
+        mark_init_done(quests, 35);
+        mark_init_done(quests, 36);
+        set_flags(quests, 37, QF_OPEN);
+    } else if ppd.smugglecom_state >= 5 {
+        mark_init_done(quests, 35);
+        set_flags(quests, 36, QF_OPEN);
+        set_flags(quests, 37, 0);
+    } else if ppd.smugglecom_state > 0 {
+        set_flags(quests, 35, QF_OPEN);
+        set_flags(quests, 36, 0);
+        set_flags(quests, 37, 0);
+    } else {
+        set_flags(quests, 35, 0);
+        set_flags(quests, 36, 0);
+        set_flags(quests, 37, 0);
+    }
+
+    if ppd.aristocrat_state >= 8 {
+        mark_init_done(quests, 38);
+    } else if ppd.aristocrat_state > 0 {
+        set_flags(quests, 38, QF_OPEN);
+    } else {
+        set_flags(quests, 38, 0);
+    }
+
+    // C bug preserved verbatim (`src/system/questlog.c:1284-1290`): this
+    // "open" branch tests `aristocrat_state`, not `yoatin_state`.
+    if ppd.yoatin_state >= 9 {
+        mark_init_done(quests, 39);
+    } else if ppd.aristocrat_state > 0 {
+        set_flags(quests, 39, QF_OPEN);
+    } else {
+        set_flags(quests, 39, 0);
+    }
+
+    if (ppd.countbran_bits & (1 | 2 | 4)) == (1 | 2 | 4) {
+        mark_init_done(quests, 40);
+    } else if ppd.countbran_state > 0 {
+        set_flags(quests, 40, QF_OPEN);
+    } else {
+        set_flags(quests, 40, 0);
+    }
+
+    if ppd.brennethbran_state >= 12 {
+        mark_init_done(quests, 41);
+        mark_init_done(quests, 42);
+        mark_init_done(quests, 43);
+    } else if ppd.brennethbran_state >= 9 {
+        mark_init_done(quests, 41);
+        mark_init_done(quests, 42);
+        set_flags(quests, 43, QF_OPEN);
+    } else if ppd.brennethbran_state >= 5 {
+        mark_init_done(quests, 41);
+        set_flags(quests, 42, QF_OPEN);
+        set_flags(quests, 43, 0);
+    } else if ppd.brennethbran_state > 0 {
+        set_flags(quests, 41, QF_OPEN);
+        set_flags(quests, 42, 0);
+        set_flags(quests, 43, 0);
+    } else {
+        set_flags(quests, 41, 0);
+        set_flags(quests, 42, 0);
+        set_flags(quests, 43, 0);
+    }
+
+    if ppd.spiritbran_state >= 5 {
+        mark_init_done(quests, 44);
+    } else if ppd.spiritbran_state > 0 {
+        set_flags(quests, 44, QF_OPEN);
+    } else {
+        set_flags(quests, 44, 0);
+    }
+
+    if ppd.broklin_state >= 11 {
+        mark_init_done(quests, 45);
+        mark_init_done(quests, 46);
+    } else if ppd.broklin_state >= 5 {
+        mark_init_done(quests, 45);
+        set_flags(quests, 46, QF_OPEN);
+    } else if ppd.broklin_state > 0 {
+        set_flags(quests, 45, QF_OPEN);
+        set_flags(quests, 46, 0);
+    } else {
+        set_flags(quests, 45, 0);
+        set_flags(quests, 46, 0);
+    }
+
+    if ppd.dwarfchief_state >= 14 {
+        mark_init_done(quests, 47);
+        mark_init_done(quests, 48);
+        mark_init_done(quests, 49);
+        mark_init_done(quests, 50);
+    } else if ppd.dwarfchief_state >= 11 {
+        mark_init_done(quests, 47);
+        mark_init_done(quests, 48);
+        mark_init_done(quests, 49);
+        set_flags(quests, 50, QF_OPEN);
+    } else if ppd.dwarfchief_state >= 8 {
+        mark_init_done(quests, 47);
+        mark_init_done(quests, 48);
+        set_flags(quests, 49, QF_OPEN);
+        set_flags(quests, 50, 0);
+    } else if ppd.dwarfchief_state >= 5 {
+        mark_init_done(quests, 47);
+        set_flags(quests, 48, QF_OPEN);
+        set_flags(quests, 49, 0);
+        set_flags(quests, 50, 0);
+    } else if ppd.dwarfchief_state > 0 {
+        set_flags(quests, 47, QF_OPEN);
+        set_flags(quests, 48, 0);
+        set_flags(quests, 49, 0);
+        set_flags(quests, 50, 0);
+    } else {
+        set_flags(quests, 47, 0);
+        set_flags(quests, 48, 0);
+        set_flags(quests, 49, 0);
+        set_flags(quests, 50, 0);
+    }
+
+    if ppd.dwarfshaman_state >= 9 {
+        mark_init_done(quests, 51);
+        mark_init_done(quests, 52);
+        mark_init_done(quests, 53);
+    } else if ppd.dwarfshaman_state >= 6 {
+        mark_init_done(quests, 51);
+        mark_init_done(quests, 52);
+        set_flags(quests, 53, QF_OPEN);
+    } else if ppd.dwarfshaman_state >= 3 {
+        mark_init_done(quests, 51);
+        set_flags(quests, 52, QF_OPEN);
+        set_flags(quests, 53, 0);
+    } else if ppd.dwarfshaman_state > 0 {
+        set_flags(quests, 51, QF_OPEN);
+        set_flags(quests, 52, 0);
+        set_flags(quests, 53, 0);
+    } else {
+        set_flags(quests, 51, 0);
+        set_flags(quests, 52, 0);
+        set_flags(quests, 53, 0);
+    }
+}
+
+/// The `twocity_ppd` fields consumed by `questlog_init_twocity`
+/// (`src/system/questlog.c:1470-1546`); a snapshot built by
+/// `PlayerRuntime::twocity_quest_state`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TwocityQuestState {
+    pub thief_state: i32,
+    pub sanwyn_state: i32,
+    pub skelly_state: i32,
+    pub alchemist_state: i32,
+}
+
+/// C `questlog_init_twocity` (`src/system/questlog.c:1470-1546`): derives
+/// quests 25-28 (Guildmaster's thief chain), 29 (Sanwyn), 30 (Skelly),
+/// and 31 (Alchemist) from the matching `twocity_ppd` NPC-dialogue state
+/// machines.
+pub fn init_twocity_quests(quests: &mut QuestLog, ppd: &TwocityQuestState) {
+    if ppd.thief_state >= 20 {
+        mark_init_done(quests, 25);
+        mark_init_done(quests, 26);
+        mark_init_done(quests, 27);
+        mark_init_done(quests, 28);
+    } else if ppd.thief_state >= 18 {
+        mark_init_done(quests, 25);
+        mark_init_done(quests, 26);
+        mark_init_done(quests, 27);
+        set_flags(quests, 28, QF_OPEN);
+    } else if ppd.thief_state >= 14 {
+        mark_init_done(quests, 25);
+        mark_init_done(quests, 26);
+        set_flags(quests, 27, QF_OPEN);
+        set_flags(quests, 28, 0);
+    } else if ppd.thief_state >= 10 {
+        mark_init_done(quests, 25);
+        set_flags(quests, 26, QF_OPEN);
+        set_flags(quests, 27, 0);
+        set_flags(quests, 28, 0);
+    } else if ppd.thief_state >= 5 {
+        set_flags(quests, 25, QF_OPEN);
+        set_flags(quests, 26, 0);
+        set_flags(quests, 27, 0);
+        set_flags(quests, 28, 0);
+    } else {
+        set_flags(quests, 25, 0);
+        set_flags(quests, 26, 0);
+        set_flags(quests, 27, 0);
+        set_flags(quests, 28, 0);
+    }
+
+    if ppd.sanwyn_state >= 8 {
+        mark_init_done(quests, 29);
+    } else if ppd.sanwyn_state > 0 {
+        set_flags(quests, 29, QF_OPEN);
+    } else {
+        set_flags(quests, 29, 0);
+    }
+
+    if ppd.skelly_state >= 3 {
+        mark_init_done(quests, 30);
+    } else if ppd.skelly_state > 0 {
+        set_flags(quests, 30, QF_OPEN);
+    } else {
+        set_flags(quests, 30, 0);
+    }
+
+    if ppd.alchemist_state >= 5 {
+        mark_init_done(quests, 31);
+    } else if ppd.alchemist_state > 0 {
+        set_flags(quests, 31, QF_OPEN);
+    } else {
+        set_flags(quests, 31, 0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1741,5 +2119,314 @@ mod tests {
         assert_eq!(log.entries()[32].done, 1);
         assert_eq!(log.entries()[33].flags, QF_DONE);
         assert_eq!(log.entries()[34].flags, QF_DONE);
+    }
+
+    #[test]
+    fn init_area3_quests_seymour_and_kelly_ladders_match_c() {
+        let mut log = QuestLog::default();
+        init_area3_quests(&mut log, &Area3QuestState::default());
+        for quest in [10, 11, 12, 13, 14, 15] {
+            assert_eq!(log.entries()[quest].flags, 0);
+        }
+
+        let mut log = QuestLog::default();
+        init_area3_quests(
+            &mut log,
+            &Area3QuestState {
+                seymour_state: 1,
+                kelly_state: 2,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[10].flags, QF_OPEN);
+        assert_eq!(log.entries()[11].flags, 0);
+        assert_eq!(log.entries()[13].flags, QF_OPEN);
+        assert_eq!(log.entries()[14].flags, 0);
+
+        let mut log = QuestLog::default();
+        init_area3_quests(
+            &mut log,
+            &Area3QuestState {
+                seymour_state: 12,
+                kelly_state: 14,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[10].flags, QF_DONE);
+        assert_eq!(log.entries()[11].flags, QF_DONE);
+        assert_eq!(log.entries()[12].flags, QF_OPEN);
+        assert_eq!(log.entries()[13].flags, QF_DONE);
+        assert_eq!(log.entries()[14].flags, QF_DONE);
+        assert_eq!(log.entries()[15].flags, QF_OPEN);
+
+        let mut log = QuestLog::default();
+        init_area3_quests(
+            &mut log,
+            &Area3QuestState {
+                seymour_state: 16,
+                kelly_state: 16,
+                ..Default::default()
+            },
+        );
+        for quest in [10, 11, 12, 13, 14, 15] {
+            assert_eq!(log.entries()[quest].flags, QF_DONE);
+            assert_eq!(log.entries()[quest].done, 1);
+        }
+    }
+
+    #[test]
+    fn init_area3_quests_astro2_crypt_clara_hermit_match_c() {
+        let mut log = QuestLog::default();
+        init_area3_quests(
+            &mut log,
+            &Area3QuestState {
+                astro2_state: 5,
+                crypt_state: 12,
+                clara_state: 15,
+                hermit_state: 5,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[16].flags, QF_DONE);
+        assert_eq!(log.entries()[18].flags, QF_DONE);
+        assert_eq!(log.entries()[19].flags, QF_OPEN);
+        assert_eq!(log.entries()[21].flags, QF_DONE);
+        assert_eq!(log.entries()[24].flags, QF_DONE);
+
+        let mut log = QuestLog::default();
+        init_area3_quests(
+            &mut log,
+            &Area3QuestState {
+                astro2_state: 1,
+                crypt_state: 1,
+                clara_state: 6,
+                hermit_state: 1,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[16].flags, QF_OPEN);
+        assert_eq!(log.entries()[18].flags, QF_OPEN);
+        assert_eq!(log.entries()[19].flags, 0);
+        assert_eq!(log.entries()[21].flags, QF_OPEN);
+        assert_eq!(log.entries()[24].flags, QF_OPEN);
+    }
+
+    #[test]
+    fn init_area3_quests_william_ladder_has_no_final_else_like_c() {
+        // Prime quests 22/23 to a non-zero flag, then confirm
+        // `william_state <= 0` leaves them untouched (C has no final
+        // `else` branch in this ladder, unlike every other one).
+        let mut log = QuestLog::default();
+        init_area3_quests(
+            &mut log,
+            &Area3QuestState {
+                william_state: 7,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[22].flags, QF_DONE);
+        assert_eq!(log.entries()[23].flags, QF_DONE);
+
+        init_area3_quests(&mut log, &Area3QuestState::default());
+        assert_eq!(log.entries()[22].flags, QF_DONE);
+        assert_eq!(log.entries()[23].flags, QF_DONE);
+
+        // A fresh log with william_state=1 opens quest 22 only.
+        let mut log = QuestLog::default();
+        init_area3_quests(
+            &mut log,
+            &Area3QuestState {
+                william_state: 1,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[22].flags, QF_OPEN);
+        assert_eq!(log.entries()[23].flags, 0);
+    }
+
+    #[test]
+    fn init_staff_quests_carlos_smugglecom_countbran_match_c() {
+        let mut log = QuestLog::default();
+        init_staff_quests(
+            &mut log,
+            &StaffQuestState {
+                carlos_state: 6,
+                smugglecom_state: 10,
+                countbran_bits: 1 | 2 | 4,
+                countbran_state: 1,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[20].flags, QF_DONE);
+        assert_eq!(log.entries()[35].flags, QF_DONE);
+        assert_eq!(log.entries()[36].flags, QF_DONE);
+        assert_eq!(log.entries()[37].flags, QF_DONE);
+        assert_eq!(log.entries()[40].flags, QF_DONE);
+
+        let mut log = QuestLog::default();
+        init_staff_quests(
+            &mut log,
+            &StaffQuestState {
+                carlos_state: 1,
+                smugglecom_state: 5,
+                countbran_bits: 1 | 2,
+                countbran_state: 1,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[20].flags, QF_OPEN);
+        assert_eq!(log.entries()[35].flags, QF_DONE);
+        assert_eq!(log.entries()[36].flags, QF_OPEN);
+        assert_eq!(log.entries()[37].flags, 0);
+        // Missing bit 4: not all bits set, but state>0 so open.
+        assert_eq!(log.entries()[40].flags, QF_OPEN);
+    }
+
+    #[test]
+    fn init_staff_quests_yoatin_ladder_reproduces_c_copy_paste_bug() {
+        // C bug: the "open" branch for quest 39 tests `aristocrat_state`,
+        // not `yoatin_state` (`src/system/questlog.c:1284-1290`). With
+        // yoatin_state=0 but aristocrat_state>0, quest 39 still opens.
+        let mut log = QuestLog::default();
+        init_staff_quests(
+            &mut log,
+            &StaffQuestState {
+                yoatin_state: 0,
+                aristocrat_state: 1,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[39].flags, QF_OPEN);
+
+        // With both zero, quest 39 stays closed.
+        let mut log = QuestLog::default();
+        init_staff_quests(&mut log, &StaffQuestState::default());
+        assert_eq!(log.entries()[39].flags, 0);
+
+        // yoatin_state alone (aristocrat_state=0) does NOT open it either,
+        // per the same bug.
+        let mut log = QuestLog::default();
+        init_staff_quests(
+            &mut log,
+            &StaffQuestState {
+                yoatin_state: 3,
+                aristocrat_state: 0,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[39].flags, 0);
+
+        // yoatin_state>=9 always marks it done regardless of aristocrat.
+        let mut log = QuestLog::default();
+        init_staff_quests(
+            &mut log,
+            &StaffQuestState {
+                yoatin_state: 9,
+                aristocrat_state: 0,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[39].flags, QF_DONE);
+    }
+
+    #[test]
+    fn init_staff_quests_brenneth_broklin_dwarf_ladders_match_c() {
+        let mut log = QuestLog::default();
+        init_staff_quests(
+            &mut log,
+            &StaffQuestState {
+                brennethbran_state: 9,
+                spiritbran_state: 5,
+                broklin_state: 11,
+                dwarfchief_state: 11,
+                dwarfshaman_state: 6,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[41].flags, QF_DONE);
+        assert_eq!(log.entries()[42].flags, QF_DONE);
+        assert_eq!(log.entries()[43].flags, QF_OPEN);
+        assert_eq!(log.entries()[44].flags, QF_DONE);
+        assert_eq!(log.entries()[45].flags, QF_DONE);
+        assert_eq!(log.entries()[46].flags, QF_DONE);
+        assert_eq!(log.entries()[47].flags, QF_DONE);
+        assert_eq!(log.entries()[48].flags, QF_DONE);
+        assert_eq!(log.entries()[49].flags, QF_DONE);
+        assert_eq!(log.entries()[50].flags, QF_OPEN);
+        assert_eq!(log.entries()[51].flags, QF_DONE);
+        assert_eq!(log.entries()[52].flags, QF_DONE);
+        assert_eq!(log.entries()[53].flags, QF_OPEN);
+
+        let mut log = QuestLog::default();
+        init_staff_quests(&mut log, &StaffQuestState::default());
+        for quest in [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53] {
+            assert_eq!(log.entries()[quest].flags, 0);
+        }
+    }
+
+    #[test]
+    fn init_twocity_quests_thief_ladder_matches_c() {
+        let mut log = QuestLog::default();
+        init_twocity_quests(&mut log, &TwocityQuestState::default());
+        for quest in [25, 26, 27, 28] {
+            assert_eq!(log.entries()[quest].flags, 0);
+        }
+
+        let mut log = QuestLog::default();
+        init_twocity_quests(
+            &mut log,
+            &TwocityQuestState {
+                thief_state: 18,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[25].flags, QF_DONE);
+        assert_eq!(log.entries()[26].flags, QF_DONE);
+        assert_eq!(log.entries()[27].flags, QF_DONE);
+        assert_eq!(log.entries()[28].flags, QF_OPEN);
+
+        let mut log = QuestLog::default();
+        init_twocity_quests(
+            &mut log,
+            &TwocityQuestState {
+                thief_state: 20,
+                ..Default::default()
+            },
+        );
+        for quest in [25, 26, 27, 28] {
+            assert_eq!(log.entries()[quest].flags, QF_DONE);
+            assert_eq!(log.entries()[quest].done, 1);
+        }
+    }
+
+    #[test]
+    fn init_twocity_quests_sanwyn_skelly_alchemist_match_c() {
+        let mut log = QuestLog::default();
+        init_twocity_quests(
+            &mut log,
+            &TwocityQuestState {
+                sanwyn_state: 8,
+                skelly_state: 3,
+                alchemist_state: 5,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[29].flags, QF_DONE);
+        assert_eq!(log.entries()[30].flags, QF_DONE);
+        assert_eq!(log.entries()[31].flags, QF_DONE);
+
+        let mut log = QuestLog::default();
+        init_twocity_quests(
+            &mut log,
+            &TwocityQuestState {
+                sanwyn_state: 1,
+                skelly_state: 1,
+                alchemist_state: 1,
+                ..Default::default()
+            },
+        );
+        assert_eq!(log.entries()[29].flags, QF_OPEN);
+        assert_eq!(log.entries()[30].flags, QF_OPEN);
+        assert_eq!(log.entries()[31].flags, QF_OPEN);
     }
 }

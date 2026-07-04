@@ -68,7 +68,7 @@ Remaining oversized files worth splitting during future work:
 | `src/server.h` | `crates/ugaris-core/src/entity.rs`, `crates/ugaris-core/src/effect.rs`, `crates/ugaris-core/src/legacy.rs`, `crates/ugaris-core/src/map.rs` | Core flags, values, map/item/character/effect shapes including character sprite, item template ID, death counter, inventory ranges, version, tick constants ported. |
 | `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-server/src/main.rs` | `IDR_STATSCROLL` dispatch, carried-only and `/noexp` blocking, C skill-cost/start-factor/max checks needed by stat scrolls, XP grant/spend, bare/effective value raise, consume-on-success behavior, and runtime executed-outcome classification ported with focused tests. `CL_RAISE` now spends already-unspent exp (`raise_value`, distinct from the exp-granting `raise_value_exp` scroll path) through `World::raise_skill`, sending a single-value `SV_SETVAL0/1` + exp/exp_used feedback packet on success and staying silent on failure like C. Both raise paths now call `update_character`: `World::raise_skill` since iteration 17 and `World::apply_item_driver_outcome`'s `StatScrollUsed` arm since iteration 18 (the item driver itself only has `&mut Character`, so the `World`-level outcome handler recomputes once after the scroll's raise loop completes, matching C's per-raise `update_char` since the recompute is idempotent on the final `value[1]` state). As of iteration 20, the `StatScrollUsed` outcome handler also calls `check_levelup` before `update_character`, matching C `raise_value_exp`'s `check_levelup(cn)` call (`raise_value`/`CL_RAISE` never calls `check_levelup` in C, so `World::raise_skill` correctly has no such call). Achievement checks (`achievement_check_skill`/`achievement_check_level`) remain unported for both raise paths. |
 | `src/system/act.h` | `crates/ugaris-core/src/legacy.rs` | Action IDs ported. |
-| `src/system/questlog.h`, `src/system/questlog.c` (metadata table, `questlog_scale`, `questlog_done`, `questlog_open`/`close`), `src/system/player.c` `sendquestlog` base packet | `crates/ugaris-core/src/quest.rs`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | Quest IDs, flags, fixed-size quest log behavior, C bitfield quest-entry packing, base `SV_QUESTLOG` payload shape with zeroed random-shrine PPD, and `CL_GETQUESTLOG` response path ported with tests. The 85-entry `struct questlog questlog[]` metadata table (name/level-range/giver/area/nominal-exp/flags, incl. `QLF_XREPEAT`) is now ported verbatim as `QUEST_TABLE`/`quest_meta()`; `questlog_scale`'s repeat-completion decay curve (`scale_exp`) and `questlog_done`'s level taper (`taper_exp_by_level`) are ported as pure functions; `QuestLog::complete_legacy` ports the full `questlog_done` bookkeeping + exp computation (caller still applies `give_exp`/`dlog`/`sendquestlog`); `QuestLog::open`/`close` now match C's exact flag assignment/guard semantics instead of bitwise OR/AND-NOT approximations. `src/area/1/area1.h`'s `struct area1_ppd` and `src/common/nomad_ppd.h`'s `struct nomad_ppd` are now real fixed-layout codecs on `PlayerRuntime` (`area1_ppd`/`nomad_ppd` in `crates/ugaris-core/src/player.rs`, `DRD_AREA1_PPD`/`DRD_NOMAD_PPD` wired into the full ppd-blob decode/encode dispatch), with `questlog_init_area1`/`questlog_init_nomad` ported as pure functions (`init_area1_quests`/`init_nomad_quests` in `crates/ugaris-core/src/quest.rs`) taking a `PlayerRuntime`-built state snapshot. `questlog_init`'s `area3_ppd`/`staffer_ppd`/`twocity_ppd` sub-functions and the top-level dispatcher, the per-area `questlog_reopen_qN` reset side effects, `quest_exp.h`'s per-encounter exp/money constants, and wiring from NPC dialogue (which isn't ported yet) remain - see `PORTING_TODO.md` P3 "Questlog initialization & quest state machine" for the itemized gap. |
+| `src/system/questlog.h`, `src/system/questlog.c` (metadata table, `questlog_scale`, `questlog_done`, `questlog_open`/`close`), `src/system/player.c` `sendquestlog` base packet | `crates/ugaris-core/src/quest.rs`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | Quest IDs, flags, fixed-size quest log behavior, C bitfield quest-entry packing, base `SV_QUESTLOG` payload shape with zeroed random-shrine PPD, and `CL_GETQUESTLOG` response path ported with tests. The 85-entry `struct questlog questlog[]` metadata table (name/level-range/giver/area/nominal-exp/flags, incl. `QLF_XREPEAT`) is now ported verbatim as `QUEST_TABLE`/`quest_meta()`; `questlog_scale`'s repeat-completion decay curve (`scale_exp`) and `questlog_done`'s level taper (`taper_exp_by_level`) are ported as pure functions; `QuestLog::complete_legacy` ports the full `questlog_done` bookkeeping + exp computation (caller still applies `give_exp`/`dlog`/`sendquestlog`); `QuestLog::open`/`close` now match C's exact flag assignment/guard semantics instead of bitwise OR/AND-NOT approximations. `src/area/1/area1.h`'s `struct area1_ppd` and `src/common/nomad_ppd.h`'s `struct nomad_ppd` are now real fixed-layout codecs on `PlayerRuntime` (`area1_ppd`/`nomad_ppd` in `crates/ugaris-core/src/player.rs`, `DRD_AREA1_PPD`/`DRD_NOMAD_PPD` wired into the full ppd-blob decode/encode dispatch), with `questlog_init_area1`/`questlog_init_nomad` ported as pure functions (`init_area1_quests`/`init_nomad_quests` in `crates/ugaris-core/src/quest.rs`) taking a `PlayerRuntime`-built state snapshot. As of iteration 61, `questlog_init_area3`/`questlog_init_staff`/`questlog_init_twocity` are ported the same way (`init_area3_quests`/`init_staff_quests`/`init_twocity_quests` in `quest.rs`, snapshot builders `area3_quest_state`/`staff_quest_state`/`twocity_quest_state` in `player.rs`), with new named accessors added to the pre-existing `area3_ppd`/`staffer_ppd`/`twocity_ppd` raw-byte blocks for every NPC state field those three functions read. This also fixed a real size bug: `LEGACY_AREA3_PPD_SIZE` was `17 * 4` (68) but C `struct area3_ppd` is 18 `int` fields = 72 bytes; corrected to `18 * 4`. Two legacy C quirks are preserved verbatim rather than "fixed": `questlog_init_area3`'s `william_state` ladder has no final `else` (quests 22/23 keep their prior flags when `william_state <= 0`, unlike every other ladder in the function), and `questlog_init_staff`'s `yoatin_state` ladder's "open" branch tests `aristocrat_state` instead of `yoatin_state` (a copy-paste bug in the original C) - both have dedicated regression tests. The `questlog_init` top-level dispatcher (the `quest[MAXQUEST-1].done == 55` sentinel + calling all 5 sub-functions; needs a Rust `DRD_QUESTLOG_PPD` representation of `struct quest[MAXQUEST]`), the per-area `questlog_reopen_qN` reset side effects, `quest_exp.h`'s per-encounter exp/money constants, and wiring from NPC dialogue (which isn't ported yet) remain - see `PORTING_TODO.md` P3 "Questlog initialization & quest state machine" for the itemized gap. |
 | `src/system/io.c` / `src/system/io.h` | `crates/ugaris-protocol/src/frame.rs`, `crates/ugaris-net/src/*`, `crates/ugaris-server/src/main.rs` | Legacy tick frame envelope, TCP session skeleton, per-session server command channels, runtime-to-session framed payload sending, listener readiness/error reporting, default info logging, IPv4 plus IPv6 localhost listening for `localhost`, multi-payload login bootstrap queueing, and chunked full-map bootstrap below legacy frame limits ported. Full gameplay send buffering, compression modes, and backpressure policy remain partial. |
 | `src/system/map.h` / `src/system/map.c` primitives | `crates/ugaris-core/src/map.rs`, `crates/ugaris-core/src/item_ops.rs` | Legacy map indexing, bounds checks, movement/sight blocker helpers, grid wrapper, item map placement/removal, character map placement/removal, `NOMAGIC` flag sync, simple 3x3 drop order, extended pathfinder-backed drop order, carried-item removal, and carried-item replacement ported with tests. C `set_item_map`'s `IF_TAKE` decay-arming (`set_expire(in, item_decay_time)`) is ported at the `World::complete_drop` call site (`crates/ugaris-core/src/world/actions.rs`) rather than inside `map.rs` itself, since only `World` owns the timer queue - see "Ralph Loop - Ground Item Decay" below. Light/trap/notify callbacks remain. |
 | `src/system/los.h` / `src/system/los.c` primitive LOS | `crates/ugaris-core/src/map.rs` | Conservative line-of-sight helper with blocker tests ported. Full per-character cached LOS table remains. |
@@ -4524,3 +4524,77 @@ sections above, iterations 51-57).
   loop running with no panics (this change doesn't wire the new pure
   functions into any live caller yet - no NPC driver advances
   `area1_ppd`/`nomad_ppd` state, so nothing calls them at runtime).
+
+- Ralph Loop iteration 61 - `src/system/questlog.c` continued (P3
+  "Questlog initialization & quest state machine", resuming the `[~]`
+  task): ported the remaining three `questlog_init_*` sub-functions -
+  `questlog_init_area3` (`src/system/questlog.c:1040-1203`),
+  `questlog_init_staff` (`:1203-1394`), `questlog_init_twocity`
+  (`:1470-1546`) - as `init_area3_quests`/`init_staff_quests`/
+  `init_twocity_quests` in `crates/ugaris-core/src/quest.rs`, mirroring
+  the previous iteration's `Area1QuestState`/`NomadQuestState` snapshot
+  pattern with new `Area3QuestState`/`StaffQuestState`/
+  `TwocityQuestState` structs built by
+  `PlayerRuntime::area3_quest_state`/`staff_quest_state`/
+  `twocity_quest_state` (`crates/ugaris-core/src/player.rs`). Unlike
+  area1/nomad, `area3_ppd`/`staffer_ppd`/`twocity_ppd` already existed
+  as real fixed-layout raw-byte blocks with a handful of named
+  accessors (`kelly_state`/`clara_state`/`imp_flags` for area3;
+  `shanra_state`/`forestbran_done` for staffer; `thief_state`/
+  `thief_killed[]`/`goodtile[]`/`solved_library` for twocity) - this
+  iteration only needed to add the remaining fields these three
+  functions read: `seymour_state`/`astro2_state`/`crypt_state`/
+  `william_state`/`hermit_state` for area3; `carlos_state`/
+  `smugglecom_state`/`aristocrat_state`/`yoatin_state`/
+  `countbran_state`/`countbran_bits`/`brennethbran_state`/
+  `spiritbran_state`/`broklin_state`/`dwarfchief_state`/
+  `dwarfshaman_state` for staffer; `sanwyn_state`/`skelly_state`/
+  `alchemist_state` for twocity - all computed as byte offsets from the
+  C struct field declaration order (`src/system/game/ppd_structs.h`),
+  same technique as the pre-existing offsets. While computing the
+  area3 offsets, found and fixed a real pre-existing size bug:
+  `LEGACY_AREA3_PPD_SIZE` was `17 * 4` (68 bytes) but C `struct
+  area3_ppd` (`src/area/3/area3.h:18-35` / `src/system/game/
+  ppd_structs.h:109-127`) has 18 `int` fields (`int imp_kills,
+  imp_flags;` declares two fields on one line, easy to undercount) =
+  72 bytes; corrected to `18 * 4`. This was safe because every use of
+  the constant went through the symbolic name (no hardcoded `68`
+  anywhere) - the missing 4 bytes only mattered for the never-before-
+  accessed tail field `kassim_item_wait_starttime`, so no existing
+  behavior changed, only newly-added out-of-bounds access became
+  possible-but-safe. Faithfully reproduced two legacy C quirks instead
+  of "fixing" them, per the porting rule to treat the C source as
+  authority: `questlog_init_area3`'s `william_state` ladder
+  (`:1177-1191`) has no final `else` branch, so quests 22/23 are left
+  with whatever flags they already had when `william_state <= 0`,
+  unlike every other ladder in the function (which all reset to `0`
+  in that case); and `questlog_init_staff`'s `yoatin_state` ladder
+  (`:1284-1290`) has a copy-paste bug where the "open" `else if` branch
+  tests `ppd->aristocrat_state > 0` instead of `ppd->yoatin_state >
+  0` - both are covered by dedicated regression tests that document
+  the quirk in the test name/comment rather than silently encoding it.
+  Added 8 new tests in `quest.rs` (every branch ladder for all three
+  new functions: area3's 7 NPC states across 2 tests, staff's 11 NPC
+  states across 4 tests including the two quirk-regression tests,
+  twocity's 4 NPC states across 2 tests) and 3 new tests in `player.rs`
+  (fixed-layout round-trip + `*_quest_state()` snapshot-builder
+  coverage for the newly-added area3/staffer/twocity fields).
+  REMAINING (documented in `PORTING_TODO.md`, task still `[~]`): the
+  top-level `questlog_init` dispatcher (the `quest[MAXQUEST-1].done ==
+  55` "already initialized" sentinel gate + calling all 5
+  sub-functions) is still not ported - it needs a Rust representation
+  of `DRD_QUESTLOG_PPD` (`struct quest[MAXQUEST]`, distinct from the
+  in-memory `QuestLog` type), and nothing calls any of the five
+  `init_*_quests` functions yet since the area NPC dialogue drivers
+  that would advance `area1_ppd`/`area3_ppd`/`staffer_ppd`/
+  `twocity_ppd`/`nomad_ppd` state are themselves separate unported P4
+  tasks. The per-area `questlog_reopen_qN` reset side effects and
+  `quest_exp.h`'s per-encounter exp/money constants also remain
+  unported.
+  Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1322
+  ugaris-core (+11 new: 8 quest.rs + 3 player.rs) + 36 db + 3 net + 33
+  protocol + 406 server, all green, zero failures. `cargo build -p
+  ugaris-server` clean with zero warnings. 10s boot-smoke showed the
+  tick loop running with no panics (this change doesn't wire the three
+  new pure functions into any live caller yet, same caveat as the
+  area1/nomad ones from the previous iteration).
