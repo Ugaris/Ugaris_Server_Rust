@@ -492,3 +492,268 @@ fn military_mission_progress_message_should_display_matches_c_threshold() {
     assert!(military_mission_progress_message_should_display(110)); // >=100, %10==0
     assert!(!military_mission_progress_message_should_display(115)); // >=100, not %10==0
 }
+
+fn demon_mission(pts: i32, exp: i32) -> SingleMission {
+    SingleMission {
+        mission_type: MISSION_TYPE_DEMON,
+        opt1: 5,
+        opt2: 10,
+        pts,
+        exp,
+    }
+}
+
+// C `accept_mission` (`military.c:1300-1341`): `ppd->took_mission != 0`
+// always wins first, regardless of every other gate.
+#[test]
+fn accept_mission_rejects_when_already_has_mission() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_took_mission(1);
+
+    assert_eq!(
+        player.accept_mission(0, 100),
+        AcceptMissionOutcome::AlreadyHasMission
+    );
+}
+
+// C: `ppd->solved_yday == yday + 1` -> "I don't have another mission for
+// you today".
+#[test]
+fn accept_mission_rejects_when_already_completed_today() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_solved_yday(101);
+
+    assert_eq!(
+        player.accept_mission(0, 100),
+        AcceptMissionOutcome::AlreadyCompletedToday
+    );
+}
+
+// C: `ppd->mission_yday != yday + 1` -> "I haven't offered you that kind
+// of mission today".
+#[test]
+fn accept_mission_rejects_when_missions_not_offered_today() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_yday(50);
+
+    assert_eq!(
+        player.accept_mission(0, 100),
+        AcceptMissionOutcome::MissionsNotOfferedToday
+    );
+}
+
+// C: non-advisor mission whose `pts` cost exceeds `current_pts` ->
+// "I have not offered you that kind of mission" (difficulty 0 is always
+// free regardless of points, matching C's `difficulty > 0` guard).
+#[test]
+fn accept_mission_rejects_insufficient_points_above_difficulty_zero() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_yday(101);
+    player.set_military_current_pts(5);
+    player.set_military_mission(1, demon_mission(10, 500));
+
+    assert_eq!(
+        player.accept_mission(1, 100),
+        AcceptMissionOutcome::InsufficientPoints
+    );
+}
+
+// C `display_mission`'s own guard: `mis[difficulty].type == 0` ->
+// "that mission is not available".
+#[test]
+fn accept_mission_rejects_unavailable_empty_slot() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_yday(101);
+
+    assert_eq!(
+        player.accept_mission(0, 100),
+        AcceptMissionOutcome::MissionUnavailable
+    );
+}
+
+// Successful acceptance at difficulty 0 never costs points (C's
+// `difficulty > 0` guard on the deduction), but still stamps
+// `took_mission`/`took_yday` and clears the mission preferences.
+#[test]
+fn accept_mission_accepts_difficulty_zero_without_spending_points() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_yday(101);
+    player.set_military_current_pts(0);
+    let mission = demon_mission(0, 200);
+    player.set_military_mission(0, mission);
+    player.set_mission_type_preference(1);
+    player.set_mission_difficulty_preference(2);
+
+    let outcome = player.accept_mission(0, 100);
+
+    assert_eq!(outcome, AcceptMissionOutcome::Accepted(mission));
+    assert_eq!(player.military_took_mission(), 1);
+    assert_eq!(player.military_took_yday(), 101);
+    assert_eq!(player.military_current_pts(), 0);
+    assert_eq!(player.mission_type_preference(), 0);
+    assert_eq!(player.mission_difficulty_preference(), -1);
+}
+
+// Successful acceptance above difficulty 0 deducts the mission's `pts`
+// cost from `current_pts` (C's `ppd->current_pts -= ppd->mis[difficulty].
+// pts`).
+#[test]
+fn accept_mission_deducts_points_above_difficulty_zero() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_yday(101);
+    player.set_military_current_pts(50);
+    player.set_military_mission(2, demon_mission(20, 400));
+
+    let outcome = player.accept_mission(2, 100);
+
+    assert_eq!(
+        outcome,
+        AcceptMissionOutcome::Accepted(demon_mission(20, 400))
+    );
+    assert_eq!(player.military_current_pts(), 30);
+    assert_eq!(player.military_took_mission(), 3);
+}
+
+// An advisor-recommended mission (`mission_type_preference > 0` matching
+// `mission_difficulty_preference`) skips the points check and the points
+// deduction entirely - C's own comment: "player already paid gold".
+#[test]
+fn accept_mission_advisor_mission_skips_points_check_and_deduction() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_mission_yday(101);
+    player.set_military_current_pts(0);
+    player.set_military_mission(3, demon_mission(999, 400));
+    player.set_mission_type_preference(1);
+    player.set_mission_difficulty_preference(3);
+
+    let outcome = player.accept_mission(3, 100);
+
+    assert_eq!(
+        outcome,
+        AcceptMissionOutcome::Accepted(demon_mission(999, 400))
+    );
+    assert_eq!(player.military_current_pts(), 0);
+    assert_eq!(player.military_took_mission(), 4);
+}
+
+// C `complete_mission`: `if (!ppd->solved_mission) return 0;` - untouched
+// no-op.
+#[test]
+fn complete_mission_no_active_mission_is_a_no_op() {
+    let mut world = World::default();
+    let player_char = character(1);
+    world.add_character(player_char);
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    let result = world.complete_mission(CharacterId(1), &mut player, 0);
+
+    assert_eq!(result, CompleteMissionResult::NoActiveMission);
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+// Non-mercenary completion: exp via `give_exp`, `pts + pts/2` added to
+// `military_points`, no gold bonus, "Well done" feedback queued. `exp`
+// stays below `level2exp(2)` (16) so `check_levelup` doesn't add its own
+// "gained level" feedback text to the queue this test inspects, and any
+// positive `military_pts_awarded` inherently crosses rank 0 (C's
+// `cbrt(1) == 1`), so this asserts the promotion that formula implies
+// rather than "no promotion".
+#[test]
+fn complete_mission_awards_exp_and_points_for_non_mercenary() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_took_mission(1); // difficulty 0
+    player.set_military_took_yday(50);
+    player.set_military_solved_mission(true);
+    player.set_military_mission(0, demon_mission(10, 10));
+
+    let result = world.complete_mission(CharacterId(1), &mut player, 0);
+
+    let CompleteMissionResult::Completed(outcome) = result else {
+        panic!("expected Completed, got {result:?}");
+    };
+    assert_eq!(outcome.difficulty, 0);
+    assert_eq!(outcome.exp_awarded, 10);
+    assert_eq!(outcome.military_pts_awarded, 15); // 10 + 10/2
+    assert_eq!(outcome.gold_awarded, 0);
+    assert_eq!(outcome.promoted_to, Some(2)); // cbrt(15) = 2.46 -> 2
+
+    let character = &world.characters[&CharacterId(1)];
+    assert_eq!(character.exp, 10);
+    assert_eq!(character.military_normal_exp, 10);
+    assert_eq!(character.military_points, 15);
+    assert_eq!(character.gold, 0);
+
+    assert!(!player.military_solved_mission());
+    assert_eq!(player.military_took_mission(), 0);
+    assert_eq!(player.military_took_yday(), 0);
+    assert_eq!(player.military_solved_yday(), 50);
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|t| t.message.contains("Well done")));
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You've been promoted")));
+}
+
+// Mercenary completion: gold bonus (`exp / 5`), and the mercenary
+// points-bonus formula (`pts + pts/2 + pts*prof*3/100 + 1`).
+#[test]
+fn complete_mission_awards_gold_bonus_for_mercenary() {
+    let mut world = World::default();
+    let mut merc = character(1);
+    merc.professions[profession::MERCENARY] = 10;
+    world.add_character(merc);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_took_mission(1);
+    player.set_military_solved_mission(true);
+    player.set_military_mission(0, demon_mission(100, 10));
+
+    let result = world.complete_mission(CharacterId(1), &mut player, 0);
+
+    let CompleteMissionResult::Completed(outcome) = result else {
+        panic!("expected Completed, got {result:?}");
+    };
+    assert_eq!(outcome.gold_awarded, 2); // 10 / 5
+                                         // 100 + 100/2 + 100*10*3/100 + 1 = 100+50+30+1 = 181
+    assert_eq!(outcome.military_pts_awarded, 181);
+
+    let character = &world.characters[&CharacterId(1)];
+    assert_eq!(character.gold, 2);
+    assert_eq!(character.military_points, 181);
+    assert!(character.flags.contains(CharacterFlags::ITEMS));
+
+    let texts = world.drain_pending_system_texts();
+    let text_bytes = world.drain_pending_system_text_bytes();
+    assert_eq!(text_bytes.len(), 1);
+    assert!(texts.iter().any(|t| t.message.contains("Well done")));
+}
+
+// Crossing a rank threshold queues the promotion feedback text, same
+// wording as `World::give_military_pts`; the server-wide "Grats:"
+// broadcast only fires above rank 9 (C's `get_army_rank_int(co) > 9`
+// guard).
+#[test]
+fn complete_mission_promotes_and_queues_feedback() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_took_mission(1);
+    player.set_military_solved_mission(true);
+    // pts + pts/2 = 15 -> military_points = 15 -> cbrt(15) = rank 2.
+    player.set_military_mission(0, demon_mission(10, 0));
+
+    let result = world.complete_mission(CharacterId(1), &mut player, 0);
+
+    let CompleteMissionResult::Completed(outcome) = result else {
+        panic!("expected Completed, got {result:?}");
+    };
+    assert_eq!(outcome.promoted_to, Some(2));
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You've been promoted")));
+    assert!(world.drain_pending_channel_broadcasts().is_empty());
+}

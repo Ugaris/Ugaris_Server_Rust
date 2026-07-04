@@ -3454,15 +3454,46 @@
         "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E 'test result|FAILED|error'",
         "test error::tests::error_constants_match_legacy_header ... ok"
       ]
+    },
+    {
+      "iteration": 109,
+      "startedAt": "2026-07-04T19:57:12.532Z",
+      "endedAt": "2026-07-04T20:17:26.230Z",
+      "durationMs": 1213074,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/player.rs",
+        "crates/ugaris-core/src/world/military.rs",
+        "crates/ugaris-core/src/world/tests/military.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All checks pass: 1612 ugaris-core + 47 db + 3 net + 37 protocol + 541 server tests green, zero failures, clean build with zero warnings. Let's check git status/diff for a final review.",
+        "test result: ok. 541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: FAILED. 1610 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test world::tests::military::complete_mission_awards_gold_bonus_for_mercenary ... FAILED",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1611 filtered out; finished in 0.00s",
+        "test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 1565 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"^test result|running [0-9]+ test|FAILED|warning\"",
+        "test result: ok. 1612 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
+      ]
     }
   ],
-  "totalDurationMs": 118374416,
+  "totalDurationMs": 119587490,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 108,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 109,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -3471,7 +3502,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 36,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 36,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 37,
       "test error::tests::error_constants_match_legacy_header ... ok": 22,
       "test error::tests::error_strings_match_legacy_table ... ok": 17,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 12,
@@ -3479,7 +3510,7 @@
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 7,
       "test result: FAILED. 1019 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 18,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 19,
       "test result: ok. 1030 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
@@ -3931,7 +3962,7 @@
       "test player::tests::arena_fight_worth_matches_every_c_ladder_boundary ... FAILED": 1,
       "assertion `left == right` failed: diff=-8000": 1,
       "test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 1536 filtered out; finished in 0.00": 1,
-      "test result: ok. 541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 4,
+      "test result: ok. 541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 5,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; finished in 0.00s": 1,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 533 filtered out; finished in 0.00s": 1,
       "test result: ok. 1558 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1,
@@ -3947,7 +3978,13 @@
       "test player::tests::apply_mission_offer_writes_missions_preference_and_yday ... FAILED": 1,
       "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1598 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1599 filtered out; finished in 0.00s": 1,
-      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1598 filtered out; finished in 0.00s": 1
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1598 filtered out; finished in 0.00s": 1,
+      "All checks pass: 1612 ugaris-core + 47 db + 3 net + 37 protocol + 541 server tests green, zero failu": 1,
+      "test result: FAILED. 1610 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
+      "test world::tests::military::complete_mission_awards_gold_bonus_for_mercenary ... FAILED": 1,
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1611 filtered out; finished in 0.00s": 1,
+      "test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 1565 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1612 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -61,7 +61,7 @@ use crate::{
         IDR_SPECIAL_POTION, IDR_SPIKETRAP, IDR_STAFFER2, IDR_STEPTRAP, IDR_SWAMPARM,
         IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_USETRAP, IID_AREA18_BONE,
     },
-    legacy::{action, worn_slot},
+    legacy::{action, profession, worn_slot},
     map::{MapFlags, MapGrid},
     player::{PlayerActionCode, PlayerRuntime, QueuedAction},
     spell::{

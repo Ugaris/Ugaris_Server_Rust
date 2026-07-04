@@ -52,23 +52,38 @@
 //! actually writes the generated offer table into `mis[]` and stamps
 //! `mission_type_preference`/`mission_yday`.
 //!
-//! REMAINING (unported, needs the above): `accept_mission`/
-//! `complete_mission`/`handle_specific_mission_request` (the remaining
-//! ppd-mutating state transitions - taking/completing/paying for a
-//! mission, as opposed to this slice's offer-generation half); resolving
-//! the rank-cubed-floored `military_pts`/level-7-floored level/current
-//! `yday` from `Character`/`World` and actually calling
-//! `apply_mission_offer` (no real call site yet - needs the Military
-//! Master/Advisor NPC drivers); those drivers themselves and their
-//! `qa[]` dialogue table (`analyse_text_driver`), storage state machines
-//! (`process_master_storage`/`process_advisor_storage`); `military_ppd`'s
-//! advisor-state/`took_yday`/`solved_yday`/`recommend`/temp-mission-
-//! selection/`reroll_yday` fields (still opaque bytes, no accessors yet);
-//! and the `SV_QUEST_EXT` mod-packet (`mod_send_questlog_ext`,
-//! `common/mod_packet.c:351-397`) that shows the active mission in the
-//! client's quest log (the `sendquestlog` calls inside `check_military_
-//! solve` itself are consequently also not reproduced yet - a cosmetic
-//! gap only, since the mission-progress state itself is already correct).
+//! This fifth slice ports `accept_mission`/`complete_mission`
+//! (`military.c:1300-1436`), the remaining ppd-mutating state
+//! transitions: [`crate::PlayerRuntime::accept_mission`] (pure ppd
+//! mutation, [`AcceptMissionOutcome`]) and [`World::complete_mission`]
+//! (ppd + `Character` mutation - exp/gold/military-points award, rank
+//! promotion, [`CompleteMissionResult`]/[`CompletedMission`]). `player.rs`
+//! gained the 3 remaining ppd accessors these need (`current_pts`/
+//! `took_yday`/`solved_yday`).
+//!
+//! REMAINING (unported, needs the above): resolving the rank-cubed-
+//! floored `military_pts`/level-7-floored level/current `yday` from
+//! `Character`/`World` and actually calling `apply_mission_offer`/
+//! `accept_mission`/`complete_mission` from a real driver (no real call
+//! site yet for any of the three - needs the Military Master/Advisor NPC
+//! drivers); those drivers themselves and their `qa[]` dialogue table
+//! (`analyse_text_driver`), storage state machines (`process_master_
+//! storage`/`process_advisor_storage`) and the `dat->storage_data`
+//! quests-given/quests-solved/pts-given/exp-given per-difficulty counters
+//! they own (no Rust `military_master_data` equivalent yet);
+//! `handle_specific_mission_request` (the paid-advisor-recommendation
+//! flow, `military.c:481-580`); `military_ppd`'s advisor-state/
+//! `recommend`/temp-mission-selection/`reroll_yday` fields (still opaque
+//! bytes, no accessors yet); the wealth-achievement ladder `give_money`
+//! also updates on `complete_mission`'s mercenary gold bonus (needs the
+//! DB-backed first-unlock announce, which lives in the server crate -
+//! wire `ugaris_core::achievement::add_gold_earned` at the same time a
+//! real driver call site lands); and the `SV_QUEST_EXT` mod-packet
+//! (`mod_send_questlog_ext`, `common/mod_packet.c:351-397`) that shows the
+//! active mission in the client's quest log (the `sendquestlog` calls
+//! inside `check_military_solve`/`complete_mission` themselves are
+//! consequently also not reproduced yet - a cosmetic gap only, since the
+//! mission-progress state itself is already correct).
 
 use super::*;
 
@@ -796,4 +811,182 @@ pub enum MilitaryMissionProgress {
     /// The mission's remaining count reached zero this kill -
     /// `solved_mission` just flipped from false to true.
     Solved,
+}
+
+/// Outcome of [`crate::PlayerRuntime::accept_mission`] (C `accept_mission`,
+/// `military.c:1300-1341`). Mirrors every distinct `say()` branch;
+/// `dat->storage_data.quests_given[difficulty]++` (the NPC-scoped
+/// mission-offer statistic) has no Rust equivalent yet - `military_master_
+/// data` itself is still unported (see this module's doc comment) - so
+/// that counter is simply not incremented anywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcceptMissionOutcome {
+    /// C: `ppd->took_mission` already nonzero -> "You already have a
+    /// mission, %s. Would you like to hear it again?".
+    AlreadyHasMission,
+    /// C: `ppd->solved_yday == yday + 1` -> "I don't have another mission
+    /// for you today, %s.".
+    AlreadyCompletedToday,
+    /// C: `ppd->mission_yday != yday + 1` -> "I haven't offered you that
+    /// kind of mission today, %s.".
+    MissionsNotOfferedToday,
+    /// C: not an advisor-paid mission and its points cost exceeds
+    /// `current_pts` -> "I have not offered you that kind of mission,
+    /// %s.".
+    InsufficientPoints,
+    /// C `display_mission`'s own guard (`difficulty` out of `0..5` or
+    /// `mis[difficulty].type == 0`) -> "I'm sorry, %s, but that mission is
+    /// not available.".
+    MissionUnavailable,
+    /// Accepted; carries the mission just committed to (`mis[difficulty]`,
+    /// unchanged in value by acceptance).
+    Accepted(SingleMission),
+}
+
+/// Outcome of [`World::complete_mission`] (C `complete_mission`,
+/// `military.c:1362-1436`)'s successful branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CompletedMission {
+    pub difficulty: usize,
+    pub exp_awarded: i32,
+    pub military_pts_awarded: i32,
+    /// Mercenary-only bonus gold (`ppd->mis[difficulty].exp / 5`), 0 for
+    /// every other profession.
+    pub gold_awarded: i32,
+    /// `Some(new_rank)` if this completion crossed an Imperial Army rank
+    /// threshold (C's `rank > get_army_rank_int(co)` guard).
+    pub promoted_to: Option<i32>,
+}
+
+/// Outcome of [`World::complete_mission`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompleteMissionResult {
+    /// C: `if (!ppd->solved_mission) return 0;` - nothing to complete, no
+    /// mutation happened.
+    NoActiveMission,
+    Completed(CompletedMission),
+}
+
+impl World {
+    /// C `complete_mission(cn, co, ppd, dat)` (`military.c:1362-1436`)'s
+    /// full ppd + character mutation: awards the mission's exp via
+    /// [`World::give_exp`] (`ppd->normal_exp` bookkeeping matches
+    /// `Character.military_normal_exp`, same field [`World::give_military_
+    /// pts`] uses), the mercenary bonus gold/points formula
+    /// (`ch[co].prof[P_MERCENARY]`, `legacy::profession::MERCENARY`), the
+    /// raw `military_pts` add (deliberately *not* routed through
+    /// [`World::give_military_pts`] - unlike that function's `_no_npc`
+    /// form, C's own `complete_mission` never applies
+    /// `hardcore_military_exp_bonus` to `pts`, and the exp was already
+    /// awarded above, so reusing it would double-grant exp and misapply
+    /// the hardcore bonus), and the identical rank-promotion
+    /// message/broadcast pattern. Queues the "Well done, %s. You've solved
+    /// your mission!" and (mercenary-only) gold-received text via
+    /// [`World::queue_system_text`]/[`World::queue_system_text_bytes`],
+    /// matching `check_military_solve`'s own wiring pattern (no NPC driver
+    /// needed for plain system text). Skips `dat->storage_data.quests_
+    /// solved/pts_given/exp_given[difficulty]` (the NPC-scoped statistics -
+    /// no Rust `military_master_data` equivalent yet) and the wealth-
+    /// achievement ladder the real `give_money` also updates (that needs
+    /// `add_gold_earned`'s DB-backed first-unlock announce, which lives in
+    /// the server crate - wire it at the same time a real Military Master
+    /// NPC driver call site lands).
+    pub fn complete_mission(
+        &mut self,
+        character_id: CharacterId,
+        player: &mut PlayerRuntime,
+        area_id: u32,
+    ) -> CompleteMissionResult {
+        if !player.military_solved_mission() {
+            return CompleteMissionResult::NoActiveMission;
+        }
+        player.set_military_solved_mission(false);
+
+        let took_yday = player.military_took_yday();
+        player.set_military_solved_yday(took_yday);
+        player.set_military_took_yday(0);
+
+        let took_mission = player.military_took_mission();
+        let difficulty = (took_mission - 1).clamp(0, 4) as usize;
+        player.set_military_took_mission(0);
+
+        let mission = player.military_mission(difficulty);
+
+        self.give_exp(character_id, i64::from(mission.exp), area_id);
+
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return CompleteMissionResult::Completed(CompletedMission {
+                difficulty,
+                exp_awarded: mission.exp,
+                ..Default::default()
+            });
+        };
+        character.military_normal_exp = character.military_normal_exp.saturating_add(mission.exp);
+
+        let mercenary_level = i32::from(character.professions[profession::MERCENARY]);
+        let mut gold_awarded = 0;
+        let pts = if mercenary_level > 0 {
+            gold_awarded = mission.exp / 5;
+            character.gold = character.gold.saturating_add(gold_awarded as u32);
+            character.flags.insert(CharacterFlags::ITEMS);
+            mission.pts + mission.pts / 2 + mission.pts * mercenary_level * 3 / 100 + 1
+        } else {
+            mission.pts + mission.pts / 2
+        };
+
+        let old_rank = army_rank_for_points(character.military_points);
+        character.military_points = character.military_points.saturating_add(pts);
+        character.flags.insert(CharacterFlags::UPDATE);
+        let new_rank = army_rank_for_points(character.military_points);
+        let name = character.name.clone();
+
+        if gold_awarded > 0 {
+            let gold_str = if gold_awarded < 100 {
+                format!("{gold_awarded}s")
+            } else {
+                format!("{:.2}G", f64::from(gold_awarded) / 100.0)
+            };
+            let mut message = Vec::with_capacity(64);
+            message.extend_from_slice(b"You received");
+            message.extend_from_slice(crate::text::COL_YELLOW);
+            message.push(b' ');
+            message.extend_from_slice(gold_str.as_bytes());
+            message.extend_from_slice(crate::text::COL_RESET);
+            message.extend_from_slice(b". It has been placed in your gold pouch.");
+            self.queue_system_text_bytes(character_id, message);
+        }
+        self.queue_system_text(
+            character_id,
+            format!("Well done, {name}. You've solved your mission!"),
+        );
+
+        let promoted_to = if new_rank > old_rank {
+            self.queue_system_text(
+                character_id,
+                format!(
+                    "You've been promoted to {}. Congratulations, {name}!",
+                    army_rank_name(new_rank)
+                ),
+            );
+            if new_rank > 9 {
+                let mut broadcast = b"0000000000".to_vec();
+                broadcast.extend_from_slice(crate::text::COL_CHAT_GRATS);
+                broadcast.extend_from_slice(
+                    format!("Grats: {name} is a {} now!", army_rank_name(new_rank)).as_bytes(),
+                );
+                self.queue_channel_broadcast(6, broadcast);
+            }
+            Some(new_rank)
+        } else {
+            None
+        };
+
+        CompleteMissionResult::Completed(CompletedMission {
+            difficulty,
+            exp_awarded: mission.exp,
+            military_pts_awarded: pts,
+            gold_awarded,
+            promoted_to,
+        })
+    }
 }

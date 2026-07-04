@@ -76,12 +76,12 @@ const MILITARY_PPD_MIS_BASE_OFFSET: usize = (6 + MILITARY_PPD_MAXADVISOR + 3) * 
 const MILITARY_PPD_MIS_ENTRY_SIZE: usize = 5 * 4;
 const MILITARY_PPD_TOOK_MISSION_OFFSET: usize =
     MILITARY_PPD_MIS_BASE_OFFSET + MILITARY_PPD_MISSION_COUNT * MILITARY_PPD_MIS_ENTRY_SIZE;
-// took_yday (offset TOOK_MISSION+4) has no accessor yet - not needed until
-// the mission-accept/reroll wrappers land.
+const MILITARY_PPD_TOOK_YDAY_OFFSET: usize = MILITARY_PPD_TOOK_MISSION_OFFSET + 4;
 const MILITARY_PPD_SOLVED_MISSION_OFFSET: usize = MILITARY_PPD_TOOK_MISSION_OFFSET + 8;
-// solved_yday (offset SOLVED_MISSION+4) has no accessor yet - not needed
-// until the mission-accept/reroll wrappers land.
+const MILITARY_PPD_SOLVED_YDAY_OFFSET: usize = MILITARY_PPD_SOLVED_MISSION_OFFSET + 4;
 const MILITARY_PPD_RECOMMEND_OFFSET: usize = MILITARY_PPD_SOLVED_MISSION_OFFSET + 8;
+// `current_pts` is `military_ppd`'s very first field (offset 0).
+const MILITARY_PPD_CURRENT_PTS_OFFSET: usize = 0;
 const MILITARY_PPD_MISSION_TYPE_PREFERENCE_OFFSET: usize = MILITARY_PPD_RECOMMEND_OFFSET + 4;
 const MILITARY_PPD_MISSION_DIFFICULTY_PREFERENCE_OFFSET: usize =
     MILITARY_PPD_MISSION_TYPE_PREFERENCE_OFFSET + 4;
@@ -2343,6 +2343,16 @@ impl PlayerRuntime {
         self.write_military_i32(MILITARY_PPD_TOOK_MISSION_OFFSET, value);
     }
 
+    /// C `military_ppd::took_yday` (`military.h:46`): day of the year
+    /// (`yday + 1`) this player accepted the currently-active mission.
+    pub fn military_took_yday(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_TOOK_YDAY_OFFSET)
+    }
+
+    pub fn set_military_took_yday(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_TOOK_YDAY_OFFSET, value);
+    }
+
     /// C `military_ppd::solved_mission` (`military.h:47`).
     pub fn military_solved_mission(&self) -> bool {
         self.read_military_i32(MILITARY_PPD_SOLVED_MISSION_OFFSET) != 0
@@ -2350,6 +2360,30 @@ impl PlayerRuntime {
 
     pub fn set_military_solved_mission(&mut self, value: bool) {
         self.write_military_i32(MILITARY_PPD_SOLVED_MISSION_OFFSET, i32::from(value));
+    }
+
+    /// C `military_ppd::solved_yday` (`military.h:48`): day of the year
+    /// this player last solved a mission (`took_yday` at solve time),
+    /// used by `accept_mission`'s "already completed today" gate.
+    pub fn military_solved_yday(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_SOLVED_YDAY_OFFSET)
+    }
+
+    pub fn set_military_solved_yday(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_SOLVED_YDAY_OFFSET, value);
+    }
+
+    /// C `military_ppd::current_pts` (`military.h:29`): the "unused
+    /// 'recommendation' pts" balance `accept_mission` spends on paying for
+    /// a non-advisor mission (C's own comment calls it unused, but
+    /// `accept_mission` reads/writes it regardless - matching that
+    /// verbatim, not the stale comment).
+    pub fn military_current_pts(&self) -> i32 {
+        self.read_military_i32(MILITARY_PPD_CURRENT_PTS_OFFSET)
+    }
+
+    pub fn set_military_current_pts(&mut self, value: i32) {
+        self.write_military_i32(MILITARY_PPD_CURRENT_PTS_OFFSET, value);
     }
 
     /// C `military_ppd::mission_type_preference` (`military.h:50`): 0 = no
@@ -2491,6 +2525,58 @@ impl PlayerRuntime {
                 elite_count,
             }
         }
+    }
+
+    /// C `accept_mission(cn, co, difficulty, ppd, dat)`
+    /// (`military.c:1300-1341`)'s ppd-mutating half. `difficulty` is
+    /// `0..=4` (C's only call sites, `military.c:1996-2015`, always pass a
+    /// literal `0`-`4` - this trusts the caller the same way
+    /// `military_mission`/`check_military_solve` already do). `yday` is
+    /// C's global `yday` (`World.date.yday`). Skips `dat->storage_data.
+    /// quests_given[difficulty]++` (the NPC-scoped mission-offer counter)
+    /// and the `say()` text itself - the caller renders
+    /// `crate::world::AcceptMissionOutcome` into the exact wording once
+    /// the Military Master NPC driver lands (see `crate::world::military`'s
+    /// module doc).
+    pub fn accept_mission(
+        &mut self,
+        difficulty: usize,
+        yday: i32,
+    ) -> crate::world::AcceptMissionOutcome {
+        use crate::world::AcceptMissionOutcome;
+
+        if self.military_took_mission() != 0 {
+            return AcceptMissionOutcome::AlreadyHasMission;
+        }
+        if self.military_solved_yday() == yday + 1 {
+            return AcceptMissionOutcome::AlreadyCompletedToday;
+        }
+        if self.mission_yday() != yday + 1 {
+            return AcceptMissionOutcome::MissionsNotOfferedToday;
+        }
+
+        let is_advisor_mission = self.mission_type_preference() > 0
+            && self.mission_difficulty_preference() == difficulty as i32;
+        if difficulty >= MILITARY_PPD_MISSION_COUNT {
+            return AcceptMissionOutcome::MissionUnavailable;
+        }
+        let mission = self.military_mission(difficulty);
+        if !is_advisor_mission && difficulty > 0 && mission.pts > self.military_current_pts() {
+            return AcceptMissionOutcome::InsufficientPoints;
+        }
+        if mission.is_empty() {
+            return AcceptMissionOutcome::MissionUnavailable;
+        }
+
+        self.set_military_took_mission(difficulty as i32 + 1);
+        self.set_military_took_yday(yday + 1);
+        if difficulty > 0 && !is_advisor_mission {
+            self.set_military_current_pts(self.military_current_pts() - mission.pts);
+        }
+        self.set_mission_type_preference(0);
+        self.set_mission_difficulty_preference(-1);
+
+        AcceptMissionOutcome::Accepted(mission)
     }
 
     pub fn decode_legacy_demonshrine_ppd(&mut self, bytes: &[u8]) -> bool {

@@ -4083,25 +4083,30 @@ Unlocks every quest NPC. Do these before any P4 area work.
   is referenced by the death path - port it there when this lands).
   REMAINING: `military_ppd`'s own advisor state (`current_advisor`/
   `advisor_state`/`advisor_cost`/`advisor_storage_nr`/`advisor_last[20]`)/
-  `took_yday`/`solved_yday`/`recommend`/temp mission selection
-  (`temp_mission_type`/`temp_mission_difficulty`)/`reroll_yday` fields
-  still round-trip as opaque bytes (no accessors yet - `mission_yday`/
-  `mission_type_preference`/`mission_difficulty_preference` gained typed
-  accessors this iteration, see Progress Log, alongside the mission-slot
-  table `mis[5]` and progress-tracking `took_mission`/`solved_mission`
-  fields from the previous iteration); the ppd-populating wrappers
-  (`generate_demon_mission`/`generate_sewer_mission`/
-  `generate_mine_mission`/`generate_mission_with_preference`/
-  `generate_mission`) are now ported as pure functions plus a
-  `PlayerRuntime::apply_mission_offer` ppd-mutating wrapper (see Progress
-  Log) but have no real call site yet - they need the rank-cubed-floored
-  `military_pts`/level-7-floored level inputs resolved from `Character`
-  and the current `World.date.yday`, which only the still-unported
-  Military Master/Advisor NPC driver would actually supply; the
-  ppd-mutating state transitions `accept_mission`/`complete_mission`/
-  `handle_specific_mission_request` remain unported; the Military
-  Master/Advisor NPC drivers, their `qa[]` dialogue table, and storage
-  state machines; the
+  `recommend`/temp mission selection (`temp_mission_type`/
+  `temp_mission_difficulty`)/`reroll_yday` fields still round-trip as
+  opaque bytes (no accessors yet - `current_pts`/`took_yday`/`solved_yday`
+  gained typed accessors this iteration, see Progress Log); the
+  ppd-populating wrappers (`generate_demon_mission`/`generate_sewer_
+  mission`/`generate_mine_mission`/`generate_mission_with_preference`/
+  `generate_mission`) plus `accept_mission`/`complete_mission` are now all
+  ported as pure/`PlayerRuntime`/`World` functions (`PlayerRuntime::
+  apply_mission_offer`/`accept_mission`, `World::complete_mission`, see
+  Progress Log) but have no real call site yet - they need the
+  rank-cubed-floored `military_pts`/level-7-floored level inputs resolved
+  from `Character` and the current `World.date.yday`, which only the
+  still-unported Military Master/Advisor NPC driver would actually
+  supply; `handle_specific_mission_request` (the paid-advisor-
+  recommendation flow, `military.c:481-580`) remains unported; the
+  Military Master/Advisor NPC drivers, their `qa[]` dialogue table, and
+  storage state machines (`process_master_storage`/`process_advisor_
+  storage`) plus the `dat->storage_data` quests-given/quests-solved/
+  pts-given/exp-given per-difficulty counters they own (no Rust
+  `military_master_data` equivalent yet); the wealth-achievement ladder
+  the real `give_money` also updates on `complete_mission`'s mercenary
+  gold bonus (needs the DB-backed first-unlock announce, which lives in
+  the server crate - wire `ugaris_core::achievement::add_gold_earned` at
+  the same time a real driver call site lands); the
   `SV_QUEST_EXT` mod-packet that shows the active mission in the client's
   quest log (so `check_military_solve`'s own `sendquestlog` calls are
   also not reproduced yet - cosmetic only, the progress state itself is
@@ -4113,7 +4118,56 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
   correction, not a real gap).
-  Progress Log: ported the next self-contained slice - the ppd-populating
+  Progress Log: ported the next self-contained slice - `accept_mission`/
+  `complete_mission` (`military.c:1300-1436`), the remaining ppd-mutating
+  state transitions on top of the previous slice's offer-generation half.
+  `crates/ugaris-core/src/player.rs` gained the 3 remaining ppd accessors
+  these need - `military_current_pts`/`set_military_current_pts`
+  (`military.h:29`, offset 0), `military_took_yday`/`set_military_took_
+  yday` and `military_solved_yday`/`set_military_solved_yday`
+  (`military.h:46,48`) - plus `PlayerRuntime::accept_mission(difficulty,
+  yday)`: the full `military.c:1300-1341` gate chain (already-has-a-
+  mission / already-completed-today / not-offered-today / insufficient-
+  points-unless-advisor-paid / empty-slot-unavailable), returning the new
+  `crate::world::AcceptMissionOutcome` enum and, on success, stamping
+  `took_mission`/`took_yday`, deducting `current_pts` (skipped for
+  difficulty 0 and for advisor-paid missions, matching C exactly), and
+  clearing the mission preference pair. `crates/ugaris-core/src/world/
+  military.rs` gained `World::complete_mission(character_id, player,
+  area_id)` (`military.c:1362-1436`): awards the mission's exp via the
+  existing `World::give_exp` (`character.military_normal_exp`
+  bookkeeping, same field `give_military_pts` uses), the mercenary bonus
+  (`ch[co].prof[P_MERCENARY]` -> `legacy::profession::MERCENARY`) gold-
+  reward (`exp / 5`) and points formula (`pts + pts/2 + pts*prof*3/100 +
+  1` vs. the non-mercenary `pts + pts/2`), the raw `military_points` add
+  (deliberately *not* routed through `World::give_military_pts` - unlike
+  that function's hardcore-bonus-on-points behavior, C's own `complete_
+  mission` never applies `hardcore_military_exp_bonus` to `pts`, and the
+  exp was already awarded separately, so reusing it would double-grant
+  exp and misapply the bonus), and the identical rank-promotion message/
+  channel-6-broadcast pattern `give_military_pts` already has (reusing
+  `army_rank_for_points`/`army_rank_name`). Queues the "Well done..."/
+  gold-received/promotion feedback text via the existing `World::
+  queue_system_text`/`queue_system_text_bytes` (already generically
+  drained by the tick loop - no new wiring needed for plain system text,
+  same reasoning `check_military_solve`'s wiring note already
+  established), returning `CompleteMissionResult`/`CompletedMission`
+  (`NoActiveMission` unchanged, matching C's `if (!ppd->solved_mission)
+  return 0;`). 15 new tests: 8 for `accept_mission` in `crates/
+  ugaris-core/src/world/tests/military.rs` (every rejection branch,
+  difficulty-0 no-points-spent acceptance, above-difficulty-0 points
+  deduction, advisor-paid mission skipping both the points check and the
+  deduction), 4 for `complete_mission` (no-op when nothing solved,
+  non-mercenary exp/points math plus the promotion its own `pts=15`
+  inherently crosses since C's `cbrt(1) == 1` means any positive award
+  starts above rank 0, the mercenary gold-bonus formula, and the
+  above-rank-9 broadcast gate staying silent below it). `cargo fmt --all`,
+  `cargo test --workspace` (1612 ugaris-core + 47 db + 3 net + 37
+  protocol + 541 server, all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panics. No NPC/networking wiring yet -
+  see REMAINING above.
+  Earlier progress: ported the next self-contained slice - the ppd-populating
   mission-offer-table wrappers on top of the existing pure per-instance
   generators, plus the 3 remaining ppd fields they need. `crates/
   ugaris-core/src/player.rs` gained `mission_type_preference`/
