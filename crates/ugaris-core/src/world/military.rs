@@ -1969,14 +1969,35 @@ impl MilitaryMasterStorageRegistry {
         }
     }
 
-    /// Whether any entry has changed since the last [`Self::clear_dirty`]
-    /// - no DB repository reads this yet (see this type's doc comment).
+    /// Whether any entry has changed since the last [`Self::clear_dirty`],
+    /// consulted by `ugaris-server`'s periodic save tick (see
+    /// `crates/ugaris-db/src/military.rs`).
     pub fn dirty(&self) -> bool {
         self.dirty
     }
 
     pub fn clear_dirty(&mut self) {
         self.dirty = false;
+    }
+
+    /// All `(storage_id, storage)` rows currently held, for the DB
+    /// repository's per-row upsert on save (`crates/ugaris-db/src/
+    /// military.rs`) - mirrors the table design this type's own doc
+    /// comment describes (one row per `storage_id`, unlike
+    /// [`crate::clan::ClanRegistry`]'s single-row-blob approach).
+    pub fn iter(&self) -> impl Iterator<Item = (i32, &MilitaryMasterStorage)> {
+        self.entries.iter().map(|(id, storage)| (*id, storage))
+    }
+
+    /// Rebuilds a registry from persisted `(storage_id, storage)` rows
+    /// (the DB repository's load path) without marking it dirty - a
+    /// freshly loaded registry has nothing new to save back until it is
+    /// mutated again.
+    pub fn from_rows(rows: impl IntoIterator<Item = (i32, MilitaryMasterStorage)>) -> Self {
+        Self {
+            entries: rows.into_iter().collect(),
+            dirty: false,
+        }
     }
 }
 

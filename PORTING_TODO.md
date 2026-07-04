@@ -4117,13 +4117,12 @@ Unlocks every quest NPC. Do these before any P4 area work.
   along with the in-memory-only `MilitaryMasterStorage`/
   `MilitaryMasterStorageRegistry` data model (`struct
   military_master_storage`'s `clan_pts[MAXCLAN]` - the 4 quest counters
-  it also holds still have no real reader/writer call site). REMAINING
-  for the Master driver itself: DB persistence for that registry (resets
-  on restart today - see `MilitaryMasterStorageRegistry`'s own doc
-  comment in `crates/ugaris-core/src/world/military.rs` for the scoped
-  `military_master_storage(storage_id integer primary key, storage_json
-  jsonb, updated_at)` table design, following `clan.rs`'s
-   `PgClanRegistryRepository` pattern). The Master driver's own admin-only
+  it also holds still have no real reader/writer call site). DB
+  persistence for that registry (`military_master_storage(storage_id
+  integer primary key, storage_json jsonb, updated_at)`, one row per
+  Military Master NPC's `storage=N;` id, following `clan.rs`'s
+  `PgClanRegistryRepository` pattern) was closed in iteration 118 (see
+  Progress Log). The Master driver's own admin-only
   qa codes 18-21 (`info`/`reset`/`raise`/`promote`, `military.c:2037-2089`)
   were closed this iteration (see Progress Log) - `info` reads the
   quest-stat/clan-pts counters closed in iteration 116, `reset`/`raise`
@@ -4156,12 +4155,16 @@ Unlocks every quest NPC. Do these before any P4 area work.
    would just be re-implementing a DB polling loop Rust doesn't need.
    Advisor's own sales-economy `struct cost_data` counters (`add_cost`/
    `update_advisor_storage` - no Rust `military_advisor_data` equivalent
-   at all yet) remain unported, plus DB persistence for the Master's own
-   `MilitaryMasterStorageRegistry` (in-memory only since iteration 115 -
-   same "no generic storage-blob persistence concept in `ugaris-db` yet"
-   architectural gap the Arena rankings task's REMAINING note also
-   flags, though the *in-memory* half of that gap is now closed for the
-   Master's `clan_pts` and quest counters both); the wealth-achievement ladder the real `give_money` also
+   at all yet) remain unported. DB persistence for the Master's own
+   `MilitaryMasterStorageRegistry` was closed in iteration 118
+   (`crates/ugaris-db/src/military.rs::PgMilitaryMasterStorageRepository`,
+   `migrations/0010_military_master_storage.sql`, loaded at boot and
+   saved once a minute when `dirty`, mirroring the clan registry's own
+   flush cadence in `main.rs` - see Progress Log); the Advisor's own
+   `cost_data` counters have no equivalent table yet since they have no
+   Rust model at all (the architectural gap the Arena rankings task's
+   REMAINING note also flags is now closed for the Master's registry
+   specifically). The wealth-achievement ladder the real `give_money` also
   updates on `complete_mission`'s mercenary gold bonus (needs the DB-
   backed first-unlock announce, which lives in the server crate - wire
   `ugaris_core::achievement::add_gold_earned` at the same time; not done
@@ -4180,8 +4183,51 @@ Unlocks every quest NPC. Do these before any P4 area work.
   also not added (there is no such command anywhere in the
   current C `command.c` tree either - checked; only the admin-only
    `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
-    so there is nothing to port here; dropping this as a documentation
-     correction, not a real gap).
+     so there is nothing to port here; dropping this as a documentation
+      correction, not a real gap).
+  Progress Log (iteration 118): closed the DB-persistence gap for
+    `MilitaryMasterStorageRegistry` (the last item its own iteration-115
+    doc comment flagged as a future slice), mirroring `clan.rs`'s
+    `PgClanRegistryRepository` pattern but keyed per-row rather than as
+    a whole-registry singleton blob, since Military Master storage isn't
+    a singleton (every Military Master NPC has its own `storage=N;`
+    zone-file id). Added `migrations/0010_military_master_storage.sql`
+    (`military_master_storage(storage_id integer primary key,
+    storage_json jsonb, updated_at)`) and `crates/ugaris-db/src/
+    military.rs` (`MilitaryMasterStorageRepository` trait +
+    `PgMilitaryMasterStorageRepository`: `save_registry` upserts one row
+    per `(storage_id, storage)` pair, `load_registry` reads every row
+    back into a fresh registry). Gave `MilitaryMasterStorageRegistry`
+    (`crates/ugaris-core/src/world/military.rs`) two new public methods
+    to support this without exposing its private mutators: `iter()`
+    (borrowed `(storage_id, &MilitaryMasterStorage)` pairs for save) and
+    `from_rows()` (rebuilds a registry from loaded rows without marking
+    it dirty, matching a freshly-loaded registry having nothing new to
+    flush until mutated again). Wired both the boot-time load and a
+    once-a-minute `dirty`-gated save into `ugaris-server/src/main.rs`,
+    directly mirroring the existing `clan_registry` load/save blocks
+    (same cadence, same `Option<Repository>` "run without persistence if
+    `DATABASE_URL` unset" shape) - `Database::military_master_storage()`
+    added alongside the other repository constructors in
+    `crates/ugaris-db/src/lib.rs`. 4 new tests in `crates/ugaris-db/src/
+    military.rs` (SQL-shape assertion, a JSON round-trip test building
+    synthetic `MilitaryMasterStorage` values via `serde_json::from_value`
+    against its field names rather than calling any of its
+    crate-private mutators, plus 2 `live` tests following `clan.rs`'s
+    "skip without failing when `DATABASE_URL` is unset" convention).
+    `cargo fmt --all`, `cargo test --workspace` (1705 ugaris-core + 51 db
+    [+4] + 3 net + 37 protocol + 553 server, all green, zero failures),
+    `cargo build -p ugaris-server` clean with zero warnings, 10s
+    boot-smoke confirmed "entering Rust game loop" with no panics (this
+    iteration's load/save blocks live in the runtime tick loop and
+    startup path). REMAINING for the "Military ranks" task overall:
+    Advisor's own sales-economy `cost_data` counters (still no Rust
+    model at all), the wealth-achievement ladder wiring on
+    `complete_mission`'s gold bonus, the cosmetic `SV_QUEST_EXT`
+    quest-log packet, and `complete_mission`/`promote`'s reward/
+    promotion text still going through `queue_system_text` rather than
+    `npc_quiet_say` - see the REMAINING note above (unchanged except the
+    DB-persistence item now closed).
   Progress Log (iteration 117): ported the Military Master driver's own
     admin-only qa codes 18-21 (`info`/`reset`/`raise`/`promote`,
     `military.c:2037-2089`, the shared `if (!(ch[co].flags & CF_GOD))

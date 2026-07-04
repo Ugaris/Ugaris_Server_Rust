@@ -171,7 +171,7 @@ use ugaris_core::{
 use ugaris_db::{
     AuctionRepository, CharacterRepository, CharacterSaveMode, CharacterSaveRequest,
     CharacterSnapshot, ClanRegistryRepository, LoginOutcome, LoginRequest, MerchantRepository,
-    MerchantStoreSnapshot, MerchantWareSnapshot,
+    MerchantStoreSnapshot, MerchantWareSnapshot, MilitaryMasterStorageRepository,
 };
 
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
@@ -614,6 +614,7 @@ async fn main() -> anyhow::Result<()> {
         achievement_repository,
         clan_repository,
         clan_log_repository,
+        military_master_storage_repository,
     ) = if let Some(database_url) = args.database_url.as_deref() {
         let db = ugaris_db::Database::connect(database_url, 8).await?;
         db.ping().await?;
@@ -633,10 +634,11 @@ async fn main() -> anyhow::Result<()> {
             Some(db.achievements()),
             Some(db.clans()),
             Some(db.clan_log()),
+            Some(db.military_master_storage()),
         )
     } else {
         warn!("DATABASE_URL not set; starting without persistence");
-        (None, None, None, None, None, None)
+        (None, None, None, None, None, None, None)
     };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
@@ -716,6 +718,23 @@ async fn main() -> anyhow::Result<()> {
             }
             Err(err) => {
                 warn!(error = %err, "failed to load clan registry from database; starting with an empty one");
+            }
+        }
+    }
+    // Restart-persistence for `world.military_master_storage` (no C
+    // equivalent as a standalone table - see
+    // `crates/ugaris-db/src/military.rs`'s doc comment): load whatever
+    // was last saved before the game loop starts, so Military Master
+    // clan-points/quest-stat counters survive a restart instead of
+    // always starting empty.
+    if let Some(repository) = &military_master_storage_repository {
+        match repository.load_registry().await {
+            Ok(loaded) => {
+                info!("loaded military master storage registry from database");
+                world.military_master_storage = loaded;
+            }
+            Err(err) => {
+                warn!(error = %err, "failed to load military master storage registry from database; starting with an empty one");
             }
         }
     }
@@ -5872,6 +5891,26 @@ async fn main() -> anyhow::Result<()> {
                             Ok(()) => world.clan_registry.clear_dirty(),
                             Err(err) => {
                                 warn!(error = %err, "failed to save clan registry to database")
+                            }
+                        }
+                    }
+                }
+                // Restart-persistence for `world.military_master_storage`:
+                // same once-a-minute cadence and `dirty`-gating as the
+                // clan registry save above, for the same reason (no C
+                // equivalent flush task to mirror - see
+                // `crates/ugaris-db/src/military.rs`'s doc comment).
+                if world.tick.0 % (TICKS_PER_SECOND * 60) == 0
+                    && world.military_master_storage.dirty()
+                {
+                    if let Some(repository) = &military_master_storage_repository {
+                        match repository
+                            .save_registry(&world.military_master_storage)
+                            .await
+                        {
+                            Ok(()) => world.military_master_storage.clear_dirty(),
+                            Err(err) => {
+                                warn!(error = %err, "failed to save military master storage registry to database")
                             }
                         }
                     }
