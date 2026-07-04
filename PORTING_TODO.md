@@ -3222,12 +3222,49 @@ Unlocks every quest NPC. Do these before any P4 area work.
   protocol + 489 server, all unchanged/green, zero failures), `cargo
   build -p ugaris-server` clean with zero warnings.
 
-- [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
+- [~] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository
   (`crates/ugaris-db/src/clan.rs`), clan trade bonus (merchants call
   `clan_trade_bonus` - currently 0), clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
-  (transport module has the seam).
+  (transport module has the seam). REMAINING: clan identity (name/rank
+  names/website/message/treasury/dungeon economy), the actual
+  `found_clan`/`add_member`/`remove_member`/`get_char_clan` membership
+  wiring onto `Character.clan`/`clan_rank`/`clan_serial`, a persistent
+  `crates/ugaris-db/src/clan.rs` repository + migration (no DB table
+  exists yet), wiring `ClanRelations` as the live `ClanAttackPolicy` in the
+  actual game loop/`World` (currently only available as an impl, not
+  constructed/used anywhere outside tests), clan-log persistence/message
+  formatting (`add_clanlog`), `clan_trade_bonus` (blocked on the merchant
+  system itself not being ported), clan chat channel gating (channels
+  5/7/12), and clan-hall transport access beyond direct membership.
+
+  Progress Log:
+  - 2026-07-04: ported the pure relation state machine as a first
+    self-contained slice: `crates/ugaris-core/src/clan.rs` -
+    `ClanRelation` (`CS_*` enum), `ClanRelations` (per-pair
+    `current_relation`/`want_relation`/`want_date`, `MAX_CLAN`=32),
+    `found_clan`/`delete_clan`/`set_relation`/`may_enter`/
+    `can_attack_outside`/`can_attack_inside`/`alliance`, and the full
+    `update_relations` escalation/de-escalation tick (`clan.c:936-1089`,
+    all 7 distinct log-message transition shapes modeled as
+    `ClanRelationChange` variants, timers ported exactly: 1h one-sided
+    war escalation, 24h one-sided de-escalation for alliance/treaty/feud).
+    Implemented `do_action::ClanAttackPolicy` for `ClanRelations`, closing
+    the `are_allied`/`can_attack_inside_clan_area`/
+    `can_attack_outside_clan_area` stubs that previously only had
+    `NoClanAttackPolicy` (always-false) - the trait/call-site plumbing in
+    `do_action.rs` needed zero changes. Intentionally skipped the
+    `dungeon.doraid` relation clamp in `update_relations` (dead in
+    practice after a clan's first tick per a code comment explaining why,
+    and meaningless without the unported dungeon/raid system). 21 new
+    unit tests in `clan.rs` plus one end-to-end wiring test in
+    `do_action.rs` (`can_attack_wired_against_real_clan_relations_registry`).
+    `cargo fmt --all`, `cargo test --workspace` (1429 ugaris-core + 38 db
+    + 3 net + 37 protocol + 489 server, all green), `cargo build -p
+    ugaris-server` clean with zero warnings, boot-smoke confirmed
+    "entering Rust game loop" with no panics for 10+ seconds. No DB
+    migration and no runtime wiring yet - see REMAINING above.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

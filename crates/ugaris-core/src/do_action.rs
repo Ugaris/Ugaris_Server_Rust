@@ -2277,6 +2277,48 @@ mod tests {
     }
 
     #[test]
+    fn can_attack_wired_against_real_clan_relations_registry() {
+        // End-to-end check that `crate::clan::ClanRelations` (the real
+        // `clan.c` relation state machine) satisfies `ClanAttackPolicy` and
+        // produces the same war/feud/alliance gating as the hand-written
+        // `TestClanPolicy` above, once its clans are set up with matching
+        // relations.
+        use crate::clan::{ClanRelation, ClanRelations};
+
+        let mut relations = ClanRelations::new();
+        relations.found_clan(20, 0);
+        relations.found_clan(21, 0);
+        relations
+            .set_relation(20, 21, ClanRelation::War, 0)
+            .unwrap();
+        relations
+            .set_relation(21, 20, ClanRelation::War, 0)
+            .unwrap();
+        relations.update(0);
+
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        attacker.clan = 20;
+        defender.clan = 21;
+        attacker.flags.insert(CharacterFlags::PLAYER);
+        defender.flags.insert(CharacterFlags::PLAYER);
+        map.tile_mut(10, 10).unwrap().flags.insert(MapFlags::CLAN);
+        map.tile_mut(11, 10).unwrap().flags.insert(MapFlags::CLAN);
+
+        assert!(can_attack_in_area_with_clan_policy(
+            &attacker, &defender, &map, 2, &relations
+        ));
+        // Area 1 always blocks player-vs-player attacks, clan war or not.
+        assert!(!can_attack_in_area_with_clan_policy(
+            &attacker, &defender, &map, 1, &relations
+        ));
+    }
+
+    #[test]
     fn act_attack_uses_strict_hit_roll_and_applies_damage() {
         let mut map = MapGrid::new(20, 20);
         let mut attacker = character();
