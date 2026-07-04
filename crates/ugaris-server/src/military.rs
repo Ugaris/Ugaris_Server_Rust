@@ -265,7 +265,7 @@ fn apply_military_master_nearby_player(
     // `World::queue_system_text`/`queue_system_text_bytes` (see that
     // function's doc comment) rather than `npc_quiet_say` from this NPC -
     // a pre-existing simplification, not tightened here.
-    let _ = world.complete_mission(player_id, player, u32::from(area_id));
+    let _ = world.complete_mission(player_id, player, u32::from(area_id), master_id);
 
     true
 }
@@ -379,6 +379,7 @@ fn apply_military_master_accept_mission(
             );
         }
         AcceptMissionOutcome::Accepted(mission) => {
+            world.record_mission_offered(master_id, difficulty);
             let text = display_mission_text(&mission).unwrap_or_else(|| {
                 format!("I'm sorry, {player_name}, but that mission is not available.")
             });

@@ -4126,27 +4126,36 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `PgClanRegistryRepository` pattern) and the admin-only qa codes 18-21
   (`info`/`reset`/`raise`/`promote` - `info` needs the quest counters;
   `/milinfo`/`/milpoints`/`/milstats` already cover admin needs). The
-  Military *Advisor* NPC (`CDR_MILITARY_ADVISOR`) was ported in
-  iteration 113 (see Progress Log): `handle_specific_mission_request`/
-  `offer_favor`/`process_favor_payment` (the ppd-mutating halves),
-  `adv_introduction`/`adv_favor_desc`'s dialogue-rendering halves, and
-  `military_advisor_driver` itself, reusing the same shared
-  `MILITARY_QA` table and `World`/`PlayerRuntime`-split pattern the
-  Master driver established. REMAINING for the Advisor driver: only its
-  own admin-only qa code 18 (`info`) - needs the same unported
-  storage-blob counters below. Both drivers' storage state
-  machines (`process_master_storage`/`process_advisor_storage`) plus the
-  `dat->storage_data` quests-given/quests-solved/pts-given/exp-given
-  per-difficulty counters (Master - `MilitaryMasterStorage` already
-  models these fields, just no reader/writer call site yet) and
-  sales-economy `struct cost_data` counters (Advisor's `add_cost`/
-  `update_advisor_storage` - no Rust `military_advisor_data` equivalent
-  at all yet) they own, plus DB persistence for the Master's own
-  `MilitaryMasterStorageRegistry` (in-memory only since iteration 115 -
-  same "no generic storage-blob persistence concept in `ugaris-db` yet"
-  architectural gap the Arena rankings task's REMAINING note also
-  flags, though the *in-memory* half of that gap is now closed for the
-  Master's `clan_pts`); the wealth-achievement ladder the real `give_money` also
+   Military *Advisor* NPC (`CDR_MILITARY_ADVISOR`) was ported in
+   iteration 113 (see Progress Log): `handle_specific_mission_request`/
+   `offer_favor`/`process_favor_payment` (the ppd-mutating halves),
+   `adv_introduction`/`adv_favor_desc`'s dialogue-rendering halves, and
+   `military_advisor_driver` itself, reusing the same shared
+   `MILITARY_QA` table and `World`/`PlayerRuntime`-split pattern the
+   Master driver established. REMAINING for the Advisor driver: only its
+   own admin-only qa code 18 (`info`) - needs the same unported
+   storage-blob counters below. The Master's own `quests_given`/
+   `quests_solved`/`exp_given`/`pts_given[difficulty]` counters now have
+   real reader *and* writer call sites (`World::record_mission_offered`/
+   `World::complete_mission`, wired from `apply_military_master_accept_
+   mission`/`apply_military_master_nearby_player` in `ugaris-server`,
+   see Progress Log iteration 116) - closing that half of this REMAINING
+   note. Still REMAINING: the literal `process_master_storage`/
+   `process_advisor_storage` async-DB-blob state machines themselves
+   (`military.c:1468-1531,1560-1615`) were deliberately *not* ported -
+   they're C's own generic `create_storage`/`read_storage`/
+   `update_storage` round-trip mechanism, which `MilitaryMasterStorage`/
+   `MilitaryMasterStorageRegistry`'s simpler direct in-memory model
+   (iteration 115) already supersedes; porting the state machine itself
+   would just be re-implementing a DB polling loop Rust doesn't need.
+   Advisor's own sales-economy `struct cost_data` counters (`add_cost`/
+   `update_advisor_storage` - no Rust `military_advisor_data` equivalent
+   at all yet) remain unported, plus DB persistence for the Master's own
+   `MilitaryMasterStorageRegistry` (in-memory only since iteration 115 -
+   same "no generic storage-blob persistence concept in `ugaris-db` yet"
+   architectural gap the Arena rankings task's REMAINING note also
+   flags, though the *in-memory* half of that gap is now closed for the
+   Master's `clan_pts` and quest counters both); the wealth-achievement ladder the real `give_money` also
   updates on `complete_mission`'s mercenary gold bonus (needs the DB-
   backed first-unlock announce, which lives in the server crate - wire
   `ugaris_core::achievement::add_gold_earned` at the same time; not done
@@ -4165,8 +4174,55 @@ Unlocks every quest NPC. Do these before any P4 area work.
   also not added (there is no such command anywhere in the
   current C `command.c` tree either - checked; only the admin-only
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
-  so there is nothing to port here; dropping this as a documentation
-   correction, not a real gap).
+   so there is nothing to port here; dropping this as a documentation
+    correction, not a real gap).
+  Progress Log (iteration 116): wired the Military Master's per-
+    difficulty quest statistics (`struct military_master_storage`'s
+    `quests_given`/`quests_solved`/`exp_given`/`pts_given[5]`,
+    `military.c:1348,1382,1407,1411`) - `MilitaryMasterStorage` already
+    modeled these fields with read-only accessors since iteration 115,
+    but nothing incremented them. Added private mutators
+    (`add_quests_given`/`add_quests_solved`/`add_exp_given`/
+    `add_pts_given`) to `MilitaryMasterStorage` and matching
+    `storage_id`-keyed wrappers to `MilitaryMasterStorageRegistry`
+    (`add_quests_given`, and `add_completed_mission_stats` bumping
+    solved/exp/pts together since C's own `complete_mission` always
+    updates all three in the same call), following `add_clan_pts`'s
+    existing lazy-`or_default()` pattern exactly. Added `World::
+    record_mission_offered(master_id, difficulty)` (`crates/ugaris-core/
+    src/world/military.rs`) for the `quests_given` counter -
+    `PlayerRuntime::accept_mission` itself has no `World`/`master_id`
+    access (documented inline on both that method and its
+    `AcceptMissionOutcome` doc comment), so the caller now invokes it
+    explicitly on `Accepted`, wired into `ugaris-server`'s
+    `apply_military_master_accept_mission`. Gave `World::complete_mission`
+    a new `master_id: CharacterId` parameter and wired the `quests_
+    solved`/`exp_given`/`pts_given` bump directly inside it (matching C's
+    own `complete_mission` doing the same inline), using the mission's
+    raw `pts`/`exp` cost fields - *not* `CompletedMission::military_pts_
+    awarded` (the larger, mercenary-formula-adjusted amount actually
+    credited to the player), matching C's own `dat->storage_data.pts_
+    given[difficulty] += ppd->mis[difficulty].pts` exactly; updated its
+    one real call site (`apply_military_master_nearby_player`) and all 4
+    existing test call sites (a nonexistent `CharacterId(999)`, matching
+    their prior storage-agnostic behavior). Explicitly did *not* port the
+    literal `process_master_storage`/`process_advisor_storage` async-DB-
+    blob state machines (`military.c:1468-1531,1560-1615`) - researched
+    this iteration and confirmed they're C's own generic storage-blob
+    round-trip mechanism, which the simpler direct in-memory registry
+    approach (iteration 115) already supersedes; documented this as a
+    closed non-gap in the REMAINING note above rather than a silent skip.
+    6 new tests in `crates/ugaris-core/src/world/tests/military.rs`
+    (`record_mission_offered_increments_quests_given_for_its_difficulty`,
+    its non-master no-op sibling, `complete_mission_records_quest_stats_
+    on_its_master_npc`, cross-difficulty accumulation with a second
+    independent NPC's storage staying untouched, and the non-master
+    no-op for `complete_mission` itself). `cargo fmt --all`, `cargo test
+    --workspace` (1704 ugaris-core [+6] + 47 db + 3 net + 37 protocol +
+    553 server, all green, zero failures), `cargo build -p ugaris-server`
+    clean with zero warnings, 12s boot-smoke confirmed "entering Rust
+    game loop" with no panics (this iteration's `complete_mission` call
+    site lives in the live NPC-driver tick path).
   Progress Log (iteration 115): ported `process_clan_recommendation`/
   `update_clan_points` (`military.c:1654-1674,1815-1832`) as
   `World::process_clan_recommendation`/`World::update_clan_points`

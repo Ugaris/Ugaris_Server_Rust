@@ -1250,9 +1250,11 @@ pub enum MilitaryMissionProgress {
 /// Outcome of [`crate::PlayerRuntime::accept_mission`] (C `accept_mission`,
 /// `military.c:1300-1341`). Mirrors every distinct `say()` branch;
 /// `dat->storage_data.quests_given[difficulty]++` (the NPC-scoped
-/// mission-offer statistic) has no Rust equivalent yet - `military_master_
-/// data` itself is still unported (see this module's doc comment) - so
-/// that counter is simply not incremented anywhere.
+/// mission-offer statistic) needs a `master_id`/`World` this
+/// `PlayerRuntime` method has no access to - callers should invoke
+/// [`World::record_mission_offered`] themselves on
+/// [`AcceptMissionOutcome::Accepted`], matching C calling it
+/// unconditionally at the very end of `accept_mission`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AcceptMissionOutcome {
     /// C: `ppd->took_mission` already nonzero -> "You already have a
@@ -1318,18 +1320,20 @@ impl World {
     /// your mission!" and (mercenary-only) gold-received text via
     /// [`World::queue_system_text`]/[`World::queue_system_text_bytes`],
     /// matching `check_military_solve`'s own wiring pattern (no NPC driver
-    /// needed for plain system text). Skips `dat->storage_data.quests_
-    /// solved/pts_given/exp_given[difficulty]` (the NPC-scoped statistics -
-    /// no Rust `military_master_data` equivalent yet) and the wealth-
-    /// achievement ladder the real `give_money` also updates (that needs
-    /// `add_gold_earned`'s DB-backed first-unlock announce, which lives in
-    /// the server crate - wire it at the same time a real Military Master
-    /// NPC driver call site lands).
+    /// needed for plain system text). Also bumps `dat->storage_data.
+    /// quests_solved/pts_given/exp_given[difficulty]` on the Military
+    /// Master NPC identified by `master_id` (`military.c:1382,1407,1411`) -
+    /// a no-op if `master_id` isn't a live `CDR_MILITARY_MASTER` NPC.
+    /// Skips the wealth-achievement ladder the real `give_money` also
+    /// updates (that needs `add_gold_earned`'s DB-backed first-unlock
+    /// announce, which lives in the server crate - wire it at the same
+    /// time a real Military Master NPC driver call site lands).
     pub fn complete_mission(
         &mut self,
         character_id: CharacterId,
         player: &mut PlayerRuntime,
         area_id: u32,
+        master_id: CharacterId,
     ) -> CompleteMissionResult {
         if !player.military_solved_mission() {
             return CompleteMissionResult::NoActiveMission;
@@ -1373,6 +1377,25 @@ impl World {
         character.flags.insert(CharacterFlags::UPDATE);
         let new_rank = army_rank_for_points(character.military_points);
         let name = character.name.clone();
+
+        // C `dat->storage_data.quests_solved[difficulty]++;` /
+        // `pts_given[difficulty] += ppd->mis[difficulty].pts;` /
+        // `exp_given[difficulty] += ppd->mis[difficulty].exp;`
+        // (`military.c:1382,1407,1411`) - a no-op if `master_id` isn't a
+        // live `CDR_MILITARY_MASTER` NPC.
+        if let Some(CharacterDriverState::MilitaryMaster(data)) = self
+            .characters
+            .get(&master_id)
+            .and_then(|c| c.driver_state.as_ref())
+        {
+            let storage_id = data.storage_id;
+            self.military_master_storage.add_completed_mission_stats(
+                storage_id,
+                difficulty,
+                mission.exp,
+                mission.pts,
+            );
+        }
 
         if gold_awarded > 0 {
             let gold_str = if gold_awarded < 100 {
@@ -1745,14 +1768,17 @@ pub struct MilitaryMasterStorage {
     /// returns `0`), matching C leaving `clan_pts[0]` permanently unused.
     clan_pts: [i32; crate::clan::MAX_CLAN],
     /// `quests_given[5]`: incremented once per difficulty every time a
-    /// mission is offered (`military.c:1348`). No Rust call site yet -
-    /// see the "Military ranks" task's REMAINING note.
+    /// mission is offered (`military.c:1348`), fed by
+    /// [`World::record_mission_offered`].
     quests_given: [i32; 5],
-    /// `quests_solved[5]` (`military.c:1382`). No Rust call site yet.
+    /// `quests_solved[5]` (`military.c:1382`), fed by
+    /// [`World::complete_mission`].
     quests_solved: [i32; 5],
-    /// `exp_given[5]` (`military.c:1411`). No Rust call site yet.
+    /// `exp_given[5]` (`military.c:1411`), fed by
+    /// [`World::complete_mission`].
     exp_given: [i32; 5],
-    /// `pts_given[5]` (`military.c:1407`). No Rust call site yet.
+    /// `pts_given[5]` (`military.c:1407`), fed by
+    /// [`World::complete_mission`].
     pts_given: [i32; 5],
 }
 
@@ -1801,6 +1827,39 @@ impl MilitaryMasterStorage {
     /// `dat->storage_data.pts_given[difficulty]`.
     pub fn pts_given(&self, difficulty: usize) -> i32 {
         self.pts_given.get(difficulty).copied().unwrap_or(0)
+    }
+
+    /// `dat->storage_data.quests_given[difficulty]++` (`military.c:1348`).
+    fn add_quests_given(&mut self, difficulty: usize) {
+        if let Some(slot) = self.quests_given.get_mut(difficulty) {
+            *slot += 1;
+        }
+    }
+
+    /// `dat->storage_data.quests_solved[difficulty]++` (`military.c:1382`).
+    fn add_quests_solved(&mut self, difficulty: usize) {
+        if let Some(slot) = self.quests_solved.get_mut(difficulty) {
+            *slot += 1;
+        }
+    }
+
+    /// `dat->storage_data.exp_given[difficulty] += ppd->mis[difficulty].
+    /// exp;` (`military.c:1411`).
+    fn add_exp_given(&mut self, difficulty: usize, delta: i32) {
+        if let Some(slot) = self.exp_given.get_mut(difficulty) {
+            *slot += delta;
+        }
+    }
+
+    /// `dat->storage_data.pts_given[difficulty] += ppd->mis[difficulty].
+    /// pts;` (`military.c:1407`) - note this is the mission's raw point
+    /// *cost*, not the (larger, formula-adjusted) amount actually
+    /// credited to the player's `military_pts` (`CompletedMission::
+    /// military_pts_awarded`).
+    fn add_pts_given(&mut self, difficulty: usize, delta: i32) {
+        if let Some(slot) = self.pts_given.get_mut(difficulty) {
+            *slot += delta;
+        }
     }
 }
 
@@ -1865,9 +1924,39 @@ impl MilitaryMasterStorageRegistry {
         self.dirty = true;
     }
 
+    /// C `dat->storage_data.quests_given[difficulty]++` (`accept_mission`,
+    /// `military.c:1348`). Creates the entry on first use, matching
+    /// [`Self::add_clan_pts`]'s lazy-`create_storage` semantics.
+    fn add_quests_given(&mut self, storage_id: i32, difficulty: usize) {
+        self.entries
+            .entry(storage_id)
+            .or_default()
+            .add_quests_given(difficulty);
+        self.dirty = true;
+    }
+
+    /// C `dat->storage_data.quests_solved[difficulty]++` / `pts_given`/
+    /// `exp_given[difficulty] += ...` (`complete_mission`,
+    /// `military.c:1382,1407,1411`), all three bumped together since C's
+    /// own `complete_mission` always updates them in the same call.
+    fn add_completed_mission_stats(
+        &mut self,
+        storage_id: i32,
+        difficulty: usize,
+        exp: i32,
+        pts: i32,
+    ) {
+        let entry = self.entries.entry(storage_id).or_default();
+        entry.add_quests_solved(difficulty);
+        entry.add_exp_given(difficulty, exp);
+        entry.add_pts_given(difficulty, pts);
+        self.dirty = true;
+    }
+
     /// Read-only per-difficulty quest-stat lookup - `(given, solved,
-    /// exp_given, pts_given)`, no Rust call site yet (see
-    /// [`MilitaryMasterStorage`]'s field doc comments).
+    /// exp_given, pts_given)`, wired from [`World::record_mission_
+    /// offered`] (quests_given) and [`World::complete_mission`] (the
+    /// other three) since iteration 116.
     pub fn quest_stats(&self, storage_id: i32, difficulty: usize) -> (i32, i32, i32, i32) {
         match self.entries.get(&storage_id) {
             Some(storage) => (
@@ -2020,6 +2109,27 @@ impl World {
             .and_then(|c| c.driver_state.as_mut())
         {
             data.last_clan_update += 60;
+        }
+    }
+
+    /// C `dat->storage_data.quests_given[difficulty]++;`
+    /// (`accept_mission`, `military.c:1348`) - the NPC-scoped mission-
+    /// offer statistic `PlayerRuntime::accept_mission` itself
+    /// deliberately skips (see that function's doc comment; it has no
+    /// `master_id`/`World` access). Call once per successful
+    /// [`AcceptMissionOutcome::Accepted`], mirroring C calling this
+    /// unconditionally at the end of `accept_mission` (which itself only
+    /// runs after every rejection branch has already returned). A no-op
+    /// if `master_id` isn't a live `CDR_MILITARY_MASTER` NPC.
+    pub fn record_mission_offered(&mut self, master_id: CharacterId, difficulty: usize) {
+        if let Some(CharacterDriverState::MilitaryMaster(data)) = self
+            .characters
+            .get(&master_id)
+            .and_then(|c| c.driver_state.as_ref())
+        {
+            let storage_id = data.storage_id;
+            self.military_master_storage
+                .add_quests_given(storage_id, difficulty);
         }
     }
 }

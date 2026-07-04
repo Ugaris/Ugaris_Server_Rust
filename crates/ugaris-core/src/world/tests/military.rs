@@ -650,7 +650,7 @@ fn complete_mission_no_active_mission_is_a_no_op() {
     world.add_character(player_char);
     let mut player = PlayerRuntime::connected(1, 0);
 
-    let result = world.complete_mission(CharacterId(1), &mut player, 0);
+    let result = world.complete_mission(CharacterId(1), &mut player, 0, CharacterId(999));
 
     assert_eq!(result, CompleteMissionResult::NoActiveMission);
     assert!(world.drain_pending_system_texts().is_empty());
@@ -673,7 +673,7 @@ fn complete_mission_awards_exp_and_points_for_non_mercenary() {
     player.set_military_solved_mission(true);
     player.set_military_mission(0, demon_mission(10, 10));
 
-    let result = world.complete_mission(CharacterId(1), &mut player, 0);
+    let result = world.complete_mission(CharacterId(1), &mut player, 0, CharacterId(999));
 
     let CompleteMissionResult::Completed(outcome) = result else {
         panic!("expected Completed, got {result:?}");
@@ -715,7 +715,7 @@ fn complete_mission_awards_gold_bonus_for_mercenary() {
     player.set_military_solved_mission(true);
     player.set_military_mission(0, demon_mission(100, 10));
 
-    let result = world.complete_mission(CharacterId(1), &mut player, 0);
+    let result = world.complete_mission(CharacterId(1), &mut player, 0, CharacterId(999));
 
     let CompleteMissionResult::Completed(outcome) = result else {
         panic!("expected Completed, got {result:?}");
@@ -749,7 +749,7 @@ fn complete_mission_promotes_and_queues_feedback() {
     // pts + pts/2 = 15 -> military_points = 15 -> cbrt(15) = rank 2.
     player.set_military_mission(0, demon_mission(10, 0));
 
-    let result = world.complete_mission(CharacterId(1), &mut player, 0);
+    let result = world.complete_mission(CharacterId(1), &mut player, 0, CharacterId(999));
 
     let CompleteMissionResult::Completed(outcome) = result else {
         panic!("expected Completed, got {result:?}");
@@ -2603,4 +2603,136 @@ fn process_clan_recommendation_allows_a_different_player_after_another_was_recom
 
     assert!(second_outcome.is_some());
     assert_eq!(second_player.military_current_pts(), 5);
+}
+
+//-----------------------
+// Military Master NPC-scoped quest statistics: `World::record_mission_
+// offered` (`accept_mission`'s `quests_given[difficulty]++`,
+// `military.c:1348`) and `World::complete_mission`'s `quests_solved`/
+// `pts_given`/`exp_given[difficulty]` bumps (`military.c:1382,1407,1411`).
+
+// C: `dat->storage_data.quests_given[difficulty]++;` - called once per
+// successful mission acceptance, keyed by the accepting NPC's own
+// `storage_id`.
+#[test]
+fn record_mission_offered_increments_quests_given_for_its_difficulty() {
+    let mut world = World::default();
+    assert!(world.spawn_character(master_npc_with_storage(1, 7), 10, 10));
+
+    world.record_mission_offered(CharacterId(1), 2);
+    world.record_mission_offered(CharacterId(1), 2);
+    world.record_mission_offered(CharacterId(1), 0);
+
+    assert_eq!(
+        world.military_master_storage.quest_stats(7, 2),
+        (2, 0, 0, 0)
+    );
+    assert_eq!(
+        world.military_master_storage.quest_stats(7, 0),
+        (1, 0, 0, 0)
+    );
+}
+
+// A `master_id` with no live `CDR_MILITARY_MASTER` driver state is a
+// silent no-op (mirrors every other storage-scoped `World` method's own
+// guard in this module).
+#[test]
+fn record_mission_offered_is_a_no_op_for_a_non_master_character() {
+    let mut world = World::default();
+    world.add_character(character(1));
+
+    world.record_mission_offered(CharacterId(1), 0);
+
+    assert_eq!(
+        world.military_master_storage.quest_stats(0, 0),
+        (0, 0, 0, 0)
+    );
+}
+
+// C `complete_mission`: `quests_solved[difficulty]++`, `pts_given[
+// difficulty] += mis[difficulty].pts` (the mission's raw point *cost*,
+// not the larger formula-adjusted `military_pts_awarded`), `exp_given[
+// difficulty] += mis[difficulty].exp`.
+#[test]
+fn complete_mission_records_quest_stats_on_its_master_npc() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    assert!(world.spawn_character(master_npc_with_storage(2, 9), 10, 10));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_took_mission(3); // difficulty 2
+    player.set_military_solved_mission(true);
+    player.set_military_mission(2, demon_mission(20, 40));
+
+    let result = world.complete_mission(CharacterId(1), &mut player, 0, CharacterId(2));
+
+    let CompleteMissionResult::Completed(outcome) = result else {
+        panic!("expected Completed, got {result:?}");
+    };
+    assert_eq!(outcome.difficulty, 2);
+
+    // (quests_given, quests_solved, exp_given, pts_given)
+    assert_eq!(
+        world.military_master_storage.quest_stats(9, 2),
+        (0, 1, 40, 20)
+    );
+}
+
+// A second completion at a different difficulty accumulates
+// independently, and the counters are keyed per-`storage_id` (a
+// different Master NPC's own blob stays untouched).
+#[test]
+fn complete_mission_accumulates_stats_across_difficulties_and_keeps_npcs_independent() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    assert!(world.spawn_character(master_npc_with_storage(2, 9), 10, 10));
+    assert!(world.spawn_character(master_npc_with_storage(3, 40), 11, 10));
+
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_took_mission(1); // difficulty 0
+    player.set_military_solved_mission(true);
+    player.set_military_mission(0, demon_mission(10, 10));
+    let _ = world.complete_mission(CharacterId(1), &mut player, 0, CharacterId(2));
+
+    player.set_military_took_mission(2); // difficulty 1
+    player.set_military_solved_mission(true);
+    player.set_military_mission(1, demon_mission(5, 8));
+    let _ = world.complete_mission(CharacterId(1), &mut player, 0, CharacterId(2));
+
+    assert_eq!(
+        world.military_master_storage.quest_stats(9, 0),
+        (0, 1, 10, 10)
+    );
+    assert_eq!(
+        world.military_master_storage.quest_stats(9, 1),
+        (0, 1, 8, 5)
+    );
+    // The other Master NPC's storage_id (40) was never touched.
+    assert_eq!(
+        world.military_master_storage.quest_stats(40, 0),
+        (0, 0, 0, 0)
+    );
+}
+
+// A `master_id` with no live `CDR_MILITARY_MASTER` driver state is a
+// silent no-op for the stats bump - `complete_mission`'s own character/
+// exp/points mutation still applies normally.
+#[test]
+fn complete_mission_stats_are_a_no_op_for_a_non_master_character() {
+    let mut world = World::default();
+    world.add_character(character(1));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_military_took_mission(1);
+    player.set_military_solved_mission(true);
+    player.set_military_mission(0, demon_mission(10, 10));
+
+    let result = world.complete_mission(CharacterId(1), &mut player, 0, CharacterId(999));
+
+    let CompleteMissionResult::Completed(outcome) = result else {
+        panic!("expected Completed, got {result:?}");
+    };
+    assert_eq!(outcome.exp_awarded, 10);
+    assert_eq!(
+        world.military_master_storage.quest_stats(0, 0),
+        (0, 0, 0, 0)
+    );
 }

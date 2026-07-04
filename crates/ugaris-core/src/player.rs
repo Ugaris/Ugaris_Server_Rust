@@ -2700,8 +2700,11 @@ impl PlayerRuntime {
     /// literal `0`-`4` - this trusts the caller the same way
     /// `military_mission`/`check_military_solve` already do). `yday` is
     /// C's global `yday` (`World.date.yday`). Skips `dat->storage_data.
-    /// quests_given[difficulty]++` (the NPC-scoped mission-offer counter)
-    /// and the `say()` text itself - the caller renders
+    /// quests_given[difficulty]++` (the NPC-scoped mission-offer counter -
+    /// this method has no `World`/`master_id` access; the caller should
+    /// invoke `crate::world::World::record_mission_offered` itself on
+    /// `Accepted`, see that function's doc comment) and the `say()` text
+    /// itself - the caller renders
     /// `crate::world::AcceptMissionOutcome` into the exact wording once
     /// the Military Master NPC driver lands (see `crate::world::military`'s
     /// module doc).
