@@ -816,6 +816,59 @@ pub const QUEST_TABLE: [QuestMeta; 85] = [
 /// C `questlog[qnr]` lookup - `None` for `qnr >= QUEST_TABLE.len()` (indices
 /// `85..MAX_QUESTS` have no metadata in C either; nothing in the ported
 /// tree references them).
+/// C `src/common/quest_exp.h`: per-encounter exp/money constants handed to
+/// `give_exp`/`give_military_pts`/`create_money_item` by individual area
+/// NPC drivers (not by `questlog.c` itself - none of these are read
+/// anywhere in this file). Copied digit for digit; kept here since this is
+/// the quest-adjacent home for quest reward constants until the P4 area
+/// driver tasks that actually consume them land (`EXP_AREA15_HARDKILL`
+/// and `EXP_AREA3_SHRINE` are the only two used in the C source today -
+/// every other `EXP_AREA*` define is dead code in C too, and the
+/// `MONEY_AREA*` ones feed `create_money_item` calls in area drivers that
+/// aren't ported yet either).
+pub mod quest_exp {
+    pub const EXP_AREA1_SKULL1: i64 = 75;
+    pub const EXP_AREA1_SKULL2: i64 = 150;
+    pub const EXP_AREA1_SKULL3: i64 = 300;
+    pub const EXP_AREA1_JESTER: i64 = 400;
+    pub const EXP_AREA1_SKULL4: i64 = 800;
+    pub const EXP_AREA1_BEARTOOTH: i64 = 600;
+    pub const EXP_AREA1_MADMAGE1: i64 = 800;
+    pub const EXP_AREA1_MADMAGE2: i64 = 900;
+    pub const EXP_AREA1_MADKNIGHT: i64 = 1200;
+    pub const EXP_AREA1_GUILD: i64 = 1250;
+
+    pub const EXP_AREA3_SKULL1: i64 = 850;
+    pub const EXP_AREA3_SKULL2: i64 = 1000;
+    pub const EXP_AREA3_SKULL3: i64 = 1250;
+    pub const EXP_AREA3_LOISAN: i64 = 1500;
+
+    pub const EXP_AREA3_CREEPER: i64 = 1850;
+    /// Per shrine, 3 total (C comment preserved verbatim).
+    pub const EXP_AREA3_SHRINE: i64 = 1500;
+    pub const EXP_AREA3_MOONIES: i64 = 5000;
+    /// 50% bonus if no money (C comment preserved verbatim).
+    pub const EXP_AREA2_VAMPIRE1: i64 = 5000;
+    pub const EXP_AREA2_VAMPIRE2: i64 = 12000;
+    pub const EXP_AREA3_REACHCLARA: i64 = 2500;
+    pub const EXP_AREA15_HARDKILL: i64 = 7500;
+    pub const EXP_AREA15_DIDKILL: i64 = 22500;
+    pub const EXP_AREA16_BEARKILL: i64 = 12500;
+    pub const EXP_AREA16_MANTIS: i64 = 15000;
+    pub const EXP_AREA16_SPIDERKILL: i64 = 25000;
+
+    pub const MONEY_AREA1_SKULL1: i64 = 125;
+    pub const MONEY_AREA1_SKULL2: i64 = 250;
+    pub const MONEY_AREA1_SKULL3: i64 = 400;
+    pub const MONEY_AREA1_SKULL4: i64 = 600;
+    pub const MONEY_AREA1_BEARTOOTH: i64 = 500;
+    pub const MONEY_AREA1_MADMAGE1: i64 = 250;
+    pub const MONEY_AREA1_MADMAGE2: i64 = 500;
+    pub const MONEY_AREA1_MADKNIGHT: i64 = 550;
+    pub const MONEY_AREA3_MOONIES: i64 = 2500;
+    pub const MONEY_AREA3_VAMPIRE1: i64 = 2500;
+}
+
 pub fn quest_meta(qnr: usize) -> Option<&'static QuestMeta> {
     QUEST_TABLE.get(qnr)
 }
@@ -1733,6 +1786,49 @@ mod tests {
         assert_eq!(QF_DONE, 2);
         assert_eq!(QLF_REPEATABLE, 1);
         assert_eq!(QLOG_JESSICA_KILL, 84);
+    }
+
+    #[test]
+    fn quest_exp_constants_match_c_header() {
+        use quest_exp::*;
+
+        // `src/common/quest_exp.h`, copied digit for digit.
+        assert_eq!(EXP_AREA1_SKULL1, 75);
+        assert_eq!(EXP_AREA1_SKULL2, 150);
+        assert_eq!(EXP_AREA1_SKULL3, 300);
+        assert_eq!(EXP_AREA1_JESTER, 400);
+        assert_eq!(EXP_AREA1_SKULL4, 800);
+        assert_eq!(EXP_AREA1_BEARTOOTH, 600);
+        assert_eq!(EXP_AREA1_MADMAGE1, 800);
+        assert_eq!(EXP_AREA1_MADMAGE2, 900);
+        assert_eq!(EXP_AREA1_MADKNIGHT, 1200);
+        assert_eq!(EXP_AREA1_GUILD, 1250);
+        assert_eq!(EXP_AREA3_SKULL1, 850);
+        assert_eq!(EXP_AREA3_SKULL2, 1000);
+        assert_eq!(EXP_AREA3_SKULL3, 1250);
+        assert_eq!(EXP_AREA3_LOISAN, 1500);
+        assert_eq!(EXP_AREA3_CREEPER, 1850);
+        assert_eq!(EXP_AREA3_SHRINE, 1500);
+        assert_eq!(EXP_AREA3_MOONIES, 5000);
+        assert_eq!(EXP_AREA2_VAMPIRE1, 5000);
+        assert_eq!(EXP_AREA2_VAMPIRE2, 12000);
+        assert_eq!(EXP_AREA3_REACHCLARA, 2500);
+        assert_eq!(EXP_AREA15_HARDKILL, 7500);
+        assert_eq!(EXP_AREA15_DIDKILL, 22500);
+        assert_eq!(EXP_AREA16_BEARKILL, 12500);
+        assert_eq!(EXP_AREA16_MANTIS, 15000);
+        assert_eq!(EXP_AREA16_SPIDERKILL, 25000);
+
+        assert_eq!(MONEY_AREA1_SKULL1, 125);
+        assert_eq!(MONEY_AREA1_SKULL2, 250);
+        assert_eq!(MONEY_AREA1_SKULL3, 400);
+        assert_eq!(MONEY_AREA1_SKULL4, 600);
+        assert_eq!(MONEY_AREA1_BEARTOOTH, 500);
+        assert_eq!(MONEY_AREA1_MADMAGE1, 250);
+        assert_eq!(MONEY_AREA1_MADMAGE2, 500);
+        assert_eq!(MONEY_AREA1_MADKNIGHT, 550);
+        assert_eq!(MONEY_AREA3_MOONIES, 2500);
+        assert_eq!(MONEY_AREA3_VAMPIRE1, 2500);
     }
 
     #[test]

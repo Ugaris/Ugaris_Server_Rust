@@ -2210,26 +2210,40 @@ Unlocks every quest NPC. Do these before any P4 area work.
 
 ## P3 - World Systems
 
-- [~] **Questlog initialization & quest state machine**
+- [x] **Questlog initialization & quest state machine**
   (`src/system/questlog.c`) - quest open/done transitions driven by NPC
   dialogue flags, `sendquestlog` on change (packet already ported), exp
   rewards per quest (`quest_exp.h`). Port the quest table + the
   `questlog_open/done` helpers; wire the already-ported `CL_REOPENQUEST`
   reset side effects per area.
-  REMAINING: `questlog_init` is now called unconditionally on every login
-  (new character, DB-loaded, and reclaimed-lostcon paths all converge on
-  one call site in `main.rs`'s `SessionEvent::Login` handler, matching C
-  `login_ok`'s unconditional `questlog_init(cn)`), and the full
-  `questlog_reopen`/`questlog_reopen_qN` per-area reset side-effect switch
-  is now ported too (see iteration 63 log below) - but
-  `init_area1_quests`/`init_area3_quests`/`init_staff_quests`/
-  `init_twocity_quests`/`init_nomad_quests` still can't observe real state
-  changes since the area NPC drivers themselves aren't ported (P4 area
-  content). `quest_exp.h`'s per-encounter exp/money constants (used by NPC
-  drivers that don't exist yet) are also not ported. No NPC dialogue
-  driver calls `QuestLog::open`/`complete_legacy` yet either, for the same
-  reason. The `ACHIEVEMENT_QUESTER` award on successful `CL_REOPENQUEST`
-  is skipped pending the separate "Achievements" P3 task below.
+  CLOSED (iteration 64): every function this task's own description names
+  is ported and wired into a live call site - `QUEST_TABLE`, the quest
+  table metadata, `QuestLog::open`/`close`/`complete_legacy` (`questlog_
+  open`/`questlog_close`/`questlog_done`), `PlayerRuntime::init_questlog`
+  (called unconditionally on every login), and `PlayerRuntime::
+  reopen_quest_legacy` (the full `CL_REOPENQUEST` per-area switch). This
+  iteration closed the last named gap, `quest_exp.h`'s per-encounter
+  exp/money constants, as `crate::quest::quest_exp` (see Progress Log).
+  What remains unported all belongs to *other*, already-tracked tasks
+  rather than this one: (1) `init_area1_quests`/`init_area3_quests`/
+  `init_staff_quests`/`init_twocity_quests`/`init_nomad_quests` can't
+  observe real state changes and no driver calls `QuestLog::open`/
+  `complete_legacy`/reads `quest_exp` until the P4 "Area 1"/"Area 2"/
+  etc. character-driver tasks below port the NPC dialogue that drives
+  them; (2) `ACHIEVEMENT_QUESTER` on `CL_REOPENQUEST` success is gated on
+  the separate "Achievements" P3 task directly below; (3) `questlog.c`'s
+  trailing `destroy_item_byID`/`remove_item_from_body_bg`/`destroy_item_
+  from_body` helpers (`questlog.c:1630-1703`, only ever called by area
+  NPC drivers to clean up quest items) remain unported too - they need a
+  Rust model of the legacy per-character `DRD_DEPOT_PPD` block (no
+  equivalent exists; `ugaris-server::depot`'s `AccountDepotState` is an
+  unrelated, newer system) and `destroy_item_from_body` additionally
+  depends on real cross-server IPC (`server_chat` in this C function is a
+  cross-node broadcast; the Rust `server_chat` is a same-server chat-
+  channel fanout only, per `world/death.rs`'s documented cross-server-
+  transfer-is-out-of-scope precedent) - whichever P4 area task first
+  needs one of these three helpers should port them together with the
+  legacy depot PPD at that point.
   Progress Log: ported the C `struct questlog questlog[]` metadata table
   (85 entries, name/level-range/giver/area/nominal-exp/flags incl.
   `QLF_XREPEAT`, copied digit-for-digit including the two trailing-space
@@ -2434,6 +2448,40 @@ Unlocks every quest NPC. Do these before any P4 area work.
   net + 33 protocol + 406 server, all green, zero failures), `cargo build
   -p ugaris-server` clean with zero warnings, and a 10s boot-smoke showed
   "entering Rust game loop" with no panics.
+  Progress Log (iteration 64, task closed): ported the last item this
+  task's own description named as in-scope, `src/common/quest_exp.h`'s
+  34 per-encounter exp/money constants (`EXP_AREA1_SKULL1` .. `EXP_
+  AREA16_SPIDERKILL`, `MONEY_AREA1_SKULL1` .. `MONEY_AREA3_VAMPIRE1`),
+  copied digit for digit into a new `crate::quest::quest_exp` module
+  (`crates/ugaris-core/src/quest.rs`) with a doc comment noting that only
+  2 of the 34 (`EXP_AREA15_HARDKILL`, `EXP_AREA3_SHRINE`) are actually
+  referenced anywhere in the C source today - the rest are dead code in
+  C too, not just "not ported yet". No consumer exists in Rust yet either
+  (same P4-area-driver gate as the rest of this task), so this is data-
+  only; added 1 new test (`quest_exp_constants_match_c_header`) asserting
+  every constant against the C header to guard against silent drift.
+  Verified line-by-line against `questlog.c` that every other function in
+  the file is already ported: `questlog_open`/`close`/`scale`/`done`/
+  `count`/`isdone` (-> `QuestLog::open`/`close`/`complete_legacy`/
+  `mark_done`/`count`/`is_done`), all 24 `questlog_reopen_qN` helpers plus
+  the outer switch (-> `reopen_dispatch`, iteration 63), and `questlog_
+  init`/all five `questlog_init_*` (-> `PlayerRuntime::init_questlog`,
+  iteration 62-63, called from `main.rs`'s login handler). The only
+  unported leftovers are the file's trailing, quest-adjacent-only-by-
+  file-location `destroy_item_byID`/`remove_item_from_body_bg`/`destroy_
+  item_from_body` helpers (`questlog.c:1630-1703`) - deliberately left
+  for whichever P4 area task first needs them, since they require a
+  legacy `DRD_DEPOT_PPD` Rust model that doesn't exist and (for
+  `destroy_item_from_body`) real cross-server IPC that this codebase has
+  explicitly scoped out elsewhere (see the task's CLOSED note above for
+  detail). Marked the task `[x]`: every action item in its own
+  description is done, and everything else is already tracked by the
+  "Achievements" P3 task and the P4 "Area 1"/etc. tasks below. `cargo fmt
+  --all`, `cargo test --workspace` (1345 ugaris-core [+1] + 36 db + 3 net
+  + 33 protocol + 406 server, all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, and a 10s boot-smoke showed
+  ticking with no panics (data-only change, doesn't touch the runtime
+  loop/login/map sync/protocol).
 
 - [ ] **Achievements (`src/module/achievements/achievement.c`)** - runtime
   markers partially exist (chests, transport). Port the achievement
