@@ -467,16 +467,22 @@ pub(crate) fn apply_bank_events(runtime: &mut ServerRuntime, world: &mut World) 
     applied
 }
 
-/// C `trader_driver`'s "show trade" (`src/module/base.c:443-465`) and
-/// `NT_GIVE` cross-notify (`base.c:496-523`) item-look output, deferred
-/// half: applies each [`TraderEvent`] queued by `World::process_trader_actions`
-/// (see `world/trader.rs`'s module doc comment for why - `legacy_item_look_text`
-/// lives in this crate, not `ugaris-core`) by formatting each item with
-/// `legacy_item_look_text` and queuing the resulting lines as system text
-/// to the requesting player, mirroring `apply_bank_events`'s shape (no
-/// `ServerRuntime` needed here since neither event touches
+/// C `trader_driver`'s "show trade" (`src/module/base.c:443-465`),
+/// `NT_GIVE` cross-notify (`base.c:496-523`) item-look output, and the
+/// "accept trade" success branch's Trust But Verify achievement award
+/// (`base.c:4420-4428`): applies each [`TraderEvent`] queued by
+/// `World::process_trader_actions` (see `world/trader.rs`'s module doc
+/// comment for why the first two need `legacy_item_look_text`, which lives
+/// in this crate, not `ugaris-core`) by formatting each item and queuing
+/// the resulting lines as system text to the requesting player, mirroring
+/// `apply_bank_events`'s shape - `runtime`/`repository` are only touched by
+/// the `DealCompleted` branch (`ShowTrade`/`ItemAddedToTrade` don't touch
 /// `PlayerRuntime`).
-pub(crate) fn apply_trader_events(world: &mut World) -> usize {
+pub(crate) async fn apply_trader_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+) -> usize {
     let mut applied = 0;
     for event in world.drain_pending_trader_events() {
         match event {
@@ -523,6 +529,10 @@ pub(crate) fn apply_trader_events(world: &mut World) -> usize {
                         world.queue_system_text(notify_id, line.to_string());
                     }
                 }
+                applied += 1;
+            }
+            TraderEvent::DealCompleted { c1_id, c2_id } => {
+                award_trader_deal_achievement(world, runtime, repository, c1_id, c2_id).await;
                 applied += 1;
             }
         }

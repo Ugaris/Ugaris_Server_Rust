@@ -2526,15 +2526,48 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 80,
+      "startedAt": "2026-07-04T11:00:22.191Z",
+      "endedAt": "2026-07-04T11:18:54.172Z",
+      "durationMs": 1111391,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/tests/trader.rs",
+        "crates/ugaris-core/src/world/trader.rs",
+        "crates/ugaris-server/src/achievement.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/achievement.rs",
+        "crates/ugaris-server/src/world_events.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All green, zero failures, zero warnings. This satisfies the iteration's scope: a self-contained, tested slice of the in-progress Achievements task, with paperwork updated. The task remains `[~]` since",
+        "test result: ok. 470 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Text: {\"filePath\": \"/home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/w",
+        "Error message: JSON Parse error: Property name must be a string literal",
+        "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 1376 filtered out; finished in 0.01s",
+        "test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.01s",
+        "test result: ok. 473 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
+        "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 86286729,
+  "totalDurationMs": 87398120,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 79,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 80,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -2556,8 +2589,8 @@
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
       "Verified: `cargo fmt --all` (clean), `cargo test --workspace` (1035+9+3+31+327 passed, 0 failed), `c": 1,
-      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 29,
-      "Error message: JSON Parse error: Property name must be a string literal": 25,
+      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 30,
+      "Error message: JSON Parse error: Property name must be a string literal": 26,
       "assertion failed: saved.flags.contains(CharacterFlags::ALIVE)": 1,
       "test result: FAILED. 1034 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1035 filtered out; finished in 0.00s": 1,
@@ -2881,17 +2914,22 @@
       "test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 1,
       "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
-      "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error; 1 warning em": 1,
       "**Verification:** `cargo fmt --all`, `cargo test --workspace` (1396 core + 38 db + 3 net + 37 protoc": 1,
-      "test result: ok. 470 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 2,
+      "test result: ok. 470 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 3,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 46 previous errors": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 38 previous errors": 2,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 21 previous errors": 1,
       "test result: ok. 470 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` green (1396 ugaris-core + 38 db ": 1,
-      "2123:  Progress Log (iteration 53): wired `enter_test`'s validation-failure": 1
+      "2123:  Progress Log (iteration 53): wired `enter_test`'s validation-failure": 1,
+      "All green, zero failures, zero warnings. This satisfies the iteration's scope: a self-contained, tes": 1,
+      "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 1376 filtered out; finished in 0.01s": 1,
+      "test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.01s": 1,
+      "test result: ok. 473 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -31,9 +31,11 @@
 //!   replicated - the gatekeeper NPC/lab room concept is not ported yet
 //!   (see `PORTING_TODO.md`'s "Gatekeeper NPC" task).
 //! - The successful "Deal." branch's `achievement_award(...,
-//!   ACHIEVEMENT_TRUST_BUT_VERIFY, 1)` calls are not replicated -
-//!   achievements are not ported yet (`PORTING_TODO.md`'s "Achievements"
-//!   task).
+//!   ACHIEVEMENT_TRUST_BUT_VERIFY, 1)` calls are queued as
+//!   [`TraderEvent::DealCompleted`] and applied in `ugaris-server` (see
+//!   that crate's `world_events.rs::apply_trader_events` and
+//!   `achievement.rs::award_trader_deal_achievement`), since awarding
+//!   needs `ServerRuntime`'s `PlayerRuntime` map.
 //! - `give_char_item`'s `dlog(cn, in, "was given %s from NPC", ...)` audit
 //!   log line is not replicated (no generic "was given from NPC" audit
 //!   log path exists yet, matching precedent elsewhere in this codebase).
@@ -100,6 +102,18 @@ pub enum TraderEvent {
         notify_id: CharacterId,
         giver_name: String,
         item_id: ItemId,
+    },
+    /// C `trader_driver`'s "accept trade" success branch (`base.c:4416-
+    /// 4428`): once both sides have accepted, `achievement_award(c1,
+    /// ACHIEVEMENT_TRUST_BUT_VERIFY, 1)`/`achievement_award(c2_trader,
+    /// ACHIEVEMENT_TRUST_BUT_VERIFY, 1)` fire for both traders. Deferred
+    /// to `ugaris-server` because awarding needs `ServerRuntime`'s
+    /// `PlayerRuntime` map, which `ugaris-core` doesn't have access to
+    /// (same reason `world/death.rs`'s `KillAchievementAward` queue
+    /// exists).
+    DealCompleted {
+        c1_id: CharacterId,
+        c2_id: CharacterId,
     },
 }
 
@@ -375,6 +389,12 @@ impl World {
                     self.trader_return_items(data, true);
                     self.npc_quiet_say(trader_id, "Deal.");
                     *face_target = Some(speaker_pos);
+                    // C: "Award Trust But Verify achievement to both
+                    // traders" (`base.c:4420-4428`).
+                    if let (Some(c1_id), Some(c2_id)) = (data.c1_id, data.c2_id) {
+                        self.pending_trader_events
+                            .push(TraderEvent::DealCompleted { c1_id, c2_id });
+                    }
                     data.state = 0;
                     data.c1_ok = false;
                     data.c2_ok = false;

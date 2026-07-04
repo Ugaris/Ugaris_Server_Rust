@@ -2997,6 +2997,58 @@ Unlocks every quest NPC. Do these before any P4 area work.
   "entering Rust game loop" with no panics (touches the tick loop's
   command-dispatch call site for `/achievements`/`/achstats`/`/achgive`/
   `/achfix`/`/achclear`/`/achsync`).
+  Progress Log (iteration 80): closed the "Trader deal" gameplay call site
+  - C `trader_driver`'s "accept trade" success branch (`src/module/
+  base.c:4416-4428`): once both sides accept, `achievement_award(c1,
+  ACHIEVEMENT_TRUST_BUT_VERIFY, 1)`/`achievement_award(c2_trader,
+  ACHIEVEMENT_TRUST_BUT_VERIFY, 1)` fire independently for both traders.
+  The Trader NPC's full trade state machine (`crates/ugaris-core/src/
+  world/trader.rs`) was already fully ported except this one achievement
+  call, explicitly noted as deferred in that file's module doc comment.
+  Added `TraderEvent::DealCompleted { c1_id, c2_id }` (`world/trader.rs`),
+  pushed in the same "both sides accepted" branch that already calls
+  `trader_return_items`/says "Deal." - mirrors the existing `ShowTrade`/
+  `ItemAddedToTrade` deferred-event pattern the module already uses for
+  cross-crate concerns. Added `award_trader_deal_achievement`/
+  `award_single_trader_achievement` (`crates/ugaris-server/src/
+  achievement.rs`) - since C calls the bare `achievement_award` primitive
+  directly here (no stat-based `achievement_add_*` helper exists for
+  `TRUST_BUT_VERIFY`), the new helper calls `AccountAchievements::award`
+  directly for each of the two characters (same generic primitive
+  `main.rs`'s pre-existing `Quester` award call site uses), sends the
+  unlock packet, and records the DB first-unlock/grats-announce tail -
+  independently no-op-safe per side if either character has no live
+  `PlayerRuntime` (mirrors C's per-side `find_char_byID` null check).
+  Converted `apply_trader_events` (`crates/ugaris-server/src/
+  world_events.rs`) to an `async fn` taking `runtime`/`repository`
+  parameters (previously only `world`, matching `apply_bank_events`'s
+  existing shape) to consume the new `DealCompleted` event; updated the
+  one call site in `main.rs`'s tick loop to pass `&mut runtime`/
+  `&achievement_repository` and `.await` it - no surrounding refactor
+  needed since the tick loop already runs inside `async fn main`. Added 2
+  core tests (`crates/ugaris-core/src/world/tests/trader.rs`: the
+  existing full-deal test now also asserts the queued `DealCompleted`
+  event with the correct `c1_id`/`c2_id`, plus a new test confirming a
+  one-side-only "accept trade" queues nothing) and 3 server tests
+  (`crates/ugaris-server/src/tests/achievement.rs`: both traders unlock
+  and get notified, no re-unlock on a later deal, an NPC trading partner
+  is silently skipped while the player side still unlocks). Still
+  unwired: (5)'s remaining ~12 gameplay call sites that depend on
+  unported systems (mining reward RNG - `mine.c`'s `handle_mining_result`
+  cascade itself, tracked by the "Area 12" P4 task below; professions -
+  `professor.c`, no task section yet; exploration beyond transport;
+  clans/clubs - `clan.c`/`clubmaster.c`/`area/30/clanmaster.c`'s
+  founding/join flows are entirely unported, tracked by the "Clan system"
+  P4 task below; military - tracked by "Military ranks"; tunnels; arena;
+  pentagram solve/lucky-pent reward - `pents.c`'s per-player pentagram
+  state (`pentagram_player_data`, `distribute_rewards_to_player`,
+  `handle_lucky_pentagram`) is entirely unported, tracked by the "Area 4"
+  P4 task below) - each remains gated on porting its own source system
+  first. `cargo fmt --all`, `cargo test --workspace` (1397 ugaris-core
+  [+1] + 38 db + 3 net + 37 protocol + 473 server [+3], all green, zero
+  failures), `cargo build -p ugaris-server` clean with zero warnings, and
+  a 10s boot-smoke confirmed "entering Rust game loop" with no panics
+  (touches the tick loop's trader-event-application call site).
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

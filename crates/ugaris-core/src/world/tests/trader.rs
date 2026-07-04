@@ -417,6 +417,34 @@ fn accept_trade_needs_both_sides_before_swapping_items() {
     let data = trader_state(&world, CharacterId(1));
     assert_eq!(data.state, 0);
     assert!(!data.c1_ok && !data.c2_ok);
+
+    // C: "Award Trust But Verify achievement to both traders"
+    // (`base.c:4420-4428`) - queued as a `DealCompleted` event for
+    // `ugaris-server` to apply.
+    let events = world.drain_pending_trader_events();
+    assert_eq!(
+        events,
+        vec![TraderEvent::DealCompleted {
+            c1_id: CharacterId(2),
+            c2_id: CharacterId(3),
+        }]
+    );
+}
+
+#[test]
+fn accept_trade_only_one_side_does_not_queue_deal_completed_event() {
+    let mut world = World::default();
+    assert!(world.spawn_character(started_trade_trader(1, 2, 3), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 10, 10));
+    assert!(world.spawn_character(player(3, "Egbert"), 10, 10));
+
+    if let Some(trader) = world.characters.get_mut(&CharacterId(1)) {
+        trader.push_driver_text_message(CharacterId(2), "accept trade");
+    }
+    world.process_trader_actions();
+
+    // Only one side accepted - no deal, no achievement event yet.
+    assert!(world.drain_pending_trader_events().is_empty());
 }
 
 #[test]

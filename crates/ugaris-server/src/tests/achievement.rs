@@ -1410,3 +1410,75 @@ async fn award_stone_pickup_achievement_is_a_noop_for_characters_without_a_playe
     award_stone_pickup_achievement(&mut world, &mut runtime, &None, character_id, 23).await;
     assert!(runtime.player_for_character(character_id).is_none());
 }
+
+// ============================================================================
+// `award_trader_deal_achievement` (`src/module/base.c:4416-4428`, the
+// `trader_driver` "accept trade" success branch's "Award Trust But Verify
+// achievement to both traders").
+// ============================================================================
+
+#[tokio::test]
+async fn award_trader_deal_achievement_unlocks_trust_but_verify_for_both_traders() {
+    let c1 = CharacterId(7);
+    let c2 = CharacterId(8);
+    let (mut world, mut runtime) = connected_player(c1, 1);
+    add_connected_target(&mut world, &mut runtime, c2, 2);
+
+    award_trader_deal_achievement(&mut world, &mut runtime, &None, c1, c2).await;
+
+    assert!(runtime
+        .player_for_character(c1)
+        .unwrap()
+        .achievement_data
+        .is_unlocked(AchievementType::TrustButVerify));
+    assert!(runtime
+        .player_for_character(c2)
+        .unwrap()
+        .achievement_data
+        .is_unlocked(AchievementType::TrustButVerify));
+
+    let c1_payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("c1 session should receive an unlock packet");
+    assert_eq!(c1_payloads[0][3], AchievementType::TrustButVerify as u8);
+    let c2_payloads = runtime
+        .tick_out
+        .get(&2)
+        .expect("c2 session should receive an unlock packet");
+    assert_eq!(c2_payloads[0][3], AchievementType::TrustButVerify as u8);
+}
+
+#[tokio::test]
+async fn award_trader_deal_achievement_does_not_reunlock_on_a_later_deal() {
+    let c1 = CharacterId(7);
+    let c2 = CharacterId(8);
+    let (mut world, mut runtime) = connected_player(c1, 1);
+    add_connected_target(&mut world, &mut runtime, c2, 2);
+
+    award_trader_deal_achievement(&mut world, &mut runtime, &None, c1, c2).await;
+    runtime.tick_out.clear();
+    award_trader_deal_achievement(&mut world, &mut runtime, &None, c1, c2).await;
+
+    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(runtime.tick_out.get(&2).is_none());
+}
+
+#[tokio::test]
+async fn award_trader_deal_achievement_credits_only_the_side_with_a_live_player_runtime() {
+    let c1 = CharacterId(7);
+    let c2 = CharacterId(9);
+    let (mut world, mut runtime) = connected_player(c1, 1);
+    // C2 is an NPC (no live `PlayerRuntime`) - mirrors C's `find_char_byID`
+    // returning nothing for a non-player.
+    world.add_character(login_character(c2, &login_block("Npc"), 1, 11, 10));
+
+    award_trader_deal_achievement(&mut world, &mut runtime, &None, c1, c2).await;
+
+    assert!(runtime
+        .player_for_character(c1)
+        .unwrap()
+        .achievement_data
+        .is_unlocked(AchievementType::TrustButVerify));
+    assert!(runtime.player_for_character(c2).is_none());
+}

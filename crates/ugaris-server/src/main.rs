@@ -5570,7 +5570,8 @@ async fn main() -> anyhow::Result<()> {
                 // C `trader_driver`: player-to-player trade middleman NPC
                 // (`src/module/base.c`).
                 world.process_trader_actions();
-                let trader_events_applied = apply_trader_events(&mut world);
+                let trader_events_applied =
+                    apply_trader_events(&mut world, &mut runtime, &achievement_repository).await;
                 if trader_events_applied != 0 {
                     info!(trader_events_applied, tick = world.tick.0, "applied trader item-look events");
                 }

@@ -754,6 +754,76 @@ pub(crate) async fn award_stone_pickup_achievement(
     record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
+/// Shared helper for [`award_trader_deal_achievement`]: awards `ty` to a
+/// single character via `AccountAchievements::award` (the same generic
+/// primitive `main.rs`'s `Quester` award call site uses - there is no
+/// stat-based `add_*` helper for `TrustButVerify` in C either, just a bare
+/// `achievement_award` call), sends the unlock packet to every session for
+/// that character, and records the DB first-unlock/grats-announce tail.
+/// A no-op if the character has no live `PlayerRuntime` (mirrors C's
+/// `CF_PLAYER` gate - `find_char_byID` returning nothing is C's equivalent
+/// no-op path).
+async fn award_single_trader_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    character_id: CharacterId,
+    ty: AchievementType,
+) {
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    if !player.achievement_data.award(ty, &name, now) {
+        return;
+    }
+    let payload = achievement_unlock_payload(ty, now);
+    for (sid, _) in runtime.sessions_for_character(character_id) {
+        runtime.send_to_session(sid, payload.clone());
+    }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &[ty]).await;
+}
+
+/// C `trader_driver`'s "accept trade" success branch (`src/module/
+/// base.c:4416-4428`): once both sides have accepted a trade,
+/// `achievement_award(c1, ACHIEVEMENT_TRUST_BUT_VERIFY, 1)` and
+/// `achievement_award(c2_trader, ACHIEVEMENT_TRUST_BUT_VERIFY, 1)` fire
+/// independently for both traders (C guards each with its own
+/// `find_char_byID` null check - our per-character no-op inside
+/// `award_single_trader_achievement` is the equivalent). Consumes a
+/// `TraderEvent::DealCompleted` queued by `World::process_trader_actions`.
+pub(crate) async fn award_trader_deal_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    c1_id: CharacterId,
+    c2_id: CharacterId,
+) {
+    award_single_trader_achievement(
+        world,
+        runtime,
+        repository,
+        c1_id,
+        AchievementType::TrustButVerify,
+    )
+    .await;
+    award_single_trader_achievement(
+        world,
+        runtime,
+        repository,
+        c2_id,
+        AchievementType::TrustButVerify,
+    )
+    .await;
+}
+
 /// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every
 /// achievement (all 127 defs carry a non-empty `steam_id`, so none are
 /// skipped, unlike C's defensive `if (!def->steam_id...) continue;`) into
