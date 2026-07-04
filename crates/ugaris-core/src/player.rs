@@ -161,6 +161,11 @@ pub const DRD_BANK_PPD: u32 = make_drd(DEV_ID_DB, 38 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TWOCITY_PPD: u32 = make_drd(DEV_ID_DB, 97 | PERSISTENT_PLAYER_DATA);
 pub const DRD_LAB_PPD: u32 = make_drd(DEV_ID_DB, 116 | PERSISTENT_PLAYER_DATA);
 pub const DRD_WARP_PPD: u32 = make_drd(DEV_ID_DB, 127 | PERSISTENT_PLAYER_DATA);
+/// C `#define DRD_GATE_PPD MAKE_DRD(DEV_ID_DB, 65 | PERSISTENT_PLAYER_DATA)`
+/// (`src/system/drdata.h:127`): `struct gate_ppd { int welcome_state; int
+/// target_class; int step; }` (`src/system/gatekeeper.c:221-225`), the
+/// gatekeeper welcome-dialogue/test progress carried on the player.
+pub const DRD_GATE_PPD: u32 = make_drd(DEV_ID_DB, 65 | PERSISTENT_PLAYER_DATA);
 pub const SALTMINE_LADDER_COUNT: usize = 20;
 pub const DRD_SALTMINE_PPD: u32 = make_drd(DEV_ID_MR, 13 | PERSISTENT_PLAYER_DATA);
 pub const SPECIAL_SHRINE_HCSC_CUTOFF_SECONDS: u64 = 1_411_941_600;
@@ -171,6 +176,14 @@ const WARP_PPD_POINTS_OFFSET: usize = WARP_PPD_BASE_OFFSET + 4;
 const WARP_PPD_BONUS_ID_OFFSET: usize = WARP_PPD_POINTS_OFFSET + 4;
 const WARP_PPD_BONUS_LAST_USED_OFFSET: usize = WARP_PPD_BONUS_ID_OFFSET + WARP_BONUS_COUNT * 4;
 const WARP_PPD_NOSTEPEXP_OFFSET: usize = WARP_PPD_BONUS_LAST_USED_OFFSET + WARP_BONUS_COUNT * 4;
+
+/// C `struct gate_ppd { int welcome_state; int target_class; int step; }`
+/// (`src/system/gatekeeper.c:221-225`) - three packed `int`s, matching the
+/// legacy PPD blob layout exactly.
+pub const LEGACY_GATE_PPD_SIZE: usize = 12;
+const GATE_PPD_WELCOME_STATE_OFFSET: usize = 0;
+const GATE_PPD_TARGET_CLASS_OFFSET: usize = 4;
+const GATE_PPD_STEP_OFFSET: usize = 8;
 
 pub const fn make_drd(dev_id: u32, nr: u32) -> u32 {
     (dev_id << 24) | nr
@@ -481,6 +494,23 @@ pub struct PlayerRuntime {
     #[serde(default)]
     pub warp_nostepexp: i32,
     #[serde(default)]
+    pub gate_ppd: Vec<u8>,
+    /// C `gate_ppd.welcome_state` (`src/system/gatekeeper.c:222`): the
+    /// `gate_welcome_driver` dialogue step, `0..=6`.
+    #[serde(default)]
+    pub gate_welcome_state: i32,
+    /// C `gate_ppd.target_class` (`src/system/gatekeeper.c:223`): the
+    /// class chosen for the test (`5` Arch-Warrior, `6` Arch-Mage, `7`
+    /// Arch-Seyan'Du, `8` Seyan'Du).
+    #[serde(default)]
+    pub gate_target_class: i32,
+    /// C `gate_ppd.step` (`src/system/gatekeeper.c:224`): unused by the
+    /// ported logic so far (C never reads it either - set once on
+    /// `enter_room` success and never consulted), kept for round-trip
+    /// fidelity.
+    #[serde(default)]
+    pub gate_step: i32,
+    #[serde(default)]
     pub lab_solved_bits: u64,
     #[serde(default)]
     pub lab2_grave_bits: Vec<u8>,
@@ -605,6 +635,10 @@ impl PlayerRuntime {
             warp_bonus_ids: vec![0; WARP_BONUS_COUNT],
             warp_bonus_last_used: vec![0; WARP_BONUS_COUNT],
             warp_nostepexp: 0,
+            gate_ppd: Vec::new(),
+            gate_welcome_state: 0,
+            gate_target_class: 0,
+            gate_step: 0,
             lab_solved_bits: 0,
             lab2_grave_bits: Vec::new(),
             pk_kills: 0,
@@ -1167,6 +1201,34 @@ impl PlayerRuntime {
                 read_i32(&self.warp_ppd, WARP_PPD_BONUS_LAST_USED_OFFSET + index * 4);
         }
         self.warp_nostepexp = read_i32(&self.warp_ppd, WARP_PPD_NOSTEPEXP_OFFSET);
+        true
+    }
+
+    pub fn encode_legacy_gate_ppd(&self) -> Vec<u8> {
+        let mut bytes = self.gate_ppd.clone();
+        bytes.resize(LEGACY_GATE_PPD_SIZE, 0);
+        write_i32(
+            &mut bytes,
+            GATE_PPD_WELCOME_STATE_OFFSET,
+            self.gate_welcome_state,
+        );
+        write_i32(
+            &mut bytes,
+            GATE_PPD_TARGET_CLASS_OFFSET,
+            self.gate_target_class,
+        );
+        write_i32(&mut bytes, GATE_PPD_STEP_OFFSET, self.gate_step);
+        bytes
+    }
+
+    pub fn decode_legacy_gate_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_GATE_PPD_SIZE {
+            return false;
+        }
+        self.gate_ppd = bytes[..LEGACY_GATE_PPD_SIZE].to_vec();
+        self.gate_welcome_state = read_i32(&self.gate_ppd, GATE_PPD_WELCOME_STATE_OFFSET);
+        self.gate_target_class = read_i32(&self.gate_ppd, GATE_PPD_TARGET_CLASS_OFFSET);
+        self.gate_step = read_i32(&self.gate_ppd, GATE_PPD_STEP_OFFSET);
         true
     }
 
@@ -2204,6 +2266,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_GATE_PPD => {
+                    if !self.decode_legacy_gate_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_PK_PPD => {
                     if !self.decode_legacy_pk_ppd(block.data) {
                         return false;
@@ -2332,6 +2399,7 @@ impl PlayerRuntime {
         let mut had_transport = false;
         let mut had_lab = false;
         let mut had_warp = false;
+        let mut had_gate = false;
         let mut had_pk = false;
         let mut had_randchest = false;
         let mut had_ratchest = false;
@@ -2392,6 +2460,9 @@ impl PlayerRuntime {
             } else if block.id == DRD_WARP_PPD {
                 had_warp = true;
                 write_ppd_block(&mut encoded, DRD_WARP_PPD, &self.encode_legacy_warp_ppd());
+            } else if block.id == DRD_GATE_PPD {
+                had_gate = true;
+                write_ppd_block(&mut encoded, DRD_GATE_PPD, &self.encode_legacy_gate_ppd());
             } else if block.id == DRD_PK_PPD {
                 had_pk = true;
                 write_ppd_block(&mut encoded, DRD_PK_PPD, &self.encode_legacy_pk_ppd());
@@ -2573,6 +2644,15 @@ impl PlayerRuntime {
                 || !self.warp_ppd.is_empty()
             {
                 write_ppd_block(&mut encoded, DRD_WARP_PPD, &self.encode_legacy_warp_ppd());
+            }
+        }
+        if !had_gate && (existing_was_valid || existing.is_empty()) {
+            if self.gate_welcome_state != 0
+                || self.gate_target_class != 0
+                || self.gate_step != 0
+                || !self.gate_ppd.is_empty()
+            {
+                write_ppd_block(&mut encoded, DRD_GATE_PPD, &self.encode_legacy_gate_ppd());
             }
         }
         if !had_pk && (existing_was_valid || existing.is_empty()) {
@@ -4872,6 +4952,68 @@ mod tests {
         assert_eq!(read_u32(&encoded, 0), DRD_WARP_PPD);
         assert_eq!(read_u32(&encoded, 4), LEGACY_WARP_PPD_SIZE as u32);
         assert_eq!(read_i32(&encoded, 8 + WARP_PPD_BASE_OFFSET), 40);
+    }
+
+    #[test]
+    fn gate_ppd_fixed_layout_round_trips() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.gate_welcome_state = 3;
+        player.gate_target_class = 7;
+        player.gate_step = 1;
+
+        let encoded = player.encode_legacy_gate_ppd();
+        assert_eq!(encoded.len(), LEGACY_GATE_PPD_SIZE);
+        assert_eq!(read_i32(&encoded, GATE_PPD_WELCOME_STATE_OFFSET), 3);
+        assert_eq!(read_i32(&encoded, GATE_PPD_TARGET_CLASS_OFFSET), 7);
+        assert_eq!(read_i32(&encoded, GATE_PPD_STEP_OFFSET), 1);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_gate_ppd(&encoded));
+        assert_eq!(decoded.gate_welcome_state, 3);
+        assert_eq!(decoded.gate_target_class, 7);
+        assert_eq!(decoded.gate_step, 1);
+        assert!(!decoded.decode_legacy_gate_ppd(&encoded[..7]));
+    }
+
+    #[test]
+    fn gate_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 22 | PERSISTENT_PLAYER_DATA);
+        let mut existing_gate = vec![0; LEGACY_GATE_PPD_SIZE];
+        write_i32(&mut existing_gate, GATE_PPD_WELCOME_STATE_OFFSET, 2);
+
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[1, 2, 3, 4]);
+        write_ppd_block(&mut existing, DRD_GATE_PPD, &existing_gate);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.gate_welcome_state = 6;
+        player.gate_target_class = 8;
+        player.gate_step = 1;
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_GATE_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_GATE_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 20 + GATE_PPD_WELCOME_STATE_OFFSET), 6);
+        assert_eq!(read_i32(&encoded, 20 + GATE_PPD_TARGET_CLASS_OFFSET), 8);
+        assert_eq!(read_i32(&encoded, 20 + GATE_PPD_STEP_OFFSET), 1);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.gate_welcome_state, 6);
+        assert_eq!(decoded.gate_target_class, 8);
+        assert_eq!(decoded.gate_step, 1);
+    }
+
+    #[test]
+    fn ppd_blob_appends_gate_without_existing_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.gate_welcome_state = 1;
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_GATE_PPD);
+        assert_eq!(read_u32(&encoded, 4), LEGACY_GATE_PPD_SIZE as u32);
+        assert_eq!(read_i32(&encoded, 8 + GATE_PPD_WELCOME_STATE_OFFSET), 1);
     }
 
     #[test]

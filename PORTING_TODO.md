@@ -1868,9 +1868,50 @@ Unlocks every quest NPC. Do these before any P4 area work.
   with zero warnings, and a 12s boot-smoke showed "entering Rust game
   loop" with no panics.
 
-- [ ] **Gatekeeper NPC (`src/system/gatekeeper.c`)** - lab entrance
+- [~] **Gatekeeper NPC (`src/system/gatekeeper.c`)** - lab entrance
   dialogue/fight driver. The lab item drivers are ported; this is the
   character in front. Depends on text analysis + memory.
+  REMAINING: `World`/tick-loop wiring is not done yet (no NPC actually
+  talks in-game). Specifically still needed: (1) `enter_room`/`enter_test`
+  side effects - `take_money`, spawning the `gatekeeper_w`/`_m`/`_s`
+  opponent via `loader.instantiate_character_template` (modeled on
+  `crates/ugaris-server/src/spawns.rs::spawn_swampspawn_character`), the
+  9-room-slot busy/refund search, teleporting the player and stripping
+  spells/items; (2) `World::process_gate_welcome_actions()` (modeled on
+  `World::process_trader_actions`) to actually call
+  `gate_welcome_dialogue_step`/`GATEKEEPER_QA` from the tick loop and
+  `say()` the result; (3) `gate_fight_driver`'s combat loop (reuse
+  `world/npc_fight.rs` helpers) and `gate_fight_dead`'s reward grant,
+  including `turn_seyan` (`src/system/tool.c:4278-4353`, not ported
+  anywhere yet - full character re-roll to a Seyan'Du template); (4) the
+  `NTID_GATEKEEPER` message hookup between the two NPCs.
+  Progress Log (iteration 51): ported the pure, fully-tested logic slice:
+  `CDR_GATE_WELCOME`/`CDR_GATE_FIGHT` driver-id constants; `GATEKEEPER_QA`
+  (the verbatim `qa[]` small-talk + class-choice-code table, reusing the
+  existing `analyse_text_qa` engine); `gate_welcome_dialogue_step` (a pure
+  state machine faithfully reproducing `gate_welcome_driver`'s
+  `welcome_state` switch at `gatekeeper.c:475-542`, including its C
+  fallthrough quirk where the "fast path" - lab never needed - and the
+  "slow path" - lab satisfied on a later call - land on different
+  terminal states, `6` vs `5`, and only the slow path shows the `case 5`
+  "name the class" message); `gate_welcome_state_after_repeat`;
+  `gate_enter_test_precheck`/`gate_class_choice_is_valid` (the
+  `enter_test` class-eligibility and carried-item-count preconditions,
+  excluding money/room-search side effects); and a `DRD_GATE_PPD`-shaped
+  PPD block (`gate_ppd`/`gate_welcome_state`/`gate_target_class`/
+  `gate_step` fields + encode/decode, modeled on the existing
+  `DRD_WARP_PPD` fixed-layout block pattern) in
+  `crates/ugaris-core/src/player.rs`. Ledger section "Gatekeeper NPC".
+  Tests: 9 new tests in `character_driver.rs` (QA table word/code
+  coverage, both dialogue-state fast/slow paths, the repeat-reset
+  boundary, and full `enter_test` precondition/class-validation matrices)
+  plus 3 new tests in `player.rs` (fixed-layout round-trip, outer PPD
+  blob framing, append-without-existing-block). `cargo fmt --all`,
+  `cargo test --workspace` (1240+36+3+33+398 passed), `cargo build -p
+  ugaris-server` clean with zero warnings, and a 10s boot-smoke showed
+  "entering Rust game loop" with no panics (this change doesn't touch
+  the tick loop/login/map sync/protocol yet since nothing calls the new
+  functions).
 
 ---
 
@@ -2290,3 +2331,12 @@ Add one line per completed task: date, task, ledger section touched.
   ad-hoc `pending_area_texts` pushes onto the new helpers (fixing two
   latent format/distance bugs found along the way); ledger section
   "Ralph Loop - NPC Speech Helpers (`quiet_say`/`say`/`emote`/`murmur`)".
+- 2026-07-04: Gatekeeper NPC (P2, iteration 51, `[~]`) - ported the pure
+  dialogue/precondition logic slice from `src/system/gatekeeper.c` into
+  `crates/ugaris-core/src/character_driver.rs` (`GATEKEEPER_QA`,
+  `gate_welcome_dialogue_step`, `gate_welcome_state_after_repeat`,
+  `gate_enter_test_precheck`, `CDR_GATE_WELCOME`/`CDR_GATE_FIGHT`) and a
+  `DRD_GATE_PPD` block to `crates/ugaris-core/src/player.rs`. World/tick
+  wiring (room spawning, `turn_seyan`, fight driver, tick-loop dispatch)
+  remains - see the task's REMAINING note. Ledger section "Gatekeeper
+  NPC".

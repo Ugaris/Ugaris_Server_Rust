@@ -273,7 +273,7 @@ Current implemented slices:
 - Client-visible transient effect exposure now sends legacy-shaped `SV_CEFFECT` records and `SV_UEFFECT` used-slot masks for the currently retained Rust `EF_FIREBALL`, `EF_BALL`, `EF_STRIKE`, `EF_BURN`, `EF_PULSE`, `EF_PULSEBACK`, and character-attached `EF_MAGICSHIELD`, `EF_FLASH`, `EF_WARCRY`, `EF_BLESS`, `EF_HEAL`, `EF_FREEZE`, `EF_POTION`, and `EF_FIRERING` records. The server keeps a 64-slot per-session effect cache, reuses effect slots by legacy effect id, only retransmits changed records, clears stale slots and the used mask when effects leave visibility, deterministically reuses freed slots for newly visible effects, gates projectile/strike/pulse records by the visible diamond, gates character-attached records by the current target character position, and now sends legacy `SV_MAP01` map-effect pointer packets for visible tile effect slots during bootstrap and same-origin diffs, including clearing removed pointers, with focused protocol/server tests. Runtime retained show-effect creation is now wired for magicshield, heal, pulse/pulseback, flash, firering, bless, freeze, warcry, beyond-potion spell installation, and restored existing timed bless/freeze/warcry/potion spell timers. Remaining effect parity gaps are retained runtime creation for other less common character-attached visual call sites, explosion/mist/earth/bubble effect families, sound fan-out, and exact `hurt` side effects/death handling.
 - `IDR_PALACEKEY = 59` now dispatches from the base item-driver path for C `palace_key`: the full legacy sprite-combination table is ported, carried-only/non-character guards are preserved, no-cursor use splits already-combined parts through the `palace_key_part1` template, cursor use requires an `IID_AREA11_PALACEKEYPART`, matching parts combine symmetrically, final sprite `51014` becomes a non-use `Palace Key` with `IID_AREA11_PALACEKEY`, and cursor parts are consumed with inventory dirtying. Focused core/server-path tests cover split/combine/failure outcomes and final-key world mutation. Exact debug-number log lines/dlog parity and live area-data smoke coverage remain.
 - Area 11 `IDR_PALACEDOOR = 76` now dispatches from the palace item-driver path for C `palace_door`: player use requires a carried/cursor `IID_AREA11_PALACEKEY` and otherwise emits the legacy `You need a key to open this gate.` feedback, successful use starts the opening animation through `drdata[1] = 3`, timer callbacks advance opening frames with sprite `15196 + drdata[0]`, clear `MF_TMOVEBLOCK` when fully open, wait ten seconds, set `MF_TMOVEBLOCK` before closing, and close frames back to the dormant state with focused core/workspace tests. Remaining area 11 gaps include `IDR_ISLENADOOR`, palace guard/Islena character drivers, exact sector invalidation parity beyond dirty map state, and live palace data smoke coverage.
-- `IDR_LABENTRANCE = 101` now dispatches from the gatekeeper item-driver path for C `labentrance` / `teleport_next_lab`: `PlayerRuntime` decodes/encodes the legacy `DRD_LAB_PPD` solved-bit field while preserving the remaining lab PPD payload, the item-driver scans lab levels `0..63` exactly like C, skips solved/missing lab levels, enforces the per-lab minimum levels, returns the fixed area-22 labyrinth destinations for lab levels 10/15/20/25/30, and emits the legacy solved-all / too-low feedback through the server runtime. Focused core/server/workspace tests cover next-lab selection, solved-bit skipping, level gates, all-solved feedback boundary, and PPD blob round trips. Actual cross-area transfer execution, lab completion reward/exit creation, and full gatekeeper character-driver dialogue/fight behavior remain.
+- `IDR_LABENTRANCE = 101` now dispatches from the gatekeeper item-driver path for C `labentrance` / `teleport_next_lab`: `PlayerRuntime` decodes/encodes the legacy `DRD_LAB_PPD` solved-bit field while preserving the remaining lab PPD payload, the item-driver scans lab levels `0..63` exactly like C, skips solved/missing lab levels, enforces the per-lab minimum levels, returns the fixed area-22 labyrinth destinations for lab levels 10/15/20/25/30, and emits the legacy solved-all / too-low feedback through the server runtime. Focused core/server/workspace tests cover next-lab selection, solved-bit skipping, level gates, all-solved feedback boundary, and PPD blob round trips. Actual cross-area transfer execution, lab completion reward/exit creation, and full gatekeeper character-driver dialogue/fight behavior remain. Iteration 51: see the dedicated "Gatekeeper NPC Welcome Dialogue" section below for the character-driver-side dialogue/precondition slice that has since landed.
 - `IDR_LABEXIT = 102` now dispatches from the base item-driver path for the C labyrinth exit gate core: zero-character timer callbacks animate sprite ranges `1060..` from little-endian `drdata[8]`, reschedule every two ticks, expire/destroy after the closing animation, character use requires the matching creator ID from `drdata[0..3]`, rejected users get the legacy gate-owner feedback, successful use sets the closing frame, returns the solved-lab number from `drdata[4]`, and exposes a typed cross-area exit to area 3 at `(183,199)` with focused core tests. Persisting solved-lab PPD state and actual cross-area transfer execution remain scaffolded.
 - `src/system/light.c` now has reusable Rust primitives for legacy light handling: `LIGHTDIST = 20`, center tile accumulation before capped inverse-square falloff, sight-blocked propagation checks through the current conservative LOS helper, non-negative tile light clamping, character/item/effect `MF_NOLIGHT` gates, takeable item suppression on no-light tiles, lava ground tile light emission, indoor `dlight` best-outdoor-tile recomputation, and mixed indoor/outdoor reset scanning with focused tests. `World` now wraps groundlight, shadow, single-tile dlight, and mixed indoor/outdoor dlight reset recomputation so changed light/daylight tiles mark dirty sectors for cache/sector consumers. Remaining work is live world entity/effect bulk remove/add around LOS-changing map edits.
 - C `compute_shadow` is now ported into `crates/ugaris-core/src/light.rs`: it scans the same 7x7 foreground sprite shadow tables, applies the left-side sightblock bonus, writes capped daylight values, preserves legacy edge bounds, and exposes `compute_shadow_with_random` so runtime code can inject the eventual global C-compatible RNG. Focused tests cover no-shadow fallback, blocker distance, foreground table/randomized divisor behavior, edge bounds, and world-level dirty-sector marking when daylight changes. Remaining light work is exact global RNG wiring and live world entity/effect bulk remove/add around LOS-changing map edits.
@@ -3690,3 +3690,86 @@ Recommended next chest steps:
   - `PORTING_TODO.md`'s "Aclerk / auction NPC" checkbox flipped to `[x]`:
     all three slices plus the login-notice gap are now done, and slice
     (3) stays confirmed N/A per the prior client audit.
+
+## Ralph Loop - Gatekeeper NPC Welcome Dialogue (Iteration 51, partial)
+
+`PORTING_TODO.md`'s P2 "Gatekeeper NPC" task (`src/system/gatekeeper.c`)
+is the character standing in front of the already-ported `IDR_LABENTRANCE`
+lab door. Read the full 830-line C file this iteration; ported the pure,
+fully-tested logic slice that doesn't require `World`/tick-loop access,
+following the same "pure state machine, not yet wired" pattern already
+established by `clara_dialogue_step` (Area 15).
+
+- `crates/ugaris-core/src/character_driver.rs`:
+  - `CDR_GATE_WELCOME: u16 = 39` / `CDR_GATE_FIGHT: u16 = 40` driver-id
+    constants (C `src/system/drvlib.h`).
+  - `GATEKEEPER_QA: &[TextQaEntry]` - the verbatim 27-row `qa[]` table
+    from `gatekeeper.c:83-112`, reusing the existing
+    `analyse_text_qa`/`TextQaEntry` engine (no new tokenizer needed).
+    Every accepted spelling variant for the four class choices
+    (Arch-Warrior/Arch-Mage/Arch-Seyan'Du/Seyan'Du, including the
+    hyphenated and apostrophe'd single-token forms - C's tokenizer only
+    splits on `' ' ',' ':' '?' '!' '"' '.'`, not `-`/`'`) is covered.
+  - `gate_welcome_dialogue_step` - a pure port of `gate_welcome_driver`'s
+    `switch (ppd->welcome_state)` (`gatekeeper.c:475-542`), states
+    `0..=6`. This required literally reproducing C's `case 2:`/`case 3:`/
+    `case 4:` fallthrough (no `break` after case 2, conditional
+    fallthrough after case 3) via explicit helper functions
+    (`gate_case3_stops`, `gate_case4`) rather than a `match` arm per
+    state, since Rust has no fallthrough. Along the way this surfaced (and
+    intentionally preserved, not "fixed") a genuine C quirk: the "fast
+    path" (state 2 entered with the labyrinth requirement already
+    satisfied) falls through cases 3 and 4 in one call and lands on state
+    `6` directly, skipping the `case 5` "name the class, 100 gold" message
+    entirely; the "slow path" (state 3 entered on a later call, after the
+    labyrinth got solved in between) only reaches state `5` in that call,
+    so the player sees the `case 5` message on the *next* call that the
+    fast path never shows. Both paths are covered by dedicated tests.
+  - `gate_welcome_state_after_repeat` - C's `analyse_text_driver` result
+    `2` (`"repeat"`/`"restart"`) resets `welcome_state` to `0`, but only
+    when `welcome_state <= 6` (`gatekeeper.c:566-570`).
+  - `gate_enter_test_precheck`/`gate_class_choice_is_valid` - the
+    `enter_test` preconditions (`gatekeeper.c:316-390`): `CF_PAID` gate,
+    `teleport_next_lab`-vs-`CF_GOD` gate, `CF_NOEXP` gate, then (skipped
+    entirely for `CF_GOD`) the four-class flag-combination validation and
+    the carried-item-count rules (zero items for Arch classes, up to three
+    for Seyan'Du). Deliberately excludes the side-effecting tail
+    (`take_money`, the `enter_room` 9-slot room search/spawn) since that
+    needs `World`/zone-loader access this pure module doesn't have.
+- `crates/ugaris-core/src/player.rs`: `DRD_GATE_PPD` (`MAKE_DRD(DEV_ID_DB,
+  65 | PERSISTENT_PLAYER_DATA)`) now round-trips through the legacy PPD
+  blob, modeled on the existing `DRD_WARP_PPD` fixed-12-byte-layout
+  pattern: `gate_welcome_state`/`gate_target_class`/`gate_step` fields
+  (mirroring C `struct gate_ppd`) plus `encode_legacy_gate_ppd`/
+  `decode_legacy_gate_ppd`, wired into both the decode-block match and the
+  encode-block match-plus-append-if-nonzero tail.
+- Tests: 9 new tests in `character_driver.rs` (QA table coverage across
+  every word/code combination, fast-path and slow-path dialogue-state
+  assertions including the exact terminal-state discrepancy, the
+  repeat-reset boundary, the state-6 silent wait, and the full
+  `enter_test` precondition/class-validation matrix including the
+  `CF_GOD` bypass) plus 3 new tests in `player.rs` (fixed-layout
+  round-trip, outer PPD blob block framing, append-without-existing-block).
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1240
+  `ugaris-core` (62 net new across the two files) + 36 db + 3 net + 33
+  protocol + 398 server, all green, zero failures. `cargo build -p
+  ugaris-server` clean, zero warnings. A 10s boot-smoke showed "entering
+  Rust game loop" with no panics (expected - nothing calls the new
+  functions yet, so this doesn't touch the runtime tick loop).
+- Remaining (left `[~]` in `PORTING_TODO.md`, precise notes there): (1)
+  `enter_room`/`enter_test`'s side effects - `take_money`, spawning
+  `gatekeeper_w`/`_m`/`_s` via `loader.instantiate_character_template`
+  (template data already exists in `ugaris_data`, confirmed at
+  `zones/3/above3_generic.chr:3538-3789`), the 9-room busy/refund search,
+  stripping the player's spells/items and teleporting them in; (2) a
+  `World::process_gate_welcome_actions()` tick-loop entry point (modeled
+  on `World::process_trader_actions`) to actually invoke
+  `gate_welcome_dialogue_step`/`GATEKEEPER_QA` and `say()` the result -
+  without this, no gatekeeper NPC talks in-game yet; (3) `gate_fight_driver`
+  (reuse `world/npc_fight.rs` combat helpers) and `gate_fight_dead`'s
+  class-grant rewards, including `turn_seyan` (`src/system/tool.c:
+  4278-4353`), which is not ported anywhere in the tree yet and is a
+  substantial full character re-roll (temp-template stat copy, gear
+  unequip, several unrelated PPD deletes); (4) the `NTID_GATEKEEPER`
+  cross-NPC message hookup connecting the welcome NPC to its spawned
+  opponent.

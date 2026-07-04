@@ -38,6 +38,14 @@ pub const CDR_TEUFELQUEST: u16 = 116;
 pub const CDR_TEUFELRAT: u16 = 117;
 pub const CDR_CALIGARSKELLY: u16 = 124;
 pub const CDR_LAB2UNDEAD: u16 = 198;
+/// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
+/// gatekeeper-welcome NPC (`gate_welcome` template,
+/// `src/system/gatekeeper.c::gate_welcome_driver`).
+pub const CDR_GATE_WELCOME: u16 = 39;
+/// C `#define CDR_GATE_FIGHT 40` (`src/system/drvlib.h`): the private-room
+/// opponent NPC spawned by `enter_room` (`gatekeeper_w`/`gatekeeper_m`/
+/// `gatekeeper_s` templates, `src/system/gatekeeper.c::gate_fight_driver`).
+pub const CDR_GATE_FIGHT: u16 = 40;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
@@ -776,6 +784,155 @@ pub const TRADER_QA: &[TextQaEntry] = &[
              make it take place.",
         ),
         answer_code: 1,
+    },
+];
+
+/// C `struct qa qa[]` from `src/system/gatekeeper.c:83-112`
+/// (`gate_welcome_driver`'s small-talk plus the class-choice answer
+/// codes). Unlike [`MERCHANT_QA`]/[`TRADER_QA`], every row past `"nay"`
+/// carries `answer: NULL` and a distinct `answer_code` the caller must
+/// interpret: `2` repeat/restart (resets `welcome_state` to `0`), `3`
+/// aye, `4` nay, `5`/`6`/`7`/`8` the Arch-Warrior/Arch-Mage/Arch-Seyan'Du/
+/// Seyan'Du class choice fed to `enter_test`, and `9` reset (deletes
+/// `DRD_LAB_PPD` for `CF_GOD` speakers). Word patterns are copied
+/// verbatim; C's tokenizer only splits on `' ' ',' ':' '?' '!' '"' '.'`
+/// so `"arch-warrior"`/`"seyan'du"` stay single tokens (hyphen and
+/// apostrophe are not delimiters).
+pub const GATEKEEPER_QA: &[TextQaEntry] = &[
+    TextQaEntry {
+        words: &["how", "are", "you"],
+        answer: Some("I'm fine!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hello"],
+        answer: Some("Hello, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hi"],
+        answer: Some("Hi, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["greetings"],
+        answer: Some("Greetings, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hail"],
+        answer: Some("And hail to you, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what", "is", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["repeat"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["restart"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["please", "repeat"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["please", "restart"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["aye"],
+        answer: None,
+        answer_code: 3,
+    },
+    TextQaEntry {
+        words: &["nay"],
+        answer: None,
+        answer_code: 4,
+    },
+    TextQaEntry {
+        words: &["arch", "warrior"],
+        answer: None,
+        answer_code: 5,
+    },
+    TextQaEntry {
+        words: &["arch-warrior"],
+        answer: None,
+        answer_code: 5,
+    },
+    TextQaEntry {
+        words: &["arch", "mage"],
+        answer: None,
+        answer_code: 6,
+    },
+    TextQaEntry {
+        words: &["arch-mage"],
+        answer: None,
+        answer_code: 6,
+    },
+    TextQaEntry {
+        words: &["arch-seyan", "du"],
+        answer: None,
+        answer_code: 7,
+    },
+    TextQaEntry {
+        words: &["arch", "seyan", "du"],
+        answer: None,
+        answer_code: 7,
+    },
+    TextQaEntry {
+        words: &["arch-seyan'du"],
+        answer: None,
+        answer_code: 7,
+    },
+    TextQaEntry {
+        words: &["arch", "seyan'du"],
+        answer: None,
+        answer_code: 7,
+    },
+    TextQaEntry {
+        words: &["arch", "seyan"],
+        answer: None,
+        answer_code: 7,
+    },
+    TextQaEntry {
+        words: &["arch-seyan"],
+        answer: None,
+        answer_code: 7,
+    },
+    TextQaEntry {
+        words: &["seyan", "du"],
+        answer: None,
+        answer_code: 8,
+    },
+    TextQaEntry {
+        words: &["seyan'du"],
+        answer: None,
+        answer_code: 8,
+    },
+    TextQaEntry {
+        words: &["seyan"],
+        answer: None,
+        answer_code: 8,
+    },
+    TextQaEntry {
+        words: &["reset"],
+        answer: None,
+        answer_code: 9,
     },
 ];
 
@@ -1670,6 +1827,269 @@ pub fn clara_state_after_swamp_monster_death(
     } else {
         clara_state
     }
+}
+
+//-----------------------
+// Gatekeeper welcome dialogue (`src/system/gatekeeper.c::gate_welcome_driver`,
+// `struct gate_ppd`'s `welcome_state` switch, lines 475-542).
+//
+// Pure state-machine port modeled on [`clara_dialogue_step`]: the caller
+// (not yet wired - see `PORTING_TODO.md`'s "Gatekeeper NPC" task) is
+// responsible for the message-loop plumbing (distance/visibility checks,
+// the every-10-seconds throttle, `notify_char`/`say`) and for resolving
+// `needs_lab` via `teleport_next_lab(co, 0)` before calling this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GateWelcomeContext<'a> {
+    pub player_name: &'a str,
+    pub welcome_state: i32,
+    /// C `teleport_next_lab(co, 0)` truthiness at the time of the call.
+    pub needs_lab: bool,
+    pub flags: CharacterFlags,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GateWelcomeOutcome {
+    pub welcome_state: i32,
+    pub text: Option<String>,
+}
+
+/// C `case 3:` body (`gatekeeper.c:501-506`): `if (!teleport_next_lab(co,
+/// 0)) { welcome_state++; } else { break; }`. Returns `true` when C would
+/// `break` (stop, no fallthrough into case 4).
+fn gate_case3_stops(state: &mut i32, needs_lab: bool) -> bool {
+    if needs_lab {
+        true
+    } else {
+        *state += 1;
+        false
+    }
+}
+
+/// C `case 4:` body (`gatekeeper.c:508-533`). Mutates `state`/`text` the
+/// same way C mutates `ppd->welcome_state`/calls `say` - note the two
+/// non-arch branches do a plain `welcome_state++` off whatever value is
+/// already in `state` when this runs, which is *not* always the same
+/// number depending on whether case 4 was reached by falling through
+/// from case 2 (fast path, ends at `6`) or from a separate call that
+/// entered directly at case 3 after the labyrinth got solved later (slow
+/// path, ends at `5` - an extra `case 5` "name the class" message gets
+/// shown on the next call that the fast path skips entirely). This is a
+/// faithfully-preserved legacy quirk, not a Rust bug.
+fn gate_case4(
+    state: &mut i32,
+    needs_lab: bool,
+    flags: CharacterFlags,
+    player_name: &str,
+) -> Option<String> {
+    if needs_lab {
+        *state = 2;
+        return None;
+    }
+    if flags.contains(CharacterFlags::ARCH) {
+        let class_name = if flags.contains(CharacterFlags::WARRIOR) {
+            if flags.contains(CharacterFlags::MAGE) {
+                "Seyan'Du"
+            } else {
+                "Warrior"
+            }
+        } else {
+            "Mage"
+        };
+        *state = 6;
+        Some(format!(
+            "There is nothing I can do for thee, {player_name}, though, since thou art already an Arch-{class_name}."
+        ))
+    } else if flags.contains(CharacterFlags::MAGE) && flags.contains(CharacterFlags::WARRIOR) {
+        *state += 1;
+        Some(
+            "Since thou art already a Seyan'Du, thy only choice is to become Arch-Seyan'Du."
+                .to_string(),
+        )
+    } else {
+        let path = if flags.contains(CharacterFlags::WARRIOR) {
+            "Warrior"
+        } else {
+            "Mage"
+        };
+        *state += 1;
+        Some(format!(
+            "The choice is hard, and so is the test. If thou wishest to take the test, decide which path to follow. That of the Arch-{path}, or that of the Seyan'Du."
+        ))
+    }
+}
+
+/// C `gate_welcome_driver`'s `switch (ppd->welcome_state)` (`gatekeeper.c:
+/// 475-542`), states `0..=6`. Text is `None` for the terminal "waiting for
+/// answer" state (`6`) and for the labyrinth-still-needed wait (state `3`
+/// re-checked with `needs_lab` still true).
+pub fn gate_welcome_dialogue_step(context: GateWelcomeContext<'_>) -> GateWelcomeOutcome {
+    let mut state = context.welcome_state;
+    let text = match state {
+        0 => {
+            state = 1;
+            Some(format!(
+                "Be greeted, {}. These are the halls of Ishtar. Only the greatest fighters and magic users come here, to take the final test and fight the Gatekeeper.",
+                context.player_name
+            ))
+        }
+        1 => {
+            state = 2;
+            Some(
+                "Those who succeed in this test will be able to enhance their abilities further. They may either choose to learn more about their profession than any other mortal being, or to start again as one who can learn all arts."
+                    .to_string(),
+            )
+        }
+        2 => {
+            // C `case 2:` (`gatekeeper.c:491-500`) never `break`s, so it
+            // always falls through into `case 3` in the same call.
+            let mut text = None;
+            if context.needs_lab {
+                state = 3;
+                text = Some(
+                    "Before thou mayest engage the Gatekeeper, thou must solve the Labyrinth built by Ishtar. Thou canst enter the labyrinth through the door to the east."
+                        .to_string(),
+                );
+            } else {
+                state = 4;
+            }
+            if !gate_case3_stops(&mut state, context.needs_lab) {
+                text = gate_case4(
+                    &mut state,
+                    context.needs_lab,
+                    context.flags,
+                    context.player_name,
+                );
+            }
+            text
+        }
+        3 => {
+            if gate_case3_stops(&mut state, context.needs_lab) {
+                None
+            } else {
+                gate_case4(
+                    &mut state,
+                    context.needs_lab,
+                    context.flags,
+                    context.player_name,
+                )
+            }
+        }
+        4 => gate_case4(
+            &mut state,
+            context.needs_lab,
+            context.flags,
+            context.player_name,
+        ),
+        5 => {
+            state = 6;
+            Some(
+                "Name the class thou wishest to become to begin the test. Each try will cost thee 100 gold coins."
+                    .to_string(),
+            )
+        }
+        _ => None,
+    };
+
+    GateWelcomeOutcome {
+        welcome_state: state,
+        text,
+    }
+}
+
+/// C `gate_welcome_driver`'s `case 2:` of the `analyse_text_driver` switch
+/// (`gatekeeper.c:565-570`): a `"repeat"`/`"restart"` answer resets the
+/// dialogue to `0`, but only while `welcome_state <= 6` (a fully advanced
+/// test-in-progress conversation is left alone).
+pub fn gate_welcome_state_after_repeat(welcome_state: i32) -> i32 {
+    if welcome_state <= 6 {
+        0
+    } else {
+        welcome_state
+    }
+}
+
+/// C `enter_test`'s class-choice/item-carrying preconditions
+/// (`gatekeeper.c:316-390`), excluding the side-effecting tail
+/// (`take_money`, `enter_room` room search) which needs `World` access.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GateEnterTestPrecheck {
+    /// C `ch[cn].flags & CF_PAID`.
+    pub is_paid: bool,
+    /// C `teleport_next_lab(cn, 0)` truthiness.
+    pub needs_lab: bool,
+    /// C `ch[cn].flags & CF_GOD`.
+    pub is_god: bool,
+    /// C `ch[cn].flags & CF_NOEXP`.
+    pub is_noexp: bool,
+    pub flags: CharacterFlags,
+    /// C's `cnt`: carried items in slots `30..INVENTORYSIZE` plus
+    /// `ch[cn].citem`.
+    pub carried_item_count: u32,
+    /// The chosen class: `5` Arch-Warrior, `6` Arch-Mage, `7`
+    /// Arch-Seyan'Du, `8` Seyan'Du.
+    pub class: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GateEnterTestOutcome {
+    /// "Sorry, only paying players may take the test."
+    NotPaid,
+    /// "Sorry, you may not enter before you have solved the labyrinth."
+    LabNotSolved,
+    /// "Sorry, you may not enter if you have the /noexp mode turned on."
+    NoExpMode,
+    /// C's class-validation `switch` (or its `default`) returned `0`
+    /// silently; the caller (`gate_welcome_driver`) then says "That is
+    /// not a possible choice."
+    InvalidClass,
+    /// "Sorry, you may not enter while you are carrying items. You
+    /// currently have %d items." (any items, non-Seyan'Du classes).
+    CarryingItems { count: u32 },
+    /// "Sorry, you may not enter while you are carrying more than three
+    /// items. You currently have %d items." (Seyan'Du class only).
+    CarryingTooManyItems { count: u32 },
+    /// All preconditions satisfied; caller should attempt
+    /// `take_money(cn, 100 * 100)` then the `enter_room` search.
+    Ready,
+}
+
+fn gate_class_choice_is_valid(flags: CharacterFlags, class: i32) -> bool {
+    use CharacterFlags as F;
+    match class {
+        5 => !flags.intersects(F::MAGE | F::ARCH),
+        6 => !flags.intersects(F::WARRIOR | F::ARCH),
+        7 => !flags.contains(F::ARCH) && flags.contains(F::WARRIOR) && flags.contains(F::MAGE),
+        8 => !flags.contains(F::ARCH) && !(flags.contains(F::WARRIOR) && flags.contains(F::MAGE)),
+        _ => false,
+    }
+}
+
+pub fn gate_enter_test_precheck(input: GateEnterTestPrecheck) -> GateEnterTestOutcome {
+    if !input.is_paid {
+        return GateEnterTestOutcome::NotPaid;
+    }
+    if input.needs_lab && !input.is_god {
+        return GateEnterTestOutcome::LabNotSolved;
+    }
+    if input.is_noexp {
+        return GateEnterTestOutcome::NoExpMode;
+    }
+    if !input.is_god {
+        if !gate_class_choice_is_valid(input.flags, input.class) {
+            return GateEnterTestOutcome::InvalidClass;
+        }
+        if input.carried_item_count > 0 && input.class != 8 {
+            return GateEnterTestOutcome::CarryingItems {
+                count: input.carried_item_count,
+            };
+        }
+        if input.carried_item_count > 3 {
+            return GateEnterTestOutcome::CarryingTooManyItems {
+                count: input.carried_item_count,
+            };
+        }
+    }
+    GateEnterTestOutcome::Ready
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2991,6 +3411,344 @@ mod tests {
         assert_eq!(clara_state_after_swamp_monster_death(11, true, true), 11);
         assert_eq!(clara_state_after_swamp_monster_death(12, false, true), 12);
         assert_eq!(clara_state_after_swamp_monster_death(12, true, false), 12);
+    }
+
+    fn gate_context(
+        welcome_state: i32,
+        needs_lab: bool,
+        flags: CharacterFlags,
+    ) -> GateWelcomeContext<'static> {
+        GateWelcomeContext {
+            player_name: "Hero",
+            welcome_state,
+            needs_lab,
+            flags,
+        }
+    }
+
+    #[test]
+    fn gatekeeper_qa_matches_c_table_words_and_codes() {
+        assert_eq!(
+            analyse_text_qa("how are you", "Gatekeeper", "Hero", GATEKEEPER_QA),
+            TextAnalysisOutcome::Said("I'm fine!".to_string())
+        );
+        assert_eq!(
+            analyse_text_qa("hello", "Gatekeeper", "Hero", GATEKEEPER_QA),
+            TextAnalysisOutcome::Said("Hello, Hero!".to_string())
+        );
+        assert_eq!(
+            analyse_text_qa("repeat", "Gatekeeper", "Hero", GATEKEEPER_QA),
+            TextAnalysisOutcome::Matched(2)
+        );
+        assert_eq!(
+            analyse_text_qa("please restart", "Gatekeeper", "Hero", GATEKEEPER_QA),
+            TextAnalysisOutcome::Matched(2)
+        );
+        assert_eq!(
+            analyse_text_qa("aye", "Gatekeeper", "Hero", GATEKEEPER_QA),
+            TextAnalysisOutcome::Matched(3)
+        );
+        assert_eq!(
+            analyse_text_qa("nay", "Gatekeeper", "Hero", GATEKEEPER_QA),
+            TextAnalysisOutcome::Matched(4)
+        );
+        // Every accepted class-choice spelling variant maps to the same
+        // `answer_code` C's table does (`gatekeeper.c:97-109`).
+        for phrase in ["arch warrior", "arch-warrior"] {
+            assert_eq!(
+                analyse_text_qa(phrase, "Gatekeeper", "Hero", GATEKEEPER_QA),
+                TextAnalysisOutcome::Matched(5),
+                "phrase={phrase}"
+            );
+        }
+        for phrase in ["arch mage", "arch-mage"] {
+            assert_eq!(
+                analyse_text_qa(phrase, "Gatekeeper", "Hero", GATEKEEPER_QA),
+                TextAnalysisOutcome::Matched(6),
+                "phrase={phrase}"
+            );
+        }
+        for phrase in [
+            "arch-seyan du",
+            "arch seyan du",
+            "arch-seyan'du",
+            "arch seyan'du",
+            "arch seyan",
+            "arch-seyan",
+        ] {
+            assert_eq!(
+                analyse_text_qa(phrase, "Gatekeeper", "Hero", GATEKEEPER_QA),
+                TextAnalysisOutcome::Matched(7),
+                "phrase={phrase}"
+            );
+        }
+        for phrase in ["seyan du", "seyan'du", "seyan"] {
+            assert_eq!(
+                analyse_text_qa(phrase, "Gatekeeper", "Hero", GATEKEEPER_QA),
+                TextAnalysisOutcome::Matched(8),
+                "phrase={phrase}"
+            );
+        }
+        assert_eq!(
+            analyse_text_qa("reset", "Gatekeeper", "Hero", GATEKEEPER_QA),
+            TextAnalysisOutcome::Matched(9)
+        );
+        assert_eq!(
+            analyse_text_qa("what's up", "Gatekeeper", "Hero", GATEKEEPER_QA),
+            TextAnalysisOutcome::Said("Everything that isn't nailed down.".to_string())
+        );
+    }
+
+    #[test]
+    fn gate_welcome_dialogue_greets_then_explains_the_test() {
+        let flags = CharacterFlags::USED;
+        let greet = gate_welcome_dialogue_step(gate_context(0, false, flags));
+        assert_eq!(greet.welcome_state, 1);
+        assert_eq!(
+            greet.text.as_deref(),
+            Some(
+                "Be greeted, Hero. These are the halls of Ishtar. Only the greatest fighters and magic users come here, to take the final test and fight the Gatekeeper."
+            )
+        );
+
+        let explain = gate_welcome_dialogue_step(gate_context(1, false, flags));
+        assert_eq!(explain.welcome_state, 2);
+        assert!(explain
+            .text
+            .unwrap()
+            .starts_with("Those who succeed in this test"));
+    }
+
+    #[test]
+    fn gate_welcome_dialogue_sends_to_labyrinth_when_needed_and_waits() {
+        let flags = CharacterFlags::USED;
+        let sent = gate_welcome_dialogue_step(gate_context(2, true, flags));
+        assert_eq!(sent.welcome_state, 3);
+        assert_eq!(
+            sent.text.as_deref(),
+            Some(
+                "Before thou mayest engage the Gatekeeper, thou must solve the Labyrinth built by Ishtar. Thou canst enter the labyrinth through the door to the east."
+            )
+        );
+
+        // Re-entering at state 3 while the labyrinth is still unsolved:
+        // C `case 3`'s `else break;` - no text, no state change.
+        let waiting = gate_welcome_dialogue_step(gate_context(3, true, flags));
+        assert_eq!(waiting.welcome_state, 3);
+        assert_eq!(waiting.text, None);
+    }
+
+    #[test]
+    fn gate_welcome_dialogue_offers_class_choice_when_lab_already_solved() {
+        // Fast path: state 2 with no labyrinth requirement falls through
+        // case 3 into case 4 in the same call, ending at state 6 and
+        // skipping the `case 5` "name the class" message entirely
+        // (`gatekeeper.c`'s undocumented quirk - see `gate_case4` doc).
+        let single_class = gate_welcome_dialogue_step(gate_context(
+            2,
+            false,
+            CharacterFlags::USED | CharacterFlags::WARRIOR,
+        ));
+        assert_eq!(single_class.welcome_state, 6);
+        assert_eq!(
+            single_class.text.as_deref(),
+            Some(
+                "The choice is hard, and so is the test. If thou wishest to take the test, decide which path to follow. That of the Arch-Warrior, or that of the Seyan'Du."
+            )
+        );
+
+        let seyan_already = gate_welcome_dialogue_step(gate_context(
+            2,
+            false,
+            CharacterFlags::USED | CharacterFlags::WARRIOR | CharacterFlags::MAGE,
+        ));
+        assert_eq!(seyan_already.welcome_state, 6);
+        assert_eq!(
+            seyan_already.text.as_deref(),
+            Some("Since thou art already a Seyan'Du, thy only choice is to become Arch-Seyan'Du.")
+        );
+
+        let arch_already = gate_welcome_dialogue_step(gate_context(
+            2,
+            false,
+            CharacterFlags::USED | CharacterFlags::WARRIOR | CharacterFlags::ARCH,
+        ));
+        assert_eq!(arch_already.welcome_state, 6);
+        assert_eq!(
+            arch_already.text.as_deref(),
+            Some("There is nothing I can do for thee, Hero, though, since thou art already an Arch-Warrior.")
+        );
+    }
+
+    #[test]
+    fn gate_welcome_dialogue_slow_path_ends_one_state_lower_than_fast_path() {
+        // Slow path: entering directly at state 3 (labyrinth requirement
+        // just got satisfied since the last call) falls through case 3
+        // into case 4 with `state == 4` on entry, so the non-arch
+        // branches' `welcome_state++` lands on `5`, not `6` - the next
+        // call will show the `case 5` "name the class" message that the
+        // fast path (`gate_welcome_dialogue_offers_class_choice_when_
+        // lab_already_solved`) never shows.
+        let slow = gate_welcome_dialogue_step(gate_context(
+            3,
+            false,
+            CharacterFlags::USED | CharacterFlags::WARRIOR,
+        ));
+        assert_eq!(slow.welcome_state, 5);
+        assert_eq!(
+            slow.text.as_deref(),
+            Some(
+                "The choice is hard, and so is the test. If thou wishest to take the test, decide which path to follow. That of the Arch-Warrior, or that of the Seyan'Du."
+            )
+        );
+
+        let name_class = gate_welcome_dialogue_step(gate_context(
+            5,
+            false,
+            CharacterFlags::USED | CharacterFlags::WARRIOR,
+        ));
+        assert_eq!(name_class.welcome_state, 6);
+        assert_eq!(
+            name_class.text.as_deref(),
+            Some("Name the class thou wishest to become to begin the test. Each try will cost thee 100 gold coins.")
+        );
+    }
+
+    #[test]
+    fn gate_welcome_dialogue_waits_silently_at_state_six() {
+        let waiting = gate_welcome_dialogue_step(gate_context(6, false, CharacterFlags::USED));
+        assert_eq!(waiting.welcome_state, 6);
+        assert_eq!(waiting.text, None);
+    }
+
+    #[test]
+    fn gate_welcome_state_after_repeat_resets_only_below_state_seven() {
+        assert_eq!(gate_welcome_state_after_repeat(0), 0);
+        assert_eq!(gate_welcome_state_after_repeat(6), 0);
+        assert_eq!(gate_welcome_state_after_repeat(7), 7);
+    }
+
+    #[test]
+    fn gate_enter_test_precheck_orders_preconditions_like_c() {
+        let base = GateEnterTestPrecheck {
+            is_paid: true,
+            needs_lab: false,
+            is_god: false,
+            is_noexp: false,
+            flags: CharacterFlags::USED | CharacterFlags::WARRIOR,
+            carried_item_count: 0,
+            class: 5,
+        };
+
+        assert_eq!(
+            gate_enter_test_precheck(GateEnterTestPrecheck {
+                is_paid: false,
+                ..base
+            }),
+            GateEnterTestOutcome::NotPaid
+        );
+        assert_eq!(
+            gate_enter_test_precheck(GateEnterTestPrecheck {
+                needs_lab: true,
+                ..base
+            }),
+            GateEnterTestOutcome::LabNotSolved
+        );
+        // CF_GOD bypasses the labyrinth check but not CF_PAID/CF_NOEXP.
+        assert_eq!(
+            gate_enter_test_precheck(GateEnterTestPrecheck {
+                needs_lab: true,
+                is_god: true,
+                ..base
+            }),
+            GateEnterTestOutcome::Ready
+        );
+        assert_eq!(
+            gate_enter_test_precheck(GateEnterTestPrecheck {
+                is_noexp: true,
+                ..base
+            }),
+            GateEnterTestOutcome::NoExpMode
+        );
+        assert_eq!(
+            gate_enter_test_precheck(GateEnterTestPrecheck {
+                flags: CharacterFlags::USED | CharacterFlags::WARRIOR | CharacterFlags::MAGE,
+                ..base
+            }),
+            GateEnterTestOutcome::InvalidClass
+        );
+        assert_eq!(
+            gate_enter_test_precheck(GateEnterTestPrecheck {
+                carried_item_count: 2,
+                ..base
+            }),
+            GateEnterTestOutcome::CarryingItems { count: 2 }
+        );
+        assert_eq!(gate_enter_test_precheck(base), GateEnterTestOutcome::Ready);
+
+        // Seyan'Du (class 8) tolerates up to three carried items.
+        let seyan = GateEnterTestPrecheck {
+            flags: CharacterFlags::USED,
+            class: 8,
+            carried_item_count: 3,
+            ..base
+        };
+        assert_eq!(gate_enter_test_precheck(seyan), GateEnterTestOutcome::Ready);
+        assert_eq!(
+            gate_enter_test_precheck(GateEnterTestPrecheck {
+                carried_item_count: 4,
+                ..seyan
+            }),
+            GateEnterTestOutcome::CarryingTooManyItems { count: 4 }
+        );
+
+        // CF_GOD also bypasses class/item-count validation entirely.
+        assert_eq!(
+            gate_enter_test_precheck(GateEnterTestPrecheck {
+                is_god: true,
+                flags: CharacterFlags::USED | CharacterFlags::ARCH,
+                carried_item_count: 99,
+                ..base
+            }),
+            GateEnterTestOutcome::Ready
+        );
+    }
+
+    #[test]
+    fn gate_class_choice_validation_matches_c_flag_checks() {
+        use CharacterFlags as F;
+        // Arch-Warrior (5): blocked if already MAGE or ARCH.
+        assert!(gate_class_choice_is_valid(F::USED | F::WARRIOR, 5));
+        assert!(!gate_class_choice_is_valid(F::USED | F::MAGE, 5));
+        assert!(!gate_class_choice_is_valid(F::USED | F::ARCH, 5));
+
+        // Arch-Mage (6): blocked if already WARRIOR or ARCH.
+        assert!(gate_class_choice_is_valid(F::USED | F::MAGE, 6));
+        assert!(!gate_class_choice_is_valid(F::USED | F::WARRIOR, 6));
+
+        // Arch-Seyan'Du (7): requires both WARRIOR and MAGE, not ARCH.
+        assert!(gate_class_choice_is_valid(
+            F::USED | F::WARRIOR | F::MAGE,
+            7
+        ));
+        assert!(!gate_class_choice_is_valid(F::USED | F::WARRIOR, 7));
+        assert!(!gate_class_choice_is_valid(
+            F::USED | F::WARRIOR | F::MAGE | F::ARCH,
+            7
+        ));
+
+        // Seyan'Du (8): blocked if already ARCH or already both WARRIOR+MAGE.
+        assert!(gate_class_choice_is_valid(F::USED | F::WARRIOR, 8));
+        assert!(gate_class_choice_is_valid(F::USED, 8));
+        assert!(!gate_class_choice_is_valid(
+            F::USED | F::WARRIOR | F::MAGE,
+            8
+        ));
+        assert!(!gate_class_choice_is_valid(F::USED | F::ARCH, 8));
+
+        // Unknown class values are always invalid (C's `default: return 0;`).
+        assert!(!gate_class_choice_is_valid(F::USED, 0));
+        assert!(!gate_class_choice_is_valid(F::USED, 99));
     }
 
     fn test_character() -> Character {
