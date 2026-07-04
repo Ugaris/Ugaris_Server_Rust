@@ -3227,17 +3227,25 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (`crates/ugaris-db/src/clan.rs`), clan trade bonus (merchants call
   `clan_trade_bonus` - currently 0), clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
-  (transport module has the seam). REMAINING: clan identity (name/rank
-  names/website/message/treasury/dungeon economy), the actual
-  `found_clan`/`add_member`/`remove_member`/`get_char_clan` membership
-  wiring onto `Character.clan`/`clan_rank`/`clan_serial`, a persistent
-  `crates/ugaris-db/src/clan.rs` repository + migration (no DB table
-  exists yet), wiring `ClanRelations` as the live `ClanAttackPolicy` in the
-  actual game loop/`World` (currently only available as an impl, not
-  constructed/used anywhere outside tests), clan-log persistence/message
-  formatting (`add_clanlog`), `clan_trade_bonus` (blocked on the merchant
-  system itself not being ported), clan chat channel gating (channels
-  5/7/12), and clan-hall transport access beyond direct membership.
+  (transport module has the seam). REMAINING: treasury/bonus/dungeon-guard
+  economy (`update_treasure`/`update_training`/`struct clan_dungeon` -
+  jewels, cost-per-week/debt, bonuses, dungeon guard counts, potions), a
+  persistent `crates/ugaris-db/src/clan.rs` repository + migration (no DB
+  table exists yet - `ClanRegistry` is in-memory only and does not survive
+  a restart), wiring `ClanRegistry`/`ClanRelations` as the live
+  `ClanAttackPolicy` in the actual game loop/`World` (currently only
+  available as an impl, not constructed/used anywhere outside tests) and
+  calling `add_member`/`remove_member`/`found_clan` from an actual `/clan`
+  or GM command (only the pre-existing `/joinclan` cheat mutates the
+  fields directly, bypassing the new registry), clan-log persistence/
+  message formatting (`add_clanlog`), the `ACHIEVEMENT_CLAN_MEMBER`/
+  `ACHIEVEMENT_CLAN_MASTER`/`ACHIEVEMENT_CLUB_MEMBER` award wiring on
+  membership change, `clan_trade_bonus` (blocked on the merchant system
+  itself not being ported), clan chat channel gating (channels 5/7/12),
+  clan-hall transport access beyond direct membership, and the
+  `set_clan_website`/`set_clan_message` trailing-character-strip quirk
+  (deferred to whichever future task wires a real `/clan` command
+  parser).
 
   Progress Log:
   - 2026-07-04: ported the pure relation state machine as a first
@@ -3265,6 +3273,47 @@ Unlocks every quest NPC. Do these before any P4 area work.
     ugaris-server` clean with zero warnings, boot-smoke confirmed
     "entering Rust game loop" with no panics for 10+ seconds. No DB
     migration and no runtime wiring yet - see REMAINING above.
+  - 2026-07-04 (iteration 86): ported the next self-contained slice, clan
+    identity + membership, in `crates/ugaris-core/src/clan.rs`: new
+    `ClanIdentity` struct (`name`/`rank_names[5]`/`website`/`message`,
+    `clan.h:88-101`'s identity fields minus treasury/dungeon economy) and
+    `ClanRegistry` (wraps `ClanRelations`, adds a per-slot `u32` serial and
+    `Option<ClanIdentity>` array). Ported `found_clan` (first-free-slot
+    allocation + `clan_standards` default rank names + relation reset,
+    `clan.c:460-492`, `NameTooLong`/`ClanListFull` error cases),
+    `delete_clan` (generalizes the bankrupt-clan deletion path,
+    `clan.c:1154-1160`, bumping the slot's serial so stale member
+    references invalidate), `get_char_clan` (`clan.c:242-272`, validates
+    `Character.clan`/`.clan_serial` against the registry and clears all
+    three fields on any mismatch, exactly like C; treats `clan >=
+    CLUB_OFFSET` (1024, `club.h:5`) as out-of-jurisdiction rather than
+    invalid, matching C's own `cnr >= CLUBOFFSET` early return),
+    `get_char_clan_name` (as `char_clan_name`), `add_member`/
+    `remove_member` (`clan.c:1186-1221`, wired onto `Character.clan`/
+    `.clan_rank`/`.clan_serial` - confirmed `add_member` never sets
+    `clan_rank`, matching C exactly), and the identity mutators
+    `set_clan_rankname`/`set_clan_website`/`set_clan_message`
+    (`clan.c:584-604,862-879`, length-cap validation ported; the C
+    trailing-character-strip quirk on website/message - which depends on
+    a raw command-line calling convention that doesn't exist in Rust yet -
+    is intentionally deferred to the future `/clan` command-parsing task
+    rather than guessed here, documented inline). This is the module's
+    first membership system with real side effects on `Character`, so
+    added a dedicated `test_character()` fixture in `clan.rs` (mirroring
+    the existing one in `spell.rs`) and 20 new unit tests covering slot
+    reuse/serial invalidation after delete+refound, club-number rejection,
+    stale-reference clearing, and identity mutator validation. Runtime
+    wiring (constructing a `ClanRegistry` in `ServerRuntime`, plugging it
+    into `ClanAttackPolicy` at the two live call sites in `main.rs`,
+    calling `add_member`/`found_clan` from an actual command instead of
+    only the `/joinclan` cheat, achievement awarding on join, clan-log
+    persistence) and the DB repository/migration remain unstarted - see
+    REMAINING above (updated this iteration to reflect what's now done).
+    `cargo fmt --all`, `cargo test --workspace` (1444 ugaris-core + 38 db
+    + 3 net + 37 protocol + 489 server, all green, zero failures), `cargo
+    build -p ugaris-server` clean with zero warnings. No runtime-loop/
+    protocol/login changes this iteration, so boot-smoke was not required
+    per the recipe and was not re-run.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

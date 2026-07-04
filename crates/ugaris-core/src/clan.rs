@@ -1,36 +1,43 @@
 //! Clan relation state machine ported from `src/system/clan.c` in the
 //! legacy C server (`clan.h` for constants/data model).
 //!
-//! This is a first, self-contained slice of the much larger clan system
-//! (see the "Clan system" P3 entry in `PORTING_TODO.md`). What is ported
-//! here: the `CS_*` relation levels (`clan.h:41-56`), the per-pair
+//! This is built up in self-contained slices of the much larger clan
+//! system (see the "Clan system" P3 entry in `PORTING_TODO.md`). What is
+//! ported here: the `CS_*` relation levels (`clan.h:41-56`), the per-pair
 //! `current_relation`/`want_relation`/`want_date` state (`struct
 //! clan_status`, `clan.h:58-64`), clan founding's relation reset
 //! (`found_clan`/`clan_standards`/`zero_relation`, `clan.c:76-95,450-492`),
 //! the unilateral relation-request setter (`set_clan_relation`,
 //! `clan.c:839-860`), the read-only policy queries (`may_enter_clan`,
 //! `clan_can_attack_outside`, `clan_can_attack_inside`, `clan_alliance`,
-//! `clan.c:881-934`), and the daily escalation/de-escalation tick state
-//! machine (`update_relations`, `clan.c:936-1089`).
+//! `clan.c:881-934`), the daily escalation/de-escalation tick state
+//! machine (`update_relations`, `clan.c:936-1089`), and - via
+//! [`ClanRegistry`] - clan identity (name/rank names/website/message,
+//! `struct clan`'s `name`/`rankname`/`website`/`message` fields,
+//! `clan.h:88-101`) plus the membership wiring onto `Character.clan`/
+//! `.clan_rank`/`.clan_serial` (`found_clan`, `get_char_clan`,
+//! `add_member`, `remove_member`, `clan.c:242-272,460-492,1186-1221`).
 //!
-//! NOT ported yet (left for follow-up slices): clan identity beyond a bare
-//! "does this clan number exist" flag (no name/rank-name/website/message
-//! storage), membership (`ch[cn].clan`/`.clan_rank`/`.clan_serial` already
-//! exist as plain `Character` fields per `PORTING_LEDGER.md`, but
-//! `found_clan`/`add_member`/`remove_member`/`get_char_clan` are not
-//! wired), treasury/bonus/dungeon-guard economy (`update_treasure`,
-//! `update_training`, `struct clan_dungeon`), the `doraid` raid-toggle
-//! clamp inside `update_relations` (dead in practice once a clan's first
-//! tick has run - see the comment on [`ClanRelations::update`] - and
-//! meaningless without the dungeon/raid system, so intentionally skipped),
+//! NOT ported yet (left for follow-up slices): treasury/bonus/
+//! dungeon-guard economy (`update_treasure`, `update_training`, `struct
+//! clan_dungeon`), the `doraid` raid-toggle clamp inside
+//! `update_relations` (dead in practice once a clan's first tick has run
+//! - see the comment on [`ClanRelations::update`] - and meaningless
+//! without the dungeon/raid system, so intentionally skipped),
 //! clan-log persistence (`add_clanlog`/SQL `clanlog` table - this module
 //! returns [`ClanRelationEvent`]s for a future caller to format and log),
-//! `crates/ugaris-db/src/clan.rs` (no DB repository yet), the
+//! `crates/ugaris-db/src/clan.rs` (no DB repository/migration yet, so
+//! [`ClanRegistry`] is not yet persisted across restarts), the
 //! `ClanAttackPolicy` wiring in `do_action.rs` (still `NoClanAttackPolicy`
-//! everywhere), chat channel gating, and clan-hall transport access beyond
-//! direct membership.
+//! everywhere), achievement awarding on membership change
+//! (`ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLUB_MEMBER`, left to the
+//! runtime caller per the pattern used elsewhere - see
+//! [`ClanRegistry::add_member`]), chat channel gating, and clan-hall
+//! transport access beyond direct membership.
 
 use serde::{Deserialize, Serialize};
+
+use crate::entity::Character;
 
 /// C `#define MAXCLAN 32` (`clan.h:19`). Clan numbers are `1..MAX_CLAN`;
 /// `0` means "no clan" and numbers `>= 1024` (`CLUBOFFSET`) mean a club,
@@ -446,6 +453,325 @@ impl crate::do_action::ClanAttackPolicy for ClanRelations {
     // separately by `RuntimePlayerAttackPolicy` in `world/combat.rs`.
 }
 
+/// C `#define CLUBOFFSET 1024` (`club.h:5`). Clan numbers `>= CLUB_OFFSET`
+/// stored in `Character.clan` mean "club #`n - CLUB_OFFSET`", a separate
+/// not-yet-ported system (`src/system/club.c`) that reuses the same
+/// character fields. [`ClanRegistry`] treats such values as out of its
+/// jurisdiction rather than as invalid.
+pub const CLUB_OFFSET: u16 = 1024;
+
+/// C `struct clan`'s identity fields (`clan.h:88-101`, minus the treasury/
+/// bonus/dungeon-guard economy - see the module doc comment). Owned by
+/// [`ClanRegistry`], one per existing clan number.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClanIdentity {
+    /// C `char name[80]` (`clan.h:89`). Presence of a `ClanIdentity` at
+    /// all *is* the Rust equivalent of C's `clan[n].name[0]` "clan exists"
+    /// check, so this is never empty while the identity exists.
+    pub name: String,
+    /// C `char rankname[5][40]` (`clan.h:91`), indices `0..=4` matching
+    /// `Character.clan_rank`. Defaults set by `clan_standards`
+    /// (`clan.c:79-83`): `["Member", "Member", "Recruiter", "Treasurer",
+    /// "Leader"]`.
+    pub rank_names: [String; 5],
+    /// C `char website[80]` (`clan.h:98`).
+    pub website: String,
+    /// C `char message[80]` (`clan.h:99`).
+    pub message: String,
+}
+
+impl ClanIdentity {
+    /// C `clan_standards` (`clan.c:76-95`), identity portion only (the
+    /// relation-reset portion is [`ClanRelations::found_clan`]).
+    fn standard(name: String) -> Self {
+        ClanIdentity {
+            name,
+            rank_names: [
+                "Member".to_string(),
+                "Member".to_string(),
+                "Recruiter".to_string(),
+                "Treasurer".to_string(),
+                "Leader".to_string(),
+            ],
+            website: String::new(),
+            message: String::new(),
+        }
+    }
+}
+
+/// C `found_clan`'s `strlen(name) > 78` guard (`clan.c:463-465`) and the
+/// "no free slot" case (linear scan hits `MAXCLAN`, `clan.c:476-478`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClanFoundError {
+    /// C: `strlen(name) > 78`.
+    NameTooLong,
+    /// C: every clan slot `1..MAXCLAN` already has a name.
+    ClanListFull,
+}
+
+/// Errors for [`ClanRegistry`] identity mutators (`set_clan_rankname`,
+/// `set_clan_website`, `set_clan_message`, `clan.c:584-604,862-879`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClanIdentityError {
+    /// C: `cnr` names a clan slot with no identity (`clan[cnr].name[0] ==
+    /// 0` or out of range).
+    NotFound,
+    /// C `set_clan_rankname`'s `rank < 0 || rank >= 5` guard
+    /// (`clan.c:866-868`).
+    InvalidRank,
+    /// C `set_clan_rankname`'s `strlen(name) > 37` guard (`clan.c:869-871`).
+    NameTooLong,
+}
+
+/// Errors for [`ClanRegistry::add_member`], mirroring the boundaries C
+/// `add_member`'s caller is expected to have already checked (C itself
+/// does not validate `cnr`; this is a stricter Rust seam).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClanMembershipError {
+    /// `cnr` is out of range or names a slot with no identity.
+    NotFound,
+    /// `cnr >= CLUB_OFFSET` - use the (not yet ported) club system instead.
+    IsClub,
+}
+
+/// Clan identity + membership registry: which clan numbers exist, their
+/// name/rank-names/website/message, and a per-slot serial used to
+/// invalidate stale `Character.clan_serial` references (e.g. after a clan
+/// is deleted and a different clan later re-founded in the same slot).
+/// Wraps [`ClanRelations`] for the relation state machine, which is
+/// unaffected by this struct beyond `found_clan`/`delete_clan` keeping
+/// both in sync.
+///
+/// Not yet persisted: no `crates/ugaris-db` repository/migration exists,
+/// so this registry currently only lives in server memory (see the
+/// module doc comment).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClanRegistry {
+    relations: ClanRelations,
+    serials: [u32; MAX_CLAN],
+    identities: [Option<ClanIdentity>; MAX_CLAN],
+}
+
+impl Default for ClanRegistry {
+    fn default() -> Self {
+        ClanRegistry {
+            relations: ClanRelations::default(),
+            serials: [0; MAX_CLAN],
+            identities: std::array::from_fn(|_| None),
+        }
+    }
+}
+
+impl ClanRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn valid_clan(nr: u16) -> bool {
+        nr >= 1 && (nr as usize) < MAX_CLAN
+    }
+
+    /// C: `clan[nr].name[0]` truthiness.
+    pub fn exists(&self, nr: u16) -> bool {
+        Self::valid_clan(nr) && self.identities[nr as usize].is_some()
+    }
+
+    /// C `clan[nr].status.serial`.
+    pub fn serial(&self, nr: u16) -> u32 {
+        if Self::valid_clan(nr) {
+            self.serials[nr as usize]
+        } else {
+            0
+        }
+    }
+
+    pub fn identity(&self, nr: u16) -> Option<&ClanIdentity> {
+        if Self::valid_clan(nr) {
+            self.identities[nr as usize].as_ref()
+        } else {
+            None
+        }
+    }
+
+    fn identity_mut(&mut self, nr: u16) -> Option<&mut ClanIdentity> {
+        if Self::valid_clan(nr) {
+            self.identities[nr as usize].as_mut()
+        } else {
+            None
+        }
+    }
+
+    /// C `get_clan_name` (`clan.c:286-292`).
+    pub fn name(&self, nr: u16) -> Option<&str> {
+        self.identity(nr).map(|id| id.name.as_str())
+    }
+
+    pub fn relations(&self) -> &ClanRelations {
+        &self.relations
+    }
+
+    pub fn relations_mut(&mut self) -> &mut ClanRelations {
+        &mut self.relations
+    }
+
+    /// C `found_clan` (`clan.c:460-492`) + `clan_standards`
+    /// (`clan.c:76-95`) + `zero_relation` (`clan.c:450-458`, folded into
+    /// [`ClanRelations::found_clan`]): allocates the first free clan slot
+    /// (a slot with no identity - either never used or previously
+    /// deleted), sets its name and standard rank names, and resets its
+    /// relation to every other clan (in both directions) to neutral.
+    ///
+    /// Unlike C (which takes the founding character and calls
+    /// `add_clanlog` itself, `clan.c:489`), clan-log persistence and the
+    /// `ACHIEVEMENT_CLAN_MASTER` award are left to the caller - this
+    /// function only returns the new clan number.
+    pub fn found_clan(&mut self, name: &str, now: i64) -> Result<u16, ClanFoundError> {
+        if name.len() > 78 {
+            return Err(ClanFoundError::NameTooLong);
+        }
+        let slot = (1..MAX_CLAN).find(|&n| self.identities[n].is_none());
+        let Some(slot) = slot else {
+            return Err(ClanFoundError::ClanListFull);
+        };
+        self.identities[slot] = Some(ClanIdentity::standard(name.to_string()));
+        self.relations.found_clan(slot as u16, now);
+        Ok(slot as u16)
+    }
+
+    /// C: the bankrupt-clan deletion path (`update_treasure`,
+    /// `clan.c:1154-1160`) generalized to any clan deletion - clears the
+    /// clan's identity and bumps its serial so stale
+    /// `Character.clan_serial` references from former members become
+    /// invalid the next time [`ClanRegistry::get_char_clan`] runs (C:
+    /// `clan[cnr].name[0] = 0; clan[cnr].status.serial++;`).
+    pub fn delete_clan(&mut self, nr: u16) {
+        if Self::valid_clan(nr) {
+            self.identities[nr as usize] = None;
+            self.serials[nr as usize] = self.serials[nr as usize].wrapping_add(1);
+            self.relations.delete_clan(nr);
+        }
+    }
+
+    /// C `get_char_clan` (`clan.c:242-272`): validates a character's clan
+    /// membership fields against the live registry, clearing them (and
+    /// returning `None`) on any mismatch, exactly like C's
+    /// `ch[cn].clan = ch[cn].clan_rank = ch[cn].clan_serial = 0`.
+    ///
+    /// Clubs (`clan >= CLUB_OFFSET`) are out of scope for this registry
+    /// (`club.c` is a separate, not-yet-ported system reusing the same
+    /// fields, mirroring C's own `cnr >= CLUBOFFSET` early return,
+    /// `clan.c:249-251`): a club reference is left untouched but never
+    /// confirmed by this function.
+    ///
+    /// Unlike C, this always fully validates: C skips validation while
+    /// `!update_done` (storage still loading at server boot, `clan.c:259-
+    /// 261`), which has no equivalent in this always-ready in-memory
+    /// registry.
+    pub fn get_char_clan(&self, character: &mut Character) -> Option<u16> {
+        let cnr = character.clan;
+        if cnr == 0 {
+            return None;
+        }
+        if cnr >= CLUB_OFFSET {
+            return None;
+        }
+        if !Self::valid_clan(cnr)
+            || character.clan_serial != self.serials[cnr as usize]
+            || !self.exists(cnr)
+        {
+            character.clan = 0;
+            character.clan_rank = 0;
+            character.clan_serial = 0;
+            return None;
+        }
+        Some(cnr)
+    }
+
+    /// C `get_char_clan_name` (`clan.c:274-284`).
+    pub fn char_clan_name(&self, character: &mut Character) -> Option<&str> {
+        let cnr = self.get_char_clan(character)?;
+        self.name(cnr)
+    }
+
+    /// C `add_member` (`clan.c:1186-1206`): assigns clan membership
+    /// fields. Notably does *not* set `clan_rank` (a new member always
+    /// keeps whatever rank they already had, normally `0`/Member).
+    ///
+    /// Runtime-wide side effects the caller is expected to trigger
+    /// separately (out of scope for this pure registry): the
+    /// `ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLUB_MEMBER` award, the
+    /// clan-log entry, and resetting every other player's "knows this
+    /// character's name" flag (`set_player_knows_name`, `clan.c:1194-
+    /// 1196`).
+    pub fn add_member(
+        &self,
+        character: &mut Character,
+        cnr: u16,
+    ) -> Result<(), ClanMembershipError> {
+        if cnr >= CLUB_OFFSET {
+            return Err(ClanMembershipError::IsClub);
+        }
+        if !self.exists(cnr) {
+            return Err(ClanMembershipError::NotFound);
+        }
+        character.clan = cnr;
+        character.clan_serial = self.serials[cnr as usize];
+        Ok(())
+    }
+
+    /// C `remove_member` (`clan.c:1208-1221`): clears clan membership
+    /// fields unconditionally (C performs no validation and always
+    /// succeeds). Clan-log entry and name-recognition reset are left to
+    /// the caller, as in [`ClanRegistry::add_member`].
+    pub fn remove_member(&self, character: &mut Character) {
+        character.clan = 0;
+        character.clan_rank = 0;
+        character.clan_serial = 0;
+    }
+
+    /// C `set_clan_rankname` (`clan.c:862-879`).
+    pub fn set_rankname(
+        &mut self,
+        cnr: u16,
+        rank: usize,
+        name: &str,
+    ) -> Result<(), ClanIdentityError> {
+        if rank >= 5 {
+            return Err(ClanIdentityError::InvalidRank);
+        }
+        if name.len() > 37 {
+            return Err(ClanIdentityError::NameTooLong);
+        }
+        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
+        identity.rank_names[rank] = name.to_string();
+        Ok(())
+    }
+
+    /// C `set_clan_website` (`clan.c:584-593`). C additionally strips the
+    /// string's final character after truncating to 79 bytes
+    /// (`website[strlen(website)-1] = 0`), which depends on the raw
+    /// command-line parser appending a trailing delimiter before calling
+    /// this function - a calling convention that doesn't exist yet in the
+    /// (not-yet-wired) Rust command layer, so that quirk is deferred to
+    /// whichever future task wires a `/clan` command parser rather than
+    /// guessed here. This function only enforces the 79-character length
+    /// cap.
+    pub fn set_website(&mut self, cnr: u16, site: &str) -> Result<(), ClanIdentityError> {
+        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
+        identity.website = site.chars().take(79).collect();
+        Ok(())
+    }
+
+    /// C `set_clan_message` (`clan.c:595-604`). See
+    /// [`ClanRegistry::set_website`] for why the trailing-character-strip
+    /// quirk is deferred rather than ported here.
+    pub fn set_message(&mut self, cnr: u16, message: &str) -> Result<(), ClanIdentityError> {
+        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
+        identity.message = message.chars().take(79).collect();
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -767,5 +1093,265 @@ mod tests {
         assert!(!relations.can_attack_inside(0, 1));
         assert!(!relations.can_attack_outside(1, 100));
         assert!(!relations.alliance(1, 100));
+    }
+
+    fn test_character() -> Character {
+        Character {
+            merchant: None,
+            template_key: String::new(),
+            respawn_ticks: 0,
+            id: crate::ids::CharacterId(1),
+            serial: 1,
+            name: "tester".to_string(),
+            description: String::new(),
+            flags: crate::entity::CharacterFlags::USED,
+            sprite: 0,
+            c1: 0,
+            c2: 0,
+            c3: 0,
+            driver: 0,
+            group: 0,
+            clan: 0,
+            clan_rank: 0,
+            clan_serial: 0,
+            staff_code: String::new(),
+            speed_mode: crate::entity::SpeedMode::Normal,
+            x: 0,
+            y: 0,
+            rest_area: 0,
+            rest_x: 0,
+            rest_y: 0,
+            tox: 0,
+            toy: 0,
+            dir: 4,
+            action: 0,
+            duration: 0,
+            step: 0,
+            act1: 0,
+            act2: 0,
+            hp: 1000,
+            mana: 1000,
+            endurance: 1000,
+            lifeshield: 0,
+            level: 1,
+            exp: 0,
+            exp_used: 0,
+            military_points: 0,
+            military_normal_exp: 0,
+            gold: 0,
+            karma: 0,
+            creation_time: 0,
+            saves: 0,
+            got_saved: 0,
+            deaths: 0,
+            regen_ticker: 0,
+            last_regen: 0,
+            cursor_item: None,
+            current_container: None,
+            values: Character::empty_values(),
+            professions: Character::empty_professions(),
+            inventory: Character::empty_inventory(),
+            driver_state: None,
+            driver_messages: Vec::new(),
+            driver_memory: crate::character_driver::DriverMemory::default(),
+            class: 0,
+        }
+    }
+
+    #[test]
+    fn registry_found_clan_allocates_first_free_slot_with_standard_ranks() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("The Founders", 1_000).unwrap();
+        assert_eq!(nr, 1);
+        assert!(registry.exists(1));
+        assert_eq!(registry.name(1), Some("The Founders"));
+        let identity = registry.identity(1).unwrap();
+        assert_eq!(
+            identity.rank_names,
+            ["Member", "Member", "Recruiter", "Treasurer", "Leader"]
+        );
+        // Relations were reset to neutral by the wrapped ClanRelations.
+        assert_eq!(
+            registry.relations().current_relation(1, 5),
+            ClanRelation::Neutral
+        );
+    }
+
+    #[test]
+    fn registry_found_clan_rejects_names_over_78_chars() {
+        let mut registry = ClanRegistry::new();
+        let long_name = "x".repeat(79);
+        assert_eq!(
+            registry.found_clan(&long_name, 0),
+            Err(ClanFoundError::NameTooLong)
+        );
+    }
+
+    #[test]
+    fn registry_found_clan_reuses_slot_after_delete_and_bumps_serial() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("First", 0).unwrap();
+        assert_eq!(registry.serial(nr), 0);
+        registry.delete_clan(nr);
+        assert!(!registry.exists(nr));
+
+        let nr2 = registry.found_clan("Second", 0).unwrap();
+        assert_eq!(nr2, nr); // same slot reused
+        assert_eq!(registry.name(nr2), Some("Second"));
+        assert_eq!(registry.serial(nr2), 1); // serial bumped by delete_clan
+    }
+
+    #[test]
+    fn registry_found_clan_returns_list_full_when_all_slots_used() {
+        let mut registry = ClanRegistry::new();
+        for n in 1..MAX_CLAN {
+            registry.found_clan(&format!("Clan{n}"), 0).unwrap();
+        }
+        assert_eq!(
+            registry.found_clan("Overflow", 0),
+            Err(ClanFoundError::ClanListFull)
+        );
+    }
+
+    #[test]
+    fn add_member_then_get_char_clan_round_trips() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Allies", 0).unwrap();
+        let mut character = test_character();
+
+        registry.add_member(&mut character, nr).unwrap();
+        assert_eq!(character.clan, nr);
+        assert_eq!(character.clan_serial, registry.serial(nr));
+        assert_eq!(character.clan_rank, 0); // add_member never sets rank
+
+        assert_eq!(registry.get_char_clan(&mut character), Some(nr));
+        assert_eq!(character.clan, nr); // untouched on success
+    }
+
+    #[test]
+    fn add_member_rejects_unknown_clan() {
+        let registry = ClanRegistry::new();
+        let mut character = test_character();
+        assert_eq!(
+            registry.add_member(&mut character, 5),
+            Err(ClanMembershipError::NotFound)
+        );
+    }
+
+    #[test]
+    fn add_member_rejects_club_numbers() {
+        let registry = ClanRegistry::new();
+        let mut character = test_character();
+        assert_eq!(
+            registry.add_member(&mut character, CLUB_OFFSET),
+            Err(ClanMembershipError::IsClub)
+        );
+    }
+
+    #[test]
+    fn remove_member_clears_all_three_fields() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Allies", 0).unwrap();
+        let mut character = test_character();
+        registry.add_member(&mut character, nr).unwrap();
+        character.clan_rank = 3;
+
+        registry.remove_member(&mut character);
+        assert_eq!(character.clan, 0);
+        assert_eq!(character.clan_rank, 0);
+        assert_eq!(character.clan_serial, 0);
+    }
+
+    #[test]
+    fn get_char_clan_clears_stale_reference_after_clan_deleted_and_refounded() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Original", 0).unwrap();
+        let mut character = test_character();
+        registry.add_member(&mut character, nr).unwrap();
+
+        registry.delete_clan(nr);
+        let nr2 = registry.found_clan("Replacement", 0).unwrap();
+        assert_eq!(nr2, nr);
+
+        // Character still has the old serial - must be treated as former
+        // member of a now-different clan, exactly like C's
+        // `ch[cn].clan_serial != clan[cnr].status.serial` check.
+        assert_eq!(registry.get_char_clan(&mut character), None);
+        assert_eq!(character.clan, 0);
+        assert_eq!(character.clan_rank, 0);
+        assert_eq!(character.clan_serial, 0);
+    }
+
+    #[test]
+    fn get_char_clan_ignores_club_numbers() {
+        let registry = ClanRegistry::new();
+        let mut character = test_character();
+        character.clan = CLUB_OFFSET + 3;
+        character.clan_rank = 2;
+        character.clan_serial = 7;
+
+        assert_eq!(registry.get_char_clan(&mut character), None);
+        // Untouched: club membership is a different (unported) system.
+        assert_eq!(character.clan, CLUB_OFFSET + 3);
+        assert_eq!(character.clan_rank, 2);
+        assert_eq!(character.clan_serial, 7);
+    }
+
+    #[test]
+    fn get_char_clan_zero_means_no_clan() {
+        let registry = ClanRegistry::new();
+        let mut character = test_character();
+        assert_eq!(registry.get_char_clan(&mut character), None);
+    }
+
+    #[test]
+    fn char_clan_name_resolves_through_get_char_clan() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Named Clan", 0).unwrap();
+        let mut character = test_character();
+        registry.add_member(&mut character, nr).unwrap();
+        assert_eq!(registry.char_clan_name(&mut character), Some("Named Clan"));
+    }
+
+    #[test]
+    fn set_rankname_validates_rank_and_length() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Ranked", 0).unwrap();
+
+        registry.set_rankname(nr, 4, "Warlord").unwrap();
+        assert_eq!(registry.identity(nr).unwrap().rank_names[4], "Warlord");
+
+        assert_eq!(
+            registry.set_rankname(nr, 5, "Invalid"),
+            Err(ClanIdentityError::InvalidRank)
+        );
+        assert_eq!(
+            registry.set_rankname(nr, 0, &"x".repeat(38)),
+            Err(ClanIdentityError::NameTooLong)
+        );
+        assert_eq!(
+            registry.set_rankname(99, 0, "Nobody"),
+            Err(ClanIdentityError::NotFound)
+        );
+    }
+
+    #[test]
+    fn set_website_and_message_update_identity() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Web", 0).unwrap();
+        registry.set_website(nr, "https://example.com").unwrap();
+        registry.set_message(nr, "Welcome!").unwrap();
+        let identity = registry.identity(nr).unwrap();
+        assert_eq!(identity.website, "https://example.com");
+        assert_eq!(identity.message, "Welcome!");
+    }
+
+    #[test]
+    fn set_website_truncates_to_79_chars() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Web", 0).unwrap();
+        let long = "y".repeat(200);
+        registry.set_website(nr, &long).unwrap();
+        assert_eq!(registry.identity(nr).unwrap().website.len(), 79);
     }
 }

@@ -2729,15 +2729,43 @@
         "test result: ok. 1429 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
         "358:- `src/module/simple_baddy.c` post-combat noncombat driver flow now has a Rust runtime slice: idle live `CDR_SIMPLEBADDY` characters with driver state perform the legacy short creation idle, day/n"
       ]
+    },
+    {
+      "iteration": 86,
+      "startedAt": "2026-07-04T12:51:06.536Z",
+      "endedAt": "2026-07-04T13:05:07.431Z",
+      "durationMs": 840334,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/clan.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` → 1444 ugaris-core + 38 db + 3 net + 37 protocol + 489 server, all green, zero failures; `cargo build -p ugaris-server` clean with z",
+        "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "+            return Err(ClanFoundError::NameTooLong);",
+        "+            return Err(ClanFoundError::ClanListFull);",
+        "+            return Err(ClanMembershipError::IsClub);",
+        "+            return Err(ClanMembershipError::NotFound);",
+        "+            return Err(ClanIdentityError::InvalidRank);",
+        "+            return Err(ClanIdentityError::NameTooLong);",
+        "+            .ok_or(ClanIdentityError::NotFound)?;"
+      ]
     }
   ],
-  "totalDurationMs": 92906581,
+  "totalDurationMs": 93746915,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 85,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 86,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -3109,7 +3137,7 @@
       "test result: ok. 485 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 1382 filtered out; finished in 0.00s": 1,
       "test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 414 filtered out; finished in 0.01s": 1,
-      "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
+      "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 3,
       "test result: ok. 1408 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "- **Verification**: `cargo fmt --all`, `cargo test --workspace` (all green, zero failures), `cargo b": 1,
       "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
@@ -3121,7 +3149,15 @@
       "test result: FAILED. 35 passed; 2 failed; 0 ignored; 0 measured; 1390 filtered out; finished in 0.00": 1,
       "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 1390 filtered out; finished in 0.00s": 1,
       "test result: ok. 1429 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
-      "358:- `src/module/simple_baddy.c` post-combat noncombat driver flow now has a Rust runtime slice: id": 1
+      "358:- `src/module/simple_baddy.c` post-combat noncombat driver flow now has a Rust runtime slice: id": 1,
+      "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` → 1444 ugaris-core + 38 db + 3 n": 1,
+      "+            return Err(ClanFoundError::NameTooLong);": 1,
+      "+            return Err(ClanFoundError::ClanListFull);": 1,
+      "+            return Err(ClanMembershipError::IsClub);": 1,
+      "+            return Err(ClanMembershipError::NotFound);": 1,
+      "+            return Err(ClanIdentityError::InvalidRank);": 1,
+      "+            return Err(ClanIdentityError::NameTooLong);": 1,
+      "+            .ok_or(ClanIdentityError::NotFound)?;": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
