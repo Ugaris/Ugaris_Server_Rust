@@ -525,12 +525,12 @@ fn connected_player(character_id: CharacterId, session_id: u64) -> (World, Serve
     (world, runtime)
 }
 
-#[test]
-fn award_play_time_minute_bumps_stat_without_unlock_below_threshold() {
+#[tokio::test]
+async fn award_play_time_minute_bumps_stat_without_unlock_below_threshold() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
-    award_play_time_minute(&world, &mut runtime, character_id);
+    award_play_time_minute(&mut world, &mut runtime, &None, character_id).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.play_time_minutes, 1);
@@ -540,17 +540,17 @@ fn award_play_time_minute_bumps_stat_without_unlock_below_threshold() {
     assert!(runtime.tick_out.get(&1).is_none());
 }
 
-#[test]
-fn award_play_time_minute_unlocks_dedicated_player_at_1440_minutes_and_notifies_session() {
+#[tokio::test]
+async fn award_play_time_minute_unlocks_dedicated_player_at_1440_minutes_and_notifies_session() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
         .achievement_stats
         .play_time_minutes = 1439;
 
-    award_play_time_minute(&world, &mut runtime, character_id);
+    award_play_time_minute(&mut world, &mut runtime, &None, character_id).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.play_time_minutes, 1440);
@@ -568,8 +568,8 @@ fn award_play_time_minute_unlocks_dedicated_player_at_1440_minutes_and_notifies_
     assert_eq!(payloads[0][3], AchievementType::DedicatedPlayer as u8);
 }
 
-#[test]
-fn award_play_time_minute_is_a_noop_for_characters_without_a_player_runtime() {
+#[tokio::test]
+async fn award_play_time_minute_is_a_noop_for_characters_without_a_player_runtime() {
     let character_id = CharacterId(9);
     let mut world = World::default();
     world.add_character(login_character(
@@ -584,7 +584,7 @@ fn award_play_time_minute_is_a_noop_for_characters_without_a_player_runtime() {
     // Should not panic even though no session/PlayerRuntime exists for this
     // character (mirrors C's `player_update` only ever running for
     // connected player slots).
-    award_play_time_minute(&world, &mut runtime, character_id);
+    award_play_time_minute(&mut world, &mut runtime, &None, character_id).await;
     assert!(runtime.player_for_character(character_id).is_none());
 }
 
@@ -593,12 +593,12 @@ fn award_play_time_minute_is_a_noop_for_characters_without_a_player_runtime() {
 // `kill_char`'s `achievement_add_enemy_killed`/`achievement_add_demons`).
 // ============================================================================
 
-#[test]
-fn award_enemy_killed_achievement_unlocks_first_blood_on_first_kill() {
+#[tokio::test]
+async fn award_enemy_killed_achievement_unlocks_first_blood_on_first_kill() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
-    award_enemy_killed_achievement(&world, &mut runtime, character_id, 1, false);
+    award_enemy_killed_achievement(&mut world, &mut runtime, &None, character_id, 1, false).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.enemies_killed, 1);
@@ -616,10 +616,10 @@ fn award_enemy_killed_achievement_unlocks_first_blood_on_first_kill() {
     assert_eq!(payloads[0][3], AchievementType::FirstBlood as u8);
 }
 
-#[test]
-fn award_enemy_killed_achievement_does_not_reunlock_first_blood_on_later_kills() {
+#[tokio::test]
+async fn award_enemy_killed_achievement_does_not_reunlock_first_blood_on_later_kills() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
@@ -631,20 +631,20 @@ fn award_enemy_killed_achievement_does_not_reunlock_first_blood_on_later_kills()
         .achievement_data
         .award(AchievementType::FirstBlood, "Tester", 1);
 
-    award_enemy_killed_achievement(&world, &mut runtime, character_id, 1, false);
+    award_enemy_killed_achievement(&mut world, &mut runtime, &None, character_id, 1, false).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.enemies_killed, 2);
     assert!(runtime.tick_out.get(&1).is_none());
 }
 
-#[test]
-fn award_enemy_killed_achievement_also_awards_demon_progress_when_target_is_demon() {
+#[tokio::test]
+async fn award_enemy_killed_achievement_also_awards_demon_progress_when_target_is_demon() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
     // area_id 4 maps to `PentArea::Earth` (`achievement_area_to_pent_index`).
-    award_enemy_killed_achievement(&world, &mut runtime, character_id, 4, true);
+    award_enemy_killed_achievement(&mut world, &mut runtime, &None, character_id, 4, true).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.enemies_killed, 1);
@@ -655,19 +655,19 @@ fn award_enemy_killed_achievement_also_awards_demon_progress_when_target_is_demo
         .is_unlocked(AchievementType::FirstBlood));
 }
 
-#[test]
-fn award_enemy_killed_achievement_skips_demon_progress_when_target_is_not_demon() {
+#[tokio::test]
+async fn award_enemy_killed_achievement_skips_demon_progress_when_target_is_not_demon() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
-    award_enemy_killed_achievement(&world, &mut runtime, character_id, 4, false);
+    award_enemy_killed_achievement(&mut world, &mut runtime, &None, character_id, 4, false).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.demons_defeated, 0);
 }
 
-#[test]
-fn award_enemy_killed_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+#[tokio::test]
+async fn award_enemy_killed_achievement_is_a_noop_for_characters_without_a_player_runtime() {
     let character_id = CharacterId(9);
     let mut world = World::default();
     world.add_character(login_character(
@@ -679,7 +679,7 @@ fn award_enemy_killed_achievement_is_a_noop_for_characters_without_a_player_runt
     ));
     let mut runtime = ServerRuntime::default();
 
-    award_enemy_killed_achievement(&world, &mut runtime, character_id, 1, false);
+    award_enemy_killed_achievement(&mut world, &mut runtime, &None, character_id, 1, false).await;
     assert!(runtime.player_for_character(character_id).is_none());
 }
 
@@ -688,17 +688,17 @@ fn award_enemy_killed_achievement_is_a_noop_for_characters_without_a_player_runt
 // `flower_driver`'s `achievement_add_flowers`/`_mushrooms`/`_berries`).
 // ============================================================================
 
-#[test]
-fn award_gathering_achievement_credits_flowers_for_kind_1_through_7() {
+#[tokio::test]
+async fn award_gathering_achievement_credits_flowers_for_kind_1_through_7() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
         .achievement_stats
         .flowers_picked = 9;
 
-    award_gathering_achievement(&world, &mut runtime, character_id, 7);
+    award_gathering_achievement(&mut world, &mut runtime, &None, character_id, 7).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.flowers_picked, 10);
@@ -714,17 +714,17 @@ fn award_gathering_achievement_credits_flowers_for_kind_1_through_7() {
     assert_eq!(payloads[0][3], AchievementType::GreenThumb as u8);
 }
 
-#[test]
-fn award_gathering_achievement_credits_mushrooms_for_kind_8_through_16() {
+#[tokio::test]
+async fn award_gathering_achievement_credits_mushrooms_for_kind_8_through_16() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
         .achievement_stats
         .mushrooms_picked = 9;
 
-    award_gathering_achievement(&world, &mut runtime, character_id, 16);
+    award_gathering_achievement(&mut world, &mut runtime, &None, character_id, 16).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.mushrooms_picked, 10);
@@ -734,17 +734,17 @@ fn award_gathering_achievement_credits_mushrooms_for_kind_8_through_16() {
         .is_unlocked(AchievementType::MushroomHunter));
 }
 
-#[test]
-fn award_gathering_achievement_credits_berries_for_kind_17_through_20() {
+#[tokio::test]
+async fn award_gathering_achievement_credits_berries_for_kind_17_through_20() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
         .achievement_stats
         .berries_picked = 9;
 
-    award_gathering_achievement(&world, &mut runtime, character_id, 20);
+    award_gathering_achievement(&mut world, &mut runtime, &None, character_id, 20).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.berries_picked, 10);
@@ -754,13 +754,13 @@ fn award_gathering_achievement_credits_berries_for_kind_17_through_20() {
         .is_unlocked(AchievementType::BerryPicker));
 }
 
-#[test]
-fn award_gathering_achievement_ignores_out_of_range_kind() {
+#[tokio::test]
+async fn award_gathering_achievement_ignores_out_of_range_kind() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
-    award_gathering_achievement(&world, &mut runtime, character_id, 0);
-    award_gathering_achievement(&world, &mut runtime, character_id, 21);
+    award_gathering_achievement(&mut world, &mut runtime, &None, character_id, 0).await;
+    award_gathering_achievement(&mut world, &mut runtime, &None, character_id, 21).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.flowers_picked, 0);
@@ -768,8 +768,8 @@ fn award_gathering_achievement_ignores_out_of_range_kind() {
     assert_eq!(player.achievement_stats.berries_picked, 0);
 }
 
-#[test]
-fn award_gathering_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+#[tokio::test]
+async fn award_gathering_achievement_is_a_noop_for_characters_without_a_player_runtime() {
     let character_id = CharacterId(9);
     let mut world = World::default();
     world.add_character(login_character(
@@ -781,7 +781,7 @@ fn award_gathering_achievement_is_a_noop_for_characters_without_a_player_runtime
     ));
     let mut runtime = ServerRuntime::default();
 
-    award_gathering_achievement(&world, &mut runtime, character_id, 1);
+    award_gathering_achievement(&mut world, &mut runtime, &None, character_id, 1).await;
     assert!(runtime.player_for_character(character_id).is_none());
 }
 
@@ -791,17 +791,17 @@ fn award_gathering_achievement_is_a_noop_for_characters_without_a_player_runtime
 // potions`).
 // ============================================================================
 
-#[test]
-fn award_potion_brewed_achievement_unlocks_alchemist_at_10_potions() {
+#[tokio::test]
+async fn award_potion_brewed_achievement_unlocks_alchemist_at_10_potions() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
         .achievement_stats
         .potions_brewed = 9;
 
-    award_potion_brewed_achievement(&world, &mut runtime, character_id);
+    award_potion_brewed_achievement(&mut world, &mut runtime, &None, character_id).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.potions_brewed, 10);
@@ -815,12 +815,12 @@ fn award_potion_brewed_achievement_unlocks_alchemist_at_10_potions() {
     assert_eq!(payloads[0][3], AchievementType::Alchemist as u8);
 }
 
-#[test]
-fn award_potion_brewed_achievement_bumps_stat_without_unlock_below_threshold() {
+#[tokio::test]
+async fn award_potion_brewed_achievement_bumps_stat_without_unlock_below_threshold() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
-    award_potion_brewed_achievement(&world, &mut runtime, character_id);
+    award_potion_brewed_achievement(&mut world, &mut runtime, &None, character_id).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.potions_brewed, 1);
@@ -830,8 +830,8 @@ fn award_potion_brewed_achievement_bumps_stat_without_unlock_below_threshold() {
     assert!(runtime.tick_out.get(&1).is_none());
 }
 
-#[test]
-fn award_potion_brewed_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+#[tokio::test]
+async fn award_potion_brewed_achievement_is_a_noop_for_characters_without_a_player_runtime() {
     let character_id = CharacterId(9);
     let mut world = World::default();
     world.add_character(login_character(
@@ -843,7 +843,7 @@ fn award_potion_brewed_achievement_is_a_noop_for_characters_without_a_player_run
     ));
     let mut runtime = ServerRuntime::default();
 
-    award_potion_brewed_achievement(&world, &mut runtime, character_id);
+    award_potion_brewed_achievement(&mut world, &mut runtime, &None, character_id).await;
     assert!(runtime.player_for_character(character_id).is_none());
 }
 
@@ -852,18 +852,20 @@ fn award_potion_brewed_achievement_is_a_noop_for_characters_without_a_player_run
 // `raise_value`/`raise_value_exp`'s shared `achievement_check_skill` call).
 // ============================================================================
 
-#[test]
-fn award_skill_achievement_unlocks_weapon_novice_at_bare_10_for_dagger() {
+#[tokio::test]
+async fn award_skill_achievement_unlocks_weapon_novice_at_bare_10_for_dagger() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
     award_skill_achievement(
-        &world,
+        &mut world,
         &mut runtime,
+        &None,
         character_id,
         ugaris_core::achievement::V_DAGGER,
         10,
-    );
+    )
+    .await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert!(player
@@ -879,10 +881,10 @@ fn award_skill_achievement_unlocks_weapon_novice_at_bare_10_for_dagger() {
     assert_eq!(payloads[0][3], AchievementType::WeaponNovice as u8);
 }
 
-#[test]
-fn award_skill_achievement_unlocks_master_of_arms_at_bare_110_for_twohand() {
+#[tokio::test]
+async fn award_skill_achievement_unlocks_master_of_arms_at_bare_110_for_twohand() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
@@ -890,12 +892,14 @@ fn award_skill_achievement_unlocks_master_of_arms_at_bare_110_for_twohand() {
         .award(AchievementType::WeaponNovice, "Tester", 1);
 
     award_skill_achievement(
-        &world,
+        &mut world,
         &mut runtime,
+        &None,
         character_id,
         ugaris_core::achievement::V_TWOHAND,
         110,
-    );
+    )
+    .await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert!(player
@@ -903,18 +907,20 @@ fn award_skill_achievement_unlocks_master_of_arms_at_bare_110_for_twohand() {
         .is_unlocked(AchievementType::MasterOfArms));
 }
 
-#[test]
-fn award_skill_achievement_unlocks_magic_ladder_for_fire_and_flash() {
+#[tokio::test]
+async fn award_skill_achievement_unlocks_magic_ladder_for_fire_and_flash() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
     award_skill_achievement(
-        &world,
+        &mut world,
         &mut runtime,
+        &None,
         character_id,
         ugaris_core::achievement::V_FIRE,
         50,
-    );
+    )
+    .await;
     let player = runtime.player_for_character(character_id).unwrap();
     assert!(player
         .achievement_data
@@ -927,63 +933,71 @@ fn award_skill_achievement_unlocks_magic_ladder_for_fire_and_flash() {
         .is_unlocked(AchievementType::MasterOfMagic));
 
     award_skill_achievement(
-        &world,
+        &mut world,
         &mut runtime,
+        &None,
         character_id,
         ugaris_core::achievement::V_FLASH,
         110,
-    );
+    )
+    .await;
     let player = runtime.player_for_character(character_id).unwrap();
     assert!(player
         .achievement_data
         .is_unlocked(AchievementType::MasterOfMagic));
 }
 
-#[test]
-fn award_skill_achievement_unlocks_fighting_ladder_for_attack_and_parry() {
+#[tokio::test]
+async fn award_skill_achievement_unlocks_fighting_ladder_for_attack_and_parry() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
     award_skill_achievement(
-        &world,
+        &mut world,
         &mut runtime,
+        &None,
         character_id,
         ugaris_core::achievement::V_ATTACK,
         10,
-    );
+    )
+    .await;
     let player = runtime.player_for_character(character_id).unwrap();
     assert!(player
         .achievement_data
         .is_unlocked(AchievementType::ApprenticeFighting));
 
     award_skill_achievement(
-        &world,
+        &mut world,
         &mut runtime,
+        &None,
         character_id,
         ugaris_core::achievement::V_PARRY,
         110,
-    );
+    )
+    .await;
     let player = runtime.player_for_character(character_id).unwrap();
     assert!(player
         .achievement_data
         .is_unlocked(AchievementType::MasterOfFighting));
 }
 
-#[test]
-fn award_skill_achievement_ignores_unrelated_skill_types_and_sub_threshold_levels() {
+#[tokio::test]
+async fn award_skill_achievement_ignores_unrelated_skill_types_and_sub_threshold_levels() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
     // Unrelated skill index (e.g. barter) never triggers any of these.
-    award_skill_achievement(&world, &mut runtime, character_id, 25, 999);
+    award_skill_achievement(&mut world, &mut runtime, &None, character_id, 25, 999).await;
     // Weapon skill below the novice threshold.
     award_skill_achievement(
-        &world,
+        &mut world,
         &mut runtime,
+        &None,
         character_id,
         ugaris_core::achievement::V_DAGGER,
         9,
-    );
+    )
+    .await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert!(!player
@@ -992,8 +1006,8 @@ fn award_skill_achievement_ignores_unrelated_skill_types_and_sub_threshold_level
     assert!(runtime.tick_out.get(&1).is_none());
 }
 
-#[test]
-fn award_skill_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+#[tokio::test]
+async fn award_skill_achievement_is_a_noop_for_characters_without_a_player_runtime() {
     let character_id = CharacterId(9);
     let mut world = World::default();
     world.add_character(login_character(
@@ -1006,12 +1020,14 @@ fn award_skill_achievement_is_a_noop_for_characters_without_a_player_runtime() {
     let mut runtime = ServerRuntime::default();
 
     award_skill_achievement(
-        &world,
+        &mut world,
         &mut runtime,
+        &None,
         character_id,
         ugaris_core::achievement::V_DAGGER,
         10,
-    );
+    )
+    .await;
     assert!(runtime.player_for_character(character_id).is_none());
 }
 
@@ -1019,8 +1035,8 @@ fn award_skill_achievement_is_a_noop_for_characters_without_a_player_runtime() {
 // `give_money` (`src/system/tool.c:1459-1483`).
 // ============================================================================
 
-#[test]
-fn give_money_adds_gold_and_formats_message_under_100_silver() {
+#[tokio::test]
+async fn give_money_adds_gold_and_formats_message_under_100_silver() {
     let character_id = CharacterId(7);
     let (mut world, mut runtime) = connected_player(character_id, 1);
     let starting_gold = world.characters.get(&character_id).unwrap().gold;
@@ -1029,10 +1045,12 @@ fn give_money_adds_gold_and_formats_message_under_100_silver() {
     give_money(
         &mut world,
         &mut runtime,
+        &None,
         character_id,
         42,
         &mut feedback_bytes,
-    );
+    )
+    .await;
 
     assert_eq!(
         world.characters.get(&character_id).unwrap().gold,
@@ -1053,8 +1071,8 @@ fn give_money_adds_gold_and_formats_message_under_100_silver() {
     assert!(text.ends_with(". It has been placed in your gold pouch."));
 }
 
-#[test]
-fn give_money_formats_gold_units_at_or_above_100_silver() {
+#[tokio::test]
+async fn give_money_formats_gold_units_at_or_above_100_silver() {
     let character_id = CharacterId(7);
     let (mut world, mut runtime) = connected_player(character_id, 1);
     let mut feedback_bytes = Vec::new();
@@ -1062,17 +1080,19 @@ fn give_money_formats_gold_units_at_or_above_100_silver() {
     give_money(
         &mut world,
         &mut runtime,
+        &None,
         character_id,
         250,
         &mut feedback_bytes,
-    );
+    )
+    .await;
 
     let text = String::from_utf8_lossy(&feedback_bytes[0].1);
     assert!(text.contains("2.50G"));
 }
 
-#[test]
-fn give_money_tracks_gold_earned_achievement_ladder_in_whole_gold_units() {
+#[tokio::test]
+async fn give_money_tracks_gold_earned_achievement_ladder_in_whole_gold_units() {
     let character_id = CharacterId(7);
     let (mut world, mut runtime) = connected_player(character_id, 1);
     let mut feedback_bytes = Vec::new();
@@ -1083,10 +1103,12 @@ fn give_money_tracks_gold_earned_achievement_ladder_in_whole_gold_units() {
     give_money(
         &mut world,
         &mut runtime,
+        &None,
         character_id,
         1_000_000,
         &mut feedback_bytes,
-    );
+    )
+    .await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.gold_earned, 10_000);
@@ -1100,8 +1122,8 @@ fn give_money_tracks_gold_earned_achievement_ladder_in_whole_gold_units() {
     assert_eq!(payloads[0][3], AchievementType::CoinCollector as u8);
 }
 
-#[test]
-fn give_money_below_100_silver_bumps_no_gold_earned_stat() {
+#[tokio::test]
+async fn give_money_below_100_silver_bumps_no_gold_earned_stat() {
     let character_id = CharacterId(7);
     let (mut world, mut runtime) = connected_player(character_id, 1);
     let mut feedback_bytes = Vec::new();
@@ -1111,17 +1133,20 @@ fn give_money_below_100_silver_bumps_no_gold_earned_stat() {
     give_money(
         &mut world,
         &mut runtime,
+        &None,
         character_id,
         99,
         &mut feedback_bytes,
-    );
+    )
+    .await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.gold_earned, 0);
 }
 
-#[test]
-fn give_money_still_mutates_gold_and_sends_a_message_for_characters_without_a_player_runtime() {
+#[tokio::test]
+async fn give_money_still_mutates_gold_and_sends_a_message_for_characters_without_a_player_runtime()
+{
     let character_id = CharacterId(9);
     let mut world = World::default();
     world.add_character(login_character(
@@ -1137,10 +1162,12 @@ fn give_money_still_mutates_gold_and_sends_a_message_for_characters_without_a_pl
     give_money(
         &mut world,
         &mut runtime,
+        &None,
         character_id,
         500,
         &mut feedback_bytes,
-    );
+    )
+    .await;
 
     assert_eq!(world.characters.get(&character_id).unwrap().gold, 500);
     assert_eq!(feedback_bytes.len(), 1);
@@ -1152,17 +1179,17 @@ fn give_money_still_mutates_gold_and_sends_a_message_for_characters_without_a_pl
 // stone-pickup block calling `achievement_add_stones`).
 // ============================================================================
 
-#[test]
-fn award_stone_pickup_achievement_credits_earth_stones_for_drdata_23_and_24() {
+#[tokio::test]
+async fn award_stone_pickup_achievement_credits_earth_stones_for_drdata_23_and_24() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
         .achievement_stats
         .earth_stones = 49;
 
-    award_stone_pickup_achievement(&world, &mut runtime, character_id, 23);
+    award_stone_pickup_achievement(&mut world, &mut runtime, &None, character_id, 23).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.earth_stones, 50);
@@ -1176,13 +1203,13 @@ fn award_stone_pickup_achievement_credits_earth_stones_for_drdata_23_and_24() {
     assert_eq!(payloads[0][3], AchievementType::EarthRocks as u8);
 
     // drdata 24 is the other Earth-stone variant.
-    let (world2, mut runtime2) = connected_player(character_id, 1);
+    let (mut world2, mut runtime2) = connected_player(character_id, 1);
     runtime2
         .player_for_character_mut(character_id)
         .unwrap()
         .achievement_stats
         .earth_stones = 49;
-    award_stone_pickup_achievement(&world2, &mut runtime2, character_id, 24);
+    award_stone_pickup_achievement(&mut world2, &mut runtime2, &None, character_id, 24).await;
     assert!(runtime2
         .player_for_character(character_id)
         .unwrap()
@@ -1190,17 +1217,17 @@ fn award_stone_pickup_achievement_credits_earth_stones_for_drdata_23_and_24() {
         .is_unlocked(AchievementType::EarthRocks));
 }
 
-#[test]
-fn award_stone_pickup_achievement_credits_fire_stones_for_drdata_21() {
+#[tokio::test]
+async fn award_stone_pickup_achievement_credits_fire_stones_for_drdata_21() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
         .achievement_stats
         .fire_stones = 99;
 
-    award_stone_pickup_achievement(&world, &mut runtime, character_id, 21);
+    award_stone_pickup_achievement(&mut world, &mut runtime, &None, character_id, 21).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.fire_stones, 100);
@@ -1209,17 +1236,17 @@ fn award_stone_pickup_achievement_credits_fire_stones_for_drdata_21() {
         .is_unlocked(AchievementType::FireRocks));
 }
 
-#[test]
-fn award_stone_pickup_achievement_credits_ice_stones_for_drdata_22() {
+#[tokio::test]
+async fn award_stone_pickup_achievement_credits_ice_stones_for_drdata_22() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
     runtime
         .player_for_character_mut(character_id)
         .unwrap()
         .achievement_stats
         .ice_stones = 999;
 
-    award_stone_pickup_achievement(&world, &mut runtime, character_id, 22);
+    award_stone_pickup_achievement(&mut world, &mut runtime, &None, character_id, 22).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.ice_stones, 1000);
@@ -1228,13 +1255,13 @@ fn award_stone_pickup_achievement_credits_ice_stones_for_drdata_22() {
         .is_unlocked(AchievementType::IceRocks));
 }
 
-#[test]
-fn award_stone_pickup_achievement_ignores_unrelated_drdata_values() {
+#[tokio::test]
+async fn award_stone_pickup_achievement_ignores_unrelated_drdata_values() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
-    award_stone_pickup_achievement(&world, &mut runtime, character_id, 0);
-    award_stone_pickup_achievement(&world, &mut runtime, character_id, 20);
+    award_stone_pickup_achievement(&mut world, &mut runtime, &None, character_id, 0).await;
+    award_stone_pickup_achievement(&mut world, &mut runtime, &None, character_id, 20).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.earth_stones, 0);
@@ -1242,8 +1269,8 @@ fn award_stone_pickup_achievement_ignores_unrelated_drdata_values() {
     assert_eq!(player.achievement_stats.ice_stones, 0);
 }
 
-#[test]
-fn award_stone_pickup_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+#[tokio::test]
+async fn award_stone_pickup_achievement_is_a_noop_for_characters_without_a_player_runtime() {
     let character_id = CharacterId(9);
     let mut world = World::default();
     world.add_character(login_character(
@@ -1255,6 +1282,6 @@ fn award_stone_pickup_achievement_is_a_noop_for_characters_without_a_player_runt
     ));
     let mut runtime = ServerRuntime::default();
 
-    award_stone_pickup_achievement(&world, &mut runtime, character_id, 23);
+    award_stone_pickup_achievement(&mut world, &mut runtime, &None, character_id, 23).await;
     assert!(runtime.player_for_character(character_id).is_none());
 }

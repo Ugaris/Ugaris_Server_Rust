@@ -926,12 +926,14 @@ async fn main() -> anyhow::Result<()> {
                 // C kill_char achievement_add_enemy_killed/achievement_add_demons.
                 for award in world.drain_pending_kill_achievements() {
                     award_enemy_killed_achievement(
-                        &world,
+                        &mut world,
                         &mut runtime,
+                        &achievement_repository,
                         award.killer_id,
                         award.area_id,
                         award.target_is_demon,
-                    );
+                    )
+                    .await;
                 }
                 let timer_feedback = timer_outcome_feedback(&timer_outcomes);
                 if !timer_feedback.is_empty() {
@@ -1520,12 +1522,14 @@ async fn main() -> anyhow::Result<()> {
                                 // achievement_check_skill(cn, v,
                                 // ch[cn].value[1][v]); }`.
                                 award_skill_achievement(
-                                    &world,
+                                    &mut world,
                                     &mut runtime,
+                                    &achievement_repository,
                                     character_id,
                                     value as i32,
                                     bare as i32,
-                                );
+                                )
+                                .await;
                             }
                         }
                         ClientAction::LookCharacter { character } => {
@@ -1899,11 +1903,13 @@ async fn main() -> anyhow::Result<()> {
                                     let stone_drdata =
                                         item.driver_data.first().copied().unwrap_or_default();
                                     award_stone_pickup_achievement(
-                                        &world,
+                                        &mut world,
                                         &mut runtime,
+                                        &achievement_repository,
                                         completion.character_id,
                                         stone_drdata,
-                                    );
+                                    )
+                                    .await;
                                 }
                             }
                         }
@@ -2000,7 +2006,7 @@ async fn main() -> anyhow::Result<()> {
                                                     }
                                                     feedback.push((character_id, format!("You got a {item_name}.")));
                                                     executed += 1;
-                                                    award_chest_opened_achievement(&world, &mut runtime, character_id, Some(treasure_index));
+                                                    award_chest_opened_achievement(&mut world, &mut runtime, &achievement_repository, character_id, Some(treasure_index)).await;
                                                 }
                                                 ChestTreasureApplyResult::Empty => {
                                                     feedback.push((character_id, CHEST_EMPTY_MESSAGE.to_string()));
@@ -2036,12 +2042,12 @@ async fn main() -> anyhow::Result<()> {
                                                 RandomChestApplyResult::Money { amount } => {
                                                     feedback.push((character_id, format!("You found some money ({:.2}G)!", f64::from(amount) / 100.0)));
                                                     executed += 1;
-                                                    award_chest_opened_achievement(&world, &mut runtime, character_id, None);
+                                                    award_chest_opened_achievement(&mut world, &mut runtime, &achievement_repository, character_id, None).await;
                                                 }
                                                 RandomChestApplyResult::Item { item_name } => {
                                                     feedback.push((character_id, format!("You found a {item_name}.")));
                                                     executed += 1;
-                                                    award_chest_opened_achievement(&world, &mut runtime, character_id, None);
+                                                    award_chest_opened_achievement(&mut world, &mut runtime, &achievement_repository, character_id, None).await;
                                                 }
                                                 RandomChestApplyResult::Empty => {
                                                     feedback.push((character_id, RANDCHEST_EMPTY_MESSAGE.to_string()));
@@ -3722,12 +3728,14 @@ async fn main() -> anyhow::Result<()> {
                                                             achievement::give_money(
                                                                 &mut world,
                                                                 &mut runtime,
+                                                                &achievement_repository,
                                                                 character_id,
                                                                 reward_level
                                                                     .saturating_mul(reward_level)
                                                                     .saturating_mul(10),
                                                                 &mut feedback_bytes,
-                                                            );
+                                                            )
+                                                            .await;
                                                         }
                                                         Some(5) => {
                                                             if grant_template_item_smart(
@@ -3915,12 +3923,14 @@ async fn main() -> anyhow::Result<()> {
                                                 .map(|character| character.values[1][value as usize])
                                             {
                                                 award_skill_achievement(
-                                                    &world,
+                                                    &mut world,
                                                     &mut runtime,
+                                                    &achievement_repository,
                                                     character_id,
                                                     value as i32,
                                                     level as i32,
-                                                );
+                                                )
+                                                .await;
                                             }
                                             executed += 1;
                                         }
@@ -4815,7 +4825,7 @@ async fn main() -> anyhow::Result<()> {
                                                 realtime_seconds,
                                             ) {
                                                 PickBerryApplyResult::Picked(_) => {
-                                                    award_gathering_achievement(&world, &mut runtime, character_id, kind);
+                                                    award_gathering_achievement(&mut world, &mut runtime, &achievement_repository, character_id, kind).await;
                                                     executed += 1;
                                                 }
                                                 PickBerryApplyResult::NotRipe => {
@@ -4883,7 +4893,7 @@ async fn main() -> anyhow::Result<()> {
                                                 feedback.push((character_id, message));
                                             }
                                             feedback.push((character_id, "The potion seems finished.".to_string()));
-                                            award_potion_brewed_achievement(&world, &mut runtime, character_id);
+                                            award_potion_brewed_achievement(&mut world, &mut runtime, &achievement_repository, character_id).await;
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::FlaskRuined { character_id, ingredient_counts, .. } => {
@@ -5671,7 +5681,7 @@ async fn main() -> anyhow::Result<()> {
                         .filter_map(|player| player.character_id)
                         .collect();
                     for character_id in play_time_characters {
-                        award_play_time_minute(&world, &mut runtime, character_id);
+                        award_play_time_minute(&mut world, &mut runtime, &achievement_repository, character_id).await;
                     }
                 }
                 // C `tick_player`'s deferred-init sweep (`player.c:3660-

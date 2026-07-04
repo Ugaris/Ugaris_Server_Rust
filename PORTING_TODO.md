@@ -2917,6 +2917,48 @@ Unlocks every quest NPC. Do these before any P4 area work.
   ugaris-server` clean with zero warnings, and a 10s boot-smoke confirmed
   "entering Rust game loop" with no panics (touches DB startup wiring
   and the tick loop's achievement-sweep/questlog-reopen paths).
+  Progress Log (iteration 78): finished wiring gap (3) (DB first-unlock/
+  grats announcement) into every remaining unlock call site - the
+  previous iteration only reached 2 of ~8. Converted `award_play_time_
+  minute`/`award_enemy_killed_achievement`/`award_gathering_achievement`/
+  `award_potion_brewed_achievement`/`award_skill_achievement`/`give_money`/
+  `award_stone_pickup_achievement` (`crates/ugaris-server/src/
+  achievement.rs`) and `award_chest_opened_achievement` (`crates/
+  ugaris-server/src/chests.rs`) to `async fn`, each now calling
+  `record_achievement_firsts_and_announce` internally right after sending
+  its own `SV_ACH_UNLOCK` packet(s) - mirrors C `achievement_award` doing
+  the client packet, DB record, and grats announce in one call, instead
+  of leaving the DB/announce half to a separate per-call-site splice.
+  Updated all 9 call sites in `main.rs` (kill achievements, both `Raise`/
+  `StatScrollUsed` skill-check sites, the 3 chest-open sites, the
+  `warpbonus_driver` reward-4 `give_money` site, the stone-pickup TAKE-
+  completion site, and the once-a-minute play-time sweep) to pass
+  `&achievement_repository` and `.await` the now-async calls - no
+  sync-to-async refactor of any enclosing function was needed since every
+  call site already lived inside `async fn main()`'s tick loop body (the
+  same async context the pre-existing `Quester`/login-sweep call sites
+  already used). Updated all 46 existing unit tests across `tests/
+  achievement.rs`/`tests/chests.rs` that exercised these functions to
+  `#[tokio::test]`/`async fn`, passing `&None` for the repository
+  (matching the existing `record_achievement_firsts_and_announce`
+  no-repository-configured no-op convention) - no test assertions changed,
+  only signatures/call sites. This closes gap (3) completely: every
+  achievement-unlock code path now goes through the DB-record/first-unlock
+  grats-announce tail when `--database-url` is configured. Still unwired:
+  the `/achgive` GM command's unlock loop (`commands_player.rs`, a
+  synchronous command-dispatch function - would need its own async
+  refactor, left for a future slice since it's GM-only tooling, not a
+  player-facing gap); the ~37 other `give_money` call sites (P4 area
+  tasks, each needs its own area driver ported first); mining reward RNG
+  (`mine.c` unported); professions (`professor.c` unported); exploration
+  beyond transport; clans; tunnels (`tunnel.c` unported); pentagram solve
+  reward (`pents.c` unported). `cargo fmt --all`, `cargo test --workspace`
+  (1396 ugaris-core + 38 db + 3 net + 37 protocol + 470 server [unchanged
+  counts, signatures only], all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, and a 10s boot-smoke confirmed
+  "entering Rust game loop" with no panics (touches the tick loop's
+  kill/skill/chest/gathering/potion/stone/play-time award call sites and
+  the `warpbonus_driver` item-driver dispatch).
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

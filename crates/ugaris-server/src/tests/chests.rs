@@ -601,13 +601,13 @@ fn connected_player(character_id: CharacterId, session_id: u64) -> (World, Serve
     (world, runtime)
 }
 
-#[test]
-fn award_chest_opened_achievement_bumps_stat_without_unlock_below_looter_threshold() {
+#[tokio::test]
+async fn award_chest_opened_achievement_bumps_stat_without_unlock_below_looter_threshold() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
     for _ in 0..9 {
-        award_chest_opened_achievement(&world, &mut runtime, character_id, None);
+        award_chest_opened_achievement(&mut world, &mut runtime, &None, character_id, None).await;
     }
 
     let player = runtime.player_for_character(character_id).unwrap();
@@ -618,13 +618,13 @@ fn award_chest_opened_achievement_bumps_stat_without_unlock_below_looter_thresho
     assert!(runtime.tick_out.get(&1).is_none());
 }
 
-#[test]
-fn award_chest_opened_achievement_unlocks_looter_at_ten_chests_and_notifies_session() {
+#[tokio::test]
+async fn award_chest_opened_achievement_unlocks_looter_at_ten_chests_and_notifies_session() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
     for _ in 0..10 {
-        award_chest_opened_achievement(&world, &mut runtime, character_id, None);
+        award_chest_opened_achievement(&mut world, &mut runtime, &None, character_id, None).await;
     }
 
     let player = runtime.player_for_character(character_id).unwrap();
@@ -649,12 +649,12 @@ fn award_chest_opened_achievement_unlocks_looter_at_ten_chests_and_notifies_sess
     );
 }
 
-#[test]
-fn award_chest_opened_achievement_treasure_63_awards_gold_looter_alongside_stat_bump() {
+#[tokio::test]
+async fn award_chest_opened_achievement_treasure_63_awards_gold_looter_alongside_stat_bump() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
-    award_chest_opened_achievement(&world, &mut runtime, character_id, Some(63));
+    award_chest_opened_achievement(&mut world, &mut runtime, &None, character_id, Some(63)).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.chests_opened, 1);
@@ -673,12 +673,12 @@ fn award_chest_opened_achievement_treasure_63_awards_gold_looter_alongside_stat_
     );
 }
 
-#[test]
-fn award_chest_opened_achievement_non_gold_looter_chest_does_not_award_gold_looter() {
+#[tokio::test]
+async fn award_chest_opened_achievement_non_gold_looter_chest_does_not_award_gold_looter() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_player(character_id, 1);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
 
-    award_chest_opened_achievement(&world, &mut runtime, character_id, Some(9));
+    award_chest_opened_achievement(&mut world, &mut runtime, &None, character_id, Some(9)).await;
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert!(!player
@@ -687,8 +687,8 @@ fn award_chest_opened_achievement_non_gold_looter_chest_does_not_award_gold_loot
     assert!(runtime.tick_out.get(&1).is_none());
 }
 
-#[test]
-fn award_chest_opened_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+#[tokio::test]
+async fn award_chest_opened_achievement_is_a_noop_for_characters_without_a_player_runtime() {
     let character_id = CharacterId(9);
     let mut world = World::default();
     world.add_character(login_character(
@@ -702,6 +702,6 @@ fn award_chest_opened_achievement_is_a_noop_for_characters_without_a_player_runt
 
     // Should not panic even though no session/PlayerRuntime exists for this
     // character (mirrors C's `ch[cn].flags & CF_PLAYER` gate never firing).
-    award_chest_opened_achievement(&world, &mut runtime, character_id, Some(63));
+    award_chest_opened_achievement(&mut world, &mut runtime, &None, character_id, Some(63)).await;
     assert!(runtime.player_for_character(character_id).is_none());
 }

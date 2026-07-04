@@ -394,10 +394,14 @@ pub(crate) fn achievement_unlock_payload(ty: AchievementType, timestamp: i64) ->
 /// `SV_ACH_UNLOCK` for `DedicatedPlayer`/`VeteranPlayer`/`UgarisLifer` on
 /// first crossing their thresholds. A no-op if the character has no live
 /// `PlayerRuntime` (mirrors C's `CF_PLAYER` implicit gate: `player_update`
-/// only ever runs for connected player slots).
-pub(crate) fn award_play_time_minute(
-    world: &World,
+/// only ever runs for connected player slots). Also records the DB
+/// first-unlock/grats-announce tail (`record_achievement_firsts_and_
+/// announce`) for anything newly unlocked, matching C's `achievement_
+/// award` doing both in one call.
+pub(crate) async fn award_play_time_minute(
+    world: &mut World,
     runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
     character_id: CharacterId,
 ) {
     let Some(name) = world
@@ -418,12 +422,13 @@ pub(crate) fn award_play_time_minute(
         &name,
         now,
     );
-    for ty in unlocked {
-        let payload = achievement_unlock_payload(ty, now);
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
         for (sid, _) in runtime.sessions_for_character(character_id) {
             runtime.send_to_session(sid, payload.clone());
         }
     }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
 /// C `kill_char` (`src/system/death.c:417-422`): `if (ch[co].flags &
@@ -431,10 +436,13 @@ pub(crate) fn award_play_time_minute(
 /// CF_DEMON) achievement_add_demons(co, areaID, 1); }` - runs for every kill
 /// scored by a player character, independent of the target being a player
 /// (unlike the sibling `give_exp` kill-experience path). A no-op if the
-/// killer has no live `PlayerRuntime` (mirrors C's `CF_PLAYER` gate).
-pub(crate) fn award_enemy_killed_achievement(
-    world: &World,
+/// killer has no live `PlayerRuntime` (mirrors C's `CF_PLAYER` gate). Also
+/// records the DB first-unlock/grats-announce tail for anything newly
+/// unlocked (see `award_play_time_minute`'s doc comment).
+pub(crate) async fn award_enemy_killed_achievement(
+    world: &mut World,
     runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
     killer_id: CharacterId,
     area_id: i32,
     target_is_demon: bool,
@@ -466,12 +474,13 @@ pub(crate) fn award_enemy_killed_achievement(
             now,
         ));
     }
-    for ty in unlocked {
-        let payload = achievement_unlock_payload(ty, now);
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
         for (sid, _) in runtime.sessions_for_character(killer_id) {
             runtime.send_to_session(sid, payload.clone());
         }
     }
+    record_achievement_firsts_and_announce(world, repository, killer_id, &name, &unlocked).await;
 }
 
 /// C `flower_driver` (`src/module/alchemy.c:1306-1315`): `if (ch[cn].flags
@@ -483,10 +492,13 @@ pub(crate) fn award_enemy_killed_achievement(
 /// PickAlchemyFlower`'s `kind` field (the C `IDR_FLOWER` driver, not the
 /// unrelated area-31 `IDR_PICKBERRY` driver, which never calls any
 /// achievement function in C). A no-op if the character has no live
-/// `PlayerRuntime` (mirrors C's `CF_PLAYER` gate).
-pub(crate) fn award_gathering_achievement(
-    world: &World,
+/// `PlayerRuntime` (mirrors C's `CF_PLAYER` gate). Also records the DB
+/// first-unlock/grats-announce tail for anything newly unlocked (see
+/// `award_play_time_minute`'s doc comment).
+pub(crate) async fn award_gathering_achievement(
+    world: &mut World,
     runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
     character_id: CharacterId,
     kind: u8,
 ) {
@@ -525,22 +537,26 @@ pub(crate) fn award_gathering_achievement(
         ),
         _ => Vec::new(),
     };
-    for ty in unlocked {
-        let payload = achievement_unlock_payload(ty, now);
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
         for (sid, _) in runtime.sessions_for_character(character_id) {
             runtime.send_to_session(sid, payload.clone());
         }
     }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
 /// C `flask_driver`'s `mixer()` success branch (`src/module/alchemy.c:1077-
 /// 1082`): `if (mixer(cn, in)) { ... if (ch[cn].flags & CF_PLAYER) {
 /// achievement_add_potions(cn, 1); } }`, i.e. shaking a filled flask into a
 /// magical potion. A no-op if the character has no live `PlayerRuntime`
-/// (mirrors C's `CF_PLAYER` gate).
-pub(crate) fn award_potion_brewed_achievement(
-    world: &World,
+/// (mirrors C's `CF_PLAYER` gate). Also records the DB first-unlock/
+/// grats-announce tail for anything newly unlocked (see `award_play_time_
+/// minute`'s doc comment).
+pub(crate) async fn award_potion_brewed_achievement(
+    world: &mut World,
     runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
     character_id: CharacterId,
 ) {
     let Some(name) = world
@@ -561,12 +577,13 @@ pub(crate) fn award_potion_brewed_achievement(
         &name,
         now,
     );
-    for ty in unlocked {
-        let payload = achievement_unlock_payload(ty, now);
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
         for (sid, _) in runtime.sessions_for_character(character_id) {
             runtime.send_to_session(sid, payload.clone());
         }
     }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
 /// C `raise_value`/`raise_value_exp` (`src/system/skill.c:204-266`,
@@ -579,10 +596,13 @@ pub(crate) fn award_potion_brewed_achievement(
 /// legacy `V_*` index (`ugaris_core::achievement::V_DAGGER` etc.),
 /// `skill_level` is the new bare value (`character.values[1][value]`
 /// after the raise). A no-op if the character has no live `PlayerRuntime`
-/// (mirrors C's `CF_PLAYER` gate).
-pub(crate) fn award_skill_achievement(
-    world: &World,
+/// (mirrors C's `CF_PLAYER` gate). Also records the DB first-unlock/
+/// grats-announce tail for anything newly unlocked (see `award_play_time_
+/// minute`'s doc comment).
+pub(crate) async fn award_skill_achievement(
+    world: &mut World,
     runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
     character_id: CharacterId,
     skill_type: i32,
     skill_level: i32,
@@ -605,12 +625,13 @@ pub(crate) fn award_skill_achievement(
         &name,
         now,
     );
-    for ty in unlocked {
-        let payload = achievement_unlock_payload(ty, now);
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
         for (sid, _) in runtime.sessions_for_character(character_id) {
             runtime.send_to_session(sid, payload.clone());
         }
     }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
 /// C `give_money` (`src/system/tool.c:1459-1483`): adds `amount` silver to
@@ -624,10 +645,13 @@ pub(crate) fn award_skill_achievement(
 /// converted to whole gold units (`amount / 100`, integer division,
 /// exactly like C's `(unsigned int)(val / 100)` cast). `dlog`/Macro-Daemon
 /// activity tracking have no Rust equivalent yet (same omission as
-/// `World::gate_give_money_silent`).
-pub(crate) fn give_money(
+/// `World::gate_give_money_silent`). Also records the DB first-unlock/
+/// grats-announce tail for anything newly unlocked (see `award_play_time_
+/// minute`'s doc comment).
+pub(crate) async fn give_money(
     world: &mut World,
     runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
     character_id: CharacterId,
     amount: u32,
     feedback_bytes: &mut Vec<(CharacterId, Vec<u8>)>,
@@ -667,12 +691,13 @@ pub(crate) fn give_money(
         &name,
         now,
     );
-    for ty in unlocked {
-        let payload = achievement_unlock_payload(ty, now);
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
         for (sid, _) in runtime.sessions_for_character(character_id) {
             runtime.send_to_session(sid, payload.clone());
         }
     }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
 /// C `act_take` (`src/system/act.c:305-327`)'s stone-pickup block, which
@@ -685,10 +710,13 @@ pub(crate) fn give_money(
 /// achievement_add_stones(cn, 2, 1); }`. `stone_drdata` is the picked
 /// item's `drdata[0]` (`Item::driver_data[0]`); 23/24 = Earth, 21 = Fire,
 /// 22 = Ice - a no-op for any other value. A no-op if the character has no
-/// live `PlayerRuntime` (mirrors C's `CF_PLAYER` gate).
-pub(crate) fn award_stone_pickup_achievement(
-    world: &World,
+/// live `PlayerRuntime` (mirrors C's `CF_PLAYER` gate). Also records the DB
+/// first-unlock/grats-announce tail for anything newly unlocked (see
+/// `award_play_time_minute`'s doc comment).
+pub(crate) async fn award_stone_pickup_achievement(
+    world: &mut World,
     runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
     character_id: CharacterId,
     stone_drdata: u8,
 ) {
@@ -717,12 +745,13 @@ pub(crate) fn award_stone_pickup_achievement(
         &name,
         now,
     );
-    for ty in unlocked {
-        let payload = achievement_unlock_payload(ty, now);
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
         for (sid, _) in runtime.sessions_for_character(character_id) {
             runtime.send_to_session(sid, payload.clone());
         }
     }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
 /// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every

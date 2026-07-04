@@ -13,10 +13,13 @@ pub(crate) const RATCHEST_TREASURE_RESPAWN_SECONDS: u64 = 60 * 60 * 24;
 /// was actually granted. `chest_driver` additionally special-cases treasure
 /// #63 (the Mines level 80 gold room chest) to award
 /// `ACHIEVEMENT_GOLD_LOOTER` outright; `randchest_driver` has no such
-/// special case, so callers pass `None` for that argument.
-pub(crate) fn award_chest_opened_achievement(
-    world: &World,
+/// special case, so callers pass `None` for that argument. Also records
+/// the DB first-unlock/grats-announce tail for anything newly unlocked
+/// (see `achievement::award_play_time_minute`'s doc comment).
+pub(crate) async fn award_chest_opened_achievement(
+    world: &mut World,
     runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
     character_id: CharacterId,
     gold_looter_treasure_index: Option<u8>,
 ) {
@@ -43,12 +46,13 @@ pub(crate) fn award_chest_opened_achievement(
     {
         unlocked.push(AchievementType::GoldLooter);
     }
-    for ty in unlocked {
-        let payload = achievement_unlock_payload(ty, now);
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
         for (sid, _) in runtime.sessions_for_character(character_id) {
             runtime.send_to_session(sid, payload.clone());
         }
     }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
