@@ -4,6 +4,7 @@ mod achievement;
 mod area_apply;
 mod auction;
 mod chests;
+mod clan_log;
 mod commands_admin;
 mod commands_chat;
 mod commands_player;

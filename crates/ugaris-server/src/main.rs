@@ -12,6 +12,7 @@ mod achievement;
 mod area_apply;
 mod auction;
 mod chests;
+mod clan_log;
 mod commands_admin;
 mod commands_chat;
 mod commands_player;
@@ -610,6 +611,7 @@ async fn main() -> anyhow::Result<()> {
         auction_repository,
         achievement_repository,
         clan_repository,
+        clan_log_repository,
     ) = if let Some(database_url) = args.database_url.as_deref() {
         let db = ugaris_db::Database::connect(database_url, 8).await?;
         db.ping().await?;
@@ -628,10 +630,11 @@ async fn main() -> anyhow::Result<()> {
             Some(auctions),
             Some(db.achievements()),
             Some(db.clans()),
+            Some(db.clan_log()),
         )
     } else {
         warn!("DATABASE_URL not set; starting without persistence");
-        (None, None, None, None, None)
+        (None, None, None, None, None, None)
     };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
@@ -1410,6 +1413,22 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 if result.inventory_changed {
                                     command_inventory_refresh.push(character_id);
+                                }
+                            }
+                            if let Some(result) = clan_log::apply_clan_log_command(
+                                &mut world,
+                                &clan_log_repository,
+                                character_id,
+                                current_unix_time(),
+                                &command,
+                            )
+                            .await
+                            {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                for message in result.message_bytes {
+                                    command_feedback_bytes.push((character_id, message));
                                 }
                             }
                         }

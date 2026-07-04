@@ -4,6 +4,7 @@ pub mod area;
 pub mod auction;
 pub mod character;
 pub mod clan;
+pub mod clan_log;
 pub mod merchant;
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -24,6 +25,10 @@ pub use character::{
     LoginRequest, PgCharacterRepository,
 };
 pub use clan::{ClanRegistryRepository, PgClanRegistryRepository};
+pub use clan_log::{
+    ClanLogEntry, ClanLogFilter, ClanLogRepository, PgClanLogRepository, CLAN_LOG_DISPLAY_LIMIT,
+    CLAN_LOG_FETCH_LIMIT,
+};
 pub use merchant::{
     MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot, PgMerchantRepository,
 };
@@ -77,5 +82,9 @@ impl Database {
 
     pub fn clans(&self) -> PgClanRegistryRepository {
         PgClanRegistryRepository::new(self.pool.clone())
+    }
+
+    pub fn clan_log(&self) -> PgClanLogRepository {
+        PgClanLogRepository::new(self.pool.clone())
     }
 }

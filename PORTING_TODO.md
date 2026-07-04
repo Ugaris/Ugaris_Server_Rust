@@ -3236,15 +3236,23 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `clan_serial` through the registry, but `add_member`/`found_clan`
   themselves have no command wiring yet - clan founding is an NPC-dialogue
   flow, `area/30/clanmaster.c`, not a `/clan` command; a real join/leave
-  command still doesn't exist either), clan-log
-  persistence/message formatting (`add_clanlog`), the `ACHIEVEMENT_CLAN_MEMBER`/
+  command still doesn't exist either), the `ACHIEVEMENT_CLAN_MEMBER`/
   `ACHIEVEMENT_CLAN_MASTER`/`ACHIEVEMENT_CLUB_MEMBER` award wiring on
   membership change, `clan_trade_bonus` (blocked on the merchant system
   itself not being ported), clan chat channel gating (channels 5/7/12),
   clan-hall transport access beyond direct membership, the
   `set_clan_website`/`set_clan_message` trailing-character-strip quirk
   (deferred to whichever future task wires a real `/clan` command
-  parser).
+  parser). Clan-log *read*/*admin-clear* persistence is now ported
+  (`/clanlog`, `/clearclanlog`, `crates/ugaris-db/src/clan_log.rs`) - but
+  the *write* side (`add_clanlog`) still has zero live call sites: every
+  C call site is on a clan mutation this codebase either doesn't call
+  from a command yet (`found_clan`, `add_member`/`remove_member`) or
+  doesn't tick at all yet (the daily relation-transition tick,
+  `ClanRelations::update`, is a pure function with no game-loop caller -
+  a real, separate gap from clan-log itself, worth its own note for
+  whoever wires it). Wire `ClanLogRepository::add_entry` into each of
+  those call sites as they get built.
 
   Progress Log:
   - 2026-07-04: ported the pure relation state machine as a first
@@ -3458,6 +3466,57 @@ Unlocks every quest NPC. Do these before any P4 area work.
     clan-log, achievement-on-join wiring, `clan_trade_bonus`, chat
     channel gating, clan-hall transport beyond direct membership, and
     the treasury/dungeon economy all still need their own slices.
+  - 2026-07-04 (iteration 91): closed the "clan-log persistence/message
+    formatting" REMAINING item's *read* and *admin-clear* halves. Ported
+    `src/system/database/database_notes.c`'s `add_clanlog`/
+    `lookup_clanlog`/`db_read_clanlog` as `crates/ugaris-db/src/
+    clan_log.rs` (`ClanLogRepository`/`PgClanLogRepository`, a plain
+    `clan_log` table - `migrations/0009_clan_log.sql` - since C's own
+    `clanlog` table already is fully relational, unlike the single-blob
+    `clan_registry` table) and `src/system/clanlog.c`'s `/clanlog`
+    command (full flag parser: `-p <player>`/`-c <clan#>`/`-x <prio>`/
+    `-s <hours>`/`-e <hours>`/`-i`/`-h`, the "priority > 20 forces your
+    own clan" gate, the "Not all entries displayed" 51-row cutoff hint,
+    and the "Former clan N" fallback when a row's stored `serial` no
+    longer matches the live `ClanRegistry`'s current serial for that
+    clan number) plus `command.c`'s `/clearclanlog` GM command, both in
+    the new `crates/ugaris-server/src/clan_log.rs`. Two documented,
+    deliberate deviations: (1) `-p <player>` resolves only against
+    currently-*online* characters (`find_online_character_by_name`) since
+    no persistent cross-restart name index exists in Rust yet - matches
+    C's `repeat=1 -> return 0` "command not recognized" fallback exactly
+    when the name doesn't resolve; (2) `/clearclanlog`'s two feedback
+    lines are preserved byte-for-byte *including* a real legacy bug
+    (`command.c:7550-7556` checks `execute_query`'s MySQL-style
+    0-on-success return backwards, so a successful delete prints "Failed
+    to clear clan log" and a failed one prints "... cleared" - kept
+    verbatim per the porting rules on copying odd edge cases, not
+    "fixed"). The *write* side (`add_clanlog` itself) has zero live call
+    sites still - see the REMAINING note above this Progress Log for why
+    (every C call site sits on a clan mutation this codebase either has
+    no command wiring for yet, or - for the daily relation-transition
+    tick - doesn't tick at all yet); `ClanLogRepository::add_entry` is
+    implemented and tested, ready for whichever future slice wires those
+    call sites. 22 new tests in `crates/ugaris-server/src/tests/
+    clan_log.rs` (every flag, the priority/clan-override interaction, the
+    `-p` online-resolve and unresolved-name-returns-`None` cases, help/
+    validation-error text, entry formatting for both the
+    current-clan-name and stale-serial "Former clan" paths, the 51-row
+    cutoff hint, and both commands' repository-unavailable/GOD-gate/
+    range-validation paths) plus 5 new tests in `crates/ugaris-db/src/
+    clan_log.rs` (2 static-SQL guards, 3 `DATABASE_URL`-gated live tests:
+    add-then-lookup round trip, priority filtering, and
+    clear-one-clan-only). `cargo fmt --all`, `cargo test --workspace`
+    (1458 ugaris-core + 47 db [+5] + 3 net + 37 protocol + 516 server
+    [+22], all green, zero failures), `cargo build -p ugaris-server`
+    clean with zero warnings, 10s boot-smoke confirmed "entering Rust
+    game loop" with no panics (this iteration adds a command-dispatch
+    call site to the tick loop's client-command handling). REMAINING
+    otherwise unchanged: `add_member`/`found_clan` command wiring (and
+    then wiring `add_clanlog` into it), achievement-on-join wiring,
+    `clan_trade_bonus`, chat channel gating, clan-hall transport beyond
+    direct membership, and the treasury/dungeon economy all still need
+    their own slices.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission
