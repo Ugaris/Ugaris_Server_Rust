@@ -213,3 +213,71 @@ fn relation_with_no_clan_and_no_argument_shows_nothing() {
     let result = apply_clan_command(&mut world, character_id, "/relation", NOW).unwrap();
     assert!(result.message_bytes.is_empty());
 }
+
+#[test]
+fn clanpots_requires_clan_membership() {
+    let mut world = World::default();
+    let character_id = tester(&mut world, 0, 0);
+
+    let result = apply_clan_command(&mut world, character_id, "/clanpots", NOW).unwrap();
+    assert_eq!(
+        feedback_lines(&result),
+        vec!["Only for clan members.".to_string()]
+    );
+}
+
+#[test]
+fn clanpots_requires_sufficient_rank() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Iron Wolves", NOW).unwrap();
+    let character_id = tester(&mut world, nr, 0);
+
+    let result = apply_clan_command(&mut world, character_id, "/clanpots", NOW).unwrap();
+    assert_eq!(
+        feedback_lines(&result),
+        vec!["Not of sufficient rank.".to_string()]
+    );
+}
+
+#[test]
+fn clanpots_reports_freshly_founded_clan_as_all_zero() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Iron Wolves", NOW).unwrap();
+    let character_id = tester(&mut world, nr, 1);
+
+    let result = apply_clan_command(&mut world, character_id, "/clanpots", NOW).unwrap();
+    let lines = feedback_lines(&result);
+
+    assert_eq!(lines.len(), 6 + 6 + 3 + 3 + 3);
+    assert_eq!(lines[0], "Attack, Parry, Immunity+4: \u{e}0");
+    assert_eq!(lines[5], "Attack, Parry, Immunity+24: \u{e}0");
+    assert_eq!(lines[6], "Flash, Magic Shield, Immunity+4: \u{e}0");
+    assert_eq!(lines[11], "Flash, Magic Shield, Immunity+24: \u{e}0");
+    assert_eq!(lines[12], "Small healing potions: \u{e}0");
+    assert_eq!(lines[13], "Medium healing potions: \u{e}0");
+    assert_eq!(lines[14], "Big healing potions: \u{e}0");
+    assert_eq!(lines[15], "Small mana potions: \u{e}0");
+    assert_eq!(lines[16], "Medium mana potions: \u{e}0");
+    assert_eq!(lines[17], "Big mana potions: \u{e}0");
+    assert_eq!(lines[18], "Small combo potions: \u{e}0");
+    assert_eq!(lines[19], "Medium combo potions: \u{e}0");
+    assert_eq!(lines[20], "Big combo potions: \u{e}0");
+}
+
+#[test]
+fn clanpots_abbreviation_needs_five_chars_like_c_cmdcmp() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Iron Wolves", NOW).unwrap();
+    let character_id = tester(&mut world, nr, 1);
+
+    // 4 chars: falls through to "/clan" (showclan), not "/clanpots".
+    let result = apply_clan_command(&mut world, character_id, "/clan", NOW).unwrap();
+    assert!(feedback_lines(&result)[0].contains("Clan List"));
+
+    // 5+ chars: resolves to "/clanpots".
+    let result = apply_clan_command(&mut world, character_id, "/clanp", NOW).unwrap();
+    assert_eq!(
+        feedback_lines(&result)[0],
+        "Attack, Parry, Immunity+4: \u{e}0"
+    );
+}

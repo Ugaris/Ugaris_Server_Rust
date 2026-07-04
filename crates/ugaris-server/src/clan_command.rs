@@ -1,22 +1,27 @@
-//! `/clan` and `/relation` text commands: read-only clan status display.
+//! `/clan`, `/relation`, and `/clanpots` text commands: read-only clan
+//! status display.
 //!
-//! Ports `showclan`/`show_clan_relation` (`src/system/clan.c:128-357`),
-//! dispatched from `command.c:5978-6011` (`cmdcmp(ptr, "clan", 0)`/
-//! `cmdcmp(ptr, "relation", 0)`).
+//! Ports `showclan`/`show_clan_relation`/`show_clan_pots`
+//! (`src/system/clan.c:128-357,1426-1455`), dispatched from
+//! `command.c:5974-5980,6001-6011` (`cmdcmp(ptr, "clanpots", 5)`/
+//! `cmdcmp(ptr, "clan", 0)`/`cmdcmp(ptr, "relation", 0)`).
 //!
-//! NOT ported here: `/clanpots` (`show_clan_pots`, `clan.c:1426-1453`)
-//! displays the clan's alchemy-potion stockpile (`clan[cnr].dungeon.
-//! alc_pot`/`simple_pot`), which is part of the still-unported
-//! dungeon-guard economy (see the "Clan system" P3 task's REMAINING
-//! note) - no Rust data exists to read yet. `showclan`'s "--- Dungeon
-//! Guards ---" section and "Dungeon points: X / 400" line
-//! (`clan.c:169-197`) are skipped for the same reason (guard counts
-//! aren't part of [`ClanEconomy`]); every other section of `showclan` is
-//! ported faithfully below.
+//! `showclan`'s "--- Dungeon Guards ---" section and "Dungeon points: X /
+//! 400" line (`clan.c:169-197`) are still skipped - the guard counts
+//! (`struct clan_dungeon`'s `warrior`/`mage`/`seyan`/`teleport`/`fake`/
+//! `key` fields) are part of the still-unported dungeon-guard economy
+//! (see the "Clan system" P3 task's REMAINING note) and aren't part of
+//! [`ClanEconomy`]. `/clanpots` only needs the potion stockpile
+//! (`alc_pot`/`simple_pot`) which *is* part of [`ClanEconomy`] now, even
+//! though nothing feeds it yet (every clan reads all-zero until the
+//! alchemy-potion economy's `add_alc_potion`/`add_simple_potion` call
+//! sites are ported), same as a freshly-founded C clan would show.
 
 use super::*;
 
-use ugaris_core::clan::{bonus_name, score_to_level, ClanRegistry, MAX_BONUS, MAX_CLAN};
+use ugaris_core::clan::{
+    bonus_name, score_to_level, ClanEconomy, ClanRegistry, MAX_BONUS, MAX_CLAN,
+};
 use ugaris_core::text::{COL_HEADING, COL_LINK};
 
 fn colored_line(color: &[u8], text: &str) -> Vec<u8> {
@@ -255,9 +260,46 @@ fn show_clan_relation_lines(registry: &ClanRegistry, cnr: u16, now: i64) -> Vec<
     lines
 }
 
-/// Dispatches `/clan` and `/relation` (`command.c:5978-5980,6001-6011`).
-/// `/clanpots` (`clan.c:1426-1453`) is intentionally not handled - see the
-/// module doc comment.
+/// C `show_clan_pots`'s potion-tier name table (`clan.c:1428`).
+const CLAN_POT_SIZES: [&str; 3] = ["Small", "Medium", "Big"];
+
+/// C `show_clan_pots` (`clan.c:1426-1455`), the `/clanpots` command.
+/// `character` is only used for its `clan`/`clan_rank` fields (via
+/// [`ClanRegistry::get_char_clan`], same as `showclan_lines`).
+fn show_clan_pots_lines(registry: &ClanRegistry, character: &mut Character) -> Vec<Vec<u8>> {
+    let Some(cnr) = registry.get_char_clan(character) else {
+        return vec![b"Only for clan members.".to_vec()];
+    };
+    if character.clan_rank < 1 {
+        return vec![b"Not of sufficient rank.".to_vec()];
+    }
+    let economy: &ClanEconomy = &registry
+        .identity(cnr)
+        .expect("get_char_clan already validated cnr exists")
+        .economy;
+
+    let mut lines = Vec::with_capacity(6 + 6 + 3 + 3 + 3);
+    for (n, count) in economy.alc_pot[0].iter().enumerate() {
+        lines.push(format!("Attack, Parry, Immunity+{}: \x0e{count}", n * 4 + 4).into_bytes());
+    }
+    for (n, count) in economy.alc_pot[1].iter().enumerate() {
+        lines
+            .push(format!("Flash, Magic Shield, Immunity+{}: \x0e{count}", n * 4 + 4).into_bytes());
+    }
+    for (size, count) in CLAN_POT_SIZES.iter().zip(economy.simple_pot[0].iter()) {
+        lines.push(format!("{size} healing potions: \x0e{count}").into_bytes());
+    }
+    for (size, count) in CLAN_POT_SIZES.iter().zip(economy.simple_pot[1].iter()) {
+        lines.push(format!("{size} mana potions: \x0e{count}").into_bytes());
+    }
+    for (size, count) in CLAN_POT_SIZES.iter().zip(economy.simple_pot[2].iter()) {
+        lines.push(format!("{size} combo potions: \x0e{count}").into_bytes());
+    }
+    lines
+}
+
+/// Dispatches `/clan`, `/relation`, and `/clanpots`
+/// (`command.c:5974-5980,6001-6011`).
 pub(crate) fn apply_clan_command(
     world: &mut World,
     character_id: CharacterId,
@@ -280,6 +322,18 @@ pub(crate) fn apply_clan_command(
         };
         return Some(KeyringCommandResult {
             message_bytes: show_clan_relation_lines(&world.clan_registry, cnr, now),
+            ..Default::default()
+        });
+    }
+
+    // C checks `cmdcmp(ptr, "clanpots", 5)` before `cmdcmp(ptr, "clan", 0)`
+    // (`command.c:5974,5978`) so a typed word long enough to disambiguate
+    // (5+ chars) resolves to `/clanpots` before falling through to the
+    // shorter `/clan` prefix match.
+    if lower.len() >= 5 && "clanpots".starts_with(&lower) {
+        let character = world.characters.get_mut(&character_id)?;
+        return Some(KeyringCommandResult {
+            message_bytes: show_clan_pots_lines(&world.clan_registry, character),
             ..Default::default()
         });
     }

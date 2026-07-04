@@ -3274,9 +3274,12 @@ Unlocks every quest NPC. Do these before any P4 area work.
   website/message at all). The read-only `/clan` and `/relation` player
   text commands (`showclan`/`show_clan_relation`, `clan.c:128-233,
   311-357`) were ported in iteration 98 (see Progress Log); `/clanpots`
-  (`show_clan_pots`, `clan.c:1426-1453`) remains unported - it needs the
-  same still-unported dungeon-guard potion stockpile as the rest of
-  `struct clan_dungeon` above.
+  (`show_clan_pots`, `clan.c:1426-1455`) was ported in iteration 99 (see
+  Progress Log) - it now reads a new `ClanEconomy::alc_pot`/
+  `simple_pot` pair (added this iteration, all-zero until the
+  alchemy-potion economy feeds them); the guard-count fields of
+  `struct clan_dungeon` (`warrior`/`mage`/`seyan`/`teleport`/`fake`/
+  `key`) remain out of scope, unchanged from before.
 
   Progress Log:
   - 2026-07-04: ported the pure relation state machine as a first
@@ -3866,6 +3869,38 @@ Unlocks every quest NPC. Do these before any P4 area work.
     club-variant achievement wiring, `clan_trade_bonus`, `/clanpots`,
     and the dungeon-guard economy proper (guard counts/potions - `use`/
     `buy`'s real logic).
+  - 2026-07-04 (iteration 99): ported `/clanpots` (`show_clan_pots`,
+    `clan.c:1426-1455`), a self-contained slice that closes one of
+    iteration 98's REMAINING items. Added the missing storage first:
+    `ClanEconomy::alc_pot: [[u16; 6]; 2]` and `::simple_pot: [[u16; 3];
+    3]` (`struct clan_dungeon`'s `alc_pot`/`simple_pot` arrays,
+    `clan.h:74-75`), both `#[serde(default)]` for snapshot backward
+    compatibility, defaulted to all-zero in `ClanEconomy::standard`
+    (matching a freshly-founded C clan - nothing feeds these fields yet,
+    same caveat as `training_score`/`raid` before them: the alchemy-
+    potion economy's `add_alc_potion`/`add_simple_potion` `NT_GIVE`
+    call site is still unported). Then added `show_clan_pots_lines` +
+    dispatch wiring in `crates/ugaris-server/src/clan_command.rs`: the
+    `Only for clan members.`/`Not of sufficient rank.` guard clauses
+    (`clan_rank < 1`), and the 21-line potion-tier report (6
+    Attack/Parry/Immunity + 6 Flash/Magic Shield/Immunity + 3x3
+    healing/mana/combo), byte-for-byte including the literal `\016`
+    (0x0E) tab-marker C embeds in each line. Wired `/clanpots` ahead of
+    `/clan` in the dispatch `if` chain with C's exact `cmdcmp` minlen
+    (5 for `clanpots`, matched before the shorter `clan` minlen-0
+    prefix), confirmed with a dedicated abbreviation test. 4 new tests
+    in `crates/ugaris-server/src/tests/clan_command.rs`. Updated this
+    task's own REMAINING note above to drop `/clanpots`. `cargo fmt
+    --all`, `cargo test --workspace` (1541 ugaris-core + 47 db + 3 net +
+    37 protocol + 536 server [+4], all green, zero failures), `cargo
+    build -p ugaris-server` clean with zero warnings, 10s boot-smoke
+    confirmed "entering Rust game loop" with no panics. REMAINING for
+    the "Clan system" task overall (updated above, `/clanpots` dropped):
+    the offline-player DB-task fallback for `rank:`/`fire:`,
+    club-variant achievement wiring, `clan_trade_bonus`, and the
+    dungeon-guard economy proper (guard counts/potions - `use`/`buy`'s
+    real logic, and the alchemy-potion economy that would actually
+    populate `alc_pot`/`simple_pot`).
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

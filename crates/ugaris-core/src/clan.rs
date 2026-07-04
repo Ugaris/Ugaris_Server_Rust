@@ -576,6 +576,25 @@ pub struct ClanEconomy {
     /// (`clan.c:232-234`) - not surfaced here since no caller shows clan
     /// info yet.
     pub raid_on_start: i64,
+    /// C `struct clan_dungeon`'s `alc_pot[2][6]` (`clan.h:74`): the
+    /// clan's alchemy-potion dungeon-guard stockpile, `[0]` = "Attack,
+    /// Parry, Immunity+N" potions, `[1]` = "Flash, Magic Shield,
+    /// Immunity+N" potions, indexed `0..6` for the `+4..=+24` tiers.
+    /// Nothing feeds this yet (`add_alc_potion`'s `NT_GIVE` `IDR_FLASK`
+    /// call site is part of the still-unported alchemy-potion economy -
+    /// see the module doc comment), so every clan reads all zero here,
+    /// same as a freshly-founded C clan. `#[serde(default)]` keeps this
+    /// backward compatible with any snapshot saved before this field
+    /// existed.
+    #[serde(default)]
+    pub alc_pot: [[u16; 6]; 2],
+    /// C `struct clan_dungeon`'s `simple_pot[3][3]` (`clan.h:75`): the
+    /// clan's simple-potion stockpile, `[0]` = healing, `[1]` = mana,
+    /// `[2]` = combo, indexed `0..3` for Small/Medium/Big. Nothing feeds
+    /// this yet either (`add_simple_potion` is the same unported
+    /// call site) - see [`ClanEconomy::alc_pot`].
+    #[serde(default)]
+    pub simple_pot: [[u16; 3]; 3],
 }
 
 impl ClanEconomy {
@@ -598,6 +617,8 @@ impl ClanEconomy {
             last_training_update: now,
             raid: false,
             raid_on_start: 0,
+            alc_pot: [[0; 6]; 2],
+            simple_pot: [[0; 3]; 3],
         }
     }
 
