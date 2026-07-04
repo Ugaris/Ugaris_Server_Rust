@@ -2402,15 +2402,45 @@
         "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
         "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s"
       ]
+    },
+    {
+      "iteration": 76,
+      "startedAt": "2026-07-04T10:08:04.772Z",
+      "endedAt": "2026-07-04T10:17:16.304Z",
+      "durationMs": 550970,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/achievement.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/achievement.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "4. **Verification**: `cargo fmt --all`, `cargo test --workspace` (1396+36+3+37+468, all green, zero failures), `cargo build -p ugaris-server` (zero warnings), and a 10s boot-smoke confirmed \"entering ",
+        "test result: ok. 463 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error",
+        "test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "69:| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `src/system/player.c` `cl_raise` / `src/system/skill.c` `raise_value` (`CL_RAISE`) | `crates/ugaris-c",
+        "+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris-se",
+        "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Text: {\"filePath\": \"/home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/PORTING_TODO.md\", \"offse",
+        "Error message: JSON Parse error: Property name must be a string literal",
+        "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
+      ]
     }
   ],
-  "totalDurationMs": 83163223,
+  "totalDurationMs": 83714193,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 75,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 76,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -2425,15 +2455,15 @@
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 11,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 3,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 4,
       "test result: FAILED. 1019 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "error: test failed, to rerun pass `-p ugaris-core --lib`": 14,
       "test result: ok. 1030 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
       "Verified: `cargo fmt --all` (clean), `cargo test --workspace` (1035+9+3+31+327 passed, 0 failed), `c": 1,
-      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 26,
-      "Error message: JSON Parse error: Property name must be a string literal": 22,
+      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 27,
+      "Error message: JSON Parse error: Property name must be a string literal": 23,
       "assertion failed: saved.flags.contains(CharacterFlags::ALIVE)": 1,
       "test result: FAILED. 1034 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1035 filtered out; finished in 0.00s": 1,
@@ -2541,7 +2571,7 @@
       "All green: 1110 + 9 + 3 + 33 + 342 = 1497 tests pass, zero failures, build clean. Let's check git st": 1,
       "**Verification:** `cargo fmt --all` (no diffs), `cargo test --workspace` (1497 tests, 0 failures), `": 1,
       "test result: ok. 1110 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
-      "69:| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `": 4,
+      "69:| `src/module/base.c` `stat_scroll_driver`, `src/system/skill.c` `raise_value_exp` scroll path, `": 5,
       "**Verification:** `cargo fmt --all` (clean), `cargo test --workspace` (1112/9/3/33/342 passed, 0 fai": 1,
       "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 1091 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s": 2,
@@ -2751,7 +2781,12 @@
       "-protocol + 452 server [+8], all green, zero failures - 8 new tests,": 1,
       "test result: ok. 458 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 463 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && git status --short | head ": 1
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && git status --short | head ": 1,
+      "4. **Verification**: `cargo fmt --all`, `cargo test --workspace` (1396+36+3+37+468, all green, zero ": 1,
+      "test result: ok. 463 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 1,
+      "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
