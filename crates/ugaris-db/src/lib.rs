@@ -1,5 +1,6 @@
 pub mod anticheat;
 pub mod area;
+pub mod auction;
 pub mod character;
 pub mod merchant;
 
@@ -10,6 +11,11 @@ pub use anticheat::{
     AntiCheatSessionCreate, PgAntiCheatRepository,
 };
 pub use area::{AreaRepository, PgAreaRepository};
+pub use auction::{
+    AuctionDelivery, AuctionFilter, AuctionRecord, AuctionRepository, AuctionSearchResult,
+    AuctionSortBy, AuctionStatus, DeliveryReason, DeliverySummary, NewAuction, NewDelivery,
+    PgAuctionRepository, MAX_SEARCH_RESULTS,
+};
 pub use character::{
     CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
     LoginRequest, PgCharacterRepository,
@@ -55,5 +61,9 @@ impl Database {
 
     pub fn merchants(&self) -> PgMerchantRepository {
         PgMerchantRepository::new(self.pool.clone())
+    }
+
+    pub fn auctions(&self) -> PgAuctionRepository {
+        PgAuctionRepository::new(self.pool.clone())
     }
 }

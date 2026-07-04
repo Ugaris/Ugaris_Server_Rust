@@ -1726,9 +1726,41 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (3) `CL_*` auction client protocol if the community client uses it
   (check client sources first - if the client has no auction UI, mark
   N/A with a note).
-  REMAINING: slice (2) auction storage in DB and slice (3) `CL_*` auction
-  protocol are untouched - `src/system/auction/*.c` is a separate subsystem
-  the arena clerk driver itself never calls, still needs its own audit.
+  REMAINING: slice (2) is now a CRUD/search DB repository only - the
+  `auction_house.c` business logic (fee/bid math, expiry processing
+  orchestration) and the `/ah` text command state machine in
+  `auction_cmd.c` are not ported, so nothing calls this repository yet.
+  Slice (3) `CL_*` auction protocol remains N/A per the client audit noted
+  below (community client `render.c` has no auction UI at all).
+  Progress Log (iteration 48): ported slice (2), the DB layer of
+  `src/system/auction/auction_db.c` (`init_auction_database`,
+  `db_create_auction`, `db_update_auction`, `db_get_auction`,
+  `db_delete_auction`, `db_search_auctions`, `db_get_player_auctions`,
+  `db_count_active_auctions`, `db_create_delivery`,
+  `db_get_pending_deliveries`, `db_mark_delivery_claimed`,
+  `db_get_delivery_summary`, `db_cleanup_expired_auctions`) as
+  `crates/ugaris-db/src/auction.rs` (`AuctionRepository`/
+  `PgAuctionRepository`) + `migrations/0006_auction_house.sql`
+  (`auctions`/`auction_deliveries` tables). C stores the auctioned item as
+  a raw `struct item` BLOB and filters/sorts on offsets inside it via
+  `CAST(SUBSTRING(...))`; Rust stores the item as `jsonb` (same convention
+  as `merchant_stores.wares_json`) and filters/sorts on its `name`/
+  `min_level`/`max_level` keys directly instead. `db_get_character_name`
+  is not ported: it's declared and defined in C but never called anywhere
+  in the C tree (confirmed by grep), so it's dead code - everywhere else
+  needing a seller name uses the `LEFT JOIN chars`/`characters` C already
+  inlines into the auction queries, which this port replicates. Tests: 5
+  unit tests (status/reason string round trips, `MAX_SEARCH_RESULTS`
+  constant, item JSON round trip) plus 4 `DATABASE_URL`-gated live tests
+  covering create/get/update/delete, name+level search with price
+  sorting, delivery create/claim/summary, and expired-auction cleanup
+  (winner delivery + gold-to-seller vs. no-bid item return) - verified
+  against a real ephemeral Postgres 16 Docker container (all 6
+  `migrations/*.sql` files applied by hand), not just compiled.
+  `cargo fmt --all`, `cargo test --workspace` (1228+36+3+33+374 passed),
+  `cargo build -p ugaris-server` clean with zero warnings. No boot-smoke:
+  this change only adds an unused DB repository, touching neither the
+  runtime loop, login, map sync, nor protocol.
   Progress Log: ported slice (1), `CDR_ACLERK`'s dialogue/greet/idle-chatter/
   give handling in new `world/aclerk.rs` (`AclerkDriverData`/
   `parse_aclerk_driver_args` in `character_driver.rs`, zone spawn wiring in

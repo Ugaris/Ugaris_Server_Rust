@@ -1547,15 +1547,45 @@
         "test world::tests::aclerk::aclerk_ignores_non_abuser_trade_request ... FAILED",
         "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 1215 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 48,
+      "startedAt": "2026-07-04T01:03:16.939Z",
+      "endedAt": "2026-07-04T01:16:53.136Z",
+      "durationMs": 815350,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-db/src/lib.rs",
+        "crates/ugaris-db/src/auction.rs",
+        "migrations/0006_auction_house.sql"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- `cargo fmt --all`, `cargo test --workspace` (1228+36+3+33+374 passing, zero failures), and `cargo build -p ugaris-server` all clean with zero warnings. No boot-smoke needed since this only adds an u",
+        "test result: ok. 374 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-db` (lib test) due to 1 previous error; 1 warning emitted",
+        "/// set, and skips (never fails) otherwise so `cargo test --workspace`",
+        "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test auction::tests::live::search_filters_by_name_and_level_and_sorts_by_price ... FAILED",
+        "test auction::tests::live::deliveries_round_trip_and_summary_matches_pending_rows ... FAILED",
+        "test auction::tests::live::create_get_update_and_delete_round_trip ... FAILED",
+        "test auction::tests::live::cleanup_expired_auctions_delivers_to_winner_and_returns_unsold_items ... FAILED"
+      ]
     }
   ],
-  "totalDurationMs": 50582261,
+  "totalDurationMs": 51397611,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 47,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 48,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -1741,7 +1771,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 371 filtered out; finished in 0.00s": 1,
       "test result: ok. 1130 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "- All green: `cargo fmt --all`, `cargo test --workspace` (1137 core + 27 db + 3 net + 33 protocol + ": 1,
-      "test result: ok. 374 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 9,
+      "test result: ok. 374 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 10,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1129 filtered out; finished in 0.00s": 1,
       "test result: ok. 1137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 1147 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
@@ -1782,7 +1812,15 @@
       "assertion failed: texts.iter().any(|text|": 1,
       "test result: FAILED. 1224 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "test world::tests::aclerk::aclerk_ignores_non_abuser_trade_request ... FAILED": 1,
-      "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 1215 filtered out; finished in 0.00": 1
+      "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 1215 filtered out; finished in 0.00": 1,
+      "- `cargo fmt --all`, `cargo test --workspace` (1228+36+3+33+374 passing, zero failures), and `cargo ": 1,
+      "error: could not compile `ugaris-db` (lib test) due to 1 previous error; 1 warning emitted": 1,
+      "/// set, and skips (never fails) otherwise so `cargo test --workspace`": 1,
+      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test auction::tests::live::search_filters_by_name_and_level_and_sorts_by_price ... FAILED": 1,
+      "test auction::tests::live::deliveries_round_trip_and_summary_matches_pending_rows ... FAILED": 1,
+      "test auction::tests::live::create_get_update_and_delete_round_trip ... FAILED": 1,
+      "test auction::tests::live::cleanup_expired_auctions_delivers_to_winner_and_returns_unsold_items ... ": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
