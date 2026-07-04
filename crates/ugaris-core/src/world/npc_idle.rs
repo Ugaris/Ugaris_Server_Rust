@@ -443,7 +443,8 @@ impl World {
                 | CharacterDriverState::Lab2Undead(_)
                 | CharacterDriverState::Merchant(_)
                 | CharacterDriverState::Lostcon(_)
-                | CharacterDriverState::Bank(_) => None,
+                | CharacterDriverState::Bank(_)
+                | CharacterDriverState::Trader(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

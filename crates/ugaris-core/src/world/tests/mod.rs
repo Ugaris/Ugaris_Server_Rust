@@ -31,6 +31,7 @@ mod speed;
 mod spells;
 mod teleport;
 mod text;
+mod trader;
 mod world_misc;
 
 use crate::{

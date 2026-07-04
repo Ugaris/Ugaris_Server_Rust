@@ -92,6 +92,7 @@ pub enum CharacterDriverState {
     Merchant(MerchantDriverData),
     Lostcon(LostconDriverData),
     Bank(BankDriverData),
+    Trader(TraderDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -230,6 +231,42 @@ pub fn parse_bank_driver_args(args: &str) -> BankDriverData {
         rest = next;
     }
     data
+}
+
+/// C `struct trader_data` from `src/module/base.c`'s `trader_driver`
+/// (`CDR_TRADER`, the player-to-player trade middleman NPC). Unlike
+/// `MerchantDriverData`/`BankDriverData`, C never parses zone-file args
+/// into this struct (`set_data` zero-initializes it), so there is no
+/// `parse_trader_driver_args` counterpart - `Default` (all zero/empty)
+/// matches C's initial state exactly.
+///
+/// `c1_id`/`c2_id` mirror C's `dat->c1ID`/`c2ID` (`ch[co].ID`, the
+/// player's persistent ID) using the raw runtime `CharacterId` instead -
+/// the same simplification already established for driver-memory
+/// membership (see the module doc comment above `DriverMemory`) and the
+/// merchant/bank greet-tracking ports, since threading persistent player
+/// IDs through `World` is a bigger change than this driver's scope.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TraderDriverData {
+    /// C `dat->state`: `0` idle, `1` trade in progress, `2` one side has
+    /// said "accept trade" and is waiting on the other.
+    pub state: i32,
+    pub c1_id: Option<CharacterId>,
+    pub c2_id: Option<CharacterId>,
+    /// C `dat->c1itm[10]`/`c1cnt`: items `c1` has handed over, capped at
+    /// 10 (`MAX_TRADER_ITEMS` in `world/trader.rs`).
+    pub c1_items: Vec<ItemId>,
+    pub c2_items: Vec<ItemId>,
+    pub c1_ok: bool,
+    pub c2_ok: bool,
+    /// C `dat->timeout`: absolute tick the in-progress trade auto-cancels
+    /// at (`ticker + TICKS * 60 * 3`, three minutes).
+    #[serde(default)]
+    pub timeout: u64,
+    #[serde(default)]
+    pub memory_clear_tick: u64,
+    #[serde(default)]
+    pub last_talk: u64,
 }
 
 //-----------------------
@@ -536,6 +573,110 @@ pub const BANK_QA: &[TextQaEntry] = &[
         words: &["explain", "balance"],
         answer: Some("To inquire about the balance of your account, just say: 'balance'"),
         answer_code: 0,
+    },
+];
+
+/// C `struct qa qa[]` from `src/module/base.c` (shared by `trader_driver`
+/// and `janitor_driver`, both dispatched from that file). Unlike
+/// `merchant.c`/`bank.c`'s copies, this table has no `"hi"`-style
+/// standalone greeting duplication issues, but note `"help"`/`"repeat"`
+/// both carry a non-`NULL` `answer` *and* `answer_code: 1` in C - since
+/// `analyse_text_driver` only falls back to `answer_code` when `answer`
+/// is `NULL`, the code is dead for those two rows and dropped here (the
+/// `Some(answer)` already takes precedence in [`analyse_text_qa`]).
+pub const TRADER_QA: &[TextQaEntry] = &[
+    TextQaEntry {
+        words: &["how", "are", "you"],
+        answer: Some("I'm fine!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hello"],
+        answer: Some("Hello, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hi"],
+        answer: Some("Hi, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["greetings"],
+        answer: Some("Greetings, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hail"],
+        answer: Some("And hail to you, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what", "is", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["what", "is", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["who", "are", "you"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["trade"],
+        answer: Some(
+            "I am not a normal merchant. Talk to Fred in Cameron or Jeremy in Aston instead.",
+        ),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["buy"],
+        answer: Some(
+            "I am not a normal merchant. Talk to Fred in Cameron or Jeremy in Aston instead.",
+        ),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["sell"],
+        answer: Some(
+            "I am not a normal merchant. Talk to Fred in Cameron or Jeremy in Aston instead.",
+        ),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["help"],
+        answer: Some(
+            "To start trading with someone, say: 'trade with <name>'. Then you hand me the \
+             items you wish to exchange. You can stop the deal at any time by saying: 'stop \
+             trade'. To check what items I am holding, say: 'show trade'. When you are \
+             satisfied with the deal, say 'accept trade'. Both parties must accept the deal to \
+             make it take place.",
+        ),
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["repeat"],
+        answer: Some(
+            "To start trading with someone, say: 'trade with <name>'. Then you hand me the \
+             items you wish to exchange. You can stop the deal at any time by saying: 'stop \
+             trade'. To check what items I am holding, say: 'show trade'. When you are \
+             satisfied with the deal, say 'accept trade'. Both parties must accept the deal to \
+             make it take place.",
+        ),
+        answer_code: 1,
     },
 ];
 
@@ -864,7 +1005,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Lab2Undead(_)
             | CharacterDriverState::Merchant(_)
             | CharacterDriverState::Lostcon(_)
-            | CharacterDriverState::Bank(_),
+            | CharacterDriverState::Bank(_)
+            | CharacterDriverState::Trader(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

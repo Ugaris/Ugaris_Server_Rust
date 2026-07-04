@@ -1,4 +1,34 @@
+use crate::direction::Direction;
 use crate::entity::Character;
+
+/// C `offset2dx(frx, fry, tox, toy)` (`src/system/tool.c:309-349`): the
+/// 8-way direction pointing from `(frx,fry)` toward `(tox,toy)`, snapping
+/// near-diagonal offsets to a cardinal direction when one axis dominates
+/// the other by more than 2x. Returns `None` for `(0, 0)` (C returns `0`,
+/// not a valid `DX_*` value).
+pub fn offset2dx(frx: i32, fry: i32, tox: i32, toy: i32) -> Option<Direction> {
+    let mut dx = tox - frx;
+    let mut dy = toy - fry;
+
+    if dx.abs() / 2 > dy.abs() {
+        dy = 0;
+    }
+    if dy.abs() / 2 > dx.abs() {
+        dx = 0;
+    }
+
+    match (dx.signum(), dy.signum()) {
+        (1, 1) => Some(Direction::RightDown),
+        (1, -1) => Some(Direction::RightUp),
+        (1, 0) => Some(Direction::Right),
+        (-1, 1) => Some(Direction::LeftDown),
+        (-1, -1) => Some(Direction::LeftUp),
+        (-1, 0) => Some(Direction::Left),
+        (0, 1) => Some(Direction::Down),
+        (0, -1) => Some(Direction::Up),
+        _ => None,
+    }
+}
 
 pub fn map_dist(fx: u16, fy: u16, tx: u16, ty: u16) -> i32 {
     let dx = fx.abs_diff(tx) as i32;
@@ -37,6 +67,23 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn offset2dx_matches_legacy_eight_way_snapping() {
+        assert_eq!(offset2dx(10, 10, 20, 10), Some(Direction::Right));
+        assert_eq!(offset2dx(10, 10, 0, 10), Some(Direction::Left));
+        assert_eq!(offset2dx(10, 10, 10, 20), Some(Direction::Down));
+        assert_eq!(offset2dx(10, 10, 10, 0), Some(Direction::Up));
+        assert_eq!(offset2dx(10, 10, 20, 20), Some(Direction::RightDown));
+        assert_eq!(offset2dx(10, 10, 20, 0), Some(Direction::RightUp));
+        assert_eq!(offset2dx(10, 10, 0, 20), Some(Direction::LeftDown));
+        assert_eq!(offset2dx(10, 10, 0, 0), Some(Direction::LeftUp));
+        // dy small relative to dx snaps to a pure horizontal direction.
+        assert_eq!(offset2dx(10, 10, 20, 12), Some(Direction::Right));
+        // dx small relative to dy snaps to a pure vertical direction.
+        assert_eq!(offset2dx(10, 10, 12, 20), Some(Direction::Down));
+        assert_eq!(offset2dx(10, 10, 10, 10), None);
+    }
 
     #[test]
     fn map_dist_matches_legacy_two_three_cost_estimate() {

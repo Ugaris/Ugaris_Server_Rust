@@ -145,7 +145,7 @@ use ugaris_core::{
     world::{
         exp2level, legacy_save_number, level2exp, level_value, merchant_buy_price,
         merchant_sales_price, BankEvent, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
-        RaiseSkillOutcome, StoreWare, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -5337,6 +5337,13 @@ async fn main() -> anyhow::Result<()> {
                 let bank_events_applied = apply_bank_events(&mut runtime, &mut world);
                 if bank_events_applied != 0 {
                     info!(bank_events_applied, tick = world.tick.0, "applied bank account events");
+                }
+                // C `trader_driver`: player-to-player trade middleman NPC
+                // (`src/module/base.c`).
+                world.process_trader_actions();
+                let trader_events_applied = apply_trader_events(&mut world);
+                if trader_events_applied != 0 {
+                    info!(trader_events_applied, tick = world.tick.0, "applied trader item-look events");
                 }
                 // C `merchant_driver`: seed/refresh "special" enchanted-item
                 // stock (`add_special_store`, every 12h).

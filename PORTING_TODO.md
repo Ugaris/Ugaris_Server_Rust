@@ -1646,9 +1646,49 @@ Unlocks every quest NPC. Do these before any P4 area work.
   warnings, and a 12s boot-smoke showed "entering Rust game loop" with no
   panics.
 
-- [ ] **`CDR_TRADER` player-to-player trade NPC** (`src/module/base.c`
+- [~] **`CDR_TRADER` player-to-player trade NPC** (`src/module/base.c`
   trader section) and **`CDR_JANITOR`** (item cleanup NPC). Both have
   registry stubs already - fill in behavior.
+  Progress Log: `CDR_TRADER` is fully ported. Added `TraderDriverData`
+  (`character_driver.rs`, wired into zone spawn) + `TRADER_QA` (base.c's
+  shared `qa[]` table, also used by `CDR_JANITOR`/`CDR_MACRO`) +
+  `crates/ugaris-core/src/world/trader.rs`
+  (`World::process_trader_actions`) porting the full `trader_driver` body:
+  the "trade with <name>"/"stop trade"/"accept trade"/"show trade" text
+  command state machine (exact C string matching, including the
+  case-sensitive `strstr` quirk and the "accept trade" exact-phrase
+  requirement), `NT_GIVE` item collection capped at 10 per side with
+  cross-partner notification, the three-minute timeout with item
+  return, the swap-on-deal semantics, greeting (periodic nearby-player
+  scan like `world/bank.rs`/`world/merchant.rs` already established, but
+  additionally turning to face the greeted player since C's `talkdir`
+  mechanic is part of this driver's observable behavior, unlike
+  bank/merchant which never turn), the 12-line idle-murmur table, and the
+  12h driver-memory clear timer. Added `offset2dx` (`drvlib.rs`, C
+  `tool.c:309-349`) since this is the first driver needing the
+  turn-to-face-the-speaker mechanic. Two things needing
+  `legacy_item_look_text` (lives in `ugaris-server`, not `ugaris-core`)
+  are deferred via a new `TraderEvent`/`pending_trader_events` queue
+  (mirroring the `BankEvent` convention) applied by
+  `crates/ugaris-server/src/world_events.rs::apply_trader_events`: the
+  "show trade" item dump and the `NT_GIVE` "`<name>` gave me:"
+  cross-notification. Deviations (documented in code comments): persistent
+  player IDs (`ch[co].ID`) represented as the raw runtime `CharacterId`
+  (same simplification as driver memory/bank/merchant); `is_gk_room`
+  gatekeeper-room guard in `return_items` not replicated (gatekeeper not
+  ported); `ACHIEVEMENT_TRUST_BUT_VERIFY` award on a successful deal not
+  replicated (achievements not ported); `give_char_item`'s audit `dlog`
+  line skipped; COL_LIGHT_BLUE/COL_LIGHT_GREEN/COL_RESET color markers
+  dropped (same simplification as `BANK_QA`). Tests: 20 new tests in
+  `world/tests/trader.rs` plus 1 in `drvlib.rs` for `offset2dx`. `cargo
+  fmt --all`, `cargo test --workspace` (1203+27+3+33+374 passed), `cargo
+  build -p ugaris-server` all clean with zero warnings, and a 10s
+  boot-smoke showed "entering Rust game loop" with no panics.
+  REMAINING: `CDR_JANITOR` (the lamp-lighting/item-tidying NPC AI, uses
+  `qsort`-based item-distance heuristics plus unported `take_driver`/
+  `drop_driver`/`move_driver` helpers around a specific area's toy-light
+  network) is not ported - it is a materially different, self-contained
+  AI loop from the trader and deserves its own follow-up pass.
 
 - [ ] **Aclerk / auction NPC** - C `merchant.c::aclerk_driver` +
   `src/system/auction/*.c` + `database_merchant.c`. Big; slice it:

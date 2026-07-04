@@ -42,6 +42,7 @@ mod speed;
 mod spells;
 mod teleport;
 mod text;
+mod trader;
 mod traps_hazards;
 
 pub use actions::*;
@@ -82,6 +83,7 @@ pub(crate) use spells::*;
 #[allow(unused_imports)]
 pub(crate) use teleport::*;
 pub use text::*;
+pub use trader::*;
 #[allow(unused_imports)]
 pub(crate) use traps_hazards::*;
 
@@ -97,11 +99,12 @@ use crate::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, execute_character_died_driver,
         process_simple_baddy_messages,
         remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, BankDriverData,
-        CharacterDriverOutcome, CharacterDriverState, Lab2UndeadDriverData, LostconDriverData,
-        SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_BANK, CDR_LAB2UNDEAD, CDR_LOSTCON,
-        CDR_MERCHANT, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, FDEMON_MSG_WAYPOINT, NTID_FDEMON,
-        NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT,
-        NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC, NT_SEEHIT, NT_SPELL, NT_TEXT,
+        CharacterDriverMessage, CharacterDriverOutcome, CharacterDriverState, Lab2UndeadDriverData,
+        LostconDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_BANK, CDR_LAB2UNDEAD,
+        CDR_LOSTCON, CDR_MERCHANT, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TRADER,
+        FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH,
+        NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC,
+        NT_SEEHIT, NT_SPELL, NT_TEXT,
     },
     direction::Direction,
     do_action::{
@@ -238,6 +241,7 @@ pub struct World {
     pending_channel_broadcasts: Vec<WorldChannelBroadcast>,
     pending_hurt_events: Vec<LegacyHurtEvent>,
     pending_bank_events: Vec<BankEvent>,
+    pending_trader_events: Vec<TraderEvent>,
 }
 
 impl Default for Tick {

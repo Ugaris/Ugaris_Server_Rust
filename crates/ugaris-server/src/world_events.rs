@@ -373,6 +373,69 @@ pub(crate) fn apply_bank_events(runtime: &mut ServerRuntime, world: &mut World) 
     applied
 }
 
+/// C `trader_driver`'s "show trade" (`src/module/base.c:443-465`) and
+/// `NT_GIVE` cross-notify (`base.c:496-523`) item-look output, deferred
+/// half: applies each [`TraderEvent`] queued by `World::process_trader_actions`
+/// (see `world/trader.rs`'s module doc comment for why - `legacy_item_look_text`
+/// lives in this crate, not `ugaris-core`) by formatting each item with
+/// `legacy_item_look_text` and queuing the resulting lines as system text
+/// to the requesting player, mirroring `apply_bank_events`'s shape (no
+/// `ServerRuntime` needed here since neither event touches
+/// `PlayerRuntime`).
+pub(crate) fn apply_trader_events(world: &mut World) -> usize {
+    let mut applied = 0;
+    for event in world.drain_pending_trader_events() {
+        match event {
+            TraderEvent::ShowTrade {
+                viewer_id,
+                c1_items,
+                c2_items,
+            } => {
+                let Some(viewer) = world.characters.get(&viewer_id).cloned() else {
+                    continue;
+                };
+                world.queue_system_text(viewer_id, "Trading:");
+                for item_id in c1_items {
+                    if let Some(item) = world.items.get(&item_id).cloned() {
+                        for line in legacy_item_look_text(&item, &viewer).lines() {
+                            world.queue_system_text(viewer_id, line.to_string());
+                        }
+                    }
+                }
+                world.queue_system_text(viewer_id, "For:");
+                for item_id in c2_items {
+                    if let Some(item) = world.items.get(&item_id).cloned() {
+                        for line in legacy_item_look_text(&item, &viewer).lines() {
+                            world.queue_system_text(viewer_id, line.to_string());
+                        }
+                    }
+                }
+                applied += 1;
+            }
+            TraderEvent::ItemAddedToTrade {
+                notify_id,
+                giver_name,
+                item_id,
+            } => {
+                let Some(viewer) = world.characters.get(&notify_id).cloned() else {
+                    continue;
+                };
+                // C `log_char(c2, LOG_SYSTEM, 0, COL_LIGHT_GREEN "%s gave
+                // me:", giver_name)` - color marker dropped (see
+                // `world/trader.rs`'s module doc comment).
+                world.queue_system_text(notify_id, format!("{giver_name} gave me:"));
+                if let Some(item) = world.items.get(&item_id).cloned() {
+                    for line in legacy_item_look_text(&item, &viewer).lines() {
+                        world.queue_system_text(notify_id, line.to_string());
+                    }
+                }
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
 pub(crate) fn send_pending_world_system_texts(
     runtime: &mut ServerRuntime,
     world: &mut World,

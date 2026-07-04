@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::{
     character_driver::{
         apply_lab2_undead_create_message, apply_simple_baddy_create_message, CharacterDriverState,
-        CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, NT_CREATE,
+        TraderDriverData, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -459,6 +459,12 @@ impl ZoneLoader {
             character.driver_state = Some(crate::character_driver::CharacterDriverState::Bank(
                 crate::character_driver::parse_bank_driver_args(&template.args),
             ));
+        }
+        if template.driver == CDR_TRADER {
+            // C never parses zone-file args into `struct trader_data`
+            // (`set_data` zero-initializes it) - no args to read here.
+            character.driver_state =
+                Some(CharacterDriverState::Trader(TraderDriverData::default()));
         }
         if template.driver == CDR_LAB2UNDEAD {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
