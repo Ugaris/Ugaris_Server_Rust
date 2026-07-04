@@ -3227,14 +3227,20 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (`crates/ugaris-db/src/clan.rs`), clan trade bonus (merchants call
   `clan_trade_bonus` - currently 0), clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
-  (transport module has the seam). REMAINING: treasury/bonus/dungeon-guard
-  economy (`update_treasure`/`update_training`/`struct clan_dungeon` -
-  jewels, cost-per-week/debt, bonuses, dungeon guard counts, potions),
+  (transport module has the seam). REMAINING: the dungeon-guard economy
+  proper (`struct clan_dungeon`'s guard counts/potions/raid flags and
+  `get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost`/
+  `set_clan_raid` - meaningless without the unported dungeon/raid system
+  itself; the treasury/bonus/training half of this - `update_treasure`/
+  `update_training`/jewels/cost-per-week/debt/bonus levels/depot money -
+  was closed in iteration 95, see Progress Log),
   `CDR_CLANCLERK` (`clanclerk_driver`, `area/30/clanmaster.c:662-1213` -
   the members-only economy driver: deposit/withdraw/bonus/relation/
-  rank-name/website/message/raiding commands - needs the treasury
-  functions above plus jewel-in-vault counts and raid flags, none of
-  which exist in `clan.rs` yet), the clanmaster NPC's `rank:`/`fire:` text
+  rank-name/website/message/raiding commands - the treasury functions it
+  needs now exist in `clan.rs` [`ClanRegistry::clan_money`/
+  `clan_money_change`/`jewel_count`/`bonus_level`/`set_bonus_level`], but
+  raid flags/jewel-in-vault-count still don't, and the driver itself
+  isn't wired), the clanmaster NPC's `rank:`/`fire:` text
   commands (leader rank-management, plus the offline-player
   `task_set_clan_rank`/`task_fire_from_clan` async DB-task fallback - a
   whole separate subsystem this codebase has no equivalent of), the
@@ -3642,6 +3648,63 @@ Unlocks every quest NPC. Do these before any P4 area work.
     zero warnings, 10s boot-smoke confirmed "entering Rust game loop"
     with no panics (this iteration adds a tick-loop call site). REMAINING
     updated above to reflect what's now closed.
+  - 2026-07-04 (iteration 95): ported the treasury/bonus economy slice of
+    `struct clan` (`clan.h:22-39,66-87`) into `crates/ugaris-core/src/
+    clan.rs`: new `ClanTreasure` (jewels/cost_per_week/debt/payed_till)
+    and `ClanEconomy` (bonus levels, depot money, treasure, plus the
+    `training_score`/`last_training_update` pair pulled out of `struct
+    clan_dungeon`) structs, embedded as a new `economy` field on
+    `ClanIdentity` and initialized by `clan_standards`'s treasury reset
+    (`clan.c:92-93`) inside `ClanIdentity::standard`. New `ClanRegistry`
+    methods: `clan_money`/`clan_money_change` (`get_clan_money`/
+    `clan_money_change`, `clan.c:222-244` - returns a `ClanMoneyChange`
+    log-event enum instead of calling `add_clanlog` itself, matching this
+    module's existing "return events, let the caller log" pattern),
+    `jewel_count`/`add_jewel`/`swap_jewels` (`cnt_jewels`/`add_jewel`/
+    `swap_jewels`, `clan.c:494-513` - confirmed `swap_jewels` only ever
+    charges debt to the source and never decrements its jewel count
+    directly, a subtlety verified with a dedicated test), `bonus_level`/
+    `set_bonus_level` (`get_clan_bonus`/`set_clan_bonus`, `clan.c:518-520,
+    536-544` - the `doraid` gate on bonus slot 3 intentionally not ported,
+    same reasoning as the existing `update_relations` `doraid` skip: dead
+    in practice, meaningless without the unported dungeon/raid system),
+    free function `bonus_name` (`get_bonus_name`, `clan.c:522-527`), and
+    the two periodic ticks `update_treasure`/`update_training`
+    (`clan.c:1105-1182`): bonus-affordability shrinking (the C `do`/
+    `while` loop translated literally, including its "check against the
+    *pre-reduction* cost" subtlety), weekly cost recomputation (flat
+    `CLANHALLRENT` rent + bonus upkeep), 5-minutes-late debt accrual,
+    debt auto-payoff with jewels, and bankrupt-clan deletion (`debt >=
+    2000`) returning a `ClanTreasuryEvent` (`PaidDebtWithJewels`/
+    `WentBroke`) for the caller to log/react to - `WentBroke` is the one
+    real player-facing `add_clanlog` entry in this pair, `update_training`
+    itself has no player-facing log at all (C's `xlog` there is a server
+    debug log only). Like `update_relations`, neither tick has a live
+    game-loop caller yet (documented in the module doc comment and this
+    task's REMAINING note) - this iteration is data-model-and-logic only.
+    19 new unit tests in `clan.rs` covering bonus-name table bounds,
+    economy defaults on founding, money-change threshold-gated logging,
+    jewel add/swap semantics (including the "debt-only, no jewel
+    decrement" subtlety and the "no jewels at all is a no-op" guard),
+    bonus get/set validation, and every `update_treasure` branch (rent-
+    only cost, bonus reduced to zero when unaffordable, bonus kept when
+    affordable, debt accrual gated by the 5-minute threshold, debt fully
+    paid off by jewels, bankruptcy with zero jewels, and bankruptcy after
+    a partial jewel payoff) plus `update_training`'s 1-hour gate and 5%
+    decay. Explicitly out of scope, left for a future slice (updated in
+    REMAINING above): the dungeon-guard economy proper (guard counts/
+    potions/raid flags - the rest of `struct clan_dungeon` - and
+    `get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost`/
+    `set_clan_raid`, meaningless without the dungeon/raid system itself),
+    `clan_trade_bonus` (still blocked on the unported merchant system,
+    though its one dependency `get_clan_bonus` now exists as
+    `bonus_level`), and wiring any of this into `CDR_CLANCLERK` or a
+    live game-loop tick. `cargo fmt --all`, `cargo test --workspace`
+    (1498 ugaris-core [+19] + 47 db + 3 net + 37 protocol + 520 server,
+    all green, zero failures), `cargo build -p ugaris-server` clean with
+    zero warnings. No runtime-loop/login/map-sync/protocol changes, but
+    ran a 10s boot-smoke anyway as a sanity check: "entering Rust game
+    loop" with no panics.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

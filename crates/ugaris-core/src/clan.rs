@@ -16,16 +16,29 @@
 //! `struct clan`'s `name`/`rankname`/`website`/`message` fields,
 //! `clan.h:88-101`) plus the membership wiring onto `Character.clan`/
 //! `.clan_rank`/`.clan_serial` (`found_clan`, `get_char_clan`,
-//! `add_member`, `remove_member`, `clan.c:242-272,460-492,1186-1221`).
+//! `add_member`, `remove_member`, `clan.c:242-272,460-492,1186-1221`),
+//! and the treasury/bonus economy (jewels, weekly upkeep cost, debt
+//! accrual/auto-pay, bankrupt-clan deletion, bonus levels, depot money,
+//! dungeon training-score decay - `update_treasure`, `update_training`,
+//! `add_jewel`, `swap_jewels`, `cnt_jewels`, `get_clan_bonus`,
+//! `set_clan_bonus`, `get_bonus_name`, `get_clan_money`,
+//! `clan_money_change`, `clan.c:494-544,1105-1182,222-244`).
 //!
-//! NOT ported yet (left for follow-up slices): treasury/bonus/
-//! dungeon-guard economy (`update_treasure`, `update_training`, `struct
-//! clan_dungeon`), the `doraid` raid-toggle clamp inside
-//! `update_relations` (dead in practice once a clan's first tick has run
-//! - see the comment on [`ClanRelations::update`] - and meaningless
-//! without the dungeon/raid system, so intentionally skipped),
+//! NOT ported yet (left for follow-up slices): the dungeon-guard economy
+//! proper (guard counts/potions/raid flags - the rest of `struct
+//! clan_dungeon` beyond `training_score`/`last_training_update`, and
+//! `get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost`/
+//! `set_clan_raid` - meaningless without the unported dungeon/raid
+//! system itself), `clan_trade_bonus` (blocked on the merchant system
+//! not being ported - the underlying primitive `get_clan_bonus` this
+//! needs is now available as [`ClanRegistry::bonus_level`]), the
+//! `doraid` raid-toggle clamp inside `update_relations`/`set_clan_bonus`
+//! (dead in practice once a clan's first tick has run - see the comment
+//! on [`ClanRelations::update`] - and meaningless without the dungeon/
+//! raid system, so intentionally skipped in both places),
 //! clan-log persistence (`add_clanlog`/SQL `clanlog` table - this module
-//! returns [`ClanRelationEvent`]s for a future caller to format and log),
+//! returns event enums like [`ClanRelationEvent`]/[`ClanMoneyChange`]/
+//! [`ClanTreasuryEvent`] for a future caller to format and log),
 //! `crates/ugaris-db/src/clan.rs` (no DB repository/migration yet, so
 //! [`ClanRegistry`] is not yet persisted across restarts), the
 //! `ClanAttackPolicy` wiring in `do_action.rs` (still `NoClanAttackPolicy`
@@ -33,7 +46,9 @@
 //! (`ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLUB_MEMBER`, left to the
 //! runtime caller per the pattern used elsewhere - see
 //! [`ClanRegistry::add_member`]), chat channel gating, and clan-hall
-//! transport access beyond direct membership.
+//! transport access beyond direct membership. Neither `update_treasure`
+//! nor `update_training` has a live game-loop caller yet (same "pure
+//! logic first, wiring later" precedent as `update_relations`).
 
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +59,35 @@ use crate::entity::Character;
 /// which is a separate, not-yet-ported system that reuses the same
 /// character fields (see `src/system/club.c`).
 pub const MAX_CLAN: usize = 32;
+
+/// C `#define MAXBONUS 14` (`clan.h:20`).
+pub const MAX_BONUS: usize = 14;
+
+/// C `#define CLANHALLRENT 5` (`clan.c:47`): flat weekly rent added on top
+/// of bonus upkeep in `update_treasure`, expressed in whole gold (the
+/// treasury itself tracks cost in thousandths, so this gets multiplied by
+/// 1000 before use, matching `CLANHALLRENT * 1000` at `clan.c:1125`).
+pub const CLAN_HALL_RENT: i32 = 5;
+
+/// Bonus slot index 2 ("Merchant") is the only one with a name that
+/// matters gameplay-wise today; `clan_trade_bonus` reads
+/// `get_clan_bonus(cnr, 2)` (`clan.c:1545-1552`). Kept as a named constant
+/// so future callers don't have to guess the magic number.
+pub const CLAN_BONUS_MERCHANT: usize = 2;
+
+/// C `get_bonus_name` + `static char *bonus_name[MAXBONUS]`
+/// (`clan.c:63-68,522-527`). Takes `i32` (not `usize`) to mirror C's
+/// `nr < 0` half of the range guard directly, since callers may pass an
+/// arbitrary client-supplied bonus index.
+pub fn bonus_name(nr: i32) -> &'static str {
+    match nr {
+        0 => "Pentagram Quest",
+        1 => "Military Advisor",
+        2 => "Merchant",
+        n if n > 2 && (n as usize) < MAX_BONUS => "unassigned",
+        _ => "Unknown", // C `get_bonus_name`'s `nr < 0 || nr >= MAXBONUS` guard.
+    }
+}
 
 /// C relation levels (`clan.h:41-56`). Numeric order matters: the
 /// escalation/de-escalation state machine (`update_relations`) moves the
@@ -460,8 +504,88 @@ impl crate::do_action::ClanAttackPolicy for ClanRelations {
 /// jurisdiction rather than as invalid.
 pub const CLUB_OFFSET: u16 = 1024;
 
-/// C `struct clan`'s identity fields (`clan.h:88-101`, minus the treasury/
-/// bonus/dungeon-guard economy - see the module doc comment). Owned by
+/// C `struct clan_treasure` (`clan.h:34-39`). All money-like fields are
+/// tracked in thousandths of a gold piece ("jewel-thousandths"), matching
+/// C's comment on each field - only [`ClanEconomy::depot_money`] is whole
+/// gold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClanTreasure {
+    /// C `int jewels`.
+    pub jewels: i32,
+    /// C `int cost_per_week` - in 1/1000 gold.
+    pub cost_per_week: i32,
+    /// C `int debt` - in 1/1000 gold.
+    pub debt: i32,
+    /// C `int payed_till` - `realtime` seconds.
+    pub payed_till: i64,
+}
+
+/// C `struct clan`'s bonus/depot/treasure/training fields (`clan.h:93-97`
+/// plus the `training_score`/`last_training_update` pair from `struct
+/// clan_dungeon`, `clan.h:79-80`). The rest of `struct clan_dungeon`
+/// (guard counts, potions, raid flags) is out of scope for this slice -
+/// see the module doc comment.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ClanEconomy {
+    /// C `struct clan_bonus bonus[MAXBONUS]` (`clan.h:93`), just the
+    /// `level` field of each slot.
+    pub bonus_level: [i32; MAX_BONUS],
+    /// C `struct clan_depot depot` (`clan.h:95`), just `money`.
+    pub depot_money: i32,
+    pub treasure: ClanTreasure,
+    /// C `struct clan_dungeon`'s `training_score` (`clan.h:78`).
+    pub training_score: i32,
+    /// C `struct clan_dungeon`'s `last_training_update` (`clan.h:79`).
+    pub last_training_update: i64,
+}
+
+impl ClanEconomy {
+    /// C `clan_standards`' treasury portion (`clan.c:92-93`):
+    /// `c->treasure.payed_till = realtime; c->treasure.debt = 0;`. Every
+    /// other field (bonus levels, depot money, jewels, training score) is
+    /// left at C's implicit zero-initialized default, matching the
+    /// static `struct clan clan[MAXCLAN]` array.
+    fn standard(now: i64) -> Self {
+        ClanEconomy {
+            bonus_level: [0; MAX_BONUS],
+            depot_money: 0,
+            treasure: ClanTreasure {
+                jewels: 0,
+                cost_per_week: 0,
+                debt: 0,
+                payed_till: now,
+            },
+            training_score: 0,
+            last_training_update: now,
+        }
+    }
+
+    /// C `reduce_clan_bonus` (`clan.c:1091-1099`): finds the
+    /// highest-leveled bonus and reduces it by one. A no-op when every
+    /// bonus is already at level 0.
+    fn reduce_highest_bonus(&mut self) {
+        let mut best_n = 0;
+        let mut best_level = 0;
+        for (n, level) in self.bonus_level.iter().enumerate() {
+            if *level > best_level {
+                best_level = *level;
+                best_n = n;
+            }
+        }
+        if best_level > 0 {
+            self.bonus_level[best_n] -= 1;
+        }
+    }
+
+    /// C: the bonus-upkeep sum inside `update_treasure`'s `do`/`while`
+    /// loop (`clan.c:1112-1116`) - total weekly cost of every bonus level,
+    /// in 1/1000 gold, before adding the flat clan-hall rent.
+    fn bonus_upkeep_cost(&self) -> i32 {
+        self.bonus_level.iter().map(|level| level * 1000).sum()
+    }
+}
+
+/// C `struct clan`'s identity fields (`clan.h:88-101`). Owned by
 /// [`ClanRegistry`], one per existing clan number.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClanIdentity {
@@ -478,12 +602,16 @@ pub struct ClanIdentity {
     pub website: String,
     /// C `char message[80]` (`clan.h:99`).
     pub message: String,
+    /// C `struct clan_bonus bonus[MAXBONUS]` / `struct clan_depot depot` /
+    /// `struct clan_treasure treasure` / part of `struct clan_dungeon`
+    /// (`clan.h:93-97`, `clan.h:78-79`).
+    pub economy: ClanEconomy,
 }
 
 impl ClanIdentity {
     /// C `clan_standards` (`clan.c:76-95`), identity portion only (the
     /// relation-reset portion is [`ClanRelations::found_clan`]).
-    fn standard(name: String) -> Self {
+    fn standard(name: String, now: i64) -> Self {
         ClanIdentity {
             name,
             rank_names: [
@@ -495,6 +623,7 @@ impl ClanIdentity {
             ],
             website: String::new(),
             message: String::new(),
+            economy: ClanEconomy::standard(now),
         }
     }
 }
@@ -667,7 +796,7 @@ impl ClanRegistry {
         let Some(slot) = slot else {
             return Err(ClanFoundError::ClanListFull);
         };
-        self.identities[slot] = Some(ClanIdentity::standard(name.to_string()));
+        self.identities[slot] = Some(ClanIdentity::standard(name.to_string(), now));
         self.relations.found_clan(slot as u16, now);
         self.dirty = true;
         Ok(slot as u16)
@@ -832,6 +961,236 @@ impl ClanRegistry {
         self.dirty = true;
         Ok(())
     }
+
+    /// C `get_clan_money` (`clan.c:222-228`). Out-of-range/nonexistent
+    /// clans read as `0`, matching C's zero-initialized `clan[]` slots.
+    pub fn clan_money(&self, cnr: u16) -> i32 {
+        self.identity(cnr)
+            .map(|id| id.economy.depot_money)
+            .unwrap_or(0)
+    }
+
+    /// C `clan_money_change` (`clan.c:230-244`): applies `diff` to the
+    /// clan depot and reports what to clan-log, if anything. C's `cn`
+    /// parameter serves two purposes - "is this attributable to a real
+    /// character" (truthy) and, via `ch[cn].name`, the log message's
+    /// actor name; since this pure registry has no character table, the
+    /// caller passes `log` for the first purpose and formats the message
+    /// itself (with the acting character's name) from the returned
+    /// [`ClanMoneyChange`] using [`ClanMoneyChange::log_message`].
+    /// Nonexistent/out-of-range clans are a silent no-op, matching C's
+    /// `cnr < 1 || cnr >= MAXCLAN` guard (C additionally *would* apply the
+    /// diff to an in-range-but-nameless slot; this registry has no such
+    /// slot to write into, so that quirk cannot occur here).
+    pub fn clan_money_change(&mut self, cnr: u16, diff: i32, log: bool) -> Option<ClanMoneyChange> {
+        let identity = self.identity_mut(cnr)?;
+        identity.economy.depot_money += diff;
+        self.dirty = true;
+        // C: `if (cn && (diff >= 100 || diff < 0))`.
+        if log && (diff >= 100 || diff < 0) {
+            Some(if diff > 0 {
+                ClanMoneyChange::Deposited(diff)
+            } else {
+                ClanMoneyChange::Withdrew(-diff)
+            })
+        } else {
+            None
+        }
+    }
+
+    /// C `cnt_jewels` (`clan.c:514-516`). Out-of-range/nonexistent clans
+    /// read as `0`.
+    pub fn jewel_count(&self, cnr: u16) -> i32 {
+        self.identity(cnr)
+            .map(|id| id.economy.treasure.jewels)
+            .unwrap_or(0)
+    }
+
+    /// C `add_jewel` (`clan.c:494-499`): increments the clan's jewel
+    /// count. C also unconditionally logs `"%s added a jewel"` with the
+    /// acting character's name - left to the caller (no character table
+    /// here), same pattern as [`ClanRegistry::clan_money_change`].
+    pub fn add_jewel(&mut self, cnr: u16) -> Result<(), ClanIdentityError> {
+        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
+        identity.economy.treasure.jewels += 1;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// C `swap_jewels` (`clan.c:501-513`): moves up to `cnt` jewels from
+    /// `from` to `to`, charging `from`'s treasury a matching debt (this is
+    /// the dungeon-raid jewel-theft primitive - C never removes jewels
+    /// from the loser directly, it adds debt that `update_treasure` later
+    /// converts to a jewel loss). A no-op if `from` has no jewels at all;
+    /// silently clamps `cnt` down to `from`'s jewel count otherwise.
+    /// Nonexistent/out-of-range clan numbers are a no-op (mirrors
+    /// [`ClanRegistry::clan_money_change`]'s reasoning for why C's
+    /// "writes to a nameless in-range slot" quirk cannot occur here).
+    pub fn swap_jewels(&mut self, from: u16, to: u16, cnt: i32) {
+        let available = self.jewel_count(from);
+        if available < 1 {
+            return;
+        }
+        let cnt = cnt.min(available);
+        if let Some(identity) = self.identity_mut(from) {
+            identity.economy.treasure.debt += cnt * 1000;
+        }
+        if let Some(identity) = self.identity_mut(to) {
+            identity.economy.treasure.jewels += cnt;
+        }
+        self.dirty = true;
+    }
+
+    /// C `get_clan_bonus` (`clan.c:518-520`). Out-of-range clan numbers or
+    /// bonus slots read as `0`.
+    pub fn bonus_level(&self, cnr: u16, nr: usize) -> i32 {
+        if nr >= MAX_BONUS {
+            return 0;
+        }
+        self.identity(cnr)
+            .map(|id| id.economy.bonus_level[nr])
+            .unwrap_or(0)
+    }
+
+    /// C `set_clan_bonus` (`clan.c:536-544`). C also rejects slot `3`
+    /// while `!clan[cnr].dungeon.doraid`; since the dungeon/raid system is
+    /// not ported (see the module doc comment's note on why `doraid` is
+    /// skipped in [`ClanRelations::update`]), that clamp is intentionally
+    /// not ported here either - it is dead in practice once a clan's
+    /// first relation tick has run, and slot 3 has no assigned name or
+    /// function anyway (`bonus_name(3) == "unassigned"`).
+    pub fn set_bonus_level(
+        &mut self,
+        cnr: u16,
+        nr: usize,
+        level: i32,
+    ) -> Result<(), ClanIdentityError> {
+        if nr >= MAX_BONUS {
+            return Err(ClanIdentityError::NotFound);
+        }
+        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
+        identity.economy.bonus_level[nr] = level;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// C `update_treasure` (`clan.c:1105-1159`), the periodic tick run for
+    /// every existing clan: shrinks bonuses that have become unaffordable,
+    /// recomputes the weekly upkeep cost, accrues debt for elapsed time
+    /// since `payed_till`, auto-pays off debt with jewels when possible,
+    /// and deletes any clan whose debt reaches 2 jewels' worth
+    /// (`>= 2000`). Like [`ClanRelations::update`], this has no live
+    /// game-loop caller yet - see the module doc comment.
+    pub fn update_treasure(&mut self, now: i64) -> Vec<ClanTreasuryEvent> {
+        let mut events = Vec::new();
+        for cnr in 1..MAX_CLAN {
+            let Some(identity) = self.identities[cnr].as_mut() else {
+                continue;
+            };
+            let economy = &mut identity.economy;
+
+            // C's `do { ... } while (cost > 0 && cost / 250 > jewels)`.
+            let mut cost;
+            loop {
+                cost = economy.bonus_upkeep_cost();
+                if cost / 250 > economy.treasure.jewels {
+                    economy.reduce_highest_bonus();
+                }
+                if !(cost > 0 && cost / 250 > economy.treasure.jewels) {
+                    break;
+                }
+            }
+
+            cost += CLAN_HALL_RENT * 1000;
+
+            if economy.treasure.cost_per_week != cost {
+                economy.treasure.cost_per_week = cost;
+                self.dirty = true;
+            }
+
+            let diff = now - economy.treasure.payed_till;
+            if diff > 60 * 5 {
+                // update 5 minutes late to reduce load
+                let step = (60 * 60 * 24 * 7) / cost as i64;
+                let n = diff / step + 1;
+                economy.treasure.debt += n as i32;
+                economy.treasure.payed_till += step * n;
+                self.dirty = true;
+            }
+
+            if economy.treasure.debt >= 1000 && economy.treasure.jewels > 0 {
+                let mut n = economy.treasure.debt / 1000;
+                if n > economy.treasure.jewels {
+                    n = economy.treasure.jewels;
+                    economy.treasure.jewels = 0;
+                } else {
+                    economy.treasure.jewels -= n;
+                }
+                economy.treasure.debt -= n * 1000;
+                self.dirty = true;
+                events.push(ClanTreasuryEvent::PaidDebtWithJewels {
+                    clan: cnr as u16,
+                    jewels_paid: n,
+                });
+            }
+
+            if economy.treasure.debt >= 2000 {
+                let name = identity.name.clone();
+                events.push(ClanTreasuryEvent::WentBroke {
+                    clan: cnr as u16,
+                    name,
+                });
+                self.delete_clan(cnr as u16);
+            }
+        }
+        events
+    }
+
+    /// C `update_training` (`clan.c:1166-1182`): once an hour per clan,
+    /// decays the clan's dungeon training score by 5% (`* 0.95f`, C's
+    /// `xlog` here is a server debug log only, no player-facing
+    /// clan-log entry - unlike [`ClanRegistry::update_treasure`]'s broke
+    /// deletion, so this has no event return). Like `update_treasure`,
+    /// no live game-loop caller yet.
+    pub fn update_training(&mut self, now: i64) {
+        for cnr in 1..MAX_CLAN {
+            let Some(identity) = self.identities[cnr].as_mut() else {
+                continue;
+            };
+            let economy = &mut identity.economy;
+            if now - economy.last_training_update < 60 * 60 {
+                continue;
+            }
+            economy.last_training_update = now;
+            economy.training_score = (economy.training_score as f32 * 0.95f32) as i32;
+            self.dirty = true;
+        }
+    }
+}
+
+/// Result of [`ClanRegistry::clan_money_change`] when the change should be
+/// clan-logged - the caller formats these with the acting character's
+/// name (`clan.c:236-241`'s `"%s deposited %dG"`/`"%s withdrew %dG"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClanMoneyChange {
+    Deposited(i32),
+    Withdrew(i32),
+}
+
+/// Events produced by [`ClanRegistry::update_treasure`]. See each
+/// variant's doc comment for which C log (server debug `xlog` vs
+/// player-facing `add_clanlog`) it corresponds to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClanTreasuryEvent {
+    /// C `xlog("clan %s, paid %d jewels", ...)` (`clan.c:1151`) - server
+    /// debug log only, no player-facing clan-log entry in C.
+    PaidDebtWithJewels { clan: u16, jewels_paid: i32 },
+    /// C: the bankrupt-clan deletion path (`clan.c:1154-1160`) -
+    /// `xlog("clan %s is broke, removing", ...)` plus a real
+    /// player-facing `add_clanlog(cnr, ..., "Clan %s went broke and was
+    /// deleted", ...)` entry (priority 1, actor char ID 0 meaning
+    /// "system").
+    WentBroke { clan: u16, name: String },
 }
 
 #[cfg(test)]
@@ -1540,5 +1899,308 @@ mod tests {
             "a freshly deserialized registry starts clean, matching what was just saved"
         );
         assert_eq!(reloaded.name(1), Some("Dirty"));
+    }
+
+    #[test]
+    fn bonus_name_matches_c_table_and_out_of_range_guard() {
+        assert_eq!(bonus_name(0), "Pentagram Quest");
+        assert_eq!(bonus_name(1), "Military Advisor");
+        assert_eq!(bonus_name(2), "Merchant");
+        assert_eq!(bonus_name(3), "unassigned");
+        assert_eq!(bonus_name(13), "unassigned");
+        assert_eq!(bonus_name(-1), "Unknown");
+        assert_eq!(bonus_name(14), "Unknown");
+    }
+
+    #[test]
+    fn found_clan_initializes_economy_to_standard_defaults() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Traders", 1_000).unwrap();
+        let economy = registry.identity(nr).unwrap().economy;
+        assert_eq!(economy.bonus_level, [0; MAX_BONUS]);
+        assert_eq!(economy.depot_money, 0);
+        assert_eq!(economy.treasure.jewels, 0);
+        assert_eq!(economy.treasure.cost_per_week, 0);
+        assert_eq!(economy.treasure.debt, 0);
+        // C: `c->treasure.payed_till = realtime;` (`clan.c:92`).
+        assert_eq!(economy.treasure.payed_till, 1_000);
+        assert_eq!(economy.training_score, 0);
+    }
+
+    #[test]
+    fn clan_money_defaults_to_zero_for_unknown_clans() {
+        let registry = ClanRegistry::new();
+        assert_eq!(registry.clan_money(1), 0);
+        assert_eq!(registry.clan_money(99), 0);
+    }
+
+    #[test]
+    fn clan_money_change_applies_diff_and_gates_logging_by_threshold() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Bankers", 0).unwrap();
+
+        // Small deposit (< 100): applied, but not logged.
+        assert_eq!(registry.clan_money_change(nr, 50, true), None);
+        assert_eq!(registry.clan_money(nr), 50);
+
+        // Large deposit (>= 100): applied and logged.
+        assert_eq!(
+            registry.clan_money_change(nr, 150, true),
+            Some(ClanMoneyChange::Deposited(150))
+        );
+        assert_eq!(registry.clan_money(nr), 200);
+
+        // Any withdrawal is logged, regardless of size.
+        assert_eq!(
+            registry.clan_money_change(nr, -30, true),
+            Some(ClanMoneyChange::Withdrew(30))
+        );
+        assert_eq!(registry.clan_money(nr), 170);
+
+        // `log` false suppresses the log event even for a qualifying diff.
+        assert_eq!(registry.clan_money_change(nr, -30, false), None);
+        assert_eq!(registry.clan_money(nr), 140);
+    }
+
+    #[test]
+    fn clan_money_change_on_unknown_clan_is_a_no_op() {
+        let mut registry = ClanRegistry::new();
+        assert_eq!(registry.clan_money_change(5, 500, true), None);
+        assert_eq!(registry.clan_money(5), 0);
+    }
+
+    #[test]
+    fn jewel_count_and_add_jewel() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Jewelers", 0).unwrap();
+        assert_eq!(registry.jewel_count(nr), 0);
+        registry.add_jewel(nr).unwrap();
+        registry.add_jewel(nr).unwrap();
+        assert_eq!(registry.jewel_count(nr), 2);
+    }
+
+    #[test]
+    fn add_jewel_rejects_unknown_clan() {
+        let mut registry = ClanRegistry::new();
+        assert_eq!(registry.add_jewel(5), Err(ClanIdentityError::NotFound));
+    }
+
+    #[test]
+    fn swap_jewels_charges_debt_without_removing_source_jewels() {
+        let mut registry = ClanRegistry::new();
+        let a = registry.found_clan("Raided", 0).unwrap();
+        let b = registry.found_clan("Raider", 0).unwrap();
+        for _ in 0..5 {
+            registry.add_jewel(a).unwrap();
+        }
+
+        registry.swap_jewels(a, b, 2);
+
+        // C: `swap_jewels` only adds debt to the source, it never
+        // decrements the source's jewel count directly (`clan.c:501-513`).
+        assert_eq!(registry.jewel_count(a), 5);
+        assert_eq!(registry.jewel_count(b), 2);
+        assert_eq!(registry.identity(a).unwrap().economy.treasure.debt, 2000);
+    }
+
+    #[test]
+    fn swap_jewels_clamps_to_available_jewels_and_no_ops_when_empty() {
+        let mut registry = ClanRegistry::new();
+        let a = registry.found_clan("Poor", 0).unwrap();
+        let b = registry.found_clan("Rich", 0).unwrap();
+
+        // No jewels at all: no-op even though a debt-only change would be
+        // "harmless" - matches C's `if (cnt_jewels(nr1) < 1) return;` early
+        // exit before any state is touched.
+        registry.swap_jewels(a, b, 10);
+        assert_eq!(registry.identity(a).unwrap().economy.treasure.debt, 0);
+        assert_eq!(registry.jewel_count(b), 0);
+
+        registry.add_jewel(a).unwrap();
+        registry.add_jewel(a).unwrap();
+        // Requesting more than available (2) clamps down to 2.
+        registry.swap_jewels(a, b, 10);
+        assert_eq!(registry.identity(a).unwrap().economy.treasure.debt, 2000);
+        assert_eq!(registry.jewel_count(b), 2);
+    }
+
+    #[test]
+    fn bonus_level_get_and_set() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Bonused", 0).unwrap();
+        assert_eq!(registry.bonus_level(nr, 2), 0);
+
+        registry.set_bonus_level(nr, 2, 3).unwrap();
+        assert_eq!(registry.bonus_level(nr, 2), 3);
+
+        assert_eq!(
+            registry.set_bonus_level(nr, MAX_BONUS, 1),
+            Err(ClanIdentityError::NotFound)
+        );
+        assert_eq!(registry.bonus_level(nr, MAX_BONUS), 0);
+        assert_eq!(
+            registry.set_bonus_level(99, 0, 1),
+            Err(ClanIdentityError::NotFound)
+        );
+    }
+
+    #[test]
+    fn update_treasure_charges_flat_clan_hall_rent_with_no_bonuses() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Rentpayers", 0).unwrap();
+        registry.update_treasure(0);
+        assert_eq!(
+            registry
+                .identity(nr)
+                .unwrap()
+                .economy
+                .treasure
+                .cost_per_week,
+            CLAN_HALL_RENT * 1000
+        );
+    }
+
+    #[test]
+    fn update_treasure_reduces_unaffordable_bonus_to_zero() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Overspent", 0).unwrap();
+        registry.set_bonus_level(nr, 0, 1).unwrap(); // no jewels to support it
+        registry.update_treasure(0);
+        assert_eq!(registry.bonus_level(nr, 0), 0);
+    }
+
+    #[test]
+    fn update_treasure_keeps_affordable_bonus() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Sponsored", 0).unwrap();
+        registry.set_bonus_level(nr, 0, 1).unwrap(); // costs 1000/250=4 <= 5 jewels
+        for _ in 0..5 {
+            registry.add_jewel(nr).unwrap();
+        }
+        registry.update_treasure(0);
+        assert_eq!(registry.bonus_level(nr, 0), 1);
+        assert_eq!(
+            registry
+                .identity(nr)
+                .unwrap()
+                .economy
+                .treasure
+                .cost_per_week,
+            1000 + CLAN_HALL_RENT * 1000
+        );
+    }
+
+    #[test]
+    fn update_treasure_skips_debt_accrual_before_five_minutes_late() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("OnTime", 0).unwrap();
+        registry.update_treasure(300); // exactly 300s: C requires `diff > 300`
+        assert_eq!(registry.identity(nr).unwrap().economy.treasure.debt, 0);
+    }
+
+    #[test]
+    fn update_treasure_accrues_small_debt_once_five_minutes_late() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Late", 0).unwrap();
+        // cost = 5000 (rent only) => step = 604800/5000 = 120.
+        // diff = 301 => n = 301/120 + 1 = 3.
+        registry.update_treasure(301);
+        let treasure = registry.identity(nr).unwrap().economy.treasure;
+        assert_eq!(treasure.debt, 3);
+        assert_eq!(treasure.payed_till, 120 * 3);
+    }
+
+    #[test]
+    fn update_treasure_pays_off_debt_with_jewels_when_affordable() {
+        let mut registry = ClanRegistry::new();
+        let a = registry.found_clan("Payer", 0).unwrap();
+        let b = registry.found_clan("Other", 0).unwrap();
+        for _ in 0..5 {
+            registry.add_jewel(a).unwrap();
+        }
+        registry.swap_jewels(a, b, 2); // a now owes 2000 debt, keeps 5 jewels
+
+        let events = registry.update_treasure(0);
+        assert_eq!(
+            events,
+            vec![ClanTreasuryEvent::PaidDebtWithJewels {
+                clan: a,
+                jewels_paid: 2,
+            }]
+        );
+        assert_eq!(registry.jewel_count(a), 3);
+        assert_eq!(registry.identity(a).unwrap().economy.treasure.debt, 0);
+        assert!(registry.exists(a), "debt fully paid off, clan survives");
+    }
+
+    #[test]
+    fn update_treasure_deletes_clan_that_goes_broke_with_no_jewels() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Broke", 0).unwrap();
+        let serial_before = registry.serial(nr);
+
+        // cost = 5000, step = 120; diff = 250_000 => n = 250000/120 + 1 = 2084,
+        // which lands debt at 2084 (>= 2000) with zero jewels to pay it off.
+        let events = registry.update_treasure(250_000);
+        assert_eq!(
+            events,
+            vec![ClanTreasuryEvent::WentBroke {
+                clan: nr,
+                name: "Broke".to_string(),
+            }]
+        );
+        assert!(!registry.exists(nr));
+        assert!(registry.serial(nr) > serial_before);
+    }
+
+    #[test]
+    fn update_treasure_pays_partial_debt_then_still_goes_broke() {
+        let mut registry = ClanRegistry::new();
+        let a = registry.found_clan("AlmostBroke", 0).unwrap();
+        let b = registry.found_clan("Other", 0).unwrap();
+        registry.add_jewel(a).unwrap(); // only 1 jewel available
+
+        // Four raids, each clamped to the single available jewel, push
+        // debt to 4000 while the jewel count itself never drops (`swap_
+        // jewels` only ever adds debt to the source, `clan.c:501-513`).
+        for _ in 0..4 {
+            registry.swap_jewels(a, b, 3);
+        }
+        assert_eq!(registry.identity(a).unwrap().economy.treasure.debt, 4000);
+
+        let events = registry.update_treasure(0);
+        // n = debt/1000 = 4, clamped down to the 1 available jewel:
+        // jewels -> 0, debt -= 1*1000 = 3000, which is still >= 2000.
+        assert_eq!(
+            events,
+            vec![
+                ClanTreasuryEvent::PaidDebtWithJewels {
+                    clan: a,
+                    jewels_paid: 1,
+                },
+                ClanTreasuryEvent::WentBroke {
+                    clan: a,
+                    name: "AlmostBroke".to_string(),
+                },
+            ]
+        );
+        assert!(!registry.exists(a));
+    }
+
+    #[test]
+    fn update_training_decays_score_by_five_percent_after_one_hour() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Trainers", 0).unwrap();
+        registry.identity_mut(nr).unwrap().economy.training_score = 1000;
+
+        registry.update_training(3599);
+        assert_eq!(registry.identity(nr).unwrap().economy.training_score, 1000);
+
+        registry.update_training(3600);
+        assert_eq!(registry.identity(nr).unwrap().economy.training_score, 950);
+        assert_eq!(
+            registry.identity(nr).unwrap().economy.last_training_update,
+            3600
+        );
     }
 }
