@@ -6,7 +6,7 @@ use crate::{
     entity::{Character, CharacterFlags, CharacterValue, Item},
     ids::CharacterId,
     legacy::DIST_OLD,
-    quest::QuestLog,
+    quest::{QuestLog, MAX_QUESTS},
     tell::TellData,
     tick::TICKS_PER_SECOND,
 };
@@ -52,6 +52,9 @@ pub const LEGACY_AREA1_PPD_SIZE: usize = 39 * 4;
 /// `nomad_state[MAXNOMAD]` + `nomad_win[MAXNOMAD]` (`MAXNOMAD` = 10) +
 /// `open_roll1/2/3/open_bet` + `tribe_member` = 10+10+4+1 = 25 `int`s.
 pub const LEGACY_NOMAD_PPD_SIZE: usize = 25 * 4;
+/// C `struct quest quest[MAXQUEST]` (`src/system/questlog.h:19,36-39`):
+/// `MAXQUEST` (100) 1-byte packed bitfields (`done:6`, `flags:2`).
+pub const LEGACY_QUESTLOG_PPD_SIZE: usize = MAX_QUESTS;
 pub const NOMAD_PPD_MAXNOMAD: usize = 10;
 pub const LEGACY_CALIGAR_PPD_SIZE: usize = 14 * 4 + 4;
 pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
@@ -185,7 +188,8 @@ pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_D
 /// nothing else in this codebase reads or writes them yet. `DRD_AREA1_PPD`
 /// and `DRD_NOMAD_PPD` moved out of this group (see `area1_ppd`/
 /// `nomad_ppd` below) once their questlog-init-required fields got real
-/// accessors.
+/// accessors; `DRD_QUESTLOG_PPD` moved out the same way once `quest_log`
+/// got a real PPD codec (see below).
 pub const DRD_FIRSTKILL_PPD: u32 = make_drd(DEV_ID_DB, 18 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RANK_PPD: u32 = make_drd(DEV_ID_DB, 41 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEPOT_PPD: u32 = make_drd(DEV_ID_DB, 67 | PERSISTENT_PLAYER_DATA);
@@ -194,6 +198,12 @@ pub const DRD_ARENA_PPD: u32 = make_drd(DEV_ID_DB, 83 | PERSISTENT_PLAYER_DATA);
 pub const DRD_STRATEGY_PPD: u32 = make_drd(DEV_ID_DB, 121 | PERSISTENT_PLAYER_DATA);
 pub const DRD_SIDESTORY_PPD: u32 = make_drd(DEV_ID_DB, 124 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TUNNEL_PPD: u32 = make_drd(DEV_ID_DB, 154 | PERSISTENT_PLAYER_DATA);
+/// C `#define DRD_QUESTLOG_PPD MAKE_DRD(DEV_ID_DB, 158 |
+/// PERSISTENT_PLAYER_DATA)` (`src/system/drdata.h:220`): the persisted
+/// `struct quest quest[MAXQUEST]` array (`src/system/questlog.h:36-39`),
+/// one packed byte per quest (`done:6` in the low bits, `flags:2` in the
+/// high bits, matching x86 GCC's LSB-first bitfield allocation) - see
+/// `encode_legacy_questlog_ppd`/`decode_legacy_questlog_ppd`.
 pub const DRD_QUESTLOG_PPD: u32 = make_drd(DEV_ID_DB, 158 | PERSISTENT_PLAYER_DATA);
 /// C `#define DRD_BANK_PPD MAKE_DRD(DEV_ID_DB, 38 | PERSISTENT_PLAYER_DATA)`
 /// (`src/system/drdata.h:100`).
@@ -2354,6 +2364,57 @@ impl PlayerRuntime {
         true
     }
 
+    /// C `struct quest quest[MAXQUEST]` (`src/system/questlog.h:36-39`):
+    /// one byte per quest, `done` packed into the low 6 bits and `flags`
+    /// into the high 2 bits (x86 GCC allocates bitfields LSB-first, so
+    /// `done` - declared first - occupies bits 0-5).
+    pub fn encode_legacy_questlog_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0u8; LEGACY_QUESTLOG_PPD_SIZE];
+        for (index, entry) in self.quest_log.entries().iter().enumerate() {
+            bytes[index] = (entry.done & 0x3f) | ((entry.flags & 0x3) << 6);
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_questlog_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_QUESTLOG_PPD_SIZE {
+            return false;
+        }
+        for (index, byte) in bytes[..LEGACY_QUESTLOG_PPD_SIZE].iter().enumerate() {
+            self.quest_log
+                .set_raw(index, byte & 0x3f, (byte >> 6) & 0x3);
+        }
+        true
+    }
+
+    /// C `questlog_init` (`src/system/questlog.c:1610-1626`): the
+    /// top-level dispatcher that lazily seeds every area's questlog
+    /// entries the first time a character is loaded, guarded by the
+    /// `quest[MAXQUEST - 1].done == 55` sentinel so it only ever runs
+    /// once per character. Builds the plain snapshot structs each
+    /// `init_*_quests` sub-function needs from the typed PPD accessors
+    /// (this method has full `PlayerRuntime` access, unlike the leaf
+    /// `quest` module functions it calls).
+    pub fn init_questlog(&mut self) {
+        if self.quest_log.is_init_complete() {
+            return;
+        }
+
+        let area1 = self.area1_quest_state();
+        let area3 = self.area3_quest_state();
+        let staff = self.staff_quest_state();
+        let twocity = self.twocity_quest_state();
+        let nomad = self.nomad_quest_state();
+
+        crate::quest::init_area1_quests(&mut self.quest_log, &area1);
+        crate::quest::init_area3_quests(&mut self.quest_log, &area3);
+        crate::quest::init_staff_quests(&mut self.quest_log, &staff);
+        crate::quest::init_twocity_quests(&mut self.quest_log, &twocity);
+        crate::quest::init_nomad_quests(&mut self.quest_log, &nomad);
+
+        self.quest_log.mark_init_complete();
+    }
+
     /// C `nomad_state[MAXNOMAD]` element read (`src/common/nomad_ppd.h:10`).
     pub fn nomad_state(&self, index: usize) -> i32 {
         if index >= NOMAD_PPD_MAXNOMAD || self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
@@ -2707,21 +2768,23 @@ impl PlayerRuntime {
 
     /// The `PlayerRuntime` half of `turn_seyan`'s ~22 `del_data` calls
     /// (`src/system/tool.c:4331-4353`; the character-only half is
-    /// `World::apply_turn_seyan`). 16 of the cleared ids have dedicated
+    /// `World::apply_turn_seyan`). 17 of the cleared ids have dedicated
     /// typed fields here - reset each to its empty/default state so
     /// `encode_legacy_ppd_blob` naturally omits the block on next save,
-    /// exactly like a character that never touched that system. The
-    /// remaining 8 non-depot ids (`DRD_FIRSTKILL_PPD`, `DRD_RANK_PPD`,
+    /// exactly like a character that never touched that system
+    /// (`DRD_QUESTLOG_PPD` resets `quest_log` to its default, which
+    /// re-triggers `init_questlog`'s "not yet initialized" sentinel on
+    /// next load - matching C's del+re-`questlog_init` behavior). The
+    /// remaining 7 non-depot ids (`DRD_FIRSTKILL_PPD`, `DRD_RANK_PPD`,
     /// `DRD_MILITARY_PPD`, `DRD_ARENA_PPD`, `DRD_SIDESTORY_PPD`,
-    /// `DRD_TUNNEL_PPD`, `DRD_STRATEGY_PPD`, `DRD_QUESTLOG_PPD`) have no
-    /// Rust representation at all, so they're stripped straight out of the
-    /// raw `ppd_blob` via `strip_ppd_blocks` (the same byte-level
-    /// mechanism that already round-trips every other still-unmodeled
-    /// id). `DRD_DEPOT_PPD`'s "clear `IF_QUEST` flags from the 80 depot
-    /// item slots" is a documented gap - see `World::apply_turn_seyan`'s
-    /// doc comment; no per-character legacy depot exists in Rust yet
-    /// (`AccountDepotState`, `ugaris-server::depot`, is a distinct, newer
-    /// system).
+    /// `DRD_TUNNEL_PPD`, `DRD_STRATEGY_PPD`) have no Rust representation
+    /// at all, so they're stripped straight out of the raw `ppd_blob` via
+    /// `strip_ppd_blocks` (the same byte-level mechanism that already
+    /// round-trips every other still-unmodeled id). `DRD_DEPOT_PPD`'s
+    /// "clear `IF_QUEST` flags from the 80 depot item slots" is a
+    /// documented gap - see `World::apply_turn_seyan`'s doc comment; no
+    /// per-character legacy depot exists in Rust yet (`AccountDepotState`,
+    /// `ugaris-server::depot`, is a distinct, newer system).
     pub fn clear_turn_seyan_ppd(&mut self) {
         self.chest_last_access_seconds.clear();
         self.area3_ppd.clear();
@@ -2747,6 +2810,7 @@ impl PlayerRuntime {
         self.rat_chest_last_treasure_seconds = 0;
         self.staffer_ppd.clear();
         self.arkhata_ppd.clear();
+        self.quest_log = QuestLog::default();
 
         self.ppd_blob = strip_ppd_blocks(
             &self.ppd_blob,
@@ -2758,7 +2822,6 @@ impl PlayerRuntime {
                 DRD_SIDESTORY_PPD,
                 DRD_TUNNEL_PPD,
                 DRD_STRATEGY_PPD,
-                DRD_QUESTLOG_PPD,
             ],
         );
     }
@@ -2901,6 +2964,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_QUESTLOG_PPD => {
+                    if !self.decode_legacy_questlog_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_CALIGAR_PPD => {
                     if !self.decode_legacy_caligar_ppd(block.data) {
                         return false;
@@ -2996,6 +3064,7 @@ impl PlayerRuntime {
         let mut had_area3 = false;
         let mut had_area1 = false;
         let mut had_nomad = false;
+        let mut had_questlog = false;
         let mut had_caligar = false;
         let mut had_arkhata = false;
         let mut had_staffer = false;
@@ -3111,6 +3180,13 @@ impl PlayerRuntime {
             } else if block.id == DRD_NOMAD_PPD {
                 had_nomad = true;
                 write_ppd_block(&mut encoded, DRD_NOMAD_PPD, &self.encode_legacy_nomad_ppd());
+            } else if block.id == DRD_QUESTLOG_PPD {
+                had_questlog = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_QUESTLOG_PPD,
+                    &self.encode_legacy_questlog_ppd(),
+                );
             } else if block.id == DRD_CALIGAR_PPD {
                 had_caligar = true;
                 write_ppd_block(
@@ -3334,6 +3410,20 @@ impl PlayerRuntime {
         }
         if !had_nomad && (existing_was_valid || existing.is_empty()) && !self.nomad_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_NOMAD_PPD, &self.encode_legacy_nomad_ppd());
+        }
+        if !had_questlog
+            && (existing_was_valid || existing.is_empty())
+            && self
+                .quest_log
+                .entries()
+                .iter()
+                .any(|entry| entry.done != 0 || entry.flags != 0)
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_QUESTLOG_PPD,
+                &self.encode_legacy_questlog_ppd(),
+            );
         }
         if !had_caligar
             && (existing_was_valid || existing.is_empty())
@@ -6326,6 +6416,107 @@ mod tests {
 
         let appended = player.encode_legacy_ppd_blob(&[]);
         assert_eq!(read_u32(&appended, 0), DRD_NOMAD_PPD);
+    }
+
+    #[test]
+    fn questlog_ppd_codec_matches_legacy_c_layout() {
+        assert_eq!(
+            DRD_QUESTLOG_PPD,
+            make_drd(DEV_ID_DB, 158 | PERSISTENT_PLAYER_DATA)
+        );
+        assert_eq!(LEGACY_QUESTLOG_PPD_SIZE, 100);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.quest_log.open(0);
+        player
+            .quest_log
+            .complete_legacy(1, 10, 1)
+            .expect("quest 1 has metadata");
+        player.quest_log.mark_init_complete();
+
+        let encoded = player.encode_legacy_questlog_ppd();
+        assert_eq!(encoded.len(), LEGACY_QUESTLOG_PPD_SIZE);
+        // done in the low 6 bits, flags in the high 2 bits (LSB-first
+        // bitfield allocation, matching `struct quest { done:6; flags:2; }`).
+        assert_eq!(encoded[0], crate::quest::QF_OPEN << 6);
+        assert_eq!(encoded[1], 1 | (crate::quest::QF_DONE << 6));
+        assert_eq!(encoded[MAX_QUESTS - 1], 55);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_questlog_ppd(&encoded));
+        assert!(!decoded.quest_log.is_done(0));
+        assert_eq!(decoded.quest_log.count(0), 0);
+        assert!(decoded.quest_log.is_done(1));
+        assert_eq!(decoded.quest_log.count(1), 1);
+        assert!(decoded.quest_log.is_init_complete());
+    }
+
+    #[test]
+    fn questlog_ppd_blob_replaces_and_appends_legacy_block() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.quest_log.mark_done(2);
+
+        let mut existing_questlog = vec![0u8; LEGACY_QUESTLOG_PPD_SIZE];
+        existing_questlog[2] = 9;
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, 0x3344_5566, &[4, 5, 6]);
+        write_ppd_block(&mut existing, DRD_QUESTLOG_PPD, &existing_questlog);
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), 0x3344_5566);
+        assert_eq!(read_u32(&encoded, 11), DRD_QUESTLOG_PPD);
+        assert_eq!(read_u32(&encoded, 15), LEGACY_QUESTLOG_PPD_SIZE as u32);
+        assert_eq!(encoded[19 + 2], 1 | (crate::quest::QF_DONE << 6));
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert!(decoded.quest_log.is_done(2));
+
+        // No block present and no progress yet -> nothing is appended.
+        let untouched = PlayerRuntime::connected(3, 0);
+        let appended_empty = untouched.encode_legacy_ppd_blob(&[]);
+        assert!(appended_empty.is_empty());
+
+        // Progress with no existing block -> the block is appended.
+        let appended = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&appended, 0), DRD_QUESTLOG_PPD);
+    }
+
+    #[test]
+    fn init_questlog_runs_all_five_sub_functions_once() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_area1_lydia_state(6);
+        player.set_area1_nook_state(12);
+
+        assert!(!player.quest_log.is_init_complete());
+        player.init_questlog();
+        assert!(player.quest_log.is_init_complete());
+        // `init_area1_quests`'s lydia/nook branches should have marked
+        // their quests done (see `init_area1_quests`).
+        assert!(player.quest_log.is_done(crate::quest::QLOG_LYDIA));
+        assert!(player.quest_log.is_done(crate::quest::QLOG_NOOK));
+
+        // Calling again is a no-op (sentinel guard): even though the PPD
+        // state driving the sub-functions has since changed, the already-
+        // seeded completion is left untouched.
+        player.set_area1_lydia_state(0);
+        player.init_questlog();
+        assert!(player.quest_log.is_done(crate::quest::QLOG_LYDIA));
+    }
+
+    #[test]
+    fn clear_turn_seyan_ppd_resets_quest_log() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.init_questlog();
+        assert!(player.quest_log.is_init_complete());
+
+        player.clear_turn_seyan_ppd();
+        assert!(!player.quest_log.is_init_complete());
+        assert!(player
+            .quest_log
+            .entries()
+            .iter()
+            .all(|entry| entry.done == 0 && entry.flags == 0));
     }
 
     #[test]

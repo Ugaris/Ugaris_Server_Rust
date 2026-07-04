@@ -1026,6 +1026,32 @@ impl QuestLog {
     fn entry_mut(&mut self, quest: usize) -> Option<&mut QuestEntry> {
         self.quests.get_mut(quest)
     }
+
+    /// C `questlog_init`'s (`src/system/questlog.c:1610-1626`)
+    /// already-initialized sentinel: `if (quest[MAXQUEST - 1].done == 55)
+    /// return;`.
+    pub fn is_init_complete(&self) -> bool {
+        self.quests.last().is_some_and(|entry| entry.done == 55)
+    }
+
+    /// C `questlog_init`'s final `quest[MAXQUEST - 1].done = 55;` marker,
+    /// set after all five `questlog_init_*` sub-functions have run.
+    pub fn mark_init_complete(&mut self) {
+        if let Some(entry) = self.quests.last_mut() {
+            entry.done = 55;
+        }
+    }
+
+    /// Raw `done`/`flags` setter used by the PPD codec
+    /// (`PlayerRuntime::decode_legacy_questlog_ppd`) to unpack the
+    /// persisted `struct quest { unsigned char done:6; flags:2; }`
+    /// bitfield byte per quest (`src/system/questlog.h:36-39`).
+    pub fn set_raw(&mut self, quest: usize, done: u8, flags: u8) {
+        if let Some(entry) = self.quests.get_mut(quest) {
+            entry.done = done;
+            entry.flags = flags;
+        }
+    }
 }
 
 /// C's repeated `if (!quest[qnr].done) { quest[qnr].done = 1; }

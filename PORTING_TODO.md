@@ -2216,15 +2216,14 @@ Unlocks every quest NPC. Do these before any P4 area work.
   rewards per quest (`quest_exp.h`). Port the quest table + the
   `questlog_open/done` helpers; wire the already-ported `CL_REOPENQUEST`
   reset side effects per area.
-  REMAINING: the `questlog_init` top-level dispatcher (the
-  `quest[MAXQUEST-1].done == 55` "already initialized" sentinel + calling
-  all 5 sub-functions) is still not ported - `DRD_QUESTLOG_PPD` (the
-  `struct quest[MAXQUEST]` PPD array itself, distinct from the
-  in-memory `QuestLog`) has no Rust representation, and nothing calls
-  `init_area1_quests`/`init_area3_quests`/`init_staff_quests`/
-  `init_twocity_quests`/`init_nomad_quests` yet since the area NPC
-  drivers themselves aren't ported (P4 area content) - this slice only
-  lands the reusable primitives. The per-area `questlog_reopen_qN` reset
+  REMAINING: `questlog_init`'s dispatcher and `DRD_QUESTLOG_PPD` codec are
+  now ported (see iteration 62 log below), but nothing calls
+  `PlayerRuntime::init_questlog` from the login/character-load path yet
+  (no seam exists for "run once per login" side effects outside a
+  character driver), and `init_area1_quests`/`init_area3_quests`/
+  `init_staff_quests`/`init_twocity_quests`/`init_nomad_quests` still
+  can't observe real state changes since the area NPC drivers themselves
+  aren't ported (P4 area content). The per-area `questlog_reopen_qN` reset
   side effects (`src/system/questlog.c:394-828`ish) are also not ported.
   `quest_exp.h`'s per-encounter exp/money constants (used by NPC drivers
   that don't exist yet) are also not ported. No NPC dialogue driver calls
@@ -2329,6 +2328,41 @@ Unlocks every quest NPC. Do these before any P4 area work.
   functions into any live caller yet, same as the area1/nomad ones from
   the previous iteration - the `questlog_init` dispatcher itself, which
   would call all five, is also still unported; see REMAINING above).
+  Progress Log (iteration 62): ported `questlog_init`
+  (`src/system/questlog.c:1610-1626`) as `PlayerRuntime::init_questlog`
+  (`crates/ugaris-core/src/player.rs`): checks
+  `QuestLog::is_init_complete` (the `quest[MAXQUEST-1].done == 55`
+  sentinel), calls all five `init_*_quests` sub-functions with fresh
+  snapshots built from the existing `*_quest_state` accessors, then
+  `QuestLog::mark_init_complete`. Also gave `DRD_QUESTLOG_PPD` a real
+  codec (`encode_legacy_questlog_ppd`/`decode_legacy_questlog_ppd`,
+  `LEGACY_QUESTLOG_PPD_SIZE` = `MAX_QUESTS` = 100 bytes) matching C's
+  `struct quest { done:6; flags:2; }` per-quest bitfield byte (LSB-first
+  allocation: `done` in bits 0-5, `flags` in bits 6-7), wired into
+  `decode_legacy_ppd_blob`/`encode_legacy_ppd_blob` (decode match arm,
+  encode match arm, `had_questlog` append-if-missing) - the in-memory
+  `QuestLog` (`quest_log` field, already used by `open`/`complete_legacy`
+  etc.) is now actually persisted instead of being silently dropped every
+  save. Added `QuestLog::is_init_complete`/`mark_init_complete`/`set_raw`
+  (`crates/ugaris-core/src/quest.rs`) as the primitives the codec and
+  dispatcher need. Moved `DRD_QUESTLOG_PPD` out of the "no Rust
+  representation, raw-strip only" constant group (matching the
+  `DRD_AREA1_PPD`/`DRD_NOMAD_PPD` precedent) and updated
+  `clear_turn_seyan_ppd` to reset `quest_log` to its default instead of
+  stripping raw PPD bytes (C's `del_data(cn, DRD_QUESTLOG_PPD)` in
+  `turn_seyan`, `src/system/tool.c:4364`, deletes the whole block, which
+  is exactly what resetting to default + losing the sentinel achieves -
+  the next `init_questlog` call re-seeds everything from scratch).
+  Nothing yet calls `init_questlog` from a live login/character-load
+  path (no such seam exists in the ported tree), so this remains inert at
+  runtime, same caveat as prior iterations - see REMAINING above. Added 4
+  new tests in `player.rs` (PPD codec byte-layout round-trip incl. the
+  bitfield packing, blob replace/append incl. the "no progress yet ->
+  nothing appended" case, `init_questlog` running all five sub-functions
+  once and never re-running, `clear_turn_seyan_ppd` resetting the quest
+  log). `cargo fmt --all`, `cargo test --workspace` (1326+36+3+33+406
+  passed), `cargo build -p ugaris-server` clean with zero warnings, and a
+  10s boot-smoke showed ticking with no panics.
 
 - [ ] **Achievements (`src/module/achievements/achievement.c`)** - runtime
   markers partially exist (chests, transport). Port the achievement
