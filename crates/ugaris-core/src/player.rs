@@ -44,6 +44,17 @@ pub const LEGACY_MISC_PPD_SIZE: usize = 36;
 /// kill[32]` - a flat 1024-bit (0..1023 `ch.class` range) bitmask, one bit
 /// per unique NPC class this character has ever killed.
 pub const LEGACY_FIRSTKILL_PPD_SIZE: usize = 32 * 4;
+/// C `struct arena_ppd` (`src/system/arena.c:204-211`): `score, fights,
+/// wins, losses, lastfight` - 5 flat `int` fields, 20 bytes.
+pub const LEGACY_ARENA_PPD_SIZE: usize = 5 * 4;
+const ARENA_PPD_SCORE_OFFSET: usize = 0 * 4;
+const ARENA_PPD_FIGHTS_OFFSET: usize = 1 * 4;
+const ARENA_PPD_WINS_OFFSET: usize = 2 * 4;
+const ARENA_PPD_LOSSES_OFFSET: usize = 3 * 4;
+const ARENA_PPD_LASTFIGHT_OFFSET: usize = 4 * 4;
+/// C `score_fight`'s first-fight seed score (`arena.c:437,441`): a brand
+/// new arena record starts at -2000, not 0.
+pub const ARENA_PPD_NEWCOMER_SCORE: i32 = -2000;
 /// C `struct area3_ppd` (`src/area/3/area3.h:18-35` /
 /// `src/system/game/ppd_structs.h:109-127`): 18 `int` fields (`imp_kills,
 /// imp_flags;` declares two on one line). Was previously `17 * 4` (a
@@ -567,6 +578,13 @@ pub struct PlayerRuntime {
     /// `give_first_kill`'s per-class congrats gate.
     #[serde(default)]
     pub first_kill_ppd: Vec<u8>,
+    /// C `struct arena_ppd` (`src/system/arena.c:204-211`, also declared
+    /// identically in `game/ppd_structs.h:346-353`): the arena tournament
+    /// ELO-like rating record (`score`/`fights`/`wins`/`losses`/
+    /// `lastfight`), backing `IDR_TOPLIST` (`arena_toplist_lines`) and the
+    /// (not yet ported) `score_fight` win/loss recording.
+    #[serde(default)]
+    pub arena_ppd: Vec<u8>,
     #[serde(default)]
     pub area3_ppd: Vec<u8>,
     #[serde(default)]
@@ -756,6 +774,7 @@ impl PlayerRuntime {
             treasure_dig_last_seconds: [0; TREASURE_DIG_PPD_ENTRIES],
             misc_ppd: Vec::new(),
             first_kill_ppd: Vec::new(),
+            arena_ppd: Vec::new(),
             area3_ppd: Vec::new(),
             area1_ppd: Vec::new(),
             nomad_ppd: Vec::new(),
@@ -2021,6 +2040,183 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_arena_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_ARENA_PPD_SIZE];
+        let copy_len = self.arena_ppd.len().min(LEGACY_ARENA_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.arena_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_arena_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_ARENA_PPD_SIZE {
+            return false;
+        }
+        self.arena_ppd = bytes[..LEGACY_ARENA_PPD_SIZE].to_vec();
+        true
+    }
+
+    fn read_arena_i32(&self, offset: usize) -> i32 {
+        if self.arena_ppd.len() < LEGACY_ARENA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arena_ppd, offset)
+    }
+
+    fn write_arena_i32(&mut self, offset: usize, value: i32) {
+        if self.arena_ppd.len() < LEGACY_ARENA_PPD_SIZE {
+            self.arena_ppd.resize(LEGACY_ARENA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arena_ppd, offset, value);
+    }
+
+    /// C `struct arena_ppd::score` (`arena.c:205`): the ELO-like arena
+    /// tournament rating. A character with no recorded fights yet reads
+    /// as the C `!ppd->fights` newcomer seed (`-2000`, `arena.c:437-443`)
+    /// rather than the raw zeroed byte value, matching `score_fight` and
+    /// `toplist_driver` both re-seeding on read whenever `fights == 0`.
+    pub fn arena_score(&self) -> i32 {
+        if self.arena_fights() == 0 {
+            return ARENA_PPD_NEWCOMER_SCORE;
+        }
+        self.read_arena_i32(ARENA_PPD_SCORE_OFFSET)
+    }
+
+    pub fn arena_fights(&self) -> i32 {
+        self.read_arena_i32(ARENA_PPD_FIGHTS_OFFSET)
+    }
+
+    pub fn arena_wins(&self) -> i32 {
+        self.read_arena_i32(ARENA_PPD_WINS_OFFSET)
+    }
+
+    pub fn arena_losses(&self) -> i32 {
+        self.read_arena_i32(ARENA_PPD_LOSSES_OFFSET)
+    }
+
+    pub fn arena_lastfight(&self) -> i32 {
+        self.read_arena_i32(ARENA_PPD_LASTFIGHT_OFFSET)
+    }
+
+    /// C `score_fight`'s `diff -> worth` lookup ladder (`arena.c:451-524`),
+    /// ported as a free function so it can be unit tested against every
+    /// branch boundary without a `Player` instance. `diff` is the winner's
+    /// score minus the loser's score *before* either is adjusted. Bigger
+    /// favorite-beats-underdog `diff` yields a smaller `worth` (0 pts above
+    /// 10000), bigger underdog-upset (negative `diff`) yields a bigger
+    /// `worth` (capped at 1000 below -8000).
+    pub fn arena_fight_worth(diff: i32) -> i32 {
+        if diff > 10000 {
+            0
+        } else if diff > 8000 {
+            1
+        } else if diff > 6000 {
+            2
+        } else if diff > 5000 {
+            3
+        } else if diff > 4000 {
+            4
+        } else if diff > 3000 {
+            5
+        } else if diff > 2500 {
+            6
+        } else if diff > 2000 {
+            7
+        } else if diff > 1500 {
+            8
+        } else if diff > 1250 {
+            9
+        } else if diff > 1000 {
+            10
+        } else if diff > 800 {
+            20
+        } else if diff > 600 {
+            30
+        } else if diff > 500 {
+            40
+        } else if diff > 400 {
+            50
+        } else if diff > 300 {
+            60
+        } else if diff > 200 {
+            70
+        } else if diff > 100 {
+            85
+        } else if diff > 0 {
+            100
+        } else if diff > -100 {
+            150
+        } else if diff > -200 {
+            200
+        } else if diff > -300 {
+            250
+        } else if diff > -400 {
+            300
+        } else if diff > -500 {
+            350
+        } else if diff > -600 {
+            400
+        } else if diff > -800 {
+            450
+        } else if diff > -1000 {
+            500
+        } else if diff > -1250 {
+            550
+        } else if diff > -1500 {
+            600
+        } else if diff > -2000 {
+            650
+        } else if diff > -2500 {
+            700
+        } else if diff > -3000 {
+            750
+        } else if diff > -4000 {
+            800
+        } else if diff > -5000 {
+            850
+        } else if diff > -6000 {
+            900
+        } else if diff > -8000 {
+            950
+        } else {
+            1000
+        }
+    }
+
+    /// C `score_fight` (`arena.c:432-534`), minus the server-wide
+    /// `update_toplist` call (a separate, not-yet-ported ranking-table
+    /// persistence concern - see the "Arena rankings" `PORTING_TODO.md`
+    /// entry). Records a single arena-tournament fight result on both
+    /// combatants' `arena_ppd`: seeds either side's score to `-2000` on
+    /// their very first fight, increments `fights`/`wins`/`losses`,
+    /// applies the `arena_fight_worth` ladder to `diff = winner.score -
+    /// loser.score` (before adjustment), and stamps `lastfight` on both.
+    pub fn record_arena_fight_result(
+        winner: &mut PlayerRuntime,
+        loser: &mut PlayerRuntime,
+        now: i32,
+    ) {
+        let winner_score = winner.arena_score();
+        let loser_score = loser.arena_score();
+
+        let winner_fights = winner.arena_fights() + 1;
+        let winner_wins = winner.arena_wins() + 1;
+        let loser_fights = loser.arena_fights() + 1;
+        let loser_losses = loser.arena_losses() + 1;
+
+        let diff = winner_score - loser_score;
+        let worth = Self::arena_fight_worth(diff);
+
+        winner.write_arena_i32(ARENA_PPD_SCORE_OFFSET, winner_score + worth);
+        winner.write_arena_i32(ARENA_PPD_FIGHTS_OFFSET, winner_fights);
+        winner.write_arena_i32(ARENA_PPD_WINS_OFFSET, winner_wins);
+        winner.write_arena_i32(ARENA_PPD_LASTFIGHT_OFFSET, now);
+
+        loser.write_arena_i32(ARENA_PPD_SCORE_OFFSET, loser_score - worth);
+        loser.write_arena_i32(ARENA_PPD_FIGHTS_OFFSET, loser_fights);
+        loser.write_arena_i32(ARENA_PPD_LOSSES_OFFSET, loser_losses);
+        loser.write_arena_i32(ARENA_PPD_LASTFIGHT_OFFSET, now);
+    }
+
     /// C `count_demon_lord_kills` (`death.c:169-190`): counts unique
     /// first-killed classes in `258..=305` (Earth/Fire/Ice demon lords) and
     /// `404..=411` (Hell demon lords).
@@ -3158,8 +3354,8 @@ impl PlayerRuntime {
     /// (`DRD_QUESTLOG_PPD` resets `quest_log` to its default, which
     /// re-triggers `init_questlog`'s "not yet initialized" sentinel on
     /// next load - matching C's del+re-`questlog_init` behavior). The
-    /// remaining 6 non-depot ids (`DRD_RANK_PPD`,
-    /// `DRD_MILITARY_PPD`, `DRD_ARENA_PPD`, `DRD_SIDESTORY_PPD`,
+    /// remaining 5 non-depot ids (`DRD_RANK_PPD`,
+    /// `DRD_MILITARY_PPD`, `DRD_SIDESTORY_PPD`,
     /// `DRD_TUNNEL_PPD`, `DRD_STRATEGY_PPD`) have no Rust representation
     /// at all, so they're stripped straight out of the raw `ppd_blob` via
     /// `strip_ppd_blocks` (the same byte-level mechanism that already
@@ -3195,13 +3391,13 @@ impl PlayerRuntime {
         self.arkhata_ppd.clear();
         self.quest_log = QuestLog::default();
         self.first_kill_ppd.clear();
+        self.arena_ppd.clear();
 
         self.ppd_blob = strip_ppd_blocks(
             &self.ppd_blob,
             &[
                 DRD_RANK_PPD,
                 DRD_MILITARY_PPD,
-                DRD_ARENA_PPD,
                 DRD_SIDESTORY_PPD,
                 DRD_TUNNEL_PPD,
                 DRD_STRATEGY_PPD,
@@ -3407,6 +3603,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_ARENA_PPD => {
+                    if !self.decode_legacy_arena_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_RUNE_PPD => {
                     if !self.decode_legacy_rune_ppd(block.data) {
                         return false;
@@ -3464,6 +3665,7 @@ impl PlayerRuntime {
         let mut had_treasure_dig = false;
         let mut had_misc = false;
         let mut had_firstkill = false;
+        let mut had_arena = false;
         let mut had_rune = false;
         let mut had_alias = false;
         let mut had_ignore = false;
@@ -3641,6 +3843,9 @@ impl PlayerRuntime {
                     DRD_FIRSTKILL_PPD,
                     &self.encode_legacy_firstkill_ppd(),
                 );
+            } else if block.id == DRD_ARENA_PPD {
+                had_arena = true;
+                write_ppd_block(&mut encoded, DRD_ARENA_PPD, &self.encode_legacy_arena_ppd());
             } else if block.id == DRD_RUNE_PPD {
                 had_rune = true;
                 write_ppd_block(&mut encoded, DRD_RUNE_PPD, &self.encode_legacy_rune_ppd());
@@ -3917,6 +4122,9 @@ impl PlayerRuntime {
                 DRD_FIRSTKILL_PPD,
                 &self.encode_legacy_firstkill_ppd(),
             );
+        }
+        if !had_arena && (existing_was_valid || existing.is_empty()) && !self.arena_ppd.is_empty() {
+            write_ppd_block(&mut encoded, DRD_ARENA_PPD, &self.encode_legacy_arena_ppd());
         }
         if !had_rune && (existing_was_valid || existing.is_empty()) {
             if self.rune_used_words.iter().any(|word| *word != 0)
@@ -6530,6 +6738,112 @@ mod tests {
         assert!(!round_tripped.mark_first_kill(60));
         assert!(!round_tripped.mark_first_kill(258));
         assert!(round_tripped.mark_first_kill(61));
+    }
+
+    #[test]
+    fn arena_score_seeds_newcomer_score_until_first_recorded_fight() {
+        let player = PlayerRuntime::connected(1, 0);
+        // C `!ppd->fights` re-seeds the score to -2000 (`arena.c:437-443`).
+        assert_eq!(player.arena_score(), ARENA_PPD_NEWCOMER_SCORE);
+        assert_eq!(player.arena_fights(), 0);
+        assert_eq!(player.arena_wins(), 0);
+        assert_eq!(player.arena_losses(), 0);
+        assert_eq!(player.arena_lastfight(), 0);
+    }
+
+    #[test]
+    fn arena_fight_worth_matches_every_c_ladder_boundary() {
+        // Representative values straddling each branch in `score_fight`
+        // (`arena.c:451-524`), including the exact boundary values.
+        let cases: &[(i32, i32)] = &[
+            (10001, 0),
+            (10000, 1),
+            (8001, 1),
+            (8000, 2),
+            (1, 100),
+            (0, 150),
+            (-1, 150),
+            (-100, 200),
+            (-7999, 950),
+            (-8000, 1000),
+            (-8001, 1000),
+            (i32::MIN, 1000),
+        ];
+        for (diff, expected) in cases {
+            assert_eq!(
+                PlayerRuntime::arena_fight_worth(*diff),
+                *expected,
+                "diff={diff}"
+            );
+        }
+    }
+
+    #[test]
+    fn record_arena_fight_result_seeds_both_newcomers_then_updates_fights_wins_losses() {
+        let mut winner = PlayerRuntime::connected(1, 0);
+        let mut loser = PlayerRuntime::connected(2, 0);
+
+        PlayerRuntime::record_arena_fight_result(&mut winner, &mut loser, 1_000);
+
+        // Both start at -2000 (first fight for each); diff = 0 => worth 150.
+        assert_eq!(winner.arena_score(), ARENA_PPD_NEWCOMER_SCORE + 150);
+        assert_eq!(loser.arena_score(), ARENA_PPD_NEWCOMER_SCORE - 150);
+        assert_eq!(winner.arena_fights(), 1);
+        assert_eq!(winner.arena_wins(), 1);
+        assert_eq!(winner.arena_losses(), 0);
+        assert_eq!(loser.arena_fights(), 1);
+        assert_eq!(loser.arena_losses(), 1);
+        assert_eq!(loser.arena_wins(), 0);
+        assert_eq!(winner.arena_lastfight(), 1_000);
+        assert_eq!(loser.arena_lastfight(), 1_000);
+    }
+
+    #[test]
+    fn record_arena_fight_result_accumulates_across_repeated_fights() {
+        let mut winner = PlayerRuntime::connected(1, 0);
+        let mut loser = PlayerRuntime::connected(2, 0);
+
+        PlayerRuntime::record_arena_fight_result(&mut winner, &mut loser, 1_000);
+        let score_after_first = winner.arena_score();
+        PlayerRuntime::record_arena_fight_result(&mut winner, &mut loser, 2_000);
+
+        assert_eq!(winner.arena_fights(), 2);
+        assert_eq!(winner.arena_wins(), 2);
+        assert_eq!(loser.arena_fights(), 2);
+        assert_eq!(loser.arena_losses(), 2);
+        // Second fight's diff is no longer 0 (winner pulled ahead), so it
+        // must not reuse the newcomer seed again.
+        assert!(winner.arena_score() > score_after_first);
+        assert_eq!(winner.arena_lastfight(), 2_000);
+        assert_eq!(loser.arena_lastfight(), 2_000);
+    }
+
+    #[test]
+    fn arena_ppd_blob_round_trips_through_encode_decode() {
+        let mut winner = PlayerRuntime::connected(1, 0);
+        let mut loser = PlayerRuntime::connected(2, 0);
+        PlayerRuntime::record_arena_fight_result(&mut winner, &mut loser, 5_000);
+
+        let encoded = winner.encode_legacy_ppd_blob(&[]);
+        let mut round_tripped = PlayerRuntime::connected(1, 0);
+        assert!(round_tripped.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(round_tripped.arena_ppd, winner.arena_ppd);
+        assert_eq!(round_tripped.arena_score(), winner.arena_score());
+        assert_eq!(round_tripped.arena_fights(), 1);
+        assert_eq!(round_tripped.arena_wins(), 1);
+        assert_eq!(round_tripped.arena_lastfight(), 5_000);
+    }
+
+    #[test]
+    fn clear_turn_seyan_ppd_clears_arena_ppd() {
+        let mut winner = PlayerRuntime::connected(1, 0);
+        let mut loser = PlayerRuntime::connected(2, 0);
+        PlayerRuntime::record_arena_fight_result(&mut winner, &mut loser, 5_000);
+        assert!(!winner.arena_ppd.is_empty());
+
+        winner.clear_turn_seyan_ppd();
+        assert!(winner.arena_ppd.is_empty());
+        assert_eq!(winner.arena_score(), ARENA_PPD_NEWCOMER_SCORE);
     }
 
     #[test]

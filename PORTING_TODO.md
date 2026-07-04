@@ -4126,9 +4126,49 @@ Unlocks every quest NPC. Do these before any P4 area work.
   build -p ugaris-server` clean with zero warnings, 10s boot-smoke
   confirmed "entering Rust game loop" with no panics.
 
-- [ ] **Arena rankings (`src/system/arena.c`)** - toplist formatter is
+- [~] **Arena rankings (`src/system/arena.c`)** - toplist formatter is
   ported but rankings are never stored. Port `DRD_ARENA_PPD`, win/loss
-  recording on arena kills, and the ranking table persistence.
+  recording on arena kills, and the ranking table persistence. REMAINING:
+  the entire tournament NPC state machine that triggers an arena kill in
+  the first place (`master_driver`/`fighter_driver`, contender pairing,
+  arena-box-entry/fight-timeout detection, `CDR_ARENAMASTER`/
+  `CDR_ARENAFIGHTER`, `arena.c:222-1039` - no Rust equivalent exists),
+  the server-wide `struct toplist`/`update_toplist` 100-entry ranking
+  table and its file/blob persistence (`arena.c:226-234,375-430,
+  734-786` - needs an architectural decision, since `ugaris-db` has no
+  generic "storage blob" concept yet), and wiring `arena_toplist_lines`/
+  `toplist_driver` (`crates/ugaris-core/src/item_driver/arena.rs`) to
+  real per-character/ranking-table data (`main.rs`'s `ArenaToplist`
+  handler still emits nothing, mirroring C's `!tops`).
+  Progress Log: ported the first self-contained slice - the `arena_ppd`
+  per-character data model + pure win/loss/score math, with zero NPC/
+  networking surface: `crates/ugaris-core/src/player.rs` gained
+  `PlayerRuntime::arena_ppd: Vec<u8>` (`LEGACY_ARENA_PPD_SIZE` = 20 bytes,
+  `arena.c:204-211`'s 5 flat `int` fields) with the same raw-block-with-
+  offset-accessor pattern as `area3_ppd` (`encode_legacy_arena_ppd`/
+  `decode_legacy_arena_ppd`, `arena_score`/`arena_fights`/`arena_wins`/
+  `arena_losses`/`arena_lastfight` accessors), wired into
+  `decode_legacy_ppd_blob`/`encode_legacy_ppd_blob`'s per-id match arms
+  exactly like every other typed PPD. `arena_score()` reproduces C's
+  `!ppd->fights` re-seed-to--2000 read-time quirk (`arena.c:437-443`)
+  rather than storing a stale zero. Ported `PlayerRuntime::
+  arena_fight_worth` (the 30-branch `diff`->`worth` ELO-like lookup
+  ladder, `arena.c:451-524`, unit tested at every boundary) and
+  `PlayerRuntime::record_arena_fight_result` (the `score_fight`
+  per-character mutation only - increments `fights`/`wins`/`losses`,
+  applies `worth` to both scores, stamps `lastfight` - deliberately
+  excluding the `update_toplist` ranking-table call, which is a separate
+  REMAINING item). Removed `DRD_ARENA_PPD` from `clear_turn_seyan_ppd`'s
+  raw-block `strip_ppd_blocks` list and replaced it with a real
+  `self.arena_ppd.clear()`, matching how `first_kill_ppd` graduated from
+  stripped-raw to typed-and-cleared. 9 new unit tests (newcomer seeding,
+  every `arena_fight_worth` branch boundary including the `-8000` edge,
+  single-fight and repeated-fight mutation, PPD blob round-trip,
+  turn_seyan clearing). `cargo fmt --all`, `cargo test --workspace`
+  (1558 ugaris-core + 47 db + 3 net + 37 protocol + 539 server, all
+  green, zero failures), `cargo build -p ugaris-server` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panics. No runtime/NPC/networking wiring yet - see REMAINING above.
 
 - [ ] **Weather driver (`src/module/weather/weather.c`)** - server-side
   state machine exists in `crates/ugaris-server/src/weather.rs` (admin
