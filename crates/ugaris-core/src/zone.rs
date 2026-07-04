@@ -5,8 +5,9 @@ use thiserror::Error;
 use crate::{
     character_driver::{
         apply_lab2_undead_create_message, apply_simple_baddy_create_message, CharacterDriverState,
-        GateWelcomeDriverData, JanitorDriverData, TraderDriverData, CDR_GATE_WELCOME, CDR_JANITOR,
-        CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER, NT_CREATE,
+        GateFightDriverData, GateWelcomeDriverData, JanitorDriverData, TraderDriverData,
+        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER,
+        NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -485,6 +486,18 @@ impl ZoneLoader {
             character.driver_state = Some(CharacterDriverState::GateWelcome(
                 GateWelcomeDriverData::default(),
             ));
+        }
+        if template.driver == CDR_GATE_FIGHT {
+            // C `create_char` generically does `notify_char(n, NT_CREATE,
+            // ticker, 0, 0)` (`create.c:1128`); `gate_fight_driver` reads
+            // this on its own next tick to seed `dat->creation_time`
+            // (`gatekeeper.c:653-656`). No zone-file args to parse - C's
+            // `struct gate_fight_driver_data` is zero-initialized by
+            // `set_data`, same as `CDR_GATE_WELCOME` above.
+            character.driver_state = Some(CharacterDriverState::GateFight(
+                GateFightDriverData::default(),
+            ));
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
         }
         if template.driver == CDR_LAB2UNDEAD {
             character.push_driver_message(NT_CREATE, 0, 0, 0);

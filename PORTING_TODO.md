@@ -1878,24 +1878,72 @@ Unlocks every quest NPC. Do these before any P4 area work.
   busy/refund search, spawning the `gatekeeper_w`/`_m`/`_s` opponent,
   teleporting the player, and stripping spell-slot items) is now wired
   (iteration 54) via `GateWelcomeOutcomeEvent::EnterTestReady` +
-  `spawns::gate_enter_test_spawn_room`. Still needed: (1)
-  `gate_fight_driver`'s combat loop (reuse `world/npc_fight.rs` helpers)
-  and `gate_fight_dead`'s reward grant, including `turn_seyan`
-  (`src/system/tool.c:4278-4389`, not ported anywhere yet - full character
-  re-roll to a Seyan'Du template, which also needs the still-unported
-  per-character `DRD_DEPOT_PPD` and ~11 other unmodeled `DRD_*` ids it
-  clears - see iteration 52's research notes in this task's git history
-  for the full list); (2) the `NTID_GATEKEEPER` message hookup between
-  the two NPCs is queued (`gate_enter_test_spawn_room` pushes the
-  `NT_NPC`/`NTID_GATEKEEPER` driver message onto the opponent) but nothing
-  consumes it yet, since `gate_fight_driver` (item 1) doesn't exist; (3)
-  the idle "return to post" `secure_move_driver` safety net
+  `spawns::gate_enter_test_spawn_room`. `gate_fight_driver`'s combat loop
+  and `gate_fight_dead`'s reward grant (item 1 below) are now wired too
+  (iteration 56), via the new `world::gate_fight` module and
+  `world_events::apply_gate_fight_death_from_hurt_event`. Still needed:
+  (1) `turn_seyan` (`src/system/tool.c:4278-4389`, still not ported
+  anywhere - full character re-roll to a Seyan'Du template, which also
+  needs the still-unported per-character `DRD_DEPOT_PPD` and ~11 other
+  unmodeled `DRD_*` ids it clears - see iteration 52's research notes in
+  this task's git history for the full list). `gate_fight_dead`'s class-8
+  (plain Seyan'Du) case is a documented gap in `world/gate_fight.rs`: it
+  still teleports the killer out (matching C's unconditional post-`switch`
+  teleport for that case) but skips the flag mutation and the misleading
+  "You are a Seyan'Du now." text, sending an honest placeholder instead;
+  (2) the idle "return to post" `secure_move_driver` safety net
   (`gatekeeper.c:627-631`) for the welcome NPC is now wired (iteration 55),
   reusing `rest_x`/`rest_y` (already populated for every zone-spawned
   character, including this one, by the zone loader's `pop_create_char`
-  substitution) as its post position; the opponent side of this same net
-  (inside `gate_fight_driver`, item 1) still doesn't exist since that
-  driver isn't ported yet.
+  substitution) as its post position; the fight opponent's own
+  "return to post" tail (now wired in iteration 56 too, same `rest_x`/
+  `rest_y` substitution) is also in place.
+  Progress Log (iteration 56): ported `gate_fight_driver`
+  (`gatekeeper.c:641-696`) and `gate_fight_dead` (`gatekeeper.c:705-763`)
+  into a new `crates/ugaris-core/src/world/gate_fight.rs` module plus a
+  new `CharacterDriverState::GateFight(GateFightDriverData)` variant
+  (`character_driver.rs`, wired into `zone.rs`'s
+  `instantiate_character_template` for `CDR_GATE_FIGHT` templates, pushing
+  the same `NT_CREATE` bootstrap message `CDR_LAB2UNDEAD` already uses
+  since Rust's `spawn_character` doesn't auto-notify creation like C's
+  `create_char`). Simplified C's generic 10-slot `struct
+  fight_driver_data`/`DRD_FIGHTDRIVER` enemy-list machinery
+  (`fight_driver_update`/`_attack_visible`/`_follow_invisible`,
+  `drvlib.c:2170-2345`) down to tracking the single `victim` this driver
+  ever fights (set once via the `NT_NPC`/`NTID_GATEKEEPER` message, exactly
+  as C's own `gate_fight_driver` does - it never calls
+  `fight_driver_add_enemy` itself), reusing the already-generic
+  `World::attack_driver_direct` (`world/npc_fight.rs`) for "attack
+  visible" and `secure_move_driver` toward the last-known position for
+  "follow invisible"; self-destruct after `TICKS*60*10`, return-to-post via
+  `rest_x`/`rest_y` (C's `tmpx`/`tmpy`), and `regenerate_simple_baddy`/
+  `spell_self_simple_baddy`/`idle_simple_baddy` (already-generic despite
+  their names) round out the tail exactly matching C's order. `gate_fight_
+  dead`'s reward tail (`World::apply_gate_fight_reward`) ports the Arch-
+  Warrior/Arch-Mage/Arch-Seyan'Du class 5/6/7 flag+value grants, the
+  channel-6 "Grats" broadcast (`queue_channel_broadcast`, `COL_MAUVE`), and
+  the unconditional `teleport_char_driver(co, 181, 198)` tail - including
+  C's subtle behavior that a failing class guard `return`s *before* the
+  teleport, so the player stays put. Since `World` cannot read the killer's
+  `PlayerRuntime::gate_target_class` itself, the death dispatch is wired
+  the same way `CDR_SWAMPMONSTER`/`CDR_TEUFELRAT`/`CDR_CALIGARSKELLY`
+  already are: a new `world_events::apply_gate_fight_death_from_hurt_event`
+  reads `LegacyHurtEvent`s drained by `apply_pk_hate_from_hurt_events`
+  (no change needed to the generic `CharacterDriverOutcome` dispatch, which
+  only `CDR_SIMPLEBADDY` actually uses for deaths). `process_gate_fight_
+  actions` is wired into the tick loop next to `process_gate_welcome_
+  actions` in `main.rs`. Tests: 15 new tests in `crates/ugaris-core/src/
+  world/tests/gate_fight.rs` (NT_CREATE bootstrap, NTID_GATEKEEPER victim
+  tracking, self-destruct timing, adjacent-attack vs. distant-walk vs.
+  return-to-post movement, giving up on a vanished victim, and all four
+  `apply_gate_fight_reward` class outcomes plus their guard-failure/
+  unmatched-class edge cases) and 2 new tests in `crates/ugaris-server/src/
+  tests/world_events.rs` (the full `apply_legacy_hurt` ->
+  `apply_pk_hate_from_hurt_events` -> reward-and-teleport pipeline, and a
+  non-player-killer no-op check). `cargo fmt --all`, `cargo test --workspace`
+  (1280+36+3+33+403 passed), `cargo build -p ugaris-server` clean with zero
+  warnings, and a 12s boot-smoke showed "entering Rust game loop" with no
+  panics.
   Progress Log (iteration 55): wired `gate_welcome_driver`'s idle
   "return to post" tail (`gatekeeper.c:627-631`) into
   `World::process_gate_welcome_actions`: once `TICKS*30` pass without the

@@ -107,6 +107,7 @@ pub enum CharacterDriverState {
     Trader(TraderDriverData),
     Janitor(JanitorDriverData),
     GateWelcome(GateWelcomeDriverData),
+    GateFight(GateFightDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -366,6 +367,22 @@ pub struct GateWelcomeDriverData {
     pub last_talk: u64,
     pub current_victim: Option<CharacterId>,
     pub amgivingback: i32,
+}
+
+/// C `struct gate_fight_driver_data` (`src/system/gatekeeper.c:636-639`):
+/// the private-room opponent's own driver memory (`CDR_GATE_FIGHT`). Unlike
+/// C's generic `struct fight_driver_data`/`DRD_FIGHTDRIVER` (a 10-slot enemy
+/// list this driver never actually populates, since it only ever fights the
+/// single `victim` set via the `NT_NPC`/`NTID_GATEKEEPER` message - see
+/// `world::gate_fight`'s module doc comment), this only tracks that one
+/// opponent plus its last-known position/visibility.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GateFightDriverData {
+    pub creation_time: u64,
+    pub victim: Option<CharacterId>,
+    pub victim_last_x: u16,
+    pub victim_last_y: u16,
+    pub victim_visible: bool,
 }
 
 /// C `struct janitor_data` from `src/module/base.c`'s `janitor_driver`
@@ -1278,7 +1295,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Bank(_)
             | CharacterDriverState::Trader(_)
             | CharacterDriverState::Janitor(_)
-            | CharacterDriverState::GateWelcome(_),
+            | CharacterDriverState::GateWelcome(_)
+            | CharacterDriverState::GateFight(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

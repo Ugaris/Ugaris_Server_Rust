@@ -87,8 +87,8 @@ use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{
-        needs_next_lab, CharacterDriverState, CDR_CALIGARSKELLY, CDR_LAB2UNDEAD, CDR_LOSTCON,
-        CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT,
+        needs_next_lab, CharacterDriverState, CDR_CALIGARSKELLY, CDR_GATE_FIGHT, CDR_LAB2UNDEAD,
+        CDR_LOSTCON, CDR_LQNPC, CDR_PALACEISLENA, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT,
         NTID_GATEKEEPER, NT_NPC,
     },
     direction::Direction,
@@ -5411,6 +5411,15 @@ async fn main() -> anyhow::Result<()> {
                         tick = world.tick.0,
                         "applied gate-welcome dialogue state updates"
                     );
+                }
+                // C `gate_fight_driver`: the private-room duel opponent
+                // spawned by `EnterTestReady` (`src/system/gatekeeper.c`).
+                // Its `gate_fight_dead` death-reward tail is wired via
+                // `apply_gate_fight_death_from_hurt_event`, called from
+                // `apply_pk_hate_from_hurt_events` below.
+                let gate_fight_acted = world.process_gate_fight_actions(config.area_id);
+                if gate_fight_acted != 0 {
+                    info!(gate_fight_acted, tick = world.tick.0, "processed gate-fight opponent actions");
                 }
                 // C `janitor_driver`: lamp-lighting/item-tidying NPC
                 // (`src/module/base.c`).

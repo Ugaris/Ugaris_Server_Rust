@@ -13,6 +13,7 @@ mod doors;
 mod effect_tick;
 mod effects;
 mod exp;
+mod gate_fight;
 mod gatekeeper;
 mod hurt;
 mod item_outcomes;

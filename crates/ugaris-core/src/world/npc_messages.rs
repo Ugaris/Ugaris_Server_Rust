@@ -181,7 +181,8 @@ impl World {
                 | CharacterDriverState::Bank(_)
                 | CharacterDriverState::Trader(_)
                 | CharacterDriverState::Janitor(_)
-                | CharacterDriverState::GateWelcome(_) => None,
+                | CharacterDriverState::GateWelcome(_)
+                | CharacterDriverState::GateFight(_) => None,
             })
             .unwrap_or_default()
     }

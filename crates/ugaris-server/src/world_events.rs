@@ -75,6 +75,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_teufel_rat_death_from_hurt_event(runtime, world, event);
         apply_caligar_skelly_death_from_hurt_event(runtime, world, event);
         apply_lab2_undead_death_from_hurt_event(runtime, world, event);
+        apply_gate_fight_death_from_hurt_event(runtime, world, event);
 
         let eligible = match (
             world.characters.get(&event.target_id),
@@ -262,6 +263,41 @@ pub(crate) fn apply_teufel_rat_death_from_hurt_event(
     world.queue_system_text(event.cause_id, format!("#90 {kills} Rat Kills"));
     world.queue_system_text(event.cause_id, format!("#80 {score} Rat Points"));
     true
+}
+
+/// `World::process_gate_fight_actions`'s death-side counterpart: C's
+/// `ch_died_driver`/`CDR_GATE_FIGHT` dispatch (`gatekeeper.c:808-810`) routes
+/// straight to `gate_fight_dead(cn, co)` (`cn` the dying opponent, `co` its
+/// killer). Mirrors `apply_swamp_monster_death_from_hurt_event`'s shape:
+/// the killer's `gate_ppd.target_class` (`PlayerRuntime::gate_target_class`)
+/// is the one fact `World::apply_gate_fight_reward` cannot read itself.
+pub(crate) fn apply_gate_fight_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_gate_fight_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_GATE_FIGHT && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_gate_fight_kill {
+        return false;
+    }
+
+    let Some(target_class) = runtime
+        .player_for_character(event.cause_id)
+        .map(|player| player.gate_target_class)
+    else {
+        return false;
+    };
+
+    world.apply_gate_fight_reward(event.cause_id, target_class)
 }
 
 pub(crate) fn apply_player_fightback_from_hurt_event(

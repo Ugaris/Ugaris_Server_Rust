@@ -661,3 +661,69 @@ fn lethal_pk_hurt_events_update_kill_and_death_counters() {
     assert_eq!(attacker_player.pk_kills, 1);
     assert_eq!(attacker_player.pk_last_kill, 12_345);
 }
+
+#[test]
+fn lethal_gate_fight_hurt_grants_arch_warrior_and_teleports_killer() {
+    let mut world = World::default();
+    let mut opponent = login_character(CharacterId(1), &login_block("Gatekeeper"), 1, 190, 200);
+    opponent.flags.remove(CharacterFlags::PLAYER);
+    opponent.driver = CDR_GATE_FIGHT;
+    opponent.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Godmode"), 1, 191, 200);
+    world.add_character(opponent);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.gate_target_class = 5;
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0);
+
+    let killer = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(killer.flags.contains(CharacterFlags::ARCH));
+    assert_eq!((killer.x, killer.y), (181, 198));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message == "You are an Arch-Warrior now."));
+}
+
+#[test]
+fn lethal_gate_fight_hurt_by_non_player_does_not_grant_reward() {
+    let mut world = World::default();
+    let mut opponent = login_character(CharacterId(1), &login_block("Gatekeeper"), 1, 190, 200);
+    opponent.flags.remove(CharacterFlags::PLAYER);
+    opponent.driver = CDR_GATE_FIGHT;
+    opponent.hp = POWERSCALE;
+    let mut other_npc = login_character(CharacterId(2), &login_block("Other"), 1, 191, 200);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    world.add_character(opponent);
+    world.add_character(other_npc);
+
+    let mut runtime = ServerRuntime::default();
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0);
+
+    let other_npc = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(!other_npc.flags.contains(CharacterFlags::ARCH));
+    let texts = world.drain_pending_system_texts();
+    assert!(!texts.iter().any(|text| text.message == "Well done."));
+}
