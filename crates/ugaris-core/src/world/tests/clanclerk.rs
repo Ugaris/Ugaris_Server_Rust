@@ -1,0 +1,607 @@
+use super::*;
+use crate::character_driver::{ClanclerkDriverData, CDR_CLANCLERK};
+use crate::clan::ClanRelation;
+use crate::item_driver::IDR_CLANJEWEL;
+use crate::world::clanclerk::ClanclerkEvent;
+
+fn clanclerk_npc(id: u32, clan: u16) -> Character {
+    let mut clanclerk = character(id);
+    clanclerk.name = "Clanclerk".into();
+    clanclerk.driver = CDR_CLANCLERK;
+    clanclerk.driver_state = Some(CharacterDriverState::Clanclerk(ClanclerkDriverData {
+        clan,
+    }));
+    clanclerk
+}
+
+fn player(id: u32, name: &str) -> Character {
+    let mut player = character(id);
+    player.flags |= CharacterFlags::PLAYER | CharacterFlags::PAID;
+    player.name = name.into();
+    player
+}
+
+fn member(id: u32, name: &str, world: &World, clan: u16, rank: u8) -> Character {
+    let mut character = player(id, name);
+    let _ = world.clan_registry.serial(clan);
+    character.clan = clan;
+    character.clan_serial = world.clan_registry.serial(clan);
+    character.clan_rank = rank;
+    character
+}
+
+fn found_clan(world: &mut World, name: &str) -> u16 {
+    world.clan_registry.found_clan(name, 0).unwrap()
+}
+
+fn clan_jewel_item(id: u32) -> Item {
+    let mut jewel = item(id, ItemFlags::empty());
+    jewel.driver = IDR_CLANJEWEL;
+    jewel
+}
+
+#[test]
+fn deposit_succeeds_for_non_member() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    let mut visitor = player(2, "Godmode");
+    visitor.gold = 100_000;
+    assert!(world.spawn_character(visitor, 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "deposit 150");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Thank you, Godmode. I have deposited 150G into the clan treasury.")));
+    assert_eq!(
+        world.characters.get(&CharacterId(2)).unwrap().gold,
+        100_000 - 15_000
+    );
+    assert_eq!(world.clan_registry.clan_money(clan), 150);
+
+    // C only clan-logs deposits `>= 100` (`diff >= 100 || diff < 0`).
+    let events = world.drain_pending_clanclerk_events();
+    assert_eq!(
+        events,
+        vec![ClanclerkEvent::MoneyChanged {
+            clan_nr: clan,
+            actor_id: CharacterId(2),
+            change: crate::clan::ClanMoneyChange::Deposited(150),
+        }]
+    );
+}
+
+#[test]
+fn deposit_rejects_non_positive_amount() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "deposit 0");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("I'm sorry, Godmode, but you must specify a positive amount to deposit.")));
+    assert_eq!(world.clan_registry.clan_money(clan), 0);
+}
+
+#[test]
+fn deposit_rejects_insufficient_gold() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    let mut visitor = player(2, "Godmode");
+    visitor.gold = 100;
+    assert!(world.spawn_character(visitor, 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "deposit 50");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("I'm afraid you don't have 50G to deposit, Godmode.")));
+    assert_eq!(world.characters.get(&CharacterId(2)).unwrap().gold, 100);
+}
+
+#[test]
+fn withdraw_requires_membership() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    world.clan_registry.clan_money_change(clan, 100, false);
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(player(2, "Outsider"), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "withdraw 10");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(!texts.iter().any(|t| t.message.contains("I have withdrawn")));
+    assert_eq!(world.clan_registry.clan_money(clan), 100);
+}
+
+#[test]
+fn withdraw_requires_treasurer_rank() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    world.clan_registry.clan_money_change(clan, 100, false);
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Grunt", &world, clan, 1), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "withdraw 10");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(!texts.iter().any(|t| t.message.contains("I have withdrawn")));
+    assert_eq!(world.clan_registry.clan_money(clan), 100);
+}
+
+#[test]
+fn withdraw_succeeds_for_treasurer() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    world.clan_registry.clan_money_change(clan, 100, false);
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Treasurer", &world, clan, 3), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "withdraw 30");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains(
+        "Here you are, Treasurer. I have withdrawn 30G from the clan treasury for you."
+    )));
+    assert_eq!(world.clan_registry.clan_money(clan), 70);
+    assert_eq!(world.characters.get(&CharacterId(2)).unwrap().gold, 3_000);
+}
+
+#[test]
+fn withdraw_rejects_insufficient_treasury() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    world.clan_registry.clan_money_change(clan, 10, false);
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Treasurer", &world, clan, 3), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "withdraw 30");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("I'm afraid the clan treasury only holds 10G, Treasurer.")));
+    assert_eq!(world.clan_registry.clan_money(clan), 10);
+}
+
+#[test]
+fn buy_is_always_disabled() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Treasurer", &world, clan, 3), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "buy 5 10");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Buying has been disabled, you have infinite stock.")));
+}
+
+#[test]
+fn set_bonus_requires_leader_rank() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Treasurer", &world, clan, 3), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "set bonus 2 5");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(world.clan_registry.bonus_level(clan, 2), 0);
+}
+
+#[test]
+fn set_bonus_succeeds_for_leader() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "set bonus 2 5");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(world.clan_registry.bonus_level(clan, 2), 5);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Very well. I have set the Merchant bonus to level 5 for your clan.")));
+}
+
+#[test]
+fn set_bonus_disable_message_at_level_zero() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    world.clan_registry.set_bonus_level(clan, 0, 4).unwrap();
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "set bonus 0 0");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(world.clan_registry.bonus_level(clan, 0), 0);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Very well. I have disabled the Pentagram Quest bonus for your clan.")));
+}
+
+#[test]
+fn set_bonus_rejects_out_of_range_number() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "set bonus 9 5");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains(
+        "Invalid bonus number. Available bonuses: 0=Pentagram Quest, 1=Military Advisor, 2=Merchant."
+    )));
+}
+
+#[test]
+fn rank_name_succeeds_for_leader() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "rank name 2 Officer");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(
+        world.clan_registry.identity(clan).unwrap().rank_names[2],
+        "Officer"
+    );
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Very well. Rank 2 shall now be known as Officer.")));
+
+    let events = world.drain_pending_clanclerk_events();
+    assert_eq!(
+        events,
+        vec![ClanclerkEvent::RankNameSet {
+            clan_nr: clan,
+            actor_id: CharacterId(2),
+            rank: 2,
+            name: "Officer".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn rank_name_rejects_out_of_range() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "rank name 9 Officer");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("The rank number must be between 0 and 4, Leader.")));
+}
+
+#[test]
+fn website_strips_trailing_character_like_c() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "website http://example.com/x");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    // C's `website[strlen(website)-1] = 0` drops the real last character.
+    assert_eq!(
+        world.clan_registry.identity(clan).unwrap().website,
+        "http://example.com/"
+    );
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Very well. I have updated your clan's website to: http://example.com/")));
+}
+
+#[test]
+fn message_strips_trailing_character_like_c() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "message Hello there!");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(
+        world.clan_registry.identity(clan).unwrap().message,
+        "Hello there"
+    );
+}
+
+#[test]
+fn raiding_on_then_off_toggles_pending_timer() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "raiding on");
+    }
+    world.process_clanclerk_actions(0, 555);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Understood. Raiding has been enabled for your clan. Be prepared for battle!")));
+    // `raiding on` only sets the pending timer, not `get_clan_raid` itself.
+    assert!(!world.clan_registry.get_clan_raid(clan));
+
+    // Asking again while already pending is a no-op failure in C.
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "raiding on");
+    }
+    world.process_clanclerk_actions(0, 600);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("I'm sorry, I was unable to enable raiding for your clan.")));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "raiding off");
+    }
+    world.process_clanclerk_actions(0, 700);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Understood. Raiding has been disabled for your clan. May peace be with you.")));
+}
+
+#[test]
+fn raiding_god_toggle_requires_god_flag() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "raiding god on");
+    }
+    world.process_clanclerk_actions(0, 0);
+    assert!(!world.clan_registry.get_clan_raid(clan));
+
+    let mut god_leader = member(3, "GodLeader", &world, clan, 4);
+    god_leader.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(god_leader, 10, 10));
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(3), "raiding god on");
+    }
+    world.process_clanclerk_actions(0, 0);
+    assert!(world.clan_registry.get_clan_raid(clan));
+
+    let events = world.drain_pending_clanclerk_events();
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, ClanclerkEvent::RaidGodToggled { enabled: true, .. })));
+}
+
+#[test]
+fn relation_requires_raiding_enabled_on_both_clans() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    let other = found_clan(&mut world, "White Lily");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    let mut leader = member(2, "Leader", &world, clan, 4);
+    leader.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(leader, 10, 10));
+
+    // Raiding not enabled anywhere yet: War (4) should be refused.
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "relation 2 4");
+    }
+    world.process_clanclerk_actions(0, 0);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Your clan cannot declare War unless you first say 'raiding on'.")));
+    assert_eq!(
+        world
+            .clan_registry
+            .relations()
+            .current_relation(clan, other),
+        ClanRelation::Neutral
+    );
+
+    world.clan_registry.set_clan_raid_god(clan, true).unwrap();
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "relation 2 4");
+    }
+    world.process_clanclerk_actions(0, 0);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("unless they also have raiding enabled.")));
+
+    world.clan_registry.set_clan_raid_god(other, true).unwrap();
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "relation 2 4");
+    }
+    world.process_clanclerk_actions(0, 0);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains(
+        "Very well. I have requested War status with White Lily. The change may take time to process."
+    )));
+}
+
+#[test]
+fn relation_rejects_out_of_range_clan_and_level() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "relation 99 3");
+    }
+    world.process_clanclerk_actions(0, 0);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("The clan number must be between 1 and 31. Use /clan to see the list.")));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "relation 2 9");
+    }
+    world.process_clanclerk_actions(0, 0);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("The relation must be: 1=Alliance, 2=Peace-Treaty, 3=Neutral, 4=War, 5=Feud.")));
+}
+
+#[test]
+fn help_shows_leader_section_only_for_leader_member() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(player(2, "Outsider"), 10, 10));
+    assert!(world.spawn_character(member(3, "Leader", &world, clan, 4), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "help");
+    }
+    world.process_clanclerk_actions(0, 0);
+    let outsider_lines: Vec<String> = world
+        .drain_pending_system_texts()
+        .into_iter()
+        .filter(|t| t.character_id == CharacterId(2))
+        .map(|t| t.message)
+        .collect();
+    assert!(outsider_lines
+        .iter()
+        .any(|l| l.contains("deposit <amount>")));
+    assert!(!outsider_lines.iter().any(|l| l.contains("Leader Commands")));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(3), "help");
+    }
+    world.process_clanclerk_actions(0, 0);
+    let leader_lines: Vec<String> = world
+        .drain_pending_system_texts()
+        .into_iter()
+        .filter(|t| t.character_id == CharacterId(3))
+        .map(|t| t.message)
+        .collect();
+    assert!(leader_lines.iter().any(|l| l.contains("Leader Commands")));
+    assert!(leader_lines.iter().any(|l| l.contains("raiding on/off")));
+}
+
+#[test]
+fn clan_jewel_give_adds_jewel_and_destroys_item() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+    world.items.insert(ItemId(900), clan_jewel_item(900));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.cursor_item = Some(ItemId(900));
+        clanclerk.push_driver_message(NT_GIVE, 2, 900, 0);
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(world.clan_registry.jewel_count(clan), 1);
+    assert!(world.items.get(&ItemId(900)).is_none());
+    assert_eq!(
+        world.characters.get(&CharacterId(1)).unwrap().cursor_item,
+        None
+    );
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains("Added Jewel.")));
+
+    let events = world.drain_pending_clanclerk_events();
+    assert_eq!(
+        events,
+        vec![ClanclerkEvent::JewelAdded {
+            clan_nr: clan,
+            actor_id: CharacterId(2),
+        }]
+    );
+}
+
+#[test]
+fn jewels_qa_reports_jewel_count() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    world.clan_registry.add_jewel(clan).unwrap();
+    world.clan_registry.add_jewel(clan).unwrap();
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 10, 10));
+    world.map.tile_mut(10, 10).unwrap().light = 255;
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "jewels");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Our clan has 2 jewels.")));
+}

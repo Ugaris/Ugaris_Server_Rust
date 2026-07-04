@@ -184,7 +184,8 @@ impl World {
                 | CharacterDriverState::GateWelcome(_)
                 | CharacterDriverState::GateFight(_)
                 | CharacterDriverState::Clanmaster(_)
-                | CharacterDriverState::ClanFound(_) => None,
+                | CharacterDriverState::ClanFound(_)
+                | CharacterDriverState::Clanclerk(_) => None,
             })
             .unwrap_or_default()
     }

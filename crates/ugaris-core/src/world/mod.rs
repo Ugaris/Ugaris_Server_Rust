@@ -16,6 +16,7 @@ mod area_mech;
 mod assembly;
 mod bank;
 mod character_values;
+mod clanclerk;
 mod clanmaster;
 mod combat;
 mod date;
@@ -56,6 +57,7 @@ pub(crate) use area_mech::*;
 pub(crate) use assembly::*;
 pub use bank::*;
 pub(crate) use character_values::*;
+pub use clanclerk::*;
 pub use clanmaster::*;
 pub(crate) use combat::*;
 pub use death::*;
@@ -268,6 +270,7 @@ pub struct World {
     pending_bank_events: Vec<BankEvent>,
     pending_trader_events: Vec<TraderEvent>,
     pending_clanmaster_events: Vec<ClanmasterEvent>,
+    pending_clanclerk_events: Vec<ClanclerkEvent>,
 }
 
 impl Default for Tick {

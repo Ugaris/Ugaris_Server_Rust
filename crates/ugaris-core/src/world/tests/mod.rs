@@ -6,6 +6,7 @@ mod area_mech;
 mod assembly;
 mod bank;
 mod character_values;
+mod clanclerk;
 mod clanmaster;
 mod combat;
 mod date;

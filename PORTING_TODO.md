@@ -3228,19 +3228,28 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `clan_trade_bonus` - currently 0), clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
   (transport module has the seam). REMAINING: the dungeon-guard economy
-  proper (`struct clan_dungeon`'s guard counts/potions/raid flags and
-  `get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost`/
-  `set_clan_raid` - meaningless without the unported dungeon/raid system
-  itself; the treasury/bonus/training half of this - `update_treasure`/
+  proper (`struct clan_dungeon`'s guard counts/potions and
+  `get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost` -
+  meaningless without the unported dungeon/raid system itself; the
+  treasury/bonus/training half of this - `update_treasure`/
   `update_training`/jewels/cost-per-week/debt/bonus levels/depot money -
-  was closed in iteration 95, see Progress Log),
-  `CDR_CLANCLERK` (`clanclerk_driver`, `area/30/clanmaster.c:662-1213` -
-  the members-only economy driver: deposit/withdraw/bonus/relation/
-  rank-name/website/message/raiding commands - the treasury functions it
-  needs now exist in `clan.rs` [`ClanRegistry::clan_money`/
-  `clan_money_change`/`jewel_count`/`bonus_level`/`set_bonus_level`], but
-  raid flags/jewel-in-vault-count still don't, and the driver itself
-  isn't wired), the clanmaster NPC's `rank:`/`fire:` text
+  was closed in iteration 95, and the `doraid`/`raidonstart` raid-toggle
+  pair - `get_clan_raid`/`set_clan_raid`/`set_clan_raid_god` - was closed
+  in iteration 96, both see Progress Log; the `update_relations` `doraid`
+  auto-enable-on-first-tick clamp stays intentionally unported per that
+  function's own doc comment, so in practice `get_clan_raid` only ever
+  becomes true via the `raiding god on` GM override today). `CDR_CLANCLERK`
+  (`clanclerk_driver`, `area/30/clanmaster.c:662-1213` - the
+  members-only economy driver: `help`/deposit/withdraw/set bonus/
+  relation/rank-name/website/message/raiding-on-off/raiding-god-on-off
+  text commands, plus the Clan Jewel `NT_GIVE` handoff and the "jewels"
+  small-talk reply) was ported and wired into the live tick loop in
+  iteration 96 (see Progress Log) - REMAINING for that driver only:
+  `add potions`/the `NT_GIVE` `IDR_FLASK` branch (needs the unported
+  alchemy-potion economy) and the `buy`/`use` dungeon-guard commands
+  (C's own `buy` is unconditionally disabled dead code so that part is
+  actually done; `use` needs the still-unported dungeon-guard economy's
+  cost/budget functions). The clanmaster NPC's `rank:`/`fire:` text
   commands (leader rank-management, plus the offline-player
   `task_set_clan_rank`/`task_fire_from_clan` async DB-task fallback - a
   whole separate subsystem this codebase has no equivalent of), the
@@ -3254,10 +3263,13 @@ Unlocks every quest NPC. Do these before any P4 area work.
   now have real call site wiring, clan-log *write* persistence, and
   `ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLAN_MASTER` award wiring, all
   closed in iteration 94 (see Progress Log) - the `set_clan_website`/
-  `set_clan_message` trailing-character-strip quirk (deferred to
-  whichever future task wires a real `/clan` text-command parser, since
-  `clanmaster_driver`'s own `name:`/`accept:`/`join:`/`leave!` handlers
-  are NPC-dialogue keywords, not a `/clan` command, and never touch
+  `set_clan_message` trailing-character-strip quirk was closed in
+  iteration 96 at its one real call site (`clanclerk_driver`'s own
+  `website`/`message` commands - not a hypothetical future `/clan`
+  command as an earlier note here said; that note was a documentation
+  mistake, corrected now) - the `clanmaster_driver`'s own `name:`/
+  `accept:`/`join:`/`leave!` handlers remain NPC-dialogue keywords, not
+  a `/clan` command, and never touch
   website/message at all).
 
   Progress Log:
@@ -3705,6 +3717,69 @@ Unlocks every quest NPC. Do these before any P4 area work.
     zero warnings. No runtime-loop/login/map-sync/protocol changes, but
     ran a 10s boot-smoke anyway as a sanity check: "entering Rust game
     loop" with no panics.
+  - 2026-07-04 (iteration 96): ported `CDR_CLANCLERK` (`clanclerk_driver`,
+    `src/area/30/clanmaster.c:662-1213`), the members-only clan
+    administration/treasury NPC - new `crates/ugaris-core/src/world/
+    clanclerk.rs`. Added the driver plumbing this needed first:
+    `CDR_CLANCLERK`/`ClanclerkDriverData`/`parse_clanclerk_driver_args`
+    (`character_driver.rs`, a bare clan-number zone-file arg, unlike
+    `clanmaster`'s `name=value;` pairs) plus zone-template wiring
+    (`zone.rs`). Ported every text command whose C implementation doesn't
+    depend on the unported dungeon/raid economy: `help` (rank-gated
+    command list, `log_char` lines via the existing `queue_system_text`),
+    `deposit` (works for any nearby player, not just members - matches C),
+    `withdraw` (treasurer-rank+, reuses `world::gatekeeper`'s
+    `gate_give_money_silent`), `buy` (C's own dead code - unconditionally
+    "disabled" reply, ported as such), `set bonus`/`rank name`/`website`/
+    `message` (leader-rank+, wired onto the existing `ClanRegistry`
+    setters from iterations 90/95), the Clan Jewel `NT_GIVE` handoff
+    (`add_jewel`), and the qa-table "jewels" small-talk hit (`analyse_
+    text_driver`'s `case 2`, reusing the existing `CLANMASTER_QA` table
+    C itself shares between both drivers). Also closed two real
+    REMAINING gaps this driver needed: added `ClanEconomy::raid`/
+    `raid_on_start` (`clan.h`'s `struct clan_dungeon`'s `doraid`/
+    `raidonstart`, pulled out on their own same precedent as iteration
+    95's `training_score`) plus `ClanRegistry::get_clan_raid`/
+    `set_clan_raid`/`set_clan_raid_god` (`clan.c:547-580,1541-1543`),
+    enabling the `relation`/`raiding on`/`raiding off`/`raiding god on`/
+    `raiding god off` commands to be ported faithfully too (confirmed via
+    a full `grep` of `doraid`/`raidonstart` in `clan.c` that
+    `update_relations`'s first-tick auto-enable is the *only* other
+    writer, and it's already intentionally unported - documented inline
+    rather than silently assumed); and ported the `set_clan_website`/
+    `set_clan_message` trailing-character-strip quirk at the driver
+    layer, since this driver is the *only* real call site of either
+    function in the whole C tree (a stale note on `ClanRegistry::
+    set_website` had called this quirk a "future `/clan` command"
+    concern - corrected). Out of scope, left for a future slice (see
+    REMAINING above): `add potions`/`NT_GIVE`'s `IDR_FLASK` branch and
+    `use` (both need the unported alchemy-potion/dungeon-guard
+    economies). Clan-log persistence for every new write path
+    (deposit/withdraw/rank-name/website/message/jewel/raid-toggle) is
+    queued as `ClanclerkEvent` and applied by a new `crate::world_events::
+    apply_clanclerk_events` (mirroring `apply_clanmaster_events`), wired
+    into `main.rs`'s tick loop right after the clanmaster NPC's own call.
+    30 new tests: 23 in `world/tests/clanclerk.rs` (every command's
+    success/failure/gating path, the help text's rank-conditional
+    sections, the Clan Jewel give, and the jewels qa reply), 6 new
+    `clan.rs` unit tests for the raid methods (pending-timer vs.
+    direct-flip semantics, no-op error cases, nonexistent-clan errors)
+    plus a `ClanMoneyChange::log_message` format test (a helper this
+    iteration added - a prior iteration's doc comment referenced it as
+    the intended caller-side formatting helper but never actually wrote
+    it, since nothing called `clan_money_change` live before now), and 2
+    in `character_driver.rs` (`parse_clanclerk_driver_args`, the
+    `CDR_CLANCLERK`/`CDR_CLANMASTER` constants). `cargo fmt --all`,
+    `cargo test --workspace` (1528 ugaris-core [+30] + 47 db + 3 net + 37
+    protocol + 520 server, all green, zero failures), `cargo build -p
+    ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+    "entering Rust game loop" with no panics (this iteration adds a new
+    tick-loop call site). REMAINING for the "Clan system" task overall
+    (updated above): the clanmaster NPC's `rank:`/`fire:` leader
+    rank-management commands and the offline-player DB-task fallback,
+    club-variant achievement wiring, `clan_trade_bonus`, and the
+    dungeon-guard economy proper (guard counts/potions - `use`/`buy`'s
+    real logic).
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

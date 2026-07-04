@@ -537,6 +537,20 @@ pub struct ClanEconomy {
     pub training_score: i32,
     /// C `struct clan_dungeon`'s `last_training_update` (`clan.h:79`).
     pub last_training_update: i64,
+    /// C `struct clan_dungeon`'s `doraid` (`clan.h:79`, `unsigned int`
+    /// used as a bool): whether the clan can currently be attacked/raided
+    /// (`get_clan_raid`). Pulled out on its own, same precedent as
+    /// `training_score`/`last_training_update` - the rest of
+    /// `struct clan_dungeon` (guard counts/potions) stays out of scope
+    /// (see the module doc comment).
+    pub raid: bool,
+    /// C `struct clan_dungeon`'s `raidonstart` (`clan.h:80`, `realtime`
+    /// seconds): a pending "raiding on" request's start timestamp, set by
+    /// [`ClanRegistry::set_clan_raid`] and read only for the (currently
+    /// unwired) 48-hour "PENDING" countdown display in C's `showclan`
+    /// (`clan.c:232-234`) - not surfaced here since no caller shows clan
+    /// info yet.
+    pub raid_on_start: i64,
 }
 
 impl ClanEconomy {
@@ -557,6 +571,8 @@ impl ClanEconomy {
             },
             training_score: 0,
             last_training_update: now,
+            raid: false,
+            raid_on_start: 0,
         }
     }
 
@@ -650,6 +666,17 @@ pub enum ClanIdentityError {
     InvalidRank,
     /// C `set_clan_rankname`'s `strlen(name) > 37` guard (`clan.c:869-871`).
     NameTooLong,
+}
+
+/// Errors for [`ClanRegistry::set_clan_raid`]/[`ClanRegistry::set_clan_raid_god`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClanRaidError {
+    /// `cnr` is out of range or names a slot with no identity.
+    NotFound,
+    /// C's `return 1` case: the requested on/off state was already the
+    /// current (or already-pending) state - a no-op the caller reports
+    /// as a failure message, not silently ignores.
+    NoOp,
 }
 
 /// Errors for [`ClanRegistry::add_member`], mirroring the boundaries C
@@ -1074,6 +1101,63 @@ impl ClanRegistry {
         Ok(())
     }
 
+    /// C `get_clan_raid` (`clan.c:1541-1543`). Out-of-range/nonexistent
+    /// clans read as `false` (C reads `clan[cnr].dungeon.doraid` directly
+    /// with no bounds check at all - a stricter Rust seam, same reasoning
+    /// as every other read accessor in this module).
+    pub fn get_clan_raid(&self, cnr: u16) -> bool {
+        self.identity(cnr).is_some_and(|id| id.economy.raid)
+    }
+
+    /// C `set_clan_raid` (`clan.c:547-563`): the member-facing "raiding
+    /// on"/"raiding off" toggle. Only ever sets the *pending* `raid_on_
+    /// start` timestamp, never `raid` itself directly (see
+    /// [`ClanRegistry::set_clan_raid_god`] for the only path that flips
+    /// `raid` - matching C exactly: outside of `update_relations`'s
+    /// intentionally-unported first-tick auto-enable - see the module
+    /// doc comment - nothing ever promotes a pending `raid_on_start`
+    /// request into `raid = true` on its own). Returns
+    /// [`ClanRaidError::NoOp`] for C's `return 1` case (asking to turn on
+    /// something already on/pending, or off something not pending),
+    /// matching C's silent-failure branch the driver reports as "I'm
+    /// sorry, I was unable to enable/disable raiding for your clan."
+    pub fn set_clan_raid(&mut self, cnr: u16, onoff: bool, now: i64) -> Result<(), ClanRaidError> {
+        let identity = self.identity_mut(cnr).ok_or(ClanRaidError::NotFound)?;
+        let economy = &mut identity.economy;
+        if onoff && !economy.raid && economy.raid_on_start == 0 {
+            economy.raid_on_start = now;
+            self.dirty = true;
+            return Ok(());
+        }
+        if !onoff && !economy.raid && economy.raid_on_start != 0 {
+            economy.raid_on_start = 0;
+            self.dirty = true;
+            return Ok(());
+        }
+        Err(ClanRaidError::NoOp)
+    }
+
+    /// C `set_clan_raid_god` (`clan.c:565-580`): the GM-only immediate
+    /// override, flipping `raid` directly (skipping the member-facing
+    /// pending-timer dance [`ClanRegistry::set_clan_raid`] goes through).
+    pub fn set_clan_raid_god(&mut self, cnr: u16, onoff: bool) -> Result<(), ClanRaidError> {
+        let identity = self.identity_mut(cnr).ok_or(ClanRaidError::NotFound)?;
+        let economy = &mut identity.economy;
+        if onoff && !economy.raid {
+            economy.raid_on_start = 0;
+            economy.raid = true;
+            self.dirty = true;
+            return Ok(());
+        }
+        if !onoff && economy.raid {
+            economy.raid_on_start = 0;
+            economy.raid = false;
+            self.dirty = true;
+            return Ok(());
+        }
+        Err(ClanRaidError::NoOp)
+    }
+
     /// C `update_treasure` (`clan.c:1105-1159`), the periodic tick run for
     /// every existing clan: shrinks bonuses that have become unaffordable,
     /// recomputes the weekly upkeep cost, accrues debt for elapsed time
@@ -1175,6 +1259,19 @@ impl ClanRegistry {
 pub enum ClanMoneyChange {
     Deposited(i32),
     Withdrew(i32),
+}
+
+impl ClanMoneyChange {
+    /// C `clan_money_change`'s two `add_clanlog` message shapes
+    /// (`clan.c:1245,1247`): `"%s deposited %dG"`/`"%s withdrew %dG"`,
+    /// prio 28 (left for the caller to pass alongside this, matching
+    /// every other clan-log write site in this codebase).
+    pub fn log_message(&self, actor_name: &str) -> String {
+        match self {
+            ClanMoneyChange::Deposited(amount) => format!("{actor_name} deposited {amount}G"),
+            ClanMoneyChange::Withdrew(amount) => format!("{actor_name} withdrew {amount}G"),
+        }
+    }
 }
 
 /// Events produced by [`ClanRegistry::update_treasure`]. See each
@@ -1884,6 +1981,92 @@ mod tests {
         assert!(!registry.dirty());
         registry.relations_mut().found_clan(1, 0);
         assert!(registry.dirty());
+    }
+
+    #[test]
+    fn get_clan_raid_defaults_false_and_nonexistent_reads_false() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Raiders", 0).unwrap();
+        assert!(!registry.get_clan_raid(nr));
+        assert!(!registry.get_clan_raid(999));
+    }
+
+    #[test]
+    fn set_clan_raid_on_then_off_toggles_pending_timer_not_raid_itself() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Raiders", 0).unwrap();
+
+        assert_eq!(registry.set_clan_raid(nr, true, 1_000), Ok(()));
+        // Only the pending timer moves; `get_clan_raid` (`doraid`) stays
+        // false until a GM `set_clan_raid_god` override, matching C.
+        assert!(!registry.get_clan_raid(nr));
+        assert_eq!(registry.identity(nr).unwrap().economy.raid_on_start, 1_000);
+
+        // Asking for "on" again while already pending is C's `return 1`
+        // no-op case.
+        assert_eq!(
+            registry.set_clan_raid(nr, true, 2_000),
+            Err(ClanRaidError::NoOp)
+        );
+
+        assert_eq!(registry.set_clan_raid(nr, false, 3_000), Ok(()));
+        assert_eq!(registry.identity(nr).unwrap().economy.raid_on_start, 0);
+
+        // Asking for "off" again with nothing pending is also a no-op.
+        assert_eq!(
+            registry.set_clan_raid(nr, false, 4_000),
+            Err(ClanRaidError::NoOp)
+        );
+    }
+
+    #[test]
+    fn set_clan_raid_god_flips_raid_directly_and_clears_pending_timer() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Raiders", 0).unwrap();
+        registry.set_clan_raid(nr, true, 1_000).unwrap();
+
+        assert_eq!(registry.set_clan_raid_god(nr, true), Ok(()));
+        assert!(registry.get_clan_raid(nr));
+        assert_eq!(registry.identity(nr).unwrap().economy.raid_on_start, 0);
+
+        // Already on: no-op.
+        assert_eq!(
+            registry.set_clan_raid_god(nr, true),
+            Err(ClanRaidError::NoOp)
+        );
+
+        assert_eq!(registry.set_clan_raid_god(nr, false), Ok(()));
+        assert!(!registry.get_clan_raid(nr));
+
+        assert_eq!(
+            registry.set_clan_raid_god(nr, false),
+            Err(ClanRaidError::NoOp)
+        );
+    }
+
+    #[test]
+    fn set_clan_raid_nonexistent_clan_is_not_found() {
+        let mut registry = ClanRegistry::new();
+        assert_eq!(
+            registry.set_clan_raid(999, true, 0),
+            Err(ClanRaidError::NotFound)
+        );
+        assert_eq!(
+            registry.set_clan_raid_god(999, true),
+            Err(ClanRaidError::NotFound)
+        );
+    }
+
+    #[test]
+    fn money_change_log_message_matches_c_format() {
+        assert_eq!(
+            ClanMoneyChange::Deposited(150).log_message("Godmode"),
+            "Godmode deposited 150G"
+        );
+        assert_eq!(
+            ClanMoneyChange::Withdrew(30).log_message("Godmode"),
+            "Godmode withdrew 30G"
+        );
     }
 
     #[test]

@@ -834,3 +834,167 @@ pub(crate) async fn apply_clanmaster_events(
     }
     applied
 }
+
+/// Applies each [`ClanclerkEvent`] queued by `World::process_clanclerk_actions`:
+/// the clan-log entries C's `clan_money_change`/`set_clan_rankname`/
+/// `set_clan_website`/`set_clan_message`/`add_jewel`/`set_clan_raid`/
+/// `set_clan_raid_god` perform internally, which the pure `ClanRegistry`
+/// methods leave to the caller - same shape as [`apply_clanmaster_events`].
+pub(crate) async fn apply_clanclerk_events(
+    world: &mut World,
+    clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    now_unix: i64,
+) -> usize {
+    let mut applied = 0;
+    for event in world.drain_pending_clanclerk_events() {
+        match event {
+            ClanclerkEvent::MoneyChanged {
+                clan_nr,
+                actor_id,
+                change,
+            } => {
+                let Some(actor_name) = world.characters.get(&actor_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    actor_id,
+                    28,
+                    change.log_message(&actor_name),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+            ClanclerkEvent::RankNameSet {
+                clan_nr,
+                actor_id,
+                rank,
+                name,
+            } => {
+                let Some(actor_name) = world.characters.get(&actor_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `set_clan_rankname` (`clan.c:875`): "%s set rank name
+                // %d to %s".
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    actor_id,
+                    33,
+                    format!("{actor_name} set rank name {rank} to {name}"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+            ClanclerkEvent::WebsiteSet {
+                clan_nr,
+                actor_id,
+                site,
+            } => {
+                let Some(actor_name) = world.characters.get(&actor_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `set_clan_website` (`clan.c:590`): "%s set website %s".
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    actor_id,
+                    35,
+                    format!("{actor_name} set website {site}"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+            ClanclerkEvent::MessageSet {
+                clan_nr,
+                actor_id,
+                message,
+            } => {
+                let Some(actor_name) = world.characters.get(&actor_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `set_clan_message` (`clan.c:601`): "%s set message %s".
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    actor_id,
+                    35,
+                    format!("{actor_name} set message {message}"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+            ClanclerkEvent::JewelAdded { clan_nr, actor_id } => {
+                let Some(actor_name) = world.characters.get(&actor_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `add_jewel` (`clan.c:495`): "%s added a jewel".
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    actor_id,
+                    1,
+                    format!("{actor_name} added a jewel"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+            ClanclerkEvent::RaidToggled {
+                clan_nr,
+                actor_id,
+                enabled,
+            }
+            | ClanclerkEvent::RaidGodToggled {
+                clan_nr,
+                actor_id,
+                enabled,
+            } => {
+                let Some(actor_name) = world.characters.get(&actor_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `set_clan_raid`/`set_clan_raid_god` (`clan.c:550,557,
+                // 568,575`): "%s set raiding to ON"/"%s canceled raiding".
+                let message = if enabled {
+                    format!("{actor_name} set raiding to ON")
+                } else {
+                    format!("{actor_name} canceled raiding")
+                };
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    actor_id,
+                    1,
+                    message,
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+        }
+    }
+    applied
+}

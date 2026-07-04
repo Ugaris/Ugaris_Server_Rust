@@ -45,6 +45,9 @@ pub const CDR_GATE_WELCOME: u16 = 39;
 /// C `#define CDR_CLANMASTER 27` (`src/system/drvlib.h`): the clan
 /// foundations NPC (`src/area/30/clanmaster.c::clanmaster_driver`).
 pub const CDR_CLANMASTER: u16 = 27;
+/// C `#define CDR_CLANCLERK 28` (`src/system/drvlib.h`): the clan
+/// administration/treasury NPC (`src/area/30/clanmaster.c::clanclerk_driver`).
+pub const CDR_CLANCLERK: u16 = 28;
 /// C `#define CDR_GATE_FIGHT 40` (`src/system/drvlib.h`): the private-room
 /// opponent NPC spawned by `enter_room` (`gatekeeper_w`/`gatekeeper_m`/
 /// `gatekeeper_s` templates, `src/system/gatekeeper.c::gate_fight_driver`).
@@ -121,6 +124,7 @@ pub enum CharacterDriverState {
     /// a player's `driver_state`, and C's own `set_data` is likewise just
     /// a per-character named-slot store with no NPC-only restriction.
     ClanFound(ClanFoundData),
+    Clanclerk(ClanclerkDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -437,6 +441,29 @@ pub struct ClanmasterDriverData {
     pub give_try: i32,
     #[serde(default)]
     pub memcleartimer: u64,
+}
+
+/// C `struct clanclerk_driver_data` (`src/area/30/clanmaster.c:659-661`):
+/// the clan administration/treasury NPC's own driver memory
+/// (`CDR_CLANCLERK`). Unlike [`ClanmasterDriverData`], this is just the
+/// single clan number the clerk administers - set once from the zone-file
+/// arg (`dat->clan = atoi(ch[cn].arg)`, `clanclerk_driver`'s first lines).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClanclerkDriverData {
+    pub clan: u16,
+}
+
+/// C `clanclerk_driver`'s `if (ch[cn].arg) { dat->clan = atoi(ch[cn].arg);
+/// ch[cn].arg = NULL; }` (`clanmaster.c:670-673`). Unlike
+/// [`parse_clanmaster_driver_args`]'s `name=value;` pairs, the zone-file
+/// arg here is a bare clan-number literal (e.g. `arg="5"`), so this is
+/// just an `atoi` of the whole string rather than a name/value walk
+/// (matching this file's existing `value.parse::<i32>().unwrap_or(0)`
+/// convention for zone-file numeric literals).
+pub fn parse_clanclerk_driver_args(args: &str) -> ClanclerkDriverData {
+    ClanclerkDriverData {
+        clan: args.trim().parse::<i32>().unwrap_or(0).max(0) as u16,
+    }
 }
 
 /// C `struct clan_found_data` (`src/area/30/clanmaster.c:288-292`), stored
@@ -1478,7 +1505,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::GateWelcome(_)
             | CharacterDriverState::GateFight(_)
             | CharacterDriverState::Clanmaster(_)
-            | CharacterDriverState::ClanFound(_),
+            | CharacterDriverState::ClanFound(_)
+            | CharacterDriverState::Clanclerk(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -2475,6 +2503,20 @@ mod tests {
         assert_eq!(CDT_DEAD, 2);
         assert_eq!(CDT_RESPAWN, 3);
         assert_eq!(CDT_SPECIAL, 4);
+    }
+
+    #[test]
+    fn parse_clanclerk_driver_args_reads_bare_clan_number() {
+        assert_eq!(parse_clanclerk_driver_args("5").clan, 5);
+        assert_eq!(parse_clanclerk_driver_args(" 12 ").clan, 12);
+        assert_eq!(parse_clanclerk_driver_args("").clan, 0);
+        assert_eq!(parse_clanclerk_driver_args("not-a-number").clan, 0);
+    }
+
+    #[test]
+    fn cdr_clanclerk_matches_c_drvlib() {
+        assert_eq!(CDR_CLANMASTER, 27);
+        assert_eq!(CDR_CLANCLERK, 28);
     }
 
     #[test]
