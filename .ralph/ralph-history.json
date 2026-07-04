@@ -2821,21 +2821,52 @@
         "return Err(ClanIdentityError::NameTooLong);",
         "let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;"
       ]
+    },
+    {
+      "iteration": 89,
+      "startedAt": "2026-07-04T13:32:50.880Z",
+      "endedAt": "2026-07-04T13:45:46.050Z",
+      "durationMs": 773944,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-db/src/lib.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-db/src/clan.rs",
+        "migrations/0008_clan_registry.sql"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All green (1449 + 42 + 3 + 37 + 494 tests, zero failures). Let's confirm no formatting diffs remain and build is clean.",
+        "test result: ok. 494 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "return Err(ClanFoundError::NameTooLong);",
+        "test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 1449 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 494 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris"
+      ]
     }
   ],
-  "totalDurationMs": 95396675,
+  "totalDurationMs": 96170619,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 88,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 89,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 31,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 32,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 32,
@@ -3153,7 +3184,7 @@
       "test result: ok. 420 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 1343 filtered out; finished in 0.00s": 1,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
-      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
+      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
       "- `cargo test --workspace` — 1393/36/3/37/431 all green, zero failures (unchanged counts; no new tes": 1,
       "test result: ok. 431 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
@@ -3192,7 +3223,7 @@
       "test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.01s": 1,
       "test result: ok. 473 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievemen": 2,
+      "119:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievemen": 3,
       "295:- `IDR_XMASMAKER = 143` now dispatches from the base item-driver path for C `xmasmaker`: zero-ch": 1,
       "test result: ok. 479 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
@@ -3222,7 +3253,7 @@
       "+            return Err(ClanIdentityError::InvalidRank);": 1,
       "+            return Err(ClanIdentityError::NameTooLong);": 1,
       "+            .ok_or(ClanIdentityError::NotFound)?;": 1,
-      "return Err(ClanFoundError::NameTooLong);": 2,
+      "return Err(ClanFoundError::NameTooLong);": 3,
       "return Err(ClanFoundError::ClanListFull);": 2,
       "test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 1390 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 38 filtered out; finished in 0.00s": 1,
@@ -3231,7 +3262,12 @@
       "return Err(ClanMembershipError::NotFound);": 1,
       "return Err(ClanIdentityError::InvalidRank);": 1,
       "return Err(ClanIdentityError::NameTooLong);": 1,
-      "let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;": 1
+      "let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;": 1,
+      "All green (1449 + 42 + 3 + 37 + 494 tests, zero failures). Let's confirm no formatting diffs remain ": 1,
+      "test result: ok. 494 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
+      "test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1449 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
+      "test result: ok. 494 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

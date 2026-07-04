@@ -3229,10 +3229,8 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `can_attack`, clan chat channel gating, clan hall transport access
   (transport module has the seam). REMAINING: treasury/bonus/dungeon-guard
   economy (`update_treasure`/`update_training`/`struct clan_dungeon` -
-  jewels, cost-per-week/debt, bonuses, dungeon guard counts, potions), a
-  persistent `crates/ugaris-db/src/clan.rs` repository + migration (no DB
-  table exists yet - `ClanRegistry` is in-memory only and does not survive
-  a restart), calling `add_member`/`remove_member`/`found_clan` from an
+  jewels, cost-per-week/debt, bonuses, dungeon guard counts, potions),
+  calling `add_member`/`remove_member`/`found_clan` from an
   actual `/clan` or GM command (`/killclan`/`/renclan` are now wired onto
   `delete_clan`/`set_name` as of iteration 88, and `/joinclan` now reads
   `clan_serial` through the registry, but `add_member`/`found_clan`
@@ -3243,10 +3241,13 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `ACHIEVEMENT_CLAN_MASTER`/`ACHIEVEMENT_CLUB_MEMBER` award wiring on
   membership change, `clan_trade_bonus` (blocked on the merchant system
   itself not being ported), clan chat channel gating (channels 5/7/12),
-  clan-hall transport access beyond direct membership, and the
+  clan-hall transport access beyond direct membership, the
   `set_clan_website`/`set_clan_message` trailing-character-strip quirk
   (deferred to whichever future task wires a real `/clan` command
-  parser).
+  parser), and a `clan_changed`-style dirty flag on `ClanRegistry` so the
+  now-ported DB persistence's once-a-minute periodic save (see iteration
+  89's progress log entry) can skip unchanged ticks instead of always
+  rewriting the whole registry.
 
   Progress Log:
   - 2026-07-04: ported the pure relation state machine as a first
@@ -3391,6 +3392,44 @@ Unlocks every quest NPC. Do these before any P4 area work.
     otherwise unchanged: DB persistence, clan-log, achievement-on-join
     wiring, `clan_trade_bonus`, chat channel gating, clan-hall transport
     beyond direct membership, and the treasury/dungeon economy.
+  - 2026-07-04 (iteration 89): closed the "no DB repository/migration
+    exists" REMAINING item. Added `migrations/0008_clan_registry.sql` (a
+    single-row `clan_registry(id smallint primary key, registry_json
+    jsonb, updated_at)` table) and `crates/ugaris-db/src/clan.rs`
+    (`ClanRegistryRepository`/`PgClanRegistryRepository`), storing the
+    whole `ClanRegistry` as one JSON blob rather than inventing a
+    relational schema - `ClanRegistry` already derives
+    `Serialize`/`Deserialize` end-to-end, and this mirrors how C's own
+    `struct clan clan[MAXCLAN]` only ever survives a restart as part of
+    the single memory-image world save file, not as per-row relational
+    data (the only real clan *table* C has, `clanoverview`, is a
+    write-only external-website mirror of a handful of display fields -
+    a different concern, correctly not ported here). Wired into
+    `crates/ugaris-server/src/main.rs`: `Database::clans()` added
+    alongside the sibling repository constructors in the startup tuple;
+    `world.clan_registry` is loaded from the DB once at startup (before
+    "entering Rust game loop", replacing the freshly-`Default` registry
+    only if a row exists) and saved back on the same once-a-minute
+    maintenance cadence already used for auction cleanup/play-time
+    credit (`world.tick.0 % (TICKS_PER_SECOND * 60) == 0`). 5 new tests
+    in `crates/ugaris-db/src/clan.rs` (a static-SQL guard for the
+    singleton-row upsert/select shape, a `serde_json` round-trip of a
+    founded clan, and 3 `DATABASE_URL`-gated live tests: save-then-load
+    round trip with before/after state restoration so repeated runs
+    don't clobber shared test-DB state, and the empty-database `None`
+    case). `cargo fmt --all`, `cargo test --workspace` (1449 ugaris-core
+    + 42 db [+5] + 3 net + 37 protocol + 494 server, all green, zero
+    failures), `cargo build -p ugaris-server` clean with zero warnings,
+    10s boot-smoke confirmed "entering Rust game loop" with no panics
+    (this iteration adds an `.await` in the startup path and the tick
+    loop's once-a-minute maintenance block). REMAINING otherwise
+    unchanged except the DB item removed above, plus one new small item:
+    a `clan_changed`-style dirty flag on `ClanRegistry` so the periodic
+    save can skip unchanged ticks instead of always rewriting the whole
+    (currently tiny) registry - `add_member`/`found_clan` command wiring,
+    clan-log, achievement-on-join wiring, `clan_trade_bonus`, chat
+    channel gating, clan-hall transport beyond direct membership, and
+    the treasury/dungeon economy all still need their own slices.
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

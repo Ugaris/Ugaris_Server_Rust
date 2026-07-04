@@ -165,8 +165,8 @@ use ugaris_core::{
 
 use ugaris_db::{
     AuctionRepository, CharacterRepository, CharacterSaveMode, CharacterSaveRequest,
-    CharacterSnapshot, LoginOutcome, LoginRequest, MerchantRepository, MerchantStoreSnapshot,
-    MerchantWareSnapshot,
+    CharacterSnapshot, ClanRegistryRepository, LoginOutcome, LoginRequest, MerchantRepository,
+    MerchantStoreSnapshot, MerchantWareSnapshot,
 };
 
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
@@ -604,29 +604,35 @@ async fn main() -> anyhow::Result<()> {
         ..ServerConfig::default()
     };
 
-    let (character_repository, merchant_repository, auction_repository, achievement_repository) =
-        if let Some(database_url) = args.database_url.as_deref() {
-            let db = ugaris_db::Database::connect(database_url, 8).await?;
-            db.ping().await?;
-            info!("connected to PostgreSQL");
-            let auctions = db.auctions();
-            // C `init_auction_house` (`auction_house.c:37-47`): clean up
-            // any auctions that expired while the server was down, before
-            // the game loop (and its periodic `update_auction_house`
-            // equivalent, below) starts.
-            if let Err(err) = auctions.cleanup_expired_auctions().await {
-                warn!(error = %err, "failed to clean up expired auctions at startup");
-            }
-            (
-                Some(db.characters()),
-                Some(db.merchants()),
-                Some(auctions),
-                Some(db.achievements()),
-            )
-        } else {
-            warn!("DATABASE_URL not set; starting without persistence");
-            (None, None, None, None)
-        };
+    let (
+        character_repository,
+        merchant_repository,
+        auction_repository,
+        achievement_repository,
+        clan_repository,
+    ) = if let Some(database_url) = args.database_url.as_deref() {
+        let db = ugaris_db::Database::connect(database_url, 8).await?;
+        db.ping().await?;
+        info!("connected to PostgreSQL");
+        let auctions = db.auctions();
+        // C `init_auction_house` (`auction_house.c:37-47`): clean up
+        // any auctions that expired while the server was down, before
+        // the game loop (and its periodic `update_auction_house`
+        // equivalent, below) starts.
+        if let Err(err) = auctions.cleanup_expired_auctions().await {
+            warn!(error = %err, "failed to clean up expired auctions at startup");
+        }
+        (
+            Some(db.characters()),
+            Some(db.merchants()),
+            Some(auctions),
+            Some(db.achievements()),
+            Some(db.clans()),
+        )
+    } else {
+        warn!("DATABASE_URL not set; starting without persistence");
+        (None, None, None, None, None)
+    };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
     let (listener_ready_tx, listener_ready_rx) = tokio::sync::oneshot::channel();
@@ -689,6 +695,25 @@ async fn main() -> anyhow::Result<()> {
         next_character_id,
         "initialized scaffold player character id allocator"
     );
+    // Restart-persistence for `world.clan_registry` (no C equivalent as a
+    // standalone table - see `crates/ugaris-db/src/clan.rs`'s doc comment):
+    // load whatever was last saved before the game loop starts, so clan
+    // identity/relations survive a restart instead of always starting
+    // empty.
+    if let Some(repository) = &clan_repository {
+        match repository.load_registry().await {
+            Ok(Some(loaded)) => {
+                info!("loaded clan registry from database");
+                world.clan_registry = loaded;
+            }
+            Ok(None) => {
+                info!("no persisted clan registry found; starting with an empty one");
+            }
+            Err(err) => {
+                warn!(error = %err, "failed to load clan registry from database; starting with an empty one");
+            }
+        }
+    }
     let mut tick = time::interval(TickRate::default().interval());
     // C `tick_date()` (`src/system/date.c:267`) runs once before the very
     // first `tick_char()` in the game loop (`src/server.c:618`), so players
@@ -5708,6 +5733,23 @@ async fn main() -> anyhow::Result<()> {
                             Err(err) => {
                                 warn!(error = %err, "failed to process expired auctions");
                             }
+                        }
+                    }
+                }
+                // Restart-persistence for `world.clan_registry`: C has no
+                // direct equivalent (its clan data rides along inside the
+                // whole-server memory-image save, not a dedicated flush
+                // task), so this reuses the same once-a-minute cadence as
+                // the auction/play-time maintenance above rather than
+                // C's own `clan_changed`-gated write. REMAINING: track a
+                // dirty flag on `ClanRegistry` (mirroring C's
+                // `clan_changed`) to skip the write on unchanged ticks
+                // instead of always saving the whole (currently small)
+                // registry.
+                if world.tick.0 % (TICKS_PER_SECOND * 60) == 0 {
+                    if let Some(repository) = &clan_repository {
+                        if let Err(err) = repository.save_registry(&world.clan_registry).await {
+                            warn!(error = %err, "failed to save clan registry to database");
                         }
                     }
                 }

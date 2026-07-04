@@ -3,6 +3,7 @@ pub mod anticheat;
 pub mod area;
 pub mod auction;
 pub mod character;
+pub mod clan;
 pub mod merchant;
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -22,6 +23,7 @@ pub use character::{
     CharacterRepository, CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, LoginOutcome,
     LoginRequest, PgCharacterRepository,
 };
+pub use clan::{ClanRegistryRepository, PgClanRegistryRepository};
 pub use merchant::{
     MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot, PgMerchantRepository,
 };
@@ -71,5 +73,9 @@ impl Database {
 
     pub fn achievements(&self) -> PgAchievementRepository {
         PgAchievementRepository::new(self.pool.clone())
+    }
+
+    pub fn clans(&self) -> PgClanRegistryRepository {
+        PgClanRegistryRepository::new(self.pool.clone())
     }
 }
