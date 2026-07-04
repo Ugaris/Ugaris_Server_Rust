@@ -114,10 +114,10 @@ use crate::{
         CharacterDriverMessage, CharacterDriverOutcome, CharacterDriverState, Lab2UndeadDriverData,
         LostconDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome, CDR_ACLERK, CDR_BANK,
         CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_MERCHANT,
-        CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TRADER, FDEMON_MSG_WAYPOINT, NTID_FDEMON,
-        NTID_GATEKEEPER, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR,
-        NT_CREATE, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC, NT_SEEHIT, NT_SPELL,
-        NT_TEXT,
+        CDR_MILITARY_MASTER, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TRADER, FDEMON_MSG_WAYPOINT,
+        NTID_FDEMON, NTID_GATEKEEPER, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH, NTID_TWOCITY_PICK,
+        NT_CHAR, NT_CREATE, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC, NT_SEEHIT,
+        NT_SPELL, NT_TEXT,
     },
     clan::ClanRegistry,
     direction::Direction,
@@ -275,6 +275,7 @@ pub struct World {
     pending_trader_events: Vec<TraderEvent>,
     pending_clanmaster_events: Vec<ClanmasterEvent>,
     pending_clanclerk_events: Vec<ClanclerkEvent>,
+    pending_military_master_events: Vec<MilitaryMasterEvent>,
 }
 
 impl Default for Tick {

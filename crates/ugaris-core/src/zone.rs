@@ -485,6 +485,11 @@ impl ZoneLoader {
                 parse_clanclerk_driver_args(&template.args),
             ));
         }
+        if template.driver == crate::character_driver::CDR_MILITARY_MASTER {
+            character.driver_state = Some(CharacterDriverState::MilitaryMaster(
+                crate::character_driver::parse_military_master_driver_args(&template.args),
+            ));
+        }
         if template.driver == CDR_JANITOR {
             // C never parses zone-file args into `struct janitor_data`
             // (`set_data` zero-initializes it) - no args to read here.

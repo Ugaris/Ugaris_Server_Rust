@@ -451,7 +451,8 @@ impl World {
                 | CharacterDriverState::GateFight(_)
                 | CharacterDriverState::Clanmaster(_)
                 | CharacterDriverState::ClanFound(_)
-                | CharacterDriverState::Clanclerk(_) => None,
+                | CharacterDriverState::Clanclerk(_)
+                | CharacterDriverState::MilitaryMaster(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

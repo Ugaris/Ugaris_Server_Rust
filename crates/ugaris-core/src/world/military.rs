@@ -84,8 +84,71 @@
 //! inside `check_military_solve`/`complete_mission` themselves are
 //! consequently also not reproduced yet - a cosmetic gap only, since the
 //! mission-progress state itself is already correct).
+//!
+//! This sixth slice ports `CDR_MILITARY_MASTER`'s own driver
+//! (`military_master_driver`, `military.c:2108-2206`), the first real
+//! call site for every function the previous slices left dangling:
+//! [`crate::character_driver::MILITARY_QA`] (the 44-row `qa[]` table,
+//! shared with the still-unported Advisor driver), `analyse_text_driver`
+//! (reused as [`crate::character_driver::analyse_text_qa`], same as every
+//! other qa-table NPC), [`World::handle_mission_request`] (C
+//! `handle_mission_request`, `military.c:1842-1896` - the "mission"
+//! keyword handler, newly ported here since nothing else needed it
+//! before), [`describe_mission_text`]/[`display_mission_text`]/
+//! [`offer_missions_text`] (C `describe_mission`/`display_mission`/
+//! `offer_missions`, `military.c:1194-1246` - the mission-rendering text,
+//! newly ported here too), and finally real call sites for
+//! [`crate::PlayerRuntime::greet_player`], [`crate::PlayerRuntime::
+//! accept_mission`], [`World::complete_mission`], and [`World::
+//! mission_reroll`].
+//!
+//! Like `world/bank.rs`, `World` cannot reach `PlayerRuntime` (where
+//! `military_ppd` and every mission-progress field actually live), so
+//! essentially the entire message-handling body is deferred as a
+//! [`MilitaryMasterEvent`] and applied by `ugaris-server`'s
+//! `apply_military_master_events` (mirroring `apply_bank_events`'s
+//! shape) - this is a wider deferral than bank's (which only deferred the
+//! persistent-balance mutation) because nearly every branch of
+//! `military_master_driver` touches `military_ppd`. `NT_CHAR` is ported
+//! as the same periodic nearby-player-scan simplification `world/bank.rs`/
+//! `world/merchant.rs` already established, queuing a `NearbyPlayer`
+//! event for every player in range every tick rather than reacting to a
+//! one-shot notify-area broadcast - safe here because `greet_player`'s own
+//! `master_state` gate (and `complete_mission`'s own `solved_mission`
+//! gate) already make repeated per-tick delivery a no-op once handled,
+//! matching C's own steady-state behavior (C's `military_master_driver`
+//! runs the identical `process_clan_recommendation`/`process_advisor_
+//! recommendation`/`greet_player`/`complete_mission` sequence on every
+//! incoming `NT_CHAR` message with no additional throttling of its own).
+//!
+//! Deliberately out of scope for this slice (documented here, not
+//! silently dropped - see the "Military ranks" task in
+//! `PORTING_TODO.md`):
+//! - `process_clan_recommendation`/`process_advisor_recommendation` (need
+//!   `military_master_data.storage_data.clan_pts[]`/`ppd->recommend` -
+//!   the NPC-scoped clan-points ledger has no Rust storage-blob
+//!   equivalent yet, same architectural gap the Arena rankings task's
+//!   REMAINING note flags).
+//! - The admin-only qa codes 18-21 (`info`/`reset`/`raise`/`promote`) -
+//!   `info` additionally needs the same unported storage-blob counters;
+//!   `/milinfo`/`/milpoints`/`/milstats` already cover this NPC's
+//!   admin-facing needs via other means.
+//! - `update_clan_points`/`process_master_storage` (the periodic
+//!   `military_master_data.storage_data` persistence tick) - no Rust
+//!   `military_master_data` equivalent exists (see above).
+//! - The Military Advisor NPC (`CDR_MILITARY_ADVISOR`) entirely -
+//!   `handle_specific_mission_request`/`offer_favor`/`process_favor_
+//!   payment`/`handle_advisor_message`/`military_advisor_driver` and the
+//!   advisor-recommendation qa codes 30-44 remain unported.
+//! - `complete_mission`'s own reward text still goes through
+//!   [`World::queue_system_text`]/[`World::queue_system_text_bytes`]
+//!   rather than [`World::npc_quiet_say`] from the Master NPC (a
+//!   pre-existing simplification from the fifth slice, documented on
+//!   that function itself, not tightened here to avoid touching its
+//!   already-tested behavior).
 
 use super::*;
+use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome, MILITARY_QA};
 
 /// C `military.h:12`'s `MAX_ARMY_RANK`.
 pub const MAX_ARMY_RANK: i32 = 40;
@@ -1170,5 +1233,472 @@ impl World {
         player.set_master_state(2);
 
         MissionRerollOutcome::Rerolled
+    }
+}
+
+/// C `military.c:2108-2206`'s `military_master_driver`'s `NT_CHAR`
+/// distance gate (`char_dist(cn, co) > 10`).
+const MILITARY_MASTER_GREET_DISTANCE: i32 = 10;
+/// C `analyse_text_driver`'s own distance gate (`char_dist(cn, co) >
+/// 12`), shared by every qa-table NPC's text handling.
+const MILITARY_MASTER_TEXT_DISTANCE: i32 = 12;
+/// C `DX_DOWN` (`common/direction.h:20`): the Military Master's fixed
+/// resting facing (C's own `secure_move_driver(cn, ch[cn].tmpx,
+/// ch[cn].tmpy, DX_DOWN, ret, lastact)`, `military.c:2201`).
+const MILITARY_MASTER_REST_DIRECTION: u8 = 3;
+
+/// C `static char *diff_name[5]` (`military.c:339`).
+const MISSION_DIFFICULTY_NAMES: [&str; 5] = ["easy", "normal", "hard", "impossible", "insane"];
+
+/// C `diff_name[difficulty]`/`get_colored_difficulty_name`'s own clamp
+/// (`military.c:1350-1361` - out-of-range falls back to index `0`).
+pub fn mission_difficulty_name(difficulty: usize) -> &'static str {
+    MISSION_DIFFICULTY_NAMES
+        .get(difficulty)
+        .copied()
+        .unwrap_or("easy")
+}
+
+/// C `describe_mission` (`military.c:1194-1220`): the offer-time
+/// description ("I have an easy mission for you, NAME. ..."). `None` for
+/// an empty mission slot (`mission->type == 0`) or an unrecognized type,
+/// matching C's own guard/`default: return 0`.
+pub fn describe_mission_text(
+    mission: &SingleMission,
+    difficulty: usize,
+    player_name: &str,
+) -> Option<String> {
+    if mission.is_empty() {
+        return None;
+    }
+    let diff = mission_difficulty_name(difficulty);
+    match mission.mission_type {
+        MISSION_TYPE_DEMON => Some(format!(
+            "I have an {diff} mission for you, {player_name}. It is to slay {} level {} demons \
+             in the Pentagram Quest.",
+            mission.opt1, mission.opt2
+        )),
+        MISSION_TYPE_RATLING => Some(format!(
+            "I have an {diff} mission for you, {player_name}. It is to slay {} level {} \
+             ratlings in the Sewers.",
+            mission.opt1, mission.opt2
+        )),
+        MISSION_TYPE_SILVER => Some(format!(
+            "I have an {diff} mission for you, {player_name}. It is to find {} units of silver \
+             in the Mine.",
+            mission.opt1
+        )),
+        _ => None,
+    }
+}
+
+/// C `display_mission` (`military.c:1261-1288`): the accept/hear-time
+/// description ("Your mission is to..."). `None` for an unrecognized
+/// type; callers should say the "that mission is not available" line on
+/// `None`, matching C's own fallback (this should not happen in practice
+/// for a mission slot that was already validated non-empty by the
+/// caller).
+pub fn display_mission_text(mission: &SingleMission) -> Option<String> {
+    match mission.mission_type {
+        MISSION_TYPE_DEMON => Some(format!(
+            "Your mission is to slay {} level {} demons in the Pentagram Quest.",
+            mission.opt1, mission.opt2
+        )),
+        MISSION_TYPE_RATLING => Some(format!(
+            "Your mission is to slay {} level {} ratlings in the Sewers.",
+            mission.opt1, mission.opt2
+        )),
+        MISSION_TYPE_SILVER => Some(format!(
+            "Your mission is to find {} units of silver in the Mine.",
+            mission.opt1
+        )),
+        _ => None,
+    }
+}
+
+/// C `offer_missions` (`military.c:1231-1246`): describes every mission
+/// slot the player can currently afford (`mis[d].pts <= 1 ||
+/// mis[d].pts <= current_pts`), falling back to the "no suitable
+/// missions" line if none qualified.
+pub fn offer_missions_text(
+    missions: &[SingleMission; 5],
+    current_pts: i32,
+    player_name: &str,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (difficulty, mission) in missions.iter().enumerate() {
+        if mission.pts > 1 && mission.pts > current_pts {
+            continue;
+        }
+        if let Some(text) = describe_mission_text(mission, difficulty, player_name) {
+            lines.push(text);
+        }
+    }
+    if lines.is_empty() {
+        lines.push(format!(
+            "I'm sorry, {player_name}, but I don't have any suitable missions for you at the \
+             moment."
+        ));
+    }
+    lines
+}
+
+/// Outcome of [`World::handle_mission_request`] (C `handle_mission_request`,
+/// `military.c:1842-1896`), mirroring every distinct `say()` branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MissionRequestOutcome {
+    /// C: `ppd->took_mission` nonzero -> "You already have a mission.
+    /// Would you like to hear it again?" (this particular line has no
+    /// `%s` player-name substitution, unlike almost every other branch in
+    /// this file - matches C exactly).
+    AlreadyHasMission,
+    /// C: `ppd->solved_yday == yday + 1` -> "I don't have another mission
+    /// for you today, %s.".
+    AlreadyCompletedToday,
+    /// C: `!get_army_rank_int(co)` -> "But you don't even belong to the
+    /// army, %s. Talk to Seymour about enrollment.".
+    NotEnrolled,
+    /// C: a fresh advisor-recommended mission was generated and
+    /// highlighted this call (`mission_type_preference > 0` and the
+    /// preferred difficulty's freshly generated mission type matches it)
+    /// - carries the mission description line plus the "accept by
+    /// saying X" prompt line; C returns immediately here without the
+    /// general `offer_missions` listing.
+    AdvisorRecommendation { description: String, prompt: String },
+    /// Normal offer: every line [`offer_missions_text`] produced, plus
+    /// the reroll-footer line.
+    Offered(Vec<String>),
+}
+
+impl World {
+    /// C `handle_mission_request(cn, co, ppd)` (`military.c:1842-1896`):
+    /// the "mission" keyword handler. Generates a fresh offer table via
+    /// [`crate::PlayerRuntime::apply_mission_offer`] if none was
+    /// generated today, reproducing the same rank-cubed `military_pts`
+    /// floor-up [`World::mission_reroll`] already applies at its own call
+    /// site (`generate_mission_with_preference`'s "Adjust military exp
+    /// for rank" comment - the floor lives in the C *caller*, not the
+    /// pure generator, so every caller must repeat it).
+    pub fn handle_mission_request(
+        &mut self,
+        character_id: CharacterId,
+        player: &mut PlayerRuntime,
+        yday: i32,
+        rng_seed: &mut u32,
+        player_name: &str,
+    ) -> MissionRequestOutcome {
+        if player.military_took_mission() != 0 {
+            return MissionRequestOutcome::AlreadyHasMission;
+        }
+        if player.military_solved_yday() == yday + 1 {
+            return MissionRequestOutcome::AlreadyCompletedToday;
+        }
+        let Some(character) = self.characters.get(&character_id) else {
+            return MissionRequestOutcome::NotEnrolled;
+        };
+        if army_rank_for_points(character.military_points) <= 0 {
+            return MissionRequestOutcome::NotEnrolled;
+        }
+
+        if player.mission_yday() != yday + 1 {
+            let rank = army_rank_for_points(character.military_points);
+            let rank_cubed = rank.saturating_mul(rank).saturating_mul(rank);
+            if rank_cubed > player.military_pts() {
+                player.set_military_pts(rank_cubed);
+            }
+            let level = (character.level as i32).max(7);
+            let preferred_type = player.mission_type_preference();
+            let military_pts = player.military_pts();
+            player.apply_mission_offer(level, military_pts, preferred_type, yday, rng_seed);
+
+            if preferred_type > 0 {
+                let diff_pref = player.mission_difficulty_preference();
+                if (0..5).contains(&diff_pref) {
+                    let mission = player.military_mission(diff_pref as usize);
+                    if mission.mission_type == preferred_type {
+                        let description =
+                            describe_mission_text(&mission, diff_pref as usize, player_name)
+                                .unwrap_or_default();
+                        let prompt = format!(
+                            "This mission was specifically requested by your advisor. You may \
+                             accept it by saying {}.",
+                            mission_difficulty_name(diff_pref as usize)
+                        );
+                        return MissionRequestOutcome::AdvisorRecommendation {
+                            description,
+                            prompt,
+                        };
+                    }
+                }
+            }
+        }
+
+        let missions: [SingleMission; 5] = std::array::from_fn(|i| player.military_mission(i));
+        let mut lines = offer_missions_text(&missions, player.military_current_pts(), player_name);
+        lines.push(
+            "If you don't like these missions, you can request a new set by saying reroll for \
+             200 gold. This can only be done once per day."
+                .to_string(),
+        );
+        MissionRequestOutcome::Offered(lines)
+    }
+}
+
+/// A `military_master_driver` outcome that needs `PlayerRuntime`'s
+/// `military_ppd` (owned by `ugaris-server`'s session layer, outside
+/// `World`'s visibility) to finish applying - see this module's sixth-
+/// slice doc comment for why nearly every branch ends up here, unlike
+/// `world/bank.rs`'s narrower `BankEvent`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MilitaryMasterEvent {
+    /// C `military_master_driver`'s `NT_CHAR` branch (`military.c:
+    /// 2153-2177`, minus the still-unported `process_clan_recommendation`/
+    /// `process_advisor_recommendation` calls - see this module's doc
+    /// comment): greet, the `master_state == 1` rank-follow-up check,
+    /// and `complete_mission`.
+    NearbyPlayer {
+        master_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa code 2 ("repeat"): `ppd->master_state = 0;`, no text.
+    Repeat {
+        master_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa code 10 ("mission"): [`World::handle_mission_request`].
+    MissionRequest {
+        master_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa codes 11-15 ("easy".."insane"): [`crate::PlayerRuntime::
+    /// accept_mission`]. `difficulty` is `0..=4`.
+    AcceptMission {
+        master_id: CharacterId,
+        player_id: CharacterId,
+        difficulty: usize,
+    },
+    /// qa code 16 ("failed"): abandon the active mission.
+    Failed {
+        master_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa code 17 ("hear"): repeat the active mission's description.
+    Hear {
+        master_id: CharacterId,
+        player_id: CharacterId,
+    },
+    /// qa codes 22/"decline"/"new missions": [`World::mission_reroll`].
+    Reroll {
+        master_id: CharacterId,
+        player_id: CharacterId,
+    },
+}
+
+impl World {
+    pub fn drain_pending_military_master_events(&mut self) -> Vec<MilitaryMasterEvent> {
+        self.pending_military_master_events.drain(..).collect()
+    }
+
+    /// C `military_master_driver`'s `NT_TEXT`/`NT_GIVE` message loop
+    /// (`military.c:2178-2198`). `NT_CHAR` is handled separately by
+    /// [`Self::greet_nearby_military_master_players`] (see this module's
+    /// doc comment).
+    fn process_military_master_messages(&mut self, master_id: CharacterId) {
+        let Some(master) = self.characters.get(&master_id).cloned() else {
+            return;
+        };
+        let messages = {
+            let Some(master_mut) = self.characters.get_mut(&master_id) else {
+                return;
+            };
+            std::mem::take(&mut master_mut.driver_messages)
+        };
+
+        let mut destroy_cursor = false;
+        let mut replies: Vec<String> = Vec::new();
+        let mut events: Vec<MilitaryMasterEvent> = Vec::new();
+
+        for message in messages {
+            match message.message_type {
+                NT_TEXT => {
+                    let speaker_id = CharacterId(message.dat3 as u32);
+                    if speaker_id == master_id {
+                        continue;
+                    }
+                    let Some(text) = message.text.as_deref() else {
+                        continue;
+                    };
+                    let Some(speaker) = self.characters.get(&speaker_id) else {
+                        continue;
+                    };
+                    if !speaker.flags.contains(CharacterFlags::PLAYER) {
+                        continue;
+                    }
+                    if char_dist(&master, speaker) > MILITARY_MASTER_TEXT_DISTANCE {
+                        continue;
+                    }
+                    if !char_see_char(&master, speaker, &self.map, self.date.daylight) {
+                        continue;
+                    }
+                    let speaker_name = speaker.name.clone();
+
+                    match analyse_text_qa(text, &master.name, &speaker_name, MILITARY_QA) {
+                        TextAnalysisOutcome::Said(reply) => replies.push(reply),
+                        // C: `answer_code == 1` -> `quiet_say(cn, "I'm
+                        // %s.", ch[cn].name)`.
+                        TextAnalysisOutcome::Matched(1) => {
+                            replies.push(format!("I'm {}.", master.name));
+                        }
+                        TextAnalysisOutcome::Matched(2) => {
+                            events.push(MilitaryMasterEvent::Repeat {
+                                master_id,
+                                player_id: speaker_id,
+                            });
+                        }
+                        TextAnalysisOutcome::Matched(10) => {
+                            events.push(MilitaryMasterEvent::MissionRequest {
+                                master_id,
+                                player_id: speaker_id,
+                            });
+                        }
+                        TextAnalysisOutcome::Matched(code @ 11..=15) => {
+                            events.push(MilitaryMasterEvent::AcceptMission {
+                                master_id,
+                                player_id: speaker_id,
+                                difficulty: (code - 11) as usize,
+                            });
+                        }
+                        TextAnalysisOutcome::Matched(16) => {
+                            events.push(MilitaryMasterEvent::Failed {
+                                master_id,
+                                player_id: speaker_id,
+                            });
+                        }
+                        TextAnalysisOutcome::Matched(17) => {
+                            events.push(MilitaryMasterEvent::Hear {
+                                master_id,
+                                player_id: speaker_id,
+                            });
+                        }
+                        TextAnalysisOutcome::Matched(22) => {
+                            events.push(MilitaryMasterEvent::Reroll {
+                                master_id,
+                                player_id: speaker_id,
+                            });
+                        }
+                        // Advisor-only codes (3-9, 30-44), admin codes
+                        // (18-21, deferred - see this module's doc
+                        // comment), and any unmatched text: no handling,
+                        // matches C's own `default: return 0`.
+                        TextAnalysisOutcome::Matched(_) | TextAnalysisOutcome::NoMatch => {}
+                    }
+                }
+                NT_GIVE => {
+                    destroy_cursor = true;
+                    replies.push("That's junk.".to_string());
+                }
+                _ => {}
+            }
+        }
+
+        if destroy_cursor {
+            let cursor = self
+                .characters
+                .get_mut(&master_id)
+                .and_then(|master| master.cursor_item.take());
+            if let Some(item_id) = cursor {
+                self.destroy_item(item_id);
+            }
+        }
+
+        for reply in replies {
+            self.npc_quiet_say(master_id, &reply);
+        }
+
+        self.pending_military_master_events.extend(events);
+    }
+
+    /// C `military_master_driver`'s `NT_CHAR` greeting branch
+    /// (`military.c:2153-2177`), ported as a periodic nearby-player scan
+    /// (see this module's doc comment for why).
+    fn greet_nearby_military_master_players(&mut self, master_id: CharacterId) {
+        let Some(master) = self.characters.get(&master_id).cloned() else {
+            return;
+        };
+
+        let mut nearby: Vec<CharacterId> = Vec::new();
+        for character in self.characters.values() {
+            if character.id == master_id || !character.flags.contains(CharacterFlags::PLAYER) {
+                continue;
+            }
+            if char_dist(&master, character) > MILITARY_MASTER_GREET_DISTANCE {
+                continue;
+            }
+            if !char_see_char(&master, character, &self.map, self.date.daylight) {
+                continue;
+            }
+            nearby.push(character.id);
+        }
+
+        self.pending_military_master_events
+            .extend(
+                nearby
+                    .into_iter()
+                    .map(|player_id| MilitaryMasterEvent::NearbyPlayer {
+                        master_id,
+                        player_id,
+                    }),
+            );
+    }
+
+    /// C `military_master_driver`'s movement section (`military.c:
+    /// 2200-2204`): stationary NPC returning to its `rest_x`/`rest_y`
+    /// spawn tile, facing `DX_DOWN`. Unlike `world/bank.rs`'s day/night
+    /// shop positions, C's own `struct military_master_data` has no
+    /// movement fields at all, so this is always the "no configured
+    /// position" fallback.
+    fn process_military_master_tick_action(&mut self, master_id: CharacterId, area_id: u16) {
+        let Some(master) = self.characters.get(&master_id).cloned() else {
+            return;
+        };
+        if self.setup_walk_toward(
+            master_id,
+            usize::from(master.rest_x),
+            usize::from(master.rest_y),
+            0,
+            area_id,
+            false,
+        ) {
+            return;
+        }
+        if master.dir != MILITARY_MASTER_REST_DIRECTION {
+            if let Some(master_mut) = self.characters.get_mut(&master_id) {
+                let _ = turn(master_mut, MILITARY_MASTER_REST_DIRECTION);
+            }
+        }
+    }
+
+    /// Military Master NPC tick: process messages, greet/complete-
+    /// mission scan, and the movement fallback. Ports the per-tick body
+    /// of C `military_master_driver` (minus the deferred clan/advisor
+    /// recommendation and storage-blob persistence - see this module's
+    /// doc comment).
+    pub fn process_military_master_actions(&mut self, area_id: u16) {
+        let master_ids: Vec<CharacterId> = self
+            .characters
+            .values()
+            .filter(|character| {
+                character.driver == CDR_MILITARY_MASTER
+                    && character.flags.contains(CharacterFlags::USED)
+                    && !character.flags.contains(CharacterFlags::DEAD)
+            })
+            .map(|character| character.id)
+            .collect();
+
+        for master_id in master_ids {
+            self.process_military_master_messages(master_id);
+            self.greet_nearby_military_master_players(master_id);
+            self.process_military_master_tick_action(master_id, area_id);
+        }
     }
 }

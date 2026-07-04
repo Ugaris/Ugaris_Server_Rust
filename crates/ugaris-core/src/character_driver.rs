@@ -52,6 +52,12 @@ pub const CDR_CLANCLERK: u16 = 28;
 /// opponent NPC spawned by `enter_room` (`gatekeeper_w`/`gatekeeper_m`/
 /// `gatekeeper_s` templates, `src/system/gatekeeper.c::gate_fight_driver`).
 pub const CDR_GATE_FIGHT: u16 = 40;
+/// C `#define CDR_MILITARY_MASTER 42` (`src/system/drvlib.h`): the
+/// mission-giving Military Master NPC (`src/module/military.c::
+/// military_master_driver`). `CDR_MILITARY_ADVISOR` (43, the paid
+/// mission-recommendation NPC) is not ported yet - see the "Military
+/// ranks" task in `PORTING_TODO.md`.
+pub const CDR_MILITARY_MASTER: u16 = 42;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
@@ -125,6 +131,7 @@ pub enum CharacterDriverState {
     /// a per-character named-slot store with no NPC-only restriction.
     ClanFound(ClanFoundData),
     Clanclerk(ClanclerkDriverData),
+    MilitaryMaster(MilitaryMasterDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -464,6 +471,31 @@ pub fn parse_clanclerk_driver_args(args: &str) -> ClanclerkDriverData {
     ClanclerkDriverData {
         clan: args.trim().parse::<i32>().unwrap_or(0).max(0) as u16,
     }
+}
+
+/// C `struct military_master_data`'s zone-file-parsed half
+/// (`src/module/military.c:355-364`) - just the `storage_ID` used by
+/// [`crate::world::calculate_advisor_index`]-adjacent bookkeeping. The
+/// NPC-scoped `military_master_storage` counters (clan points/quests
+/// given/solved/exp/pts per difficulty) are out of scope for this slice -
+/// see the "Military ranks" task in `PORTING_TODO.md`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MilitaryMasterDriverData {
+    pub storage_id: i32,
+}
+
+/// C `military_master_parse` (`military.c:1634-1644`): the only zone-file
+/// arg this driver reads is `storage=N;`.
+pub fn parse_military_master_driver_args(args: &str) -> MilitaryMasterDriverData {
+    let mut data = MilitaryMasterDriverData::default();
+    let mut rest = args;
+    while let Some((name, value, next)) = next_legacy_name_value(rest) {
+        if name == "storage" {
+            data.storage_id = value.parse::<i32>().unwrap_or(0);
+        }
+        rest = next;
+    }
+    data
 }
 
 /// C `struct clan_found_data` (`src/area/30/clanmaster.c:288-292`), stored
@@ -1173,6 +1205,339 @@ pub const CLANMASTER_QA: &[TextQaEntry] = &[
     },
 ];
 
+/// C `struct qa qa[]` from `src/module/military.c:89-164`, shared verbatim
+/// by both `military_master_driver` and (once ported)
+/// `military_advisor_driver`. Note `"help"`'s answer is the same
+/// copy-pasted `"Sorry, I'm just a merchant, %s!"` line every other
+/// `qa[]` table carries, even though neither NPC is a merchant -
+/// preserved verbatim per the porting rule to copy quirks, not "fix"
+/// them. `COL_LIGHT_BLUE`/`COL_RESET` markers around a few keywords in
+/// C's own `say()` calls (not this table's `answer` strings, which carry
+/// none) are dropped at the call sites that render them, same as
+/// `BANK_QA`'s doc comment explains.
+pub const MILITARY_QA: &[TextQaEntry] = &[
+    TextQaEntry {
+        words: &["how", "are", "you"],
+        answer: Some("I'm fine!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hello"],
+        answer: Some("Hello, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hi"],
+        answer: Some("Hi, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["greetings"],
+        answer: Some("Greetings, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hail"],
+        answer: Some("And hail to you, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["help"],
+        answer: Some("Sorry, I'm just a merchant, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what", "is", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["what", "is", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["who", "are", "you"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["repeat"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["favor"],
+        answer: None,
+        answer_code: 3,
+    },
+    TextQaEntry {
+        words: &["small"],
+        answer: None,
+        answer_code: 4,
+    },
+    TextQaEntry {
+        words: &["medium"],
+        answer: None,
+        answer_code: 5,
+    },
+    TextQaEntry {
+        words: &["big"],
+        answer: None,
+        answer_code: 6,
+    },
+    TextQaEntry {
+        words: &["huge"],
+        answer: None,
+        answer_code: 7,
+    },
+    TextQaEntry {
+        words: &["vast"],
+        answer: None,
+        answer_code: 8,
+    },
+    TextQaEntry {
+        words: &["pay"],
+        answer: None,
+        answer_code: 9,
+    },
+    TextQaEntry {
+        words: &["mission"],
+        answer: None,
+        answer_code: 10,
+    },
+    TextQaEntry {
+        words: &["easy"],
+        answer: None,
+        answer_code: 11,
+    },
+    TextQaEntry {
+        words: &["normal"],
+        answer: None,
+        answer_code: 12,
+    },
+    TextQaEntry {
+        words: &["hard"],
+        answer: None,
+        answer_code: 13,
+    },
+    TextQaEntry {
+        words: &["impossible"],
+        answer: None,
+        answer_code: 14,
+    },
+    TextQaEntry {
+        words: &["insane"],
+        answer: None,
+        answer_code: 15,
+    },
+    TextQaEntry {
+        words: &["failed"],
+        answer: None,
+        answer_code: 16,
+    },
+    TextQaEntry {
+        words: &["hear"],
+        answer: None,
+        answer_code: 17,
+    },
+    TextQaEntry {
+        words: &["info"],
+        answer: None,
+        answer_code: 18,
+    },
+    TextQaEntry {
+        words: &["reset"],
+        answer: None,
+        answer_code: 19,
+    },
+    TextQaEntry {
+        words: &["raise"],
+        answer: None,
+        answer_code: 20,
+    },
+    TextQaEntry {
+        words: &["promote"],
+        answer: None,
+        answer_code: 21,
+    },
+    TextQaEntry {
+        words: &["reroll"],
+        answer: None,
+        answer_code: 22,
+    },
+    TextQaEntry {
+        words: &["decline"],
+        answer: None,
+        answer_code: 22,
+    },
+    TextQaEntry {
+        words: &["new", "missions"],
+        answer: None,
+        answer_code: 22,
+    },
+    TextQaEntry {
+        words: &["easy", "demon"],
+        answer: None,
+        answer_code: 30,
+    },
+    TextQaEntry {
+        words: &["easy", "pentagram"],
+        answer: None,
+        answer_code: 30,
+    },
+    TextQaEntry {
+        words: &["normal", "demon"],
+        answer: None,
+        answer_code: 31,
+    },
+    TextQaEntry {
+        words: &["normal", "pentagram"],
+        answer: None,
+        answer_code: 31,
+    },
+    TextQaEntry {
+        words: &["hard", "demon"],
+        answer: None,
+        answer_code: 32,
+    },
+    TextQaEntry {
+        words: &["hard", "pentagram"],
+        answer: None,
+        answer_code: 32,
+    },
+    TextQaEntry {
+        words: &["impossible", "demon"],
+        answer: None,
+        answer_code: 33,
+    },
+    TextQaEntry {
+        words: &["impossible", "pentagram"],
+        answer: None,
+        answer_code: 33,
+    },
+    TextQaEntry {
+        words: &["insane", "demon"],
+        answer: None,
+        answer_code: 34,
+    },
+    TextQaEntry {
+        words: &["insane", "pentagram"],
+        answer: None,
+        answer_code: 34,
+    },
+    TextQaEntry {
+        words: &["easy", "ratling"],
+        answer: None,
+        answer_code: 35,
+    },
+    TextQaEntry {
+        words: &["easy", "rats"],
+        answer: None,
+        answer_code: 35,
+    },
+    TextQaEntry {
+        words: &["normal", "ratling"],
+        answer: None,
+        answer_code: 36,
+    },
+    TextQaEntry {
+        words: &["normal", "rats"],
+        answer: None,
+        answer_code: 36,
+    },
+    TextQaEntry {
+        words: &["hard", "ratling"],
+        answer: None,
+        answer_code: 37,
+    },
+    TextQaEntry {
+        words: &["hard", "rats"],
+        answer: None,
+        answer_code: 37,
+    },
+    TextQaEntry {
+        words: &["impossible", "ratling"],
+        answer: None,
+        answer_code: 38,
+    },
+    TextQaEntry {
+        words: &["impossible", "rats"],
+        answer: None,
+        answer_code: 38,
+    },
+    TextQaEntry {
+        words: &["insane", "ratling"],
+        answer: None,
+        answer_code: 39,
+    },
+    TextQaEntry {
+        words: &["insane", "rats"],
+        answer: None,
+        answer_code: 39,
+    },
+    TextQaEntry {
+        words: &["easy", "silver"],
+        answer: None,
+        answer_code: 40,
+    },
+    TextQaEntry {
+        words: &["easy", "mining"],
+        answer: None,
+        answer_code: 40,
+    },
+    TextQaEntry {
+        words: &["normal", "silver"],
+        answer: None,
+        answer_code: 41,
+    },
+    TextQaEntry {
+        words: &["normal", "mining"],
+        answer: None,
+        answer_code: 41,
+    },
+    TextQaEntry {
+        words: &["hard", "silver"],
+        answer: None,
+        answer_code: 42,
+    },
+    TextQaEntry {
+        words: &["hard", "mining"],
+        answer: None,
+        answer_code: 42,
+    },
+    TextQaEntry {
+        words: &["impossible", "silver"],
+        answer: None,
+        answer_code: 43,
+    },
+    TextQaEntry {
+        words: &["impossible", "mining"],
+        answer: None,
+        answer_code: 43,
+    },
+    TextQaEntry {
+        words: &["insane", "silver"],
+        answer: None,
+        answer_code: 44,
+    },
+    TextQaEntry {
+        words: &["insane", "mining"],
+        answer: None,
+        answer_code: 44,
+    },
+];
+
 //-----------------------
 // Generic per-character driver memory.
 //
@@ -1506,7 +1871,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::GateFight(_)
             | CharacterDriverState::Clanmaster(_)
             | CharacterDriverState::ClanFound(_)
-            | CharacterDriverState::Clanclerk(_),
+            | CharacterDriverState::Clanclerk(_)
+            | CharacterDriverState::MilitaryMaster(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

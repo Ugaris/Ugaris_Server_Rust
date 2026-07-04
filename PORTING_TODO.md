@@ -4095,42 +4095,123 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `complete_mission`/`greet_player`/`handle_mission_reroll` are now all
   ported as pure/`PlayerRuntime`/`World` functions (`PlayerRuntime::
   apply_mission_offer`/`accept_mission`/`greet_player`, `World::
-  complete_mission`/`mission_reroll`, see Progress Log) but have no real
-  call site yet - they need the Military Master/Advisor NPC driver to
-  actually invoke them with resolved `Character`/`World.date.yday`
-  inputs; `handle_specific_mission_request` (the paid-advisor-
-  recommendation flow, `military.c:481-580`) and `process_clan_
-  recommendation`/`process_advisor_recommendation`
-  (`military.c:1663-1750`, the advisor-recommendation-on-sight logic)
-  remain unported; the Military Master/Advisor NPC drivers themselves
-  (`military_master_driver`/`military_advisor_driver`, their `NT_CHAR`/
-  `NT_TEXT`/`NT_GIVE` message loops, and `adv_introduction`/
-  `adv_favor_desc`/`offer_favor`'s dialogue-rendering halves - the pure
-  cost math (`calculate_advisor_index`/`advisor_price`/
-  `offer_favor_cost`) is now ported, see Progress Log, but nothing calls
-  it from a live NPC yet), their `qa[]` dialogue table (`analyse_text_
-  driver`, not yet added to `character_driver.rs`'s `TextQaEntry` tables
-  the way `MERCHANT_QA`/`BANK_QA`/`GATEKEEPER_QA` were), and the storage
-  state machines (`process_master_storage`/`process_advisor_storage`)
-  plus the `dat->storage_data` quests-given/quests-solved/pts-given/
-  exp-given per-difficulty counters they own (no Rust `military_master_
-  data` equivalent yet - this shares the same "no generic storage-blob
-  persistence concept in `ugaris-db` yet" architectural gap the Arena
-  rankings task's REMAINING note also flags); the wealth-achievement
-  ladder the real `give_money` also updates on `complete_mission`'s
-  mercenary gold bonus (needs the DB-backed first-unlock announce, which
-  lives in the server crate - wire `ugaris_core::achievement::add_gold_
-  earned` at the same time a real driver call site lands); the
+  complete_mission`/`mission_reroll`, see Progress Log) and now have a
+  real call site: `CDR_MILITARY_MASTER`'s own driver
+  (`military_master_driver`, `military.c:2108-2206`) was ported in
+  iteration 112 (see Progress Log) - `handle_mission_request` (the
+  "mission" keyword handler, `military.c:1842-1896`) and the mission-
+  rendering text (`describe_mission`/`display_mission`/`offer_missions`,
+  `military.c:1194-1246`) were ported alongside it since nothing else
+  needed them before. REMAINING for the Master driver itself:
+  `process_clan_recommendation`/`process_advisor_recommendation`
+  (`military.c:1654-1755`, the clan-points-funded/advisor-recommendation-
+  on-sight greeting variants - need `military_master_data.storage_data.
+  clan_pts[]`/`ppd->recommend`, the same unported NPC-scoped storage-blob
+  gap flagged below) and the admin-only qa codes 18-21 (`info`/`reset`/
+  `raise`/`promote` - `info` needs the same storage-blob counters;
+  `/milinfo`/`/milpoints`/`/milstats` already cover admin needs). The
+  Military *Advisor* NPC (`CDR_MILITARY_ADVISOR`) remains entirely
+  unported: `handle_specific_mission_request` (the paid-advisor-
+  recommendation flow, `military.c:481-580`), `adv_introduction`/
+  `adv_favor_desc`/`offer_favor`'s dialogue-rendering halves (the pure
+  cost math - `calculate_advisor_index`/`advisor_price`/
+  `offer_favor_cost` - is already ported, see Progress Log, but nothing
+  calls it from a live NPC yet), `process_favor_payment`,
+  `handle_advisor_message`, and `military_advisor_driver` itself (its
+  `qa[]` table is already ported as the shared `MILITARY_QA` - see
+  Progress Log - since C's `qa[]` is one global table used by both
+  drivers via `analyse_text_driver`). Both drivers' storage state
+  machines (`process_master_storage`/`process_advisor_storage`) plus the
+  `dat->storage_data` quests-given/quests-solved/pts-given/exp-given
+  per-difficulty counters they own (no Rust `military_master_data`/
+  `military_advisor_data` equivalent yet - this shares the same "no
+  generic storage-blob persistence concept in `ugaris-db` yet"
+  architectural gap the Arena rankings task's REMAINING note also
+  flags); the wealth-achievement ladder the real `give_money` also
+  updates on `complete_mission`'s mercenary gold bonus (needs the DB-
+  backed first-unlock announce, which lives in the server crate - wire
+  `ugaris_core::achievement::add_gold_earned` at the same time; not done
+  this iteration since `complete_mission`'s own text still goes through
+  `queue_system_text` rather than `npc_quiet_say`, see below); the
   `SV_QUEST_EXT` mod-packet that shows the active mission in the client's
   quest log (so `check_military_solve`'s own `sendquestlog` calls are
   also not reproduced yet - cosmetic only, the progress state itself is
-  correct). A player-facing `#rank`-style status command was
+  correct); and `complete_mission`'s own reward text still goes through
+  `World::queue_system_text`/`queue_system_text_bytes` instead of
+  `npc_quiet_say` from the Master NPC (a pre-existing simplification from
+  an earlier iteration, not tightened this iteration to avoid touching
+  its already-tested behavior - functionally correct, just delivered as
+  a system message rather than an NPC speech bubble). A player-facing
+  `#rank`-style status command was
   also not added (there is no such command anywhere in the
   current C `command.c` tree either - checked; only the admin-only
   `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
   so there is nothing to port here; dropping this as a documentation
   correction, not a real gap).
-  Progress Log (iteration 111): ported the next self-contained slice on
+  Progress Log (iteration 112): ported `CDR_MILITARY_MASTER`'s own driver
+  (`military_master_driver`, `military.c:2108-2206`), the first real call
+  site for every function the previous 4 iterations left dangling.
+  `crates/ugaris-core/src/character_driver.rs` gained `CDR_MILITARY_
+  MASTER = 42`, `MilitaryMasterDriverData`/`parse_military_master_driver_
+  args` (`military_master_parse`, just the `storage=N;` zone-file arg),
+  a new `CharacterDriverState::MilitaryMaster` variant (plus the 4
+  now-non-exhaustive match sites that needed a new arm), and `MILITARY_QA`
+  (the 44-row `qa[]` table, `military.c:89-164`, transcribed verbatim -
+  shared with the still-unported Advisor driver, same as C's own single
+  global table). `crates/ugaris-core/src/zone.rs` wires zone-load parsing
+  next to the `CDR_BANK` block. `crates/ugaris-core/src/world/military.rs`
+  gained: `describe_mission_text`/`display_mission_text`/
+  `offer_missions_text`/`mission_difficulty_name` (C `describe_mission`/
+  `display_mission`/`offer_missions`/`diff_name[]`, `military.c:339,
+  1194-1246`, the mission-rendering text); `World::handle_mission_request`
+  (C `handle_mission_request`, `military.c:1842-1896`, the "mission"
+  keyword handler - generates a fresh offer table via the existing
+  `apply_mission_offer` if none exists today, reproducing the same
+  rank-cubed `military_pts` floor-up `mission_reroll` already applies at
+  its own call site, and short-circuits to an advisor-recommendation
+  reply when a fresh preferred-type/difficulty mission was just
+  generated); a new `MilitaryMasterEvent` enum (`NearbyPlayer`/`Repeat`/
+  `MissionRequest`/`AcceptMission`/`Failed`/`Hear`/`Reroll`) plus
+  `World::process_military_master_actions`/`process_military_master_
+  messages`/`greet_nearby_military_master_players`/`process_military_
+  master_tick_action` (`military_master_driver`'s message loop, `NT_CHAR`
+  greet/complete-mission scan - ported as the same periodic nearby-player-
+  scan simplification `world/bank.rs`/`world/merchant.rs` already
+  established, since `greet_player`'s own `master_state` gate and
+  `complete_mission`'s own `solved_mission` gate already make repeated
+  per-tick delivery a no-op once handled - and the stationary rest-
+  position/`DX_DOWN`-facing movement fallback). Like `world/bank.rs`,
+  `World` cannot reach `PlayerRuntime` (where `military_ppd` lives), so
+  nearly the entire message body is deferred as a `MilitaryMasterEvent` -
+  a wider deferral than bank's narrower `BankEvent` since almost every
+  branch of this driver touches `military_ppd`. `crates/ugaris-server/src/
+  military.rs` gained `apply_military_master_events` (mirroring
+  `apply_bank_events`'s shape): drains the queue, reaches `PlayerRuntime`
+  via `runtime.player_for_character_mut`, calls `greet_player`/
+  `accept_mission`/`handle_mission_request`/`mission_reroll`, and renders
+  each outcome enum into the exact C `say()` text (including two
+  verbatim-preserved C quirks: the "failed"/"hear" no-active-mission
+  branches substitute the army rank *title*, not the player's name -
+  `get_army_rank_string(co)` vs. `ch[co].name` - while their success
+  branches use the opposite). Wired into the tick loop in `main.rs` right
+  after `clanclerk`'s call site. Deliberately out of scope (see REMAINING
+  above): clan/advisor-recommendation greeting variants, admin qa codes
+  18-21, the Advisor NPC entirely, and the storage-blob NPC statistics.
+  23 new tests in `crates/ugaris-core/src/world/tests/military.rs` (driver
+  arg parsing, `mission_difficulty_name`/`describe_mission_text`/
+  `display_mission_text`/`offer_missions_text` rendering and edge cases,
+  every `handle_mission_request` branch including the advisor-
+  recommendation short-circuit and today's-table reuse, the `NT_CHAR`
+  greet-scan distance/visibility gating, every qa-code-to-event mapping
+  including all 5 difficulty keywords/3 reroll aliases in table-driven
+  sub-cases, the Master-ignored advisor/admin/combo codes staying silent,
+  out-of-range text being ignored, and the `NT_GIVE` destroy-plus-reply
+  path). `cargo fmt --all`, `cargo test --workspace` (1653 ugaris-core
+  [+23 this slice] + 47 db + 3 net + 37 protocol + 553 server, all green,
+  zero failures), `cargo build -p ugaris-server` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panics for 12+ seconds.
+  Earlier progress (iteration 111): ported the next self-contained slice on
   top of the offer/accept/complete-mission trio, still with no NPC driver
   call site (the driver itself needs its own future slice - see
   REMAINING - and its storage-blob persistence needs an architectural

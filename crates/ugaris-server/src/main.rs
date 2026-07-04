@@ -5717,6 +5717,18 @@ async fn main() -> anyhow::Result<()> {
                 let clanclerk_events_applied =
                     apply_clanclerk_events(&mut world, &clan_log_repository, current_unix_time())
                         .await;
+                // C `military_master_driver`: the mission-giving Military
+                // Master NPC (`src/module/military.c`).
+                world.process_military_master_actions(config.area_id);
+                let military_master_events_applied =
+                    apply_military_master_events(&mut world, &mut runtime, config.area_id);
+                if military_master_events_applied != 0 {
+                    info!(
+                        military_master_events_applied,
+                        tick = world.tick.0,
+                        "applied military master mission-dialogue events"
+                    );
+                }
                 if clanclerk_events_applied != 0 {
                     info!(
                         clanclerk_events_applied,
