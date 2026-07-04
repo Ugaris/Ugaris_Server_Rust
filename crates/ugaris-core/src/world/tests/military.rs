@@ -2156,6 +2156,38 @@ fn process_favor_payment_arranges_plain_favor_and_grants_points() {
     assert_eq!(player.military_current_pts(), 2 + 2 * 2);
     assert_eq!(player.advisor_state(), 1);
     assert_eq!(player.military_advisor_last(7), 101);
+    // C `add_cost(ppd->advisor_cost, dat->storage_data + ppd->
+    // advisor_storage_nr)` (`military.c:2421`): storage_id 5, slot 2
+    // ("big" favor) records the 1200 payment.
+    assert_eq!(world.military_advisor_storage.earned(5, 2), 1200);
+    assert_eq!(world.military_advisor_storage.sold(5, 2), 1);
+    // Other slots/storage ids stay untouched.
+    assert_eq!(world.military_advisor_storage.sold(5, 0), 0);
+    assert_eq!(world.military_advisor_storage.sold(6, 2), 0);
+}
+
+#[test]
+fn process_favor_payment_records_cost_across_multiple_sales() {
+    let mut world = World::default();
+    let mut character_data = character(1);
+    character_data.gold = 10_000;
+    world.add_character(character_data);
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_current_advisor(9);
+    player.set_advisor_state(2);
+    player.set_advisor_cost(300);
+    player.set_advisor_storage_nr(0); // "small" favor
+
+    let _ = world.process_favor_payment(CharacterId(1), &mut player, 0, 9, 100);
+
+    // A second sale of a different favor size on the same NPC.
+    player.set_advisor_state(2);
+    player.set_advisor_cost(700);
+    player.set_advisor_storage_nr(0);
+    let _ = world.process_favor_payment(CharacterId(1), &mut player, 0, 9, 100);
+
+    assert_eq!(world.military_advisor_storage.earned(9, 0), 1000);
+    assert_eq!(world.military_advisor_storage.sold(9, 0), 2);
 }
 
 #[test]
@@ -2329,6 +2361,31 @@ fn military_advisor_master_only_and_admin_keywords_are_silently_ignored() {
             "keyword {keyword:?} should not queue a message-driven event, got {events:?}"
         );
     }
+}
+
+// C `military.c:2523-2525`'s `if (!(ch[co].flags & CF_GOD)) { break; }`
+// guard on the admin-only "info" code: a `CF_GOD`-flagged speaker queues
+// the matching event (unlike the non-admin `recruit` speaker exercised by
+// `military_advisor_master_only_and_admin_keywords_are_silently_ignored`
+// above).
+#[test]
+fn military_advisor_info_keyword_queues_event_for_god_speaker() {
+    let mut world = World::default();
+    assert!(world.spawn_character(advisor_npc(1, 10), 10, 10));
+    let mut admin = recruit(2);
+    admin.flags |= CharacterFlags::GOD;
+    assert!(world.spawn_character(admin, 10, 10));
+
+    if let Some(advisor) = world.characters.get_mut(&CharacterId(1)) {
+        advisor.push_driver_text_message(CharacterId(2), "info");
+    }
+    world.process_military_advisor_actions(0);
+
+    let events = world.drain_pending_military_advisor_events();
+    assert!(events.contains(&MilitaryAdvisorEvent::Info {
+        advisor_id: CharacterId(1),
+        player_id: CharacterId(2),
+    }));
 }
 
 #[test]

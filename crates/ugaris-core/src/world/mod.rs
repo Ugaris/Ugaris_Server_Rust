@@ -246,6 +246,12 @@ pub struct World {
     /// persistence yet - see [`crate::world::MilitaryMasterStorageRegistry`]'s
     /// doc comment.
     pub military_master_storage: MilitaryMasterStorageRegistry,
+    /// Military Advisor NPC-scoped sales-economy storage blobs
+    /// (`struct military_advisor_data`'s `cost_data storage_data[5]`),
+    /// keyed by each NPC's zone-file `storage=N;` id. In-memory only, no
+    /// DB persistence yet - see
+    /// [`crate::world::MilitaryAdvisorStorageRegistry`]'s doc comment.
+    pub military_advisor_storage: MilitaryAdvisorStorageRegistry,
     pub show_attack_debug: bool,
     pub timers: TimerQueue,
     pub scheduler: TaskScheduler,

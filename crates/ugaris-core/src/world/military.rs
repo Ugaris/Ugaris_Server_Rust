@@ -165,11 +165,26 @@
 //!
 //! Still out of scope (documented on [`MilitaryMasterStorageRegistry`]'s
 //! own doc comment): DB persistence for the registry (in-memory only,
-//! resets on restart), the admin-only qa codes 18-21 (`info` needs the
-//! quest counters; `reset`/`raise`/`promote` don't touch storage at all
-//! and remain unported only because no one has ported the admin-facing
-//! qa codes yet), and the Advisor driver's own `struct cost_data`
-//! storage-blob economy (same architectural gap, different consumer).
+//! resets on restart), the admin-only qa codes 19-21 (`reset`/`raise`/
+//! `promote` don't touch storage at all and remain unported only because
+//! no one has ported the admin-facing qa codes yet).
+//!
+//! This ninth slice closes the Advisor driver's own `struct cost_data`
+//! sales-economy gap: [`CostData`]/[`MilitaryAdvisorStorage`]/
+//! [`MilitaryAdvisorStorageRegistry`] (mirroring [`MilitaryMasterStorage`]/
+//! [`MilitaryMasterStorageRegistry`]'s shape - in-memory only, no DB
+//! persistence yet), `add_cost` wired into [`World::process_favor_
+//! payment`], and the Advisor's own admin-only qa code 18 (`info`,
+//! `military.c:2525-2538`) as [`MilitaryAdvisorEvent::Info`], applied by
+//! `ugaris-server`'s `apply_military_advisor_info` (mirrors
+//! `apply_military_master_info`'s shape). The `amount[20]`/`date[20]`
+//! rolling sale-history window and `created` timestamp are not ported -
+//! see [`CostData`]'s doc comment for why (they only ever fed the
+//! never-called `calc_cost`). `update_advisor_storage`/`process_advisor_
+//! storage` (the periodic async-DB-blob persistence state machine) remain
+//! unported for the same reason [`MilitaryMasterStorageRegistry`]'s own
+//! `process_master_storage` was never ported: the in-memory registry
+//! supersedes the state machine entirely.
 
 use super::*;
 use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome, MILITARY_QA};
@@ -521,6 +536,14 @@ pub fn favor_size_name(favor_size: i32) -> &'static str {
     }
 }
 
+/// C `handle_advisor_message`'s admin-only "info" qa code's own
+/// `static char *fav_name[5]` (`military.c:2532`). Deliberately **not**
+/// the same strings as [`favor_size_name`] - C itself uses "normal" here
+/// for index 1 where `offer_favor`'s own switch says "medium", a genuine
+/// (if seemingly accidental) inconsistency between the two tables,
+/// reproduced verbatim rather than "fixed" to match.
+pub const ADVISOR_INFO_FAVOR_NAMES: [&str; 5] = ["small", "normal", "big", "huge", "vast"];
+
 /// C `handle_specific_mission_request`/`process_favor_payment`'s
 /// mission-type name table (`military.c:521-533`, `2429-2440`).
 pub fn mission_type_name(mission_type: i32) -> &'static str {
@@ -715,11 +738,12 @@ impl World {
     }
 
     /// C `process_favor_payment(cn, co, ppd, dat, idx)` (`military.c:
-    /// 2402-2474`). The `add_cost`/`update_advisor_storage` sales-economy
-    /// bookkeeping on a successful payment is deliberately out of scope
-    /// (no Rust storage-blob equivalent yet - see this module's doc
-    /// comment); the gold deduction and `ppd` state transition (the part
-    /// that matters for gameplay) are ported in full.
+    /// 2402-2474`). `add_cost(ppd->advisor_cost, dat->storage_data +
+    /// ppd->advisor_storage_nr)` is ported via [`MilitaryAdvisorStorageRegistry::
+    /// add_cost`]; `update_advisor_storage`'s `storage_state`
+    /// bump (the C-only async-DB-blob state machine kickoff) is not
+    /// reproduced since the in-memory registry has no such state machine
+    /// to kick - see this module's doc comment.
     pub fn process_favor_payment(
         &mut self,
         character_id: CharacterId,
@@ -743,6 +767,12 @@ impl World {
         }
         character.gold -= advisor_cost;
         character.flags.insert(CharacterFlags::ITEMS);
+
+        self.military_advisor_storage.add_cost(
+            storage_id,
+            player.advisor_storage_nr().clamp(0, 4) as usize,
+            advisor_cost as i32,
+        );
 
         let outcome = if player.temp_mission_type() > 0 {
             let mission_type = player.temp_mission_type();
@@ -2001,6 +2031,145 @@ impl MilitaryMasterStorageRegistry {
     }
 }
 
+/// C `struct cost_data` (`system/tool.h:94-101`): a single favor size's
+/// market-driven sales counters. Only [`Self::earned`]/[`Self::sold`] are
+/// ported - the rolling `amount[20]`/`date[20]` sale-history window and
+/// the `created` creation timestamp exist in C purely to feed
+/// `calc_cost`'s market-driven pricing formula (`tool.c:3187-3215`), and
+/// `calc_cost` is never actually called anywhere in the C tree (checked
+/// via `grep -rn calc_cost src/` - only its own declaration/definition
+/// match), so those fields would be genuinely dead weight with no reader
+/// anywhere, unlike `earned`/`sold` which the admin-only "info" qa code
+/// (`military.c:2534-2537`) does read back.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CostData {
+    /// `dat->earned` (`long long`): total gold (in copper/gold-cent
+    /// units, matching `ch[].gold`) ever recorded via `add_cost`.
+    earned: i64,
+    /// `dat->sold` (`int`): number of `add_cost` calls ever recorded.
+    sold: i32,
+}
+
+impl CostData {
+    /// C `add_cost(cost, dat)`'s `dat->earned += cost; dat->sold++;`
+    /// half (`tool.c:3219-3226`) - the `amount`/`date` ring-buffer shift
+    /// is intentionally not reproduced, see this type's doc comment.
+    fn add_cost(&mut self, cost: i32) {
+        self.earned += i64::from(cost);
+        self.sold += 1;
+    }
+}
+
+/// C `struct military_advisor_data`'s `struct cost_data storage_data[5]`
+/// (`military.c:374`): one [`CostData`] slot per favor size (small/
+/// normal/big/huge/vast, indices `0..=4`) - the same 5-way index
+/// `ppd->advisor_storage_nr` already uses for both plain favors
+/// ([`World::offer_favor`]'s `favor_size`) and specific mission requests
+/// ([`World::handle_specific_mission_request`]'s `difficulty`, reused as
+/// the storage index verbatim by C's own `dat->storage_data +
+/// ppd->advisor_storage_nr` in `process_favor_payment`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MilitaryAdvisorStorage {
+    cost_data: [CostData; 5],
+}
+
+impl MilitaryAdvisorStorage {
+    /// `dat->storage_data[n].earned`. Out-of-range `n` reads as `0`,
+    /// matching a fresh zero-initialized slot.
+    pub fn earned(&self, favor_size: usize) -> i64 {
+        self.cost_data.get(favor_size).map_or(0, |d| d.earned)
+    }
+
+    /// `dat->storage_data[n].sold`.
+    pub fn sold(&self, favor_size: usize) -> i32 {
+        self.cost_data.get(favor_size).map_or(0, |d| d.sold)
+    }
+
+    /// C `add_cost(ppd->advisor_cost, dat->storage_data +
+    /// ppd->advisor_storage_nr)` (`military.c:2421`).
+    fn add_cost(&mut self, favor_size: usize, cost: i32) {
+        if let Some(slot) = self.cost_data.get_mut(favor_size) {
+            slot.add_cost(cost);
+        }
+    }
+}
+
+/// A registry of [`MilitaryAdvisorStorage`] blobs keyed by `storage_id`
+/// (the zone-file `storage=N;` arg every Military Advisor NPC is
+/// configured with - `crate::character_driver::MilitaryAdvisorDriverData`),
+/// mirroring [`MilitaryMasterStorageRegistry`]'s own shape exactly (one
+/// typed struct per consumer, in-memory only for now - see that type's
+/// doc comment for the rationale). DB persistence for this registry
+/// (a `military_advisor_storage(storage_id integer primary key,
+/// storage_json jsonb, updated_at)` table following `crates/ugaris-db/
+/// src/military.rs`'s `PgMilitaryMasterStorageRepository` pattern) is
+/// left for a future slice - see the "Military ranks" task in
+/// `PORTING_TODO.md`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct MilitaryAdvisorStorageRegistry {
+    entries: std::collections::BTreeMap<i32, MilitaryAdvisorStorage>,
+    #[serde(skip)]
+    dirty: bool,
+}
+
+impl MilitaryAdvisorStorageRegistry {
+    /// Read-only lookup; a `storage_id` with no entry yet reads as a
+    /// fresh all-zero [`MilitaryAdvisorStorage`], matching C's own
+    /// zero-initialized `struct military_advisor_data` before the first
+    /// `create_storage` round trip completes.
+    pub fn earned(&self, storage_id: i32, favor_size: usize) -> i64 {
+        self.entries
+            .get(&storage_id)
+            .map_or(0, |storage| storage.earned(favor_size))
+    }
+
+    /// `dat->storage_data[n].sold`.
+    pub fn sold(&self, storage_id: i32, favor_size: usize) -> i32 {
+        self.entries
+            .get(&storage_id)
+            .map_or(0, |storage| storage.sold(favor_size))
+    }
+
+    /// C `add_cost(ppd->advisor_cost, dat->storage_data +
+    /// ppd->advisor_storage_nr)` (`military.c:2421`), fed by
+    /// [`World::process_favor_payment`]. Creates the entry on first use,
+    /// matching C's `create_storage` lazily bringing a fresh zeroed blob
+    /// into existence.
+    fn add_cost(&mut self, storage_id: i32, favor_size: usize, cost: i32) {
+        self.entries
+            .entry(storage_id)
+            .or_default()
+            .add_cost(favor_size, cost);
+        self.dirty = true;
+    }
+
+    /// Whether any entry has changed since the last [`Self::clear_dirty`].
+    pub fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
+    }
+
+    /// All `(storage_id, storage)` rows currently held, for a future DB
+    /// repository's per-row upsert on save (mirrors
+    /// [`MilitaryMasterStorageRegistry::iter`]).
+    pub fn iter(&self) -> impl Iterator<Item = (i32, &MilitaryAdvisorStorage)> {
+        self.entries.iter().map(|(id, storage)| (*id, storage))
+    }
+
+    /// Rebuilds a registry from persisted `(storage_id, storage)` rows
+    /// without marking it dirty (mirrors
+    /// [`MilitaryMasterStorageRegistry::from_rows`]).
+    pub fn from_rows(rows: impl IntoIterator<Item = (i32, MilitaryAdvisorStorage)>) -> Self {
+        Self {
+            entries: rows.into_iter().collect(),
+            dirty: false,
+        }
+    }
+}
+
 impl World {
     /// C `process_clan_recommendation(cn, co, ppd, dat)`
     /// (`military.c:1654-1674`): grants `+5 military_current_pts` (C's
@@ -2637,15 +2806,17 @@ impl World {
 ///
 /// Deliberately out of scope for this slice (documented here, not
 /// silently dropped - see the "Military ranks" task in
-/// `PORTING_TODO.md`):
-/// - The admin-only qa code 18 (`info`, `military.c:2525-2538`) - needs
-///   the still-unported `dat->storage_data` sales-economy counters (same
-///   architectural gap `military_master_data.storage_data` and the Arena
-///   rankings task's REMAINING note both flag).
-/// - `update_advisor_storage`/`process_advisor_storage` (the periodic
-///   `military_advisor_data.storage_data` persistence tick) and
-///   `add_cost`'s sales-economy bookkeeping inside `process_favor_
-///   payment` - no Rust storage-blob equivalent exists (see above).
+/// `PORTING_TODO.md`); closed in a later ("ninth") slice - see this
+/// module's doc comment:
+/// - The admin-only qa code 18 (`info`, `military.c:2525-2538`) - needed
+///   the still-unported `dat->storage_data` sales-economy counters.
+/// - `add_cost`'s sales-economy bookkeeping inside `process_favor_
+///   payment`.
+///
+/// Still out of scope: `update_advisor_storage`/`process_advisor_storage`
+/// (the periodic async-DB-blob persistence state machine, superseded by
+/// the in-memory registry the same way `MilitaryMasterStorageRegistry`
+/// supersedes `process_master_storage` - see [`CostData`]'s doc comment).
 impl World {
     /// Reads the Advisor NPC's `storage_ID` (`military.c:369-375`'s
     /// `struct military_advisor_data`, stored via zone-file `storage=N;`
@@ -2757,11 +2928,21 @@ impl World {
                                 mission_type,
                             });
                         }
-                        // Master-only codes (10-17, 22), the admin-only
-                        // "info" code (18, deferred - see this module's
-                        // doc comment), unused admin codes (19-21), and
-                        // any unmatched text: no handling, matches C's
-                        // own `default: return 0`.
+                        // C: `if (!(ch[co].flags & CF_GOD)) { break; }`
+                        // (`military.c:2523-2525`), same admin-only guard
+                        // shape as the Master driver's codes 18-21.
+                        TextAnalysisOutcome::Matched(18)
+                            if speaker.flags.contains(CharacterFlags::GOD) =>
+                        {
+                            events.push(MilitaryAdvisorEvent::Info {
+                                advisor_id,
+                                player_id: speaker_id,
+                            });
+                        }
+                        // Master-only codes (10-17, 19-22), a non-admin
+                        // speaker's "info" (18), and any unmatched text:
+                        // no handling, matches C's own `default: return
+                        // 0;` / admin-gate `break;`.
                         TextAnalysisOutcome::Matched(_) | TextAnalysisOutcome::NoMatch => {}
                     }
                 }
@@ -2853,8 +3034,8 @@ impl World {
 
     /// Military Advisor NPC tick: process messages, greet scan, and the
     /// movement fallback. Ports the per-tick body of C
-    /// `military_advisor_driver` (minus the deferred admin "info" code
-    /// and storage-blob persistence - see this module's doc comment).
+    /// `military_advisor_driver` (minus the still-unported storage-blob
+    /// async persistence state machine - see this module's doc comment).
     pub fn process_military_advisor_actions(&mut self, area_id: u16) {
         let advisor_ids: Vec<CharacterId> = self
             .characters
@@ -2922,5 +3103,12 @@ pub enum MilitaryAdvisorEvent {
         player_id: CharacterId,
         difficulty: i32,
         mission_type: i32,
+    },
+    /// Admin-only qa code 18 ("info", `military.c:2525-2538`): shows the
+    /// speaker each favor size's sales stats (only nonzero-`sold` sizes),
+    /// via [`MilitaryAdvisorStorageRegistry`].
+    Info {
+        advisor_id: CharacterId,
+        player_id: CharacterId,
     },
 }

@@ -20,7 +20,7 @@ use ugaris_core::world::{
     offer_missions_text, AcceptMissionOutcome, AdvisorRecommendationOutcome, GreetPlayerOutcome,
     MilitaryAdvisorEvent, MilitaryMasterEvent, MilitaryMissionKillCheck, MilitaryMissionProgress,
     MissionRequestOutcome, MissionRerollOutcome, OfferFavorOutcome, ProcessFavorPaymentOutcome,
-    SingleMission, SpecificMissionRequestOutcome,
+    SingleMission, SpecificMissionRequestOutcome, ADVISOR_INFO_FAVOR_NAMES,
 };
 
 /// C `check_military_solve(co, cn)`'s killer-side (`co`, `check.killer_id`
@@ -745,9 +745,55 @@ pub(crate) fn apply_military_advisor_events(
                     applied += 1;
                 }
             }
+            MilitaryAdvisorEvent::Info {
+                advisor_id,
+                player_id,
+            } => {
+                if apply_military_advisor_info(world, advisor_id, player_id) {
+                    applied += 1;
+                }
+            }
         }
     }
     applied
+}
+
+/// C qa code 18 ("info", admin-only, `military.c:2525-2538`): each favor
+/// size's sales stats (`sold > 0` gate), rendered as its own `say()` line
+/// via `npc_quiet_say`. Unlike [`apply_military_master_info`], this needs
+/// no `PlayerRuntime` data at all - every value it reads lives on the
+/// Advisor NPC's own storage-blob registry - but still validates
+/// `player_id` resolves to a real character, matching C's own `co` always
+/// being a live character by construction (`handle_advisor_message` is
+/// only ever called from a real `NT_TEXT` message's speaker).
+fn apply_military_advisor_info(
+    world: &mut World,
+    advisor_id: CharacterId,
+    player_id: CharacterId,
+) -> bool {
+    if world.characters.get(&player_id).is_none() {
+        return false;
+    }
+    let storage_id = world.advisor_storage_id(advisor_id);
+
+    for (favor_size, name) in ADVISOR_INFO_FAVOR_NAMES.iter().enumerate() {
+        let sold = world.military_advisor_storage.sold(storage_id, favor_size);
+        if sold > 0 {
+            let earned = world
+                .military_advisor_storage
+                .earned(storage_id, favor_size);
+            let earned_gold = earned as f64 / 100.0;
+            let per_favor = earned_gold / f64::from(sold);
+            world.npc_quiet_say(
+                advisor_id,
+                &format!(
+                    "I have earned {earned_gold:.2}G on {sold} {name} favors ({per_favor:.2}G \
+                     per favor)"
+                ),
+            );
+        }
+    }
+    true
 }
 
 /// C `military_advisor_driver`'s `NT_CHAR` greeting branch
