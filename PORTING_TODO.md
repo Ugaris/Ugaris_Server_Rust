@@ -3250,10 +3250,11 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (C's own `buy` is unconditionally disabled dead code so that part is
   actually done; `use` needs the still-unported dungeon-guard economy's
   cost/budget functions). The clanmaster NPC's `rank:`/`fire:` text
-  commands (leader rank-management, plus the offline-player
-  `task_set_clan_rank`/`task_fire_from_clan` async DB-task fallback - a
-  whole separate subsystem this codebase has no equivalent of), the
-  `ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLAN_MASTER`/
+  commands (leader rank-management) were ported in iteration 97 for
+  *online* targets only - see Progress Log; the offline-player
+  `task_set_clan_rank`/`task_fire_from_clan` async DB-task fallback (a
+  whole separate subsystem this codebase has no equivalent of) remains
+  unported. The `ACHIEVEMENT_CLAN_MEMBER`/`ACHIEVEMENT_CLAN_MASTER`/
   `ACHIEVEMENT_CLUB_MEMBER` award wiring for the club variant (clubs
   aren't founded/joined anywhere - `club.c` itself isn't ported), and
   `clan_trade_bonus` (blocked on the merchant system itself not being
@@ -3780,6 +3781,54 @@ Unlocks every quest NPC. Do these before any P4 area work.
     club-variant achievement wiring, `clan_trade_bonus`, and the
     dungeon-guard economy proper (guard counts/potions - `use`/`buy`'s
     real logic).
+  - 2026-07-04 (iteration 97): ported the clanmaster NPC's `rank:`/`fire:`
+    leader rank-management text commands (`clanmaster.c:446-547`) in
+    `crates/ugaris-core/src/world/clanmaster.rs` - online-target branch
+    only. Both require `char_clan_if_leader(speaker_id, 4)` (C's
+    `!get_char_clan(co) || ch[co].clan_rank < 4`). `rank:` reuses C's own
+    `ptr += 6` quirk (one character past `"rank:"`'s 5, contrast the
+    `+= 5` used by `name:`/`join:` above it in the same function) via a
+    new `take_name_token` helper (skip leading whitespace, then take up
+    to 79 bytes stopping at quote/whitespace/end - mirrors C's
+    `tmp[n]`-fill loop) feeding the remainder into `clanclerk.rs`'s
+    existing `parse_int_atoi` (made `pub(super)`, first cross-module
+    reuse) for the trailing `rank = atoi(ptr)`; validates `0..=4`
+    ("You must use a rank between 0 and 4."), the not-paying-above-rank-1
+    gate, and the same-clan-as-caller gate, in that exact order, before
+    setting `Character::clan_rank` directly (no `ClanRegistry` method
+    needed - C's own `rank:` handler mutates `ch[cc].clan_rank` inline
+    too, never calling a clan.c setter). `fire:` calls the existing
+    `ClanRegistry::remove_member` after the same same-clan check. Added
+    a new `find_online_player_by_name` helper (C's `find_char_byname`/
+    `getfirst_char`+`getnext_char` search loop, first `CF_PLAYER` name
+    case-insensitive match - same shape as `world/trader.rs`'s sibling
+    helper) since neither command restricts the search to nearby/visible
+    characters, matching C. The offline-player fallback (C's
+    `lookup_name`+`task_set_clan_rank`/`task_fire_from_clan`, an async
+    DB-task queue that applies the mutation whenever that player next
+    logs in) has no equivalent subsystem in this codebase at all (no
+    persistent name index, no task queue) - documented inline and left
+    unported, matching this task's own REMAINING notes rather than
+    silently guessing at a substitute. Two new `ClanmasterEvent` variants
+    (`RankSet`/`MemberFired`) carry the clan-log entries C's `rank:`
+    handler (`clanmaster.c:493-494`, prio 30, `"%s rank was set to %d by
+    %s"`) and `remove_member` (`clan.c:1210-1213`, prio 15, `"%s was
+    fired from clan by %s"`, master = the firing leader unlike the
+    existing `leave!`-driven `MemberLeft`'s self-master) write, applied
+    by two new match arms in `crate::world_events::
+    apply_clanmaster_events`. 10 new tests in `world/tests/
+    clanmaster.rs` (leader-rank gate, out-of-range rank, non-paying-
+    target-above-1, target-outside-clan, success + queued event, and the
+    unmatched-offline-name no-op, for both commands - `fire:` skips the
+    out-of-range-equivalent case since it takes no numeric argument).
+    `cargo fmt --all`, `cargo test --workspace` (1538 ugaris-core [+10] +
+    47 db + 3 net + 37 protocol + 520 server, all green, zero failures),
+    `cargo build -p ugaris-server` clean with zero warnings, 10s
+    boot-smoke confirmed "entering Rust game loop" with no panics.
+    REMAINING for the "Clan system" task overall (updated above): the
+    offline-player DB-task fallback for `rank:`/`fire:`, club-variant
+    achievement wiring, `clan_trade_bonus`, and the dungeon-guard economy
+    proper (guard counts/potions - `use`/`buy`'s real logic).
 
 - [ ] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

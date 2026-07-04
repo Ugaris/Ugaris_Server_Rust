@@ -966,8 +966,11 @@ impl World {
 
 /// C `atoi(ptr)` on the remainder of the message after a keyword prefix
 /// (`deposit`/`withdraw`'s own parsing, `clanmaster.c:730,792`) - no
-/// token-skipping, just a direct `atoi` of whatever follows.
-fn parse_int_atoi(text: &str) -> i32 {
+/// token-skipping, just a direct `atoi` of whatever follows. `pub(super)`
+/// so `world::clanmaster`'s `rank:` handler (`clanmaster.c:446-500`, its
+/// own `atoi(ptr)` call after parsing the target name) can reuse it
+/// instead of duplicating the same C-`atoi` semantics.
+pub(super) fn parse_int_atoi(text: &str) -> i32 {
     let bytes = text.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] as char).is_whitespace() {

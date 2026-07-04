@@ -10,12 +10,17 @@
 //! (previously only reachable from the `/joinclan`/`/killclan`/`/renclan`
 //! GM cheats - see `PORTING_TODO.md`'s "Clan system" task).
 //!
+//! `rank:`/`fire:` (leader rank-management text commands, `clanmaster.c:
+//! 446-547`) are ported for *online* targets only - C's own fallback for
+//! an unmatched name (`task_set_clan_rank`/`task_fire_from_clan`, an
+//! async DB-task queue that schedules the same mutation for whenever that
+//! player next logs in) has no equivalent subsystem in this codebase at
+//! all (no persistent name index, no task queue), so that branch is left
+//! unported and documented, not silently dropped - see
+//! `clanmaster_handle_rank_command`/`clanmaster_handle_fire_command`.
+//!
 //! Deliberately out of scope for this slice (documented in that task's
 //! REMAINING notes, not silently dropped):
-//! - `rank:`/`fire:` (leader rank-management text commands, plus the
-//!   offline-player `task_set_clan_rank`/`task_fire_from_clan` async
-//!   DB-task fallback - a whole separate subsystem this codebase has no
-//!   equivalent of yet).
 //! - `CDR_CLANCLERK` (`clanclerk_driver`, the members-only economy driver:
 //!   deposit/withdraw/bonus/relation/rank-name/website/message/raiding
 //!   commands - needs 8+ new `clan.rs` functions - money, jewel-in-vault
@@ -48,6 +53,7 @@
 //! - COL_LIGHT_BLUE/COL_RESET color markers around "clan" in the greeting
 //!   are dropped (same simplification as every other ported NPC greeting
 //!   in this codebase); wording stays byte-for-byte identical otherwise.
+use super::clanclerk::parse_int_atoi;
 use super::*;
 use crate::character_driver::{
     mem_add_driver, mem_check_driver, mem_erase_driver, ClanFoundData, ClanmasterDriverData,
@@ -116,6 +122,23 @@ pub enum ClanmasterEvent {
         member_id: CharacterId,
         clan_nr: u16,
     },
+    /// C `clanmaster_driver`'s `rank:` handler's `add_clanlog`
+    /// (`clanmaster.c:493-494`, prio 30): "%s rank was set to %d by %s".
+    RankSet {
+        clan_nr: u16,
+        target_id: CharacterId,
+        rank: u8,
+        setter_name: String,
+    },
+    /// C `remove_member` (`clan.c:1208-1221`) via `fire:`
+    /// (`clanmaster.c:539`, `remove_member(cc, co)`): same clan-log shape
+    /// as [`ClanmasterEvent::MemberLeft`], but master = the firing
+    /// leader, not the fired member themself.
+    MemberFired {
+        member_id: CharacterId,
+        clan_nr: u16,
+        firer_name: String,
+    },
 }
 
 /// C `get_char_club` (`src/system/club.c:29-51`) approximated as a bare
@@ -123,6 +146,30 @@ pub enum ClanmasterEvent {
 /// comment).
 fn is_club_member(character: &Character) -> bool {
     character.clan >= CLUB_OFFSET
+}
+
+/// C `rank:`/`fire:`'s shared name-token parser (`clanmaster.c:472-480,
+/// 517-525`): skip leading whitespace, then take up to 79 bytes stopping
+/// at the first quote/whitespace/end. Returns `(name, remainder)`, where
+/// `remainder` starts at the stopping byte (matching C's `ptr` after the
+/// loop, still pointing *at* the delimiter rather than past it - `rank:`
+/// feeds this straight into `atoi`, which skips leading whitespace
+/// itself).
+fn take_name_token(text: &str) -> (String, &str) {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && (bytes[i] as char).is_ascii_whitespace() {
+        i += 1;
+    }
+    let start = i;
+    while i < bytes.len() && i - start < 79 {
+        let c = bytes[i] as char;
+        if c == '"' || c.is_ascii_whitespace() {
+            break;
+        }
+        i += 1;
+    }
+    (text[start..i].to_string(), &text[i..])
 }
 
 impl World {
@@ -259,6 +306,19 @@ impl World {
         }
         if lower.contains("leave!") {
             self.clanmaster_handle_leave_command(clanmaster_id, speaker_id);
+        }
+        // C: `ptr += 6` after the `strcasestr` match (one past "rank:"/
+        // "fire:"'s own 5 characters) - see `clanmaster_handle_rank_command`/
+        // `clanmaster_handle_fire_command`'s doc comments for why this is
+        // *not* the same `+= <keyword length>` offset `name:`/`accept:`/
+        // `join:` use above.
+        if let Some(pos) = lower.find("rank:") {
+            let rest = text.get(pos + 6..).unwrap_or("").to_string();
+            self.clanmaster_handle_rank_command(clanmaster_id, speaker_id, &rest);
+        }
+        if let Some(pos) = lower.find("fire:") {
+            let rest = text.get(pos + 6..).unwrap_or("").to_string();
+            self.clanmaster_handle_fire_command(clanmaster_id, speaker_id, &rest);
         }
     }
 
@@ -472,6 +532,154 @@ impl World {
             .push(ClanmasterEvent::MemberLeft {
                 member_id: speaker_id,
                 clan_nr,
+            });
+    }
+
+    /// C `find_char_byname` (`base.c:4189-4201`) as used by the `rank:`/
+    /// `fire:` handlers' own `getfirst_char`/`getnext_char` search loop
+    /// (`clanmaster.c:465-467,522-524`): first `CF_PLAYER` character
+    /// whose name case-insensitively matches. See `world/trader.rs`'s
+    /// sibling helper/module doc comment for the iteration-order caveat.
+    fn find_online_player_by_name(&self, name: &str) -> Option<CharacterId> {
+        let mut candidates: Vec<&Character> = self
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        candidates.first().map(|character| character.id)
+    }
+
+    /// C `clanmaster_driver`'s `rank:` handler (`clanmaster.c:446-500`).
+    /// Only the online-target branch is ported: an unmatched name falls
+    /// through to C's `lookup_name`/`task_set_clan_rank` async DB-task
+    /// fallback, which has no equivalent subsystem in this codebase (no
+    /// persistent name index, no task queue) - see the module doc
+    /// comment.
+    fn clanmaster_handle_rank_command(
+        &mut self,
+        clanmaster_id: CharacterId,
+        speaker_id: CharacterId,
+        rest: &str,
+    ) {
+        let Some(speaker_name) = self.characters.get(&speaker_id).map(|c| c.name.clone()) else {
+            return;
+        };
+        let Some(clan_nr) = self.char_clan_if_leader(speaker_id, 4) else {
+            self.npc_quiet_say(
+                clanmaster_id,
+                &format!("You are not a clan leader, {speaker_name}."),
+            );
+            return;
+        };
+        let (target_name, remainder) = take_name_token(rest);
+        if target_name.is_empty() {
+            return;
+        }
+        // C: `rank = atoi(ptr)`, `ptr` being whatever followed the parsed
+        // name (`clanmaster.c:490`).
+        let rank = parse_int_atoi(remainder);
+        if !(0..=4).contains(&rank) {
+            self.npc_quiet_say(clanmaster_id, "You must use a rank between 0 and 4.");
+            return;
+        }
+        let rank = rank as u8;
+
+        let Some(target_id) = self.find_online_player_by_name(&target_name) else {
+            return;
+        };
+        let target_display_name = self
+            .characters
+            .get(&target_id)
+            .map(|c| c.name.clone())
+            .unwrap_or(target_name);
+        let target_is_paid = self
+            .characters
+            .get(&target_id)
+            .is_some_and(|c| c.flags.contains(CharacterFlags::PAID));
+        if !target_is_paid && rank > 1 {
+            self.npc_quiet_say(
+                clanmaster_id,
+                &format!(
+                    "{target_display_name} is not a paying player, you cannot set the rank higher than 1."
+                ),
+            );
+            return;
+        }
+        if self.char_clan_if_leader(target_id, 0) == Some(clan_nr) {
+            if let Some(target) = self.characters.get_mut(&target_id) {
+                target.clan_rank = rank;
+            }
+            self.npc_quiet_say(
+                clanmaster_id,
+                &format!("Set {target_display_name}'s rank to {rank}."),
+            );
+            self.pending_clanmaster_events
+                .push(ClanmasterEvent::RankSet {
+                    clan_nr,
+                    target_id,
+                    rank,
+                    setter_name: speaker_name,
+                });
+        } else {
+            self.npc_quiet_say(
+                clanmaster_id,
+                "You cannot change the rank of those not belonging to your clan.",
+            );
+        }
+    }
+
+    /// C `clanmaster_driver`'s `fire:` handler (`clanmaster.c:503-547`).
+    /// Only the online-target branch is ported - see
+    /// `clanmaster_handle_rank_command`'s doc comment/the module doc
+    /// comment for why the offline `task_fire_from_clan` fallback isn't.
+    fn clanmaster_handle_fire_command(
+        &mut self,
+        clanmaster_id: CharacterId,
+        speaker_id: CharacterId,
+        rest: &str,
+    ) {
+        let Some(speaker_name) = self.characters.get(&speaker_id).map(|c| c.name.clone()) else {
+            return;
+        };
+        let Some(clan_nr) = self.char_clan_if_leader(speaker_id, 4) else {
+            self.npc_quiet_say(
+                clanmaster_id,
+                &format!("You are not a clan leader, {speaker_name}."),
+            );
+            return;
+        };
+        let (target_name, _remainder) = take_name_token(rest);
+        if target_name.is_empty() {
+            return;
+        }
+        let Some(target_id) = self.find_online_player_by_name(&target_name) else {
+            return;
+        };
+        if self.char_clan_if_leader(target_id, 0) != Some(clan_nr) {
+            self.npc_quiet_say(
+                clanmaster_id,
+                "You cannot fire those not belonging to your clan.",
+            );
+            return;
+        }
+        let Some(target_display_name) = self.characters.get(&target_id).map(|c| c.name.clone())
+        else {
+            return;
+        };
+        let Some(target) = self.characters.get_mut(&target_id) else {
+            return;
+        };
+        self.clan_registry.remove_member(target);
+        self.npc_quiet_say(clanmaster_id, &format!("Fired: {target_display_name}."));
+        self.pending_clanmaster_events
+            .push(ClanmasterEvent::MemberFired {
+                member_id: target_id,
+                clan_nr,
+                firer_name: speaker_name,
             });
     }
 

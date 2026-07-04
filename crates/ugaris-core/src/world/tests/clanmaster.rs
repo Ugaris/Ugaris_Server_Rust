@@ -574,3 +574,273 @@ fn memory_clear_timer_erases_greet_memory() {
     world.process_clanmaster_actions(0, 0);
     assert_eq!(world.drain_pending_area_texts().len(), 1);
 }
+
+#[test]
+fn rank_command_requires_clan_leader_rank() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 3; // below the rank-4 leader threshold
+    assert!(world.spawn_character(leader, 10, 10));
+    let mut member = player(3, "Bob");
+    let _ = world.clan_registry.add_member(&mut member, nr);
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "rank: Bob 2");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You are not a clan leader, Alice.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan_rank, 0);
+}
+
+#[test]
+fn rank_command_rejects_out_of_range_rank() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 4;
+    assert!(world.spawn_character(leader, 10, 10));
+    let mut member = player(3, "Bob");
+    let _ = world.clan_registry.add_member(&mut member, nr);
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "rank: Bob 7");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You must use a rank between 0 and 4.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan_rank, 0);
+}
+
+#[test]
+fn rank_command_rejects_non_paying_target_above_rank_1() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 4;
+    assert!(world.spawn_character(leader, 10, 10));
+    let mut member = player(3, "Bob");
+    member.flags.remove(CharacterFlags::PAID);
+    let _ = world.clan_registry.add_member(&mut member, nr);
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "rank: Bob 2");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Bob is not a paying player, you cannot set the rank higher than 1.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan_rank, 0);
+}
+
+#[test]
+fn rank_command_rejects_target_outside_clan() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    let other_nr = world.clan_registry.found_clan("Others", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 4;
+    assert!(world.spawn_character(leader, 10, 10));
+    let mut outsider = player(3, "Eve");
+    let _ = world.clan_registry.add_member(&mut outsider, other_nr);
+    assert!(world.spawn_character(outsider, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "rank: Eve 2");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("You cannot change the rank of those not belonging to your clan.")));
+}
+
+#[test]
+fn rank_command_sets_rank_and_queues_clan_log_event() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 4;
+    assert!(world.spawn_character(leader, 10, 10));
+    let mut member = player(3, "Bob");
+    let _ = world.clan_registry.add_member(&mut member, nr);
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "rank: Bob 2");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Set Bob's rank to 2.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan_rank, 2);
+
+    let events = world.drain_pending_clanmaster_events();
+    assert_eq!(
+        events,
+        vec![ClanmasterEvent::RankSet {
+            clan_nr: nr,
+            target_id: CharacterId(3),
+            rank: 2,
+            setter_name: "Alice".into(),
+        }]
+    );
+}
+
+#[test]
+fn rank_command_ignores_unmatched_offline_name() {
+    // C falls back to `lookup_name`/`task_set_clan_rank` (an async
+    // DB-task queue) for a name that doesn't match anyone currently
+    // online - no equivalent subsystem exists here, so this is a no-op,
+    // not a crash or a bogus "not found" message (C itself sends no
+    // player feedback on this path either, aside from a would-be
+    // "Sorry, no player by the name %s found." that only fires for a
+    // *resolved-but-unknown* name, a case this codebase can't distinguish
+    // without a persistent name index).
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 4;
+    assert!(world.spawn_character(leader, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "rank: Ghost 2");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    assert!(world.drain_pending_area_texts().is_empty());
+    assert!(world.drain_pending_clanmaster_events().is_empty());
+}
+
+#[test]
+fn fire_command_requires_clan_leader_rank() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 3;
+    assert!(world.spawn_character(leader, 10, 10));
+    let mut member = player(3, "Bob");
+    let _ = world.clan_registry.add_member(&mut member, nr);
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "fire: Bob");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You are not a clan leader, Alice.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan, nr);
+}
+
+#[test]
+fn fire_command_rejects_target_outside_clan() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    let other_nr = world.clan_registry.found_clan("Others", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 4;
+    assert!(world.spawn_character(leader, 10, 10));
+    let mut outsider = player(3, "Eve");
+    let _ = world.clan_registry.add_member(&mut outsider, other_nr);
+    assert!(world.spawn_character(outsider, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "fire: Eve");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("You cannot fire those not belonging to your clan.")));
+    assert_eq!(
+        world.characters.get(&CharacterId(3)).unwrap().clan,
+        other_nr
+    );
+}
+
+#[test]
+fn fire_command_removes_membership_and_queues_clan_log_event() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 4;
+    assert!(world.spawn_character(leader, 10, 10));
+    let mut member = player(3, "Bob");
+    let _ = world.clan_registry.add_member(&mut member, nr);
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "fire: Bob");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains("Fired: Bob.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan, 0);
+
+    let events = world.drain_pending_clanmaster_events();
+    assert_eq!(
+        events,
+        vec![ClanmasterEvent::MemberFired {
+            member_id: CharacterId(3),
+            clan_nr: nr,
+            firer_name: "Alice".into(),
+        }]
+    );
+}
+
+#[test]
+fn fire_command_ignores_unmatched_offline_name() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut leader, nr);
+    leader.clan_rank = 4;
+    assert!(world.spawn_character(leader, 10, 10));
+
+    if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clanmaster.push_driver_text_message(CharacterId(2), "fire: Ghost");
+    }
+    world.process_clanmaster_actions(0, 0);
+
+    assert!(world.drain_pending_area_texts().is_empty());
+    assert!(world.drain_pending_clanmaster_events().is_empty());
+}

@@ -830,6 +830,57 @@ pub(crate) async fn apply_clanmaster_events(
                 .await;
                 applied += 1;
             }
+            ClanmasterEvent::RankSet {
+                clan_nr,
+                target_id,
+                rank,
+                setter_name,
+            } => {
+                let Some(target_name) = world.characters.get(&target_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `clanmaster_driver`'s `rank:` handler's own
+                // `add_clanlog` call (`clanmaster.c:493-494`, prio 30):
+                // "%s rank was set to %d by %s".
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    target_id,
+                    30,
+                    format!("{target_name} rank was set to {rank} by {setter_name}"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
+            ClanmasterEvent::MemberFired {
+                member_id,
+                clan_nr,
+                firer_name,
+            } => {
+                let Some(member_name) = world.characters.get(&member_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `remove_member(cc, co)` via `fire:` (`clanmaster.c:
+                // 539`): master = the firing leader, not the fired member
+                // themself (contrast `ClanmasterEvent::MemberLeft`).
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    member_id,
+                    15,
+                    format!("{member_name} was fired from clan by {firer_name}"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
         }
     }
     applied
