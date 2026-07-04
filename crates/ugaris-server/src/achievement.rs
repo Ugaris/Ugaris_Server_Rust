@@ -483,6 +483,49 @@ pub(crate) async fn award_enemy_killed_achievement(
     record_achievement_firsts_and_announce(world, repository, killer_id, &name, &unlocked).await;
 }
 
+/// C `check_levelup` (`src/system/tool.c:1352-1354`): `if (ch[cn].flags &
+/// CF_PLAYER) { achievement_check_level(cn, ch[cn].level); }`, fired once
+/// per level gained (queued as [`ugaris_core::LevelAchievementCheck`] by
+/// `World::check_levelup`, already `CharacterFlags::PLAYER`-gated there). A
+/// no-op if the character has no live `PlayerRuntime` (mirrors C's
+/// `CF_PLAYER` gate as a defense in depth, even though the queue is already
+/// filtered). Also records the DB first-unlock/grats-announce tail for
+/// anything newly unlocked (see `award_play_time_minute`'s doc comment).
+pub(crate) async fn award_level_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    character_id: CharacterId,
+    level: i32,
+    is_hardcore: bool,
+) {
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::check_level(
+        &mut player.achievement_data,
+        level,
+        is_hardcore,
+        &name,
+        now,
+    );
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
+}
+
 /// C `flower_driver` (`src/module/alchemy.c:1306-1315`): `if (ch[cn].flags
 /// & CF_PLAYER) { ... if (it[in].drdata[0] >= 1 && <= 7)
 /// achievement_add_flowers(cn, 1); else if (>= 8 && <= 16)

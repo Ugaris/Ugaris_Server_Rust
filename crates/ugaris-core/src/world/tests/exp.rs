@@ -349,3 +349,66 @@ fn give_exp_triggers_check_levelup_unless_nolevel() {
 
     assert_eq!(world.characters[&CharacterId(1)].level, 2);
 }
+
+// C `check_levelup`'s `if (ch[cn].flags & CF_PLAYER) achievement_check_
+// level(cn, ch[cn].level);` (`tool.c:1352-1354`), queued for the server
+// crate as `LevelAchievementCheck`.
+#[test]
+fn check_levelup_queues_a_level_achievement_check_per_level_for_players() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.flags.insert(CharacterFlags::PLAYER);
+    player.exp = 81; // exp2level(81) == 3, two levels above the starting 1.
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.check_levelup(CharacterId(1));
+
+    let checks = world.drain_pending_level_achievements();
+    assert_eq!(checks.len(), 2);
+    assert_eq!(checks[0].character_id, CharacterId(1));
+    assert_eq!(checks[0].level, 2);
+    assert!(!checks[0].is_hardcore);
+    assert_eq!(checks[1].level, 3);
+}
+
+#[test]
+fn check_levelup_does_not_queue_a_level_achievement_check_for_non_players() {
+    let mut world = World::default();
+    let mut player = character(1); // not `CharacterFlags::PLAYER` (NPC)
+    player.exp = 16;
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.check_levelup(CharacterId(1));
+
+    assert!(world.drain_pending_level_achievements().is_empty());
+}
+
+#[test]
+fn check_levelup_queues_hardcore_flag_on_the_level_achievement_check() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.flags.insert(CharacterFlags::PLAYER);
+    player.flags.insert(CharacterFlags::HARDCORE);
+    player.exp = 16;
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.check_levelup(CharacterId(1));
+
+    let checks = world.drain_pending_level_achievements();
+    assert_eq!(checks.len(), 1);
+    assert!(checks[0].is_hardcore);
+}
+
+#[test]
+fn drain_pending_level_achievements_is_empty_when_nothing_leveled() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.flags.insert(CharacterFlags::PLAYER);
+    player.level = 5;
+    player.exp = 0;
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.check_levelup(CharacterId(1));
+
+    assert!(world.drain_pending_level_achievements().is_empty());
+}

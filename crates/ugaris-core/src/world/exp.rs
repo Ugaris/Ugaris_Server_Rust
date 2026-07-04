@@ -19,6 +19,20 @@
 
 use super::*;
 
+/// Queued `achievement_check_level(cn, level)` check (`tool.c:1352-1354`),
+/// fired once per level gained inside `check_levelup`'s loop, gated on
+/// `CharacterFlags::PLAYER` matching C's `if (ch[cn].flags & CF_PLAYER)`
+/// guard. The server crate drains this and applies the actual
+/// `AccountAchievements`/`PlayerRuntime` state update (`ugaris-core` has no
+/// access to `PlayerRuntime`), mirroring the `KillAchievementAward`/
+/// `FirstKillCheck` queue pattern in `world/death.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LevelAchievementCheck {
+    pub character_id: CharacterId,
+    pub level: u32,
+    pub is_hardcore: bool,
+}
+
 /// C `exp2level(val)` (`src/system/tool.c:1272`):
 /// `max(1, (int)(sqrt(sqrt(val))))`.
 pub fn exp2level(exp: u32) -> u32 {
@@ -121,11 +135,13 @@ impl World {
     /// matching `apply_chat_command`'s channel delivery rule), and the map
     /// dirty-sector refresh (C `set_sector`).
     ///
+    /// `achievement_check_level(cn, level)` (`CF_PLAYER`-gated) is queued
+    /// via [`LevelAchievementCheck`] for the server crate to drain and
+    /// apply (`ugaris-core` has no access to `PlayerRuntime`'s achievement
+    /// state).
+    ///
     /// Documented gaps (not silently dropped, matching C `check_levelup`
     /// exactly otherwise):
-    /// - `achievement_check_level(cn, level)` has no Rust equivalent (the
-    ///   existing `AchievementState` only tracks chest/transport
-    ///   milestones, not level);
     /// - `reset_name(cn)` (name-color-by-level refresh) is unported;
     /// - `dlog(cn, 0, "gained a level")` debug-log call is skipped (no Rust
     ///   `dlog` sink exists).
@@ -147,10 +163,12 @@ impl World {
             character.level += 1;
             let level = character.level;
             let (x, y) = (character.x, character.y);
+            let is_hardcore = character.flags.contains(CharacterFlags::HARDCORE);
+            let is_player = character.flags.contains(CharacterFlags::PLAYER);
 
             let mut messages = vec![format!("Thou gained a level! Thou art level {level} now.")];
 
-            if character.flags.contains(CharacterFlags::HARDCORE) {
+            if is_hardcore {
                 character.saves = 0;
             } else {
                 character.saves = character.saves.saturating_add(1).min(10);
@@ -198,7 +216,20 @@ impl World {
                 self.queue_system_text(character_id, message);
             }
             self.mark_dirty_sector(usize::from(x), usize::from(y));
+
+            if is_player {
+                self.pending_level_achievements.push(LevelAchievementCheck {
+                    character_id,
+                    level,
+                    is_hardcore,
+                });
+            }
         }
         leveled
+    }
+
+    /// Drains achievement-level checks queued by [`Self::check_levelup`].
+    pub fn drain_pending_level_achievements(&mut self) -> Vec<LevelAchievementCheck> {
+        std::mem::take(&mut self.pending_level_achievements)
     }
 }

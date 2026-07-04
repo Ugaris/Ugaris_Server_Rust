@@ -2640,24 +2640,57 @@
         "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Text: {\"filePath\": \"/home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-server/src",
         "error: could not compile `ugaris-core` (lib test) due to 12 previous errors"
       ]
+    },
+    {
+      "iteration": 83,
+      "startedAt": "2026-07-04T12:09:33.675Z",
+      "endedAt": "2026-07-04T12:24:34.675Z",
+      "durationMs": 900404,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/exp.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/exp.rs",
+        "crates/ugaris-server/src/achievement.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/achievement.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 485 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 1382 filtered out; finished in 0.00s",
+        "test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 414 filtered out; finished in 0.01s",
+        "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"warning|FAILED|test result\"",
+        "test result: ok. 1408 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
+        "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 90425088,
+  "totalDurationMs": 91325492,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 82,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 83,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 30,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 31,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 31,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 32,
       "test error::tests::error_constants_match_legacy_header ... ok": 19,
       "test error::tests::error_strings_match_legacy_table ... ok": 16,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 11,
@@ -2972,7 +3005,7 @@
       "test result: ok. 420 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
       "test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 1343 filtered out; finished in 0.00s": 1,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
-      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
+      "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
       "- `cargo test --workspace` — 1393/36/3/37/431 all green, zero failures (unchanged counts; no new tes": 1,
       "test result: ok. 431 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
@@ -2995,7 +3028,7 @@
       "test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "+| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 1,
       "test result: ok. 1396 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 2,
-      "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
+      "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error; 1 warning em": 1,
       "**Verification:** `cargo fmt --all`, `cargo test --workspace` (1396 core + 38 db + 3 net + 37 protoc": 1,
@@ -3016,7 +3049,12 @@
       "test result: ok. 479 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
       "test result: ok. 1397 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
       "Now the exp_before/exp_after test failure (\"left: 7, right: 1\") — let's re-check that assertion loca": 1,
-      ".ok_or_else(|| ZoneError::UnknownCharacter(key.to_string()))?": 1
+      ".ok_or_else(|| ZoneError::UnknownCharacter(key.to_string()))?": 1,
+      "test result: ok. 485 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 1382 filtered out; finished in 0.00s": 1,
+      "test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 414 filtered out; finished in 0.01s": 1,
+      "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
+      "test result: ok. 1408 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

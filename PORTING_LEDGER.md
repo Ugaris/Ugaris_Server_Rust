@@ -5213,3 +5213,65 @@ sync/award trigger end to end.
   military; tunnels - `tunnel.c` area unported; arena PvP; pentagram
   solve reward - `pents.c` reward mechanic unported) - see
   `PORTING_TODO.md`'s task REMAINING note.
+
+### Iteration 83: Achievements - `check_levelup`'s `achievement_check_level` call site
+
+- Closed the level-up achievement gap flagged since `check_levelup`
+  itself was first ported (see the `World::check_levelup` cross-check
+  note above, iteration ~50-ish): C `check_levelup` (`src/system/
+  tool.c:1352-1354`) fires `if (ch[cn].flags & CF_PLAYER) {
+  achievement_check_level(cn, ch[cn].level); }` once per level gained
+  inside its `while` loop. `ugaris_core::achievement::check_level`
+  (Rising Beginner/Experienced Hero/Ugaris Veteran/Legendary Adventurer/
+  Demon Slayer/Master of Hell/Master of Ugaris, plus the Hardcore Hero/
+  Hardcore Legend hardcore-only variants) already existed and was fully
+  unit-tested but had no live call site - `check_levelup` lives in
+  `ugaris-core` and cannot reach `PlayerRuntime`'s achievement state
+  (that lives one layer up, mutated only by the server crate).
+- Added a `KillAchievementAward`/`FirstKillCheck`-style queue: `Level
+  AchievementCheck { character_id, level, is_hardcore }` +
+  `World::pending_level_achievements`/`drain_pending_level_
+  achievements` (`crates/ugaris-core/src/world/exp.rs`), pushed once per
+  level-up iteration inside `check_levelup`'s loop, gated on `Character
+  Flags::PLAYER` (matches C's `CF_PLAYER` guard exactly - including
+  firing once per level when several levels are gained in a single
+  `check_levelup` call, matching C's per-iteration call cardinality).
+  Required a small refactor inside the loop: `is_hardcore`/`is_player`
+  booleans are now captured into locals right after the level
+  increment (previously read inline via `character.flags.contains(..)`
+  at their point of use) so the new push doesn't fight the borrow
+  checker against the `character: &mut Character` binding whose NLL
+  lifetime already ends at earlier uses (`self.mark_dirty_sector(..)`
+  needs `&mut self` a few lines later).
+- Added `award_level_achievement(world, runtime, repository,
+  character_id, level, is_hardcore)` (`crates/ugaris-server/src/
+  achievement.rs`), following the `award_enemy_killed_achievement`/
+  `award_play_time_minute` no-op-without-`PlayerRuntime` pattern exactly
+  (calls the already-tested `check_level`, fans out one `SV_ACH_UNLOCK`
+  per newly-unlocked type, records the DB first-unlock/grats-announce
+  tail). Wired into `crates/ugaris-server/src/main.rs`'s tick loop right
+  next to the existing kill-achievement/first-kill-check drains.
+- Added 4 new `ugaris-core` tests (`world/tests/exp.rs`): one queued
+  check per level gained for `CharacterFlags::PLAYER` characters (two
+  levels gained -> two queue entries, levels 2 and 3), no queue entry
+  at all for non-player/NPC characters, `is_hardcore` correctly
+  propagated onto the queued check, and an empty drain when no level
+  was gained. Added 4 new `ugaris-server` tests (`tests/achievement.
+  rs`): Rising Beginner unlock at level 10 with its `SV_ACH_UNLOCK`
+  packet landing in the right session, a sub-threshold level (5)
+  unlocking nothing, Hardcore Hero awarded alongside Ugaris Veteran only
+  when `is_hardcore` is true, and the no-`PlayerRuntime` no-op path.
+- Verification: `cargo fmt --all` clean. `cargo test --workspace`: 1408
+  ugaris-core [+4] + 38 db + 3 net + 37 protocol + 489 server [+4], all
+  green, zero failures. `cargo build -p ugaris-server` clean, zero
+  warnings. A 10s boot-smoke confirmed "entering Rust game loop" with no
+  panics (this change touches the tick loop's new level-achievement
+  drain call site).
+- Still `[~]`: every other remaining gap is now gated on a wholly
+  unported gameplay system (mining reward RNG, professions, exploration
+  beyond transport, clans/clubs, military, tunnels, arena, pentagram
+  solve/lucky-pent reward) plus `give_char_item_smart`'s silent-branch
+  call (iteration 81) - none of these can progress further without
+  first porting their own P3/P4-tracked system, so this task stays
+  `[~]` with no further self-contained slices available until one of
+  those lands.

@@ -3134,6 +3134,50 @@ Unlocks every quest NPC. Do these before any P4 area work.
   transport, clans/clubs, military, tunnels, arena, pentagram solve/
   lucky-pent reward), plus `give_char_item_smart`'s silent-branch call
   noted in iteration 81's log.
+  Progress Log (iteration 83): closed the last self-contained achievement
+  gap that didn't require an unported gameplay system -
+  `achievement_check_level` (`src/system/tool.c:1352-1354`), C
+  `check_levelup`'s `if (ch[cn].flags & CF_PLAYER) achievement_check_
+  level(cn, ch[cn].level);`, fired once per level gained inside the
+  while loop. `World::check_levelup` (`crates/ugaris-core/src/world/
+  exp.rs`) itself was already fully ported (iteration ~50s) but its own
+  doc comment flagged this one line as an unaddressed gap since
+  `ugaris-core` has no access to `PlayerRuntime`'s achievement state.
+  Closed it with the same queue pattern as `KillAchievementAward`/
+  `FirstKillCheck` (`world/death.rs`): added `LevelAchievementCheck`
+  (character_id/level/is_hardcore) + `World::pending_level_achievements`/
+  `drain_pending_level_achievements`, pushed once per level-up iteration
+  gated on `CharacterFlags::PLAYER` (matching C's `CF_PLAYER` guard
+  exactly, including firing once per level when multiple levels are
+  gained in one `check_levelup` call - `check_level`'s threshold checks
+  are idempotent/monotonic so this has the same net effect as C's
+  per-iteration call). Added `award_level_achievement(world, runtime,
+  repository, character_id, level, is_hardcore)` (`crates/ugaris-server/
+  src/achievement.rs`), mirroring the existing `award_enemy_killed_
+  achievement`/`award_play_time_minute` no-op-without-`PlayerRuntime`
+  pattern exactly (calls the already-tested `ugaris_core::achievement::
+  check_level`, fans out `SV_ACH_UNLOCK` per newly-unlocked type, and
+  records the DB first-unlock/grats-announce tail); wired into `main.
+  rs`'s tick loop right next to the existing kill-achievement/
+  first-kill-check drains. Added 4 new `ugaris-core` tests (`world/
+  tests/exp.rs`: one queued check per level gained for players, no queue
+  entry for non-players/NPCs, `is_hardcore` flag propagation, and the
+  no-level-gained empty-drain case) and 4 new `ugaris-server` tests
+  (`tests/achievement.rs`: Rising Beginner unlock at level 10 with its
+  `SV_ACH_UNLOCK` packet, a sub-threshold level unlocking nothing,
+  Hardcore Hero only awarded alongside Ugaris Veteran when hardcore, and
+  the no-`PlayerRuntime` no-op path). `cargo fmt --all`, `cargo test
+  --workspace` (1408 ugaris-core [+4] + 38 db + 3 net + 37 protocol + 489
+  server [+4], all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, and a 10s boot-smoke confirmed "entering
+  Rust game loop" with no panics (touches the tick loop's level-up
+  achievement drain call site). Still unwired: gameplay call sites gated
+  on wholly unported systems (mining reward RNG, professions,
+  exploration beyond transport, clans/clubs, military, tunnels, arena,
+  pentagram solve/lucky-pent reward), plus `give_char_item_smart`'s
+  silent-branch call noted in iteration 81's log - all of these require
+  their own gameplay system to be ported first (tracked by their own P3/
+  P4 tasks below), so this task stays `[~]` until those land.
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

@@ -714,6 +714,80 @@ async fn award_play_time_minute_is_a_noop_for_characters_without_a_player_runtim
 }
 
 // ============================================================================
+// `award_level_achievement` (`src/system/tool.c:1352-1354`, `check_levelup`'s
+// `achievement_check_level`).
+// ============================================================================
+
+#[tokio::test]
+async fn award_level_achievement_unlocks_rising_beginner_at_level_ten() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    award_level_achievement(&mut world, &mut runtime, &None, character_id, 10, false).await;
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::RisingBeginner));
+
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0][0], SV_MOD3);
+    assert_eq!(payloads[0][2], SV_ACH_UNLOCK);
+    assert_eq!(payloads[0][3], AchievementType::RisingBeginner as u8);
+}
+
+#[tokio::test]
+async fn award_level_achievement_below_threshold_unlocks_nothing() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    award_level_achievement(&mut world, &mut runtime, &None, character_id, 5, false).await;
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(!player
+        .achievement_data
+        .is_unlocked(AchievementType::RisingBeginner));
+    assert!(runtime.tick_out.get(&1).is_none());
+}
+
+#[tokio::test]
+async fn award_level_achievement_grants_hardcore_hero_only_when_hardcore() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    award_level_achievement(&mut world, &mut runtime, &None, character_id, 50, true).await;
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::UgarisVeteran));
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::HardcoreHero));
+}
+
+#[tokio::test]
+async fn award_level_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    award_level_achievement(&mut world, &mut runtime, &None, character_id, 10, false).await;
+    assert!(runtime.player_for_character(character_id).is_none());
+}
+
+// ============================================================================
 // `award_enemy_killed_achievement` (`src/system/death.c:417-422`,
 // `kill_char`'s `achievement_add_enemy_killed`/`achievement_add_demons`).
 // ============================================================================

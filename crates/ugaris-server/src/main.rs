@@ -935,6 +935,18 @@ async fn main() -> anyhow::Result<()> {
                     )
                     .await;
                 }
+                // C check_levelup achievement_check_level.
+                for check in world.drain_pending_level_achievements() {
+                    award_level_achievement(
+                        &mut world,
+                        &mut runtime,
+                        &achievement_repository,
+                        check.character_id,
+                        check.level as i32,
+                        check.is_hardcore,
+                    )
+                    .await;
+                }
                 // C kill_char give_first_kill.
                 for check in world.drain_pending_first_kill_checks() {
                     apply_first_kill_check(
