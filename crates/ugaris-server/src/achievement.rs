@@ -674,6 +674,56 @@ pub(crate) fn give_money(
     }
 }
 
+/// C `act_take` (`src/system/act.c:305-327`)'s stone-pickup block, which
+/// only runs when `keyring_try_auto_add` did *not* consume the item (that
+/// branch `return`s early in C before reaching this check): `if
+/// (it[in].ID == IID_ALCHEMY_INGREDIENT) { int stone_drdata =
+/// it[in].drdata[0]; if (stone_drdata == 23 || stone_drdata == 24)
+/// achievement_add_stones(cn, 0, 1); else if (stone_drdata == 21)
+/// achievement_add_stones(cn, 1, 1); else if (stone_drdata == 22)
+/// achievement_add_stones(cn, 2, 1); }`. `stone_drdata` is the picked
+/// item's `drdata[0]` (`Item::driver_data[0]`); 23/24 = Earth, 21 = Fire,
+/// 22 = Ice - a no-op for any other value. A no-op if the character has no
+/// live `PlayerRuntime` (mirrors C's `CF_PLAYER` gate).
+pub(crate) fn award_stone_pickup_achievement(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    stone_drdata: u8,
+) {
+    let stone_type = match stone_drdata {
+        23 | 24 => ugaris_core::achievement::STONE_TYPE_EARTH,
+        21 => ugaris_core::achievement::STONE_TYPE_FIRE,
+        22 => ugaris_core::achievement::STONE_TYPE_ICE,
+        _ => return,
+    };
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::add_stones(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        stone_type,
+        1,
+        &name,
+        now,
+    );
+    for ty in unlocked {
+        let payload = achievement_unlock_payload(ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+}
+
 /// C `achievement_sync_all` (`achievement.c:1329-1415`): batches every
 /// achievement (all 127 defs carry a non-empty `steam_id`, so none are
 /// skipped, unlike C's defensive `if (!def->steam_id...) continue;`) into

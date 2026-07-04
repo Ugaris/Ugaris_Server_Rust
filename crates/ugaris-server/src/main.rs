@@ -1835,12 +1835,22 @@ async fn main() -> anyhow::Result<()> {
                         let Some(item_id) = completion.action_item_id else {
                             continue;
                         };
-                        match apply_keyring_auto_add_pickup(
+                        let keyring_result = apply_keyring_auto_add_pickup(
                             &mut world,
                             runtime.player_for_character_mut(completion.character_id),
                             completion.character_id,
                             item_id,
-                        ) {
+                        );
+                        // C `act_take` (`act.c:305-327`): the stone-pickup
+                        // achievement check only runs when
+                        // `keyring_try_auto_add` did NOT consume the item
+                        // (that branch `free_item`s it and `return`s early
+                        // in C before reaching this check).
+                        let stone_check_allowed = !matches!(
+                            keyring_result,
+                            Some(KeyringAutoAddPickupResult::Added { .. })
+                        );
+                        match keyring_result {
                             Some(KeyringAutoAddPickupResult::Added { key_name }) => {
                                 auto_keyring_feedback.push((
                                     completion.character_id,
@@ -1869,6 +1879,20 @@ async fn main() -> anyhow::Result<()> {
                                 auto_keyring_failed += 1;
                             }
                             None => {}
+                        }
+                        if stone_check_allowed {
+                            if let Some(item) = world.items.get(&item_id) {
+                                if item.template_id == ugaris_core::item_driver::IID_ALCHEMY_INGREDIENT {
+                                    let stone_drdata =
+                                        item.driver_data.first().copied().unwrap_or_default();
+                                    award_stone_pickup_achievement(
+                                        &world,
+                                        &mut runtime,
+                                        completion.character_id,
+                                        stone_drdata,
+                                    );
+                                }
+                            }
                         }
                     }
                     if !auto_keyring_feedback.is_empty() {

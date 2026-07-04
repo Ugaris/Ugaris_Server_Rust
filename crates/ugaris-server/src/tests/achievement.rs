@@ -1146,3 +1146,115 @@ fn give_money_still_mutates_gold_and_sends_a_message_for_characters_without_a_pl
     assert_eq!(feedback_bytes.len(), 1);
     assert!(runtime.player_for_character(character_id).is_none());
 }
+
+// ============================================================================
+// `award_stone_pickup_achievement` (`src/system/act.c:305-327`, `act_take`'s
+// stone-pickup block calling `achievement_add_stones`).
+// ============================================================================
+
+#[test]
+fn award_stone_pickup_achievement_credits_earth_stones_for_drdata_23_and_24() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .earth_stones = 49;
+
+    award_stone_pickup_achievement(&world, &mut runtime, character_id, 23);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.earth_stones, 50);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::EarthRocks));
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads[0][3], AchievementType::EarthRocks as u8);
+
+    // drdata 24 is the other Earth-stone variant.
+    let (world2, mut runtime2) = connected_player(character_id, 1);
+    runtime2
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .earth_stones = 49;
+    award_stone_pickup_achievement(&world2, &mut runtime2, character_id, 24);
+    assert!(runtime2
+        .player_for_character(character_id)
+        .unwrap()
+        .achievement_data
+        .is_unlocked(AchievementType::EarthRocks));
+}
+
+#[test]
+fn award_stone_pickup_achievement_credits_fire_stones_for_drdata_21() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .fire_stones = 99;
+
+    award_stone_pickup_achievement(&world, &mut runtime, character_id, 21);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.fire_stones, 100);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::FireRocks));
+}
+
+#[test]
+fn award_stone_pickup_achievement_credits_ice_stones_for_drdata_22() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+    runtime
+        .player_for_character_mut(character_id)
+        .unwrap()
+        .achievement_stats
+        .ice_stones = 999;
+
+    award_stone_pickup_achievement(&world, &mut runtime, character_id, 22);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.ice_stones, 1000);
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::IceRocks));
+}
+
+#[test]
+fn award_stone_pickup_achievement_ignores_unrelated_drdata_values() {
+    let character_id = CharacterId(7);
+    let (world, mut runtime) = connected_player(character_id, 1);
+
+    award_stone_pickup_achievement(&world, &mut runtime, character_id, 0);
+    award_stone_pickup_achievement(&world, &mut runtime, character_id, 20);
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.achievement_stats.earth_stones, 0);
+    assert_eq!(player.achievement_stats.fire_stones, 0);
+    assert_eq!(player.achievement_stats.ice_stones, 0);
+}
+
+#[test]
+fn award_stone_pickup_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    award_stone_pickup_achievement(&world, &mut runtime, character_id, 23);
+    assert!(runtime.player_for_character(character_id).is_none());
+}

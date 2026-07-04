@@ -2819,9 +2819,40 @@ Unlocks every quest NPC. Do these before any P4 area work.
   achievement call is gated). `cargo fmt --all`, `cargo test --workspace`
   (1396 ugaris-core + 36 db + 3 net + 37 protocol + 463 server [+5], all
   green, zero failures), `cargo build -p ugaris-server` clean with zero
-  warnings, and a 10s boot-smoke confirmed "entering Rust game loop" with
-  no panics (touches the item-driver dispatch in `main.rs`'s runtime
-  loop).
+  warnings, and a 10s boot-smoke showed "entering Rust game loop" with
+  no panics.
+  Progress Log (iteration 76): wired the stone-pickup gameplay call site -
+  C `act_take` (`src/system/act.c:305-327`)'s `if (it[in].ID ==
+  IID_ALCHEMY_INGREDIENT) { ... achievement_add_stones(cn, 0/1/2, 1); }`
+  block (keyed on the picked item's `drdata[0]`: 23/24 = Earth, 21 =
+  Fire, 22 = Ice), which in C only runs when the sibling
+  `keyring_try_auto_add` did *not* consume the item (that branch
+  `free_item`s and `return`s early, skipping the stone check). Added
+  `award_stone_pickup_achievement(world, runtime, character_id,
+  stone_drdata)` (`crates/ugaris-server/src/achievement.rs`), following
+  the same no-op-without-`PlayerRuntime` pattern as the sibling
+  `award_*` helpers; wired into `main.rs`'s existing TAKE-completion
+  loop (the same block that already calls
+  `apply_keyring_auto_add_pickup`), gated on the keyring result not
+  being `Added` and the taken item's `template_id ==
+  IID_ALCHEMY_INGREDIENT`. Also confirmed via a fresh C-tree grep that
+  `achievement_add_pvp_kill`/`achievement_add_military_mission` have
+  zero call sites anywhere in legacy C (dead code in C itself, not an
+  unported gap) - dropping "arena PvP"/"military" from the remaining-
+  gaps list below since there is nothing to port. Added 5 focused tests
+  in `tests/achievement.rs` (Earth-stone unlock at 50 for both drdata 23
+  and 24, Fire-stone unlock at 100, Ice-stone unlock at 1000, an
+  out-of-range-drdata no-op, and the no-`PlayerRuntime` no-op path).
+  Still unwired: (3) DB first-unlock/grats announcement; the ~37 other
+  `give_money` call sites (each its own P4 area task); mining reward RNG
+  (`mine.c` cascade unported); professions (`professor.c` unported);
+  exploration beyond transport; clans; tunnels (`tunnel.c` unported);
+  pentagram solve reward (`pents.c` reward mechanic unported). `cargo
+  fmt --all`, `cargo test --workspace` (1396 ugaris-core + 36 db + 3 net
+  + 37 protocol + 468 server [+5], all green, zero failures), `cargo
+  build -p ugaris-server` clean with zero warnings, and a 10s boot-smoke
+  confirmed "entering Rust game loop" with no panics (touches the
+  TAKE-completion loop in `main.rs`'s runtime loop).
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository
