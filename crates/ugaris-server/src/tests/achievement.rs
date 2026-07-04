@@ -225,12 +225,20 @@ fn achievement_data_and_stats_blocks_coexist_with_account_depot_in_one_blob() {
 // command dispatch (`achievement.c:1421-1810`, `command.c:9076-9227`).
 // ============================================================================
 
-#[test]
-fn achievements_command_reports_no_unlocks_message_like_c() {
+#[tokio::test]
+async fn achievements_command_reports_no_unlocks_message_like_c() {
     let character_id = CharacterId(7);
     let (mut world, mut runtime) = connected_god(character_id);
-    let result = apply_achievement_command(&world, &mut runtime, character_id, "/achievements", 1)
-        .expect("achievements should be handled");
+    let result = apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achievements",
+        1,
+    )
+    .await
+    .expect("achievements should be handled");
     assert_eq!(result.message_bytes.len(), 2);
     assert_eq!(
         result.message_bytes[1],
@@ -242,18 +250,26 @@ fn achievements_command_reports_no_unlocks_message_like_c() {
     let _ = &mut world;
 }
 
-#[test]
-fn achievements_command_lists_unlocked_entries_with_date_and_unlock_count() {
+#[tokio::test]
+async fn achievements_command_lists_unlocked_entries_with_date_and_unlock_count() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_god(character_id);
+    let (mut world, mut runtime) = connected_god(character_id);
     runtime.players.get_mut(&1).unwrap().achievement_data.award(
         AchievementType::FirstBlood,
         "Godmode",
         1_700_000_000,
     );
 
-    let result = apply_achievement_command(&world, &mut runtime, character_id, "/achievements", 1)
-        .expect("achievements should be handled");
+    let result = apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achievements",
+        1,
+    )
+    .await
+    .expect("achievements should be handled");
     assert_eq!(result.message_bytes.len(), 3);
     let entry = String::from_utf8_lossy(&result.message_bytes[1]).to_string();
     assert!(entry.contains("First Blood"));
@@ -265,10 +281,10 @@ fn achievements_command_lists_unlocked_entries_with_date_and_unlock_count() {
     )));
 }
 
-#[test]
-fn achstats_command_lists_every_category_like_c() {
+#[tokio::test]
+async fn achstats_command_lists_every_category_like_c() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_god(character_id);
+    let (mut world, mut runtime) = connected_god(character_id);
     {
         let stats = &mut runtime.players.get_mut(&1).unwrap().achievement_stats;
         stats.flowers_picked = 5;
@@ -278,8 +294,16 @@ fn achstats_command_lists_every_category_like_c() {
         stats.gold_mined = 200;
     }
 
-    let result = apply_achievement_command(&world, &mut runtime, character_id, "/achstats", 1)
-        .expect("achstats should be handled");
+    let result = apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achstats",
+        1,
+    )
+    .await
+    .expect("achstats should be handled");
     let lines: Vec<String> = result
         .message_bytes
         .iter()
@@ -297,22 +321,46 @@ fn achstats_command_lists_every_category_like_c() {
     assert!(lines.iter().any(|line| line == "  Gold mined: 200"));
 }
 
-#[test]
-fn achievements_and_achstats_respect_legacy_cmdcmp_prefix_lengths() {
+#[tokio::test]
+async fn achievements_and_achstats_respect_legacy_cmdcmp_prefix_lengths() {
     let character_id = CharacterId(7);
-    let (world, mut runtime) = connected_god(character_id);
+    let (mut world, mut runtime) = connected_god(character_id);
     // "achievements" has minlen 6: shorter abbreviations don't match.
-    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achie", 1).is_none());
-    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achiev", 1).is_some());
-    // "achstats" has minlen 8 == its own length: no abbreviation at all.
-    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achstat", 1).is_none());
     assert!(
-        apply_achievement_command(&world, &mut runtime, character_id, "/achstats", 1).is_some()
+        apply_achievement_command(&mut world, &mut runtime, &None, character_id, "/achie", 1)
+            .await
+            .is_none()
     );
+    assert!(
+        apply_achievement_command(&mut world, &mut runtime, &None, character_id, "/achiev", 1)
+            .await
+            .is_some()
+    );
+    // "achstats" has minlen 8 == its own length: no abbreviation at all.
+    assert!(apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achstat",
+        1
+    )
+    .await
+    .is_none());
+    assert!(apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achstats",
+        1
+    )
+    .await
+    .is_some());
 }
 
-#[test]
-fn achgive_requires_god_flag() {
+#[tokio::test]
+async fn achgive_requires_god_flag() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -323,26 +371,34 @@ fn achgive_requires_god_flag() {
         10,
     ));
     let mut runtime = ServerRuntime::default();
-    assert!(
-        apply_achievement_command(&world, &mut runtime, character_id, "/achgive Mortal 0", 1)
-            .is_none()
-    );
+    assert!(apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achgive Mortal 0",
+        1
+    )
+    .await
+    .is_none());
 }
 
-#[test]
-fn achgive_awards_and_notifies_target_session_with_unlock_and_congrats() {
+#[tokio::test]
+async fn achgive_awards_and_notifies_target_session_with_unlock_and_congrats() {
     let god_id = CharacterId(7);
     let target_id = CharacterId(8);
     let (mut world, mut runtime) = connected_god(god_id);
     add_connected_target(&mut world, &mut runtime, target_id, 2);
 
     let result = apply_achievement_command(
-        &world,
+        &mut world,
         &mut runtime,
+        &None,
         god_id,
         "/achgive Target 0", // 0 = StartedUgaris
         1_700_000_000,
     )
+    .await
     .expect("achgive should be handled");
     assert_eq!(result.messages, vec!["Achievement 0 awarded to Target."]);
 
@@ -365,19 +421,34 @@ fn achgive_awards_and_notifies_target_session_with_unlock_and_congrats() {
     assert!(!line2.is_empty());
 }
 
-#[test]
-fn achgive_rejects_unknown_player_and_bad_id() {
+#[tokio::test]
+async fn achgive_rejects_unknown_player_and_bad_id() {
     let god_id = CharacterId(7);
-    let (world, mut runtime) = connected_god(god_id);
-    let missing =
-        apply_achievement_command(&world, &mut runtime, god_id, "/achgive Ghost 0", 1).unwrap();
+    let (mut world, mut runtime) = connected_god(god_id);
+    let missing = apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        god_id,
+        "/achgive Ghost 0",
+        1,
+    )
+    .await
+    .unwrap();
     assert_eq!(missing.messages, vec!["Player 'Ghost' not found."]);
 
     let mut world2 = world;
     add_connected_target(&mut world2, &mut runtime, CharacterId(8), 2);
-    let bad_id =
-        apply_achievement_command(&world2, &mut runtime, god_id, "/achgive Target 9999", 1)
-            .unwrap();
+    let bad_id = apply_achievement_command(
+        &mut world2,
+        &mut runtime,
+        &None,
+        god_id,
+        "/achgive Target 9999",
+        1,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         bad_id.messages,
         vec![format!(
@@ -387,8 +458,8 @@ fn achgive_rejects_unknown_player_and_bad_id() {
     );
 }
 
-#[test]
-fn achfix_awards_level_won_profession_and_stat_thresholds_for_self() {
+#[tokio::test]
+async fn achfix_awards_level_won_profession_and_stat_thresholds_for_self() {
     let character_id = CharacterId(7);
     let (mut world, mut runtime) = connected_god(character_id);
     {
@@ -404,8 +475,10 @@ fn achfix_awards_level_won_profession_and_stat_thresholds_for_self() {
         .achievement_stats
         .chests_opened = 10;
 
-    let result = apply_achievement_command(&world, &mut runtime, character_id, "/achfix", 1)
-        .expect("achfix should be handled");
+    let result =
+        apply_achievement_command(&mut world, &mut runtime, &None, character_id, "/achfix", 1)
+            .await
+            .expect("achfix should be handled");
     assert_eq!(result.messages, vec!["Achievements fixed for Godmode."]);
 
     let player = runtime.player_for_character(character_id).unwrap();
@@ -421,8 +494,8 @@ fn achfix_awards_level_won_profession_and_stat_thresholds_for_self() {
     assert!(player.achievement_data.is_unlocked(AchievementType::Looter));
 }
 
-#[test]
-fn achclear_resets_data_and_stats_for_named_target() {
+#[tokio::test]
+async fn achclear_resets_data_and_stats_for_named_target() {
     let god_id = CharacterId(7);
     let target_id = CharacterId(8);
     let (mut world, mut runtime) = connected_god(god_id);
@@ -435,8 +508,16 @@ fn achclear_resets_data_and_stats_for_named_target() {
         target_player.achievement_stats.chests_opened = 5;
     }
 
-    let result = apply_achievement_command(&world, &mut runtime, god_id, "/achclear Target", 1)
-        .expect("achclear should be handled");
+    let result = apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        god_id,
+        "/achclear Target",
+        1,
+    )
+    .await
+    .expect("achclear should be handled");
     assert_eq!(result.messages, vec!["Achievements cleared for Target."]);
     let target_player = runtime.player_for_character(target_id).unwrap();
     assert_eq!(
@@ -446,8 +527,8 @@ fn achclear_resets_data_and_stats_for_named_target() {
     assert_eq!(target_player.achievement_stats, AchievementStats::default());
 }
 
-#[test]
-fn achsync_sends_batched_payloads_to_named_target() {
+#[tokio::test]
+async fn achsync_sends_batched_payloads_to_named_target() {
     let god_id = CharacterId(7);
     let target_id = CharacterId(8);
     let (mut world, mut runtime) = connected_god(god_id);
@@ -458,8 +539,16 @@ fn achsync_sends_batched_payloads_to_named_target() {
         .achievement_data
         .award(AchievementType::FirstBlood, "Target", 1);
 
-    let result = apply_achievement_command(&world, &mut runtime, god_id, "/achsync Target", 1)
-        .expect("achsync should be handled");
+    let result = apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        god_id,
+        "/achsync Target",
+        1,
+    )
+    .await
+    .expect("achsync should be handled");
     assert_eq!(
         result.messages,
         vec!["Achievements synced to client for Target."]
@@ -475,8 +564,8 @@ fn achsync_sends_batched_payloads_to_named_target() {
     );
 }
 
-#[test]
-fn achfix_achclear_achsync_are_god_only_and_full_word_only() {
+#[tokio::test]
+async fn achfix_achclear_achsync_are_god_only_and_full_word_only() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -487,11 +576,31 @@ fn achfix_achclear_achsync_are_god_only_and_full_word_only() {
         10,
     ));
     let mut runtime = ServerRuntime::default();
-    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achfix", 1).is_none());
     assert!(
-        apply_achievement_command(&world, &mut runtime, character_id, "/achclear", 1).is_none()
+        apply_achievement_command(&mut world, &mut runtime, &None, character_id, "/achfix", 1)
+            .await
+            .is_none()
     );
-    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achsync", 1).is_none());
+    assert!(apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achclear",
+        1
+    )
+    .await
+    .is_none());
+    assert!(apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achsync",
+        1
+    )
+    .await
+    .is_none());
 
     world
         .characters
@@ -501,10 +610,26 @@ fn achfix_achclear_achsync_are_god_only_and_full_word_only() {
         .insert(CharacterFlags::GOD);
     // Abbreviations below the full word length must not match
     // (`cmdcmp(..., "achclear", 8)` etc. require the exact word).
-    assert!(apply_achievement_command(&world, &mut runtime, character_id, "/achclea", 1).is_none());
-    assert!(
-        apply_achievement_command(&world, &mut runtime, character_id, "/achclear", 1).is_some()
-    );
+    assert!(apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achclea",
+        1
+    )
+    .await
+    .is_none());
+    assert!(apply_achievement_command(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        "/achclear",
+        1
+    )
+    .await
+    .is_some());
 }
 
 fn connected_player(character_id: CharacterId, session_id: u64) -> (World, ServerRuntime) {

@@ -2952,13 +2952,51 @@ Unlocks every quest NPC. Do these before any P4 area work.
   tasks, each needs its own area driver ported first); mining reward RNG
   (`mine.c` unported); professions (`professor.c` unported); exploration
   beyond transport; clans; tunnels (`tunnel.c` unported); pentagram solve
-  reward (`pents.c` unported). `cargo fmt --all`, `cargo test --workspace`
-  (1396 ugaris-core + 38 db + 3 net + 37 protocol + 470 server [unchanged
+   reward (`pents.c` unported). `cargo fmt --all`, `cargo test --workspace`
+   (1396 ugaris-core + 38 db + 3 net + 37 protocol + 470 server [unchanged
+   counts, signatures only], all green, zero failures), `cargo build -p
+   ugaris-server` clean with zero warnings, and a 10s boot-smoke confirmed
+   "entering Rust game loop" with no panics (touches the tick loop's
+   kill/skill/chest/gathering/potion/stone/play-time award call sites and
+   the `warpbonus_driver` item-driver dispatch).
+  Progress Log (iteration 79): closed the last of gap (3)'s known unwired
+  spots - the `/achgive` and `/achfix` GM command paths
+  (`crates/ugaris-server/src/commands_player.rs`). Per C `achievement_
+  award` (`achievement.c:578-627`), the DB-record/first-unlock/grats-
+  announce tail runs unconditionally on every successful unlock,
+  regardless of the `show_congrats` flag (which only gates the chat
+  congrats text, not the DB call) - so `/achgive`'s single-award path and
+  `/achfix`'s multi-award re-check both needed the same `record_
+  achievement_firsts_and_announce` tail already used by every gameplay
+  call site since iteration 78. Made `apply_achievement_command` an
+  `async fn` taking `world: &mut World` (previously `&World`) and a new
+  `repository: &Option<PgAchievementRepository>` parameter (mirroring
+  `award_chest_opened_achievement`'s signature shape exactly); `/achgive`
+  now calls the announce tail with the single newly-awarded type,
+  `/achfix` with its whole `unlocked` batch. The one call site in
+  `main.rs` (already inside `async fn main`'s tick loop, `world` already
+  `&mut`) needed only `&mut world`, `&achievement_repository`, and
+  `.await` added - no surrounding refactor. `achclear`/`achsync` are
+  unaffected (C's `achievement_clear_all`/`_sync_all` don't touch the
+  DB). Updated all 12 existing `commands_player`-side achievement
+  command tests (`crates/ugaris-server/src/tests/achievement.rs`) to
+  `#[tokio::test]`/`async fn` with `&mut world`/`&None` repository args
+  and `.await` on every call - no assertions changed, signatures only
+  (same no-op-without-database convention as iteration 78's other
+  conversions). This closes gap (3) completely across every known unlock
+  call site in the codebase (gameplay tick-loop paths from iteration 78,
+  GM commands now). Still unwired: (5)'s remaining ~13 gameplay call
+  sites that depend on unported systems (mining reward RNG, professions,
+  exploration beyond transport, clans, military, tunnels, arena,
+  pentagram solve reward) - each is gated on porting its own source
+  system first, tracked by this task's own note and the relevant P2-P4
+  system tasks below. `cargo fmt --all`, `cargo test --workspace` (1396
+  ugaris-core + 38 db + 3 net + 37 protocol + 470 server [unchanged
   counts, signatures only], all green, zero failures), `cargo build -p
   ugaris-server` clean with zero warnings, and a 10s boot-smoke confirmed
   "entering Rust game loop" with no panics (touches the tick loop's
-  kill/skill/chest/gathering/potion/stone/play-time award call sites and
-  the `warpbonus_driver` item-driver dispatch).
+  command-dispatch call site for `/achievements`/`/achstats`/`/achgive`/
+  `/achfix`/`/achclear`/`/achsync`).
 
 - [ ] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository

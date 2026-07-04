@@ -1118,12 +1118,15 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             }
                             if let Some(result) = apply_achievement_command(
-                                &world,
+                                &mut world,
                                 &mut runtime,
+                                &achievement_repository,
                                 character_id,
                                 &command,
                                 current_unix_time(),
-                            ) {
+                            )
+                            .await
+                            {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }

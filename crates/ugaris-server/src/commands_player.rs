@@ -1574,9 +1574,10 @@ fn legacy_achievement_unlock_congrats_lines(name: &str, description: &str) -> [V
 /// target name defaulting to the caller, mirroring `/reset`'s pattern
 /// (`commands_admin.rs`'s `apply_admin_character_command`, `lower ==
 /// "reset"` branch).
-pub(crate) fn apply_achievement_command(
-    world: &World,
+pub(crate) async fn apply_achievement_command(
+    world: &mut World,
     runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
     character_id: CharacterId,
     command: &str,
     now: i64,
@@ -1662,6 +1663,14 @@ pub(crate) fn apply_achievement_command(
                 payloads.push(ugaris_protocol::packet::system_text_bytes(&line));
             }
             send_raw_payloads_to_character(runtime, target_id, &payloads);
+            record_achievement_firsts_and_announce(
+                world,
+                repository,
+                target_id,
+                &target_name,
+                &[ty],
+            )
+            .await;
         }
         return Some(KeyringCommandResult {
             messages: vec![format!("Achievement {ach_id} awarded to {target_name}.")],
@@ -1741,10 +1750,18 @@ pub(crate) fn apply_achievement_command(
             }
         }
         let payloads: Vec<_> = unlocked
-            .into_iter()
-            .map(|ty| achievement_unlock_payload(ty, now))
+            .iter()
+            .map(|&ty| achievement_unlock_payload(ty, now))
             .collect();
         send_raw_payloads_to_character(runtime, target_id, &payloads);
+        record_achievement_firsts_and_announce(
+            world,
+            repository,
+            target_id,
+            &target_name,
+            &unlocked,
+        )
+        .await;
         return Some(KeyringCommandResult {
             messages: vec![format!("Achievements fixed for {target_name}.")],
             ..Default::default()
