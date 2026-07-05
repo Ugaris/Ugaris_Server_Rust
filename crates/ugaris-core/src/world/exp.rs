@@ -52,6 +52,46 @@ pub fn level_value(level: u32) -> u32 {
         .saturating_sub(level.saturating_pow(4))
 }
 
+/// C `level2maxitem(level)` (`src/system/tool.c:2516-2577`): the "max item
+/// modifier tier a player of this level should reasonably own" step
+/// function, used to scale special/computed equipment bonuses (e.g. the
+/// dungeon-guard `equip1`/`equip2` spell items in `area/13/dungeon.c`'s
+/// `build_warrior`/`build_mage`/`build_seyan`). Ported as an explicit
+/// ascending threshold ladder identical to the C `if (level < N) return
+/// V;` chain, including its final unconditional `return 20`.
+pub fn level2maxitem(level: i32) -> i32 {
+    const THRESHOLDS: [(i32, i32); 19] = [
+        (2, 0),
+        (3, 1),
+        (5, 2),
+        (10, 3),
+        (15, 4),
+        (17, 5),
+        (20, 6),
+        (23, 7),
+        (26, 8),
+        (30, 9),
+        (33, 10),
+        (36, 11),
+        (40, 12),
+        (43, 13),
+        (46, 14),
+        (50, 15),
+        (53, 16),
+        (56, 17),
+        (60, 18),
+    ];
+    for (bound, value) in THRESHOLDS {
+        if level < bound {
+            return value;
+        }
+    }
+    if level < 63 {
+        return 19;
+    }
+    20
+}
+
 impl World {
     /// C `give_exp(cn, val)` (`src/system/tool.c:1371-1423`): the canonical
     /// experience-grant entry point. Applies the hardcore/global exp

@@ -20,6 +20,7 @@ mod commands_player;
 mod constants;
 mod containers;
 mod depot;
+mod dungeon;
 mod effects_sync;
 mod inventory;
 mod item_apply;
@@ -50,6 +51,11 @@ pub(crate) use commands_player::*;
 pub(crate) use constants::*;
 pub(crate) use containers::*;
 pub(crate) use depot::*;
+// Only consumed by `tests::dungeon` today - `build_warrior`/`build_mage`/
+// `build_seyan` aren't wired into any runtime call site yet (see that
+// module's doc comment).
+#[allow(unused_imports)]
+pub(crate) use dungeon::*;
 pub(crate) use effects_sync::*;
 pub(crate) use inventory::*;
 pub(crate) use item_apply::*;
@@ -159,10 +165,11 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::{
         army_rank_for_points, army_rank_name, exp2level, legacy_save_number, level2exp,
-        level_value, merchant_buy_price, merchant_sales_price, ArenaMasterEvent, BankEvent,
-        ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, FirstKillCheck, GateWelcomeOutcomeEvent,
-        GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
-        RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        level2maxitem, level_value, merchant_buy_price, merchant_sales_price, ArenaMasterEvent,
+        BankEvent, ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, FirstKillCheck,
+        GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest,
+        MerchantTradeResult, RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion,
+        MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,

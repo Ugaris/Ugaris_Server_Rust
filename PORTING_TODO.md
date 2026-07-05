@@ -3228,19 +3228,21 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `clan_trade_bonus` - ported iteration 103, see Progress Log),
   clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
-  (transport module has the seam). REMAINING (updated iteration 139): the
+  (transport module has the seam). REMAINING (updated iteration 140): the
   raid-spawn consumer of `get_clan_dungeon` itself (`area/13/dungeon.c`)
   now has its pure maze-generation algorithm ported
   (`crates/ugaris-core/src/dungeon_maze.rs` - `build_maze`/
-  `special_fill`/`create_maze`, see Progress Log) but still needs:
-  `build_warrior`/`build_mage`/`build_seyan` NPC stat generation
-  (`dungeon_tab.c`'s three per-level tables), `build_cell`'s dispatch of
-  a generated [`dungeon_maze::MazeCell`]'s `special` code into real
-  `World` map tiles/items/NPCs (reusing `ugaris-server/src/spawns.rs`'s
-  existing template-instantiation pattern), and the `dungeonmaster`/
-  `dungeonfighter` NPC drivers (`create_dungeon`/`enter_dungeon`/
-  `list_dungeon`/`warn_dungeon`/`dungeonfighter`/`dungeon_potion`/
-  `fighter_dead`) that tie it all together - the potion
+  `special_fill`/`create_maze`, see Progress Log) and its
+  `build_warrior`/`build_mage`/`build_seyan` NPC stat generation ported
+  in iteration 140 (`crates/ugaris-server/src/dungeon.rs`, plus
+  `level2maxitem` in `crates/ugaris-core/src/world/exp.rs` and the three
+  `dungeon_tab.c` per-level tables - see Progress Log), but still needs:
+  `build_cell`'s dispatch of a generated [`dungeon_maze::MazeCell`]'s
+  `special` code into calls to those three functions plus the
+  wall/door/key/teleport map-tile builders (`dungeon.c:849-937`), and the
+  `dungeonmaster`/`dungeonfighter` NPC drivers (`create_dungeon`/
+  `enter_dungeon`/`list_dungeon`/`warn_dungeon`/`dungeonfighter`/
+  `dungeon_potion`/`fighter_dead`) that tie it all together - the potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
   reachable slice, not blocked on anything, since the alchemy-potion
@@ -4463,10 +4465,64 @@ Unlocks every quest NPC. Do these before any P4 area work.
     `cargo fmt --all`, `cargo test --workspace` (1869 ugaris-core [+12] +
     55 db + 3 net + 40 protocol + 584 server, all green, zero failures),
     `cargo build -p ugaris-server` clean with zero warnings, 10s
-    boot-smoke confirmed "entering Rust game loop" with no panics (not
-    strictly required per the recipe since this touches no runtime
-    loop/login/map-sync/protocol code, but run anyway since it was
-    cheap).
+     boot-smoke confirmed "entering Rust game loop" with no panics (not
+     strictly required per the recipe since this touches no runtime
+     loop/login/map-sync/protocol code, but run anyway since it was
+     cheap).
+  - 2026-07-05 (iteration 140): ported the next self-contained slice from
+    iteration 139's REMAINING note: `build_warrior`/`build_mage`/
+    `build_seyan` (`dungeon.c:217-700`), the three NPC-generation
+    functions that scale a "warrior"/"mage"/"seyan" character template
+    (`ugaris_data/zones/13/dungeon.chr`) to a per-level `base` stat from
+    `dungeon_tab.c`'s three tables (`warrior_tab`/`mage_tab`/
+    `seyan_tab`, copied verbatim into new consts in
+    `crates/ugaris-server/src/dungeon.rs`), via each function's own
+    per-skill `switch (n)` formula (ported as `warrior_stat_value`/
+    `mage_stat_value`/`seyan_stat_value`), then attaches the four "spell
+    of equipment" items (`equip1`/`equip2`/`armor_spell`/`weapon_spell`
+    or their `b`/`c` mage/seyan template variants) in non-worn inventory
+    slots 12-15 exactly like C's `ch[cn].item[12..15]`, with modifier
+    values from a new `level2maxitem` port (`tool.c:2516-2577`, added to
+    `crates/ugaris-core/src/world/exp.rs` next to `exp2level`/
+    `level2exp`) feeding the shared equip-item formula and the
+    character's own raised `V_ARMORSKILL`/`V_HAND` feeding
+    `armor_spell`/`weapon_spell`. Also ported: the level>33 arch-flag +
+    forced `V_RAGE`/`V_DURATION` pre-loop quirk (warrior/mage only, not
+    seyan, matching C exactly), the clan-profession assignment
+    (`prof[P_CLAN]`/`prof[P_LIGHT or P_DARK]` via `runtime_random_below`
+    for C's `RANDOM(2)`), and the full `update_char` tail (calls
+    `World::update_character` after inserting the character/items into
+    `World` so item-modifier bonuses are actually applied, then sets
+    `hp`/`endurance`/`mana` from the recomputed `value[0]`, matching
+    `drop_char`'s call order). Reused the existing `spawns.rs`
+    "`ZoneLoader::instantiate_character_template`/
+    `instantiate_item_template` then `World::spawn_character`" recipe
+    rather than duplicating it; `legacy_skill_cost_factor`/
+    `legacy_calc_exp_used` (`commands_admin.rs`, C's `skill[n].cost`
+    gate and `calc_exp`) were already `pub(crate)` and directly reusable
+    with zero changes. 8 new unit/integration tests in the new
+    `crates/ugaris-server/src/tests/dungeon.rs` (full happy-path stat/
+    equipment/profession assertions for all three NPC types at level 25,
+    the arch/rage and arch/duration forcing above level 33, the
+    level-clamped-to-1 and high-`maze_clan` sprite branches, a
+    template-missing failure path, and direct formula-level coverage of
+    `warrior_stat_value`'s default/negative-base/rage branches), plus 1
+    new `level2maxitem` threshold-ladder test in
+    `crates/ugaris-core/src/world/tests/exp.rs`. Deliberately still not
+    wired to anything (module carries a top-level `#![allow(dead_code)]`
+    with a doc comment explaining why, matching the existing
+    `depot.rs::legacy_account_depot_codec` precedent, since C's own
+    `build_cell` dispatch - the next slice - is what will call these):
+    `build_cell`'s dispatch of a generated `dungeon_maze::MazeCell`'s
+    `special` code into these three functions plus the wall/door/key/
+    teleport map-tile builders, and the `dungeonmaster`/
+    `dungeonfighter` NPC drivers, both unchanged from iteration 139's
+    note. `cargo fmt --all`, `cargo test --workspace` (1870 ugaris-core
+    [+1] + 55 db + 3 net + 40 protocol + 594 server [+10], all green,
+    zero failures), `cargo build -p ugaris-server` clean with zero
+    warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+    panics (not strictly required per the recipe, run anyway since it
+    was cheap).
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

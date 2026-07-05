@@ -1,0 +1,493 @@
+use super::*;
+
+const WARRIOR_CHR: &str = r#"
+    warrior:
+      name="Warrior"
+      description="Test warrior"
+      sprite=50
+      flag=CF_WARRIOR
+      flag=CF_ALIVE
+      V_HP=10
+      V_ENDURANCE=10
+      V_WIS=10
+      V_INT=10
+      V_AGI=10
+      V_STR=10
+      V_HAND=1
+      V_ARMORSKILL=1
+      V_ATTACK=1
+      V_PARRY=1
+      V_TACTICS=1
+      V_SURROUND=1
+      V_BODYCONTROL=1
+      V_SPEEDSKILL=1
+      V_PERCEPT=1
+      V_IMMUNITY=1
+      V_WARCRY=1
+      V_PROFESSION=1
+    ;
+"#;
+
+const MAGE_CHR: &str = r#"
+    mage:
+      name="Mage"
+      description="Test mage"
+      sprite=51
+      flag=CF_MAGE
+      flag=CF_ALIVE
+      V_HP=10
+      V_MANA=10
+      V_ENDURANCE=10
+      V_WIS=10
+      V_INT=10
+      V_AGI=10
+      V_STR=10
+      V_HAND=1
+      V_MAGICSHIELD=1
+      V_FLASH=1
+      V_BLESS=1
+      V_IMMUNITY=1
+      V_FREEZE=1
+      V_HEAL=1
+      V_FIREBALL=1
+      V_PERCEPT=1
+      V_PROFESSION=1
+    ;
+"#;
+
+const SEYAN_CHR: &str = r#"
+    seyan:
+      name="Seyan"
+      description="Test seyan"
+      sprite=50
+      flag=CF_MAGE
+      flag=CF_WARRIOR
+      flag=CF_ALIVE
+      V_HP=10
+      V_MANA=10
+      V_ENDURANCE=10
+      V_WIS=10
+      V_INT=10
+      V_AGI=10
+      V_STR=10
+      V_HAND=1
+      V_ARMORSKILL=1
+      V_ATTACK=1
+      V_PARRY=1
+      V_IMMUNITY=1
+      V_BLESS=1
+      V_FREEZE=1
+      V_TACTICS=1
+      V_PERCEPT=1
+      V_PROFESSION=1
+    ;
+"#;
+
+const DUNGEON_ITM: &str = r#"
+    equip1:
+      name="Equip1"
+      mod_index=V_HAND
+      mod_value=1
+      mod_index=V_ATTACK
+      mod_value=1
+      mod_index=V_PARRY
+      mod_value=1
+      mod_index=V_TACTICS
+      mod_value=1
+      mod_index=V_IMMUNITY
+      mod_value=1
+    ;
+    equip1b:
+      name="Equip1"
+      mod_index=V_HAND
+      mod_value=1
+      mod_index=V_MAGICSHIELD
+      mod_value=1
+      mod_index=V_FLASH
+      mod_value=1
+      mod_index=V_FREEZE
+      mod_value=1
+      mod_index=V_IMMUNITY
+      mod_value=1
+    ;
+    equip1c:
+      name="Equip1"
+      mod_index=V_HAND
+      mod_value=1
+      mod_index=V_ATTACK
+      mod_value=1
+      mod_index=V_PARRY
+      mod_value=1
+      mod_index=V_TACTICS
+      mod_value=1
+      mod_index=V_IMMUNITY
+      mod_value=1
+    ;
+    equip2:
+      name="Equip2"
+      mod_index=V_WIS
+      mod_value=1
+      mod_index=V_INT
+      mod_value=1
+      mod_index=V_AGI
+      mod_value=1
+      mod_index=V_STR
+      mod_value=1
+    ;
+    equip2b:
+      name="Equip2"
+      mod_index=V_MANA
+      mod_value=1
+      mod_index=V_HP
+      mod_value=1
+      mod_index=V_BLESS
+      mod_value=1
+      mod_index=V_INT
+      mod_value=1
+    ;
+    equip2c:
+      name="Equip2"
+      mod_index=V_WIS
+      mod_value=1
+      mod_index=V_INT
+      mod_value=1
+      mod_index=V_AGI
+      mod_value=1
+      mod_index=V_STR
+      mod_value=1
+      mod_index=V_FREEZE
+      mod_value=1
+    ;
+    armor_spell:
+      name="Armor"
+      mod_index=V_ARMOR
+      mod_value=1
+    ;
+    weapon_spell:
+      name="Weapon"
+      mod_index=V_WEAPON
+      mod_value=1
+    ;
+"#;
+
+fn dungeon_loader() -> ZoneLoader {
+    let mut loader = ZoneLoader::new();
+    loader.load_character_templates_str(WARRIOR_CHR).unwrap();
+    loader.load_character_templates_str(MAGE_CHR).unwrap();
+    loader.load_character_templates_str(SEYAN_CHR).unwrap();
+    loader.load_item_templates_str(DUNGEON_ITM).unwrap();
+    loader
+}
+
+// C `level2maxitem(level) * 1.1 + max(0, level - 63) / 2` (`dungeon.c:334`
+// and twins) - the `/ 2` truncates as C integer division before widening.
+#[test]
+fn dungeon_guard_equip_mod_value_matches_legacy_formula() {
+    assert_eq!(dungeon_guard_equip_mod_value(25), 8); // level2maxitem(25)=8, 8*1.1=8.8 -> 8
+    assert_eq!(dungeon_guard_equip_mod_value(1), 0); // level2maxitem(1)=0
+                                                     // level2maxitem(70)=20, 20*1.1=22.0, (70-63)/2=3 -> 25
+    assert_eq!(dungeon_guard_equip_mod_value(70), 25);
+}
+
+// C `build_warrior(x, y, level)` (`dungeon.c:217-336`), full happy path at
+// a mid-range level: verifies the per-skill switch formulas, the equipment
+// item modifier values, the clan-profession assignment, and that
+// `update_char`'s hp/endurance/mana tail ran.
+#[test]
+fn build_warrior_computes_stats_and_equipment_for_level_25() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(300);
+
+    let result = build_warrior(&mut world, &mut loader, &mut runtime, 12, 13, 25, 3, 25);
+    assert!(result.is_some());
+
+    let character = world.characters.get(&CharacterId(300)).unwrap();
+    assert_eq!(character.name, "Warrior25");
+    assert_eq!((character.x, character.y), (12, 13));
+    assert_eq!(character.sprite, 269); // 266 + maze_clan(3)
+    assert_eq!(character.rest_x, 3);
+    assert_eq!(character.rest_y, 0); // (25 - maze_level(25)) / 2
+
+    // WARRIOR_TAB[25] == 33.
+    let values = &character.values[1];
+    assert_eq!(values[CharacterValue::Hp as usize], 13); // max(10, 33-20)
+    assert_eq!(values[CharacterValue::Endurance as usize], 10); // max(10, 33-30)
+    assert_eq!(values[CharacterValue::Profession as usize], 26); // max(1, 33-7)
+    assert_eq!(values[CharacterValue::Wisdom as usize], 18); // max(10, 33-15)
+    assert_eq!(values[CharacterValue::Intelligence as usize], 33);
+    assert_eq!(values[CharacterValue::Agility as usize], 28); // max(10, 33-5)
+    assert_eq!(values[CharacterValue::Strength as usize], 33);
+    assert_eq!(values[CharacterValue::Hand as usize], 33);
+    assert_eq!(values[CharacterValue::ArmorSkill as usize], 30); // (33/10)*10
+    assert_eq!(values[CharacterValue::Attack as usize], 33);
+    assert_eq!(values[CharacterValue::Parry as usize], 33);
+    assert_eq!(values[CharacterValue::Immunity as usize], 33);
+    assert_eq!(values[CharacterValue::Tactics as usize], 28); // max(1, 33-5)
+    assert_eq!(values[CharacterValue::Surround as usize], 1); // max(1, 33-50)
+    assert_eq!(values[CharacterValue::BodyControl as usize], 13); // max(1, 33-20)
+    assert_eq!(values[CharacterValue::SpeedSkill as usize], 13); // max(1, 33-20)
+    assert_eq!(values[CharacterValue::Percept as usize], 23); // max(1, 33-10)
+    assert_eq!(values[CharacterValue::Warcry as usize], 1); // default: max(1, 33-50)
+    assert_eq!(values[CharacterValue::Rage as usize], 0); // not arch, never forced
+
+    // Clan profession: value[1][Profession]=26 -> CLAN=26, not >30 so no light/dark.
+    assert_eq!(character.professions[profession::CLAN], 26);
+    assert_eq!(character.professions[profession::LIGHT], 0);
+    assert_eq!(character.professions[profession::DARK], 0);
+
+    // Equipment: equip1 (slot 12, 5 modifiers), equip2 (slot 13, 4
+    // modifiers), armor_spell (slot 14), weapon_spell (slot 15).
+    let equip1_id = character.inventory[12].expect("equip1 attached");
+    let equip1 = world.items.get(&equip1_id).unwrap();
+    for value in &equip1.modifier_value[..5] {
+        assert_eq!(*value, 8); // dungeon_guard_equip_mod_value(25)
+    }
+
+    let equip2_id = character.inventory[13].expect("equip2 attached");
+    let equip2 = world.items.get(&equip2_id).unwrap();
+    for value in &equip2.modifier_value[..4] {
+        assert_eq!(*value, 8);
+    }
+
+    let armor_id = character.inventory[14].expect("armor_spell attached");
+    let armor = world.items.get(&armor_id).unwrap();
+    assert_eq!(armor.modifier_value[0], 600); // clamp(13,113,ArmorSkill=30) * 20
+
+    let weapon_id = character.inventory[15].expect("weapon_spell attached");
+    let weapon = world.items.get(&weapon_id).unwrap();
+    assert_eq!(weapon.modifier_value[0], 33); // clamp(13,113,Hand=33)
+
+    // C `update_char` tail: hp/endurance/mana derived from the recomputed
+    // value[0], not left at template defaults.
+    assert_eq!(
+        character.hp,
+        i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE
+    );
+    assert_eq!(
+        character.endurance,
+        i32::from(character.values[0][CharacterValue::Endurance as usize]) * POWERSCALE
+    );
+    assert_eq!(
+        character.mana,
+        i32::from(character.values[0][CharacterValue::Mana as usize]) * POWERSCALE
+    );
+
+    assert_eq!(result, Some(character.level));
+}
+
+// C `if (level > 33) { ch[cn].flags |= CF_ARCH; ch[cn].value[1][V_RAGE] =
+// 1; }` (`dungeon.c:219-221`) - forces V_RAGE to be raised even though the
+// "warrior" template itself never carries it.
+#[test]
+fn build_warrior_forces_rage_and_arch_flag_above_level_33() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(301);
+
+    build_warrior(&mut world, &mut loader, &mut runtime, 12, 13, 40, 3, 40).unwrap();
+
+    let character = world.characters.get(&CharacterId(301)).unwrap();
+    assert!(character.flags.contains(CharacterFlags::ARCH));
+    // WARRIOR_TAB[40] == 51; V_RAGE: max(1, 51-20) == 31.
+    assert_eq!(character.values[1][CharacterValue::Rage as usize], 31);
+}
+
+// C `if (level < 1) level = 1;` (`dungeon.c:223-225`) applies before the
+// table lookup and the final `sprintf` name.
+#[test]
+fn build_warrior_clamps_nonpositive_level_to_one() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(302);
+
+    build_warrior(&mut world, &mut loader, &mut runtime, 12, 13, 0, 3, 0).unwrap();
+
+    let character = world.characters.get(&CharacterId(302)).unwrap();
+    assert_eq!(character.name, "Warrior1");
+    // WARRIOR_TAB[1] == 1, so V_HP == max(10, 1-20) == 10.
+    assert_eq!(character.values[1][CharacterValue::Hp as usize], 10);
+}
+
+// C `if (maze_clan < 17) sprite = 266+maze_clan; else sprite = 516 +
+// maze_clan - 16;` (`dungeon.c:312-316`).
+#[test]
+fn build_warrior_uses_high_maze_clan_sprite_branch() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(303);
+
+    build_warrior(&mut world, &mut loader, &mut runtime, 12, 13, 25, 20, 25).unwrap();
+
+    let character = world.characters.get(&CharacterId(303)).unwrap();
+    assert_eq!(character.sprite, 520); // 516 + 20 - 16
+}
+
+#[test]
+fn build_warrior_returns_none_when_template_missing() {
+    let mut world = World::default();
+    let mut loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+
+    assert!(build_warrior(&mut world, &mut loader, &mut runtime, 12, 13, 25, 3, 25).is_none());
+    assert!(world.characters.is_empty());
+}
+
+// C `build_mage(x, y, level)` (`dungeon.c:389-535`).
+#[test]
+fn build_mage_computes_stats_and_equipment_for_level_25() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(310);
+
+    let result = build_mage(&mut world, &mut loader, &mut runtime, 12, 13, 25, 3, 25);
+    assert!(result.is_some());
+
+    let character = world.characters.get(&CharacterId(310)).unwrap();
+    assert_eq!(character.name, "Mage25");
+    assert_eq!(character.sprite, 285); // 282 + maze_clan(3)
+
+    // MAGE_TAB[25] == 31.
+    let values = &character.values[1];
+    assert_eq!(values[CharacterValue::Hp as usize], 10); // max(10, 31-40)
+    assert_eq!(values[CharacterValue::Mana as usize], 21); // max(10, 31-10)
+    assert_eq!(values[CharacterValue::Endurance as usize], 10); // max(10, 31-30)
+    assert_eq!(values[CharacterValue::Profession as usize], 24); // max(1, 31-7)
+    assert_eq!(values[CharacterValue::Wisdom as usize], 31);
+    assert_eq!(values[CharacterValue::Intelligence as usize], 31);
+    assert_eq!(values[CharacterValue::Agility as usize], 31);
+    assert_eq!(values[CharacterValue::Strength as usize], 31);
+    assert_eq!(values[CharacterValue::Hand as usize], 31);
+    assert_eq!(values[CharacterValue::MagicShield as usize], 31);
+    assert_eq!(values[CharacterValue::Flash as usize], 31);
+    assert_eq!(values[CharacterValue::Bless as usize], 31);
+    assert_eq!(values[CharacterValue::Immunity as usize], 31);
+    assert_eq!(values[CharacterValue::Freeze as usize], 21); // max(1, 31-10)
+    assert_eq!(values[CharacterValue::Heal as usize], 21);
+    assert_eq!(values[CharacterValue::Fireball as usize], 21);
+    assert_eq!(values[CharacterValue::Percept as usize], 21);
+    assert_eq!(values[CharacterValue::Duration as usize], 0); // not arch, never forced
+
+    assert_eq!(character.professions[profession::CLAN], 24);
+
+    // Mage only carries equip1b/equip2b/weapon_spell - no armor_spell.
+    let equip1_id = character.inventory[12].expect("equip1b attached");
+    let equip1 = world.items.get(&equip1_id).unwrap();
+    for value in &equip1.modifier_value[..5] {
+        assert_eq!(*value, 8);
+    }
+    let equip2_id = character.inventory[13].expect("equip2b attached");
+    let equip2 = world.items.get(&equip2_id).unwrap();
+    for value in &equip2.modifier_value[..4] {
+        assert_eq!(*value, 8);
+    }
+    assert!(character.inventory[14].is_none(), "mage has no armor_spell");
+    let weapon_id = character.inventory[15].expect("weapon_spell attached");
+    let weapon = world.items.get(&weapon_id).unwrap();
+    assert_eq!(weapon.modifier_value[0], 31); // clamp(13,113,Hand=31)
+}
+
+// C `if (level > 33) { ch[cn].flags |= CF_ARCH; ch[cn].value[1][V_DURATION]
+// = 1; }` (`dungeon.c:392-394`).
+#[test]
+fn build_mage_forces_duration_and_arch_flag_above_level_33() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(311);
+
+    build_mage(&mut world, &mut loader, &mut runtime, 12, 13, 40, 3, 40).unwrap();
+
+    let character = world.characters.get(&CharacterId(311)).unwrap();
+    assert!(character.flags.contains(CharacterFlags::ARCH));
+    // MAGE_TAB[40] == 49; V_DURATION: max(1, 49-10) == 39.
+    assert_eq!(character.values[1][CharacterValue::Duration as usize], 39);
+}
+
+// C `build_seyan(x, y, level)` (`dungeon.c:551-700`).
+#[test]
+fn build_seyan_computes_stats_and_equipment_for_level_25() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(320);
+
+    let result = build_seyan(&mut world, &mut loader, &mut runtime, 12, 13, 25, 3, 25);
+    assert!(result.is_some());
+
+    let character = world.characters.get(&CharacterId(320)).unwrap();
+    assert_eq!(character.name, "Seyan25");
+    assert_eq!(character.sprite, 269); // 266 + maze_clan(3)
+
+    // SEYAN_TAB[25] == 29.
+    let values = &character.values[1];
+    assert_eq!(values[CharacterValue::Hp as usize], 10); // max(10, 29-40)
+    assert_eq!(values[CharacterValue::Mana as usize], 10); // max(10, 29-30)
+    assert_eq!(values[CharacterValue::Endurance as usize], 10); // max(10, 29-50)
+    assert_eq!(values[CharacterValue::Profession as usize], 22); // max(1, 29-7)
+    assert_eq!(values[CharacterValue::Wisdom as usize], 14); // max(10, 29-15)
+    assert_eq!(values[CharacterValue::Intelligence as usize], 29);
+    assert_eq!(values[CharacterValue::Agility as usize], 24); // max(10, 29-5)
+    assert_eq!(values[CharacterValue::Strength as usize], 29);
+    assert_eq!(values[CharacterValue::Hand as usize], 29);
+    assert_eq!(values[CharacterValue::ArmorSkill as usize], 20); // (29/10)*10
+    assert_eq!(values[CharacterValue::Attack as usize], 29);
+    assert_eq!(values[CharacterValue::Parry as usize], 29);
+    assert_eq!(values[CharacterValue::Immunity as usize], 29);
+    assert_eq!(values[CharacterValue::Bless as usize], 29);
+    assert_eq!(values[CharacterValue::Freeze as usize], 29);
+    assert_eq!(values[CharacterValue::Tactics as usize], 24); // max(1, 29-5)
+    assert_eq!(values[CharacterValue::Percept as usize], 19); // max(1, 29-10)
+
+    assert_eq!(character.professions[profession::CLAN], 22);
+
+    // Seyan carries equip1c (5 mods), equip2c (5 mods), armor_spell,
+    // weapon_spell.
+    let equip1_id = character.inventory[12].expect("equip1c attached");
+    let equip1 = world.items.get(&equip1_id).unwrap();
+    for value in &equip1.modifier_value[..5] {
+        assert_eq!(*value, 8);
+    }
+    let equip2_id = character.inventory[13].expect("equip2c attached");
+    let equip2 = world.items.get(&equip2_id).unwrap();
+    for value in &equip2.modifier_value[..5] {
+        assert_eq!(*value, 8);
+    }
+    let armor_id = character.inventory[14].expect("armor_spell attached");
+    let armor = world.items.get(&armor_id).unwrap();
+    assert_eq!(armor.modifier_value[0], 400); // clamp(13,113,ArmorSkill=20) * 20
+    let weapon_id = character.inventory[15].expect("weapon_spell attached");
+    let weapon = world.items.get(&weapon_id).unwrap();
+    assert_eq!(weapon.modifier_value[0], 29); // clamp(13,113,Hand=29)
+}
+
+// C's per-skill `switch (n)` bodies, tested directly for a couple of
+// corner cases that the full-spawn tests above don't exercise: the
+// `min(...,125)`-pre-clamp negative-base saturation branches.
+#[test]
+fn warrior_stat_value_default_and_negative_base_branches() {
+    // Surround: max(1, base-50), base=10 -> stays at floor 1.
+    assert_eq!(
+        warrior_stat_value(CharacterValue::Surround as usize, 10, 25, false),
+        1
+    );
+    // Unlisted index (e.g. Dagger) falls into the default branch.
+    assert_eq!(
+        warrior_stat_value(CharacterValue::Dagger as usize, 10, 25, false),
+        1
+    );
+    // Rage only applies its formula when arch.
+    assert_eq!(
+        warrior_stat_value(CharacterValue::Rage as usize, 51, 40, false),
+        0
+    );
+    assert_eq!(
+        warrior_stat_value(CharacterValue::Rage as usize, 51, 40, true),
+        31
+    );
+}

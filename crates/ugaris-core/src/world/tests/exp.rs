@@ -24,6 +24,53 @@ fn level_value_is_the_gap_between_consecutive_level2exp() {
     assert_eq!(level_value(10), level2exp(11) - level2exp(10));
 }
 
+// C `level2maxitem(level)` (`tool.c:2516-2577`): ascending threshold ladder,
+// every boundary checked on both sides.
+#[test]
+fn level2maxitem_matches_legacy_threshold_ladder() {
+    assert_eq!(level2maxitem(0), 0);
+    assert_eq!(level2maxitem(1), 0);
+    assert_eq!(level2maxitem(2), 1);
+    assert_eq!(level2maxitem(3), 2);
+    assert_eq!(level2maxitem(4), 2);
+    assert_eq!(level2maxitem(5), 3);
+    assert_eq!(level2maxitem(9), 3);
+    assert_eq!(level2maxitem(10), 4);
+    assert_eq!(level2maxitem(14), 4);
+    assert_eq!(level2maxitem(15), 5);
+    assert_eq!(level2maxitem(16), 5);
+    assert_eq!(level2maxitem(17), 6);
+    assert_eq!(level2maxitem(19), 6);
+    assert_eq!(level2maxitem(20), 7);
+    assert_eq!(level2maxitem(22), 7);
+    assert_eq!(level2maxitem(23), 8);
+    assert_eq!(level2maxitem(25), 8);
+    assert_eq!(level2maxitem(26), 9);
+    assert_eq!(level2maxitem(29), 9);
+    assert_eq!(level2maxitem(30), 10);
+    assert_eq!(level2maxitem(32), 10);
+    assert_eq!(level2maxitem(33), 11);
+    assert_eq!(level2maxitem(35), 11);
+    assert_eq!(level2maxitem(36), 12);
+    assert_eq!(level2maxitem(39), 12);
+    assert_eq!(level2maxitem(40), 13);
+    assert_eq!(level2maxitem(42), 13);
+    assert_eq!(level2maxitem(43), 14);
+    assert_eq!(level2maxitem(45), 14);
+    assert_eq!(level2maxitem(46), 15);
+    assert_eq!(level2maxitem(49), 15);
+    assert_eq!(level2maxitem(50), 16);
+    assert_eq!(level2maxitem(52), 16);
+    assert_eq!(level2maxitem(53), 17);
+    assert_eq!(level2maxitem(55), 17);
+    assert_eq!(level2maxitem(56), 18);
+    assert_eq!(level2maxitem(59), 18);
+    assert_eq!(level2maxitem(60), 19);
+    assert_eq!(level2maxitem(62), 19);
+    assert_eq!(level2maxitem(63), 20);
+    assert_eq!(level2maxitem(200), 20);
+}
+
 #[test]
 fn check_levelup_grants_one_level_and_a_save_with_feedback_text() {
     let mut world = World::default();

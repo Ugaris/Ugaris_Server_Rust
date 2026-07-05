@@ -11,6 +11,7 @@ mod commands_chat;
 mod commands_player;
 mod containers;
 mod depot;
+mod dungeon;
 mod effects_sync;
 mod inventory;
 mod item_apply;
