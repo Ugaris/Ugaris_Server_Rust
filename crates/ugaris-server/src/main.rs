@@ -2625,7 +2625,12 @@ async fn main() -> anyhow::Result<()> {
                                                         .and_then(|character| character.cursor_item)
                                                     {
                                                         if let Some(cursor_item) = world.items.get_mut(&cursor_item_id) {
-                                                            cursor_item.template_id = key_id;
+                                                            // C `dungeonkey` (`dungeon.c:1913-1937`) wraps the
+                                                            // spawn's raw stored `keyid` into the real key's `ID`
+                                                            // so it can later match a `dungeon_door`'s own wrapped
+                                                            // `key1`/`key2` requirement (`dungeon.c:820,825`).
+                                                            cursor_item.template_id =
+                                                                dungeon::dungeon_key_item_id(template, key_id);
                                                         }
                                                     }
                                                     executed += 1;

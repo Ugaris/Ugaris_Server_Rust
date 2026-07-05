@@ -636,6 +636,33 @@ fn build_key_stores_nr_clan_and_raw_keyid() {
     assert_eq!(keyid, 0x1122_3344); // stored raw, not MAKE_ITEMID-wrapped
 }
 
+// C `dungeonkey` (`dungeon.c:1913-1937`): the real picked-up key's `ID`
+// must be wrapped with the same `MAKE_ITEMID(DEV_ID_MAZE1/2, keyid)` a
+// `build_door`-created door checks against (`dungeon.c:820,825`), keyed off
+// which of the two `maze_key1`/`maze_key2` templates was granted.
+#[test]
+fn dungeon_key_item_id_wraps_raw_keyid_by_slot() {
+    assert_eq!(
+        dungeon_key_item_id("maze_key1", 0xABCD),
+        (0x03 << 24) | 0xABCD
+    );
+    assert_eq!(
+        dungeon_key_item_id("maze_key2", 0xABCD),
+        (0x04 << 24) | 0xABCD
+    );
+
+    // Matches the corresponding door's own wrapped requirement exactly.
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    build_door(&mut world, &mut loader, 20, 20, 0xABCD, 2, 9);
+    let tile = world.map.tile(20, 20).unwrap();
+    let door = world.items.get(&ItemId(tile.item)).unwrap();
+    let key1 = u32::from_le_bytes(door.driver_data[0..4].try_into().unwrap());
+    let key2 = u32::from_le_bytes(door.driver_data[4..8].try_into().unwrap());
+    assert_eq!(dungeon_key_item_id("maze_key1", 0xABCD), key1);
+    assert_eq!(dungeon_key_item_id("maze_key2", 0xABCD), key2);
+}
+
 // C `build_cell(cx, cy, cell)` (`dungeon.c:851-937`): wall segments plus a
 // warrior-tier NPC spawn dispatch.
 #[test]

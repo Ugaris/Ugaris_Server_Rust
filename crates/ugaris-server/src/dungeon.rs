@@ -587,6 +587,23 @@ const fn make_maze_item_id(dev_id: u32, nr: u32) -> u32 {
     (dev_id << 24) | nr
 }
 
+/// C `dungeonkey` (`dungeon.c:1913-1937`): the real key item created for a
+/// picked-up `maze_key_spawn` has its `ID` set to the spawn's own raw
+/// stored `keyid` wrapped via `MAKE_ITEMID(DEV_ID_MAZE1, keyid)` for the
+/// first key slot (`drdata[0] == 1`, `maze_key1` template) or
+/// `MAKE_ITEMID(DEV_ID_MAZE2, keyid)` for the second
+/// (`maze_key2` template) - matching the corresponding `dungeon_door`'s
+/// own wrapped `key1`/`key2` requirement (`build_door`, `dungeon.c:
+/// 814-835`).
+pub(crate) fn dungeon_key_item_id(template: &str, key_id: u32) -> u32 {
+    let dev_id = if template == "maze_key1" {
+        DEV_ID_MAZE1
+    } else {
+        DEV_ID_MAZE2
+    };
+    make_maze_item_id(dev_id, key_id)
+}
+
 fn ensure_driver_data_len(item: &mut Item, len: usize) {
     if item.driver_data.len() < len {
         item.driver_data.resize(len, 0);

@@ -3241,20 +3241,17 @@ Unlocks every quest NPC. Do these before any P4 area work.
   calls to those three functions plus the wall/door/key/teleport map-tile
   builders (`build_wall`/`build_teleport`/`build_fake`/`build_door`/
   `build_key`, `dungeon.c:715-937`) ported in iteration 141 (same file,
-  see Progress Log) - REMAINING now: only the `dungeonmaster`/
-  `dungeonfighter` NPC drivers (`create_dungeon`/`enter_dungeon`/
-  `list_dungeon`/`warn_dungeon`/`destroy_dungeon`/`dungeonfighter`/
-  `dungeon_potion`/`fighter_dead`, `dungeon.c:1343-2161`) that actually
-  call `create_maze`+loop-over-`build_cell` to spin up/track/tear down a
-  live catacomb - plus a real gap iteration 141 discovered while auditing
-  the already-ported `dungeonkey` item driver (`item_driver::
-  area13_dungeon::dungeon_key_driver`/its `main.rs` `DungeonKey` outcome
-  handler): a picked-up key's `template_id` is set straight from the
-  spawn item's raw stored `keyid` with no `MAKE_ITEMID(DEV_ID_MAZE1/2,
-  ...)` wrapping applied (unlike C's own `dungeonkey`, `dungeon.c:
-  1913-1930`, which sets the real key's `ID` to the wrapped value), so it
-  can never actually match a `dungeon_door`'s wrapped `key1`/`key2`
-  fields today - needs its own small fix-up slice. The potion
+  see Progress Log); the `dungeonkey` `MAKE_ITEMID(DEV_ID_MAZE1/2,
+  keyid)` key-wrapping gap iteration 141 discovered (a picked-up key's
+  `template_id` was set straight from the spawn's raw stored `keyid`
+  with no wrapping, so it could never match a `dungeon_door`'s own
+  wrapped `key1`/`key2` fields) was fixed in iteration 142
+  (`dungeon_key_item_id`, same file, see Progress Log) - REMAINING now:
+  only the `dungeonmaster`/`dungeonfighter` NPC drivers
+  (`create_dungeon`/`enter_dungeon`/`list_dungeon`/`warn_dungeon`/
+  `destroy_dungeon`/`dungeonfighter`/`dungeon_potion`/`fighter_dead`,
+  `dungeon.c:1343-2161`) that actually call `create_maze`+loop-over-
+  `build_cell` to spin up/track/tear down a live catacomb. The potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
   reachable slice, not blocked on anything, since the alchemy-potion
@@ -4577,6 +4574,29 @@ Unlocks every quest NPC. Do these before any P4 area work.
     the `dungeonmaster`/`dungeonfighter` NPC driver orchestration and the
     `dungeonkey` `MAKE_ITEMID` gap remain of this REMAINING item - see the
     updated REMAINING note above.
+  - 2026-07-05: fixed the `dungeonkey` `MAKE_ITEMID` gap flagged by the
+    previous iteration: `crates/ugaris-server/src/dungeon.rs` gained
+    `dungeon_key_item_id(template, key_id)` (C `dungeonkey`, `dungeon.c:
+    1913-1937`) which wraps a picked-up key spawn's raw stored `keyid`
+    into `MAKE_ITEMID(DEV_ID_MAZE1, keyid)` for the `maze_key1` template
+    or `MAKE_ITEMID(DEV_ID_MAZE2, keyid)` for `maze_key2`, reusing the
+    already-ported `make_maze_item_id`/`DEV_ID_MAZE1`/`DEV_ID_MAZE2`
+    constants that `build_door` itself uses; wired into `main.rs`'s
+    `ItemDriverOutcome::DungeonKey` handler so the granted key's
+    `template_id` now matches a `dungeon_door`'s own wrapped `key1`/`key2`
+    requirement exactly, closing the bug an earlier iteration's key
+    could never open a door. New test
+    `dungeon_key_item_id_wraps_raw_keyid_by_slot` in
+    `crates/ugaris-server/src/tests/dungeon.rs` (checks both slot
+    wrappings directly and cross-checks against a `build_door`-created
+    door's own stored `key1`/`key2`). Only the `dungeonmaster`/
+    `dungeonfighter` NPC driver orchestration (`create_dungeon`/
+    `enter_dungeon`/`list_dungeon`/`warn_dungeon`/`destroy_dungeon`/
+    `dungeonfighter`/`dungeon_potion`/`fighter_dead`, `dungeon.c:
+    1343-2161`) remains of this REMAINING item now. `cargo fmt --all`,
+    `cargo test --workspace` (602 server [+1], all other crates
+    unchanged/green, zero failures), `cargo build -p ugaris-server`
+    clean with zero warnings.
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

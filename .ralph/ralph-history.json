@@ -4531,15 +4531,43 @@
         "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s",
         "test result: ok. 601 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s"
       ]
+    },
+    {
+      "iteration": 142,
+      "startedAt": "2026-07-05T07:28:15.389Z",
+      "endedAt": "2026-07-05T07:35:50.939Z",
+      "durationMs": 454999,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/dungeon.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/dungeon.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 601 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 602 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "121:| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/world/clanmaster.rs`, `crates/ugaris-core/src/world/clanclerk.rs",
+        "115:| `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-core/src/dungeon_maze.rs`, `crates/ugaris-server",
+        "-| `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-core/src/dungeon_maze.rs`, `crates/ugaris-server/sr",
+        "+| `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`, `crates/ugaris-core/src/world.rs`, `crates/ugaris-core/src/dungeon_maze.rs`, `crates/ugaris-server/sr",
+        "| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris-ser"
+      ]
     }
   ],
-  "totalDurationMs": 159701516,
+  "totalDurationMs": 160156515,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 141,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 142,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -4983,7 +5011,7 @@
       "3. Verified: `cargo fmt --all`, `cargo test --workspace` (1541+47+3+37+536, all green, zero failures": 1,
       "test result: ok. 532 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
       "test result: ok. 536 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 3,
-      "121:| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_": 2,
+      "121:| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_": 3,
       "test result: ok. 1541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1,
       "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 1510 filtered out; finished in 0.01s": 1,
       "test result: ok. 1541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
@@ -5064,7 +5092,7 @@
       "test result: ok. 1705 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 2,
       "test result: ok. 553 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s": 1,
       "test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
-      "| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs": 3,
+      "| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs": 4,
       "| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_acti": 2,
       "-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/": 2,
       "+| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/": 2,
@@ -5169,7 +5197,11 @@
       ".ok_or_else(|| ZoneError::UnknownItem(key.to_string()))?": 1,
       "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
-      "test result: ok. 601 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
+      "test result: ok. 601 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 2,
+      "test result: ok. 602 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
+      "115:| `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`": 1,
+      "-| `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`, `": 1,
+      "+| `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`, `": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
