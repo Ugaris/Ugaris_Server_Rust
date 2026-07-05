@@ -3228,10 +3228,13 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `clan_trade_bonus` - ported iteration 103, see Progress Log),
   clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
-  (transport module has the seam). REMAINING: the potion half of the
-  dungeon-guard economy (`struct clan_dungeon`'s `alc_pot`/`simple_pot` -
-  meaningless without the unported alchemy-potion economy) and the
-  raid-spawn consumer itself (`area/13/dungeon.c`, unported); the
+  (transport module has the seam). REMAINING: club-variant achievement
+  wiring (blocked on unported `club.c`), and the raid-spawn consumer of
+  `get_clan_dungeon` itself (`area/13/dungeon.c`, unported) - the potion
+  half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
+  in iteration 135 (see Progress Log): it turned out to be a real,
+  reachable slice, not blocked on anything, since the alchemy-potion
+  item drivers (`IDR_FLASK`/`IDR_POTION`) are already ported. The
   guard-count *configuration* accessors
   (`get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost`)
   were ported in iteration 134 (see Progress Log) - they turned out to
@@ -4148,6 +4151,70 @@ Unlocks every quest NPC. Do these before any P4 area work.
     all three are now genuinely the *only* remaining gaps, each gated on
     a whole separate unported system, not a self-contained slice of this
     task.
+  - 2026-07-05 (iteration 135): found that iteration 134's "potion half
+    ... blocked on the unported alchemy-potion economy" claim was itself
+    overstated - the alchemy-potion *item drivers* (`IDR_FLASK`/
+    `IDR_POTION`, `crates/ugaris-core/src/item_driver/alchemy.rs`) are
+    already fully ported (flask mixing, `mixer_use` drinking, and their
+    `modifier_index`/`modifier_value`/`driver_data` fields), so
+    `add_alc_potion`/`add_simple_potion` (`clan.c:1457-1533`) only
+    needed to *read* those already-modeled fields, not port a new
+    economy. Ported both in `crates/ugaris-core/src/clan.rs`:
+    `ClanRegistry::add_alc_potion` (takes the flask's own
+    `modifier_index`/`modifier_value` arrays directly rather than a
+    whole `Item`, keeping this module's existing "no `Item`/`Character`
+    types beyond what's needed" import discipline; matches C's two
+    three-modifier recipes - Attack/Parry/Immunity into `alc_pot[0]`,
+    Flash/MagicShield/Immunity into `alc_pot[1]` - via `CharacterValue`
+    discriminant casts, computes the `str = min(5, (mod_value[0]/4)-1)`
+    tier with a documented `.clamp(0, 5)` in place of C's
+    theoretical-only negative-index UB) and `ClanRegistry::
+    bump_simple_pot` (the plain stockpile-increment half of
+    `add_simple_potion`, given an already-classified `(kind, size)`
+    slot). Wired both real call sites in `crates/ugaris-core/src/world/
+    clanclerk.rs`: the `NT_GIVE` handler's `IDR_FLASK` branch (giving a
+    finished flask to the clerk - success destroys it and says "Added
+    one potion to our storage.", failure says "Failed to add potion to
+    storage, please try again." and falls through to this driver's
+    existing "let it vanish" `NT_GIVE` fallback, matching C's own
+    fallthrough-on-failure exactly) and a new `add potions` text command
+    (`clanmaster_c:763-771`, works for any nearby player like `deposit`,
+    ahead of the members-only gate) backed by a new
+    `World::add_simple_potions_from_inventory` helper that scans the
+    speaker's own inventory slots (`INVENTORY_START_INVENTORY..
+    INVENTORY_SIZE`), pattern-matches each `IDR_POTION` item's
+    `driver_data[1..4]` against C's nine healing/mana/combo
+    Small/Medium/Big triples, and destroys every match via the existing
+    `World::destroy_item` (which already clears the owning character's
+    inventory slot and `CharacterFlags::ITEMS`, so C's explicit
+    `ch[co].item[n] = 0;`/`CF_ITEMS` set needed no separate port).
+    Confirmed via a full `add_clanlog`/`dlog` grep of `clanmaster.c`
+    that neither function's C call site logs anything (unlike
+    `add_jewel`'s own internal clan-log entry), so no new
+    `ClanclerkEvent` variant was needed for parity. 13 new tests: 6 in
+    `clan.rs` (`add_alc_potion_matches_attack_recipe_and_computes_tier`,
+    `add_alc_potion_matches_flash_recipe_and_clamps_tier_at_five`,
+    `add_alc_potion_rejects_unmatched_modifiers`,
+    `add_alc_potion_returns_false_for_nonexistent_clan`,
+    `bump_simple_pot_increments_the_given_slot`,
+    `bump_simple_pot_returns_false_for_nonexistent_clan`), 7 in
+    `world/tests/clanclerk.rs` (flask give success/tier-clamp/rejection,
+    non-jewel-non-flask give still silently destroyed, `add potions`
+    success count + matched/unmatched item destruction, the "no
+    potions" message, and non-member eligibility). `cargo fmt --all`,
+    `cargo test --workspace` (1801 ugaris-core [+13] + 55 db + 3 net +
+    40 protocol + 584 server, all green, zero failures), `cargo build -p
+    ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+    "entering Rust game loop" with no panics (this iteration touches the
+    clanclerk tick-loop's `NT_GIVE`/text-message handlers). REMAINING
+    for the "Clan system" task overall, now genuinely only: club-variant
+    achievement wiring (blocked on unported `club.c`) and the raid-spawn
+    consumer of `get_clan_dungeon` itself (blocked on unported
+    `area/13/dungeon.c`) - both gated on a whole separate unported
+    system, not a self-contained slice of this task. The `total`-owned
+    half of each guard-count pair (`buy`'s own C-dead-code target) and
+    the `doraid` clamp remain intentionally unported per their own
+    established precedent (see the module doc comment).
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

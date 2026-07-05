@@ -33,14 +33,18 @@
 //! `crate::world::clanclerk`), even though `get_clan_dungeon`'s own only
 //! C caller (`area/13/dungeon.c`'s raid-spawn setup) is not ported yet -
 //! same "pure logic first, wiring later" precedent as `set_clan_raid`
-//! before it.
+//! before it - and the potion half of the dungeon-guard economy
+//! (`add_alc_potion`/`add_simple_potion`, `clan.c:1457-1533`, the
+//! `alc_pot`/`simple_pot` stockpile populated by finished alchemy
+//! flasks/potions handed to the clan clerk NPC, `area/30/
+//! clanmaster.c:763-771,1176-1189`), ported alongside the guard-count
+//! accessors above it.
 //!
-//! NOT ported yet (left for follow-up slices): the rest of the
-//! dungeon-guard economy (potions - `alc_pot`/`simple_pot`, populated by
-//! the unported alchemy-potion economy; the `total`-owned half of each
-//! guard-count pair, which stays permanently `0` since C's own `buy`
+//! NOT ported yet (left for follow-up slices): the `total`-owned half of
+//! each guard-count pair, which stays permanently `0` since C's own `buy`
 //! command that would set it is dead code; the raid-spawn consumer in
-//! `area/13/dungeon.c` itself), the `doraid` raid-toggle clamp inside
+//! `area/13/dungeon.c` itself (the only real reader of `get_clan_dungeon`/
+//! the potion stockpile), the `doraid` raid-toggle clamp inside
 //! `update_relations`/`set_clan_bonus`
 //! (dead in practice once a clan's first tick has run - see the comment
 //! on [`ClanRelations::update`] - and meaningless without the dungeon/
@@ -58,7 +62,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::entity::Character;
+use crate::entity::{Character, CharacterValue, MAX_MODIFIERS};
 
 /// C `#define MAXCLAN 32` (`clan.h:19`). Clan numbers are `1..MAX_CLAN`;
 /// `0` means "no clan" and numbers `>= 1024` (`CLUBOFFSET`) mean a club,
@@ -1321,6 +1325,69 @@ impl ClanRegistry {
         Ok(())
     }
 
+    /// C `add_alc_potion` (`clan.c:1457-1474`): registers a finished
+    /// alchemy flask handed to the clan clerk NPC (`NT_GIVE`,
+    /// `area/30/clanmaster.c:1176-1188`) in the clan's dungeon-guard
+    /// potion stockpile. Takes the flask's own `modifier_index`/
+    /// `modifier_value` (C's `it[in].mod_index`/`mod_value`) directly
+    /// rather than a whole `Item`, keeping this module's existing "no
+    /// `Item`/`Character` types beyond what's needed" import discipline.
+    /// Returns `false` for a mismatched driver/modifier combination (C's
+    /// `return -1`) - the caller (`crate::world::clanclerk`) uses that to
+    /// decide whether to destroy the item or leave it (matching C's own
+    /// "try to give it back, then let it vanish" fallback).
+    ///
+    /// Deviation from C: `str = min(5, (mod_value[0]/4)-1)` can go
+    /// negative in C when `mod_value[0] < 4` (an out-of-bounds array
+    /// write in the original - never observed from a real finished
+    /// flask, whose modifier values are always `>= 4`, see
+    /// `item_driver::alchemy::finish_flask_mix`) - clamped to `0` here
+    /// instead of guessing at C's undefined behavior.
+    pub fn add_alc_potion(
+        &mut self,
+        cnr: u16,
+        modifier_index: [i16; MAX_MODIFIERS],
+        modifier_value: [i16; MAX_MODIFIERS],
+    ) -> bool {
+        let kind = if modifier_index[0] == CharacterValue::Attack as i16
+            && modifier_index[1] == CharacterValue::Parry as i16
+            && modifier_index[2] == CharacterValue::Immunity as i16
+        {
+            0usize
+        } else if modifier_index[0] == CharacterValue::Flash as i16
+            && modifier_index[1] == CharacterValue::MagicShield as i16
+            && modifier_index[2] == CharacterValue::Immunity as i16
+        {
+            1usize
+        } else {
+            return false;
+        };
+        let tier = (i32::from(modifier_value[0]) / 4 - 1).clamp(0, 5) as usize;
+        let Some(identity) = self.identity_mut(cnr) else {
+            return false;
+        };
+        identity.economy.alc_pot[kind][tier] += 1;
+        self.dirty = true;
+        true
+    }
+
+    /// C `add_simple_potion`'s per-match stockpile increment
+    /// (`clan.c:1487-1521`'s nine `if (flag) { ... clan[nr].dungeon.
+    /// simple_pot[k][s]++; }` branches) - given an already-classified
+    /// `(kind, size)` slot (see `crate::world::clanclerk`'s per-item
+    /// pattern match on `drdata[1..4]`, the only caller), bumps
+    /// `ClanEconomy::simple_pot[kind][size]`. Returns `false` (no-op) for
+    /// a nonexistent clan, matching every other `ClanIdentity`-mutating
+    /// method in this module.
+    pub fn bump_simple_pot(&mut self, cnr: u16, kind: usize, size: usize) -> bool {
+        let Some(identity) = self.identity_mut(cnr) else {
+            return false;
+        };
+        identity.economy.simple_pot[kind][size] += 1;
+        self.dirty = true;
+        true
+    }
+
     /// C `get_clan_raid` (`clan.c:1541-1543`). Out-of-range/nonexistent
     /// clans read as `false` (C reads `clan[cnr].dungeon.doraid` directly
     /// with no bounds check at all - a stricter Rust seam, same reasoning
@@ -2468,6 +2535,86 @@ mod tests {
         assert_eq!(registry.get_clan_dungeon(999, 1), 0);
         assert_eq!(registry.get_clan_dungeon(1, 0), 0);
         assert_eq!(registry.get_clan_dungeon(1, 22), 0);
+    }
+
+    #[test]
+    fn add_alc_potion_matches_attack_recipe_and_computes_tier() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Alchemists", 0).unwrap();
+        let modifier_index = {
+            let mut idx = [-1i16; MAX_MODIFIERS];
+            idx[0] = CharacterValue::Attack as i16;
+            idx[1] = CharacterValue::Parry as i16;
+            idx[2] = CharacterValue::Immunity as i16;
+            idx
+        };
+        let modifier_value = {
+            let mut val = [0i16; MAX_MODIFIERS];
+            val[0] = 12; // tier (12/4)-1 = 2
+            val
+        };
+        assert!(registry.add_alc_potion(nr, modifier_index, modifier_value));
+        assert_eq!(registry.identity(nr).unwrap().economy.alc_pot[0][2], 1);
+    }
+
+    #[test]
+    fn add_alc_potion_matches_flash_recipe_and_clamps_tier_at_five() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Alchemists", 0).unwrap();
+        let modifier_index = {
+            let mut idx = [-1i16; MAX_MODIFIERS];
+            idx[0] = CharacterValue::Flash as i16;
+            idx[1] = CharacterValue::MagicShield as i16;
+            idx[2] = CharacterValue::Immunity as i16;
+            idx
+        };
+        let modifier_value = {
+            let mut val = [0i16; MAX_MODIFIERS];
+            val[0] = 40; // (40/4)-1 = 9, clamped to 5
+            val
+        };
+        assert!(registry.add_alc_potion(nr, modifier_index, modifier_value));
+        assert_eq!(registry.identity(nr).unwrap().economy.alc_pot[1][5], 1);
+    }
+
+    #[test]
+    fn add_alc_potion_rejects_unmatched_modifiers() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Alchemists", 0).unwrap();
+        assert!(!registry.add_alc_potion(nr, [-1; MAX_MODIFIERS], [0; MAX_MODIFIERS]));
+        assert_eq!(
+            registry.identity(nr).unwrap().economy.alc_pot,
+            [[0; 6], [0; 6]]
+        );
+    }
+
+    #[test]
+    fn add_alc_potion_returns_false_for_nonexistent_clan() {
+        let mut registry = ClanRegistry::new();
+        let modifier_index = {
+            let mut idx = [-1i16; MAX_MODIFIERS];
+            idx[0] = CharacterValue::Attack as i16;
+            idx[1] = CharacterValue::Parry as i16;
+            idx[2] = CharacterValue::Immunity as i16;
+            idx
+        };
+        assert!(!registry.add_alc_potion(999, modifier_index, [4; MAX_MODIFIERS]));
+    }
+
+    #[test]
+    fn bump_simple_pot_increments_the_given_slot() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Alchemists", 0).unwrap();
+        assert!(registry.bump_simple_pot(nr, 0, 1));
+        assert!(registry.bump_simple_pot(nr, 0, 1));
+        assert_eq!(registry.identity(nr).unwrap().economy.simple_pot[0][1], 2);
+        assert_eq!(registry.identity(nr).unwrap().economy.simple_pot[0][0], 0);
+    }
+
+    #[test]
+    fn bump_simple_pot_returns_false_for_nonexistent_clan() {
+        let mut registry = ClanRegistry::new();
+        assert!(!registry.bump_simple_pot(999, 0, 0));
     }
 
     #[test]

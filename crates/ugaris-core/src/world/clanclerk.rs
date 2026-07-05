@@ -3,18 +3,18 @@
 //! Ports `src/area/30/clanmaster.c`'s `clanclerk_driver`: the `help` text
 //! command, `deposit`/`withdraw` treasury commands, the leader-only
 //! `set bonus`/`relation`/`rank name`/`website`/`message`/`raiding on`/
-//! `raiding off`/`raiding god on`/`raiding god off` commands, and the
-//! `NT_GIVE` Clan Jewel handoff (`add_jewel`). The generic small-talk qa
-//! table hit (`analyse_text_driver`'s `case 2` - "Our clan has %d
-//! jewels.") is also ported, reusing the same
+//! `raiding off`/`raiding god on`/`raiding god off` commands, the
+//! `NT_GIVE` Clan Jewel handoff (`add_jewel`), the `add potions` command
+//! (`add_simple_potion`, scans the speaker's own inventory for finished
+//! `IDR_POTION` items), and `NT_GIVE`'s `IDR_FLASK` branch
+//! (`add_alc_potion`, a finished alchemy flask handed directly to the
+//! clerk). The generic small-talk qa table hit (`analyse_text_driver`'s
+//! `case 2` - "Our clan has %d jewels.") is also ported, reusing the same
 //! [`crate::character_driver::CLANMASTER_QA`] table `clanmaster.c` itself
 //! shares between both drivers.
 //!
 //! Deliberately out of scope for this slice (documented here, not
 //! silently dropped - see the "Clan system" task in `PORTING_TODO.md`):
-//! - `add potions`/`NT_GIVE`'s `IDR_FLASK` branch (`add_simple_potion`/
-//!   `add_alc_potion`) - the alchemy-potion economy these call into has
-//!   no Rust port at all.
 //! - `buy` (the dungeon-guard *purchase* command) - unconditionally dead
 //!   code in C itself (`say("Buying has been disabled...");  continue;`
 //!   fires before any of the real parsing/purchase logic below it ever
@@ -350,6 +350,13 @@ impl World {
             self.clanclerk_handle_deposit(clanclerk_id, speaker_id, data.clan, &text[pos + 7..]);
         }
 
+        // C: `add potions` (`clanmaster.c:763-771`) also works for anyone
+        // nearby, member or not - it appears textually before the
+        // members-only gate below, same as `deposit`.
+        if lower.contains("add potions") {
+            self.clanclerk_handle_add_potions(clanclerk_id, speaker_id, data.clan);
+        }
+
         // C: `if (get_char_clan(co) != dat->clan) { continue; }` -
         // members only past this point.
         let Some(speaker) = self.characters.get_mut(&speaker_id) else {
@@ -588,6 +595,86 @@ impl World {
             clanclerk_id,
             &format!("Thank you, {speaker_name}. I have deposited {nr}G into the clan treasury."),
         );
+    }
+
+    /// C `clanclerk_driver`'s `add potions` branch (`clanmaster.c:763-771`,
+    /// `add_simple_potion`, `clan.c:1480-1533`).
+    fn clanclerk_handle_add_potions(
+        &mut self,
+        clanclerk_id: CharacterId,
+        speaker_id: CharacterId,
+        clan: u16,
+    ) {
+        let count = self.add_simple_potions_from_inventory(clan, speaker_id);
+        if count > 0 {
+            self.npc_say(
+                clanclerk_id,
+                &format!("Very well. I have added {count} potions to the clan stores."),
+            );
+        } else {
+            self.npc_say(clanclerk_id, "I'm sorry, there were no potions to add.");
+        }
+    }
+
+    /// C `add_simple_potion` (`clan.c:1480-1533`): scans the speaking
+    /// player's own inventory (slots `INVENTORY_START_INVENTORY..
+    /// INVENTORY_SIZE`, matching C's `ch[co].item[30..INVENTORYSIZE]`)
+    /// for finished `IDR_POTION` items matching one of C's nine
+    /// healing/mana/combo Small/Medium/Big `drdata[1..4]` patterns, bumps
+    /// the clan's `simple_pot` stockpile for each match, and destroys the
+    /// matched items. Returns the number of potions added (C's own
+    /// return value). `World::destroy_item` already clears the owning
+    /// character's inventory slot and sets `CharacterFlags::ITEMS`, so
+    /// C's explicit `ch[co].item[n] = 0;`/`ch[co].flags |= CF_ITEMS;`
+    /// need no separate port here.
+    fn add_simple_potions_from_inventory(&mut self, cnr: u16, character_id: CharacterId) -> u32 {
+        let Some(character) = self.characters.get(&character_id) else {
+            return 0;
+        };
+        let candidate_ids: Vec<ItemId> = character
+            .inventory
+            .get(INVENTORY_START_INVENTORY..INVENTORY_SIZE)
+            .unwrap_or_default()
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+
+        let mut matched_ids = Vec::new();
+        for item_id in candidate_ids {
+            let Some(item) = self.items.get(&item_id) else {
+                continue;
+            };
+            if item.driver != IDR_POTION {
+                continue;
+            }
+            let d1 = item.driver_data.get(1).copied().unwrap_or(0);
+            let d2 = item.driver_data.get(2).copied().unwrap_or(0);
+            let d3 = item.driver_data.get(3).copied().unwrap_or(0);
+            let slot = match (d1, d2, d3) {
+                (8, 0, 0) => Some((0usize, 0usize)),
+                (16, 0, 0) => Some((0, 1)),
+                (32, 0, 0) => Some((0, 2)),
+                (0, 8, 0) => Some((1, 0)),
+                (0, 16, 0) => Some((1, 1)),
+                (0, 32, 0) => Some((1, 2)),
+                (8, 8, 8) => Some((2, 0)),
+                (16, 16, 16) => Some((2, 1)),
+                (32, 32, 32) => Some((2, 2)),
+                _ => None,
+            };
+            let Some((kind, size)) = slot else {
+                continue;
+            };
+            if self.clan_registry.bump_simple_pot(cnr, kind, size) {
+                matched_ids.push(item_id);
+            }
+        }
+        let count = matched_ids.len() as u32;
+        for item_id in matched_ids {
+            self.destroy_item(item_id);
+        }
+        count
     }
 
     /// C `clanclerk_driver`'s `withdraw` branch (`clanmaster.c:790-810`).
@@ -1010,9 +1097,9 @@ impl World {
         }
     }
 
-    /// C `clanclerk_driver`'s `NT_GIVE` branch, Clan Jewel case only
-    /// (`clanmaster.c:1157-1168`) - see the module doc comment for why
-    /// the `IDR_FLASK` potion branch is out of scope.
+    /// C `clanclerk_driver`'s `NT_GIVE` branch (`clanmaster.c:1163-1196`):
+    /// the Clan Jewel case (`add_jewel`) and the `IDR_FLASK` finished-potion
+    /// case (`add_alc_potion`).
     fn clanclerk_handle_give_message(
         &mut self,
         clanclerk_id: CharacterId,
@@ -1027,27 +1114,50 @@ impl World {
         else {
             return;
         };
-        let is_clan_jewel = self
-            .items
-            .get(&item_id)
-            .is_some_and(|item| item.driver == IDR_CLANJEWEL);
-
-        if !is_clan_jewel {
-            // Out of scope: the `IDR_FLASK` potion branch and the
-            // "try to give it back" fallback (same simplification as
-            // `world/clanmaster.rs`'s own `NT_GIVE` handler).
+        let Some(item) = self.items.get(&item_id) else {
             self.destroy_item(item_id);
+            return;
+        };
+        let driver = item.driver;
+
+        if driver == IDR_CLANJEWEL {
+            self.clan_registry.add_jewel(data.clan).ok();
+            self.destroy_item(item_id);
+            self.npc_quiet_say(clanclerk_id, "Added Jewel.");
+            self.pending_clanclerk_events
+                .push(ClanclerkEvent::JewelAdded {
+                    clan_nr: data.clan,
+                    actor_id: giver_id,
+                });
             return;
         }
 
-        self.clan_registry.add_jewel(data.clan).ok();
+        if driver == IDR_FLASK {
+            let modifier_index = item.modifier_index;
+            let modifier_value = item.modifier_value;
+            if self
+                .clan_registry
+                .add_alc_potion(data.clan, modifier_index, modifier_value)
+            {
+                self.destroy_item(item_id);
+                self.npc_say(clanclerk_id, "Added one potion to our storage.");
+                return;
+            }
+            self.npc_say(
+                clanclerk_id,
+                "Failed to add potion to storage, please try again.",
+            );
+            // Falls through to the "try to give it back, then let it
+            // vanish" simplification below, same as C's own fallthrough
+            // on a failed `add_alc_potion` (C's own `give_driver`/"let
+            // it vanish" path is out of scope, see the module doc
+            // comment).
+        }
+
+        // Out of scope: the "try to give it back" fallback (same
+        // simplification as `world/clanmaster.rs`'s own `NT_GIVE`
+        // handler).
         self.destroy_item(item_id);
-        self.npc_quiet_say(clanclerk_id, "Added Jewel.");
-        self.pending_clanclerk_events
-            .push(ClanclerkEvent::JewelAdded {
-                clan_nr: data.clan,
-                actor_id: giver_id,
-            });
     }
 
     /// C `clanclerk_driver`'s tail movement (`clanmaster.c:1209-1212`):

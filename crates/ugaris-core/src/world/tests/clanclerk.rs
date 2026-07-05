@@ -1,7 +1,8 @@
 use super::*;
 use crate::character_driver::{ClanclerkDriverData, CDR_CLANCLERK};
 use crate::clan::ClanRelation;
-use crate::item_driver::IDR_CLANJEWEL;
+use crate::entity::CharacterValue;
+use crate::item_driver::{IDR_CLANJEWEL, IDR_FLASK, IDR_POTION};
 use crate::world::clanclerk::ClanclerkEvent;
 
 fn clanclerk_npc(id: u32, clan: u16) -> Character {
@@ -38,6 +39,40 @@ fn clan_jewel_item(id: u32) -> Item {
     let mut jewel = item(id, ItemFlags::empty());
     jewel.driver = IDR_CLANJEWEL;
     jewel
+}
+
+/// A finished, shaken alchemy flask matching `add_alc_potion`'s first
+/// branch ("Attack, Parry, Immunity+N"), `tier` selecting `mod_value[0]`
+/// (`4 + tier*4`, matching `str = min(5, (mod_value[0]/4)-1)`).
+fn attack_flask_item(id: u32, tier: i16) -> Item {
+    let mut flask = item(id, ItemFlags::empty());
+    flask.driver = IDR_FLASK;
+    flask.modifier_index[0] = CharacterValue::Attack as i16;
+    flask.modifier_index[1] = CharacterValue::Parry as i16;
+    flask.modifier_index[2] = CharacterValue::Immunity as i16;
+    flask.modifier_value[0] = 4 + tier * 4;
+    flask
+}
+
+/// A finished, shaken alchemy flask matching `add_alc_potion`'s second
+/// branch ("Flash, Magic Shield, Immunity+N").
+fn flash_flask_item(id: u32, tier: i16) -> Item {
+    let mut flask = item(id, ItemFlags::empty());
+    flask.driver = IDR_FLASK;
+    flask.modifier_index[0] = CharacterValue::Flash as i16;
+    flask.modifier_index[1] = CharacterValue::MagicShield as i16;
+    flask.modifier_index[2] = CharacterValue::Immunity as i16;
+    flask.modifier_value[0] = 4 + tier * 4;
+    flask
+}
+
+/// A finished `IDR_POTION` item matching one of `add_simple_potion`'s
+/// nine `drdata[1..4]` patterns.
+fn simple_potion_item(id: u32, d1: u8, d2: u8, d3: u8) -> Item {
+    let mut potion = item(id, ItemFlags::empty());
+    potion.driver = IDR_POTION;
+    potion.driver_data = vec![0, d1, d2, d3];
+    potion
 }
 
 #[test]
@@ -738,4 +773,206 @@ fn jewels_qa_reports_jewel_count() {
     assert!(texts
         .iter()
         .any(|t| t.message.contains("Our clan has 2 jewels.")));
+}
+
+#[test]
+fn flask_give_adds_attack_potion_and_destroys_item() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+    world.items.insert(ItemId(900), attack_flask_item(900, 0));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.cursor_item = Some(ItemId(900));
+        clanclerk.push_driver_message(NT_GIVE, 2, 900, 0);
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(
+        world.clan_registry.identity(clan).unwrap().economy.alc_pot[0][0],
+        1
+    );
+    assert!(world.items.get(&ItemId(900)).is_none());
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Added one potion to our storage.")));
+}
+
+#[test]
+fn flask_give_adds_flash_potion_at_correct_tier() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+    // tier 5 (mod_value 24) and an over-24 value both clamp to tier 5.
+    world.items.insert(ItemId(900), flash_flask_item(900, 7));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.cursor_item = Some(ItemId(900));
+        clanclerk.push_driver_message(NT_GIVE, 2, 900, 0);
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(
+        world.clan_registry.identity(clan).unwrap().economy.alc_pot[1][5],
+        1
+    );
+}
+
+#[test]
+fn flask_give_rejects_unmatched_modifiers_and_destroys_item() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+    let mut flask = item(900, ItemFlags::empty());
+    flask.driver = IDR_FLASK;
+    // No modifiers set at all - doesn't match either recipe.
+    world.items.insert(ItemId(900), flask);
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.cursor_item = Some(ItemId(900));
+        clanclerk.push_driver_message(NT_GIVE, 2, 900, 0);
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(
+        world.clan_registry.identity(clan).unwrap().economy.alc_pot,
+        [[0; 6], [0; 6]]
+    );
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Failed to add potion to storage, please try again.")));
+    // Out-of-scope "give it back" fallback: the item still vanishes.
+    assert!(world.items.get(&ItemId(900)).is_none());
+}
+
+#[test]
+fn non_jewel_non_flask_give_is_silently_destroyed() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Leader", &world, clan, 4), 10, 10));
+    world
+        .items
+        .insert(ItemId(900), item(900, ItemFlags::empty()));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.cursor_item = Some(ItemId(900));
+        clanclerk.push_driver_message(NT_GIVE, 2, 900, 0);
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert!(world.items.get(&ItemId(900)).is_none());
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.is_empty());
+}
+
+#[test]
+fn add_potions_adds_matching_potions_and_reports_count() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 10, 10));
+
+    let mut small_healing = simple_potion_item(900, 8, 0, 0); // Small healing
+    small_healing.carried_by = Some(CharacterId(2));
+    world.items.insert(ItemId(900), small_healing);
+    let mut medium_combo = simple_potion_item(901, 16, 16, 16); // Medium combo
+    medium_combo.carried_by = Some(CharacterId(2));
+    world.items.insert(ItemId(901), medium_combo);
+    let mut no_match = simple_potion_item(902, 1, 2, 3); // no match
+    no_match.carried_by = Some(CharacterId(2));
+    world.items.insert(ItemId(902), no_match);
+
+    if let Some(godmode) = world.characters.get_mut(&CharacterId(2)) {
+        godmode.inventory[30] = Some(ItemId(900));
+        godmode.inventory[31] = Some(ItemId(901));
+        godmode.inventory[32] = Some(ItemId(902));
+    }
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "add potions");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(
+        world
+            .clan_registry
+            .identity(clan)
+            .unwrap()
+            .economy
+            .simple_pot[0][0],
+        1
+    );
+    assert_eq!(
+        world
+            .clan_registry
+            .identity(clan)
+            .unwrap()
+            .economy
+            .simple_pot[2][1],
+        1
+    );
+    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(world.items.get(&ItemId(901)).is_none());
+    assert!(world.items.get(&ItemId(902)).is_some());
+    let inventory = &world.characters.get(&CharacterId(2)).unwrap().inventory;
+    assert_eq!(inventory[30], None);
+    assert_eq!(inventory[31], None);
+    assert_eq!(inventory[32], Some(ItemId(902)));
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Very well. I have added 2 potions to the clan stores.")));
+}
+
+#[test]
+fn add_potions_reports_no_potions_message_when_nothing_matches() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "add potions");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("I'm sorry, there were no potions to add.")));
+}
+
+#[test]
+fn add_potions_works_for_non_clan_member() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(player(2, "Visitor"), 10, 10));
+    let mut potion = simple_potion_item(900, 8, 0, 0);
+    potion.carried_by = Some(CharacterId(2));
+    world.items.insert(ItemId(900), potion);
+    if let Some(visitor) = world.characters.get_mut(&CharacterId(2)) {
+        visitor.inventory[30] = Some(ItemId(900));
+    }
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "add potions");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(
+        world
+            .clan_registry
+            .identity(clan)
+            .unwrap()
+            .economy
+            .simple_pot[0][0],
+        1
+    );
+    assert!(world.items.get(&ItemId(900)).is_none());
 }

@@ -4303,15 +4303,46 @@
         "Error message: JSON Parse error: Property name must be a string literal",
         "+        Err(ClanDungeonUseError::InvalidRequest)"
       ]
+    },
+    {
+      "iteration": 135,
+      "startedAt": "2026-07-05T05:04:45.734Z",
+      "endedAt": "2026-07-05T05:27:47.398Z",
+      "durationMs": 1381076,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/clan.rs",
+        "crates/ugaris-core/src/world/clanclerk.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/clanclerk.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 584 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "121:| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/world/clanmaster.rs`, `crates/ugaris-core/src/world/clanclerk.rs",
+        "257:- `IDR_FLASK` finished-potion use now follows the C `mixer_use` application path instead of the Rust-only unported feedback: shaken alchemy flasks with an empty cursor check item requirements, ins",
+        "1086:            return Err(ClanIdentityError::InvalidRank);",
+        "1089:            return Err(ClanIdentityError::NameTooLong);",
+        "1091:        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;",
+        "1107:        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;",
+        "1117:        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;",
+        "1140:        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;"
+      ]
     }
   ],
-  "totalDurationMs": 151119760,
+  "totalDurationMs": 152500836,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 134,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 135,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -4755,7 +4786,7 @@
       "3. Verified: `cargo fmt --all`, `cargo test --workspace` (1541+47+3+37+536, all green, zero failures": 1,
       "test result: ok. 532 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
       "test result: ok. 536 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 3,
-      "121:| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_": 1,
+      "121:| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_": 2,
       "test result: ok. 1541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1,
       "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 1510 filtered out; finished in 0.01s": 1,
       "test result: ok. 1541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
@@ -4904,7 +4935,15 @@
       "+        .ok_or(ClanDungeonUseError::InvalidRequest)?;": 1,
       "+        return Err(ClanDungeonUseError::InvalidRequest);": 1,
       "+        return Err(ClanDungeonUseError::OverBudget(cost));": 1,
-      "+        Err(ClanDungeonUseError::InvalidRequest)": 1
+      "+        Err(ClanDungeonUseError::InvalidRequest)": 1,
+      "test result: ok. 584 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s": 1,
+      "257:- `IDR_FLASK` finished-potion use now follows the C `mixer_use` application path instead of the ": 1,
+      "1086:            return Err(ClanIdentityError::InvalidRank);": 1,
+      "1089:            return Err(ClanIdentityError::NameTooLong);": 1,
+      "1091:        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;": 1,
+      "1107:        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;": 1,
+      "1117:        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;": 1,
+      "1140:        let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
