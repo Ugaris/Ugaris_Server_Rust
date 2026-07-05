@@ -2619,6 +2619,26 @@ impl PlayerRuntime {
         true
     }
 
+    /// C `tunnel_ppd::clevel` (`tunnel.h:7`): the player's currently
+    /// assigned tunnel dungeon level (`0` for a freshly zeroed struct,
+    /// matching an un-set `set_data`).
+    pub fn tunnel_clevel(&self) -> i32 {
+        if self.tunnel_ppd.len() < LEGACY_TUNNEL_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.tunnel_ppd, 0)
+    }
+
+    /// Writes `tunnel_ppd::clevel`, growing the backing store to
+    /// [`LEGACY_TUNNEL_PPD_SIZE`] on first use (matching C's zero-
+    /// initializing `set_data`). C `/changetunnel` (`command.c:2045-2085`).
+    pub fn set_tunnel_clevel(&mut self, value: i32) {
+        if self.tunnel_ppd.len() < LEGACY_TUNNEL_PPD_SIZE {
+            self.tunnel_ppd.resize(LEGACY_TUNNEL_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.tunnel_ppd, 0, value);
+    }
+
     /// C `tunnel_ppd::used[level]` (`tunnel.h:8`): the number of rewarded
     /// completions recorded at `level` (`0` for a level never touched, or
     /// for an out-of-range/negative `level`, matching a freshly zeroed C

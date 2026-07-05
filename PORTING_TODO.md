@@ -7001,7 +7001,15 @@ Unlocks every quest NPC. Do these before any P4 area work.
    `/tunnels`/`/demonlords` were already done
    earlier - see their own entries above); `/killbless` done (see
    iteration 184, `command.c:9605-9617`, no permission gate, destroys the
-   caller's own bless spell item) (see the Progress Log entries
+   caller's own bless spell item); `/changetunnel`/`/settunnel`/
+   `/cleartunnel`/`/solvetunnel` done (see iteration 185,
+   `command.c:2045-2222`, `CF_GOD`-gated, the tunnel-editor family right
+   next to `/tunnel`/`/tunnellist` - `changetunnel`/`settunnel`/
+   `cleartunnel` edit an explicit named online target's `tunnel_ppd`
+   (no self-fallback, unlike `/setrd`'s `parse_exp_command_target`);
+   `/solvetunnel` is self-only and message-only in the C oracle itself,
+   since its own reward call is commented out there) (see the Progress
+   Log entries
   pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
@@ -8204,6 +8212,62 @@ Unlocks every quest NPC. Do these before any P4 area work.
   not exhaustively re-verify every other name in the prior REMAINING
   list, several of which were previously miscategorized by naive
   grepping too).
+
+  Progress Log (iteration 185): ported the tunnel-editor family right
+  next to the already-ported `/tunnel`/`/tunnellist` -
+  `/changetunnel`/`/settunnel`/`/cleartunnel`/`/solvetunnel`
+  (`command.c:2045-2222`, dispatched at `command.c:9924-9958`,
+  `CF_GOD`-gated). Considered porting the sibling `/pentinfo`/
+  `/setpentcount`/`/setpentstatus`/`/setpentbonus`/`/resetpent`/
+  `/penthelp` debug family first (`command.c:1136-1362`) but confirmed
+  via a fresh read of `src/area/4/pents.c` that their backing
+  `pent_debug_data`/`pentagram_player_data`/`macro_pent_data` (three
+  files' identical re-declarations of the same `DRD_PENT_NPPD` layout)
+  is the actual live per-player pentagram-minigame run-state, not
+  throwaway debug scaffolding - porting the debug commands first would
+  still require inventing that whole run-state model ahead of the real
+  "Area 4 - `pents.c`" gameplay task (P4 section), exactly as this
+  note's iteration-172 finding already warned; left them alone rather
+  than duplicate that warning a third time. Added
+  `PlayerRuntime::tunnel_clevel`/`set_tunnel_clevel` (`player.rs`, next
+  to the existing `tunnel_used`/`set_tunnel_used` pair, same
+  `tunnel_ppd` raw-bytes-plus-accessors convention as
+  `gorwin_tunnel_level`) for the struct's first field (offset 0, C
+  `tunnel_ppd::clevel`). `changetunnel`/`settunnel`/`cleartunnel` all
+  require an explicit target name via `take_legacy_alpha_name` (no
+  bare-number-means-self shortcut, unlike `/setrd`'s
+  `parse_exp_command_target` - verified by reading C's own `isalpha`
+  parse loop, which has no self-fallback branch), reject an
+  unmatched/empty name with "Sorry, no one by the name ... around.",
+  validate the level against `MIN_TUNNEL_LEVEL..=MAX_TUNNEL_LEVEL` (now
+  imported into `main.rs`'s `ugaris_core::player::{...}` re-export list
+  alongside the pre-existing `MAX_TUNNEL_USES`), then mutate the target's
+  `tunnel_ppd` and notify both the caller and (if different) the target
+  player - the latter needed a new `KeyringCommandResult::
+  other_messages: Vec<(CharacterId, String)>` field (plain-text
+  message-to-non-caller, matching the existing
+  `auction::AuctionCommandResult::other_messages` convention rather than
+  the raw-bytes `target_message_bytes` field, which was also newly wired
+  at the `apply_admin_character_command` call site in `main.rs` since it
+  had never been read from that dispatcher before). `/solvetunnel`
+  parses/validates its `exptype` argument and reports the reward-kind
+  message but mutates nothing, matching C exactly: its own
+  `give_reward(cn, ppd, door_type)` call is commented out in the oracle
+  itself (`command.c:2218`), so the real reward mechanic has never
+  existed to port. 8 new tests in
+  `crates/ugaris-server/src/tests/commands_admin.rs` (named-target
+  clevel set + target notification + caller-self-untouched, out-of-range
+  level and unknown-name rejection, `CF_GOD` gate, settunnel/cleartunnel
+  completed-amount mutation + notification, self-target sends no
+  `other_messages`, solvetunnel's three message variants, `CF_GOD` gate
+  on solvetunnel). `cargo fmt --all`, `cargo test --workspace` (2022
+  ugaris-core + 55 db + 3 net + 40 protocol + 791 server [+8], all
+  green, zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic. REMAINING: the ~90-entry
+  `cmdcmp` tail (mostly `ac*` anticheat, `macro*` macro-detection, plus
+  `/depotsort`, `/punish`/`/rename`/`/showppd` family already flagged as
+  blocked above) is still mostly unported.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

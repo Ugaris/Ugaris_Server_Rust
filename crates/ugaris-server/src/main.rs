@@ -154,8 +154,8 @@ use ugaris_core::{
         CaligarSkellyDeathResult, CommandAlias, DemonShrineResult, IgnoreToggleResult,
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
         XmasTreeResult, ARENA_PPD_NEWCOMER_SCORE, DEFERRED_ACHIEVEMENTS, DEFERRED_AUCTION,
-        LEGACY_SWEAR_PPD_SIZE, MAX_TUNNEL_USES, MILITARY_PPD_MAXADVISOR, SWEAR_SENTENCE_COUNT,
-        SWEAR_SENTENCE_LEN,
+        LEGACY_SWEAR_PPD_SIZE, MAX_TUNNEL_LEVEL, MAX_TUNNEL_USES, MILITARY_PPD_MAXADVISOR,
+        MIN_TUNNEL_LEVEL, SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
     },
     quest::{QuestReopenResult, QF_OPEN},
     spell::{
@@ -1522,6 +1522,9 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 for message in result.message_bytes {
                                     command_feedback_bytes.push((character_id, message));
+                                }
+                                for (target_id, message) in result.other_messages {
+                                    command_feedback.push((target_id, message));
                                 }
                                 if result.inventory_changed {
                                     command_inventory_refresh.push(character_id);

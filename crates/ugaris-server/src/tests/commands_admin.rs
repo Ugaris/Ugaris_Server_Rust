@@ -5878,3 +5878,222 @@ fn god_solverd_command_marks_all_but_the_continuity_shrine_used() {
     }
     assert!(!target_player.has_used_random_shrine(29));
 }
+
+#[test]
+fn god_changetunnel_command_sets_named_target_clevel_and_notifies_them() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/changetunnel Target 42",
+        1,
+    )
+    .expect("god changetunnel should be recognized");
+    assert_eq!(result.messages, vec!["Set Target's tunnel level to 42."]);
+    assert_eq!(
+        result.other_messages,
+        vec![(
+            target_id,
+            "Your tunnel level has been set to 42 by a god.".to_string()
+        )]
+    );
+    assert_eq!(
+        runtime
+            .player_for_character(target_id)
+            .unwrap()
+            .tunnel_clevel(),
+        42
+    );
+    // The caller's own tunnel state is untouched.
+    assert_eq!(
+        runtime
+            .player_for_character(god_id)
+            .unwrap()
+            .tunnel_clevel(),
+        0
+    );
+}
+
+#[test]
+fn changetunnel_rejects_out_of_range_level_and_unknown_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
+
+    let missing = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/changetunnel Ghost 42",
+        1,
+    )
+    .expect("changetunnel should be recognized even for a missing target");
+    assert_eq!(
+        missing.messages,
+        vec!["Sorry, no one by the name Ghost around."]
+    );
+
+    for command in ["/changetunnel Target 9", "/changetunnel Target 201"] {
+        let result = apply_admin_character_command(&mut world, &mut runtime, god_id, command, 1)
+            .expect("changetunnel should be recognized even with an invalid level");
+        assert_eq!(
+            result.messages,
+            vec!["Invalid tunnel level. Must be between 10 and 200."]
+        );
+    }
+}
+
+#[test]
+fn changetunnel_is_god_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "/changetunnel Target 42",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn god_settunnel_command_sets_completed_amount_for_level() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/settunnel Target 15 7",
+        1,
+    )
+    .expect("god settunnel should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Set Target's completed amount for tunnel level 15 to 7."]
+    );
+    assert_eq!(
+        result.other_messages,
+        vec![(
+            target_id,
+            "Your completed amount for tunnel level 15 has been set to 7 by a god.".to_string()
+        )]
+    );
+    assert_eq!(
+        runtime
+            .player_for_character(target_id)
+            .unwrap()
+            .tunnel_used(15),
+        7
+    );
+}
+
+#[test]
+fn god_cleartunnel_command_clears_completed_amount_for_level() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
+    runtime
+        .player_for_character_mut(target_id)
+        .unwrap()
+        .set_tunnel_used(15, 7);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/cleartunnel Target 15",
+        1,
+    )
+    .expect("god cleartunnel should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Cleared Target's completed amount for tunnel level 15."]
+    );
+    assert_eq!(
+        result.other_messages,
+        vec![(
+            target_id,
+            "Your completed amount for tunnel level 15 has been cleared by a god.".to_string()
+        )]
+    );
+    assert_eq!(
+        runtime
+            .player_for_character(target_id)
+            .unwrap()
+            .tunnel_used(15),
+        0
+    );
+}
+
+#[test]
+fn changetunnel_command_on_self_sends_no_other_message() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/changetunnel Godmode 30",
+        1,
+    )
+    .expect("god changetunnel on self should be recognized");
+    assert_eq!(result.messages, vec!["Set Godmode's tunnel level to 30."]);
+    assert!(result.other_messages.is_empty());
+}
+
+#[test]
+fn god_solvetunnel_command_reports_reward_kind_without_mutating_state() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
+
+    let exp = apply_admin_character_command(&mut world, &mut runtime, god_id, "/solvetunnel 0", 1)
+        .expect("god solvetunnel should be recognized");
+    assert_eq!(
+        exp.messages,
+        vec!["Solved current tunnel and granted experience reward."]
+    );
+
+    let mil = apply_admin_character_command(&mut world, &mut runtime, god_id, "/solvetunnel 1", 1)
+        .expect("god solvetunnel should be recognized");
+    assert_eq!(
+        mil.messages,
+        vec!["Solved current tunnel and granted military experience reward."]
+    );
+
+    let invalid =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/solvetunnel 2", 1)
+            .expect("god solvetunnel should be recognized even with an invalid type");
+    assert_eq!(
+        invalid.messages,
+        vec!["Invalid exp type. Must be 0 (exp) or 1 (military exp)."]
+    );
+}
+
+#[test]
+fn solvetunnel_is_god_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "/solvetunnel 0",
+        1
+    )
+    .is_none());
+}

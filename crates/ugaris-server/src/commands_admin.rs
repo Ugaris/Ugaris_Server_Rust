@@ -3307,6 +3307,125 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/changetunnel` (`command.c:2045-2085`, `CF_GOD`-gated): sets an
+    // online target's `tunnel_ppd::clevel` directly, no self-fallback -
+    // an empty/unmatched name always reports "no one by the name".
+    if lower == "changetunnel" || lower == "settunnel" || lower == "cleartunnel" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let rest = rest.trim_start();
+        let (name, remainder) = take_legacy_alpha_name(rest);
+        let mut tokens = remainder.trim_start().split_whitespace();
+        let level = tokens.next().map(legacy_atoi_prefix).unwrap_or(0) as i32;
+        let amount = tokens.next().map(legacy_atoi_prefix).unwrap_or(0) as i32;
+
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+
+        if !(MIN_TUNNEL_LEVEL..=MAX_TUNNEL_LEVEL).contains(&level) {
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Invalid tunnel level. Must be between {MIN_TUNNEL_LEVEL} and {MAX_TUNNEL_LEVEL}."
+                )],
+                ..Default::default()
+            });
+        }
+
+        let target_name = world
+            .characters
+            .get(&target_id)
+            .map(|character| character.name.clone())
+            .unwrap_or_default();
+
+        let Some(target_player) = runtime.player_for_character_mut(target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Failed to get player data.".to_string()],
+                ..Default::default()
+            });
+        };
+
+        let (caller_message, target_message) = match lower.as_str() {
+            "changetunnel" => {
+                target_player.set_tunnel_clevel(level);
+                (
+                    format!("Set {target_name}'s tunnel level to {level}."),
+                    format!("Your tunnel level has been set to {level} by a god."),
+                )
+            }
+            "settunnel" => {
+                target_player.set_tunnel_used(level, amount.clamp(0, u8::MAX as i32) as u8);
+                (
+                    format!(
+                        "Set {target_name}'s completed amount for tunnel level {level} to {amount}."
+                    ),
+                    format!(
+                        "Your completed amount for tunnel level {level} has been set to {amount} by a god."
+                    ),
+                )
+            }
+            _ => {
+                target_player.set_tunnel_used(level, 0);
+                (
+                    format!("Cleared {target_name}'s completed amount for tunnel level {level}."),
+                    format!(
+                        "Your completed amount for tunnel level {level} has been cleared by a god."
+                    ),
+                )
+            }
+        };
+
+        let mut result = KeyringCommandResult {
+            messages: vec![caller_message],
+            ..Default::default()
+        };
+        if target_id != character_id {
+            result.other_messages.push((target_id, target_message));
+        }
+        return Some(result);
+    }
+
+    // C `/solvetunnel` (`command.c:2199-2222`, `CF_GOD`-gated, self
+    // only): C's own reward call (`give_reward(cn, ppd, door_type)`) is
+    // commented out in the oracle itself, so this is a message-only
+    // no-op there too - nothing to mutate here either.
+    if lower == "solvetunnel" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let exptype = legacy_atoi_prefix(rest.trim_start());
+        if exptype != 0 && exptype != 1 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Invalid exp type. Must be 0 (exp) or 1 (military exp).".to_string()],
+                ..Default::default()
+            });
+        }
+
+        let reward_name = if exptype == 0 {
+            "experience"
+        } else {
+            "military experience"
+        };
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Solved current tunnel and granted {reward_name} reward."
+            )],
+            ..Default::default()
+        });
+    }
+
     let Some(character) = world.characters.get_mut(&character_id) else {
         return Some(KeyringCommandResult::default());
     };

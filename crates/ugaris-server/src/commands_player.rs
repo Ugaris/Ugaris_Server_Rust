@@ -89,6 +89,15 @@ pub(crate) struct KeyringCommandResult {
     /// isn't ported yet (see `PORTING_TODO.md`'s `/saveall` note), so
     /// there is nothing to save and claiming otherwise would be dishonest.
     pub(crate) save_all_requested: bool,
+    /// Plain-text system messages addressed to a character other than the
+    /// command caller (e.g. `/changetunnel`/`/settunnel`/`/cleartunnel`,
+    /// C `command.c:2045-2199`, notifying the edited target player). Kept
+    /// separate from `target_message_bytes` (already-encoded packet
+    /// bytes) since these are plain `log_char`-style strings, matching
+    /// the convention `auction::AuctionCommandResult::other_messages`
+    /// already established for the same "message a non-caller character"
+    /// shape.
+    pub(crate) other_messages: Vec<(CharacterId, String)>,
 }
 
 pub(crate) fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {
