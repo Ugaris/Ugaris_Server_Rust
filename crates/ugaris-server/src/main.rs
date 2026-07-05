@@ -154,7 +154,8 @@ use ugaris_core::{
         CaligarSkellyDeathResult, CommandAlias, DemonShrineResult, IgnoreToggleResult,
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
         XmasTreeResult, ARENA_PPD_NEWCOMER_SCORE, DEFERRED_ACHIEVEMENTS, DEFERRED_AUCTION,
-        LEGACY_SWEAR_PPD_SIZE, MILITARY_PPD_MAXADVISOR, SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
+        LEGACY_SWEAR_PPD_SIZE, MAX_TUNNEL_USES, MILITARY_PPD_MAXADVISOR, SWEAR_SENTENCE_COUNT,
+        SWEAR_SENTENCE_LEN,
     },
     quest::{QuestReopenResult, QF_OPEN},
     spell::{
@@ -1807,6 +1808,22 @@ async fn main() -> anyhow::Result<()> {
                             }
                             if let Some(result) =
                                 apply_treasures_command(&world, &runtime, character_id, &command)
+                            {
+                                for message in result.message_bytes {
+                                    command_feedback_bytes.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) =
+                                apply_tunnel_command(&world, &runtime, character_id, &command)
+                            {
+                                for message in result.message_bytes {
+                                    command_feedback_bytes.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) =
+                                apply_tunnellist_command(&world, &runtime, character_id, &command)
                             {
                                 for message in result.message_bytes {
                                     command_feedback_bytes.push((character_id, message));

@@ -1490,6 +1490,304 @@ fn treasures_command_falls_through_without_a_live_player_runtime() {
     assert!(apply_treasures_command(&world, &runtime, CharacterId(1), "/treasures").is_none());
 }
 
+/// C `cmdcmp(ptr, "tunnel", 6)`: since `minlen` equals the full word
+/// length, `/tunnel` matches exactly but `/tunnels` does not (the C
+/// `cmdcmp` loop fails to match the literal's terminating null against
+/// the extra trailing `s`), so the two commands are mutually exclusive.
+#[test]
+fn tunnel_command_requires_the_full_word_and_ignores_case() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 5);
+
+    assert!(apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel").is_some());
+    assert!(apply_tunnel_command(&world, &runtime, CharacterId(1), "/TUNNEL").is_some());
+    assert!(apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnels").is_none());
+    assert!(apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunn").is_none());
+    assert!(apply_tunnel_command(&world, &runtime, CharacterId(1), "/time").is_none());
+}
+
+/// A disconnected/never-logged-in character has no `PlayerRuntime`, so the
+/// command falls through (`None`).
+#[test]
+fn tunnel_command_falls_through_without_a_live_player_runtime() {
+    let world = World::default();
+    let runtime = ServerRuntime::default();
+    assert!(apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel").is_none());
+}
+
+/// C `cmd_tunnel` (`command.c:1722-1727`): with `gorwin_ppd::tunnel_level`
+/// unset (`0`) and a character level below 20, the default level is
+/// always 10, regardless of the character's actual level.
+#[test]
+fn tunnel_command_default_level_below_20_is_always_ten() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 5);
+
+    let result = apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel")
+        .expect("tunnel command should be recognized");
+    assert_eq!(result.message_bytes.len(), 3);
+
+    let mut expected1 = Vec::new();
+    expected1.extend_from_slice(b"Your current tunnel level is: ");
+    expected1.extend_from_slice(COL_ORANGE);
+    expected1.extend_from_slice(b" 10");
+    expected1.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected1);
+
+    let mut expected2 = Vec::new();
+    expected2.extend_from_slice(b"You have completed this level ");
+    expected2.extend_from_slice(COL_LIGHT_GREEN);
+    expected2.extend_from_slice(b" 0");
+    expected2.extend_from_slice(COL_RESET);
+    expected2.extend_from_slice(b" times.");
+    assert_eq!(result.message_bytes[1], expected2);
+
+    let mut expected3 = Vec::new();
+    expected3.extend_from_slice(b"You can complete this level ");
+    expected3.extend_from_slice(COL_LIGHT_GREEN);
+    expected3.extend_from_slice(b" 10");
+    expected3.extend_from_slice(COL_RESET);
+    expected3.extend_from_slice(b" more times for rewards.");
+    assert_eq!(result.message_bytes[2], expected3);
+}
+
+/// C `cmd_tunnel` (`command.c:1728-1729`): for a character level in
+/// `20..=100`, the default level is `char_level - 10`.
+#[test]
+fn tunnel_command_default_level_between_20_and_100_is_level_minus_ten() {
+    let (world, mut runtime) = connected_player_at_level(CharacterId(1), 50);
+    runtime.players.get_mut(&1).unwrap().set_tunnel_used(40, 3);
+
+    let result = apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel")
+        .expect("tunnel command should be recognized");
+    let mut expected1 = Vec::new();
+    expected1.extend_from_slice(b"Your current tunnel level is: ");
+    expected1.extend_from_slice(COL_ORANGE);
+    expected1.extend_from_slice(b" 40");
+    expected1.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected1);
+
+    let mut expected2 = Vec::new();
+    expected2.extend_from_slice(b"You have completed this level ");
+    expected2.extend_from_slice(COL_LIGHT_GREEN);
+    expected2.extend_from_slice(b" 3");
+    expected2.extend_from_slice(COL_RESET);
+    expected2.extend_from_slice(b" times.");
+    assert_eq!(result.message_bytes[1], expected2);
+
+    let mut expected3 = Vec::new();
+    expected3.extend_from_slice(b"You can complete this level ");
+    expected3.extend_from_slice(COL_LIGHT_GREEN);
+    expected3.extend_from_slice(b" 7");
+    expected3.extend_from_slice(COL_RESET);
+    expected3.extend_from_slice(b" more times for rewards.");
+    assert_eq!(result.message_bytes[2], expected3);
+}
+
+/// C `cmd_tunnel` (`command.c:1730-1738`): for a character level above
+/// 100, search upward from 90 for the first level with zero completions,
+/// stopping early once one is found - copied including the exact search
+/// bound (`n < ch.level - 10 && n < 200`).
+#[test]
+fn tunnel_command_default_level_above_100_stops_at_first_uncompleted_level() {
+    let (world, mut runtime) = connected_player_at_level(CharacterId(1), 150);
+    let player = runtime.players.get_mut(&1).unwrap();
+    player.set_tunnel_used(90, 1);
+    // 91 left at 0 (never completed) - the search should stop there.
+
+    let result = apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel")
+        .expect("tunnel command should be recognized");
+    let mut expected1 = Vec::new();
+    expected1.extend_from_slice(b"Your current tunnel level is: ");
+    expected1.extend_from_slice(COL_ORANGE);
+    expected1.extend_from_slice(b" 91");
+    expected1.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected1);
+}
+
+/// C `cmd_tunnel` (`command.c:1730-1738`): if every level from 90 up to
+/// the search boundary is already completed at least once, the loop
+/// exhausts its condition instead of breaking, landing `current_level` on
+/// `min(char_level - 10, 200)`.
+#[test]
+fn tunnel_command_default_level_above_100_exhausts_search_at_boundary() {
+    let (world, mut runtime) = connected_player_at_level(CharacterId(1), 130);
+    let player = runtime.players.get_mut(&1).unwrap();
+    for level in 90..120 {
+        player.set_tunnel_used(level, 1);
+    }
+
+    let result = apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel")
+        .expect("tunnel command should be recognized");
+    let mut expected1 = Vec::new();
+    expected1.extend_from_slice(b"Your current tunnel level is: ");
+    expected1.extend_from_slice(COL_ORANGE);
+    expected1.extend_from_slice(b" 120");
+    expected1.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected1);
+}
+
+/// C `cmd_tunnel` (`command.c:1722-1723`): a non-zero
+/// `gorwin_ppd::tunnel_level` is used directly, skipping the whole
+/// default-level computation, then clamped to `10..=200`.
+#[test]
+fn tunnel_command_uses_gorwin_level_directly_and_clamps() {
+    let (world, mut runtime) = connected_player_at_level(CharacterId(1), 5);
+    runtime
+        .players
+        .get_mut(&1)
+        .unwrap()
+        .set_gorwin_tunnel_level(250);
+
+    let result = apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel")
+        .expect("tunnel command should be recognized");
+    let mut expected1 = Vec::new();
+    expected1.extend_from_slice(b"Your current tunnel level is: ");
+    expected1.extend_from_slice(COL_ORANGE);
+    expected1.extend_from_slice(b" 200");
+    expected1.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected1);
+}
+
+/// C `cmd_tunnel` (`command.c:1747-1751`): once `used[level] >=
+/// MAX_TUNNEL_USES` (10), the "maxed out" line replaces the "N more
+/// times" line.
+#[test]
+fn tunnel_command_reports_maxed_out_current_level() {
+    let (world, mut runtime) = connected_player_at_level(CharacterId(1), 5);
+    runtime.players.get_mut(&1).unwrap().set_tunnel_used(10, 10);
+
+    let result = apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel")
+        .expect("tunnel command should be recognized");
+    let mut expected = Vec::new();
+    expected.extend_from_slice(COL_LIGHT_RED);
+    expected.extend_from_slice(
+        b"You have reached the maximum number of rewarded completions for this level.",
+    );
+    expected.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[2], expected);
+}
+
+/// C `cmd_tunnel` (`command.c:1755-1774`): a valid explicit level
+/// argument (`10..=200`) reports its own completion count and remaining-
+/// uses line as two additional messages.
+#[test]
+fn tunnel_command_with_valid_explicit_level_argument() {
+    let (world, mut runtime) = connected_player_at_level(CharacterId(1), 5);
+    runtime.players.get_mut(&1).unwrap().set_tunnel_used(75, 4);
+
+    let result = apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel 75")
+        .expect("tunnel command should be recognized");
+    assert_eq!(result.message_bytes.len(), 5);
+
+    let mut expected4 = Vec::new();
+    expected4.extend_from_slice(b"Tunnel level ");
+    expected4.extend_from_slice(COL_ORANGE);
+    expected4.extend_from_slice(b" 75");
+    expected4.extend_from_slice(COL_RESET);
+    expected4.extend_from_slice(b": completed ");
+    expected4.extend_from_slice(COL_LIGHT_GREEN);
+    expected4.extend_from_slice(b" 4");
+    expected4.extend_from_slice(COL_RESET);
+    expected4.extend_from_slice(b" times.");
+    assert_eq!(result.message_bytes[3], expected4);
+
+    let mut expected5 = Vec::new();
+    expected5.extend_from_slice(b"This level can be completed ");
+    expected5.extend_from_slice(COL_LIGHT_GREEN);
+    expected5.extend_from_slice(b" 6");
+    expected5.extend_from_slice(COL_RESET);
+    expected5.extend_from_slice(b" more times for rewards.");
+    assert_eq!(result.message_bytes[4], expected5);
+}
+
+/// C `cmd_tunnel` (`command.c:1770-1773`): an out-of-range explicit level
+/// argument (outside `10..=200`) reports a rejection instead.
+#[test]
+fn tunnel_command_with_invalid_explicit_level_argument() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 5);
+
+    let result = apply_tunnel_command(&world, &runtime, CharacterId(1), "/tunnel 300")
+        .expect("tunnel command should be recognized");
+    assert_eq!(result.message_bytes.len(), 4);
+    let mut expected = Vec::new();
+    expected.extend_from_slice(COL_LIGHT_RED);
+    expected.extend_from_slice(b"Invalid tunnel level. Please choose a level between 10 and 200.");
+    expected.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[3], expected);
+}
+
+/// C `cmdcmp(ptr, "tunnels", 7)`: exact case-insensitive word match, the
+/// counterpart of `/tunnel`'s own exact-match gate.
+#[test]
+fn tunnellist_command_requires_the_full_word_and_ignores_case() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 5);
+
+    assert!(apply_tunnellist_command(&world, &runtime, CharacterId(1), "/tunnels").is_some());
+    assert!(apply_tunnellist_command(&world, &runtime, CharacterId(1), "/TUNNELS").is_some());
+    assert!(apply_tunnellist_command(&world, &runtime, CharacterId(1), "/tunnel").is_none());
+    assert!(apply_tunnellist_command(&world, &runtime, CharacterId(1), "/time").is_none());
+}
+
+/// C `cmd_tunnellist` (`command.c:1802-1809`): with zero levels ever
+/// completed, only the rejection line is shown.
+#[test]
+fn tunnellist_command_rejects_when_nothing_completed() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 5);
+
+    let result = apply_tunnellist_command(&world, &runtime, CharacterId(1), "/tunnels")
+        .expect("tunnels command should be recognized");
+    assert_eq!(result.message_bytes.len(), 1);
+    let mut expected = Vec::new();
+    expected.extend_from_slice(COL_LIGHT_RED);
+    expected
+        .extend_from_slice(b"Ye must complete at least one tunnel before thou canst check this.");
+    expected.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected);
+}
+
+/// C `cmd_tunnellist` (`command.c:1811-1832`): lists every level from 10
+/// up to `max(highest_completed, max(10, char_level - 10))`, coloring
+/// each entry violet (maxed), light red (partial), or plain (untouched).
+#[test]
+fn tunnellist_command_lists_status_colored_by_completion() {
+    let (world, mut runtime) = connected_player_at_level(CharacterId(1), 15);
+    let player = runtime.players.get_mut(&1).unwrap();
+    player.set_tunnel_used(10, 10); // maxed
+    player.set_tunnel_used(11, 3); // partial
+                                   // 12 stays untouched (never completed).
+
+    let result = apply_tunnellist_command(&world, &runtime, CharacterId(1), "/tunnels")
+        .expect("tunnels command should be recognized");
+    assert_eq!(result.message_bytes.len(), 2);
+
+    let mut expected_header = Vec::new();
+    expected_header.extend_from_slice(COL_ORANGE);
+    expected_header.extend_from_slice(b"Tunnels status:");
+    expected_header.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected_header);
+
+    // char_level (15) - 10 = 5, so max(10, 5) = 10; highest_completed = 11
+    // (level 11 is the highest with used >= 1); max_level = max(11, 10) = 11.
+    let mut expected_body = Vec::new();
+    expected_body.extend_from_slice(COL_VIOLET);
+    expected_body.extend_from_slice(b" 10");
+    expected_body.extend_from_slice(COL_RESET);
+    expected_body.extend_from_slice(b" ");
+    expected_body.extend_from_slice(COL_LIGHT_RED);
+    expected_body.extend_from_slice(b" 11");
+    expected_body.extend_from_slice(COL_RESET);
+    expected_body.extend_from_slice(b" ");
+    assert_eq!(result.message_bytes[1], expected_body);
+}
+
+/// A disconnected/never-logged-in character has no `PlayerRuntime`, so the
+/// command falls through (`None`).
+#[test]
+fn tunnellist_command_falls_through_without_a_live_player_runtime() {
+    let world = World::default();
+    let runtime = ServerRuntime::default();
+    assert!(apply_tunnellist_command(&world, &runtime, CharacterId(1), "/tunnels").is_none());
+}
+
 /// C `cmdcmp(ptr, "steal", 5)`: `minlen == strlen("steal")`, an exact
 /// case-insensitive word match, not a prefix abbreviation like `/thief`.
 #[test]

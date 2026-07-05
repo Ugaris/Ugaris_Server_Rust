@@ -6922,8 +6922,14 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `apply_weather_admin_command`/`apply_weather_command`, a whole
   autonomous weather-cycle system, not just the commands), and the item-
   editor commands `itemmod`/`itemname`/`itemdesc`
-  (`commands_admin.rs`) plus `tunnel`/`tunnels` (elsewhere in the
-  tunnel-progress display code) - none of these need further work. The
+  (`commands_admin.rs`) - none of these need further work. `/tunnel`/
+  `/tunnels` are done now too (see iteration 183 - a prior iteration's
+  note here incorrectly claimed these needed "no further work" based on
+  seeing their names in `commands_player.rs`'s help-text list, but they
+  had no real dispatch handler at all before this iteration; ported
+  `cmd_tunnel`/`cmd_tunnellist`, `command.c:1712-1834`, plus the
+  backing `tunnel_ppd`/`gorwin_ppd` typed PPD codecs in
+  `crates/ugaris-core/src/player.rs`). The
   16-member lag-control/automation toggle family (`/noball`, `/nobless`,
   `/nofireball`, `/noflash`, `/nofreeze`, `/noheal`, `/noshield`,
   `/nowarcry`, `/nolife`, `/nomana`, `/nocombo`, `/nomove`, `/norecall`,
@@ -8052,6 +8058,60 @@ Unlocks every quest NPC. Do these before any P4 area work.
   ~90-entry `cmdcmp` tail (anticheat `ac*`/`macro*` family, `/depotsort`,
   `/showppd`, `punish`/`rename`/etc.) noted above is still unported and
   still needs a fresh cross-reference pass before the next slice.
+
+  Progress Log (iteration 183): a fresh cross-reference pass (grepping
+  every `cmdcmp(ptr, "...")` name in `command.c` against the Rust
+  `commands_*.rs`/`weather.rs`/`clan_command.rs` files) found `/tunnel`/
+  `/tunnels` genuinely unported despite this note's earlier "no further
+  work" claim - only their help-text lines existed in
+  `commands_player.rs`, no real dispatch handler. Ported `cmd_tunnel`/
+  `cmd_tunnellist` (`command.c:1712-1834`, dispatched unconditionally
+  from `command.c:8920-8935`, no permission gate on either) into two new
+  `apply_tunnel_command`/`apply_tunnellist_command` functions in
+  `commands_player.rs`, wired at the same `main.rs` call site as
+  `/orbs`/`/treasures`. Ported the backing `struct tunnel_ppd { int
+  clevel; unsigned char used[204]; }` / `struct gorwin_ppd { int
+  tunnel_level; }` (`src/area/33/tunnel.h:6-13`, `DRD_TUNNEL_PPD`/
+  `DRD_GORWIN_PPD`) as new typed `PlayerRuntime::tunnel_ppd`/
+  `gorwin_ppd` byte-vec fields in `crates/ugaris-core/src/player.rs`,
+  following the established `military_ppd` raw-bytes-plus-accessors
+  pattern: `encode_legacy_tunnel_ppd`/`decode_legacy_tunnel_ppd`,
+  `tunnel_used`/`set_tunnel_used`, `encode_legacy_gorwin_ppd`/
+  `decode_legacy_gorwin_ppd`, `gorwin_tunnel_level`/
+  `set_gorwin_tunnel_level`, wired into both `decode_legacy_ppd_blob`
+  and `encode_legacy_ppd_blob`. `DRD_TUNNEL_PPD` graduated out of the
+  "no Rust representation, stripped raw via `strip_ppd_blocks`" group
+  used by `clear_turn_seyan_ppd` into a real `self.tunnel_ppd.clear()`
+  call (matching C's `del_data(cn, DRD_TUNNEL_PPD)`, `tool.c:4362`);
+  `DRD_GORWIN_PPD` is untouched by `turn_seyan` in C, so `gorwin_ppd` is
+  correctly left alone there. Reproduced two C quirks verbatim: (1) the
+  default-tunnel-level computation when `gorwin_ppd::tunnel_level == 0`
+  (below 20 always gets 10; 20..=100 gets `level - 10`; above 100
+  searches upward from 90 for the first level with zero completions,
+  stopping early on a match or at `min(level - 10, 200)` if none is
+  found); (2) `cmdcmp`'s exact-full-word semantics mean `/tunnel` and
+  `/tunnels` never both match the same input (the C `cmdcmp` loop fails
+  to match a literal's terminating null against `tunnels`' extra
+  trailing `s`), so the two verbs are mutually exclusive dispatch
+  handlers, same as every other `eq_ignore_ascii_case` command in this
+  file. 21 new tests: 7 in `crates/ugaris-core/src/player.rs` (accessor
+  defaults, tunnel/gorwin PPD encode/decode round-trips through the full
+  `PlayerRuntime` blob codec, `clear_turn_seyan_ppd` clearing tunnel but
+  sparing gorwin) + 14 in `tests/commands_player.rs` (exact-word
+  matching for both verbs, all three default-level branches including
+  the search-loop break and boundary-exhaustion cases, gorwin-level
+  clamping, maxed-out messaging, valid/invalid explicit level argument,
+  the `/tunnels` empty-progress rejection, and colored per-level status
+  listing). `cargo fmt --all`, `cargo test --workspace` (2019 ugaris-core
+  + 55 db + 3 net + 40 protocol + 780 server, all green, zero failures),
+  `cargo build -p ugaris-server` / `cargo build --workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
+  no panic. REMAINING: the ~90-entry `cmdcmp` tail (anticheat `ac*`/
+  `macro*` family, `/depotsort`, `/showppd`, `punish`/`rename`/etc.)
+  noted above is still unported and still needs a fresh cross-reference
+  pass before the next slice; `tunnel_ppd::clevel` and the whole tunnel
+  dungeon runtime (`tunnel.c`'s door/creeper/reward logic) remain
+  unported - tracked separately by the "Area 33" P4 task.
 
   Progress Log (iteration 182): ported `/jail`/`/unjail <name>`
   (`command.c:8839-8858`/`8861-8882` dispatch -> `cmd_jail_player`/

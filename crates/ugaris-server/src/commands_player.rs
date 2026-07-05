@@ -2702,6 +2702,214 @@ pub(crate) fn apply_treasures_command(
     })
 }
 
+/// C `cmd_tunnel` (`command.c:1712-1774`, dispatched unconditionally from
+/// `command.c:8920-8926`, no permission gate). Reports the caller's
+/// current Gorwin-assigned tunnel level (`gorwin_ppd::tunnel_level`, or a
+/// computed default when it's still `0` - not yet initialized) and its
+/// completion count, then optionally reports the same for an explicit
+/// `level` argument.
+pub(crate) fn apply_tunnel_command(
+    world: &World,
+    runtime: &ServerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("tunnel") {
+        return None;
+    }
+
+    let player = runtime.player_for_character(character_id)?;
+    let character = world.characters.get(&character_id)?;
+    let arg = rest.trim();
+
+    // C `cmd_tunnel` (`command.c:1722-1739`): if the Gorwin-assigned
+    // level is unset (`0`), derive a default from the caller's own level
+    // - below 20 always gets 10; up to 100 gets `level - 10`; above 100
+    // searches upward from 90 for the first not-yet-completed level,
+    // stopping at `min(level - 10, 200)` (copied digit for digit,
+    // including the search's exact stopping point).
+    let mut current_level = player.gorwin_tunnel_level();
+    if current_level == 0 {
+        let char_level = character.level as i32;
+        if char_level < 20 {
+            current_level = 10;
+        } else if char_level <= 100 {
+            current_level = char_level - 10;
+        } else {
+            let mut n = 90;
+            while n < char_level - 10 && n < 200 {
+                if player.tunnel_used(n) < 1 {
+                    break;
+                }
+                n += 1;
+            }
+            current_level = n;
+        }
+    }
+    current_level = current_level.clamp(10, 200);
+
+    let mut lines = Vec::new();
+
+    let mut line1 = Vec::new();
+    line1.extend_from_slice(b"Your current tunnel level is: ");
+    line1.extend_from_slice(COL_ORANGE);
+    line1.extend_from_slice(format!(" {current_level}").as_bytes());
+    line1.extend_from_slice(COL_RESET);
+    lines.push(line1);
+
+    let used_current = player.tunnel_used(current_level);
+    let mut line2 = Vec::new();
+    line2.extend_from_slice(b"You have completed this level ");
+    line2.extend_from_slice(COL_LIGHT_GREEN);
+    line2.extend_from_slice(format!(" {used_current}").as_bytes());
+    line2.extend_from_slice(COL_RESET);
+    line2.extend_from_slice(b" times.");
+    lines.push(line2);
+
+    if used_current >= MAX_TUNNEL_USES {
+        lines.push(legacy_achievement_colored_line(
+            COL_LIGHT_RED,
+            "You have reached the maximum number of rewarded completions for this level.",
+        ));
+    } else {
+        let remaining = MAX_TUNNEL_USES - used_current;
+        let mut line = Vec::new();
+        line.extend_from_slice(b"You can complete this level ");
+        line.extend_from_slice(COL_LIGHT_GREEN);
+        line.extend_from_slice(format!(" {remaining}").as_bytes());
+        line.extend_from_slice(COL_RESET);
+        line.extend_from_slice(b" more times for rewards.");
+        lines.push(line);
+    }
+
+    if !arg.is_empty() {
+        let level: i32 = arg.parse().unwrap_or(0);
+        if (10..=200).contains(&level) {
+            let used = player.tunnel_used(level);
+            let mut line = Vec::new();
+            line.extend_from_slice(b"Tunnel level ");
+            line.extend_from_slice(COL_ORANGE);
+            line.extend_from_slice(format!(" {level}").as_bytes());
+            line.extend_from_slice(COL_RESET);
+            line.extend_from_slice(b": completed ");
+            line.extend_from_slice(COL_LIGHT_GREEN);
+            line.extend_from_slice(format!(" {used}").as_bytes());
+            line.extend_from_slice(COL_RESET);
+            line.extend_from_slice(b" times.");
+            lines.push(line);
+
+            if used >= MAX_TUNNEL_USES {
+                lines.push(legacy_achievement_colored_line(
+                    COL_LIGHT_RED,
+                    "Maximum number of rewarded completions reached for this level.",
+                ));
+            } else {
+                let remaining = MAX_TUNNEL_USES - used;
+                let mut line = Vec::new();
+                line.extend_from_slice(b"This level can be completed ");
+                line.extend_from_slice(COL_LIGHT_GREEN);
+                line.extend_from_slice(format!(" {remaining}").as_bytes());
+                line.extend_from_slice(COL_RESET);
+                line.extend_from_slice(b" more times for rewards.");
+                lines.push(line);
+            }
+        } else {
+            lines.push(legacy_achievement_colored_line(
+                COL_LIGHT_RED,
+                "Invalid tunnel level. Please choose a level between 10 and 200.",
+            ));
+        }
+    }
+
+    Some(KeyringCommandResult {
+        message_bytes: lines,
+        ..Default::default()
+    })
+}
+
+/// C `cmd_tunnellist` (`command.c:1785-1834`, dispatched unconditionally
+/// from `command.c:8929-8935`, no permission gate). Lists every tunnel
+/// level from `MIN_TUNNEL_LEVEL` (10) up to
+/// `max(highest_completed, max(10, char_level - 10))` (capped at 200),
+/// colored by completion state (violet = maxed out, light red =
+/// partially completed, plain = never touched). Requires at least one
+/// completed level or reports a rejection instead.
+pub(crate) fn apply_tunnellist_command(
+    world: &World,
+    runtime: &ServerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("tunnels") {
+        return None;
+    }
+
+    let player = runtime.player_for_character(character_id)?;
+    let character = world.characters.get(&character_id)?;
+
+    let mut tunnel_done = false;
+    let mut highest_completed = 10;
+    for n in 10..=200 {
+        if player.tunnel_used(n) >= 1 {
+            tunnel_done = true;
+            highest_completed = n;
+        }
+    }
+
+    if !tunnel_done {
+        return Some(KeyringCommandResult {
+            message_bytes: vec![legacy_achievement_colored_line(
+                COL_LIGHT_RED,
+                "Ye must complete at least one tunnel before thou canst check this.",
+            )],
+            ..Default::default()
+        });
+    }
+
+    let mut lines = vec![legacy_achievement_colored_line(
+        COL_ORANGE,
+        "Tunnels status:",
+    )];
+
+    let char_level = character.level as i32;
+    let mut max_level = highest_completed.max(10.max(char_level - 10));
+    if max_level > 200 {
+        max_level = 200;
+    }
+
+    let mut buf = Vec::new();
+    for n in 10..=max_level {
+        let used = player.tunnel_used(n);
+        if used >= MAX_TUNNEL_USES {
+            buf.extend_from_slice(COL_VIOLET);
+            buf.extend_from_slice(format!(" {n}").as_bytes());
+            buf.extend_from_slice(COL_RESET);
+            buf.extend_from_slice(b" ");
+        } else if used >= 1 {
+            buf.extend_from_slice(COL_LIGHT_RED);
+            buf.extend_from_slice(format!(" {n}").as_bytes());
+            buf.extend_from_slice(COL_RESET);
+            buf.extend_from_slice(b" ");
+        } else {
+            buf.extend_from_slice(format!("{n} ").as_bytes());
+        }
+    }
+    lines.push(buf);
+
+    Some(KeyringCommandResult {
+        message_bytes: lines,
+        ..Default::default()
+    })
+}
+
 /// C `achievement_list`/`achievement_show_stats`/`achievement_fix_all`/
 /// `achievement_clear_all`/`achievement_sync_all` plus the `/achgive`
 /// admin-only give command (`achievement.c:1421-1810`, dispatched from

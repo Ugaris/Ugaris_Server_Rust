@@ -118,6 +118,22 @@ const MILITARY_PPD_TEMP_MISSION_DIFFICULTY_OFFSET: usize =
 /// C `military_ppd::reroll_yday` (`military.h:59`): the very last field of
 /// the struct, immediately after `temp_mission_difficulty`.
 const MILITARY_PPD_REROLL_YDAY_OFFSET: usize = LEGACY_MILITARY_PPD_SIZE - 4;
+/// C `struct tunnel_ppd { int clevel; unsigned char used[204]; }`
+/// (`src/area/33/tunnel.h:6-9`): one leading `int` (4 bytes) followed by
+/// the 204-byte `used[]` completion-count array (`MAX_TUNNEL_LEVEL` = 200,
+/// so indices `0..=203` cover every valid level with room to spare, no
+/// struct padding since 4 + 204 = 208 is already a multiple of 4).
+pub const LEGACY_TUNNEL_PPD_SIZE: usize = 4 + 204;
+const TUNNEL_PPD_USED_BASE_OFFSET: usize = 4;
+/// C `struct gorwin_ppd { int tunnel_level; }` (`src/area/33/tunnel.h:
+/// 11-13`): a single `int`.
+pub const LEGACY_GORWIN_PPD_SIZE: usize = 4;
+/// C `#define MIN_TUNNEL_LEVEL 10` (`src/area/33/tunnel.h:29`).
+pub const MIN_TUNNEL_LEVEL: i32 = 10;
+/// C `#define MAX_TUNNEL_LEVEL 200` (`src/area/33/tunnel.h:28`).
+pub const MAX_TUNNEL_LEVEL: i32 = 200;
+/// C `#define MAX_TUNNEL_USES 10` (`src/area/33/tunnel.h:30`).
+pub const MAX_TUNNEL_USES: u8 = 10;
 /// C `struct area3_ppd` (`src/area/3/area3.h:18-35` /
 /// `src/system/game/ppd_structs.h:109-127`): 18 `int` fields (`imp_kills,
 /// imp_flags;` declares two on one line). Was previously `17 * 4` (a
@@ -256,10 +272,10 @@ pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DAT
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_DATA);
-/// The following 8 ids (`src/system/drdata.h`) back systems that are not
+/// The following ids (`src/system/drdata.h`) back systems that are not
 /// modeled on `PlayerRuntime` at all yet (army rank, military points,
-/// arena, sidestory, tunnel, strategy game, quest log, and the
-/// per-character legacy depot). They exist here solely so `turn_seyan`
+/// arena, sidestory, strategy game, quest log, and the per-character
+/// legacy depot). They exist here solely so `turn_seyan`
 /// (`src/system/tool.c:4278-4389`, ported at `World::apply_turn_seyan`)
 /// can `del_data` them exactly like C does, via
 /// `PlayerRuntime::clear_turn_seyan_ppd`'s raw-block strip - see
@@ -270,7 +286,10 @@ pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_D
 /// accessors; `DRD_QUESTLOG_PPD` moved out the same way once `quest_log`
 /// got a real PPD codec (see below); `DRD_FIRSTKILL_PPD` moved out the
 /// same way once `first_kill_ppd` got a real codec (see
-/// `encode_legacy_firstkill_ppd`/`decode_legacy_firstkill_ppd` below).
+/// `encode_legacy_firstkill_ppd`/`decode_legacy_firstkill_ppd` below);
+/// `DRD_TUNNEL_PPD` moved out the same way once `tunnel_ppd` got a real
+/// codec (see `encode_legacy_tunnel_ppd`/`decode_legacy_tunnel_ppd`
+/// below, backing the `/tunnel`/`/tunnels` commands).
 pub const DRD_FIRSTKILL_PPD: u32 = make_drd(DEV_ID_DB, 18 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RANK_PPD: u32 = make_drd(DEV_ID_DB, 41 | PERSISTENT_PLAYER_DATA);
 pub const DRD_DEPOT_PPD: u32 = make_drd(DEV_ID_DB, 67 | PERSISTENT_PLAYER_DATA);
@@ -278,7 +297,19 @@ pub const DRD_MILITARY_PPD: u32 = make_drd(DEV_ID_DB, 72 | PERSISTENT_PLAYER_DAT
 pub const DRD_ARENA_PPD: u32 = make_drd(DEV_ID_DB, 83 | PERSISTENT_PLAYER_DATA);
 pub const DRD_STRATEGY_PPD: u32 = make_drd(DEV_ID_DB, 121 | PERSISTENT_PLAYER_DATA);
 pub const DRD_SIDESTORY_PPD: u32 = make_drd(DEV_ID_DB, 124 | PERSISTENT_PLAYER_DATA);
+/// C `#define DRD_TUNNEL_PPD MAKE_DRD(DEV_ID_DB, 154 |
+/// PERSISTENT_PLAYER_DATA)` (`src/system/drdata.h:216`): `struct
+/// tunnel_ppd { int clevel; unsigned char used[204]; }`
+/// (`src/area/33/tunnel.h:6-9`). See
+/// `encode_legacy_tunnel_ppd`/`decode_legacy_tunnel_ppd`.
 pub const DRD_TUNNEL_PPD: u32 = make_drd(DEV_ID_DB, 154 | PERSISTENT_PLAYER_DATA);
+/// C `#define DRD_GORWIN_PPD MAKE_DRD(DEV_ID_ED, 4 |
+/// PERSISTENT_PLAYER_DATA)` (`src/system/drdata.h:257`): `struct
+/// gorwin_ppd { int tunnel_level; }` (`src/area/33/tunnel.h:11-13`), the
+/// Gorwin NPC's currently-offered tunnel level (not deleted by
+/// `turn_seyan`, unlike `DRD_TUNNEL_PPD`). See
+/// `encode_legacy_gorwin_ppd`/`decode_legacy_gorwin_ppd`.
+pub const DRD_GORWIN_PPD: u32 = make_drd(DEV_ID_ED, 4 | PERSISTENT_PLAYER_DATA);
 /// C `#define DRD_QUESTLOG_PPD MAKE_DRD(DEV_ID_DB, 158 |
 /// PERSISTENT_PLAYER_DATA)` (`src/system/drdata.h:220`): the persisted
 /// `struct quest quest[MAXQUEST]` array (`src/system/questlog.h:36-39`),
@@ -675,6 +706,22 @@ pub struct PlayerRuntime {
     /// [`LEGACY_MILITARY_PPD_SIZE`] for the byte layout.
     #[serde(default)]
     pub military_ppd: Vec<u8>,
+    /// C `struct tunnel_ppd` (`src/area/33/tunnel.h:6-9`, also declared
+    /// identically in `system/game/ppd_structs.h:629-632`): `{ int
+    /// clevel; unsigned char used[204]; }`. `clevel` is a per-dungeon-
+    /// entry scratch value (not yet meaningful without the unported
+    /// tunnel dungeon runtime); `used[level]` is the completion counter
+    /// `/tunnel` and `/tunnels` display, one byte per tunnel level
+    /// (`MIN_TUNNEL_LEVEL..=MAX_TUNNEL_LEVEL`, i.e. `10..=200`). See
+    /// [`LEGACY_TUNNEL_PPD_SIZE`] for the byte layout.
+    #[serde(default)]
+    pub tunnel_ppd: Vec<u8>,
+    /// C `struct gorwin_ppd` (`src/area/33/tunnel.h:11-13`): `{ int
+    /// tunnel_level; }`, the Gorwin NPC's currently-offered tunnel level
+    /// (`0` means "not yet initialized" - see `initialize_gorwin_ppd`,
+    /// not yet ported). See [`LEGACY_GORWIN_PPD_SIZE`].
+    #[serde(default)]
+    pub gorwin_ppd: Vec<u8>,
     #[serde(default)]
     pub area3_ppd: Vec<u8>,
     #[serde(default)]
@@ -919,6 +966,8 @@ impl PlayerRuntime {
             first_kill_ppd: Vec::new(),
             arena_ppd: Vec::new(),
             military_ppd: Vec::new(),
+            tunnel_ppd: Vec::new(),
+            gorwin_ppd: Vec::new(),
             area3_ppd: Vec::new(),
             area1_ppd: Vec::new(),
             nomad_ppd: Vec::new(),
@@ -2555,6 +2604,86 @@ impl PlayerRuntime {
             + (404..=411).filter(|&c| self.has_first_kill(c)).count() as u32
     }
 
+    pub fn encode_legacy_tunnel_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_TUNNEL_PPD_SIZE];
+        let copy_len = self.tunnel_ppd.len().min(LEGACY_TUNNEL_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.tunnel_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_tunnel_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_TUNNEL_PPD_SIZE {
+            return false;
+        }
+        self.tunnel_ppd = bytes[..LEGACY_TUNNEL_PPD_SIZE].to_vec();
+        true
+    }
+
+    /// C `tunnel_ppd::used[level]` (`tunnel.h:8`): the number of rewarded
+    /// completions recorded at `level` (`0` for a level never touched, or
+    /// for an out-of-range/negative `level`, matching a freshly zeroed C
+    /// struct - `set_data` would have zero-initialized it too).
+    pub fn tunnel_used(&self, level: i32) -> u8 {
+        if level < 0 {
+            return 0;
+        }
+        let idx = TUNNEL_PPD_USED_BASE_OFFSET + level as usize;
+        if idx >= self.tunnel_ppd.len() {
+            return 0;
+        }
+        self.tunnel_ppd[idx]
+    }
+
+    /// Writes `tunnel_ppd::used[level]`, growing the backing store to
+    /// [`LEGACY_TUNNEL_PPD_SIZE`] on first use (matching C's zero-
+    /// initializing `set_data`). No-op for a negative `level`.
+    pub fn set_tunnel_used(&mut self, level: i32, value: u8) {
+        if level < 0 {
+            return;
+        }
+        let idx = TUNNEL_PPD_USED_BASE_OFFSET + level as usize;
+        if self.tunnel_ppd.len() <= idx {
+            self.tunnel_ppd
+                .resize(LEGACY_TUNNEL_PPD_SIZE.max(idx + 1), 0);
+        }
+        self.tunnel_ppd[idx] = value;
+    }
+
+    pub fn encode_legacy_gorwin_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_GORWIN_PPD_SIZE];
+        let copy_len = self.gorwin_ppd.len().min(LEGACY_GORWIN_PPD_SIZE);
+        bytes[..copy_len].copy_from_slice(&self.gorwin_ppd[..copy_len]);
+        bytes
+    }
+
+    pub fn decode_legacy_gorwin_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_GORWIN_PPD_SIZE {
+            return false;
+        }
+        self.gorwin_ppd = bytes[..LEGACY_GORWIN_PPD_SIZE].to_vec();
+        true
+    }
+
+    /// C `gorwin_ppd::tunnel_level` (`tunnel.h:12`): `0` means "not yet
+    /// initialized" (`initialize_gorwin_ppd`, not yet ported), matching a
+    /// freshly zeroed C struct.
+    pub fn gorwin_tunnel_level(&self) -> i32 {
+        if self.gorwin_ppd.len() < LEGACY_GORWIN_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.gorwin_ppd, 0)
+    }
+
+    /// Writes `gorwin_ppd::tunnel_level`, growing the backing store to
+    /// [`LEGACY_GORWIN_PPD_SIZE`] on first use (matching C's zero-
+    /// initializing `set_data`).
+    pub fn set_gorwin_tunnel_level(&mut self, value: i32) {
+        if self.gorwin_ppd.len() < LEGACY_GORWIN_PPD_SIZE {
+            self.gorwin_ppd.resize(LEGACY_GORWIN_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.gorwin_ppd, 0, value);
+    }
+
     pub fn encode_legacy_military_ppd(&self) -> Vec<u8> {
         let mut bytes = vec![0; LEGACY_MILITARY_PPD_SIZE];
         let copy_len = self.military_ppd.len().min(LEGACY_MILITARY_PPD_SIZE);
@@ -4179,11 +4308,16 @@ impl PlayerRuntime {
     /// (`DRD_QUESTLOG_PPD` resets `quest_log` to its default, which
     /// re-triggers `init_questlog`'s "not yet initialized" sentinel on
     /// next load - matching C's del+re-`questlog_init` behavior). The
-    /// remaining 4 non-depot ids (`DRD_RANK_PPD`, `DRD_SIDESTORY_PPD`,
-    /// `DRD_TUNNEL_PPD`, `DRD_STRATEGY_PPD`) have no Rust representation
-    /// at all, so they're stripped straight out of the raw `ppd_blob` via
-    /// `strip_ppd_blocks` (the same byte-level mechanism that already
-    /// round-trips every other still-unmodeled id). `DRD_MILITARY_PPD`
+    /// remaining 3 non-depot ids (`DRD_RANK_PPD`, `DRD_SIDESTORY_PPD`,
+    /// `DRD_STRATEGY_PPD`) have no Rust representation at all, so they're
+    /// stripped straight out of the raw `ppd_blob` via `strip_ppd_blocks`
+    /// (the same byte-level mechanism that already round-trips every
+    /// other still-unmodeled id). `DRD_TUNNEL_PPD` graduated from that
+    /// stripped-raw list to a real `self.tunnel_ppd.clear()` once
+    /// `tunnel_ppd` gained a typed Rust representation (matching C's
+    /// `del_data(cn, DRD_TUNNEL_PPD)`, `tool.c:4362` - note `DRD_GORWIN_PPD`
+    /// is NOT deleted by `turn_seyan` in C, so `gorwin_ppd` is left alone
+    /// here too). `DRD_MILITARY_PPD`
     /// graduated from that stripped-raw list to a real
     /// `self.military_ppd.clear()` once `military_ppd` gained a typed
     /// Rust representation, matching how `first_kill_ppd`/`arena_ppd`
@@ -4221,15 +4355,11 @@ impl PlayerRuntime {
         self.first_kill_ppd.clear();
         self.arena_ppd.clear();
         self.military_ppd.clear();
+        self.tunnel_ppd.clear();
 
         self.ppd_blob = strip_ppd_blocks(
             &self.ppd_blob,
-            &[
-                DRD_RANK_PPD,
-                DRD_SIDESTORY_PPD,
-                DRD_TUNNEL_PPD,
-                DRD_STRATEGY_PPD,
-            ],
+            &[DRD_RANK_PPD, DRD_SIDESTORY_PPD, DRD_STRATEGY_PPD],
         );
     }
 
@@ -4441,6 +4571,16 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_TUNNEL_PPD => {
+                    if !self.decode_legacy_tunnel_ppd(block.data) {
+                        return false;
+                    }
+                }
+                DRD_GORWIN_PPD => {
+                    if !self.decode_legacy_gorwin_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_RUNE_PPD => {
                     if !self.decode_legacy_rune_ppd(block.data) {
                         return false;
@@ -4500,6 +4640,8 @@ impl PlayerRuntime {
         let mut had_firstkill = false;
         let mut had_arena = false;
         let mut had_military = false;
+        let mut had_tunnel = false;
+        let mut had_gorwin = false;
         let mut had_rune = false;
         let mut had_alias = false;
         let mut had_ignore = false;
@@ -4686,6 +4828,20 @@ impl PlayerRuntime {
                     &mut encoded,
                     DRD_MILITARY_PPD,
                     &self.encode_legacy_military_ppd(),
+                );
+            } else if block.id == DRD_TUNNEL_PPD {
+                had_tunnel = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_TUNNEL_PPD,
+                    &self.encode_legacy_tunnel_ppd(),
+                );
+            } else if block.id == DRD_GORWIN_PPD {
+                had_gorwin = true;
+                write_ppd_block(
+                    &mut encoded,
+                    DRD_GORWIN_PPD,
+                    &self.encode_legacy_gorwin_ppd(),
                 );
             } else if block.id == DRD_RUNE_PPD {
                 had_rune = true;
@@ -4978,6 +5134,22 @@ impl PlayerRuntime {
                 &mut encoded,
                 DRD_MILITARY_PPD,
                 &self.encode_legacy_military_ppd(),
+            );
+        }
+        if !had_tunnel && (existing_was_valid || existing.is_empty()) && !self.tunnel_ppd.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_TUNNEL_PPD,
+                &self.encode_legacy_tunnel_ppd(),
+            );
+        }
+        if !had_gorwin && (existing_was_valid || existing.is_empty()) && !self.gorwin_ppd.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_GORWIN_PPD,
+                &self.encode_legacy_gorwin_ppd(),
             );
         }
         if !had_rune && (existing_was_valid || existing.is_empty()) {
@@ -8094,6 +8266,54 @@ mod tests {
         player.clear_turn_seyan_ppd();
         assert!(player.military_ppd.is_empty());
         assert_eq!(player.military_took_mission(), 0);
+    }
+
+    #[test]
+    fn tunnel_ppd_used_accessor_defaults_to_zero_and_rejects_negative_levels() {
+        let player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.tunnel_used(10), 0);
+        assert_eq!(player.tunnel_used(-1), 0);
+    }
+
+    #[test]
+    fn tunnel_ppd_blob_round_trips_through_encode_decode() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_tunnel_used(90, 5);
+        player.set_tunnel_used(200, 10);
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        let mut round_tripped = PlayerRuntime::connected(1, 0);
+        assert!(round_tripped.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(round_tripped.tunnel_ppd, player.tunnel_ppd);
+        assert_eq!(round_tripped.tunnel_used(90), 5);
+        assert_eq!(round_tripped.tunnel_used(200), 10);
+        assert_eq!(round_tripped.tunnel_used(91), 0);
+    }
+
+    #[test]
+    fn gorwin_ppd_blob_round_trips_through_encode_decode() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_gorwin_tunnel_level(42);
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        let mut round_tripped = PlayerRuntime::connected(1, 0);
+        assert!(round_tripped.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(round_tripped.gorwin_tunnel_level(), 42);
+    }
+
+    #[test]
+    fn clear_turn_seyan_ppd_clears_tunnel_ppd_but_not_gorwin_ppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_tunnel_used(50, 3);
+        player.set_gorwin_tunnel_level(50);
+        assert!(!player.tunnel_ppd.is_empty());
+
+        player.clear_turn_seyan_ppd();
+        assert!(player.tunnel_ppd.is_empty());
+        assert_eq!(player.tunnel_used(50), 0);
+        // C's `turn_seyan` does NOT `del_data` `DRD_GORWIN_PPD` - only
+        // `DRD_TUNNEL_PPD` (`tool.c:4362`).
+        assert_eq!(player.gorwin_tunnel_level(), 50);
     }
 
     // C `check_military_solve` (`src/system/death.c:290-383`).
