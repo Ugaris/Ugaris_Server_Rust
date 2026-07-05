@@ -1510,6 +1510,27 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
+                            if let Some(result) = apply_setseyan_command(
+                                &mut world,
+                                &zone_loader,
+                                &mut runtime,
+                                character_id,
+                                &command,
+                            ) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                for (target_id, message) in result.other_messages {
+                                    command_feedback.push((target_id, message));
+                                }
+                                if result.inventory_changed {
+                                    command_inventory_refresh.push(character_id);
+                                }
+                                if result.name_changed {
+                                    command_name_refresh.push(character_id);
+                                }
+                                continue;
+                            }
                             if let Some(result) = apply_admin_character_command(
                                 &mut world,
                                 &mut runtime,

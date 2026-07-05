@@ -7012,9 +7012,13 @@ Unlocks every quest NPC. Do these before any P4 area work.
    (see iteration 186 - `command.c:3081-3130`/`6043-6046`, `CF_GOD`-
    gated, pure dispatch wiring over the pre-existing
    `parse_exp_command_target` helper and `PlayerRuntime::lab_solved_bits`
-   field, no new backing model needed unlike its pentagram-debug
-   neighbors) (see the Progress Log entries
-  pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
+    field, no new backing model needed unlike its pentagram-debug
+    neighbors); `/setseyan <name>` done (see iteration 187,
+    `command.c:3055-3078`/`9989-9996`, `CF_GOD`-gated, exact-word only
+    per C's `cmdcmp(ptr, "setseyan", 8)` - pure dispatch wiring over the
+    already-ported `turn_seyan`/`World::apply_turn_seyan` that the
+    gate-fight class-8 reward already drives) (see the Progress Log entries
+   pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
   drifted out of sync with actual progress more than once - iteration
@@ -8298,6 +8302,34 @@ Unlocks every quest NPC. Do these before any P4 area work.
   with no panic. REMAINING: unchanged otherwise - still ~90
   uncross-referenced `cmdcmp` entries (now minus `/labsolved`), mostly
   blocked on unported infra as documented above.
+
+  Progress Log (iteration 187): ported `/setseyan <name>` (`cmd_setseyan`,
+  `command.c:3055-3078`, dispatched at `command.c:9989-9996`,
+  `CF_GOD`-gated, `cmdcmp(ptr, "setseyan", 8)` with `minlen` equal to the
+  full command's length, so no abbreviation is accepted). Pure dispatch
+  wiring over the already-ported `turn_seyan` (`tool.c:4278-4389`,
+  `World::apply_turn_seyan` in `world/turn_seyan.rs` +
+  `PlayerRuntime::clear_turn_seyan_ppd`) that the gate-fight class-8
+  reward path (`World::apply_gate_fight_reward`) already drives - no new
+  backing model needed, just a new `apply_setseyan_command` in
+  `commands_admin.rs` (kept as its own function taking `&ZoneLoader`
+  directly, alongside `apply_create_command`/`apply_create_orb_command`
+  at the `main.rs` call site, rather than widening
+  `apply_admin_character_command`'s signature and touching its ~320
+  existing call sites for a single command). Preserved the C oracle's
+  quirk that the confirmation message goes to the *target* character
+  (`log_char(co, ...)` in `cmd_setseyan`), not the caller - only the
+  "no one by that name" error reaches the caller. 3 new tests in
+  `commands_admin.rs` (target reroll + target-only message + demonshrine
+  PPD cleared, `CF_GOD` gate + missing-target message, exact-8-char
+  `cmdcmp` boundary rejects the `/setsey` abbreviation). `cargo fmt
+  --all`, `cargo test --workspace` (2022 ugaris-core + 55 db + 3 net + 40
+  protocol + 798 server [+3], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic.
+  REMAINING: unchanged otherwise - still ~89 uncross-referenced `cmdcmp`
+  entries (now minus `/setseyan`), mostly blocked on unported infra as
+  documented above.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

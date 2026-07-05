@@ -449,6 +449,73 @@ pub(crate) fn grant_created_orb(
     }
 }
 
+/// C `/setseyan` (`command.c:9989-9996`, `CF_GOD`-gated,
+/// `cmdcmp(ptr, "setseyan", 8)` - `minlen == strlen("setseyan")`, so this
+/// is an exact-word match only, no abbreviations) plus `cmd_setseyan`
+/// (`command.c:3055-3078`): looks up an online character by name (no
+/// self-fallback) and rerolls them into a plain Seyan'Du via the
+/// already-ported `turn_seyan` (`tool.c:4278-4389`,
+/// `World::apply_turn_seyan` + `PlayerRuntime::clear_turn_seyan_ppd`),
+/// the same reroll `/goto`'s sibling gate-fight reward path
+/// (`World::apply_gate_fight_reward`'s class-8 case) already drives.
+/// C sends the confirmation message to the *target* (`co`), not the
+/// caller (`log_char(co, ...)` in `cmd_setseyan`) - only the "no one by
+/// that name" error goes to the caller.
+pub(crate) fn apply_setseyan_command(
+    world: &mut World,
+    loader: &ZoneLoader,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("setseyan") {
+        return None;
+    }
+
+    let caller = world.characters.get(&character_id)?;
+    if !caller.flags.contains(CharacterFlags::GOD) {
+        return None;
+    }
+
+    let (name, _) = take_legacy_alpha_name(rest.trim_start());
+    let Some(target_id) = find_online_character_by_name(world, name) else {
+        return Some(KeyringCommandResult {
+            messages: vec![format!("Sorry, no one by the name {name} around.")],
+            ..Default::default()
+        });
+    };
+
+    let Some(base_values) = loader
+        .character_templates
+        .get("seyan_m")
+        .map(|template| template.base_values.clone())
+    else {
+        return Some(KeyringCommandResult::default());
+    };
+
+    let applied = world.apply_turn_seyan(target_id, &base_values);
+    if !applied {
+        return Some(KeyringCommandResult::default());
+    }
+    if let Some(player) = runtime.player_for_character_mut(target_id) {
+        player.clear_turn_seyan_ppd();
+    }
+
+    let mut result = KeyringCommandResult {
+        inventory_changed: target_id == character_id,
+        name_changed: target_id == character_id,
+        ..Default::default()
+    };
+    result
+        .other_messages
+        .push((target_id, "You are a Seyan'Du now.".to_string()));
+    Some(result)
+}
+
 pub(crate) fn apply_status_command(
     character: &Character,
     player: &PlayerRuntime,

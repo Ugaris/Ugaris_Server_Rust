@@ -1352,6 +1352,133 @@ fn resetgift_is_god_only_checks_target_and_area() {
     assert_eq!(no_runtime.messages, vec!["Could not retrieve player data."]);
 }
 
+fn seyan_m_loader() -> ZoneLoader {
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_character_templates_str(
+            r#"
+                seyan_m:
+                  name="Seyan'Du"
+                  description="A Seyan'Du"
+                  V_HP=10
+                  V_ENDURANCE=8
+                  V_MANA=6
+                ;
+            "#,
+        )
+        .unwrap();
+    loader
+}
+
+#[test]
+fn god_setseyan_rerolls_target_and_messages_the_target_not_the_caller() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let mut god = login_character(god_id, &login_block("Godmode"), 40, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut target = login_character(target_id, &login_block("Target"), 40, 11, 10);
+    target.flags.insert(CharacterFlags::ARCH);
+    target.exp = 500_000;
+    world.add_character(target);
+
+    let mut runtime = ServerRuntime::default();
+    let mut target_player = PlayerRuntime::connected(80, 0);
+    target_player.character_id = Some(target_id);
+    target_player.demonshrines.push(77);
+    runtime.players.insert(80, target_player);
+
+    let loader = seyan_m_loader();
+
+    let result = apply_setseyan_command(
+        &mut world,
+        &loader,
+        &mut runtime,
+        god_id,
+        "/setseyan Target",
+    )
+    .expect("god setseyan should be recognized");
+
+    assert!(result.messages.is_empty());
+    assert_eq!(
+        result.other_messages,
+        vec![(target_id, "You are a Seyan'Du now.".to_string())]
+    );
+    assert!(!result.inventory_changed);
+    assert!(!result.name_changed);
+
+    let target = world.characters.get(&target_id).unwrap();
+    assert_eq!(target.level, 1);
+    assert_eq!(target.exp, 0);
+    assert!(target.flags.contains(CharacterFlags::MAGE));
+    assert!(target.flags.contains(CharacterFlags::WARRIOR));
+
+    let player = runtime.player_for_character(target_id).unwrap();
+    assert!(player.demonshrines.is_empty());
+}
+
+#[test]
+fn setseyan_is_god_only_and_reports_missing_target() {
+    let mut world = World::default();
+    let caller_id = CharacterId(7);
+    world.add_character(login_character(
+        caller_id,
+        &login_block("Tester"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+    let loader = seyan_m_loader();
+
+    assert!(apply_setseyan_command(
+        &mut world,
+        &loader,
+        &mut runtime,
+        caller_id,
+        "/setseyan Missing",
+    )
+    .is_none());
+
+    world
+        .characters
+        .get_mut(&caller_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+    let missing = apply_setseyan_command(
+        &mut world,
+        &loader,
+        &mut runtime,
+        caller_id,
+        "/setseyan Missing",
+    )
+    .expect("god setseyan missing target should be handled");
+    assert_eq!(
+        missing.messages,
+        vec!["Sorry, no one by the name Missing around."]
+    );
+}
+
+#[test]
+fn setseyan_requires_exact_full_word_no_abbreviation() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+    let loader = seyan_m_loader();
+
+    // C `cmdcmp(ptr, "setseyan", 8)`: `minlen` equals the full command's
+    // length, so an abbreviation like `/setsey` must not match at all.
+    assert!(
+        apply_setseyan_command(&mut world, &loader, &mut runtime, god_id, "/setsey Godmode")
+            .is_none()
+    );
+}
+
 #[test]
 fn god_questlog_lists_flagged_quests_like_c() {
     let mut world = World::default();
