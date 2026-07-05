@@ -2578,6 +2578,35 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/checksanity` (`command.c:7443-7457`), `CF_GOD`-gated
+    // (`cmdcmp(ptr, "checksanity", 5)`). Runs the full self-healing
+    // `consistency_check_*` sweep (`World::consistency_check`, see
+    // `world/consistency.rs`'s module doc comment) and reports the same
+    // four aggregate error counts C does. C's per-anomaly `elog` console
+    // lines aren't reproduced (see that module's doc comment for the
+    // established untracked-console-side-effect convention).
+    if lower.len() >= 5 && "checksanity".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let report = world.consistency_check();
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Running consistency checks...".to_string(),
+                format!("Item errors: {}", report.item_errors),
+                format!("Map errors: {}", report.map_errors),
+                format!("Character errors: {}", report.char_errors),
+                format!("Container errors: {}", report.container_errors),
+                "Consistency check complete".to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+
     if lower == "setskill" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());

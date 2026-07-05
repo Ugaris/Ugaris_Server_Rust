@@ -8648,6 +8648,84 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `setnpcbodytimearea32`, `look`, `klog`, `col`, `values`/`showvalues`,
   `summonmacro`) are unchanged from iteration 192's note.
 
+  Progress Log (iteration 194): read and ported `/checksanity`
+  (`command.c:7443-7457`, `CF_GOD`-gated, `cmdcmp` `minlen` 5), the first
+  of the previously-unread GOD-only debug/stats commands - a full Rust
+  port of C's four `consistency_check_items`/`_map`/`_chars`/
+  `_containers` functions (`src/system/consistency.c`, 453 lines), not
+  just a command handler. C walks its fixed-size global `it[]`/`ch[]`/
+  `con[]`/`map[]` arrays looking for desynced back-references (an item
+  that thinks it's carried/on-the-ground/contained but the character/
+  map-tile/container it points at disagrees, or vice versa) and repairs
+  every one found by clearing the dangling side; since this `World` is a
+  straight-line port of the same *duplicated*-reference data model
+  (`Item::carried_by`/`x`+`y`/`contained_in` vs. `Character::inventory`/
+  `cursor_item`, `MapTile::item`), the exact same class of bug remains
+  possible here, so this is a meaningful (not cosmetic) port. Added
+  `World::consistency_check` (new `crates/ugaris-core/src/world/
+  consistency.rs`, returning a new `ConsistencyReport{item_errors,
+  map_errors, char_errors, container_errors}`) running the four checks
+  in the same order and sharing one "how many places reference this
+  item" counter across the map/character/container passes, matching C's
+  file-static `item_used` array reset every call. Since this Rust port
+  has no separate `con[]` array (containers are just `Item`s with
+  `content_id != 0`, contents derived on the fly from every item whose
+  `contained_in` points back), `consistency_check_containers` iterates
+  every container item and checks every item pointing at it - the
+  reverse direction from C's forward array walk, functionally
+  equivalent since there's no forward array to desync against here.
+  Also: no `MAXITEM`/`MAXCHARS`/`MAXMAP` bound to violate in a
+  `HashMap`-keyed world, so C's numeric out-of-bounds branches have no
+  analogue - only "does the referenced id exist, and does it agree"
+  checks apply. Two established deviations (documented in the module's
+  doc comment): no per-anomaly console log line (`ugaris-core` has no
+  logging convention, unlike `ugaris-server`'s `tracing`; the command's
+  own report is only ever the four aggregate counts anyway - the same
+  untracked-console-side-effect convention already used for `dlog`/
+  `write_scrollback` elsewhere), and C's player-facing "You encountered
+  a bug (consist1)..." message to the owning player is not sent (only
+  the aggregate count reaches the admin who ran the command). Wired
+  `apply_checksanity_command`-equivalent inline dispatch into
+  `apply_admin_character_command` (`commands_admin.rs`), right after
+  `/clearmerchantstores`; the `/help`-text line already existed in
+  `commands_player.rs` with no real handler behind it (the same trap
+  several prior iterations found for other commands). 20 new tests in
+  `crates/ugaris-core/src/world/tests/consistency.rs` covering every
+  fix branch of all four checks individually (dangling `carried_by` to a
+  missing character, to a character with no back-link, valid cursor-item
+  linkage, item-on-ground with no/mismatched tile back-link, item
+  double-referenced from two tiles, `contained_in` pointing at a missing
+  or non-container item, inventory slot referencing a missing item or
+  one claiming a different carrier, cursor-item slot, stray position on
+  a carried item, an item carried by two characters at once, a
+  contained item with a stray position or stray `carried_by`, and the
+  interesting multi-pass case where a legitimately-carried-and-shelved
+  item's stale `contained_in` is caught by the characters pass before
+  the containers pass ever sees it - verified by tracing C's own
+  per-check priority order rather than assumed), plus 3 in
+  `crates/ugaris-server/src/tests/commands_admin.rs` (clean-world
+  zero-counts report with exact message text, a repaired dangling item
+  reflected in both the report and the world, `CF_GOD` gate + minlen
+  rejection). `cargo fmt --all`, `cargo test --workspace` (2047
+  ugaris-core [+20] + 55 db + 3 net + 40 protocol + 838 server [+3], all
+  green, zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic. REMAINING: same ~82
+  uncross-referenced entries as before (now minus `/checksanity`); the
+  `ac*`/`macro*` families remain the largest unexamined chunk (see
+  iteration 191's note on the missing sync-command/async-repository
+  bridge); `memstats`/`poolstats`/`querystats`/`profinfo` still need a
+  whole new stats-counter subsystem before any command handler is
+  meaningful (unchanged from iteration 193's note); `respawn`,
+  `exterminate`, `setnpcbodytimearea32`, `look`, `klog`, `col`, `values`/
+  `showvalues`, `summonmacro` remain unread - do that before assuming
+  any is a quick win (note, from earlier reading: `respawn`'s
+  `respawn_check()` is a C-internal template-NPC respawn-tracker
+  consistency logger with a different architecture gap than
+  `checksanity`'s, likely low value; `exterminate`/`look`/`klog` are
+  blocked on the unported `server_chat`/DB-task-queue/notes infra like
+  `punish`/`rename`).
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

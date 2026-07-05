@@ -3050,6 +3050,97 @@ fn clearmerchantstores_is_god_only_and_rejects_too_short_prefix() {
 }
 
 #[test]
+fn god_checksanity_reports_zero_errors_on_a_clean_world() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+
+    let mut runtime = ServerRuntime::default();
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/checksanity", 1)
+        .expect("god checksanity should be recognized");
+
+    assert_eq!(
+        result.messages,
+        vec![
+            "Running consistency checks...",
+            "Item errors: 0",
+            "Map errors: 0",
+            "Character errors: 0",
+            "Container errors: 0",
+            "Consistency check complete",
+        ]
+    );
+}
+
+#[test]
+fn god_checksanity_repairs_a_dangling_carried_item_and_reports_the_count() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+
+    // A dangling item claims to be carried by a character that doesn't
+    // exist (the same class of bug C's `consistency_check_items` fixes).
+    let mut dangling = test_item(ItemId(900), 1234, ItemFlags::TAKE);
+    dangling.carried_by = Some(CharacterId(999));
+    world.add_item(dangling);
+
+    let mut runtime = ServerRuntime::default();
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/checksanity", 1)
+        .expect("god checksanity should be recognized");
+
+    assert_eq!(
+        result.messages,
+        vec![
+            "Running consistency checks...",
+            "Item errors: 1",
+            "Map errors: 0",
+            "Character errors: 0",
+            "Container errors: 0",
+            "Consistency check complete",
+        ]
+    );
+    assert_eq!(world.items.get(&ItemId(900)).unwrap().carried_by, None);
+}
+
+#[test]
+fn checksanity_is_god_only_and_rejects_too_short_prefix() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    world.add_character(login_character(
+        character_id,
+        &login_block("Tester"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/checksanity",
+        1,
+    )
+    .is_none());
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/chec", 1,)
+            .is_none()
+    );
+}
+
+#[test]
 fn itemname_and_itemdesc_are_god_only_and_require_cursor_item() {
     let mut world = World::default();
     let character_id = CharacterId(7);

@@ -13,6 +13,7 @@ mod clanmaster;
 mod clubmaster;
 mod combat;
 mod complain;
+mod consistency;
 mod date;
 mod death;
 mod doors;
