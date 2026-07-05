@@ -9,6 +9,7 @@ mod bank;
 mod character_values;
 mod clanclerk;
 mod clanmaster;
+mod clubmaster;
 mod combat;
 mod date;
 mod death;

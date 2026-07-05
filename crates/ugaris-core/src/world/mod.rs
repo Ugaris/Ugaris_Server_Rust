@@ -19,6 +19,7 @@ mod bank;
 mod character_values;
 mod clanclerk;
 mod clanmaster;
+mod clubmaster;
 mod combat;
 mod date;
 mod death;
@@ -63,6 +64,7 @@ pub use bank::*;
 pub(crate) use character_values::*;
 pub use clanclerk::*;
 pub use clanmaster::*;
+pub use clubmaster::*;
 pub(crate) use combat::*;
 pub use death::*;
 pub use doors::*;
@@ -309,6 +311,7 @@ pub struct World {
     pending_trader_events: Vec<TraderEvent>,
     pending_clanmaster_events: Vec<ClanmasterEvent>,
     pending_clanclerk_events: Vec<ClanclerkEvent>,
+    pending_clubmaster_events: Vec<ClubmasterEvent>,
     pending_military_master_events: Vec<MilitaryMasterEvent>,
     pending_military_advisor_events: Vec<MilitaryAdvisorEvent>,
     pending_arena_master_events: Vec<ArenaMasterEvent>,

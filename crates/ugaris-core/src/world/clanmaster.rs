@@ -204,7 +204,11 @@ impl World {
     /// (not cloned) character so `get_char_clan`'s stale-reference
     /// self-heal (clearing `clan`/`clan_rank`/`clan_serial` on a mismatch)
     /// actually sticks, matching C.
-    fn char_is_clan_or_club_member(&mut self, character_id: CharacterId) -> bool {
+    ///
+    /// `pub(super)` since `world/clubmaster.rs` reuses this same idiom
+    /// (see that module's doc comment for the one place its own C source
+    /// applies it to the *NPC* rather than the speaking player).
+    pub(super) fn char_is_clan_or_club_member(&mut self, character_id: CharacterId) -> bool {
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };

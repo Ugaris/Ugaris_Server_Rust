@@ -185,6 +185,39 @@ impl ClubRegistry {
         }
     }
 
+    fn identity_mut(&mut self, nr: u16) -> Option<&mut ClubIdentity> {
+        if Self::valid_club(nr) {
+            self.identities.get_mut(&nr)
+        } else {
+            None
+        }
+    }
+
+    /// C `club[nr].money` (in 1/100 gold, see [`ClubIdentity::money`]'s
+    /// doc comment). `0` for an out-of-range/nonexistent club - C has no
+    /// dedicated `get_club_money` accessor (`show_club_info`/
+    /// `clubmaster.c` both read `club[n].money` directly), this mirrors
+    /// [`crate::clan::ClanRegistry::clan_money`]'s shape for symmetry.
+    pub fn club_money(&self, nr: u16) -> i32 {
+        self.identity(nr).map(|id| id.money).unwrap_or(0)
+    }
+
+    /// Applies `diff` (positive = deposit, negative = withdrawal) to a
+    /// club's treasury (`clubmaster.c:492,511`: `club[n].money +=
+    /// val;`/`club[n].money -= val;`). Returns `false` for an out-of-
+    /// range/nonexistent club (a no-op, matching every other mutator in
+    /// this registry); the caller is expected to have already validated
+    /// the amount (positive, affordable) exactly like `clubmaster_driver`
+    /// does before calling into either branch.
+    pub fn club_money_change(&mut self, nr: u16, diff: i32) -> bool {
+        let Some(identity) = self.identity_mut(nr) else {
+            return false;
+        };
+        identity.money += diff;
+        self.dirty = true;
+        true
+    }
+
     pub fn name(&self, nr: u16) -> Option<&str> {
         self.identity(nr).map(|id| id.name.as_str())
     }
@@ -639,6 +672,31 @@ mod tests {
         let mut registry = ClubRegistry::new();
         registry.create_club("Rangers", 0).unwrap();
         assert_eq!(registry.tick_billing(3, 0), None);
+    }
+
+    #[test]
+    fn club_money_reads_zero_for_out_of_range_or_nonexistent_club() {
+        let registry = ClubRegistry::new();
+        assert_eq!(registry.club_money(0), 0);
+        assert_eq!(registry.club_money(5), 0);
+    }
+
+    #[test]
+    fn club_money_change_deposits_and_withdraws() {
+        let mut registry = ClubRegistry::new();
+        let nr = registry.create_club("Rangers", 0).unwrap();
+        assert_eq!(registry.club_money(nr), 0);
+        assert!(registry.club_money_change(nr, 1_000_000));
+        assert_eq!(registry.club_money(nr), 1_000_000);
+        assert!(registry.club_money_change(nr, -400_000));
+        assert_eq!(registry.club_money(nr), 600_000);
+    }
+
+    #[test]
+    fn club_money_change_is_noop_for_nonexistent_club() {
+        let mut registry = ClubRegistry::new();
+        assert!(!registry.club_money_change(5, 100));
+        assert_eq!(registry.club_money(5), 0);
     }
 
     #[test]

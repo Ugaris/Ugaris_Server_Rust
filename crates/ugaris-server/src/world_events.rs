@@ -1145,6 +1145,54 @@ async fn apply_offline_clan_fire(
     world.npc_quiet_say(clanmaster_id, &format!("Fired {target_display_name}."));
 }
 
+/// Applies each [`ClubmasterEvent`] queued by `World::process_clubmaster_actions`:
+/// the `ACHIEVEMENT_CLUB_MEMBER`/`ACHIEVEMENT_CLUB_MASTER` awards C's
+/// `clubmaster_driver` performs inline at its `found:`/`join:` success
+/// sites (`src/system/clubmaster.c:305-306,364`) - same shape as
+/// [`apply_clanmaster_events`], minus any clan-log persistence (club
+/// founding/deposit/withdraw only ever hit C's bare, non-persisted
+/// `dlog`, see `crate::world::clubmaster`'s module doc comment) and minus
+/// any offline-DB fallback (club's `rank:`/`fire:` aren't ported yet).
+pub(crate) async fn apply_clubmaster_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+) -> usize {
+    let mut applied = 0;
+    for event in world.drain_pending_clubmaster_events() {
+        match event {
+            ClubmasterEvent::ClubFounded { founder_id } => {
+                award_clubmaster_member_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    founder_id,
+                )
+                .await;
+                award_clubmaster_master_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    founder_id,
+                )
+                .await;
+                applied += 1;
+            }
+            ClubmasterEvent::MemberAdded { member_id } => {
+                award_clubmaster_member_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    member_id,
+                )
+                .await;
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
 /// Applies each [`ClanclerkEvent`] queued by `World::process_clanclerk_actions`:
 /// the clan-log entries C's `clan_money_change`/`set_clan_rankname`/
 /// `set_clan_website`/`set_clan_message`/`add_jewel`/`set_clan_raid`/

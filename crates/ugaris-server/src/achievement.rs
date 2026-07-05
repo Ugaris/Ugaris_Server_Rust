@@ -952,6 +952,43 @@ pub(crate) async fn award_clanmaster_master_achievement(
     .await;
 }
 
+/// C `clubmaster_driver`'s `found:` success branch's `ACHIEVEMENT_CLUB_
+/// MEMBER` award (`src/system/clubmaster.c:305`). Consumes a
+/// `ClubmasterEvent` queued by `World::process_clubmaster_actions`.
+pub(crate) async fn award_clubmaster_member_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    member_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        member_id,
+        AchievementType::ClubMember,
+    )
+    .await;
+}
+
+/// C `clubmaster_driver`'s `found:` success branch's `ACHIEVEMENT_CLUB_
+/// MASTER` award (`src/system/clubmaster.c:306`).
+pub(crate) async fn award_clubmaster_master_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    founder_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        founder_id,
+        AchievementType::ClubMaster,
+    )
+    .await;
+}
+
 /// C `give_first_kill`'s class-range congrats-message dispatch
 /// (`death.c:213-253`). `has_name` gates on `ch[co].flags & CF_HASNAME`
 /// (checked before any class range); the two subsequent `else if` chains

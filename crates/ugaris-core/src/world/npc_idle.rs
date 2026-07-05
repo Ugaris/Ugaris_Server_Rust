@@ -474,6 +474,7 @@ impl World {
                 | CharacterDriverState::Clanmaster(_)
                 | CharacterDriverState::ClanFound(_)
                 | CharacterDriverState::Clanclerk(_)
+                | CharacterDriverState::Clubmaster(_)
                 | CharacterDriverState::MilitaryMaster(_)
                 | CharacterDriverState::MilitaryAdvisor(_)
                 | CharacterDriverState::ArenaMaster(_)

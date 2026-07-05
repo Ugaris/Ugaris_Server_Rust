@@ -48,6 +48,13 @@ pub const CDR_CLANMASTER: u16 = 27;
 /// C `#define CDR_CLANCLERK 28` (`src/system/drvlib.h`): the clan
 /// administration/treasury NPC (`src/area/30/clanmaster.c::clanclerk_driver`).
 pub const CDR_CLANCLERK: u16 = 28;
+/// C `#define CDR_CLUBMASTER 113` (`src/system/drvlib.h`): the club
+/// foundations/administration NPC (`src/system/clubmaster.c::
+/// clubmaster_driver`) - a single driver combining what `CDR_CLANMASTER`/
+/// `CDR_CLANCLERK` split into two separate NPCs. See `crate::club`'s
+/// module doc comment for the club/clan split, and
+/// `crate::world::clubmaster` for the port itself.
+pub const CDR_CLUBMASTER: u16 = 113;
 /// C `#define CDR_GATE_FIGHT 40` (`src/system/drvlib.h`): the private-room
 /// opponent NPC spawned by `enter_room` (`gatekeeper_w`/`gatekeeper_m`/
 /// `gatekeeper_s` templates, `src/system/gatekeeper.c::gate_fight_driver`).
@@ -150,6 +157,7 @@ pub enum CharacterDriverState {
     /// a per-character named-slot store with no NPC-only restriction.
     ClanFound(ClanFoundData),
     Clanclerk(ClanclerkDriverData),
+    Clubmaster(ClubmasterDriverData),
     MilitaryMaster(MilitaryMasterDriverData),
     MilitaryAdvisor(MilitaryAdvisorDriverData),
     ArenaMaster(ArenaMasterDriverData),
@@ -494,6 +502,51 @@ pub fn parse_clanclerk_driver_args(args: &str) -> ClanclerkDriverData {
     ClanclerkDriverData {
         clan: args.trim().parse::<i32>().unwrap_or(0).max(0) as u16,
     }
+}
+
+/// C `struct clubmaster_driver_data` (`src/system/clubmaster.c:198-213`):
+/// the club foundations/administration NPC's own driver memory
+/// (`CDR_CLUBMASTER`). Unlike [`ClanmasterDriverData`], club founding
+/// (`found:`) is a single-step gold payment - there is no per-player
+/// "name chosen, waiting for a Clan Jewel" state, so there is no club
+/// counterpart to [`ClanFoundData`]. C's own `new_name[80]`/`new_co`/
+/// `new_ID`/`new_timeout` fields are declared but never read *or* written
+/// anywhere in `clubmaster_driver` (genuinely dead struct members, unlike
+/// `ClanmasterDriverData::accept_cn`, which is at least written once) -
+/// dropped here rather than kept for fidelity, since there is nothing to
+/// be faithful to.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClubmasterDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub dir: i32,
+    /// C `dat->accept[80]`: the name of the player a club leader has
+    /// invited (`accept: <name>`).
+    pub accept: String,
+    pub accept_clan: u16,
+    /// C `dat->accept_cn`: set by the `accept:` handler but never read
+    /// again anywhere in `clubmaster.c` either - kept for the same
+    /// fidelity reason `ClanmasterDriverData::accept_cn` documents.
+    pub accept_cn: Option<CharacterId>,
+    /// C `dat->join[80]`: the inviting leader's own name, echoed back by
+    /// the invitee via `join: <leader name>` to confirm the invite.
+    pub join: String,
+    #[serde(default)]
+    pub memcleartimer: u64,
+}
+
+/// C `clubmaster_driver_parse` (`src/system/clubmaster.c:215-225`): same
+/// `dir=N;` zone-file arg shape as [`parse_clanmaster_driver_args`].
+pub fn parse_clubmaster_driver_args(args: &str) -> ClubmasterDriverData {
+    let mut data = ClubmasterDriverData::default();
+    let mut rest = args;
+    while let Some((name, value, next)) = next_legacy_name_value(rest) {
+        if name == "dir" {
+            data.dir = value.parse::<i32>().unwrap_or(0);
+        }
+        rest = next;
+    }
+    data
 }
 
 /// C `struct contender` (`src/system/arena.c:215-220`): one tournament
@@ -1528,6 +1581,80 @@ pub const CLANMASTER_QA: &[TextQaEntry] = &[
     },
 ];
 
+/// C `struct qa qa[]` from `src/system/clubmaster.c:70-83`. Like
+/// `CLANMASTER_QA`, C's own caller (`clubmaster_driver`) never reads
+/// `analyse_text_driver`'s return value either, so `answer_code == 1`
+/// ("what's your name"/"who are you") is the only observable special
+/// case, handled by `crate::world::World::clubmaster_qa_reply` the same
+/// way `clanmaster_qa_reply` handles it. Unlike `CLANMASTER_QA`, this
+/// table has no "jewels"/"repeat"/"raid"/"scout"/"info" entries at all -
+/// `clubmaster.c`'s own table genuinely stops after `"club"`.
+pub const CLUBMASTER_QA: &[TextQaEntry] = &[
+    TextQaEntry {
+        words: &["how", "are", "you"],
+        answer: Some("I'm fine!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hello"],
+        answer: Some("Hello, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hi"],
+        answer: Some("Hi, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["greetings"],
+        answer: Some("Greetings, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hail"],
+        answer: Some("And hail to you, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["help"],
+        answer: Some("Sorry, I'm just a merchant, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what", "is", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["club"],
+        answer: Some(
+            "Say 'found: <club name>' to found a club. The first weekly payment of 10000g is \
+             due immediately.",
+        ),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["what", "is", "your", "name"],
+        answer: None,
+        answer_code: 1,
+    },
+    TextQaEntry {
+        words: &["who", "are", "you"],
+        answer: None,
+        answer_code: 1,
+    },
+];
+
 /// C `struct qa qa[]` from `src/module/military.c:89-164`, shared verbatim
 /// by both `military_master_driver` and (once ported)
 /// `military_advisor_driver`. Note `"help"`'s answer is the same
@@ -2195,6 +2322,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Clanmaster(_)
             | CharacterDriverState::ClanFound(_)
             | CharacterDriverState::Clanclerk(_)
+            | CharacterDriverState::Clubmaster(_)
             | CharacterDriverState::MilitaryMaster(_)
             | CharacterDriverState::MilitaryAdvisor(_)
             | CharacterDriverState::ArenaMaster(_)
@@ -3210,6 +3338,17 @@ mod tests {
     fn cdr_clanclerk_matches_c_drvlib() {
         assert_eq!(CDR_CLANMASTER, 27);
         assert_eq!(CDR_CLANCLERK, 28);
+    }
+
+    #[test]
+    fn cdr_clubmaster_matches_c_drvlib() {
+        assert_eq!(CDR_CLUBMASTER, 113);
+    }
+
+    #[test]
+    fn parse_clubmaster_driver_args_reads_dir() {
+        assert_eq!(parse_clubmaster_driver_args("dir=3;").dir, 3);
+        assert_eq!(parse_clubmaster_driver_args("").dir, 0);
     }
 
     #[test]

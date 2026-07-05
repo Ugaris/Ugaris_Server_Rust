@@ -3228,12 +3228,14 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `clan_trade_bonus` - ported iteration 103, see Progress Log),
   clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
-  (transport module has the seam). REMAINING: club-variant achievement
-  wiring (blocked on the unported `CDR_CLUBMASTER` founding NPC driver,
-  `clubmaster.c` - `club.c`'s own core identity/serial registry was
-  ported in iteration 136, see Progress Log, and is now wired into
-  `clanmaster.rs`'s membership gate, but nothing yet creates a real club
-  in a live game), and the raid-spawn consumer of
+  (transport module has the seam). REMAINING: the `CDR_CLUBMASTER`
+  founding NPC driver's `rank:`/`fire:` leader rank-management text
+  commands plus their offline-player DB-task fallback (`clubmaster.c:
+  379-483`) - the core of that driver (`found:`/`accept:`/`join:`/
+  `leave!`/`deposit:`/`withdraw:`, achievement wiring, greeting/idle
+  chatter) was ported in iteration 137 (see Progress Log), so a real club
+  can now actually be founded/joined by a player in a live game - and the
+  raid-spawn consumer of
   `get_clan_dungeon` itself (`area/13/dungeon.c`, unported) - the potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
@@ -4273,8 +4275,76 @@ Unlocks every quest NPC. Do these before any P4 area work.
     (whose core registry now exists and is tested); the raid-spawn
     consumer of `get_clan_dungeon` (blocked on unported
     `area/13/dungeon.c`) is unchanged. Neither is a self-contained slice
-    of this task by itself - each is its own separate, larger future NPC-
-    driver/area port.
+     of this task by itself - each is its own separate, larger future NPC-
+     driver/area port.
+   - 2026-07-05 (iteration 137): ported the core of the `CDR_CLUBMASTER`
+     founding/administration NPC (`src/system/clubmaster.c::
+     clubmaster_driver`, driver 113) in a new
+     `crates/ugaris-core/src/world/clubmaster.rs`: `found:` (a single-step
+     10,000-gold founding payment - no Clan-Jewel two-step handoff like
+     `clanmaster_driver`'s `name:`, so `create_club` fires immediately),
+     `accept:`/`join:` (leader-invites-member handshake, rank `>= 1` gate
+     unlike clan's `>= 2`), `leave!` (reuses the same shared
+     `ClanRegistry::remove_member` clan's own `leave!` already calls -
+     it's clan/club-agnostic field-clearing with no club-specific
+     validation of its own), `deposit:`/`withdraw:` (club treasury,
+     `withdraw:` gated at founder rank `2`), the generic small-talk qa
+     table (new `CLUBMASTER_QA` constant - a different, shorter table than
+     `CLANMASTER_QA`, stopping after a `"club"` entry with no "jewels"/
+     "repeat"/"raid" special cases), the periodic greeting, the 8-entry
+     idle-murmur table (`RANDOM(8)`, vs. clan's `RANDOM(13)`), and the 12h
+     driver-memory clear timer. New `crate::club::ClubRegistry::
+     club_money`/`club_money_change` accessors (club's own `deposit:`/
+     `withdraw:` read/write `club[n].money` directly in C, unlike clan's
+     dedicated `clan_money_change` function). Preserved a genuine C bug
+     verbatim: the `NT_CHAR` greeting's membership check
+     (`clubmaster.c:269`) tests the *clubmaster NPC's own* `get_char_club`/
+     `get_char_clan`, not the visiting player's like `clanmaster_driver`'s
+     equivalent check does - since NPCs never have a clan/club this is
+     always true, so the clubmaster greets every single visitor, never
+     skipping existing members (documented inline, not silently
+     corrected). Club founding/deposit/withdraw's bare C `dlog(...)` calls
+     are server-debug-only (no `club_log` table exists, matching the same
+     precedent already documented for clan's own bare `dlog` calls in
+     `world/clanclerk.rs`), so no clan-log-style persistence was added;
+     achievement awards (`ACHIEVEMENT_CLUB_MEMBER`/`ACHIEVEMENT_CLUB_
+     MASTER`) are queued as a new `ClubmasterEvent` enum and applied by a
+     new `crates/ugaris-server/src/world_events.rs::
+     apply_clubmaster_events` (mirroring `apply_clanmaster_events`'s
+     shape) plus two new `award_clubmaster_member_achievement`/
+     `award_clubmaster_master_achievement` helpers in `achievement.rs`,
+     wired into `main.rs`'s tick loop right after `apply_clanclerk_events`.
+     `zone.rs` gained the `CDR_CLUBMASTER` -> `parse_clubmaster_driver_args`
+     spawn wiring (same `dir=N;` zone-file arg shape as
+     `parse_clanmaster_driver_args`). This is the first live, reachable
+     call site for `ClubRegistry::create_club`/`get_char_club` outside
+     tests - a real club can now actually be founded and joined by a
+     player in a live game, unblocking the "club-variant achievement
+     wiring" REMAINING item from iteration 136. Deliberately out of scope
+     for this slice (documented inline, not silently dropped, same phased
+     approach `world/clanmaster.rs` itself took across iterations 94/97/
+     100): `rank:`/`fire:` (leader rank-management text commands,
+     `clubmaster.c:379-483`) and their `lookup_name`/`task_set_clan_rank`/
+     `task_fire_from_clan` offline-player DB-task fallback. 18 new tests
+     in `world/tests/clubmaster.rs` (founding success/name-truncation/
+     unpaid/already-a-member/insufficient-gold/duplicate-name, accept-then-
+     join handshake success plus its own rank/invitation-mismatch
+     rejections, leave success-with-no-event plus non-member rejection,
+     deposit success plus insufficient-gold, withdraw success plus rank-
+     gate and insufficient-treasury rejections, and the greeting-fires-
+     for-every-visitor C-bug case) plus 3 `club.rs` unit tests
+     (`club_money`/`club_money_change` read/deposit/withdraw/no-op-on-
+     nonexistent-club) and 2 `character_driver.rs` constant/arg-parser
+     tests. `cargo fmt --all`, `cargo test --workspace` (1845 ugaris-core
+     [+23] + 55 db + 3 net + 40 protocol + 584 server, all green, zero
+     failures), `cargo build -p ugaris-server` clean with zero warnings,
+     10s boot-smoke confirmed "entering Rust game loop" with no panics
+     (this iteration adds a `World` field, a new tick-loop call site, and
+     a new spawn-wiring branch in `zone.rs`). REMAINING for the "Clan
+     system" task overall, updated: `CDR_CLUBMASTER`'s `rank:`/`fire:`
+     handlers (online + offline-DB-fallback) and the raid-spawn consumer
+     of `get_clan_dungeon` (blocked on unported `area/13/dungeon.c`) are
+     the only two gaps left.
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

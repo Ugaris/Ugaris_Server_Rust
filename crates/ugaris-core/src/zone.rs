@@ -6,11 +6,11 @@ use crate::{
     character_driver::{
         apply_lab2_undead_create_message, apply_simple_baddy_create_message,
         parse_arena_manager_driver_args, parse_clanclerk_driver_args, parse_clanmaster_driver_args,
-        ArenaFighterDriverData, ArenaMasterDriverData, CharacterDriverState, GateFightDriverData,
-        GateWelcomeDriverData, JanitorDriverData, TraderDriverData, ARENA_FIGHTER_REST_POS,
-        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_CLANCLERK, CDR_CLANMASTER,
-        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER,
-        NT_CREATE,
+        parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
+        CharacterDriverState, GateFightDriverData, GateWelcomeDriverData, JanitorDriverData,
+        TraderDriverData, ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER,
+        CDR_ARENAMASTER, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_GATE_FIGHT,
+        CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -485,6 +485,11 @@ impl ZoneLoader {
         if template.driver == CDR_CLANCLERK {
             character.driver_state = Some(CharacterDriverState::Clanclerk(
                 parse_clanclerk_driver_args(&template.args),
+            ));
+        }
+        if template.driver == CDR_CLUBMASTER {
+            character.driver_state = Some(CharacterDriverState::Clubmaster(
+                parse_clubmaster_driver_args(&template.args),
             ));
         }
         if template.driver == CDR_ARENAMASTER {

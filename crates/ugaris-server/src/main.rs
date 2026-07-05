@@ -160,7 +160,7 @@ use ugaris_core::{
     world::{
         army_rank_for_points, army_rank_name, exp2level, legacy_save_number, level2exp,
         level_value, merchant_buy_price, merchant_sales_price, ArenaMasterEvent, BankEvent,
-        ClanclerkEvent, ClanmasterEvent, FirstKillCheck, GateWelcomeOutcomeEvent,
+        ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, FirstKillCheck, GateWelcomeOutcomeEvent,
         GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
         RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
@@ -5974,6 +5974,19 @@ async fn main() -> anyhow::Result<()> {
                 let clanclerk_events_applied =
                     apply_clanclerk_events(&mut world, &clan_log_repository, current_unix_time())
                         .await;
+                // C `clubmaster_driver`: the club foundations/
+                // administration NPC (`src/system/clubmaster.c`).
+                world.process_clubmaster_actions(config.area_id, current_unix_time());
+                let clubmaster_events_applied =
+                    apply_clubmaster_events(&mut world, &mut runtime, &achievement_repository)
+                        .await;
+                if clubmaster_events_applied != 0 {
+                    info!(
+                        clubmaster_events_applied,
+                        tick = world.tick.0,
+                        "applied clubmaster founding/membership events"
+                    );
+                }
                 // C `military_master_driver`: the mission-giving Military
                 // Master NPC (`src/module/military.c`).
                 world.process_military_master_actions(config.area_id, current_unix_time());
