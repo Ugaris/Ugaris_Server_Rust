@@ -6696,10 +6696,22 @@ Unlocks every quest NPC. Do these before any P4 area work.
     clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
     loop" with no panics.
 
-- [ ] **Events (`src/module/events/**`)** - recurring boosted-rate events
+- [~] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +
   each recurring event's modifier hooks (`event_drop_rate` modifier is
-  referenced by loot JSON).
+  referenced by loot JSON). REMAINING: the generic seasonal
+  `EventDecoration`/date-range (`RECUR_NONE`/`RECUR_YEARLY`) scheduling
+  used by `christmas_event.c`/`easter_event.c` is not wired into the new
+  `events.rs` framework (Christmas keeps its own independent date logic in
+  `xmas.rs`; Easter is a full gap - no Rust code at all, including
+  `calculate_easter_date`). `RecurrenceType::Daily`/`Monthly` branches of
+  `should_event_be_active` are also unported (no currently-ported event
+  needs them). The `event_drop_rate` loot modifier is stored/settable but
+  has no consumer yet (blocked on the separate "Death-mode loot tables"
+  task's JSON roll engine). The four `mining_*_multiplier` settings the
+  Mining Monday/Wednesday events scale are likewise still dead/unwired
+  outside `GameSettings` (blocked on porting the mining "dig" mechanic
+  itself, not part of this task).
 
 - [ ] **Death-mode loot tables (`src/system/loot/loot.c`)** - JSON tables
   under `ugaris_data/loot/`. Port the loader + roll engine + pity
@@ -7221,3 +7233,29 @@ Add one line per completed task: date, task, ledger section touched.
   protocol + 602 server, all green, zero failures), `cargo build -p
   ugaris-server` clean with zero warnings. Ledger section "Ralph Loop -
   Clan System" extended.
+- 2026-07-05: Events (P3, now `[~]`) - ported `src/module/events/events.c`'s
+  generic calendar-matching primitives (`is_date_in_range`/
+  `is_time_in_range`/`is_day_matching`/`is_week_matching`, plus a
+  from-scratch `days_from_civil`/`weekday_from_days`/`week_number` (glibc
+  `strftime("%W")`) trio validated against real `date +%W` output) and all
+  five `src/module/events/recurring/*.c` boosted-rate events (Double
+  Experience Thursday, Double Drop Rate Tuesday, Double Experience & Drop
+  Rate Weekend, Mining Monday, Mining Wednesday) as
+  `crates/ugaris-server/src/events.rs`, wired into `main.rs`'s existing
+  once-a-minute tick gate (mirroring C's `add_scheduled_task(check_events,
+  60, ...)`). Added a `GameSettings::loot_modifiers` named-scalar registry
+  (`get_loot_modifier`/`set_loot_modifier`, default 1.0) matching C
+  `loot_get_modifier`/`loot_set_modifier` for the `event_drop_rate` hook.
+  Preserved two real C quirks rather than "fixing" them: Mining
+  Monday/Wednesday's `_end` hooks hardcode their multipliers back to `1.0`
+  instead of restoring the snapshot their `_start` hooks captured (dead
+  snapshot code in the C source), while Double Experience
+  Thursday/Weekend's `_end` hooks do restore their captured
+  `original_exp_modifier` snapshot exactly. 16 new tests in
+  `crates/ugaris-server/src/tests/events.rs` plus 1 in
+  `crates/ugaris-core/src/game_settings.rs`. `cargo fmt --all`, `cargo test
+  --workspace` (1950 core + 55 db + 3 net + 40 protocol + 620 server, all
+  green, zero failures), `cargo build -p ugaris-server` clean with zero
+  warnings, 12s boot-smoke confirmed "entering Rust game loop" with no
+  panics. Ledger section "Ralph Loop - Events (Recurring Boosted-Rate)"
+  added.

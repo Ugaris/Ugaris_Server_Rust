@@ -22,6 +22,7 @@ mod containers;
 mod depot;
 mod dungeon;
 mod effects_sync;
+mod events;
 mod inventory;
 mod item_apply;
 mod keyring;
@@ -259,6 +260,9 @@ struct ServerRuntime {
     holler_cost: i32,
     shout_cost: i32,
     weather: WeatherState,
+    /// C `src/module/events/events.c`'s recurring boosted-rate event
+    /// scheduler state (`events::RecurringEventKind`'s five events).
+    recurring_events: events::RecurringEventsState,
 }
 
 impl Default for ServerRuntime {
@@ -297,6 +301,7 @@ impl Default for ServerRuntime {
             holler_cost: settings.holler_cost,
             shout_cost: settings.shout_cost,
             weather: WeatherState::default(),
+            recurring_events: events::RecurringEventsState::default(),
         }
     }
 }
@@ -6310,6 +6315,23 @@ async fn main() -> anyhow::Result<()> {
                         .collect();
                     for character_id in play_time_characters {
                         award_play_time_minute(&mut world, &mut runtime, &achievement_repository, character_id).await;
+                    }
+                }
+                // C `init_event_system`'s `add_scheduled_task(check_events,
+                // 60, "event_check", true)`: check every registered
+                // recurring event's should-be-active state once a minute.
+                if world.tick.0 % (TICKS_PER_SECOND * 60) == 0 {
+                    let now = events::CalendarNow::now();
+                    for (kind, started) in events::check_recurring_events(
+                        &mut world.settings,
+                        &mut runtime.recurring_events,
+                        &now,
+                    ) {
+                        if started {
+                            info!(event = kind.name(), "recurring event started");
+                        } else {
+                            info!(event = kind.name(), "recurring event ended");
+                        }
                     }
                 }
                 // C `tick_player`'s deferred-init sweep (`player.c:3660-

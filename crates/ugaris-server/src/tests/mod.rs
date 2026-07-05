@@ -13,6 +13,7 @@ mod containers;
 mod depot;
 mod dungeon;
 mod effects_sync;
+mod events;
 mod inventory;
 mod item_apply;
 mod keyring;

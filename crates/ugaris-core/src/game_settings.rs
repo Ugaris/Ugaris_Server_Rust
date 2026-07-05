@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{entity::POWERSCALE, legacy::SAY_DIST, tick::TICKS_PER_SECOND};
@@ -110,6 +112,15 @@ pub struct GameSettings {
     /// `do_walk`, which apply this value and the indoor-tile override).
     /// 100 = no weather effect (C's `MOD_WEATHER_EFFECT_SLOW` flag unset).
     pub weather_movement_percent: i32,
+    /// C `src/system/loot/loot.c`'s `static struct LootModifier modifiers[]`
+    /// registry: named runtime-settable scalars (default 1.0) that loot
+    /// table groups opt into via a `"modifiers": ["event_drop_rate"]` JSON
+    /// list. Recurring events (`src/module/events/recurring/*`) call
+    /// `loot_set_modifier`/`loot_get_modifier` to scale drop rates for the
+    /// duration of the event; the JSON loot-table roll engine itself
+    /// (`Death-mode loot tables` porting task) is the eventual consumer.
+    #[serde(default)]
+    pub loot_modifiers: HashMap<String, f64>,
 }
 
 impl Default for GameSettings {
@@ -208,6 +219,7 @@ impl Default for GameSettings {
             max_clan_bonus_percent: 20,
             tester_heal_threshold: 0.5,
             weather_movement_percent: 100,
+            loot_modifiers: HashMap::new(),
         }
     }
 }
@@ -474,6 +486,28 @@ impl GameSettings {
         special_item_drop_multiplier,
         f64
     );
+
+    /// C `loot_set_modifier` (`src/system/loot/loot.c:138-152`): registers or
+    /// updates a named runtime scalar. C silently ignores an empty name and
+    /// logs+ignores registration past a fixed pool size; the Rust
+    /// `HashMap` has no such fixed-size limit so only the empty-name guard
+    /// applies here.
+    pub fn set_loot_modifier(&mut self, name: &str, value: f64) {
+        if name.is_empty() {
+            return;
+        }
+        self.loot_modifiers.insert(name.to_string(), value);
+    }
+
+    /// C `loot_get_modifier` (`src/system/loot/loot.c:153-158`): returns the
+    /// registered scalar, or `1.0` (no-op multiplier) if unset or the name
+    /// is empty.
+    pub fn get_loot_modifier(&self, name: &str) -> f64 {
+        if name.is_empty() {
+            return 1.0;
+        }
+        self.loot_modifiers.get(name).copied().unwrap_or(1.0)
+    }
 }
 
 #[cfg(test)]
@@ -508,5 +542,25 @@ mod tests {
         assert_eq!(settings.get_special_item_drop_multiplier(), 1.0);
         settings.set_special_item_drop_multiplier(1.5);
         assert_eq!(settings.get_special_item_drop_multiplier(), 1.5);
+    }
+
+    #[test]
+    fn loot_modifier_defaults_to_one_and_round_trips_like_c() {
+        let mut settings = GameSettings::default();
+
+        // C `loot_get_modifier` returns 1.0 for an unregistered name.
+        assert_eq!(settings.get_loot_modifier("event_drop_rate"), 1.0);
+
+        settings.set_loot_modifier("event_drop_rate", 2.0);
+        assert_eq!(settings.get_loot_modifier("event_drop_rate"), 2.0);
+
+        // Re-setting the same name updates in place (C `find_modifier` hit).
+        settings.set_loot_modifier("event_drop_rate", 1.0);
+        assert_eq!(settings.get_loot_modifier("event_drop_rate"), 1.0);
+
+        // C `loot_set_modifier`/`loot_get_modifier` both silently ignore an
+        // empty name.
+        settings.set_loot_modifier("", 5.0);
+        assert_eq!(settings.get_loot_modifier(""), 1.0);
     }
 }
