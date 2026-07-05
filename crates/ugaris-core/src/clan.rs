@@ -25,14 +25,22 @@
 //! `clan_money_change`, `clan.c:494-544,1105-1182,222-244`), and the
 //! merchant trade bonus (`clan_trade_bonus`, `clan.c:1545-1552` - see
 //! [`crate::world::World::clan_trade_bonus`], wired into every merchant
-//! price computation in `crate::world::merchant`).
+//! price computation in `crate::world::merchant`), and the dungeon-guard
+//! configuration accessors (`get_clan_dungeon_cost`/`set_clan_dungeon_use`/
+//! `get_clan_dungeon`, `clan.c:617-799`) - these are pure state on `struct
+//! clan_dungeon` with a real, reachable caller today (the clanclerk NPC's
+//! `use` command, `area/30/clanmaster.c:854-899`, ported in
+//! `crate::world::clanclerk`), even though `get_clan_dungeon`'s own only
+//! C caller (`area/13/dungeon.c`'s raid-spawn setup) is not ported yet -
+//! same "pure logic first, wiring later" precedent as `set_clan_raid`
+//! before it.
 //!
-//! NOT ported yet (left for follow-up slices): the dungeon-guard economy
-//! proper (guard counts/potions/raid flags - the rest of `struct
-//! clan_dungeon` beyond `training_score`/`last_training_update`, and
-//! `get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost`/
-//! `set_clan_raid` - meaningless without the unported dungeon/raid
-//! system itself), the `doraid` raid-toggle clamp inside
+//! NOT ported yet (left for follow-up slices): the rest of the
+//! dungeon-guard economy (potions - `alc_pot`/`simple_pot`, populated by
+//! the unported alchemy-potion economy; the `total`-owned half of each
+//! guard-count pair, which stays permanently `0` since C's own `buy`
+//! command that would set it is dead code; the raid-spawn consumer in
+//! `area/13/dungeon.c` itself), the `doraid` raid-toggle clamp inside
 //! `update_relations`/`set_clan_bonus`
 //! (dead in practice once a clan's first tick has run - see the comment
 //! on [`ClanRelations::update`] - and meaningless without the dungeon/
@@ -85,6 +93,29 @@ pub const CLAN_BONUS_MILITARY_ADVISOR: usize = 1;
 /// `showclan` ("guard bonus: +%d", `clan.c:196-198`).
 pub fn score_to_level(score: i32) -> i32 {
     score / 100
+}
+
+/// C `get_clan_dungeon_cost` (`clan.c:732-780`): the training-point cost
+/// of setting a dungeon-guard configuration slot (`type` `1..=21`, see
+/// [`ClanEconomy::dungeon_guard_use`]) to `number`. Per-tier multipliers
+/// repeat identically across the warrior/mage/seyan `+0..+5` triples (`*
+/// 1/2/4/8/12/16`); teleport traps/fake walls/locked doors get their own
+/// flat multipliers. An unknown `type` is C server-side-log-only dead
+/// code in practice (every real caller already validates `type` first)
+/// and returns `0`, matching C's own fallback return after the `elog`.
+pub fn get_clan_dungeon_cost(dungeon_type: i32, number: i32) -> i32 {
+    match dungeon_type {
+        1 | 7 | 13 => number,
+        2 | 8 | 14 => number * 2,
+        3 | 9 | 15 => number * 4,
+        4 | 10 | 16 => number * 8,
+        5 | 11 | 17 => number * 12,
+        6 | 12 | 18 => number * 16,
+        19 => number * 8,
+        20 => number * 16,
+        21 => number * 12,
+        _ => 0,
+    }
 }
 
 /// C `get_bonus_name` + `static char *bonus_name[MAXBONUS]`
@@ -639,6 +670,22 @@ pub struct ClanEconomy {
     /// call site) - see [`ClanEconomy::alc_pot`].
     #[serde(default)]
     pub simple_pot: [[u16; 3]; 3],
+    /// C `struct clan_dungeon`'s `warrior[1]`/`mage[1]`/`seyan[1]`/
+    /// `teleport[1]`/`fake[1]`/`key[1]` (`clan.h:67-71`), the "use per
+    /// dungeon" configured guard/trap/wall/key counts, flattened into one
+    /// array indexed `type - 1` for `type` `1..=21` (warrior `+0..+5` =
+    /// `1..=6`, mage `+0..+5` = `7..=12`, seyan `+0..+5` = `13..=18`,
+    /// teleport = `19`, fake wall = `20`, locked door key = `21`) - see
+    /// [`get_clan_dungeon_cost`]/[`ClanRegistry::set_clan_dungeon_use`]/
+    /// [`ClanRegistry::get_clan_dungeon`]. The mirrored `[0]` "total
+    /// owned" half of each C pair is not modeled: it is only ever written
+    /// by C's own `buy` command, which is unconditionally dead code (see
+    /// `crate::world::clanclerk`'s module doc comment), so it stays
+    /// permanently `0` in every real C server too. `#[serde(default)]`
+    /// keeps this backward compatible with any snapshot saved before this
+    /// field existed.
+    #[serde(default)]
+    pub dungeon_guard_use: [i32; 21],
 }
 
 impl ClanEconomy {
@@ -663,6 +710,7 @@ impl ClanEconomy {
             raid_on_start: 0,
             alc_pot: [[0; 6]; 2],
             simple_pot: [[0; 3]; 3],
+            dungeon_guard_use: [0; 21],
         }
     }
 
@@ -767,6 +815,22 @@ pub enum ClanRaidError {
     /// current (or already-pending) state - a no-op the caller reports
     /// as a failure message, not silently ignores.
     NoOp,
+}
+
+/// Errors for [`ClanRegistry::set_clan_dungeon_use`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClanDungeonUseError {
+    /// C's `return -1` case: an invalid `cnr`, a `type` outside `1..=21`,
+    /// or a `number` outside that type's own guard/trap/wall/key cap
+    /// (`clan.c:619-664`).
+    InvalidRequest,
+    /// C's `return cost` case (`clan.c:679-681`): the resulting total
+    /// training-point spend across all 21 slots would exceed the
+    /// 400-point budget. Only checked when raising a value (`number >
+    /// 0`) - lowering a slot is always allowed even if the clan's
+    /// existing configuration is (impossibly, in practice) already over
+    /// budget.
+    OverBudget(i32),
 }
 
 /// Errors for [`ClanRegistry::add_member`], mirroring the boundaries C
@@ -1187,6 +1251,72 @@ impl ClanRegistry {
         }
         let identity = self.identity_mut(cnr).ok_or(ClanIdentityError::NotFound)?;
         identity.economy.bonus_level[nr] = level;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// C `get_clan_dungeon` (`clan.c:783-799`). Out-of-range/nonexistent
+    /// clans and out-of-range `type`s read as `0`, matching C's own
+    /// `cnr` bounds check and `default: return 0;` switch arm. The only
+    /// C caller (`area/13/dungeon.c`'s raid-spawn setup) is not ported
+    /// yet, so this currently has no live reader either - see the module
+    /// doc comment.
+    pub fn get_clan_dungeon(&self, cnr: u16, dungeon_type: i32) -> i32 {
+        if !(1..=21).contains(&dungeon_type) {
+            return 0;
+        }
+        self.identity(cnr)
+            .map(|id| id.economy.dungeon_guard_use[(dungeon_type - 1) as usize])
+            .unwrap_or(0)
+    }
+
+    /// C `set_clan_dungeon_use` (`clan.c:617-729`): the clan-leader-facing
+    /// dungeon-guard configuration setter, live behind the clanclerk
+    /// NPC's `use` command (`crate::world::clanclerk`). Validates `cnr`
+    /// (via [`ClanRegistry::identity_mut`]), the `type`/`number` range for
+    /// that specific slot (`clan.c:619-664`), then recomputes the total
+    /// training-point cost across all 21 slots (`clan.c:667-682`) - the
+    /// candidate `number` substituted in for `dungeon_type`'s own slot,
+    /// every other slot read at its current stored value - and rejects
+    /// (without mutating anything) if that total exceeds 400 while
+    /// raising a value.
+    pub fn set_clan_dungeon_use(
+        &mut self,
+        cnr: u16,
+        dungeon_type: i32,
+        number: i32,
+    ) -> Result<(), ClanDungeonUseError> {
+        let identity = self
+            .identity_mut(cnr)
+            .ok_or(ClanDungeonUseError::InvalidRequest)?;
+        if !(1..=21).contains(&dungeon_type) {
+            return Err(ClanDungeonUseError::InvalidRequest);
+        }
+        let max_for_type = match dungeon_type {
+            19 => 25,
+            20 => 1,
+            21 => 2,
+            _ => 10,
+        };
+        if number < 0 || number > max_for_type {
+            return Err(ClanDungeonUseError::InvalidRequest);
+        }
+
+        let mut cost = 0;
+        for (offset, &current) in identity.economy.dungeon_guard_use.iter().enumerate() {
+            let slot_type = (offset + 1) as i32;
+            let value = if slot_type == dungeon_type {
+                number
+            } else {
+                current
+            };
+            cost += get_clan_dungeon_cost(slot_type, value);
+        }
+        if cost > 400 && number > 0 {
+            return Err(ClanDungeonUseError::OverBudget(cost));
+        }
+
+        identity.economy.dungeon_guard_use[(dungeon_type - 1) as usize] = number;
         self.dirty = true;
         Ok(())
     }
@@ -2238,6 +2368,106 @@ mod tests {
             registry.set_clan_raid_god(999, true),
             Err(ClanRaidError::NotFound)
         );
+    }
+
+    #[test]
+    fn get_clan_dungeon_cost_matches_c_multiplier_table() {
+        // warrior/mage/seyan +0..+5 tiers all repeat 1/2/4/8/12/16.
+        assert_eq!(get_clan_dungeon_cost(1, 3), 3);
+        assert_eq!(get_clan_dungeon_cost(6, 3), 48);
+        assert_eq!(get_clan_dungeon_cost(7, 3), 3);
+        assert_eq!(get_clan_dungeon_cost(12, 3), 48);
+        assert_eq!(get_clan_dungeon_cost(13, 3), 3);
+        assert_eq!(get_clan_dungeon_cost(18, 3), 48);
+        assert_eq!(get_clan_dungeon_cost(19, 2), 16); // teleport traps *8
+        assert_eq!(get_clan_dungeon_cost(20, 1), 16); // fake wall *16
+        assert_eq!(get_clan_dungeon_cost(21, 2), 24); // locked door key *12
+        assert_eq!(get_clan_dungeon_cost(22, 5), 0); // unknown type -> 0
+    }
+
+    #[test]
+    fn set_clan_dungeon_use_rejects_invalid_type_or_out_of_range_number() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Dungeoneers", 0).unwrap();
+        assert_eq!(
+            registry.set_clan_dungeon_use(nr, 0, 1),
+            Err(ClanDungeonUseError::InvalidRequest)
+        );
+        assert_eq!(
+            registry.set_clan_dungeon_use(nr, 22, 1),
+            Err(ClanDungeonUseError::InvalidRequest)
+        );
+        // warrior/mage/seyan slots cap at 10.
+        assert_eq!(
+            registry.set_clan_dungeon_use(nr, 1, 11),
+            Err(ClanDungeonUseError::InvalidRequest)
+        );
+        // teleport traps cap at 25.
+        assert_eq!(
+            registry.set_clan_dungeon_use(nr, 19, 26),
+            Err(ClanDungeonUseError::InvalidRequest)
+        );
+        // fake walls cap at 1.
+        assert_eq!(
+            registry.set_clan_dungeon_use(nr, 20, 2),
+            Err(ClanDungeonUseError::InvalidRequest)
+        );
+        // locked doors cap at 2.
+        assert_eq!(
+            registry.set_clan_dungeon_use(nr, 21, 3),
+            Err(ClanDungeonUseError::InvalidRequest)
+        );
+        assert_eq!(
+            registry.set_clan_dungeon_use(999, 1, 1),
+            Err(ClanDungeonUseError::InvalidRequest)
+        );
+    }
+
+    #[test]
+    fn set_clan_dungeon_use_applies_within_budget_and_reads_back() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Dungeoneers", 0).unwrap();
+        assert_eq!(registry.get_clan_dungeon(nr, 1), 0);
+        assert_eq!(registry.set_clan_dungeon_use(nr, 1, 5), Ok(()));
+        assert_eq!(registry.get_clan_dungeon(nr, 1), 5);
+        // Lowering back to 0 is always allowed.
+        assert_eq!(registry.set_clan_dungeon_use(nr, 1, 0), Ok(()));
+        assert_eq!(registry.get_clan_dungeon(nr, 1), 0);
+    }
+
+    #[test]
+    fn set_clan_dungeon_use_rejects_over_budget_configuration_without_mutating() {
+        let mut registry = ClanRegistry::new();
+        let nr = registry.found_clan("Dungeoneers", 0).unwrap();
+        // Warrior slots 1-5 (multipliers 1/2/4/8/12) maxed at 10 each:
+        // running cost 10, 30, 70, 150, 270 - all within budget.
+        assert_eq!(registry.set_clan_dungeon_use(nr, 1, 10), Ok(()));
+        assert_eq!(registry.set_clan_dungeon_use(nr, 2, 10), Ok(()));
+        assert_eq!(registry.set_clan_dungeon_use(nr, 3, 10), Ok(()));
+        assert_eq!(registry.set_clan_dungeon_use(nr, 4, 10), Ok(()));
+        assert_eq!(registry.set_clan_dungeon_use(nr, 5, 10), Ok(()));
+        // Slot 6 (multiplier 16) at 8: 270 + 128 = 398, still <= 400.
+        assert_eq!(registry.set_clan_dungeon_use(nr, 6, 8), Ok(()));
+        assert_eq!(registry.get_clan_dungeon(nr, 6), 8);
+        // Raising slot 6 to 9 would cost 270 + 144 = 414 > 400 - rejected
+        // without mutating the stored value.
+        match registry.set_clan_dungeon_use(nr, 6, 9) {
+            Err(ClanDungeonUseError::OverBudget(cost)) => assert_eq!(cost, 414),
+            other => panic!("expected OverBudget(414), got {other:?}"),
+        }
+        assert_eq!(registry.get_clan_dungeon(nr, 6), 8);
+        // Lowering a different slot is always allowed even while the
+        // clan sits near budget.
+        assert_eq!(registry.set_clan_dungeon_use(nr, 1, 0), Ok(()));
+        assert_eq!(registry.get_clan_dungeon(nr, 1), 0);
+    }
+
+    #[test]
+    fn get_clan_dungeon_reads_zero_for_invalid_type_or_clan() {
+        let registry = ClanRegistry::new();
+        assert_eq!(registry.get_clan_dungeon(999, 1), 0);
+        assert_eq!(registry.get_clan_dungeon(1, 0), 0);
+        assert_eq!(registry.get_clan_dungeon(1, 22), 0);
     }
 
     #[test]

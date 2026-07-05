@@ -15,12 +15,14 @@
 //! - `add potions`/`NT_GIVE`'s `IDR_FLASK` branch (`add_simple_potion`/
 //!   `add_alc_potion`) - the alchemy-potion economy these call into has
 //!   no Rust port at all.
-//! - `buy`/`use` (the dungeon-guard purchase/configuration commands) -
-//!   `buy` is C dead code anyway (`say("Buying has been disabled...");
-//!   continue;` unconditionally, matching the module's own drop-through
-//!   here), but `use` needs `get_clan_dungeon_cost`/`set_clan_dungeon_use`
-//!   and the training-points budget, none of which exist without the
-//!   dungeon/raid system.
+//! - `buy` (the dungeon-guard *purchase* command) - unconditionally dead
+//!   code in C itself (`say("Buying has been disabled...");  continue;`
+//!   fires before any of the real parsing/purchase logic below it ever
+//!   runs), so it is ported here exactly as dead: the message fires, the
+//!   handler returns, nothing else happens. `use` (the dungeon-guard
+//!   *configuration* command) is real, reachable code and is ported in
+//!   full via [`World::clanclerk_handle_dungeon_use`] and
+//!   [`crate::clan::ClanRegistry::set_clan_dungeon_use`].
 //! - The `doraid` auto-enable inside `ClanRelations::update` stays
 //!   unported (see that module's doc comment), so
 //!   [`crate::clan::ClanRegistry::get_clan_raid`] only ever becomes
@@ -52,7 +54,7 @@
 //!   fallback `world/bank.rs`/`world/clanmaster.rs` already established.
 use super::*;
 use crate::character_driver::{ClanclerkDriverData, CLANMASTER_QA};
-use crate::clan::{ClanMoneyChange, ClanRaidError, ClanRelation};
+use crate::clan::{ClanDungeonUseError, ClanMoneyChange, ClanRaidError, ClanRelation};
 
 /// C `DX_RIGHTDOWN` (`common/direction.h:19`): the clerk's fixed resting
 /// facing, unlike `clanmaster_driver`'s per-instance `dat->dir`.
@@ -114,6 +116,14 @@ pub enum ClanclerkEvent {
         clan_nr: u16,
         actor_id: CharacterId,
         enabled: bool,
+    },
+    /// C `set_clan_dungeon_use`'s `add_clanlog` (`clan.c:722`, prio 35):
+    /// `"%s set dungeon use of type %d to %d"`.
+    DungeonUseSet {
+        clan_nr: u16,
+        actor_id: CharacterId,
+        dungeon_type: i32,
+        number: i32,
     },
 }
 
@@ -189,6 +199,33 @@ fn parse_rank_name(text: &str) -> (i32, String) {
         name.push(b as char);
     }
     (rank, name)
+}
+
+/// C's `use` handler's two-number extraction (`clanmaster.c:854-866`):
+/// unlike `"set bonus"`/`"relation"`'s [`skip_to_token`] (which skips any
+/// non-digit/non-`-` character), this only ever skips whitespace between
+/// numbers, matching C's own `isspace`/`isdigit`/`isspace` walk exactly -
+/// including its quirk: a negative first number is walked over
+/// incorrectly (the digit-skip loop never consumes a leading `-`, so the
+/// second `atoi` re-parses starting from that same `-`), which is dead in
+/// practice since a negative `nr` is always rejected by the caller's
+/// "dungeon type must be between 1 and 21" range check before the
+/// resulting `level` value is ever used.
+fn parse_dungeon_use_args(text: &str) -> (i32, i32) {
+    let nr = parse_int_atoi(text);
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && (bytes[i] as char).is_whitespace() {
+        i += 1;
+    }
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    while i < bytes.len() && (bytes[i] as char).is_whitespace() {
+        i += 1;
+    }
+    let level = parse_int_atoi(&text[i..]);
+    (nr, level)
 }
 
 /// C's `website[strlen(website)-1] = 0` trailing-strip quirk (see the
@@ -339,6 +376,15 @@ impl World {
                 "Buying has been disabled, you have infinite stock.",
             );
             return;
+        }
+
+        if let Some(pos) = lower.find("use") {
+            self.clanclerk_handle_dungeon_use(
+                clanclerk_id,
+                speaker_id,
+                data.clan,
+                &text[pos + 3..],
+            );
         }
 
         // C: `if (ch[co].clan_rank < 4) { continue; }` - leader only.
@@ -588,6 +634,70 @@ impl World {
                 "Here you are, {speaker_name}. I have withdrawn {nr}G from the clan treasury for you."
             ),
         );
+    }
+
+    /// C `clanclerk_driver`'s `use` branch (`clanmaster.c:854-899`): the
+    /// dungeon-guard configuration command. Gated at treasurer+ like
+    /// `withdraw`/`buy` (`clan_rank >= 3`, enforced by the shared caller
+    /// guard above this method's one call site) - the leader-only gate
+    /// applies only to the commands after this one.
+    fn clanclerk_handle_dungeon_use(
+        &mut self,
+        clanclerk_id: CharacterId,
+        speaker_id: CharacterId,
+        clan: u16,
+        rest: &str,
+    ) {
+        let (dungeon_type, number) = parse_dungeon_use_args(rest);
+        let Some(speaker_name) = self.characters.get(&speaker_id).map(|c| c.name.clone()) else {
+            return;
+        };
+        if !(0..=21).contains(&dungeon_type) {
+            self.npc_say(
+                clanclerk_id,
+                &format!("The dungeon type must be between 1 and 21, {speaker_name}."),
+            );
+            return;
+        }
+        if !(0..=100).contains(&number) {
+            self.npc_say(
+                clanclerk_id,
+                &format!("The quantity must be between 0 and 100, {speaker_name}."),
+            );
+            return;
+        }
+        match self
+            .clan_registry
+            .set_clan_dungeon_use(clan, dungeon_type, number)
+        {
+            Ok(()) => {
+                self.npc_say(
+                    clanclerk_id,
+                    "Very well. I have updated the dungeon configuration for your clan.",
+                );
+                self.pending_clanclerk_events
+                    .push(ClanclerkEvent::DungeonUseSet {
+                        clan_nr: clan,
+                        actor_id: speaker_id,
+                        dungeon_type,
+                        number,
+                    });
+            }
+            Err(ClanDungeonUseError::InvalidRequest) => {
+                self.npc_say(
+                    clanclerk_id,
+                    "I'm sorry, but the limits are: 0-10 guards of each type, 0-25 teleport traps, 0-1 fake walls, and 0-2 locked doors.",
+                );
+            }
+            Err(ClanDungeonUseError::OverBudget(cost)) => {
+                self.npc_say(
+                    clanclerk_id,
+                    &format!(
+                        "That configuration would cost {cost} points, but you may only spend 400 points."
+                    ),
+                );
+            }
+        }
     }
 
     /// C `clanclerk_driver`'s `set bonus` branch (`clanmaster.c:905-957`).

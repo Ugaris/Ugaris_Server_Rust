@@ -212,6 +212,140 @@ fn buy_is_always_disabled() {
 }
 
 #[test]
+fn dungeon_use_requires_treasurer_rank() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Grunt", &world, clan, 1), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "use 1 5");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(world.clan_registry.get_clan_dungeon(clan, 1), 0);
+    let texts = world.drain_pending_area_texts();
+    assert!(!texts
+        .iter()
+        .any(|t| t.message.contains("dungeon configuration")));
+}
+
+#[test]
+fn dungeon_use_succeeds_for_treasurer() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Treasurer", &world, clan, 3), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "use 1 5");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    assert_eq!(world.clan_registry.get_clan_dungeon(clan, 1), 5);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Very well. I have updated the dungeon configuration for your clan.")));
+
+    let events = world.drain_pending_clanclerk_events();
+    assert_eq!(
+        events,
+        vec![ClanclerkEvent::DungeonUseSet {
+            clan_nr: clan,
+            actor_id: CharacterId(2),
+            dungeon_type: 1,
+            number: 5,
+        }]
+    );
+}
+
+#[test]
+fn dungeon_use_rejects_out_of_range_type() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Treasurer", &world, clan, 3), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "use 99 5");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("The dungeon type must be between 1 and 21, Treasurer.")));
+}
+
+#[test]
+fn dungeon_use_rejects_out_of_range_quantity() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Treasurer", &world, clan, 3), 10, 10));
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "use 1 200");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("The quantity must be between 0 and 100, Treasurer.")));
+}
+
+#[test]
+fn dungeon_use_rejects_per_type_cap_with_generic_limits_message() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Treasurer", &world, clan, 3), 10, 10));
+
+    // 11 passes the outer 0..=100 quantity check but exceeds the
+    // per-type cap of 10 for warrior/mage/seyan slots.
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "use 1 11");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains(
+        "I'm sorry, but the limits are: 0-10 guards of each type, 0-25 teleport traps, 0-1 fake walls, and 0-2 locked doors."
+    )));
+    assert_eq!(world.clan_registry.get_clan_dungeon(clan, 1), 0);
+}
+
+#[test]
+fn dungeon_use_reports_cost_when_over_training_budget() {
+    let mut world = World::default();
+    let clan = found_clan(&mut world, "Black Rose");
+    assert!(world.spawn_character(clanclerk_npc(1, clan), 10, 10));
+    assert!(world.spawn_character(member(2, "Treasurer", &world, clan, 3), 10, 10));
+
+    // Slots 1-5 (multipliers 1/2/4/8/12) maxed at 10 each = running cost
+    // 270; slot 6 (multiplier 16) at 9 would push the total to 414.
+    for (dungeon_type, number) in [(1, 10), (2, 10), (3, 10), (4, 10), (5, 10)] {
+        world
+            .clan_registry
+            .set_clan_dungeon_use(clan, dungeon_type, number)
+            .unwrap();
+    }
+
+    if let Some(clanclerk) = world.characters.get_mut(&CharacterId(1)) {
+        clanclerk.push_driver_text_message(CharacterId(2), "use 6 9");
+    }
+    world.process_clanclerk_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("That configuration would cost 414 points, but you may only spend 400 points.")));
+    assert_eq!(world.clan_registry.get_clan_dungeon(clan, 6), 0);
+}
+
+#[test]
 fn set_bonus_requires_leader_rank() {
     let mut world = World::default();
     let clan = found_clan(&mut world, "Black Rose");

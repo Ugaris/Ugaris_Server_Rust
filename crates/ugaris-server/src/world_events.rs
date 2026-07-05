@@ -1304,6 +1304,31 @@ pub(crate) async fn apply_clanclerk_events(
                 .await;
                 applied += 1;
             }
+            ClanclerkEvent::DungeonUseSet {
+                clan_nr,
+                actor_id,
+                dungeon_type,
+                number,
+            } => {
+                let Some(actor_name) = world.characters.get(&actor_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `set_clan_dungeon_use` (`clan.c:722`): "%s set
+                // dungeon use of type %d to %d".
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    actor_id,
+                    35,
+                    format!("{actor_name} set dungeon use of type {dungeon_type} to {number}"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
         }
     }
     applied

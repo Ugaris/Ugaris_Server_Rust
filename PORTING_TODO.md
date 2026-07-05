@@ -3228,10 +3228,17 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `clan_trade_bonus` - ported iteration 103, see Progress Log),
   clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
-  (transport module has the seam). REMAINING: the dungeon-guard economy
-  proper (`struct clan_dungeon`'s guard counts/potions and
-  `get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost` -
-  meaningless without the unported dungeon/raid system itself; the
+  (transport module has the seam). REMAINING: the potion half of the
+  dungeon-guard economy (`struct clan_dungeon`'s `alc_pot`/`simple_pot` -
+  meaningless without the unported alchemy-potion economy) and the
+  raid-spawn consumer itself (`area/13/dungeon.c`, unported); the
+  guard-count *configuration* accessors
+  (`get_clan_dungeon`/`set_clan_dungeon_use`/`get_clan_dungeon_cost`)
+  were ported in iteration 134 (see Progress Log) - they turned out to
+  be pure state on `struct clan_dungeon` with a real, already-ported,
+  reachable caller (the clanclerk NPC's `use` command), independent of
+  `area/13/dungeon.c`'s own unported raid-spawn consumer, same "pure
+  logic first, wiring later" precedent as `set_clan_raid` before it. The
   treasury/bonus/training half of this - `update_treasure`/
   `update_training`/jewels/cost-per-week/debt/bonus levels/depot money -
   was closed in iteration 95, and wired into the live tick loop (plus
@@ -3252,10 +3259,11 @@ Unlocks every quest NPC. Do these before any P4 area work.
   small-talk reply) was ported and wired into the live tick loop in
   iteration 96 (see Progress Log) - REMAINING for that driver only:
   `add potions`/the `NT_GIVE` `IDR_FLASK` branch (needs the unported
-  alchemy-potion economy) and the `buy`/`use` dungeon-guard commands
-  (C's own `buy` is unconditionally disabled dead code so that part is
-  actually done; `use` needs the still-unported dungeon-guard economy's
-   cost/budget functions). The clanmaster NPC's `rank:`/`fire:` text
+  alchemy-potion economy). The `buy`/`use` dungeon-guard commands are
+  both now fully closed: `buy` is C's own unconditionally-disabled dead
+  code, ported as dead (iteration 96); `use` (the real, reachable
+  dungeon-guard configuration command) was ported in iteration 134 (see
+  Progress Log). The clanmaster NPC's `rank:`/`fire:` text
    commands (leader rank-management) were ported in iteration 97 for
    *online* targets only; the offline-player `task_set_clan_rank`/
    `task_fire_from_clan` async DB-task fallback was closed in iteration
@@ -4069,13 +4077,77 @@ Unlocks every quest NPC. Do these before any P4 area work.
     `cargo test --workspace` (1552 ugaris-core [+3] + 47 db + 3 net + 37
     protocol + 539 server, all green, zero failures), `cargo build -p
     ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
-    "entering Rust game loop" with no panics. REMAINING for the "Clan
-    system" task overall: club-variant achievement wiring and the
-    dungeon-guard economy proper (guard counts/potions, `use`/`buy`'s
-    real logic, and the alchemy-potion economy that would populate
-    `alc_pot`/`simple_pot`) - both still genuinely blocked on other
-    unported systems (club.c, the dungeon/raid + alchemy-potion
-    systems).
+     "entering Rust game loop" with no panics. REMAINING for the "Clan
+     system" task overall: club-variant achievement wiring and the
+     dungeon-guard economy proper (guard counts/potions, `use`/`buy`'s
+     real logic, and the alchemy-potion economy that would populate
+     `alc_pot`/`simple_pot`) - both still genuinely blocked on other
+     unported systems (club.c, the dungeon/raid + alchemy-potion
+     systems).
+  - 2026-07-05 (iteration 134): re-examined the "dungeon-guard economy
+    proper" REMAINING item above and found it was overstated: while the
+    potions (`alc_pot`/`simple_pot`) and the raid-spawn *consumer*
+    (`area/13/dungeon.c`) genuinely are blocked on other unported
+    systems, the guard-count *configuration* accessors themselves -
+    `get_clan_dungeon_cost`/`set_clan_dungeon_use`/`get_clan_dungeon`
+    (`clan.c:617-799`) - are pure state on `struct clan_dungeon` with a
+    real, already-ported, reachable caller today: the clanclerk NPC's
+    `use` command (`area/30/clanmaster.c:854-899`), which every prior
+    iteration's own module doc comment on `crate::world::clanclerk` had
+    left silently unimplemented pending this exact system. Ported all
+    three in `crates/ugaris-core/src/clan.rs`: a new
+    `ClanEconomy::dungeon_guard_use: [i32; 21]` field (flattening C's
+    `warrior[1]`/`mage[1]`/`seyan[1]`/`teleport[1]`/`fake[1]`/`key[1]`
+    "use per dungeon" pairs by `type - 1`, `#[serde(default)]` for
+    snapshot back-compat; the mirrored `[0]` "total owned" half stays
+    unmodeled since it is only ever written by C's own dead `buy`
+    command), the free function `get_clan_dungeon_cost` (the exact
+    per-type multiplier switch table), `ClanRegistry::get_clan_dungeon`
+    (read accessor), and `ClanRegistry::set_clan_dungeon_use` (validates
+    `cnr`/`type`/the type's own number cap, recomputes the 21-slot
+    training-point total with the candidate value substituted in,
+    rejects over-400 raises without mutating, `ClanDungeonUseError`
+    enum for the two C `-1`/`cost` failure shapes). Wired the `use`
+    command itself in `crates/ugaris-core/src/world/clanclerk.rs`: a new
+    `parse_dungeon_use_args` helper matching C's exact
+    `atoi`/whitespace-skip/digit-skip/whitespace-skip two-number
+    extraction (including its "negative first number breaks the second
+    atoi" quirk, dead in practice since a negative type is always
+    rejected first), `World::clanclerk_handle_dungeon_use` (the outer
+    `0..=21`/`0..=100` range messages plus the three
+    success/limits/over-budget outcomes, byte-exact C strings), a new
+    `ClanclerkEvent::DungeonUseSet` queued on success and applied in
+    `crates/ugaris-server/src/world_events.rs::apply_clanclerk_events`
+    (prio-35 clan-log entry, "%s set dungeon use of type %d to %d",
+    same shape as the five sibling `ClanclerkEvent` arms already there).
+    The `use` command sits in the treasurer-tier gate (same as
+    `withdraw`/`buy`), not the leader-only gate below it - confirmed
+    against the exact C branch ordering. Updated this task's own
+    REMAINING note and `crate::world::clanclerk`'s module doc comment to
+    stop calling `use` unported. 10 new tests: 6 in `clan.rs`
+    (`get_clan_dungeon_cost_matches_c_multiplier_table`,
+    `set_clan_dungeon_use_rejects_invalid_type_or_out_of_range_number`,
+    `set_clan_dungeon_use_applies_within_budget_and_reads_back`,
+    `set_clan_dungeon_use_rejects_over_budget_configuration_without_mutating`
+    - hand-computed the exact 414-point over-budget cost against C's
+    formula - `get_clan_dungeon_reads_zero_for_invalid_type_or_clan`),
+    6 in `world/tests/clanclerk.rs` (treasurer-gate requirement,
+    success + event, out-of-range type/quantity, the per-type-cap
+    generic "limits are" message, the over-training-budget cost
+    message). `cargo fmt --all`, `cargo test --workspace` (1788
+    ugaris-core [+11] + 55 db + 3 net + 40 protocol + 584 server, all
+    green, zero failures), `cargo build -p ugaris-server` clean with
+    zero warnings, 10s boot-smoke confirmed "entering Rust game loop"
+    with no panics (this iteration touches the clanclerk tick-loop
+    event-drain call site). REMAINING for the "Clan system" task
+    overall, now accurate: club-variant achievement wiring (blocked on
+    unported `club.c`), the potion half of the dungeon-guard economy and
+    its `add potions`/`NT_GIVE` `IDR_FLASK` call site (blocked on the
+    unported alchemy-potion economy), and the raid-spawn consumer of
+    `get_clan_dungeon` itself (blocked on unported `area/13/dungeon.c`) -
+    all three are now genuinely the *only* remaining gaps, each gated on
+    a whole separate unported system, not a self-contained slice of this
+    task.
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission
