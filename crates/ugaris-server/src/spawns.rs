@@ -60,6 +60,17 @@ pub(crate) fn respawn_npc_character(
     for item in inventory_items {
         world.items.insert(item.id, item);
     }
+    // C `create.c:1121-1125`: spawn-mode loot table (`loot_table=`), rolled
+    // by `create_char_nr` for every character creation, including
+    // `respawn_callback`'s recreate-from-template path.
+    let loot_table_id = loader
+        .character_templates
+        .get(&request.template_key)
+        .map(|template| template.loot_table.clone())
+        .unwrap_or_default();
+    if !loot_table_id.is_empty() {
+        world.loot_apply_to_npc(loader, character_id, &loot_table_id);
+    }
     true
 }
 

@@ -278,6 +278,17 @@ impl ZoneLoader {
                         character.rest_x = current_x as u16;
                         character.rest_y = current_y as u16;
                     }
+                    // C `create.c:1121-1125`: spawn-mode loot table
+                    // (`loot_table=` in the .chr template), rolled right
+                    // after the NPC's own creation/placement.
+                    let loot_table_id = self
+                        .character_templates
+                        .get(key)
+                        .map(|template| template.loot_table.clone())
+                        .unwrap_or_default();
+                    if !loot_table_id.is_empty() {
+                        world.loot_apply_to_npc(self, character_id, &loot_table_id);
+                    }
                 }
                 MapDirective::Item(key) => {
                     let item = match self.create_item(key, None) {
@@ -1691,5 +1702,56 @@ mod tests {
         assert_eq!(data.aggressive, 1);
         assert_eq!(data.startdist, 40);
         assert_eq!(data.stopdist, 80);
+    }
+
+    #[test]
+    fn zone_population_rolls_spawn_mode_loot_table_into_new_npcs_own_inventory() {
+        // C `create.c:1121-1125`: `if (ch_temp[ctmp].loot_table[0])
+        // loot_apply_to_npc(n, ch_temp[ctmp].loot_table);`, run for every
+        // NPC `pop_create_char` places while loading a zone's map.
+        let items = r#"
+            bronzechip:
+              name="Bronze Chip"
+              flag=IF_TAKE
+            ;
+        "#;
+        let chars = r#"
+            Guard:
+              name="Practice Guard"
+              loot_table="guard_spawn_loot"
+              V_HP=10
+            ;
+        "#;
+        let map = r#"
+            field="5,5"
+            ch=Guard
+        "#;
+
+        let mut loader = ZoneLoader::new();
+        loader.load_item_templates_str(items).unwrap();
+        loader.load_character_templates_str(chars).unwrap();
+        let mut world = World::default();
+        world.loot_registry.load_str(
+            r#"{
+                "id": "guard_spawn_loot",
+                "rolls": 1,
+                "entries": [{"weight": 1, "item": "bronzechip"}]
+            }"#,
+        );
+        world.legacy_random_seed = 0;
+        loader.apply_map_str(&mut world, map).unwrap();
+
+        let npc = world
+            .characters
+            .get(&CharacterId(1))
+            .expect("guard spawned");
+        assert_eq!(npc.name, "Practice Guard");
+        // Slots 0-29 (worn/spells) stay empty; the rolled item lands at the
+        // first free carried slot (30).
+        assert!(npc.inventory[..30].iter().all(Option::is_none));
+        let carried_id = npc.inventory[30].expect("loot item placed at slot 30");
+        let carried_item = world.items.get(&carried_id).expect("item exists");
+        assert_eq!(carried_item.name, "Bronze Chip");
+        assert_eq!(carried_item.carried_by, Some(CharacterId(1)));
     }
 }

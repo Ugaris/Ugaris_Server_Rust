@@ -505,3 +505,65 @@ fn gate_enter_test_spawn_room_rejects_when_underfunded() {
         .iter()
         .any(|entry| entry.message.contains("Thou canst pay the price of 100G.")));
 }
+
+/// C `create.c:1121-1125`'s `loot_apply_to_npc` runs inside `create_char_nr`
+/// for every character creation, including `respawn_callback`'s recreate-
+/// from-template path - not just the original zone-load `pop_create_char`.
+#[test]
+fn respawn_npc_character_rolls_its_templates_spawn_mode_loot_table() {
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_character_templates_str(
+            r#"
+                looter:
+                  name="Looter"
+                  loot_table="looter_spawn_loot"
+                  V_HP=10
+                ;
+            "#,
+        )
+        .unwrap();
+    loader
+        .load_item_templates_str(
+            r#"
+                bronzechip:
+                  name="Bronze Chip"
+                  flag=IF_TAKE
+                ;
+            "#,
+        )
+        .unwrap();
+
+    let mut world = World::default();
+    world.loot_registry.load_str(
+        r#"{
+            "id": "looter_spawn_loot",
+            "rolls": 1,
+            "entries": [{"weight": 1, "item": "bronzechip"}]
+        }"#,
+    );
+    world.legacy_random_seed = 0;
+
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(300);
+    let request = ugaris_core::world::NpcRespawnRequest {
+        slot: 0,
+        template_key: "looter".to_string(),
+        x: 20,
+        y: 20,
+    };
+
+    assert!(respawn_npc_character(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        &request,
+    ));
+
+    let npc = world.characters.get(&CharacterId(300)).unwrap();
+    assert_eq!(npc.name, "Looter");
+    let carried_id = npc.inventory[30].expect("loot item placed at first carried slot");
+    let carried_item = world.items.get(&carried_id).unwrap();
+    assert_eq!(carried_item.name, "Bronze Chip");
+    assert_eq!(carried_item.carried_by, Some(CharacterId(300)));
+}

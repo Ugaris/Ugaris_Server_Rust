@@ -443,3 +443,107 @@ fn unknown_quest_context_default_used_by_server_never_grants_conditional_drops()
         0
     );
 }
+
+#[test]
+fn loot_apply_to_npc_returns_negative_one_for_unknown_table() {
+    let mut world = World::default();
+    let mut loader = ZoneLoader::new();
+    let npc = character(1);
+    world.spawn_character(npc, 10, 10);
+    assert_eq!(
+        world.loot_apply_to_npc(&mut loader, CharacterId(1), "does_not_exist"),
+        -1
+    );
+}
+
+#[test]
+fn loot_apply_to_npc_returns_negative_one_for_death_mode_table() {
+    let mut world = World::default();
+    let mut loader = ZoneLoader::new();
+    let npc = character(1);
+    world.spawn_character(npc, 10, 10);
+    world.loot_registry.load_str(
+        r#"{"id": "death_only", "mode": "death", "entries": [{"weight": 1, "item": "bronzechip"}]}"#,
+    );
+    assert_eq!(
+        world.loot_apply_to_npc(&mut loader, CharacterId(1), "death_only"),
+        -1
+    );
+}
+
+#[test]
+fn loot_apply_to_npc_places_items_starting_at_carried_slot_thirty() {
+    // C `create.c:1121-1125` calling `loot_apply_to_npc` right after
+    // character creation, which rolls into `ch[cn].item[30..
+    // INVENTORYSIZE]` via `place_in_npc` (`loot.c:665-675`).
+    let mut world = World::default();
+    let mut loader = ZoneLoader::new();
+    load_item(&mut loader, "bronzechip");
+    load_item(&mut loader, "demon_helmet1");
+    world.loot_registry.load_str(
+        r#"[
+            {
+                "id": "demon_low_equipment",
+                "rolls": 1,
+                "entries": [{"weight": 1, "item": "demon_helmet1"}]
+            },
+            {
+                "id": "pent_demon_low_spawn",
+                "rolls": 2,
+                "entries": [
+                    {"weight": 1, "table": "demon_low_equipment"},
+                    {"weight": 1, "item": "bronzechip"}
+                ]
+            }
+        ]"#,
+    );
+
+    let mut npc = character(1);
+    // Occupy every worn/spell slot (0..30) so a bug that started placement
+    // there instead of slot 30 would be immediately caught by an empty
+    // sink, not silently succeed in the wrong range.
+    for slot in 0..30 {
+        npc.inventory[slot] = Some(ItemId(9000 + slot as u32));
+    }
+    world.spawn_character(npc, 10, 10);
+
+    world.legacy_random_seed = 0;
+    let added = world.loot_apply_to_npc(&mut loader, CharacterId(1), "pent_demon_low_spawn");
+    assert_eq!(added, 2, "two rolls, both entries resolve to a placed item");
+
+    let npc = world.characters.get(&CharacterId(1)).unwrap();
+    // Slots 0..30 are untouched (still the pre-seeded placeholder ids);
+    // the two new items land at the first two free carried slots (30, 31).
+    for slot in 0..30 {
+        assert_eq!(npc.inventory[slot], Some(ItemId(9000 + slot as u32)));
+    }
+    let carried_names: Vec<&str> = npc.inventory[30..32]
+        .iter()
+        .flatten()
+        .map(|id| world.items.get(id).unwrap().name.as_str())
+        .collect();
+    assert_eq!(carried_names.len(), 2);
+    assert!(carried_names.iter().all(|name| world
+        .items
+        .values()
+        .any(|item| item.name == *name && item.carried_by == Some(CharacterId(1)))));
+}
+
+#[test]
+fn loot_apply_to_npc_is_a_no_op_when_every_carried_slot_is_full() {
+    let mut world = World::default();
+    let mut loader = ZoneLoader::new();
+    load_item(&mut loader, "bronzechip");
+    world.loot_registry.load_str(
+        r#"{"id": "full_sink", "rolls": 1, "entries": [{"weight": 1, "item": "bronzechip"}]}"#,
+    );
+
+    let mut npc = character(1);
+    for slot in 0..INVENTORY_SIZE {
+        npc.inventory[slot] = Some(ItemId(9000 + slot as u32));
+    }
+    world.spawn_character(npc, 10, 10);
+
+    let added = world.loot_apply_to_npc(&mut loader, CharacterId(1), "full_sink");
+    assert_eq!(added, 0, "no free carried slot => place_in_npc fails");
+}

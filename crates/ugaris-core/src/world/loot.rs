@@ -4,8 +4,9 @@
 //! `src/system/loot/loot.h`): JSON loot tables under `ugaris_data/loot/`
 //! (recursively scanned by the server - see `ugaris-server`'s zone/startup
 //! wiring), evaluated either at spawn time (`loot_table=`, into a fresh
-//! NPC's inventory - unwired here, see the REMAINING note in
-//! `PORTING_TODO.md`'s "Death-mode loot tables" task) or at death time
+//! NPC's own inventory - [`World::loot_apply_to_npc`], called right after
+//! character creation in `ZoneLoader::apply_map_directives` and every
+//! `ugaris-server` NPC spawn/respawn site) or at death time
 //! (`loot_table_death=`, `apply_death_loot_for_template` -
 //! [`World::loot_apply_to_container`]).
 //!
@@ -460,10 +461,21 @@ pub struct LootKiller<'a> {
     pub quest: &'a dyn LootQuestContext,
 }
 
+/// C `struct DropSink` (`loot.c:111-115`): "at most one of cn / container
+/// is set" - modeled here as an enum instead of two nullable fields.
+/// `killer_cn` (death-mode only) is threaded separately as `Option<&
+/// LootKiller>` rather than living on the sink, since it is only ever read
+/// by [`eval_loot_condition`], not by placement.
+#[derive(Debug, Clone, Copy)]
+enum LootSink {
+    /// Death-mode: corpse/body container (`place_in_container`).
+    Container(ItemId),
+    /// Spawn-mode: the newly-created NPC's own inventory
+    /// (`place_in_npc`).
+    Npc(CharacterId),
+}
+
 impl World {
-    /// C `loot_apply_to_npc`/`loot_apply_to_container`'s shared mode-check
-    /// preamble, specialized to the death-mode entry point (spawn-mode
-    /// `loot_apply_to_npc` is not wired yet - see the module doc comment).
     /// C `loot_apply_to_container` (`loot.c:777-792`): returns -1 for an
     /// unknown table id or a mode mismatch (mirroring `elog` + early
     /// return), otherwise the number of items placed.
@@ -478,7 +490,33 @@ impl World {
             Some(table) if table.mode == LootMode::Death => {}
             _ => return -1,
         }
-        self.roll_loot_table_into_container(loader, container_id, killer, table_id, 0)
+        self.roll_loot_table(
+            loader,
+            LootSink::Container(container_id),
+            killer,
+            table_id,
+            0,
+        )
+    }
+
+    /// C `loot_apply_to_npc` (`loot.c:760-774`): returns -1 for an unknown
+    /// table id or a mode mismatch, otherwise the number of items placed
+    /// into the NPC's own inventory. Called right after character creation
+    /// (C `create.c:1121-1125`'s `if (ch_temp[ctmp].loot_table[0])
+    /// loot_apply_to_npc(n, ...)`) - `sink.killer_cn` is always 0 in C's
+    /// spawn-mode call site, so every killer-dependent condition fails the
+    /// same way `killer: None` already makes [`eval_loot_condition`] fail.
+    pub fn loot_apply_to_npc(
+        &mut self,
+        loader: &mut ZoneLoader,
+        character_id: CharacterId,
+        table_id: &str,
+    ) -> i32 {
+        match self.loot_registry.find(table_id) {
+            Some(table) if table.mode == LootMode::Spawn => {}
+            _ => return -1,
+        }
+        self.roll_loot_table(loader, LootSink::Npc(character_id), None, table_id, 0)
     }
 
     /// C `roll_table` (`loot.c:747-758`). Clones the resolved table's
@@ -488,10 +526,10 @@ impl World {
     /// updates, and item creation - loot tables are tiny (a handful of
     /// groups/entries each), so this is not a hot path worth the
     /// self-referential-borrow complexity C's raw pointer avoids for free.
-    fn roll_loot_table_into_container(
+    fn roll_loot_table(
         &mut self,
         loader: &mut ZoneLoader,
-        container_id: ItemId,
+        sink: LootSink,
         killer: Option<&LootKiller<'_>>,
         table_id: &str,
         depth: u32,
@@ -504,17 +542,16 @@ impl World {
         };
         let mut added = 0;
         for group in &groups {
-            added +=
-                self.roll_loot_group_into_container(loader, container_id, killer, group, depth);
+            added += self.roll_loot_group(loader, sink, killer, group, depth);
         }
         added
     }
 
     /// C `roll_group` (`loot.c:699-745`).
-    fn roll_loot_group_into_container(
+    fn roll_loot_group(
         &mut self,
         loader: &mut ZoneLoader,
-        container_id: ItemId,
+        sink: LootSink,
         killer: Option<&LootKiller<'_>>,
         group: &LootGroup,
         depth: u32,
@@ -563,20 +600,14 @@ impl World {
                         ) as i32;
                     }
                     for _ in 0..count {
-                        if self.place_loot_item_in_container(loader, container_id, &entry.reference)
-                        {
+                        if self.place_loot_item(loader, sink, &entry.reference) {
                             added += 1;
                         }
                     }
                 }
                 LootEntryKind::Table => {
-                    added += self.roll_loot_table_into_container(
-                        loader,
-                        container_id,
-                        killer,
-                        &entry.reference,
-                        depth + 1,
-                    );
+                    added +=
+                        self.roll_loot_table(loader, sink, killer, &entry.reference, depth + 1);
                 }
             }
         }
@@ -610,23 +641,48 @@ impl World {
         group.entries.last().cloned()
     }
 
-    /// C `place_item`/`place_in_container` (`loot.c:678-695`). Newly
-    /// created items are inserted directly (bypassing `World::add_item`'s
-    /// map-light bookkeeping, which doesn't apply to contained items at
+    /// C `place_item` (`loot.c:684-695`), dispatching to `place_in_container`
+    /// (`loot.c:678-680`) or `place_in_npc` (`loot.c:665-675`) depending on
+    /// which half of the `DropSink` is set. Newly created items are
+    /// inserted directly (bypassing `World::add_item`'s map-light
+    /// bookkeeping, which doesn't apply to contained/carried items at
     /// `x=y=0`) - the same pattern `fill_body_container`'s money item
-    /// already uses.
-    fn place_loot_item_in_container(
-        &mut self,
-        loader: &mut ZoneLoader,
-        container_id: ItemId,
-        item_key: &str,
-    ) -> bool {
-        let Ok(mut item) = loader.instantiate_item_template(item_key, None) else {
+    /// already uses. Returns `false` (item creation failed, or the sink is
+    /// full/missing) without inserting anything, matching C's `free_item`
+    /// fallback for a `place_item` that returns 0.
+    fn place_loot_item(&mut self, loader: &mut ZoneLoader, sink: LootSink, item_key: &str) -> bool {
+        let carried_by = match sink {
+            LootSink::Npc(character_id) => Some(character_id),
+            LootSink::Container(_) => None,
+        };
+        let Ok(mut item) = loader.instantiate_item_template(item_key, carried_by) else {
             return false;
         };
-        item.contained_in = Some(container_id);
-        self.items.insert(item.id, item);
-        true
+        match sink {
+            LootSink::Container(container_id) => {
+                item.contained_in = Some(container_id);
+                self.items.insert(item.id, item);
+                true
+            }
+            LootSink::Npc(character_id) => {
+                // C `place_in_npc` (`loot.c:665-675`): first free slot in
+                // `ch[cn].item[30..INVENTORYSIZE]` (slots 0-11 worn,
+                // 12-29 spells - see `server.h:447`); no-op (sink full)
+                // when every carried slot is occupied.
+                let Some(character) = self.characters.get_mut(&character_id) else {
+                    return false;
+                };
+                let Some(offset) = character.inventory[30..]
+                    .iter()
+                    .position(|slot| slot.is_none())
+                else {
+                    return false;
+                };
+                character.inventory[30 + offset] = Some(item.id);
+                self.items.insert(item.id, item);
+                true
+            }
+        }
     }
 }
 

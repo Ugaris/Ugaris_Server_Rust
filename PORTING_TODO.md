@@ -6791,22 +6791,22 @@ Unlocks every quest NPC. Do these before any P4 area work.
   -p ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
 
-- [~] **Death-mode loot tables (`src/system/loot/loot.c`)** - JSON tables
+- [x] **Death-mode loot tables (`src/system/loot/loot.c`)** - JSON tables
   under `ugaris_data/loot/`. Port the loader + roll engine + pity
   counters + `apply_death_loot_for_template` into the body-container fill
   in `world/death.rs`. Only pents data exists today; add tests with
-  fixture JSON. REMAINING: spawn-mode (`loot_table=` /
-  `loot_apply_to_npc`, `create.c:1125`) is not wired - only death-mode
-  (`loot_table_death=` / `loot_apply_to_container`) is. Spawn-mode needs
-  its own NPC-inventory "sink" (C places into `ch[cn].item[30..]` at
-  creation time inside `pop_create_char`/`ZoneLoader::create_character*`)
-  and isn't required by any currently-shipped table (both real
-  `ugaris_data/loot/pents/*.json` tables are `mode=death` or the implicit
-  spawn default with no live `loot_table=` zone-file reference yet
-  either). `loot_reload` (the admin `/` command hot-reload half,
-  `command.c:8193`) also isn't wired to any admin command yet - only the
+  fixture JSON. Iteration 157 closed the remaining spawn-mode gap (see
+  Progress Log). Deliberately left out of scope (not a gap in this
+  task's title): `loot_reload` (the admin `/` command hot-reload half,
+  `command.c:8193`) isn't wired to any admin command yet - only the
   one-time startup scan (`LootRegistry::clear_tables` exists for it, but
-  no call site).
+  no call site); ~8 exotic one-off NPC-spawn call sites in
+  `crates/ugaris-server/src/spawns.rs` (edemon/fdemon gate, chestspawn,
+  warp-trial-fighter, swampspawn, teufel-ratnest, lq-npc, gatekeeper
+  `enter_test` opponents) don't call `loot_apply_to_npc` yet since none
+  of their templates carry `loot_table=` today - wire the same 3-line
+  snippet `apply_map_directives`/`respawn_npc_character` use if a future
+  template needs it there.
 
   Progress Log (iteration 155): ported the full loot data model + JSON
   parser + roll engine as `crates/ugaris-core/src/world/loot.rs`
@@ -6856,6 +6856,38 @@ Unlocks every quest NPC. Do these before any P4 area work.
   panic and logged `loaded loot tables root=ugaris_data/loot
   files_scanned=2 tables_added=9 warnings=0` (the real pents fixture
   data) right before it.
+
+  Progress Log (iteration 157): closed the task by wiring spawn-mode
+  loot (`loot_table=`, C `loot_apply_to_npc`, `create.c:1121-1125`).
+  Added `World::loot_apply_to_npc` in `world/loot.rs`, refactoring the
+  death-mode-only `roll_loot_table_into_container`/`..._group_into_
+  container`/`place_loot_item_in_container` into mode-agnostic
+  `roll_loot_table`/`roll_loot_group`/`place_loot_item` parameterized by
+  a new private `LootSink` enum (`Container(ItemId)` | `Npc
+  (CharacterId)`), matching C's own `struct DropSink` abstraction rather
+  than duplicating the roll/pity/modifier recursion per mode; the `Npc`
+  arm places into `character.inventory[30..INVENTORY_SIZE]` (first free
+  slot, C `place_in_npc`), no-op when every carried slot is full.  Wired
+  at the two call sites that cover every currently-loadable NPC:
+  `ZoneLoader::apply_map_directives`'s `MapDirective::Character` branch
+  (regular zone-population spawns, C `pop_create_char`) and `ugaris-
+  server::spawns::respawn_npc_character` (C `respawn_callback`'s
+  recreate-from-template path, which also funnels through
+  `create_char_nr` in C and must re-roll on every respawn). Left the ~8
+  other one-off NPC-creation call sites in `spawns.rs` unwired (see the
+  updated task note above) since none of their templates carry
+  `loot_table=` today. 7 new tests: 4 in `world/tests/loot.rs` (unknown-
+  table/death-mode-mismatch -1 returns, placement starting at slot 30
+  with slots 0-29 pre-occupied as a canary against an off-by-one, no-op
+  when every carried slot is full), 1 in `zone.rs`'s own test module
+  exercising the real `MapDirective::Character` path end-to-end through
+  `apply_map_str`, and 1 in `crates/ugaris-server/src/tests/spawns.rs`
+  for `respawn_npc_character`. `cargo fmt --all`, `cargo test
+  --workspace` (1973 ugaris-core [+5] + 55 db + 3 net + 40 protocol + 630
+  server [+1], all green, zero failures), `cargo build -p ugaris-server`
+  / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic and the pre-existing
+  `loaded loot tables ... tables_added=9` log line unchanged.
 
 - [ ] **Remaining `/` and `#` text commands** - diff
   `src/system/command.c` against `crates/ugaris-server/src/commands_*.rs`
