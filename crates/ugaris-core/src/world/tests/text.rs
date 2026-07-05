@@ -1,4 +1,5 @@
 use super::*;
+use crate::clan::CLUB_OFFSET;
 
 #[test]
 fn legacy_hurt_queues_player_ouch_and_death_sounds() {
@@ -535,7 +536,7 @@ fn look_character_text_reports_saves_deaths_mirror_and_karma_for_player_target()
     }
 
     let result = world
-        .look_character_text(CharacterId(1), CharacterId(2), false, 7)
+        .look_character_text(CharacterId(1), CharacterId(2), false, 7, 0, 0)
         .expect("visible player target should produce look text");
 
     assert_eq!(result.header, "#1Bob (10):");
@@ -557,7 +558,7 @@ fn look_character_text_uses_singular_save_wording_for_exactly_one_save() {
     }
 
     let result = world
-        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
         .unwrap();
 
     assert!(result
@@ -577,7 +578,7 @@ fn look_character_text_reports_hardcore_death_count_instead_of_saves() {
     }
 
     let result = world
-        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
         .unwrap();
 
     assert!(result
@@ -588,10 +589,10 @@ fn look_character_text_reports_hardcore_death_count_instead_of_saves() {
 
 #[test]
 fn look_character_text_the_brave_header_variant_when_shrine_flag_set() {
-    let world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
+    let mut world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
 
     let result = world
-        .look_character_text(CharacterId(1), CharacterId(2), true, 0)
+        .look_character_text(CharacterId(1), CharacterId(2), true, 0, 0, 0)
         .unwrap();
 
     assert_eq!(result.header, "#1Bob the Brave (10):");
@@ -605,7 +606,7 @@ fn look_character_text_title_prefix_for_won_male_and_female() {
     );
     assert_eq!(
         world
-            .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+            .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
             .unwrap()
             .header,
         "#1Sir Bob (10):"
@@ -614,7 +615,7 @@ fn look_character_text_title_prefix_for_won_male_and_female() {
     world.characters.get_mut(&CharacterId(2)).unwrap().flags |= CharacterFlags::FEMALE;
     assert_eq!(
         world
-            .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+            .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
             .unwrap()
             .header,
         "#1Lady Bob (10):"
@@ -623,10 +624,10 @@ fn look_character_text_title_prefix_for_won_male_and_female() {
 
 #[test]
 fn look_character_text_omits_player_only_lines_for_npc_targets() {
-    let world = look_char_pair(CharacterFlags::empty(), CharacterFlags::empty());
+    let mut world = look_char_pair(CharacterFlags::empty(), CharacterFlags::empty());
 
     let result = world
-        .look_character_text(CharacterId(1), CharacterId(2), false, 99)
+        .look_character_text(CharacterId(1), CharacterId(2), false, 99, 0, 0)
         .unwrap();
 
     assert_eq!(result.header, "#1Bob (10):");
@@ -645,7 +646,7 @@ fn look_character_text_includes_profession_lines_regardless_of_player_flag() {
     }
 
     let result = world
-        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
         .unwrap();
 
     assert!(result.body.contains("He is a skilled Athlete. "));
@@ -664,7 +665,7 @@ fn look_character_text_none_when_looker_is_not_player() {
         .remove(CharacterFlags::PLAYER);
 
     assert!(world
-        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
         .is_none());
 }
 
@@ -679,20 +680,154 @@ fn look_character_text_none_when_target_invisible() {
         .insert(CharacterFlags::INVISIBLE);
 
     assert!(world
-        .look_character_text(CharacterId(1), CharacterId(2), false, 0)
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
         .is_none());
 }
 
 #[test]
 fn look_character_text_none_for_unknown_looker_or_target() {
-    let world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
+    let mut world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
 
     assert!(world
-        .look_character_text(CharacterId(99), CharacterId(2), false, 0)
+        .look_character_text(CharacterId(99), CharacterId(2), false, 0, 0, 0)
         .is_none());
     assert!(world
-        .look_character_text(CharacterId(1), CharacterId(99), false, 0)
+        .look_character_text(CharacterId(1), CharacterId(99), false, 0, 0, 0)
         .is_none());
+}
+
+#[test]
+fn look_character_text_reports_army_rank_when_positive() {
+    let mut world = look_char_pair(
+        CharacterFlags::empty(),
+        CharacterFlags::PLAYER | CharacterFlags::MALE,
+    );
+    {
+        let target = world.characters.get_mut(&CharacterId(2)).unwrap();
+        // cbrt(1_000_000) = 100 -> clamped to MAX_ARMY_RANK (40).
+        target.military_points = 1_000_000;
+    }
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
+        .unwrap();
+
+    assert!(result
+        .body
+        .contains("Bob is a Avatar of Astonia in the Imperial Army. "));
+}
+
+#[test]
+fn look_character_text_omits_army_rank_line_when_zero() {
+    let mut world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
+        .unwrap();
+
+    assert!(!result.body.contains("Imperial Army"));
+}
+
+#[test]
+fn look_character_text_reports_pk_info_for_player_killers() {
+    let mut world = look_char_pair(
+        CharacterFlags::empty(),
+        CharacterFlags::PLAYER | CharacterFlags::PK | CharacterFlags::MALE,
+    );
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 3, 5)
+        .unwrap();
+
+    assert!(result.body.contains(
+        "Bob is a player killer. He killed 3 players and died 5 times through the hands of other players. "
+    ));
+}
+
+#[test]
+fn look_character_text_omits_pk_info_when_not_pk() {
+    let mut world = look_char_pair(CharacterFlags::empty(), CharacterFlags::PLAYER);
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 3, 5)
+        .unwrap();
+
+    assert!(!result.body.contains("player killer"));
+}
+
+#[test]
+fn look_character_text_reports_clan_membership() {
+    let mut world = look_char_pair(
+        CharacterFlags::empty(),
+        CharacterFlags::PLAYER | CharacterFlags::MALE,
+    );
+    let clan = world.clan_registry.found_clan("Black Rose", 0).unwrap();
+    world
+        .clan_registry
+        .set_rankname(clan, 2, "Veteran")
+        .unwrap();
+    {
+        let target = world.characters.get_mut(&CharacterId(2)).unwrap();
+        target.clan = clan;
+        target.clan_serial = world.clan_registry.serial(clan);
+        target.clan_rank = 2;
+    }
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
+        .unwrap();
+
+    assert!(result
+        .body
+        .contains("He is a member of the clan 'Black Rose', his rank is Veteran. "));
+}
+
+#[test]
+fn look_character_text_resets_stale_clan_reference() {
+    let mut world = look_char_pair(
+        CharacterFlags::empty(),
+        CharacterFlags::PLAYER | CharacterFlags::MALE,
+    );
+    let clan = world.clan_registry.found_clan("Black Rose", 0).unwrap();
+    {
+        let target = world.characters.get_mut(&CharacterId(2)).unwrap();
+        target.clan = clan;
+        target.clan_serial = world.clan_registry.serial(clan) + 1; // stale
+        target.clan_rank = 1;
+    }
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
+        .unwrap();
+
+    assert!(!result.body.contains("member of the clan"));
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!(target.clan, 0);
+    assert_eq!(target.clan_rank, 0);
+    assert_eq!(target.clan_serial, 0);
+}
+
+#[test]
+fn look_character_text_reports_club_membership() {
+    let mut world = look_char_pair(
+        CharacterFlags::empty(),
+        CharacterFlags::PLAYER | CharacterFlags::MALE,
+    );
+    let club = world.club_registry.create_club("Rangers", 0).unwrap();
+    {
+        let target = world.characters.get_mut(&CharacterId(2)).unwrap();
+        target.clan = CLUB_OFFSET + club;
+        target.clan_serial = world.club_registry.serial(club);
+        target.clan_rank = 1;
+    }
+
+    let result = world
+        .look_character_text(CharacterId(1), CharacterId(2), false, 0, 0, 0)
+        .unwrap();
+
+    assert!(result.body.contains(&format!(
+        "He is a member of the club 'Rangers' ({club}), his rank is Private. "
+    )));
 }
 
 #[test]

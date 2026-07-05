@@ -299,15 +299,18 @@ order.
     `crates/ugaris-server/src/inventory.rs` for the text-side conventions.
   - Tests: packet layout against C client expectations; NPC vs player
     variants.
-  - REMAINING: `look_char`'s labyrinth-solved count, first-kill Hell
-    flavor text, army rank, PK info, clan info, and club info lines are
-    not ported (no `count_solved_labs`/`check_first_kill`/`DRD_RANK_PPD`/
-    `DRD_PK_PPD`/clan/club system exists yet - each is its own P2/P3 todo
-    item). The looker-`CF_GOD` debug branch (dumping the target's carried
-    non-worn items + active effect slots) is also deferred since
-    `CL_LOOK_ITEM`'s text builder (next task below) doesn't exist yet
-    either. See `PORTING_LEDGER.md` "Ralph Loop - Look At Character
-    (CL_LOOK_CHAR)" for the full gap list.
+  - REMAINING (updated iteration 150): army rank, PK info, clan info and
+    club info lines were closed in iteration 150 as a slice of the
+    "Clan system" P3 task, now that `ClanRegistry`/`ClubRegistry` and the
+    existing `army_rank_for_points`/`PlayerRuntime::pk_kills` back them -
+    see that task's Progress Log. Still not ported: `look_char`'s
+    labyrinth-solved count and first-kill Hell flavor text (no
+    `count_solved_labs`/`check_first_kill` exists yet - each is its own
+    P2/P3 todo item). The looker-`CF_GOD` debug branch (dumping the
+    target's carried non-worn items + active effect slots) is also
+    deferred since `CL_LOOK_ITEM`'s text builder (next task below)
+    doesn't exist yet either. See `PORTING_LEDGER.md` "Ralph Loop - Look
+    At Character (CL_LOOK_CHAR)" for the full gap list.
 
 - [x] **Look at map item (`CL_LOOK_ITEM`)** - parsed, ignored. Reuse
   `legacy_item_look_text`; gate by `char_see_item` and distance like C
@@ -3363,9 +3366,12 @@ Unlocks every quest NPC. Do these before any P4 area work.
   relation/rank-name/website/message/raiding-on-off/raiding-god-on-off
   text commands, plus the Clan Jewel `NT_GIVE` handoff and the "jewels"
   small-talk reply) was ported and wired into the live tick loop in
-  iteration 96 (see Progress Log) - REMAINING for that driver only:
-  `add potions`/the `NT_GIVE` `IDR_FLASK` branch (needs the unported
-  alchemy-potion economy). The `buy`/`use` dungeon-guard commands are
+  iteration 96 (see Progress Log). The `add potions`/`NT_GIVE`
+  `IDR_FLASK` branch this note used to flag as blocked on "the unported
+  alchemy-potion economy" was itself closed in iteration 135 (see
+  Progress Log) - that claim was stale even before iteration 150 caught
+  it, since the alchemy-potion item drivers it was waiting on were
+  already fully ported. The `buy`/`use` dungeon-guard commands are
   both now fully closed: `buy` is C's own unconditionally-disabled dead
   code, ported as dead (iteration 96); `use` (the real, reachable
   dungeon-guard configuration command) was ported in iteration 134 (see
@@ -3408,6 +3414,52 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `key`) remain out of scope, unchanged from before.
 
    Progress Log:
+   - 2026-07-05 (iteration 150): wired `show_clan_info` (`clan.c:294-
+     309`) and `show_club_info` (`club.c:65-80`) - the two lines this
+     task's own notes and the "Look at character" task's REMAINING note
+     both cross-referenced as blocked on "clan/club system" not existing
+     yet - into `World::look_character_text`
+     (`crates/ugaris-core/src/world/text.rs`), now that `ClanRegistry`/
+     `ClubRegistry` are both real. Also ported the two other lines
+     `tool.c:1972-1983` groups with them behind the same `CF_PLAYER |
+     CF_PLAYERLIKE` gate, since they turned out to be equally unblocked:
+     army rank (`ppd->army_rank` text, backed by the already-existing
+     `crate::world::military::army_rank_for_points`/`army_rank_name`,
+     which derive the C `DRD_RANK_PPD` value from `Character.
+     military_points` instead of a second persisted field - see that
+     function's own doc comment) and `show_pk_info` (`tool.c:927-941`,
+     backed by the already-existing `PlayerRuntime::pk_kills`/
+     `pk_deaths`, C's `DRD_PK_PPD`). `look_character_text` gained two new
+     `target_pk_kills`/`target_pk_deaths: u32` parameters (same "caller
+     supplies session-only `PlayerRuntime` data" pattern `target_is_
+     brave`/`target_mirror` already used) and changed from `&self` to
+     `&mut self` so it can call `ClanRegistry::get_char_clan`/
+     `ClubRegistry::get_char_club`'s self-healing `&mut Character`
+     lookups; the one production call site
+     (`crates/ugaris-server/src/main.rs`'s `ClientAction::LookCharacter`
+     handler) was updated to read `PlayerRuntime::pk_kills`/`pk_deaths`
+     for the target the same way it already did for mirror/shrine data.
+     `show_club_info`'s C quirk of reusing the global army-rank name
+     table for its own "rank" display (not a typo - `club.c:78` really
+     does index the same `rankname[]` `get_army_rank_string` uses) is
+     preserved via `army_rank_name`. Still not ported (documented in the
+     function's own doc comment, only reachable via `count_solved_labs`/
+     `check_first_kill`, neither of which exists yet): labyrinth-solved
+     count and first-kill Hell flavor text. While in the area, corrected
+     two doc comments this iteration found stale from before iteration
+     135 actually closed the gaps they described: `ClanEconomy::alc_pot`/
+     `simple_pot`'s "nothing feeds this yet" claim (`add_alc_potion`/
+     `bump_simple_pot` do feed them, wired at `clanclerk.rs`'s `NT_GIVE`
+     `IDR_FLASK` branch and `add potions` command) and this task's own
+     `CDR_CLANCLERK` note repeating the same stale claim as a
+     "REMAINING" item - paperwork-only correction, no behavior change.
+     7 new tests in `world::tests::text` (army rank present/absent, PK
+     info present/absent, clan membership + stale-reference reset, club
+     membership). `cargo fmt --all`, `cargo test --workspace` (1947
+     ugaris-core + 55 db + 3 net + 40 protocol + 604 server, all green,
+     zero failures), `cargo build -p ugaris-server` clean with zero
+     warnings, and a boot-smoke confirmed "entering Rust game loop" with
+     no panics.
    - 2026-07-05 (iteration 149): closed the `CDR_DUNGEONFIGHTER`/
      SimpleBaddy AI architecture gap flagged by the previous five
      iterations' notes as this task's biggest remaining piece: added

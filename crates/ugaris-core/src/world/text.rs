@@ -387,18 +387,35 @@ impl World {
     /// `DRD_RANDOMSHRINE_PPD` `DEATH_SHRINE` check and `target_mirror` is
     /// C's `ch[co].mirror` - both live in session-only `PlayerRuntime`
     /// state in this codebase, so the caller (which has access to
-    /// `PlayerRuntime`) supplies them.
+    /// `PlayerRuntime`) supplies them; `target_pk_kills`/`target_pk_deaths`
+    /// are C's `DRD_PK_PPD` `kills`/`deaths` fields, tracked instead on
+    /// `PlayerRuntime::pk_kills`/`pk_deaths` in this codebase, same
+    /// reason.
+    ///
+    /// Army rank (`show_army_rank`-equivalent inline text, `tool.c:1977-
+    /// 1979`), PK info (`show_pk_info`, `tool.c:927-941`), clan info
+    /// (`show_clan_info`, `clan.c:294-309`) and club info
+    /// (`show_club_info`, `club.c:65-80`) are all ported here now that
+    /// their backing systems exist (`crate::world::military::
+    /// army_rank_for_points`/`army_rank_name`, `PlayerRuntime::pk_kills`/
+    /// `pk_deaths`, `ClanRegistry`, `ClubRegistry`); C gates all four
+    /// behind a `DRD_RANK_PPD` `set_data` allocation that only fails on
+    /// OOM in practice (`ppd == NULL` -> `return 0` from the whole
+    /// function), which has no equivalent failure mode here and is not
+    /// modeled.
     ///
     /// REMAINING (not ported - no C-side data source exists yet in this
-    /// codebase): labyrinth-solved count, first-kill Hell flavor text,
-    /// army rank (`DRD_RANK_PPD`), PK info, clan info, club info. These
-    /// are documented gaps, not silently dropped - see `PORTING_TODO.md`.
+    /// codebase): labyrinth-solved count (`count_solved_labs`) and
+    /// first-kill Hell flavor text (`check_first_kill`) - see
+    /// `PORTING_TODO.md`.
     pub fn look_character_text(
-        &self,
+        &mut self,
         looker_id: CharacterId,
         target_id: CharacterId,
         target_is_brave: bool,
         target_mirror: u32,
+        target_pk_kills: u32,
+        target_pk_deaths: u32,
     ) -> Option<LookCharacterResult> {
         let looker = self.characters.get(&looker_id)?;
         if !looker.flags.contains(CharacterFlags::PLAYER) {
@@ -449,9 +466,87 @@ impl World {
             }
         }
 
-        if target.flags.contains(CharacterFlags::PLAYER) {
+        // C `if (ch[co].flags & (CF_PLAYER | CF_PLAYERLIKE))`
+        // (`tool.c:1972-1983`): army rank, PK info, clan info and club
+        // info all share this one gate. Snapshot everything needed
+        // before taking a `&mut Character` borrow for the registries'
+        // self-healing lookups (`ClanRegistry::get_char_clan`/
+        // `ClubRegistry::get_char_club` reset a stale `Character.clan`/
+        // `.clan_rank`/`.clan_serial` back to 0, matching C's own
+        // `get_char_clan`/`get_char_club`).
+        let target_name = target.name.clone();
+        let target_hename = look_character_hename(target);
+        let target_hisname = hisname(target);
+        let is_player_or_playerlike = target
+            .flags
+            .intersects(CharacterFlags::PLAYER | CharacterFlags::PLAYERLIKE);
+        let is_player = target.flags.contains(CharacterFlags::PLAYER);
+        let is_pk = target.flags.contains(CharacterFlags::PK);
+        let military_points = target.military_points;
+        let karma = target.karma;
+
+        if is_player_or_playerlike {
+            // C: `if (ppd->army_rank) { ... "is a %s in the Imperial
+            // Army. " ... }` (`tool.c:1977-1979`).
+            let rank = army_rank_for_points(military_points);
+            if rank > 0 {
+                body.push_str(&format!(
+                    "{target_name} is a {} in the Imperial Army. ",
+                    army_rank_name(rank)
+                ));
+            }
+
+            // C `show_pk_info` (`tool.c:927-941`): gated on `CF_PLAYER`
+            // and `CF_PK` both (a `CF_PLAYERLIKE`-only NPC never has
+            // `CF_PK` set in practice, matching a zero-initialized
+            // `DRD_PK_PPD`).
+            if is_player && is_pk {
+                body.push_str(&format!(
+                    "{target_name} is a player killer. {target_hename} killed {target_pk_kills} players and died {target_pk_deaths} times through the hands of other players. "
+                ));
+            }
+
+            if let Some(target_mut) = self.characters.get_mut(&target_id) {
+                // C `show_clan_info` (`clan.c:294-309`).
+                if let Some(cnr) = self.clan_registry.get_char_clan(target_mut) {
+                    let rank = if target_mut.clan_rank > 4 {
+                        0
+                    } else {
+                        target_mut.clan_rank as usize
+                    };
+                    if let Some(identity) = self.clan_registry.identity(cnr) {
+                        body.push_str(&format!(
+                            "{target_hename} is a member of the clan '{}', {target_hisname} rank is {}. ",
+                            identity.name, identity.rank_names[rank]
+                        ));
+                    }
+                }
+
+                // C `show_club_info` (`club.c:65-80`): reuses the global
+                // army-rank name table for its own "rank" display (a C
+                // quirk, not a typo - `club.c:78` literally indexes
+                // `rankname[]`, the same array `get_army_rank_string`
+                // uses).
+                if let Some(cnr) = self.club_registry.get_char_club(target_mut) {
+                    let rank = if target_mut.clan_rank > 2 {
+                        0
+                    } else {
+                        target_mut.clan_rank as i32
+                    };
+                    if let Some(identity) = self.club_registry.identity(cnr) {
+                        body.push_str(&format!(
+                            "{target_hename} is a member of the club '{}' ({cnr}), {target_hisname} rank is {}. ",
+                            identity.name,
+                            army_rank_name(rank)
+                        ));
+                    }
+                }
+            }
+        }
+
+        if is_player {
             body.push_str(&format!("Mirror={target_mirror}. "));
-            body.push_str(&format!("Karma: {}", target.karma));
+            body.push_str(&format!("Karma: {karma}"));
         }
 
         Some(LookCharacterResult { header, body })

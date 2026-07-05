@@ -1903,11 +1903,17 @@ async fn main() -> anyhow::Result<()> {
                                     .player_for_character(target_id)
                                     .map(|player| u32::from(player.current_mirror_id))
                                     .unwrap_or(0);
+                                let (target_pk_kills, target_pk_deaths) = runtime
+                                    .player_for_character(target_id)
+                                    .map(|player| (player.pk_kills, player.pk_deaths))
+                                    .unwrap_or((0, 0));
                                 if let Some(text) = world.look_character_text(
                                     character_id,
                                     target_id,
                                     target_is_brave,
                                     target_mirror,
+                                    target_pk_kills,
+                                    target_pk_deaths,
                                 ) {
                                     command_feedback.push((character_id, text.header));
                                     if let Some(paperdoll) =
