@@ -401,12 +401,20 @@ pub fn do_drop(
     Ok(())
 }
 
+/// C `do_attack`/`act_attack` (`system/do.c:424`) calls `speed(cn, ...)`
+/// unconditionally for every attack, folding `modify_movement_speed`'s
+/// weather multiplier into the attack duration just like `do_walk`'s
+/// `speed()` call - not just movement. `weather_movement_percent` is the
+/// already-resolved percentage (100 = no change); the indoor check (C's
+/// `map[m].flags & MF_INDOORS` in `modify_movement_speed`) is resolved here
+/// from the attacker's *current* tile, mirroring `do_walk`.
 pub fn do_attack(
     attacker: &mut Character,
     map: &MapGrid,
     defender: &Character,
     direction: u8,
     attack_variant: u16,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if attacker.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -425,12 +433,22 @@ pub fn do_attack(
         return Err(DoError::IllegalAttack);
     }
 
+    let attacker_indoors = map
+        .tile(usize::from(attacker.x), usize::from(attacker.y))
+        .is_some_and(|tile| tile.flags.contains(MapFlags::INDOORS));
+    let effective_weather_movement_percent = if attacker_indoors {
+        100
+    } else {
+        weather_movement_percent
+    };
+
     attacker.action = attack_variant.clamp(action::ATTACK1, action::ATTACK3);
     attacker.act1 = defender.id.0 as i32;
-    attacker.duration = speed_ticks(
+    attacker.duration = speed_ticks_with_weather_movement(
         character_value(attacker, CharacterValue::Speed),
         attacker.speed_mode,
         DUR_COMBAT_ACTION,
+        effective_weather_movement_percent,
     );
     if attacker.speed_mode == SpeedMode::Fast {
         attacker.endurance -= endurance_cost(attacker) * 2;
@@ -1963,6 +1981,7 @@ mod tests {
             &defender,
             Direction::Right as u8,
             action::ATTACK2,
+            100,
         )
         .unwrap();
 
@@ -1993,6 +2012,7 @@ mod tests {
                 &defender,
                 Direction::Right as u8,
                 action::ATTACK1,
+                100,
             ),
             Err(DoError::NoCharacter)
         );
@@ -2009,6 +2029,7 @@ mod tests {
                 &defender,
                 Direction::Right as u8,
                 action::ATTACK1,
+                100,
             ),
             Err(DoError::Dead)
         );
@@ -2022,6 +2043,7 @@ mod tests {
                 &defender,
                 Direction::Right as u8,
                 action::ATTACK1,
+                100,
             ),
             Err(DoError::IllegalAttack)
         );
@@ -2036,8 +2058,70 @@ mod tests {
                 &defender,
                 Direction::Right as u8,
                 action::ATTACK1,
+                100,
             ),
             Err(DoError::IllegalAttack)
+        );
+    }
+
+    #[test]
+    fn do_attack_slows_down_outdoors_under_a_weather_movement_percent() {
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        map.tile_mut(11, 10).unwrap().character = defender.id.0 as u16;
+        attacker.values[0][CharacterValue::Speed as usize] = 100;
+
+        do_attack(
+            &mut attacker,
+            &map,
+            &defender,
+            Direction::Right as u8,
+            action::ATTACK1,
+            70,
+        )
+        .unwrap();
+
+        assert_eq!(
+            attacker.duration,
+            speed_ticks_with_weather_movement(100, SpeedMode::Normal, DUR_COMBAT_ACTION, 70)
+        );
+        assert_ne!(
+            attacker.duration,
+            speed_ticks(100, SpeedMode::Normal, DUR_COMBAT_ACTION)
+        );
+    }
+
+    #[test]
+    fn do_attack_ignores_weather_movement_percent_indoors() {
+        let mut map = MapGrid::new(20, 20);
+        map.set_flags(10, 10, MapFlags::INDOORS);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        map.tile_mut(11, 10).unwrap().character = defender.id.0 as u16;
+        attacker.values[0][CharacterValue::Speed as usize] = 100;
+
+        // C `modify_movement_speed` returns `speed` unmodified indoors, even
+        // though the weather-slow flag/percent is passed in.
+        do_attack(
+            &mut attacker,
+            &map,
+            &defender,
+            Direction::Right as u8,
+            action::ATTACK1,
+            70,
+        )
+        .unwrap();
+
+        assert_eq!(
+            attacker.duration,
+            speed_ticks(100, SpeedMode::Normal, DUR_COMBAT_ACTION)
         );
     }
 

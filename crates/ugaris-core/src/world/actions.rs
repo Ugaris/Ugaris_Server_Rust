@@ -585,6 +585,7 @@ impl World {
                         &target,
                         direction as u8,
                         action::ATTACK1,
+                        self.settings.weather_movement_percent,
                     )
                     .is_ok()
                     {

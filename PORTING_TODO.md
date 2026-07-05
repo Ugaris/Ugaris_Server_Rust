@@ -5126,7 +5126,8 @@ Unlocks every quest NPC. Do these before any P4 area work.
   weather packets to clients (check client protocol), movement slow,
   visibility reduction, damage weather, area gating. REMAINING:
   `modify_movement_speed` (`weather.c:477-493`) was wired in iteration 126
-  for player walking only - see Progress Log; `modify_visibility_range`/
+  for player walking only, and extended to melee attacks (both player and
+  NPC) in iteration 128 - see Progress Log; `modify_visibility_range`/
   `modify_skill_value` (`weather.c:495-527`) are still not wired into
   `see::char_see_char`/any skill-value accessor. `char_see_char` has ~28
   call sites across `aclerk.rs`/`bank.rs`/`clanclerk.rs`/`clanmaster.rs`/
@@ -5383,6 +5384,47 @@ Unlocks every quest NPC. Do these before any P4 area work.
   ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panics (this iteration touches the
   runtime tick loop).
+  Progress Log (iteration 128): extended `modify_movement_speed`
+  (`weather.c:477-493`) weather-slow wiring from player walking to melee
+  attacks, closing one of the `speed_ticks`'s ~25 non-walking call sites
+  named in the previous REMAINING note. C's `do_attack`/`act_attack`
+  (`system/do.c:424`) calls the same unconditional `speed(cn, ...)` as
+  `do_walk` does - the weather multiplier is not movement-specific in C,
+  it applies to every `speed()` call. `do_action::do_attack` gained a
+  `weather_movement_percent: i32` parameter and now calls
+  `speed_ticks_with_weather_movement` instead of the bare `speed_ticks`,
+  resolving the attacker's own indoor-tile override itself
+  (`attacker_indoors`, read from `map.tile(attacker.x, attacker.y)`
+  before computing duration) exactly mirroring `do_walk`'s pattern - the
+  function already took `map: &MapGrid`, so no new parameter was needed
+  for that part. All 3 real call sites now pass
+  `self.settings.weather_movement_percent` (the same `World`-level field
+  `do_walk` already reads, refreshed once per tick in `main.rs`):
+  `crates/ugaris-core/src/world/actions.rs`'s player `Kill` action setup,
+  and both NPC melee call sites in `crates/ugaris-core/src/world/
+  npc_fight.rs` (`simple_baddy`'s direct-adjacent attack and
+  `attack_driver_direct`'s adjacent-tile branch) - confirming the field
+  access compiles cleanly alongside the pre-existing disjoint mutable
+  borrow of `self.characters` in each case, no borrow-checker gymnastics
+  needed. 2 new tests in `do_action.rs` mirroring the existing
+  `do_walk_slows_down_outdoors_under_a_weather_movement_percent`/
+  `do_walk_ignores_weather_movement_percent_indoors` pair
+  (`do_attack_slows_down_outdoors_under_a_weather_movement_percent`,
+  `do_attack_ignores_weather_movement_percent_indoors`); the 5 existing
+  `do_attack` test call sites were updated for the new parameter
+  (`100` = no-op, preserving their original assertions unchanged).
+  REMAINING (updated): visibility/skill-value modifiers and their 4 dead
+  combat-modifier siblings unchanged from iteration 127's note;
+  `apply_elemental_debuffs` still unported; `speed_ticks`'s remaining
+  ~24 non-walking, non-attack call sites (spell cast/heal/use durations
+  in `do_action.rs`/`spells.rs`/`npc_fight.rs`) still use the
+  weather-unaware wrapper - each would need the same per-call-site
+  indoor-tile-plus-percent threading demonstrated here, left for future
+  slices. `cargo fmt --all`, `cargo test --workspace` (1727 ugaris-core
+  [+2] + 55 protocol + 3 net + 38 db + 580 server, all green, zero
+  failures), `cargo build -p ugaris-server` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panics
+  (this iteration touches player and NPC combat action setup).
 
 - [ ] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +

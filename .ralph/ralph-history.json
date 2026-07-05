@@ -4066,15 +4066,45 @@
         "test result: ok. 1718 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
         "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 128,
+      "startedAt": "2026-07-05T02:00:47.341Z",
+      "endedAt": "2026-07-05T02:11:09.306Z",
+      "durationMs": 621222,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/do_action.rs",
+        "crates/ugaris-core/src/world/actions.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 580 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "return Err(DoError::IllegalDirection);",
+        "return Err(DoError::Dead);",
+        "let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;",
+        "let target_x = offset(current_x, dx).ok_or(DoError::IllegalCoords)?;",
+        "let target_y = offset(current_y, dy).ok_or(DoError::IllegalCoords)?;",
+        "return Err(DoError::IllegalCoords);",
+        ".ok_or(DoError::IllegalCoords)?;",
+        "let target_tile = map.tile(target_x, target_y).ok_or(DoError::IllegalCoords)?;"
+      ]
     }
   ],
-  "totalDurationMs": 140109818,
+  "totalDurationMs": 140731040,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 127,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 128,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -4289,8 +4319,8 @@
       "test result: ok. 1183 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 1183 filtered out; finished in 0.00s": 1,
       "5. Verified: `cargo fmt --all` clean, `cargo test --workspace` (1215+27+3+33+374, zero failures/warn": 1,
-      "return Err(DoError::Dead);": 2,
-      "return Err(DoError::IllegalCoords);": 1,
+      "return Err(DoError::Dead);": 3,
+      "return Err(DoError::IllegalCoords);": 2,
       "return Err(DoError::NoItem);": 1,
       "return Err(DoError::Confused);": 1,
       "return Err(DoError::HaveCursorItem);": 1,
@@ -4452,7 +4482,7 @@
       "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
       "252:- `IDR_FLASK` finished-potion use now follows the C `mixer_use` application path instead of the ": 1,
       "-| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 1,
-      "return Err(DoError::IllegalDirection);": 2,
+      "return Err(DoError::IllegalDirection);": 3,
       "test clan::tests::both_want_better_relation_deescalates_immediately ... FAILED": 1,
       "test clan::tests::war_ends_only_when_both_want_better ... FAILED": 1,
       "test result: FAILED. 35 passed; 2 failed; 0 ignored; 0 measured; 1390 filtered out; finished in 0.00": 1,
@@ -4623,8 +4653,8 @@
       "test result: ok. 571 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
       "Everything is clean: fmt formatted with no diff, all tests pass (1718 + 55 + 3 + 38 + 575 = 2389 tot": 1,
       "test result: ok. 575 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 2,
-      ".ok_or(DoError::IllegalCoords)?;": 1,
-      "let target_tile = map.tile(target_x, target_y).ok_or(DoError::IllegalCoords)?;": 1,
+      ".ok_or(DoError::IllegalCoords)?;": 2,
+      "let target_tile = map.tile(target_x, target_y).ok_or(DoError::IllegalCoords)?;": 2,
       "Err(DoError::Blocked)": 1,
       "test result: ok. 1718 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1,
       "test result: ok. 1718 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s": 1,
@@ -4632,7 +4662,11 @@
       "All checks pass: fmt, full test suite (1725+55+3+40+580 = green, zero failures), clean build with ze": 1,
       "- 19 new tests added; full test suite green (1725+55+3+40+580, zero failures), clean build with zero": 1,
       "test result: FAILED. 573 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s": 1,
-      "test result: ok. 1718 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 1
+      "test result: ok. 1718 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 1,
+      "test result: ok. 580 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
+      "let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;": 1,
+      "let target_x = offset(current_x, dx).ok_or(DoError::IllegalCoords)?;": 1,
+      "let target_y = offset(current_y, dy).ok_or(DoError::IllegalCoords)?;": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
