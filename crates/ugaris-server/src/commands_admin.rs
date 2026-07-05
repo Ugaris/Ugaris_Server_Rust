@@ -1644,6 +1644,186 @@ fn apply_legacy_game_settings_tuning_command(
     None
 }
 
+/// C `/global` (`command.c:8226-8322`), `cmdcmp(ptr, "global", 2)` +
+/// `CF_GOD`-gated: dumps every tunable `GameSettings` value as a multi-line
+/// admin report. Read-only (no field is mutated), so it only needs `&World`.
+/// Every line, section header, and format quirk (including the C source's
+/// own inconsistent spacing on the three "Drop probability" lines - a space
+/// before the dash for "low level" but not for "mid"/"high" level) is
+/// transcribed digit-for-digit / letter-for-letter rather than "fixed".
+fn apply_global_settings_command(world: &World, lower: &str) -> Option<KeyringCommandResult> {
+    if !(lower.len() >= 2 && "global".starts_with(lower)) {
+        return None;
+    }
+
+    let s = &world.settings;
+    let ticks = TICKS_PER_SECOND as i32;
+    let messages = vec![
+        "=== Current Global Settings ===".to_string(),
+        "--- Core Server Settings ---".to_string(),
+        format!(
+            "Item decay time: {} ticks ({} minutes)",
+            s.item_decay_time,
+            s.item_decay_time / (60 * ticks)
+        ),
+        format!(
+            "Player body decay time: {} ticks ({} minutes)",
+            s.player_body_decay_time,
+            s.player_body_decay_time / (60 * ticks)
+        ),
+        format!(
+            "NPC body decay time: {} ticks ({} minutes)",
+            s.npc_body_decay_time,
+            s.npc_body_decay_time / (60 * ticks)
+        ),
+        format!(
+            "NPC body decay time (area 32): {} ticks ({} minutes)",
+            s.npc_body_decay_time_area32,
+            s.npc_body_decay_time_area32 / (60 * ticks)
+        ),
+        format!(
+            "Respawn time: {} ticks ({} minutes)",
+            s.npc_respawn_timer,
+            s.npc_respawn_timer / (60 * ticks)
+        ),
+        format!(
+            "Lagout time: {} ticks ({} minutes)",
+            s.lagout_time,
+            s.lagout_time / (60 * ticks)
+        ),
+        format!("Regen time: {} ticks", s.regen_time),
+        format!(
+            "Sewer item respawn time: {} hours",
+            s.sewer_item_respawn_time / 3600
+        ),
+        "--- Experience Modifiers ---".to_string(),
+        format!("Global EXP modifier: {:.2}", s.exp_modifier),
+        format!(
+            "Hardcore military EXP bonus: {:.2}",
+            s.hardcore_military_exp_bonus
+        ),
+        format!("Hardcore EXP bonus: {:.2}", s.hardcore_exp_bonus),
+        format!("Hardcore kill EXP bonus: {:.2}", s.hardcore_kill_exp_bonus),
+        "--- Communication Settings ---".to_string(),
+        format!(
+            "Holler distance: {} tiles, Cost: {}",
+            s.holler_dist,
+            s.holler_cost / POWERSCALE
+        ),
+        format!(
+            "Shout distance: {} tiles, Cost: {}",
+            s.shout_dist,
+            s.shout_cost / POWERSCALE
+        ),
+        format!("Say distance: {} tiles", s.say_dist),
+        format!("Emote distance: {} tiles", s.emote_dist),
+        format!("Quiet say distance: {} tiles", s.quietsay_dist),
+        format!("Whisper distance: {} tiles", s.whisper_dist),
+        "--- Tool Settings ---".to_string(),
+        format!("Special item probability - Lots: {}", s.sp_lots),
+        format!("Special item probability - Many: {}", s.sp_many),
+        format!("Special item probability - Some: {}", s.sp_some),
+        format!("Special item probability - Few: {}", s.sp_few),
+        format!("Special item probability - Rare: {}", s.sp_rare),
+        format!("Special item probability - Ultra: {}", s.sp_ultra),
+        "--- Location Settings ---".to_string(),
+        format!(
+            "Jail location: {},{} (area {})",
+            s.jail_x, s.jail_y, s.jail_area
+        ),
+        format!(
+            "Aston location: {},{} (area {})",
+            s.aston_x, s.aston_y, s.aston_area
+        ),
+        format!("Orb respawn time: {} days", s.base_orb_respawn_time_days),
+        "--- Clan Settings ---".to_string(),
+        format!("Maximum jewel count: {}", s.max_jewel_count),
+        format!(
+            "Max clan bonus percent: {}%",
+            s.get_max_clan_bonus_percent()
+        ),
+        format!(
+            "Clan reflection multiplier: {:.2}",
+            s.get_exp_clan_reflection_multiplier()
+        ),
+        "--- Tunnel Settings ---".to_string(),
+        format!(
+            "Tunnel exp base value divider: {:.2}",
+            s.tunnel_exp_base_value_divider
+        ),
+        format!(
+            "Tunnel mill exp base value: {}",
+            s.tunnel_mill_exp_base_value
+        ),
+        "--- Mine Settings ---".to_string(),
+        format!("Rare golem chance: {}", s.get_rare_golem_chance()),
+        format!("Max silver golem type: {}", s.get_max_silver_golem_type()),
+        format!("Normal drop chance: {}", s.get_normal_drop_chance()),
+        format!("Rare drop chance: {}", s.get_rare_drop_chance()),
+        format!("Rare drop multiplier: {:.2}", s.get_rare_drop_multiplier()),
+        format!("Base drop multiplier: {}", s.get_base_drop_multiplier()),
+        format!("Level divisor: {}", s.get_level_divisor()),
+        format!("Rare golem level boost: {}", s.get_rare_golem_level_boost()),
+        format!(
+            "Rare golem HP multiplier: {}",
+            s.get_rare_golem_hp_multiplier()
+        ),
+        "--- Dungeon Settings ---".to_string(),
+        format!(
+            "Dungeon time: {} ticks ({} minutes)",
+            s.get_dungeon_time(),
+            s.get_dungeon_time() / (ticks * 60)
+        ),
+        "--- Brannington Settings ---".to_string(),
+        format!("Brannington Forest exp base: {}", s.get_branfo_exp_base()),
+        format!("Brannington exp base: {}", s.get_bran_exp_base()),
+        "--- Pentagram Settings ---".to_string(),
+        format!("Max visible pentagrams: {}", s.get_max_visible_pents()),
+        format!("Max power level: {}", s.get_max_power_level()),
+        format!("Max training power: {}", s.get_max_training_power()),
+        format!("Demon power deduction: {}", s.get_demon_power_deduction()),
+        format!("Random spawn chance: {}%", s.get_random_spawn_chance()),
+        format!("Activation spawn count: {}", s.get_activation_spawn_count()),
+        format!(
+            "Pentagram value multiplier: {}",
+            s.get_pentagram_value_multiplier()
+        ),
+        format!(
+            "Pentagram worth divisor: {}",
+            s.get_pentagram_worth_divisor()
+        ),
+        format!("Lucky pentagram chance: {}", s.get_lucky_pentagram_chance()),
+        format!("Power increment: {}", s.get_power_increment()),
+        format!("Solve max divisor: {}", s.get_solve_max_divisor()),
+        format!(
+            "Demon lord door access: {} seconds",
+            s.get_demon_lord_door_after_solve_access_time()
+        ),
+        format!(
+            "Experience solve multiplier: {:.2}",
+            s.get_exp_solve_multiplier()
+        ),
+        "--- Drop Probability Settings ---".to_string(),
+        format!(
+            "Drop probability (low level): {} - (default 1700)",
+            s.get_drop_prob_low_level()
+        ),
+        format!(
+            "Drop probability (mid level): {}- (default 800)",
+            s.get_drop_prob_mid_level()
+        ),
+        format!(
+            "Drop probability (high level): {}- (default 532)",
+            s.get_drop_prob_high_level()
+        ),
+    ];
+
+    Some(KeyringCommandResult {
+        messages,
+        ..Default::default()
+    })
+}
+
 /// Parses the `x y area` triple used by `/setjaillocation` and
 /// `/setastonlocation` (C `command.c:8036-8050`/`8076-8090`): `atoi` at the
 /// current pointer, then skip ascii digits, then skip whitespace, repeated
@@ -1681,6 +1861,7 @@ pub(crate) fn apply_admin_character_command(
         apply_legacy_tick_tuning_command(runtime, &lower, rest)
             .or_else(|| apply_legacy_communication_tuning_command(runtime, &lower, rest))
             .or_else(|| apply_legacy_game_settings_tuning_command(world, &lower, rest))
+            .or_else(|| apply_global_settings_command(world, &lower))
     } else {
         None
     } {
@@ -1750,6 +1931,7 @@ pub(crate) fn apply_admin_character_command(
             | "setdropprobhigh"
             | "reloadloot"
             | "setlootmod"
+            | "global"
     ) {
         return None;
     }

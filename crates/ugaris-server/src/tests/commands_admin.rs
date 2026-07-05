@@ -4760,3 +4760,74 @@ fn god_command_abbreviation_is_not_recognized() {
             .is_none()
     );
 }
+
+#[test]
+fn god_global_command_dumps_every_setting_like_c() {
+    // C `/global` (`command.c:8226-8322`), `cmdcmp(ptr, "global", 2)`,
+    // `CF_GOD`-gated.
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    // Non-god callers are gated out entirely, exactly like the C `&&
+    // (ch[cn].flags & CF_GOD)` guard.
+    let mut player = login_character(CharacterId(8), &login_block("Player"), 1, 11, 10);
+    player.flags.remove(CharacterFlags::GOD);
+    world.add_character(player);
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, CharacterId(8), "/global", 1)
+            .is_none()
+    );
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/global", 1)
+        .expect("god /global command should be recognized");
+
+    // C `cmdcmp(ptr, "global", 2)` only requires a 2-letter prefix.
+    let abbreviated = apply_admin_character_command(&mut world, &mut runtime, god_id, "/gl", 1)
+        .expect("god /gl abbreviation should be recognized");
+    assert_eq!(result.messages, abbreviated.messages);
+
+    assert_eq!(result.messages.len(), 73);
+    assert_eq!(result.messages[0], "=== Current Global Settings ===");
+    assert_eq!(result.messages[1], "--- Core Server Settings ---");
+    assert_eq!(
+        result.messages[2],
+        "Item decay time: 7200 ticks (5 minutes)"
+    );
+    assert_eq!(result.messages[9], "Sewer item respawn time: 24 hours");
+    assert_eq!(result.messages[11], "Global EXP modifier: 1.00");
+    assert_eq!(result.messages[16], "Holler distance: 75 tiles, Cost: 12");
+    assert_eq!(result.messages[30], "Jail location: 186,234 (area 3)");
+    assert_eq!(result.messages[34], "Maximum jewel count: 2");
+    assert_eq!(result.messages[35], "Max clan bonus percent: 20%");
+    assert!(result
+        .messages
+        .contains(&"--- Mine Settings ---".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Rare golem chance: 25".to_string()));
+    assert!(result
+        .messages
+        .contains(&"--- Drop Probability Settings ---".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Drop probability (low level): 1700 - (default 1700)".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Drop probability (mid level): 800- (default 800)".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Drop probability (high level): 532- (default 532)".to_string()));
+
+    // Changed settings are reflected live (read straight from
+    // `world.settings`, not cached).
+    world.settings.rare_golem_chance = 42;
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/global", 1)
+        .expect("god /global command should be recognized");
+    assert!(result
+        .messages
+        .contains(&"Rare golem chance: 42".to_string()));
+}

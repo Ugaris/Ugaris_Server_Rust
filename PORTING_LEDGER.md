@@ -7017,3 +7017,35 @@ startup log line unchanged.
   zero failures), `cargo build -p ugaris-server`/`cargo build --workspace`
   clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
   loop" with no panic.
+
+- Iteration 166 ported `/global` (`src/system/command.c:8226-8322`,
+  `cmdcmp(ptr, "global", 2)`, `CF_GOD`-gated), the read-only admin report
+  command that dumps every tunable server setting across 15 section
+  headers ("Core Server Settings" through "Drop Probability Settings").
+  Added `apply_global_settings_command`
+  (`crates/ugaris-server/src/commands_admin.rs`), wired into the same
+  `CF_GOD`-only `.or_else` dispatch chain as the `set*` tuning families
+  (right after `apply_legacy_game_settings_tuning_command`). Every single
+  field the C function reports already existed in `GameSettings` from
+  prior `set*`-family porting work (iterations 157-165), so this was a
+  pure formatting/read-only exercise with zero new `World`/`GameSettings`
+  state. All 73 lines (1 title + 72 data/section lines) transcribed
+  letter-for-letter, including the C source's own internal
+  inconsistency: the "Drop probability (low level)" line has a space
+  before its trailing dash while "(mid level)"/"(high level)" do not -
+  reproduced as-is, not "fixed". Added `"global"` to the non-GOD
+  exclusion `matches!` list for consistency with the other `CF_GOD`-gated
+  report/tuning commands. `setclanjewels`/`setweather`/
+  `setareaweather`/`clearweather` remain the only unwired items from the
+  P3 task note's remaining list, plus the ~200 unclassified `cmdcmp`
+  entries (`ac*`/`macro*`/`mil*`/item-skill-tunnel editors). 1 new test
+  in `crates/ugaris-server/src/tests/commands_admin.rs`: non-god gate,
+  the 2-letter `/gl` abbreviation (C `cmdcmp` `minlen=2`) producing
+  identical output to the full `/global`, exact line count (73) and
+  spot-checks across every section, plus a live-value check (mutating
+  `world.settings.rare_golem_chance` and confirming the next `/global`
+  call reflects it). `cargo fmt --all`, `cargo test --workspace` (1985
+  ugaris-core + 55 db + 3 net + 40 protocol + 683 server [+1], all green,
+  zero failures), `cargo build -p ugaris-server`/`cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic.

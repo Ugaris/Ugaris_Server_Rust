@@ -6924,9 +6924,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
   "top` / `"mirror"`), `setclanjewels` (`command.c:7563`, clan-treasure
   struct + clan log, different storage than `GameSettings`, not part of
   the just-closed knob family), `reloadloot`/`setlootmod` done (see
-  iteration 165); `global` (`command.c:8226-8330+`, the "dump every
-  setting" admin display command) still unported, and the rest of the
-  ~200 remaining `cmdcmp` entries in
+  iteration 165); `global` (`command.c:8226-8322`, the "dump every
+  setting" admin display command) done (see iteration 166), and the rest
+  of the ~200 remaining `cmdcmp` entries in
   `command.c` (mostly `CF_GOD`-gated `ac*` anticheat, `macro*`
   macro-detection, `mil*` military-mission admin, item/skill/tunnel
   editors, `setweather`/`setareaweather`/`clearweather`) not yet
@@ -7267,9 +7267,37 @@ Unlocks every quest NPC. Do these before any P4 area work.
   of either the success or the "root not found" text so the test doesn't
   depend on the sandbox having the data symlink). `cargo fmt --all`,
   `cargo test --workspace` (1985 ugaris-core + 55 db + 3 net + 40
-  protocol + 682 server [+2], all green, zero failures), `cargo build -p
-  ugaris-server` / `cargo build --workspace` clean with zero warnings,
-  10s boot-smoke confirmed "entering Rust game loop" with no panic.
+   protocol + 682 server [+2], all green, zero failures), `cargo build -p
+   ugaris-server` / `cargo build --workspace` clean with zero warnings,
+   10s boot-smoke confirmed "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 166): ported `/global` (`command.c:8226-8322`,
+  `cmdcmp(ptr, "global", 2)`, `CF_GOD`-gated), the read-only admin report
+  that dumps every tunable `GameSettings` value across 15 section
+  headers. Added `apply_global_settings_command` (`commands_admin.rs`),
+  wired into the same `CF_GOD`-only `.or_else` chain as the `set*`
+  tuning families (right after `apply_legacy_game_settings_tuning_command`)
+  since every single field it reports already existed in `GameSettings`
+  from prior `set*`-family porting work - no new `World`/`GameSettings`
+  state needed, purely a formatting exercise. All 73 lines (1 title + 72
+  data/section lines) transcribed letter-for-letter from the C source,
+  including its own internal inconsistency: the "Drop probability (low
+  level)" line has a space before its trailing dash while "(mid level)"
+  and "(high level)" do not - reproduced as-is, not "fixed". Added
+  `"global"` to the non-GOD exclusion `matches!` list for consistency
+  with the other `CF_GOD`-gated report/tuning commands. 1 new test in
+  `tests/commands_admin.rs`: non-god gate, the 2-letter `/gl` abbreviation
+  (C `cmdcmp` `minlen=2`) producing identical output to the full
+  `/global`, exact line count (73) and spot-checks across every section
+  (core server, exp modifiers, communication, tool, location, clan,
+  drop-probability incl. the spacing quirk), plus a live-value check
+  (mutating `world.settings.rare_golem_chance` and confirming the next
+  `/global` call reflects it, proving the command reads live state and
+  isn't cached). `cargo fmt --all`, `cargo test --workspace` (1985
+  ugaris-core + 55 db + 3 net + 40 protocol + 683 server [+1], all green,
+  zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
