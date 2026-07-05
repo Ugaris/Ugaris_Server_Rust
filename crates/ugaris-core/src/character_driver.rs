@@ -5081,6 +5081,7 @@ mod tests {
             driver_messages: Vec::new(),
             driver_memory: DriverMemory::default(),
             class: 0,
+            dungeonfighter: None,
         }
     }
 

@@ -847,6 +847,7 @@ mod tests {
             driver_messages: Vec::new(),
             driver_memory: ugaris_core::character_driver::DriverMemory::default(),
             class: 0,
+            dungeonfighter: None,
         }
     }
 

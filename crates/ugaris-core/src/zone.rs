@@ -451,6 +451,7 @@ impl ZoneLoader {
             merchant: None,
             driver_memory: crate::character_driver::DriverMemory::default(),
             class: template.class,
+            dungeonfighter: None,
         };
 
         if template.driver == CDR_SIMPLEBADDY {
@@ -533,10 +534,23 @@ impl ZoneLoader {
         if template.driver == crate::character_driver::CDR_DUNGEONFIGHTER {
             // C's `set_data(cn, DRD_DUNGEONFIGHTER, ...)` zero-initializes
             // `struct dungeonfighter_data` on first tick too - no zone-file
-            // args to read here either.
-            character.driver_state = Some(CharacterDriverState::Dungeonfighter(
-                crate::character_driver::DungeonfighterDriverData::default(),
-            ));
+            // args to read here; that data now lives on
+            // `Character::dungeonfighter` instead of `driver_state` (see
+            // its doc comment) so the field below can hold the *other*
+            // independent data blob C keeps for this same character: its
+            // own `dungeonfighter`'s tail `char_driver(CDR_SIMPLEBADDY,
+            // CDT_DRIVER, cn, ret, lastact)` call (`dungeon.c:2161`) reuses
+            // the SimpleBaddy driver's full idle-wander/auto-attack AI on
+            // this NPC, and that driver's own `NT_CREATE` handler parses
+            // `ch[cn].arg` as `struct simplebaddy_data` fields
+            // (`simple_baddy.c:174-189`) - the "warrior"/"mage"/"seyan"
+            // dungeon-guard templates do carry an `arg="aggressive=1;...
+            // "` string (`zones/13/dungeon.chr`) for exactly this purpose,
+            // even though `dungeonfighter` itself never reads `ch[cn].arg`.
+            character.dungeonfighter =
+                Some(crate::character_driver::DungeonfighterDriverData::default());
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }
         if template.driver == crate::character_driver::CDR_MILITARY_MASTER {
             character.driver_state = Some(CharacterDriverState::MilitaryMaster(
@@ -1641,5 +1655,41 @@ mod tests {
         assert_eq!(&regen.driver_data[4..8], &7_u32.to_le_bytes());
         assert_eq!(data.undead, 1);
         assert_eq!(data.patstep, 4);
+    }
+
+    #[test]
+    fn dungeonfighter_template_installs_simple_baddy_state_from_arg_and_own_data_field() {
+        // Mirrors `zones/13/dungeon.chr`'s real "warrior"/"mage"/"seyan"
+        // entries: `driver=52` (`CDR_DUNGEONFIGHTER`) with a SimpleBaddy-
+        // style `arg=` string that `dungeonfighter` itself never reads but
+        // its own tail `char_driver(CDR_SIMPLEBADDY, ...)` call does.
+        let chars = r#"
+            warrior:
+              name="Warrior"
+              driver=52
+              arg="aggressive=1;helper=0;scavenger=0;startdist=40;chardist=0;stopdist=80;"
+              V_HP=10
+            ;
+        "#;
+
+        let mut loader = ZoneLoader::new();
+        loader.load_character_templates_str(chars).unwrap();
+
+        let (character, _inventory_items) = loader
+            .instantiate_character_template("warrior", CharacterId(9))
+            .unwrap();
+
+        assert_eq!(
+            character.driver,
+            crate::character_driver::CDR_DUNGEONFIGHTER
+        );
+        assert!(character.driver_messages.is_empty());
+        assert!(character.dungeonfighter.is_some());
+        let Some(CharacterDriverState::SimpleBaddy(data)) = &character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.aggressive, 1);
+        assert_eq!(data.startdist, 40);
+        assert_eq!(data.stopdist, 80);
     }
 }

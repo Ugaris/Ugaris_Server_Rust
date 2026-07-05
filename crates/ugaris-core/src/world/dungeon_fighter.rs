@@ -21,25 +21,26 @@
 //! [`crate::clan::ClanRegistry::consume_simple_pot`] instead of round-
 //! tripping through an unported IPC channel.
 //!
-//! Not ported this slice (see `PORTING_TODO.md`'s Clan system task
-//! REMAINING notes): the tail `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER,
-//! cn, ret, lastact)` call that gives these NPCs their actual idle-
-//! wander/auto-attack combat AI - every existing Rust `process_simple_
-//! baddy_*` dispatch function requires `character.driver ==
-//! CDR_SIMPLEBADDY` *and* a `CharacterDriverState::SimpleBaddy` payload,
-//! neither of which a `CDR_DUNGEONFIGHTER` character has (its
-//! `driver_state` holds this module's own `DungeonfighterDriverData`
-//! instead - `Character::driver_state` is a single-variant slot, unlike
-//! C's `set_data`, which lets one character hold independent named data
-//! blobs for *both* drivers at once, `dungeon.c:2047` vs `simple_baddy.c:
-//! 164`). Reusing/extending the SimpleBaddy dispatch to also cover
-//! `CDR_DUNGEONFIGHTER` characters is a real architecture change (either
-//! a second driver-state field on `Character`, or merging the two
-//! structs) out of scope for one self-contained slice - until it lands,
-//! these NPCs still correctly react to being hit (`NT_GOTHIT`/`NT_DIDHIT`
-//! messages push unconditionally regardless of driver, see
-//! `world::hurt`) by drinking potions, but never initiate movement or
-//! attacks on their own.
+//! Also ported (a later slice, see `PORTING_TODO.md`'s Clan system task
+//! Progress Log): the tail `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn,
+//! ret, lastact)` call (`dungeon.c:2161`) that gives these NPCs their
+//! actual idle-wander/auto-attack combat AI. Every existing Rust
+//! `process_simple_baddy_*` dispatch function requires a
+//! `CharacterDriverState::SimpleBaddy` payload (most also independently
+//! check `character.driver == CDR_SIMPLEBADDY`, now widened to also
+//! accept `CDR_DUNGEONFIGHTER`); since `Character::driver_state` is a
+//! single-variant slot, unlike C's `set_data`, which lets one character
+//! hold independent named data blobs for *both* drivers at once
+//! (`dungeon.c:2047` vs `simple_baddy.c:164`), this module's own
+//! `DungeonfighterDriverData` now lives on the dedicated
+//! `Character::dungeonfighter` field instead, freeing `driver_state` to
+//! hold a real `SimpleBaddy(SimpleBaddyDriverData)` for these NPCs -
+//! parsed from the exact same zone-template `arg="aggressive=1;..."`
+//! string the "warrior"/"mage"/"seyan" `dungeon.chr` templates already
+//! carry for this purpose (`zone.rs`'s `CDR_DUNGEONFIGHTER` branch, reusing
+//! `apply_simple_baddy_create_message`), even though `dungeonfighter`
+//! itself never reads that arg string. See `Character::dungeonfighter`'s
+//! doc comment for the full precedent/rationale.
 //!
 //! `fighter_dead` (`dungeon.c:1899-1912`, the death hook wired via C's
 //! `ch_died_driver`) is intentionally not ported: its only effect is
@@ -79,10 +80,10 @@ impl World {
     /// the tail `char_driver(CDR_SIMPLEBADDY, ...)` call - see the module
     /// doc comment.
     fn process_dungeonfighter_messages(&mut self, fighter_id: CharacterId) {
-        let Some(CharacterDriverState::Dungeonfighter(mut dat)) = self
+        let Some(mut dat) = self
             .characters
             .get(&fighter_id)
-            .and_then(|character| character.driver_state.clone())
+            .and_then(|character| character.dungeonfighter)
         else {
             return;
         };
@@ -207,7 +208,7 @@ impl World {
         dat: DungeonfighterDriverData,
     ) {
         if let Some(character) = self.characters.get_mut(&fighter_id) {
-            character.driver_state = Some(CharacterDriverState::Dungeonfighter(dat));
+            character.dungeonfighter = Some(dat);
         }
     }
 

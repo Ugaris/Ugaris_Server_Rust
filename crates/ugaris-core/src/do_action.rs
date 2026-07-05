@@ -2958,6 +2958,7 @@ mod tests {
             driver_messages: Vec::new(),
             driver_memory: crate::character_driver::DriverMemory::default(),
             class: 0,
+            dungeonfighter: None,
         }
     }
 

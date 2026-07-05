@@ -3282,26 +3282,46 @@ Unlocks every quest NPC. Do these before any P4 area work.
    practice since this NPC is never meant to die) was ported in
    iteration 148 as `apply_dungeonmaster_death_from_hurt_event`
    (`crates/ugaris-server/src/world_events.rs`, mirroring the existing
-   `CDR_GATE_WELCOME` precedent), see Progress Log. REMAINING now:
-   `fighter_dead` (confirmed dead code in C itself - its only effect
-  decrements a `clan[cnr].dungeon.{warrior,mage,seyan}[0][level]`
-  sub-array that is never incremented anywhere in the C tree, so its
-  `> 0` guard never passes - not ported, per `dungeon_fighter.rs`'s
-  module doc comment); and the biggest remaining piece, giving
+   `CDR_GATE_WELCOME` precedent), see Progress Log. `fighter_dead`
+  (confirmed dead code in C itself - its only effect decrements a
+  `clan[cnr].dungeon.{warrior,mage,seyan}[0][level]` sub-array that is
+  never incremented anywhere in the C tree, so its `> 0` guard never
+  passes - not ported, per `dungeon_fighter.rs`'s module doc comment)
+  remains intentionally unported. The architecture gap this task's own
+  notes flagged as its biggest remaining piece - giving
   `CDR_DUNGEONFIGHTER` NPCs their actual idle-wander/auto-attack combat
-  AI (C's own `dungeonfighter` ends with `char_driver(CDR_SIMPLEBADDY,
-  CDT_DRIVER, cn, ret, lastact)`, reusing the SimpleBaddy driver's full
-  behavior on a character whose own `ch[cn].driver` is
-  `CDR_DUNGEONFIGHTER` - every existing Rust `process_simple_baddy_*`
-  dispatch function requires *both* `character.driver ==
-  CDR_SIMPLEBADDY` and a `CharacterDriverState::SimpleBaddy` payload,
-  neither of which these NPCs have now that their `driver_state` holds
-  this iteration's own `DungeonfighterDriverData` instead - unlike C's
-  `set_data`, which lets one character hold independent named data
-  blobs for both drivers at once, `Character::driver_state` is a
-  single-variant slot, so wiring this in is a real architecture change
-  (either a second driver-state field on `Character`, or merging the
-  two structs), not a one-line fix - left for a future slice).
+  AI via C's own `dungeonfighter`'s tail `char_driver(CDR_SIMPLEBADDY,
+  CDT_DRIVER, cn, ret, lastact)` call reusing the SimpleBaddy driver's
+  full behavior on the same character - was closed in iteration 149:
+  added a dedicated `Character::dungeonfighter: Option<
+  DungeonfighterDriverData>` field (mirroring the existing `merchant`/
+  `template_key` precedent of data living outside `driver_state`),
+  freeing `driver_state` to hold a real `CharacterDriverState::
+  SimpleBaddy(SimpleBaddyDriverData)` for these NPCs instead - parsed
+  from the same `arg="aggressive=1;..."` string the "warrior"/"mage"/
+  "seyan" `zones/13/dungeon.chr` templates already carry for exactly
+  this purpose (`zone.rs`'s `CDR_DUNGEONFIGHTER` branch now calls the
+  existing `apply_simple_baddy_create_message`, same as a real
+  `CDR_SIMPLEBADDY` template) even though `dungeonfighter` itself never
+  reads that arg string. Widened the driver gate in
+  `process_simple_baddy_attack_action_with_random`/
+  `process_simple_baddy_attack_actions_with_random`
+  (`world/npc_fight.rs`) and
+  `process_simple_baddy_noncombat_action_with_random_and_context`/
+  `process_simple_baddy_noncombat_actions_with_random_and_completions`
+  (`world/npc_idle.rs`) to accept `CDR_DUNGEONFIGHTER` alongside
+  `CDR_SIMPLEBADDY`; the per-tick NPC-message-dispatch filter in
+  `main.rs` already matched on `driver_state`'s variant rather than
+  `character.driver`, so it picked up these NPCs with no change. Left
+  alone on purpose: `hurt.rs`'s `apply_simple_baddy_death_driver` (the
+  Earthdemon death-explosion hook) and `area_mech.rs`'s warp-trial-door
+  room check, since C's own `ch_died_driver`'s `CDR_DUNGEONFIGHTER` case
+  only calls `fighter_dead` with no fallthrough to a SimpleBaddy death
+  handler, and the warp-trial-door mechanic is unrelated to raid
+  catacombs. 4 new tests in `world::tests::dungeon_fighter` (driver_state/
+  own-field shape, a real attack via both the single and aggregate
+  dispatch entry points) plus 1 in `zone::tests` (template instantiation
+  from a `dungeon.chr`-shaped `arg=` string).
   `dungeondoor`'s own `first_solve` jewel-stealing/`NTID_DUNGEON`-notify
   side effects (`area/13/dungeon.c:1855-1891` plus `clan.c:1343-1372`'s
   `'J'` chat-channel handler for the actual economy mutation) were
@@ -3387,8 +3407,56 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `struct clan_dungeon` (`warrior`/`mage`/`seyan`/`teleport`/`fake`/
   `key`) remain out of scope, unchanged from before.
 
-  Progress Log:
-  - 2026-07-05 (iteration 148): ported `immortal_dead`'s one-line
+   Progress Log:
+   - 2026-07-05 (iteration 149): closed the `CDR_DUNGEONFIGHTER`/
+     SimpleBaddy AI architecture gap flagged by the previous five
+     iterations' notes as this task's biggest remaining piece: added
+     `Character::dungeonfighter: Option<DungeonfighterDriverData>`
+     (`crates/ugaris-core/src/entity.rs`) so `dungeon.c`'s tail
+     `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret, lastact)` call
+     (`dungeon.c:2161`) can be modeled by giving these NPCs a real
+     `CharacterDriverState::SimpleBaddy` payload (parsed from the
+     `arg="aggressive=1;..."` string `zones/13/dungeon.chr`'s "warrior"/
+     "mage"/"seyan" entries already carry, via `zone.rs`'s
+     `CDR_DUNGEONFIGHTER` branch now calling the existing
+     `apply_simple_baddy_create_message`) while keeping their own
+     potion-budget counters on the new dedicated field instead of
+     `driver_state`. Updated `store_dungeonfighter_data`/
+     `process_dungeonfighter_messages` (`world/dungeon_fighter.rs`) to
+     read/write the new field. Widened the `character.driver ==
+     CDR_SIMPLEBADDY` gate to also accept `CDR_DUNGEONFIGHTER` in
+     `process_simple_baddy_attack_action_with_random`/
+     `process_simple_baddy_attack_actions_with_random`
+     (`world/npc_fight.rs`) and
+     `process_simple_baddy_noncombat_action_with_random_and_context`/
+     `process_simple_baddy_noncombat_actions_with_random_and_completions`
+     (`world/npc_idle.rs`); left `hurt.rs`'s `apply_simple_baddy_death_
+     driver` and `area_mech.rs`'s warp-trial-door room check unchanged
+     since C's own `ch_died_driver`'s `CDR_DUNGEONFIGHTER` case never
+     falls through to a SimpleBaddy death handler and the warp-trial
+     mechanic is unrelated to raid catacombs. Since the new field
+     appears on every `Character` struct literal in the tree (not just
+     `#[serde(default)]`-covered JSON paths), added `dungeonfighter:
+     None` (or the populated equivalent) at all ~18 real construction
+     sites across both crates - a mechanical, exhaustively-verified
+     change, not a design one. 4 new tests in `world::tests::
+     dungeon_fighter` (driver_state/own-field shape on spawn, a real
+     attack reaching completion via both
+     `process_simple_baddy_attack_action` and the aggregate `_with_
+     random` dispatcher) plus 1 in `zone::tests` (template
+     instantiation from a `dungeon.chr`-shaped `arg=` string asserting
+     `aggressive`/`startdist`/`stopdist` land in the `SimpleBaddy`
+     payload while `dungeonfighter` stays populated). `cargo fmt --all`,
+     `cargo test --workspace` (1940 ugaris-core + 55 db + 3 net + 40
+     protocol + 604 server, all green, zero failures), `cargo build -p
+     ugaris-server` clean with zero
+     warnings, boot-smoke confirmed "entering Rust game loop" with no
+     panic. Still open in this sprawling task (unrelated to this
+     slice): the DB-backed clan repository itself, and the
+     `struct clan_dungeon` guard-count fields (`warrior`/`mage`/`seyan`/
+     `teleport`/`fake`/`key`) - see the task description above for the
+     full remaining scope.
+   - 2026-07-05 (iteration 148): ported `immortal_dead`'s one-line
     bug-log message for `CDR_DUNGEONMASTER` (`dungeon.c:1735-1737,
     2197-2200`) as `apply_dungeonmaster_death_from_hurt_event`
     (`crates/ugaris-server/src/world_events.rs`), mirroring the

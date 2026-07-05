@@ -89,7 +89,11 @@ impl World {
         let Some(attacker) = self.characters.get(&character_id).cloned() else {
             return false;
         };
-        if attacker.driver != CDR_SIMPLEBADDY
+        // C: `dungeonfighter`'s own tail `char_driver(CDR_SIMPLEBADDY,
+        // CDT_DRIVER, cn, ret, lastact)` call (`dungeon.c:2161`) reuses this
+        // exact attack logic for `CDR_DUNGEONFIGHTER` guard NPCs too - see
+        // `Character::dungeonfighter`'s doc comment.
+        if (attacker.driver != CDR_SIMPLEBADDY && attacker.driver != CDR_DUNGEONFIGHTER)
             || attacker.action != 0
             || attacker.flags.contains(CharacterFlags::DEAD)
         {
@@ -2402,7 +2406,7 @@ impl World {
             .characters
             .iter()
             .filter_map(|(&character_id, character)| {
-                (character.driver == CDR_SIMPLEBADDY
+                ((character.driver == CDR_SIMPLEBADDY || character.driver == CDR_DUNGEONFIGHTER)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

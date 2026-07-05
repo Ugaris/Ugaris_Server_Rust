@@ -405,6 +405,24 @@ pub struct Character {
     /// template).
     #[serde(default)]
     pub class: i32,
+    /// C `struct dungeonfighter_data` (`dungeon.c:2027-2032`), stored
+    /// independently of `driver_state` for `CDR_DUNGEONFIGHTER` NPCs.
+    /// C's own `set_data` lets one character hold independent named data
+    /// blobs for multiple drivers at once (`dungeon.c:2047` stores this
+    /// alongside a *separate* `struct simplebaddy_data` via
+    /// `DRD_SIMPLEBADDYDRIVER`, since `dungeonfighter`'s own dispatch ends
+    /// with `char_driver(CDR_SIMPLEBADDY, ...)` reusing the SimpleBaddy
+    /// driver's full idle-wander/auto-attack AI on the same character,
+    /// `dungeon.c:2161`). `Character::driver_state` is a single-variant
+    /// slot, so `CDR_DUNGEONFIGHTER` characters keep their
+    /// `SimpleBaddyDriverData` in `driver_state` (letting every existing
+    /// `process_simple_baddy_*` dispatch function work unmodified once its
+    /// `character.driver == CDR_SIMPLEBADDY` gate also accepts
+    /// `CDR_DUNGEONFIGHTER`) and their `DungeonfighterDriverData` here
+    /// instead, mirroring the existing `merchant`/`template_key` precedent
+    /// of dedicated fields living outside `driver_state`.
+    #[serde(default)]
+    pub dungeonfighter: Option<crate::character_driver::DungeonfighterDriverData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -608,6 +626,7 @@ mod tests {
             driver_messages: Vec::new(),
             driver_memory: crate::character_driver::DriverMemory::default(),
             class: 0,
+            dungeonfighter: None,
         };
 
         character.push_driver_message(crate::character_driver::NT_CREATE, 1, 2, 3);

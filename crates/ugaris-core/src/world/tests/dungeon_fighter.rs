@@ -6,8 +6,9 @@ fn fighter(id: u32, cnr: u16, warrior: bool) -> Character {
     let mut fighter = character(id);
     fighter.name = "Warrior1".into();
     fighter.driver = CDR_DUNGEONFIGHTER;
-    fighter.driver_state = Some(CharacterDriverState::Dungeonfighter(
-        crate::character_driver::DungeonfighterDriverData::default(),
+    fighter.dungeonfighter = Some(crate::character_driver::DungeonfighterDriverData::default());
+    fighter.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        crate::character_driver::SimpleBaddyDriverData::default(),
     ));
     fighter.rest_x = cnr;
     if warrior {
@@ -26,14 +27,11 @@ fn dungeonfighter_data(
     world: &World,
     id: CharacterId,
 ) -> crate::character_driver::DungeonfighterDriverData {
-    match world
+    world
         .characters
         .get(&id)
-        .and_then(|c| c.driver_state.clone())
-    {
-        Some(CharacterDriverState::Dungeonfighter(data)) => data,
-        other => panic!("expected Dungeonfighter driver state, got {other:?}"),
-    }
+        .and_then(|c| c.dungeonfighter)
+        .expect("expected Character::dungeonfighter to be populated")
 }
 
 fn found_clan(world: &mut World, name: &str) -> u16 {
@@ -452,12 +450,10 @@ fn dungeonfighter_respects_simple_pot_budget_of_five() {
     let cnr = found_clan(&mut world, "TestClan");
     let mut warrior = fighter(1, cnr, true);
     warrior.hp = 10 * POWERSCALE;
-    warrior.driver_state = Some(CharacterDriverState::Dungeonfighter(
-        crate::character_driver::DungeonfighterDriverData {
-            simple_pots_taken: 5,
-            ..Default::default()
-        },
-    ));
+    warrior.dungeonfighter = Some(crate::character_driver::DungeonfighterDriverData {
+        simple_pots_taken: 5,
+        ..Default::default()
+    });
     assert!(world.spawn_character(warrior, 10, 10));
     assert!(world.clan_registry.bump_simple_pot(cnr, 0, 0));
 
@@ -557,4 +553,89 @@ fn dungeonfighter_skips_alchemy_potion_when_hp_below_half() {
         world.clan_registry.identity(cnr).unwrap().economy.alc_pot[0][1],
         1
     );
+}
+
+// --- reused SimpleBaddy combat AI (`char_driver(CDR_SIMPLEBADDY, ...)`
+// tail call, `dungeon.c:2161`) -----------------------------------------
+
+#[test]
+fn dungeonfighter_npc_is_spawned_with_simple_baddy_driver_state_and_own_data_field() {
+    // The `fighter()` test helper mirrors `zone.rs`'s real
+    // `CDR_DUNGEONFIGHTER` template-instantiation branch: `driver_state`
+    // holds `SimpleBaddy` (so it can attack/wander like any other
+    // SimpleBaddy) while `Character::dungeonfighter` holds this driver's
+    // own potion-budget counters independently.
+    let mut world = World::default();
+    let cnr = found_clan(&mut world, "TestClan");
+    let warrior = fighter(1, cnr, true);
+    assert!(world.spawn_character(warrior, 10, 10));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(character.driver, CDR_DUNGEONFIGHTER);
+    assert!(matches!(
+        character.driver_state,
+        Some(CharacterDriverState::SimpleBaddy(_))
+    ));
+    assert!(character.dungeonfighter.is_some());
+}
+
+#[test]
+fn dungeonfighter_npc_attacks_visible_enemy_via_reused_simple_baddy_dispatch() {
+    // C's `dungeonfighter` ends every tick with `char_driver(CDR_
+    // SIMPLEBADDY, CDT_DRIVER, cn, ret, lastact)`, reusing the SimpleBaddy
+    // driver's full attack logic on a `CDR_DUNGEONFIGHTER` character.
+    // `process_simple_baddy_attack_action`'s own driver gate must accept
+    // `CDR_DUNGEONFIGHTER` (not just `CDR_SIMPLEBADDY`) for this to fire.
+    let mut world = World::default();
+    let cnr = found_clan(&mut world, "TestClan");
+    let mut warrior = fighter(1, cnr, true);
+    warrior.values[0][CharacterValue::Fireball as usize] = 20;
+    warrior.values[0][CharacterValue::Speed as usize] = 50;
+    if let Some(CharacterDriverState::SimpleBaddy(data)) = warrior.driver_state.as_mut() {
+        data.enemies.push(SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 0,
+            visible: true,
+            last_x: 15,
+            last_y: 10,
+        });
+    }
+    let target = character(2);
+    assert!(world.spawn_character(warrior, 10, 10));
+    assert!(world.spawn_character(target, 15, 10));
+    world.map.tile_mut(15, 10).unwrap().light = 255;
+
+    assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+
+    let npc = world.characters.get(&CharacterId(1)).unwrap();
+    assert_ne!(npc.action, 0);
+    // The dungeonfighter's own potion-budget data must survive untouched.
+    assert!(npc.dungeonfighter.is_some());
+}
+
+#[test]
+fn dungeonfighter_aggregate_attack_dispatch_includes_dungeonfighter_driver() {
+    let mut world = World::default();
+    let cnr = found_clan(&mut world, "TestClan");
+    let mut warrior = fighter(1, cnr, true);
+    warrior.values[0][CharacterValue::Fireball as usize] = 20;
+    warrior.values[0][CharacterValue::Speed as usize] = 50;
+    if let Some(CharacterDriverState::SimpleBaddy(data)) = warrior.driver_state.as_mut() {
+        data.enemies.push(SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 0,
+            visible: true,
+            last_x: 15,
+            last_y: 10,
+        });
+    }
+    let target = character(2);
+    assert!(world.spawn_character(warrior, 10, 10));
+    assert!(world.spawn_character(target, 15, 10));
+    world.map.tile_mut(15, 10).unwrap().light = 255;
+
+    let attacks = world.process_simple_baddy_attack_actions_with_random(1, |_| 0);
+    assert_eq!(attacks, 1);
 }
