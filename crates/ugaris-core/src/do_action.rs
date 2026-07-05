@@ -139,6 +139,26 @@ pub fn turn(character: &mut Character, direction: u8) -> Result<bool, DoError> {
 }
 
 pub fn speed_ticks(speedy: i32, mode: SpeedMode, ticks: i32) -> i32 {
+    speed_ticks_with_weather_movement(speedy, mode, ticks, 100)
+}
+
+/// C `speed()` (`tool.c:118-160`) folds `modify_movement_speed`'s weather
+/// multiplier (`module/weather/weather.c:477-493`) directly into `speedy`
+/// right before the final tick-scaling divisor `f` is computed:
+/// `speedy = modify_movement_speed(cn, speedy)` runs after the mode
+/// adjustment but before `f = 0.75 + speedy / 288.0`. `weather_movement_percent`
+/// is the already-resolved percentage (100 = no change) after the caller has
+/// applied C's `MOD_WEATHER_EFFECT_SLOW` flag gate and the indoor-tile check
+/// (`map[m].flags & MF_INDOORS`) - `do_walk` resolves the indoor check itself
+/// since it already has the character's current tile; the weather-flag gate
+/// and `move_mod` table lookup live in `ugaris-server`'s weather module,
+/// which has no `ugaris-core` visibility.
+pub fn speed_ticks_with_weather_movement(
+    speedy: i32,
+    mode: SpeedMode,
+    ticks: i32,
+    weather_movement_percent: i32,
+) -> i32 {
     let mut speedy = if speedy > 0 {
         speedy / 2
     } else {
@@ -151,6 +171,8 @@ pub fn speed_ticks(speedy: i32, mode: SpeedMode, ticks: i32) -> i32 {
     if mode == SpeedMode::Stealth {
         speedy -= 40;
     }
+
+    speedy = speedy * weather_movement_percent / 100;
 
     let f = (0.75 + speedy as f64 / 288.0).clamp(0.2, 2.0);
     ((ticks as f64 / f) as i32).clamp(2, 255)
@@ -194,6 +216,7 @@ pub fn do_walk(
     map: &mut MapGrid,
     direction: u8,
     area_id: u16,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -215,6 +238,10 @@ pub fn do_walk(
         .tile(current_x, current_y)
         .ok_or(DoError::IllegalCoords)?;
     let mut cost = movement_cost(character, current_tile, area_id);
+    // C `modify_movement_speed` (`module/weather/weather.c:477-493`) checks
+    // the character's *current* (pre-move) tile - captured now before the
+    // later mutable borrow of `map` for the target tile's `TMOVEBLOCK` flag.
+    let current_tile_indoors = current_tile.flags.contains(MapFlags::INDOORS);
 
     let target_tile = map.tile(target_x, target_y).ok_or(DoError::IllegalCoords)?;
     if target_tile
@@ -248,11 +275,17 @@ pub fn do_walk(
         .flags
         .insert(MapFlags::TMOVEBLOCK);
 
+    let effective_weather_movement_percent = if current_tile_indoors {
+        100
+    } else {
+        weather_movement_percent
+    };
     character.action = action::WALK;
-    character.duration = speed_ticks(
+    character.duration = speed_ticks_with_weather_movement(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
         cost,
+        effective_weather_movement_percent,
     );
     if character.speed_mode == SpeedMode::Fast {
         character.endurance -= endurance_cost(character);
@@ -1633,6 +1666,22 @@ mod tests {
     }
 
     #[test]
+    fn speed_ticks_with_weather_movement_applies_percent_before_final_scale() {
+        // 100% is a no-op, identical to the weather-unaware `speed_ticks`.
+        assert_eq!(
+            speed_ticks_with_weather_movement(100, SpeedMode::Normal, 8, 100),
+            speed_ticks(100, SpeedMode::Normal, 8)
+        );
+        assert_eq!(speed_ticks(100, SpeedMode::Normal, 8), 8);
+        // C `weather.c` Storm-heavy `move_mod` (70): the same character
+        // takes one extra tick to complete the same action.
+        assert_eq!(
+            speed_ticks_with_weather_movement(100, SpeedMode::Normal, 8, 70),
+            9
+        );
+    }
+
+    #[test]
     fn endurance_cost_uses_athlete_profession_reduction() {
         let mut character = character();
         assert_eq!(endurance_cost(&character), 250);
@@ -1648,7 +1697,7 @@ mod tests {
         character.x = 10;
         character.y = 10;
 
-        do_walk(&mut character, &mut map, Direction::Right as u8, 1).unwrap();
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100).unwrap();
 
         assert_eq!(character.action, action::WALK);
         assert_eq!(character.tox, 11);
@@ -1671,14 +1720,14 @@ mod tests {
         map.set_flags(11, 10, MapFlags::MOVEBLOCK);
 
         assert_eq!(
-            do_walk(&mut character, &mut map, Direction::Right as u8, 1),
+            do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100),
             Err(DoError::Blocked)
         );
 
         map.set_flags(11, 10, MapFlags::empty());
         map.set_flags(10, 11, MapFlags::MOVEBLOCK);
         assert_eq!(
-            do_walk(&mut character, &mut map, Direction::RightDown as u8, 1),
+            do_walk(&mut character, &mut map, Direction::RightDown as u8, 1, 100),
             Err(DoError::Blocked)
         );
     }
@@ -1694,10 +1743,45 @@ mod tests {
         character.y = 10;
         map.tile_mut(10, 10).unwrap().ground_sprite = 59423;
 
-        do_walk(&mut character, &mut map, Direction::Right as u8, 1).unwrap();
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100).unwrap();
 
         assert_eq!(character.duration, speed_ticks(0, SpeedMode::Fast, 24));
         assert_eq!(character.endurance, 750);
+    }
+
+    #[test]
+    fn do_walk_slows_down_outdoors_under_a_weather_movement_percent() {
+        let mut map = MapGrid::new(20, 20);
+        let mut character = character();
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.x = 10;
+        character.y = 10;
+        character.values[0][CharacterValue::Speed as usize] = 100;
+
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 70).unwrap();
+
+        assert_eq!(
+            character.duration,
+            speed_ticks_with_weather_movement(100, SpeedMode::Normal, 8, 70)
+        );
+        assert_ne!(character.duration, speed_ticks(100, SpeedMode::Normal, 8));
+    }
+
+    #[test]
+    fn do_walk_ignores_weather_movement_percent_indoors() {
+        let mut map = MapGrid::new(20, 20);
+        map.set_flags(10, 10, MapFlags::INDOORS);
+        let mut character = character();
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.x = 10;
+        character.y = 10;
+        character.values[0][CharacterValue::Speed as usize] = 100;
+
+        // C `modify_movement_speed` returns `speed` unmodified indoors, even
+        // though the weather-slow flag/percent is passed in.
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 70).unwrap();
+
+        assert_eq!(character.duration, speed_ticks(100, SpeedMode::Normal, 8));
     }
 
     #[test]

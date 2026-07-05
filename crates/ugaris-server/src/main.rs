@@ -812,6 +812,20 @@ async fn main() -> anyhow::Result<()> {
                 if weather_changed {
                     broadcast_weather_packet(&world, &mut runtime, config.area_id);
                 }
+                // C `modify_movement_speed` (`module/weather/weather.c:
+                // 477-493`): refresh the live movement-slow percent every
+                // tick so `do_walk` (via `World.settings.
+                // weather_movement_percent`) applies it exactly like C's
+                // `speed()` call folds it in. Gated on `area_has_weather`
+                // like the damage roll below - no-weather areas (indoor/
+                // underground/arena) never apply the autonomous cycle's
+                // current weather type to movement.
+                world.settings.weather_movement_percent =
+                    if area_has_weather(i64::from(config.area_id)) {
+                        current_movement_percent(&runtime.weather)
+                    } else {
+                        100
+                    };
                 if runtime.weather.weather_effects & WEATHER_EFFECT_DAMAGE != 0
                     && area_has_weather(i64::from(config.area_id))
                 {

@@ -342,15 +342,38 @@ impl World {
                 }
             }
             PlayerActionCode::WalkDir => {
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 let Some(character) = self.characters.get_mut(&character_id) else {
                     return false;
                 };
                 let direction = player.action.arg1 as u8;
-                if do_walk(character, &mut self.map, direction, area_id).is_ok() {
+                if do_walk(
+                    character,
+                    &mut self.map,
+                    direction,
+                    area_id,
+                    weather_movement_percent,
+                )
+                .is_ok()
+                {
                     true
                 } else if diagonal_slide_alternates(direction).is_some_and(|(alt1, alt2)| {
-                    do_walk(character, &mut self.map, alt1 as u8, area_id).is_ok()
-                        || do_walk(character, &mut self.map, alt2 as u8, area_id).is_ok()
+                    do_walk(
+                        character,
+                        &mut self.map,
+                        alt1 as u8,
+                        area_id,
+                        weather_movement_percent,
+                    )
+                    .is_ok()
+                        || do_walk(
+                            character,
+                            &mut self.map,
+                            alt2 as u8,
+                            area_id,
+                            weather_movement_percent,
+                        )
+                        .is_ok()
                 }) {
                     true
                 } else {
@@ -1060,10 +1083,19 @@ impl World {
         direction: Direction,
         area_id: u16,
     ) -> bool {
+        let weather_movement_percent = self.settings.weather_movement_percent;
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        if do_walk(character, &mut self.map, direction as u8, area_id).is_ok() {
+        if do_walk(
+            character,
+            &mut self.map,
+            direction as u8,
+            area_id,
+            weather_movement_percent,
+        )
+        .is_ok()
+        {
             return true;
         }
 
@@ -1094,10 +1126,19 @@ impl World {
         direction: Direction,
         area_id: u16,
     ) -> bool {
+        let weather_movement_percent = self.settings.weather_movement_percent;
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        if do_walk(character, &mut self.map, direction as u8, area_id).is_ok() {
+        if do_walk(
+            character,
+            &mut self.map,
+            direction as u8,
+            area_id,
+            weather_movement_percent,
+        )
+        .is_ok()
+        {
             return true;
         }
         let _ = turn(character, direction as u8);
@@ -1235,10 +1276,18 @@ impl World {
         direction: Direction,
         area_id: u16,
     ) -> bool {
+        let weather_movement_percent = self.settings.weather_movement_percent;
         self.characters
             .get_mut(&character_id)
             .is_some_and(|character| {
-                do_walk(character, &mut self.map, direction as u8, area_id).is_ok()
+                do_walk(
+                    character,
+                    &mut self.map,
+                    direction as u8,
+                    area_id,
+                    weather_movement_percent,
+                )
+                .is_ok()
             })
     }
 

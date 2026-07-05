@@ -102,6 +102,14 @@ pub struct GameSettings {
     pub exp_clan_reflection_multiplier: f64,
     pub max_clan_bonus_percent: i32,
     pub tester_heal_threshold: f64,
+    /// C `modify_movement_speed`'s resolved outdoor weather multiplier
+    /// (`module/weather/weather.c:477-493`), refreshed every tick by
+    /// `ugaris-server`'s weather module from its own `WeatherEffectData`
+    /// table (`ugaris-core` has no visibility into the weather table
+    /// itself - see `do_action::speed_ticks_with_weather_movement` and
+    /// `do_walk`, which apply this value and the indoor-tile override).
+    /// 100 = no weather effect (C's `MOD_WEATHER_EFFECT_SLOW` flag unset).
+    pub weather_movement_percent: i32,
 }
 
 impl Default for GameSettings {
@@ -199,6 +207,7 @@ impl Default for GameSettings {
             exp_clan_reflection_multiplier: 0.70,
             max_clan_bonus_percent: 20,
             tester_heal_threshold: 0.5,
+            weather_movement_percent: 100,
         }
     }
 }

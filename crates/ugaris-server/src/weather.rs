@@ -332,6 +332,25 @@ pub(crate) fn weather_damage_amount(weather_type: i32, intensity: usize) -> i32 
     weather_effect_data(weather_type, intensity).damage
 }
 
+/// C `modify_movement_speed`'s table lookup (`module/weather/weather.c:
+/// 477-493`): resolves `world_weather.weather_effects & MOD_WEATHER_EFFECT_SLOW`
+/// and the `move_mod` cell into the single percentage `ugaris-core`'s
+/// `do_action::speed_ticks_with_weather_movement`/`do_walk` apply (100 = no
+/// change, matching C's early return when the flag is unset). The
+/// indoor-tile override lives in `do_walk` itself, since C's own check uses
+/// the *character's* position, not anything area/weather-global.
+pub(crate) fn current_movement_percent(weather: &WeatherState) -> i32 {
+    if weather.weather_effects & WEATHER_EFFECT_SLOW == 0 {
+        return 100;
+    }
+    if !is_valid_weather_type(i64::from(weather.current_weather))
+        || !is_valid_weather_intensity(weather.weather_intensity as i64)
+    {
+        return 100;
+    }
+    weather_effect_data(weather.current_weather, weather.weather_intensity).move_mod
+}
+
 /// C `weather.c:104-127`'s per-area config table's `has_weather = false`
 /// entries: underground/indoor/arena areas where weather never applies at
 /// all (`area_has_weather`).

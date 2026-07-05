@@ -5124,15 +5124,30 @@ Unlocks every quest NPC. Do these before any P4 area work.
   state machine exists in `crates/ugaris-server/src/weather.rs` (admin
   commands only). Port the actual per-tick weather effects: `SV_*`
   weather packets to clients (check client protocol), movement slow,
-  visibility reduction, damage weather, area gating. REMAINING: movement-
-  speed/visibility-range/skill-value modifiers (`modify_movement_speed`/
-  `modify_visibility_range`/`modify_skill_value`, `weather.c:477-527`)
-  aren't wired into `do_action::speed_ticks`/`see::char_see_char` -
-  `WeatherState` lives in `ugaris-server`, not `World`, and `speed_ticks`/
-  `char_see_char` have many call sites across `do_action.rs`/`actions.rs`/
-  `npc_fight.rs`/`spells.rs`/`see.rs`, so plumbing a weather modifier
-  through needs its own slice (the `weather_effect_data` table already
-  has `move_mod`/`vis_mod` ready for it). Lightning strikes
+  visibility reduction, damage weather, area gating. REMAINING:
+  `modify_movement_speed` (`weather.c:477-493`) was wired in iteration 126
+  for player walking only - see Progress Log; `modify_visibility_range`/
+  `modify_skill_value` (`weather.c:495-527`) are still not wired into
+  `see::char_see_char`/any skill-value accessor. `char_see_char` has ~28
+  call sites across `aclerk.rs`/`bank.rs`/`clanclerk.rs`/`clanmaster.rs`/
+  `gate_fight.rs`/`gatekeeper.rs`/`hurt.rs`/`lab2_undead.rs`/`merchant.rs`/
+  `military.rs`/`npc_fight.rs`/`npc_messages.rs`/`text.rs`/`trader.rs`
+  (plus `ugaris-server/src/map_sync.rs`), none of which currently receive
+  a `World`/weather-aware parameter, so wiring visibility needs its own
+  slice mirroring the movement one below. `modify_skill_value` additionally
+  needs its C `skill_mods[V_MAX]` per-skill table restored in
+  `ugaris-server/src/weather.rs`'s `WeatherEffectData` (currently
+  collapsed to a single `has_skill_mod: bool`) before any real per-skill
+  delta can be applied - also unstarted. `speed_ticks`'s other ~25
+  non-walking call sites (attack/spell/heal/use durations in
+  `do_action.rs`/`actions.rs`/`npc_fight.rs`/`spells.rs`) still call the
+  weather-unaware `speed_ticks` wrapper (100% = no-op) rather than
+  `speed_ticks_with_weather_movement`, since most of those `do_*` functions
+  don't take a `MapGrid` parameter yet (needed for the indoor-tile check)
+  - a real gap vs. C (which folds the same modifier into every `speed()`
+  call, not just walking), left as a documented simplification pending a
+  future slice that threads `map`/weather through those signatures too.
+  Lightning strikes
   (`handle_lightning_strike`) and elemental debuffs
   (`apply_elemental_debuffs`/`get_elemental_debuff`/
   `modify_fire_resistance`/`modify_cold_resistance`/
@@ -5229,6 +5244,53 @@ Unlocks every quest NPC. Do these before any P4 area work.
   +4 new server tests), `cargo build -p ugaris-server` clean with zero
   warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
   panics.
+  Progress Log (iteration 126): ported `modify_movement_speed`
+  (`weather.c:477-493`) end-to-end for player walking, the first of the
+  three REMAINING modifiers. `crates/ugaris-core/src/do_action.rs`
+  gained `speed_ticks_with_weather_movement` (the shared math from
+  `speed_ticks`, plus the `speedy = speedy * weather_movement_percent /
+  100` step C applies right before the final `f` divisor calc);
+  `speed_ticks` itself now just delegates with `100` (no behavior change
+  at its ~25 other call sites). `do_walk` gained a
+  `weather_movement_percent: i32` parameter and resolves C's indoor-tile
+  override itself (`current_tile_indoors`, captured before the later
+  mutable borrow for `TMOVEBLOCK`) - callers pass the *outdoor* percent,
+  `do_walk` forces `100` indoors, exactly matching `modify_movement_speed`'s
+  own `map[m].flags & MF_INDOORS` early return. Added
+  `GameSettings::weather_movement_percent` (default `100`) as the
+  `ugaris-core`-visible resolved value, following the existing
+  `exp_modifier`/`hardcore_exp_bonus` precedent (live-tunable/external
+  values get mirrored onto `World.settings` rather than threaded through
+  function parameters); all 4 `do_walk` call sites in
+  `crates/ugaris-core/src/world/actions.rs` (`apply_player_action_setup`'s
+  `WalkDir` arm incl. both diagonal-slide alternates, `walk_or_use_driver`,
+  `walk_swap_or_use_driver`, `setup_walk_direction`) now read
+  `self.settings.weather_movement_percent`. Server side:
+  `crates/ugaris-server/src/weather.rs` gained `current_movement_percent`
+  (mirrors the existing `weather_damage_amount` pattern - resolves the
+  `WEATHER_EFFECT_SLOW` flag gate + `WeatherEffectData::move_mod` table
+  lookup into one percentage, `ugaris-core` stays unaware of the weather
+  table itself); the tick loop in `main.rs` now refreshes
+  `world.settings.weather_movement_percent` every tick right after
+  `update_weather_tick`, gated on `area_has_weather` exactly like the
+  existing damage-roll gate (no-weather areas always resolve to `100`).
+  5 new tests: 3 in `do_action.rs` (`speed_ticks_with_weather_movement`
+  percent math incl. the 100%-is-a-no-op identity, `do_walk` actually
+  slowing down outdoors under a non-100 percent, `do_walk` ignoring the
+  percent entirely indoors) plus updated the 3 existing `do_walk` test
+  call sites for the new parameter. REMAINING (updated): visibility
+  (`modify_visibility_range`) and skill-value (`modify_skill_value`)
+  modifiers are still fully unported (~28 `char_see_char` call sites, no
+  `World`/weather-aware parameter anywhere yet); `speed_ticks`'s other
+  ~25 non-walking call sites (attack/spell/heal/use durations) still use
+  the weather-unaware wrapper since most of those `do_*` functions don't
+  take a `MapGrid` parameter needed for the indoor check - a known,
+  documented gap vs. C's uniform `speed()` application, left for a future
+  slice. `cargo fmt --all`, `cargo test --workspace` (1718 ugaris-core
+  [+3] + 55 protocol + 3 net + 38 db + 575 server, all green, zero
+  failures), `cargo build -p ugaris-server` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panics
+  (this iteration touches the runtime tick loop).
 
 - [ ] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +
