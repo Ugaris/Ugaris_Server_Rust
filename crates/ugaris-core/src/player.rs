@@ -3095,6 +3095,15 @@ impl PlayerRuntime {
         self.random_shrine_used_words[word] |= bit;
     }
 
+    /// C `cmd_clearrd`'s per-bit clear (`command.c:1888-1932`): the
+    /// counterpart to [`Self::mark_random_shrine_used`] that unsets a
+    /// single shrine's "used" bit instead of setting it.
+    pub fn clear_random_shrine_used(&mut self, shrine: u8) {
+        let word = usize::from(shrine / 32);
+        let bit = 1u32 << (shrine & 31);
+        self.random_shrine_used_words[word] &= !bit;
+    }
+
     pub fn treasure_dig_last_seconds(&self, dig_index: u8) -> u64 {
         self.treasure_dig_last_seconds
             .get(usize::from(dig_index))

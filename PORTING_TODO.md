@@ -6977,9 +6977,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
    third of the C command is skipped, that feature has no Rust port at
    all yet),
     `/punish`, `/rename`, `/showppd`/`/showvalues`, various pentagram
-   `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
-   like `/changetunnel`/`/settunnel`/`/cleartunnel`/`/setrd`/`/clearrd`/
-   `/solverd`) not yet cross-referenced (`/shutdown` done - see iteration
+   `setpent*`/`resetpent` admin commands, and clan/tunnel editors like
+   `/changetunnel`/`/settunnel`/`/cleartunnel`) not yet cross-referenced
+   (`/shutdown` done - see iteration
    179, `start_shutdown`/`shutdown_bg`/`shutdown_warn`, new
    `shutdown.rs`, which also wired the pre-existing but previously-dead
    `LoginRequest::no_login`/`LoginOutcome::Shutdown` plumbing; `/orbs`
@@ -6988,7 +6988,11 @@ Unlocks every quest NPC. Do these before any P4 area work.
    `chest_last_access_seconds`, `treasure_dig_last_seconds`) so, contrary
    to this note's earlier "each needs its own backing system" claim, no
    new storage was required, just the two read-only display commands in
-   `commands_player.rs`; `/tunnels`/`/demonlords` were already done
+   `commands_player.rs`; `/setrd`/`/clearrd`/`/solverd` done - see
+   iteration 181, the Area 14 random-dungeon shrine-continuity editors,
+   backed entirely by the already-ported `PlayerRuntime::
+   random_shrine_used_words`/`random_shrine_continuity` fields;
+   `/tunnels`/`/demonlords` were already done
    earlier - see their own entries above) (see the Progress Log entries
   pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
@@ -8003,11 +8007,51 @@ Unlocks every quest NPC. Do these before any P4 area work.
   commands, the level-30 plain-rejection path, zero-orbs and zero-
   treasures empty-state messages, a mixed ready/pending orbs case with
   summary-average math, and a mixed ready-chest/pending-chest/ready-dig-
-  spot treasures case). `cargo fmt --all`, `cargo test --workspace` (2009
+  spot   treasures case). `cargo fmt --all`, `cargo test --workspace` (2009
   ugaris-core + 55 db + 3 net + 40 protocol + 750 server [+9], all green,
   zero failures), `cargo build -p ugaris-server` / `cargo build
   --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 181): ported the `/setrd`/`/clearrd`/`/solverd`
+  admin trio (`command.c:1837-2010`/`6017-6030`, `CF_GOD`-gated) into
+  `apply_admin_character_command` (`commands_admin.rs`), the Area 14
+  random-dungeon shrine-continuity editors - all three share C's "bare
+  number = self, else name then number" argument shape, reproduced via
+  the existing `parse_exp_command_target` helper (not C's own
+  `lookup_char`, which is a latent bug searching the character-*template*
+  table rather than online characters - matched the established
+  `find_online_character_by_name` convention used by every sibling
+  `/mil*` admin command instead). Added `PlayerRuntime::
+  clear_random_shrine_used` (`player.rs`, the missing bit-clear
+  counterpart to the pre-existing `mark_random_shrine_used`/
+  `has_used_random_shrine`). Reproduced two C quirks verbatim: (1)
+  `sendquestlog(cn, ch[cn].player)` always resends to the ACTING
+  character's own session, never the target's, even when targeting
+  another player - done via `legacy_questlog_payload`/
+  `sessions_for_character`/`send_to_session`, the same non-login
+  `sendquestlog` pattern `military.rs`'s `apply_military_mission_kill_
+  check` already established; (2) `clearrd`/`solverd` skip `i == 9` (the
+  continuity shrine) only for `solverd`, not `clearrd`, matching each
+  function's own loop body exactly. Bounds-checked C's `shrine_index =
+  (rd_number-10)*10+i` arithmetic via `u8::try_from` (silently skipping
+  any index that overflows the fixed 256-bit `used[]` bitset) instead of
+  reproducing C's own out-of-bounds write there, since Rust would panic
+  rather than silently corrupt adjacent memory. 8 new tests in
+  `tests/commands_admin.rs` (self-target continuity set + caller-only
+  questlog resend, named-target set, out-of-range rejection for both
+  self and named-target argument shapes, unknown-name and no-live-
+  session "Failed to get player data." fallbacks, `CF_GOD` gating,
+  clearrd clearing exactly its own RD level's 10 bits leaving a
+  neighboring RD's bit untouched, solverd marking 9 of 10 bits and
+  sparing the continuity slot). `cargo fmt --all`, `cargo test
+  --workspace` (2009 ugaris-core + 55 db + 3 net + 40 protocol + 758
+  server [+8], all green, zero failures), `cargo build -p ugaris-server`
+  / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic. REMAINING: the
+  ~90-entry `cmdcmp` tail (anticheat `ac*`/`macro*` family, `/depotsort`,
+  `/showppd`, `punish`/`rename`/etc.) noted above is still unported and
+  still needs a fresh cross-reference pass before the next slice.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
