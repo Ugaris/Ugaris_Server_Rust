@@ -1202,6 +1202,23 @@ impl ClanRegistry {
         Ok(())
     }
 
+    /// C `/setclanjewels`'s direct assignment `clan[clan_nr].treasure.
+    /// jewels = jewels` (`command.c:7563-7596`). Returns the previous
+    /// jewel count so the caller can format "changed from %d to %d",
+    /// or `None` if the clan number is out of range or does not exist.
+    /// C's own array is preallocated for every in-range slot, so it would
+    /// happily write through a nameless slot too (an admin footgun, not a
+    /// feature); this registry has no such slot to write into, matching
+    /// the same "cannot occur here" reasoning already documented on
+    /// [`Self::clan_money_change`].
+    pub fn set_jewels(&mut self, cnr: u16, jewels: i32) -> Option<i32> {
+        let identity = self.identity_mut(cnr)?;
+        let old_jewels = identity.economy.treasure.jewels;
+        identity.economy.treasure.jewels = jewels;
+        self.dirty = true;
+        Some(old_jewels)
+    }
+
     /// C `swap_jewels` (`clan.c:501-513`): moves up to `cnt` jewels from
     /// `from` to `to`, charging `from`'s treasury a matching debt (this is
     /// the dungeon-raid jewel-theft primitive - C never removes jewels

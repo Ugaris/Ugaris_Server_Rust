@@ -61,6 +61,15 @@ pub(crate) struct KeyringCommandResult {
     /// then send `SV_EXIT` (with the kick-specific reason text) and
     /// disconnect every session attached to it.
     pub(crate) kick_target: Option<CharacterId>,
+    /// Set by `/setclanjewels` (C `command.c:7563-7596`) when the
+    /// optional `do_log` argument is nonzero (the default): `(clan_nr,
+    /// serial, prio, content)` for the call site to hand to
+    /// `clan_log::write_clan_log_entry`, matching C's
+    /// `add_clanlog(clan_nr, clan[clan_nr].status.serial, ch[cn].ID, 1,
+    /// ...)`. The command layer has no DB handle of its own (same reason
+    /// `/clanlog` itself is wired at the `main.rs` call site instead of
+    /// here).
+    pub(crate) clan_log_entry: Option<(u16, u32, u8, String)>,
 }
 
 pub(crate) fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {

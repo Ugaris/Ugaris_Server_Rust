@@ -6940,9 +6940,10 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/goto`/`/jump`, both already ported), no `/top` command exists in
   `command.c` either (both were aspirational notes in an earlier
   iteration, not real `cmdcmp` entries - verified by grepping
-  `command.c` for `cmdcmp(ptr, "top` / `"mirror"`), `setclanjewels`
-  (`command.c:7563`, clan-treasure struct + clan log, different storage
-  than `GameSettings`, not part of the just-closed knob family),
+  `command.c` for `cmdcmp(ptr, "top` / `"mirror"`), `setclanjewels` done
+  (see iteration 176 - `command.c:7563`, clan-treasure struct + clan log,
+  a different storage system than `GameSettings`, not part of the
+  earlier-closed knob family),
   `/demonlords` done (see iteration 172 - player-facing, no permission
   gate, `command.c:8938-8946`/`1394-1461`); the sibling `/orbs`/
   `/tunnels`/`/treasures` display commands right next to it in
@@ -7720,6 +7721,52 @@ Unlocks every quest NPC. Do these before any P4 area work.
   failures), `cargo build -p ugaris-server` / `cargo build --workspace`
   clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
   loop" with no panic.
+
+  Progress Log (iteration 176): ported `/setclanjewels <clan_nr> <jewels>
+  [do_log]` (`command.c:7563-7596`, `CF_GOD`-gated), the one remaining
+  genuinely ready gap this note called out (a distinct storage system -
+  `clan[clan_nr].treasure.jewels` plus the clan log - from the
+  `GameSettings`-backed `set*` knob family closed out earlier). Added
+  `ClanRegistry::set_jewels` (`ugaris-core/src/clan.rs`), a direct
+  assignment mirroring C's `clan[clan_nr].treasure.jewels = jewels;`,
+  returning the previous jewel count (for the "changed from %d to %d"
+  message) or `None` for an out-of-range or nonexistent clan number;
+  reused the same "cannot occur here" reasoning already documented on
+  `ClanRegistry::clan_money_change` for why C's harmless "writes through
+  a nameless in-range slot" quirk can't be reproduced (this registry has
+  no such slot), so an in-range-but-never-created clan number reports the
+  same "Invalid clan number or jewel count" message C only emits for
+  actually-out-of-range numbers or negative jewel counts - a
+  documented, minor divergence. Wired into `apply_admin_character_command`
+  (`commands_admin.rs`) right after `/killclub`; args are parsed via
+  whitespace-split `legacy_atoi_prefix` calls rather than C's manual
+  `atoi`+`isdigit`-skip pointer walk (behaviorally identical for every
+  valid, non-negative input C's own `jewels >= 0` guard would ever
+  accept afterward). Since the command layer has no DB handle,
+  `add_clanlog`'s conditional write (skipped when the optional `do_log`
+  arg is `0`, matching C's `int do_log = 1; if (*ptr) do_log =
+  atoi(ptr);`) is deferred through a new `KeyringCommandResult::
+  clan_log_entry: Option<(u16, u32, u8, String)>` field, handled at the
+  `main.rs` call site right after the pre-existing `/kick` teardown
+  block by calling the already-existing `clan_log::write_clan_log_entry`
+  - the same async DB-write helper `world_events.rs`/`dungeon.rs` already
+  use for every other clan-log write site, not a new mechanism. 3 new
+  tests in `tests/commands_admin.rs`: success with the default `do_log`
+  (message text, jewel count change, and the queued clan-log entry
+  content/prio/serial all asserted), `do_log 0` suppressing the entry,
+  and the permission gate plus all three invalid-input cases (negative
+  jewels, out-of-range clan number, in-range-but-nonexistent clan
+  number). `cargo fmt --all`, `cargo test --workspace` (2004 ugaris-core
+  + 55 db + 3 net + 40 protocol + 720 server [+3], all green, zero
+  failures), `cargo build -p ugaris-server` / `cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. REMAINING for this task overall: still ~90
+  uncross-referenced `cmdcmp` entries per the note above (mostly
+  `CF_GOD`-gated anticheat/macro-detection commands, plus one-off gaps
+  each blocked on unported infra - offline `lookup_name`, `server_chat`,
+  the DB task queue, or a whole missing storage system like the
+  per-character `DRD_DEPOT_PPD` legacy depot behind `/depotsort`); no
+  other equally self-contained ready gap was found this iteration.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

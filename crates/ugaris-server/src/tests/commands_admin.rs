@@ -760,6 +760,146 @@ fn killclub_requires_god_and_ignores_numbers_at_or_past_the_buggy_maxclan_cap() 
 }
 
 #[test]
+fn god_setclanjewels_changes_jewels_and_reports_a_default_log_entry() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    let nr = world.clan_registry.found_clan("Jewelers", 0).unwrap();
+    world.clan_registry.add_jewel(nr).unwrap();
+    world.clan_registry.add_jewel(nr).unwrap();
+    assert_eq!(world.clan_registry.jewel_count(nr), 2);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/setclanjewels {nr} 100"),
+        1,
+    )
+    .expect("god setclanjewels command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![format!("Clan {nr} (Jewelers) jewels changed from 2 to 100")]
+    );
+    assert_eq!(world.clan_registry.jewel_count(nr), 100);
+    // `do_log` defaults to 1 (C `int do_log = 1;`), so a clan-log entry
+    // must be queued for the call site to write.
+    assert_eq!(
+        result.clan_log_entry,
+        Some((
+            nr,
+            world.clan_registry.serial(nr),
+            1,
+            "God Tester changed clan jewels from 2 to 100".to_string()
+        ))
+    );
+}
+
+#[test]
+fn setclanjewels_do_log_zero_suppresses_the_clan_log_entry() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    let nr = world.clan_registry.found_clan("Jewelers", 0).unwrap();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/setclanjewels {nr} 50 0"),
+        1,
+    )
+    .expect("god setclanjewels command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![format!("Clan {nr} (Jewelers) jewels changed from 0 to 50")]
+    );
+    assert_eq!(world.clan_registry.jewel_count(nr), 50);
+    assert_eq!(result.clan_log_entry, None);
+}
+
+#[test]
+fn setclanjewels_requires_god_and_rejects_bad_args() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    // Non-god: not recognized at all.
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/setclanjewels 1 100",
+        1
+    )
+    .is_none());
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+
+    let nr = world.clan_registry.found_clan("Jewelers", 0).unwrap();
+
+    // Negative jewel count is rejected, matching C's `jewels >= 0` guard.
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/setclanjewels {nr} -5"),
+        1,
+    )
+    .expect("still recognized, just reports the invalid-args message");
+    assert_eq!(
+        result.messages,
+        vec!["Invalid clan number or jewel count".to_string()]
+    );
+    assert_eq!(world.clan_registry.jewel_count(nr), 0);
+
+    // Out-of-range clan number.
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/setclanjewels 0 100",
+        1,
+    )
+    .expect("still recognized, just reports the invalid-args message");
+    assert_eq!(
+        result.messages,
+        vec!["Invalid clan number or jewel count".to_string()]
+    );
+
+    // In-range but nonexistent clan number: also reports the same
+    // invalid-args message (see `ClanRegistry::set_jewels`'s doc comment
+    // for why this diverges from C's silent nameless-slot write).
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/setclanjewels 31 100",
+        1,
+    )
+    .expect("still recognized, just reports the invalid-args message");
+    assert_eq!(
+        result.messages,
+        vec!["Invalid clan number or jewel count".to_string()]
+    );
+}
+
+#[test]
 fn staff_renclub_command_renames_an_existing_club_in_aston() {
     let mut world = World::default();
     let character_id = CharacterId(7);

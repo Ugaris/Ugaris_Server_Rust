@@ -3562,6 +3562,64 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/setclanjewels` (`command.c:7563-7596`), `CF_GOD`-gated. Directly
+    // assigns `clan[clan_nr].treasure.jewels`, a distinct storage system
+    // from the `GameSettings`-backed `set*` tuning-knob family closed out
+    // in an earlier iteration (see this task's REMAINING notes). Args are
+    // whitespace-separated `<clan_nr> <jewels> [do_log]`; `do_log`
+    // defaults to `1` (log to the clan log) exactly like C's `int do_log =
+    // 1; if (*ptr) do_log = atoi(ptr);`. Out-of-range clan numbers,
+    // negative jewel counts, or an in-range clan number with no clan
+    // actually created there (C's array is preallocated for every
+    // in-range slot and would silently write through it anyway - a
+    // footgun, not a feature - but this registry has no such slot; see
+    // `ClanRegistry::set_jewels`) all report the same "Invalid clan
+    // number or jewel count" message C emits only for the former two
+    // cases.
+    if lower == "setclanjewels" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let mut tokens = rest.split_whitespace();
+        let clan_nr = tokens.next().map(legacy_atoi_prefix).unwrap_or(0);
+        let jewels = tokens.next().map(legacy_atoi_prefix).unwrap_or(0);
+        let do_log = tokens.next().map(legacy_atoi_prefix).unwrap_or(1);
+        let old_jewels = (clan_nr > 0 && clan_nr < LEGACY_MAX_CLAN && jewels >= 0)
+            .then(|| {
+                world
+                    .clan_registry
+                    .set_jewels(clan_nr as u16, jewels as i32)
+            })
+            .flatten();
+        let Some(old_jewels) = old_jewels else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Invalid clan number or jewel count".to_string()],
+                ..Default::default()
+            });
+        };
+        let clan_nr = clan_nr as u16;
+        let clan_name = world.clan_registry.name(clan_nr).unwrap_or("").to_string();
+        let messages = vec![format!(
+            "Clan {clan_nr} ({clan_name}) jewels changed from {old_jewels} to {jewels}"
+        )];
+        let clan_log_entry = (do_log != 0).then(|| {
+            (
+                clan_nr,
+                world.clan_registry.serial(clan_nr),
+                1u8,
+                format!(
+                    "God {} changed clan jewels from {old_jewels} to {jewels}",
+                    character.name
+                ),
+            )
+        });
+        return Some(KeyringCommandResult {
+            messages,
+            clan_log_entry,
+            ..Default::default()
+        });
+    }
+
     // C `cmd_renclan` (`src/system/command.c:4497-4531`), dispatched at
     // `command.c:9646` gated on `CF_STAFF | CF_GOD`. Renames an existing
     // clan; only usable while standing in Aston (`areaID == 3`).

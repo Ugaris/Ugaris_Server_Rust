@@ -1550,6 +1550,25 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                     }
                                 }
+                                if let Some((clan_nr, serial, prio, content)) =
+                                    result.clan_log_entry
+                                {
+                                    // C `/setclanjewels` (`command.c:
+                                    // 7563-7596`): `add_clanlog(clan_nr,
+                                    // clan[clan_nr].status.serial, ch[cn].
+                                    // ID, 1, ...)` when the optional
+                                    // `do_log` arg is nonzero.
+                                    clan_log::write_clan_log_entry(
+                                        &clan_log_repository,
+                                        clan_nr,
+                                        serial,
+                                        character_id,
+                                        prio,
+                                        content,
+                                        current_unix_time(),
+                                    )
+                                    .await;
+                                }
                                 continue;
                             }
                             if let Some(result) =
