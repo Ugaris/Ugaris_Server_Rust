@@ -6761,3 +6761,26 @@ startup log line unchanged.
   admin-teleport gaps: `/office` (still unported); real cross-area
   `change_area` handoff (tracked separately as the `Cross-area transfer`
   P3 task).
+
+- Player/staff text command `/office` from `src/system/command.c:9670-
+  9676`, `CF_GOD`-gated, added to `apply_admin_character_command`
+  (`commands_admin.rs`). Unlike `/goto`/`/summon`'s prefix matching, C's
+  `cmdcmp(ptr, "office", 6)` requires the full six-letter word (no
+  abbreviation), ported as an exact `lower == "office"` match. Teleports
+  to the staff office in Aston (area 3, x:11, y:195): same-area via the
+  existing `World::teleport_char_driver` (no new `World` logic needed),
+  cross-area via the unported `change_area` handoff, resolving to the
+  same "Nothing happens - target area server is down." message (no
+  position change) used by every other cross-area teleport in this
+  codebase. 4 new focused tests in `tests/commands_admin.rs` (permission
+  gate, same-area teleport lands exactly on (11, 195), cross-area no-op
+  message with unchanged position, abbreviation `/offic` not recognized).
+  `cargo fmt --all`, `cargo test --workspace` (1973 ugaris-core + 55 db +
+  3 net + 40 protocol + 655 server [+4], all green, zero failures),
+  `cargo build -p ugaris-server`/`cargo build --workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
+  no panic. This closes the admin-teleport family; remaining `/`/`#`
+  command gaps are `/allow`/clan invite commands, `/mirror`, `/seen`
+  (`lastseen`), `/top`, and the rest of the dozens not yet cross-
+  referenced against `command.c` (tracked under the "Remaining `/` and
+  `#` text commands" P3 task).

@@ -4051,3 +4051,73 @@ fn summonall_command_does_not_teleport_npcs() {
     assert!(result.messages.is_empty());
     assert_eq!(world.characters.get(&npc_id).unwrap().x, 90);
 }
+
+#[test]
+fn office_command_requires_god() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    assert!(world.spawn_character(
+        login_character(caller_id, &login_block("Ralph"), 3, 10, 10),
+        10,
+        10
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/office", 3).is_none()
+    );
+    assert_eq!(world.characters.get(&caller_id).unwrap().x, 10);
+}
+
+#[test]
+fn office_command_teleports_within_aston() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, caller_id, "/office", 3)
+        .expect("god office command should be recognized");
+    assert!(result.messages.is_empty());
+    let character = world.characters.get(&caller_id).unwrap();
+    assert_eq!((character.x, character.y), (11, 195));
+}
+
+#[test]
+fn office_command_from_another_area_reports_cross_area_no_op() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, caller_id, "/office", 1)
+        .expect("god office command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Nothing happens - target area server is down.".to_string()]
+    );
+    // Position is unaffected since the cross-area handoff is unported.
+    let character = world.characters.get(&caller_id).unwrap();
+    assert_eq!((character.x, character.y), (10, 10));
+}
+
+#[test]
+fn office_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "office", 6)` requires the full six-letter word;
+    // there is no shorter valid abbreviation.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/offic", 3).is_none()
+    );
+    assert_eq!(world.characters.get(&caller_id).unwrap().x, 10);
+}

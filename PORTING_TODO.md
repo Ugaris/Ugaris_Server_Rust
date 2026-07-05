@@ -6895,8 +6895,8 @@ Unlocks every quest NPC. Do these before any P4 area work.
   note as you go). Priority: `/help` completeness, `/who` variants,
   `/allow`/clan invite commands, admin teleports (`/goto`), `/mirror`,
   `/seen`, `/top`. REMAINING: admin teleports done (`/goto`, `/jump`,
-  `/gotolist`, `/gotosearch`, `/summon`, `/summonall`); still unported:
-  `/office`, `/allow`/clan invite commands, `/mirror`, `/seen`
+  `/gotolist`, `/gotosearch`, `/summon`, `/summonall`, `/office`); still
+  unported: `/allow`/clan invite commands, `/mirror`, `/seen`
   (`lastseen`), `/top`, and the rest of the dozens of `/`/`#` commands not
   yet cross-referenced against `command.c` (see the Progress Log entries
   below for what's been checked off so far).
@@ -6970,6 +6970,26 @@ Unlocks every quest NPC. Do these before any P4 area work.
   every-player-teleported (caller stays put), NPC-not-teleported for
   `/summonall`. `cargo fmt --all`, `cargo test --workspace` (1973
   ugaris-core + 55 db + 3 net + 40 protocol + 651 server [+6], all green,
+  zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 160): ported `/office` (`command.c:9670-9676`),
+  `CF_GOD`-gated, `minlen=6` so no abbreviation is accepted (unlike
+  `/goto`/`/summon` which use prefix matching, `/office` requires the
+  literal full word - matched with `lower == "office"`). Teleports to the
+  staff office in Aston (area 3, x:11, y:195): same-area via the existing
+  `World::teleport_char_driver`, cross-area via the unported
+  `change_area` handoff, which - like every other cross-area teleport in
+  this codebase - resolves to the "Nothing happens - target area server
+  is down." message with no position change. No new `World` logic needed;
+  wired directly into `apply_admin_character_command`
+  (`commands_admin.rs`) after the `/summonall` arm. 4 new tests in
+  `tests/commands_admin.rs`: permission gate, same-area (Aston)
+  teleport lands exactly on (11, 195), cross-area no-op with the correct
+  message and unchanged position, and abbreviation (`/offic`) correctly
+  not recognized. `cargo fmt --all`, `cargo test --workspace` (1973
+  ugaris-core + 55 db + 3 net + 40 protocol + 655 server [+4], all green,
   zero failures), `cargo build -p ugaris-server` / `cargo build
   --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.

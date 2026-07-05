@@ -2647,6 +2647,32 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/office` (`command.c:9670-9676`), `CF_GOD`-gated, `minlen=6` so
+    // the full word must be typed (`cmdcmp(ptr, "office", 6)`, no
+    // abbreviation). Teleports to the staff office in Aston (area 3,
+    // x:11, y:195): via `change_area` when not already in area 3
+    // (unported - resolves to the same "Nothing happens" message used by
+    // every other cross-area teleport in this codebase), or directly via
+    // `teleport_char_driver` when already in Aston.
+    if lower == "office" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        if area_id != 3 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Nothing happens - target area server is down.".to_string()],
+                ..Default::default()
+            });
+        }
+        if world.teleport_char_driver(character_id, 11, 195) {
+            debug!(target: "client_log", "office teleport");
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
     None
 }
 
