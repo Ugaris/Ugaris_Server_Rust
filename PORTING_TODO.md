@@ -3246,12 +3246,23 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `template_id` was set straight from the spawn's raw stored `keyid`
   with no wrapping, so it could never match a `dungeon_door`'s own
   wrapped `key1`/`key2` fields) was fixed in iteration 142
-  (`dungeon_key_item_id`, same file, see Progress Log) - REMAINING now:
-  only the `dungeonmaster`/`dungeonfighter` NPC drivers
-  (`create_dungeon`/`enter_dungeon`/`list_dungeon`/`warn_dungeon`/
-  `destroy_dungeon`/`dungeonfighter`/`dungeon_potion`/`fighter_dead`,
-  `dungeon.c:1343-2161`) that actually call `create_maze`+loop-over-
-  `build_cell` to spin up/track/tear down a live catacomb. The potion
+  (`dungeon_key_item_id`, same file, see Progress Log) - the pure
+  decision logic for `create_dungeon`/`enter_dungeon`/`list_dungeon`/
+  `warn_dungeon` (every validation check, error message, and the
+  busy-slot-selection/eviction rule, `dungeon.c:1377-1569`) was ported
+  in iteration 143 as `crates/ugaris-core/src/world/dungeon_master.rs`
+  (`DungeonmasterDriverData`/`World::plan_create_dungeon`/
+  `plan_enter_dungeon`/`list_dungeon_lines`/`characters_in_dungeon_slot`,
+  see Progress Log) - REMAINING now: `destroy_dungeon`'s `build_remove`/
+  `build_empty` map-teardown sweep (needs player-eviction/`change_area`/
+  `exit_char` logic, none of which this pure module has), the actual
+  `CDR_DUNGEONMASTER`/`CDR_DUNGEONFIGHTER` driver wiring (constants,
+  `CharacterDriverState` variant, message-loop entry point, tick-loop
+  call site), the do-while `create_maze`+`build_cell`-retry-until-
+  score-350 orchestration that spends the fee and actually spins up the
+  map (both builders are already ported and ready, see the Progress Log
+  entries above), and `dungeonfighter`/`dungeon_potion`/`fighter_dead`
+  (the separate combat-adjacent driver, `dungeon.c:1956-2161`). The potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
   reachable slice, not blocked on anything, since the alchemy-potion
@@ -4597,6 +4608,37 @@ Unlocks every quest NPC. Do these before any P4 area work.
     `cargo test --workspace` (602 server [+1], all other crates
     unchanged/green, zero failures), `cargo build -p ugaris-server`
     clean with zero warnings.
+  - 2026-07-05 (iteration 143): ported the next self-contained slice -
+    `create_dungeon`/`enter_dungeon`/`list_dungeon`/`warn_dungeon`'s pure
+    decision logic (`dungeon.c:1377-1569`), minus every real `World`
+    mutation (fee-charging, maze-building, teleporting, clan-log
+    writes) - as new `crates/ugaris-core/src/world/dungeon_master.rs`:
+    `DungeonmasterDriverData` (C `struct master_data`'s 9-slot arrays,
+    not yet stored on any `Character`), `World::plan_create_dungeon`
+    (clan-range/level-cap/at-war-or-GOD/jewel-count/already-
+    raiding/busy-slot-eviction checks in C's exact order, reusing the
+    already-ported `ClanRegistry::jewel_count`/`relations().
+    can_attack_inside`/`get_clan_dungeon`, returning a `DungeonRaidPlan`
+    with the chosen slot/fee/guard-roster/`xoff`/`yoff` on success or a
+    `DungeonRaidError` matching each C `say()` message otherwise),
+    `World::plan_enter_dungeon` (target-bounds/level-cap/at-war/about-
+    to-collapse checks plus teleport-destination math),
+    `World::list_dungeon_lines`, and `World::characters_in_dungeon_slot`
+    (`warn_dungeon`'s player-selection loop). No `CDR_DUNGEONMASTER`
+    constant or `CharacterDriverState` variant added yet - matches this
+    codebase's "pure logic first, wiring later" precedent, same as the
+    guard-count accessors before it. 20 new tests in
+    `crates/ugaris-core/src/world/tests/dungeon_master.rs` covering
+    every error branch (including the "God bypasses war but not jewels"
+    and "every empty slot outranks any occupied slot until all 9 are
+    occupied" edge cases) plus both success paths. `cargo fmt --all`,
+    `cargo test --workspace` (1890 ugaris-core [+20], 55 db + 3 net + 40
+    protocol + 602 server unchanged, all green, zero failures), `cargo
+    build -p ugaris-server`/`--workspace` clean with zero warnings, 10s
+    boot-smoke confirmed no panics. Marking `[~]` still: `destroy_dungeon`,
+    the actual driver/tick-loop wiring, the maze-build retry
+    orchestration, and `dungeonfighter`/`dungeon_potion`/`fighter_dead`
+    all remain - see the updated REMAINING note above.
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission
