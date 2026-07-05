@@ -6700,18 +6700,40 @@ Unlocks every quest NPC. Do these before any P4 area work.
   and seasonal events (christmas partially ported). Port the scheduler +
   each recurring event's modifier hooks (`event_drop_rate` modifier is
   referenced by loot JSON). REMAINING: the generic seasonal
-  `EventDecoration`/date-range (`RECUR_NONE`/`RECUR_YEARLY`) scheduling
-  used by `christmas_event.c`/`easter_event.c` is not wired into the new
-  `events.rs` framework (Christmas keeps its own independent date logic in
-  `xmas.rs`; Easter is a full gap - no Rust code at all, including
-  `calculate_easter_date`). `RecurrenceType::Daily`/`Monthly` branches of
-  `should_event_be_active` are also unported (no currently-ported event
-  needs them). The `event_drop_rate` loot modifier is stored/settable but
-  has no consumer yet (blocked on the separate "Death-mode loot tables"
-  task's JSON roll engine). The four `mining_*_multiplier` settings the
-  Mining Monday/Wednesday events scale are likewise still dead/unwired
-  outside `GameSettings` (blocked on porting the mining "dig" mechanic
-  itself, not part of this task).
+  `EventDecoration` spawn/remove plumbing (`spawn_event_decoration`/
+  `remove_event_decoration`) is still unported - no currently-ported
+  seasonal event needs it (Christmas keeps its own independent tree logic
+  in `xmas.rs`; Easter has zero decorations in C). `RecurrenceType::Daily`/
+  `Monthly` branches of `should_event_be_active` are also unported (no
+  currently-ported event needs them). The `event_drop_rate` loot modifier
+  is stored/settable but has no consumer yet (blocked on the separate
+  "Death-mode loot tables" task's JSON roll engine). The four
+  `mining_*_multiplier` settings the Mining Monday/Wednesday events scale
+  are likewise still dead/unwired outside `GameSettings` (blocked on
+  porting the mining "dig" mechanic itself, not part of this task).
+
+  Progress Log (iteration 153): ported the Easter seasonal event
+  (`src/module/events/seasonal/easter_event.c`) end-to-end -
+  `calculate_easter_date` (Meeus/Jones/Butcher algorithm, transcribed
+  digit-for-digit), `update_easter_dates`' ±1-week date-range computation
+  (reusing the already-ported `days_from_civil`/`civil_from_unix_seconds`
+  day-count round-trip instead of C's `mktime` normalization, handling
+  month/year rollover identically), and `easter_event_start`/`_end`'s
+  `lucky_pentagram_chance` halve-and-restore. Extended `CalendarNow` with
+  `year`/`month`/`day` fields and made the existing `is_date_in_range`
+  primitive a live (non-test-only) function, since `check_easter_event`
+  calls it directly every minute (recomputing the current year's window
+  fresh each call rather than porting C's Jan-1-only
+  `yearly_easter_update` optimization - equivalent since Easter's window
+  never crosses a year boundary). Wired into `ServerRuntime` (new
+  `easter_event: events::EasterEventState` field) and the same
+  once-a-minute tick-loop gate as `check_recurring_events` in `main.rs`.
+  6 new unit tests (`calculate_easter_date` against 6 reference years,
+  `easter_date_range` including two month-rollover cases, and the
+  start/no-op/end transition sequence for the lucky-pentagram-chance
+  modifier). `cargo fmt --all`, `cargo test --workspace` (623 passed, 0
+  failed), `cargo build -p ugaris-server` clean with zero warnings, 10s
+  boot-smoke confirmed "entering Rust game loop" with no panic.
 
 - [ ] **Death-mode loot tables (`src/system/loot/loot.c`)** - JSON tables
   under `ugaris_data/loot/`. Port the loader + roll engine + pity

@@ -263,6 +263,9 @@ struct ServerRuntime {
     /// C `src/module/events/events.c`'s recurring boosted-rate event
     /// scheduler state (`events::RecurringEventKind`'s five events).
     recurring_events: events::RecurringEventsState,
+    /// C `src/module/events/seasonal/easter_event.c`'s `easter_event`/
+    /// `event_data` file-statics.
+    easter_event: events::EasterEventState,
 }
 
 impl Default for ServerRuntime {
@@ -302,6 +305,7 @@ impl Default for ServerRuntime {
             shout_cost: settings.shout_cost,
             weather: WeatherState::default(),
             recurring_events: events::RecurringEventsState::default(),
+            easter_event: events::EasterEventState::default(),
         }
     }
 }
@@ -6332,6 +6336,17 @@ async fn main() -> anyhow::Result<()> {
                         } else {
                             info!(event = kind.name(), "recurring event ended");
                         }
+                    }
+                    // C `easter_event.c`'s registration into the same
+                    // once-a-minute `check_events` task.
+                    match events::check_easter_event(
+                        &mut world.settings,
+                        &mut runtime.easter_event,
+                        &now,
+                    ) {
+                        Some(true) => info!(event = "Easter", "recurring event started"),
+                        Some(false) => info!(event = "Easter", "recurring event ended"),
+                        None => {}
                     }
                 }
                 // C `tick_player`'s deferred-init sweep (`player.c:3660-

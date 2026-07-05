@@ -5,13 +5,18 @@ use super::*;
 // event scheduler. This slice ports the calendar-matching primitives
 // (`is_date_in_range`/`is_time_in_range`/`is_day_matching`/
 // `is_week_matching`/`should_event_be_active`'s `RECUR_WEEKLY`/
-// `RECUR_BIWEEKLY` branches) plus the five recurring boosted-rate events
-// under `src/module/events/recurring/*` and their modifier hooks. The
-// Christmas seasonal event (`src/module/events/seasonal/christmas_event.c`)
-// already has its own independently-ported date logic in `xmas.rs` and is
-// left as-is; Easter and the generic `EventDecoration`/date-range
-// scheduling needed for other seasonal events are not part of this slice
-// (see `PORTING_TODO.md`).
+// `RECUR_BIWEEKLY`/`RECUR_YEARLY` branches) plus the five recurring
+// boosted-rate events under `src/module/events/recurring/*` and their
+// modifier hooks, plus the Easter seasonal event
+// (`src/module/events/seasonal/easter_event.c`, including
+// `calculate_easter_date`). The Christmas seasonal event
+// (`src/module/events/seasonal/christmas_event.c`) already has its own
+// independently-ported date logic in `xmas.rs` and is left as-is (same
+// precedent Easter follows here, kept in this file instead of a new one
+// since it reuses `is_date_in_range`/`CalendarNow` directly); the generic
+// `EventDecoration` spawn/remove plumbing is still not ported (Easter has
+// zero decorations in C: `static EventDecoration easter_decorations[] =
+// {}`, so this slice needs none of it - see `PORTING_TODO.md`).
 //
 // Like `xmas::current_xmas_event`, calendar math runs in UTC rather than
 // replicating C's `localtime(time(NULL))` host-timezone lookup - the same
@@ -83,7 +88,6 @@ pub(crate) fn week_number(year: i32, month: u32, day: u32) -> i32 {
 /// and `start_month` are rejected up front; the trailing generic checks
 /// below apply no upper bound to the `current_month == start_month` case
 /// (matching C, since a different month covers the end boundary).
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn is_date_in_range(
     start_month: u32,
     start_day: u32,
@@ -144,6 +148,9 @@ pub(crate) fn is_week_matching(week_number_cfg: i32, interval: i32, current_week
 /// by the C event system's repeated `localtime(time(NULL))` calls.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CalendarNow {
+    pub(crate) year: i32,
+    pub(crate) month: u32,
+    pub(crate) day: u32,
     pub(crate) hour: u32,
     pub(crate) minute: u32,
     pub(crate) weekday: u32,
@@ -160,6 +167,9 @@ impl CalendarNow {
         let hour = (seconds_of_day / 3600) as u32;
         let minute = ((seconds_of_day % 3600) / 60) as u32;
         Self {
+            year,
+            month,
+            day,
             hour,
             minute,
             weekday,
@@ -179,10 +189,13 @@ impl CalendarNow {
 // ------------------------------------------------------------- recurrence
 
 /// C `events.h`'s `RecurrenceType` values actually used by a currently-
-/// ported recurring event (`RECUR_WEEKLY`/`RECUR_BIWEEKLY`). Add
-/// `Daily`/`Monthly`/`Yearly`/`None` branches (mirroring `RECUR_DAILY`/
-/// `RECUR_MONTHLY`/`RECUR_YEARLY`/`RECUR_NONE`) when a slice needing them
-/// (e.g. Easter, a `RECUR_NONE` date-range event) is ported.
+/// ported *recurring* event (`RECUR_WEEKLY`/`RECUR_BIWEEKLY`). The Easter
+/// seasonal event's `RECUR_YEARLY` is handled separately below by
+/// `check_easter_event` (it just calls `is_date_in_range` directly, like
+/// C's `should_event_be_active` does for that branch, with no per-weekday/
+/// per-time-of-day matching needed) rather than through this enum. Add
+/// `Daily`/`Monthly` branches (mirroring `RECUR_DAILY`/`RECUR_MONTHLY`)
+/// when a slice needing them is ported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecurrenceType {
     Weekly,
@@ -446,4 +459,111 @@ pub(crate) fn check_recurring_events(
         }
     }
     transitions
+}
+
+// ------------------------------------------------------------- Easter event
+
+/// C `calculate_easter_date` (`events.c:164-183`): the Meeus/Jones/Butcher
+/// algorithm for the Gregorian Easter Sunday, transcribed with C's exact
+/// integer-division truncation at every step (all divisions here are
+/// non-negative for any real calendar year, so Rust's truncating integer
+/// division matches C's).
+pub(crate) fn calculate_easter_date(year: i32) -> (u32, u32) {
+    let a = year % 19;
+    let b = year / 100;
+    let c = year % 100;
+    let d = b / 4;
+    let e = b % 4;
+    let f = (b + 8) / 25;
+    let g = (b - f + 1) / 3;
+    let h = (19 * a + b - d - g + 15) % 30;
+    let i = c / 4;
+    let k = c % 4;
+    let l = (32 + 2 * e + 2 * i - h - k) % 7;
+    let m = (a + 11 * h + 22 * l) / 451;
+
+    let month = (h + l - 7 * m + 114) / 31;
+    let day = ((h + l - 7 * m + 114) % 31) + 1;
+
+    (month as u32, day as u32)
+}
+
+/// C `update_easter_dates` (`easter_event.c:24-56`): Easter's active window
+/// is one week before to one week after Easter Sunday. C computes this via
+/// `mktime`-normalized `struct tm` arithmetic (`easter.day - 7`/`+ 7` on a
+/// `tm_mday` that can go negative or past the month's end, then
+/// renormalized by `mktime`); this reuses the already-ported
+/// `days_from_civil`/`xmas::civil_from_unix_seconds` day-count round-trip
+/// to do the same normalization.
+pub(crate) fn easter_date_range(year: i32) -> (u32, u32, u32, u32) {
+    let (easter_month, easter_day) = calculate_easter_date(year);
+    let easter_days = days_from_civil(year, easter_month, easter_day);
+    let (_, start_month, start_day) =
+        crate::xmas::civil_from_unix_seconds(((easter_days - 7) * 86_400) as u64);
+    let (_, end_month, end_day) =
+        crate::xmas::civil_from_unix_seconds(((easter_days + 7) * 86_400) as u64);
+    (start_month, start_day, end_month, end_day)
+}
+
+/// Per-event `is_active`/snapshot state for the Easter event (C's
+/// file-static `easter_event`/`event_data`).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct EasterEventState {
+    is_active: bool,
+    original_lucky_pentagram_chance: i32,
+}
+
+/// C `easter_event_start` (`easter_event.c:71-78`): halves
+/// `lucky_pentagram_chance` while active (a lower `RANDOM(chance)`
+/// denominator means a *higher* hit rate - the C comment's "Double the
+/// lucky pentagram chance" describes the resulting probability, not the
+/// stored value going up). C's `lucky_pentagram_chance *= 0.5` on an
+/// `int` truncates the float product toward zero, matched here by `as
+/// i32`.
+fn start_easter_event(settings: &mut GameSettings, state: &mut EasterEventState) {
+    state.original_lucky_pentagram_chance = settings.lucky_pentagram_chance;
+    settings.lucky_pentagram_chance = (f64::from(settings.lucky_pentagram_chance) * 0.5) as i32;
+    state.is_active = true;
+}
+
+/// C `easter_event_end` (`easter_event.c:80-83`): restores the exact
+/// pre-event snapshot (unlike the Mining Monday/Wednesday events, this one
+/// actually reads back `original_pentagram_lucky_chance`).
+fn end_easter_event(settings: &mut GameSettings, state: &mut EasterEventState) {
+    settings.lucky_pentagram_chance = state.original_lucky_pentagram_chance;
+    state.is_active = false;
+}
+
+/// C `check_events` (`events.c:274-292`) applied to the Easter event alone:
+/// `should_event_be_active`'s `RECUR_YEARLY` branch (`events.c:141-143`) is
+/// just `is_date_in_range` against a date range recomputed from that
+/// year's Easter Sunday (C's `yearly_easter_update` only recomputes once a
+/// year on January 1st as an optimization; recomputing every call here is
+/// equivalent since Easter's window never crosses a year boundary).
+/// Returns `Some(started)` on a start/end transition, `None` otherwise -
+/// mirroring `check_recurring_events`' transition-reporting shape for the
+/// caller to log.
+pub(crate) fn check_easter_event(
+    settings: &mut GameSettings,
+    state: &mut EasterEventState,
+    now: &CalendarNow,
+) -> Option<bool> {
+    let (start_month, start_day, end_month, end_day) = easter_date_range(now.year);
+    let should_be_active = is_date_in_range(
+        start_month,
+        start_day,
+        end_month,
+        end_day,
+        now.month,
+        now.day,
+    );
+    if should_be_active && !state.is_active {
+        start_easter_event(settings, state);
+        Some(true)
+    } else if !should_be_active && state.is_active {
+        end_easter_event(settings, state);
+        Some(false)
+    } else {
+        None
+    }
 }

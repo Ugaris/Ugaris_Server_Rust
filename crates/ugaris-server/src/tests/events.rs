@@ -84,6 +84,9 @@ fn is_week_matching_matches_c_modulo() {
 
 fn calendar(hour: u32, minute: u32, weekday: u32, week: i32) -> CalendarNow {
     CalendarNow {
+        year: 2024,
+        month: 1,
+        day: 1,
         hour,
         minute,
         weekday,
@@ -239,8 +242,74 @@ fn calendar_now_from_unix_seconds_matches_reference_dates() {
     // fixture above); cross-checked against `date -u -d @<epoch>`.
     let epoch = 1_704_371_640u64; // 2024-01-04T12:34:00Z
     let now = CalendarNow::from_unix_seconds(epoch);
+    assert_eq!(now.year, 2024);
+    assert_eq!(now.month, 1);
+    assert_eq!(now.day, 4);
     assert_eq!(now.weekday, 4);
     assert_eq!(now.hour, 12);
     assert_eq!(now.minute, 34);
     assert_eq!(now.week, 1);
+}
+
+#[test]
+fn calculate_easter_date_matches_known_reference_years() {
+    // Reference Easter Sundays (Gregorian), cross-checked against
+    // published dates.
+    assert_eq!(calculate_easter_date(2024), (3, 31));
+    assert_eq!(calculate_easter_date(2025), (4, 20));
+    assert_eq!(calculate_easter_date(2026), (4, 5));
+    assert_eq!(calculate_easter_date(2000), (4, 23));
+    assert_eq!(calculate_easter_date(2018), (4, 1));
+    assert_eq!(calculate_easter_date(2019), (4, 21));
+}
+
+#[test]
+fn easter_date_range_spans_one_week_before_and_after_with_month_rollover() {
+    // 2024 Easter is March 31: window should roll from March into April.
+    assert_eq!(easter_date_range(2024), (3, 24, 4, 7));
+    // 2018 Easter is April 1: window should roll from March into April.
+    assert_eq!(easter_date_range(2018), (3, 25, 4, 8));
+    // 2025 Easter is April 20: no month rollover on either side.
+    assert_eq!(easter_date_range(2025), (4, 13, 4, 27));
+}
+
+#[test]
+fn check_easter_event_starts_and_ends_halving_and_restoring_lucky_pentagram_chance() {
+    let mut settings = GameSettings::default();
+    settings.lucky_pentagram_chance = 50;
+    let mut state = EasterEventState::default();
+
+    // 2024-03-31 (Easter Sunday itself): within the window.
+    let easter_sunday = CalendarNow {
+        year: 2024,
+        month: 3,
+        day: 31,
+        hour: 12,
+        minute: 0,
+        weekday: 0,
+        week: 13,
+    };
+    let transition = check_easter_event(&mut settings, &mut state, &easter_sunday);
+    assert_eq!(transition, Some(true));
+    assert_eq!(settings.lucky_pentagram_chance, 25);
+
+    // Still within window: no transition.
+    let transition = check_easter_event(&mut settings, &mut state, &easter_sunday);
+    assert_eq!(transition, None);
+    assert_eq!(settings.lucky_pentagram_chance, 25);
+
+    // Outside the window (well before start): event ends, restoring the
+    // exact pre-event value.
+    let outside_window = CalendarNow {
+        year: 2024,
+        month: 2,
+        day: 1,
+        hour: 12,
+        minute: 0,
+        weekday: 4,
+        week: 5,
+    };
+    let transition = check_easter_event(&mut settings, &mut state, &outside_window);
+    assert_eq!(transition, Some(false));
+    assert_eq!(settings.lucky_pentagram_chance, 50);
 }
