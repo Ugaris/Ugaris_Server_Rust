@@ -6586,6 +6586,19 @@ async fn main() -> anyhow::Result<()> {
                         "applied /jail lookups"
                     );
                 }
+                // `/rmdeath <name>`'s async DB round-trip (C
+                // `lookup_name`, `system/lookup.c:42-98` + `system/
+                // database/database_lookup.c:57-83`), queued by
+                // `apply_admin_character_command` above.
+                let rmdeath_events_applied =
+                    apply_rmdeath_events(&mut world, &character_repository).await;
+                if rmdeath_events_applied != 0 {
+                    info!(
+                        rmdeath_events_applied,
+                        tick = world.tick.0,
+                        "applied /rmdeath lookups"
+                    );
+                }
                 // `/complain <name>`'s async DB round-trip (C
                 // `cmd_complain`'s `lookup_name`/`db_lookup_name`,
                 // `system/lookup.c:42-98` + `system/database/

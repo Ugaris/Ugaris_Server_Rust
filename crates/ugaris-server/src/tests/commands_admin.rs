@@ -5463,6 +5463,89 @@ fn unjail_command_abbreviation_is_not_recognized() {
     );
 }
 
+// C `/rmdeath <name>` (`command.c:8884-8903` dispatch -> `cmd_removedeath`,
+// `command.c:2006-2019`), `CF_GOD`-gated, full-word only.
+
+#[test]
+fn rmdeath_command_requires_god() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/rmdeath Baddie",
+        3
+    )
+    .is_none());
+    assert!(world.drain_pending_rmdeath_lookups().is_empty());
+}
+
+#[test]
+fn rmdeath_command_queues_a_lookup_for_a_valid_name() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/rmdeath Baddie", 3)
+            .expect("god rmdeath command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_rmdeath_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, caller_id);
+    assert_eq!(queued[0].target_name, "Baddie");
+}
+
+#[test]
+fn rmdeath_command_with_an_invalid_name_is_rejected_immediately() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    // C `lookup_name`'s `strlen(name) < 2` gate (`lookup.c:57-59`).
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/rmdeath A", 3)
+            .expect("god rmdeath command should be recognized");
+    assert!(result.messages.is_empty());
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].character_id, caller_id);
+    assert_eq!(texts[0].message, "No character by the name A.");
+    assert!(world.drain_pending_rmdeath_lookups().is_empty());
+}
+
+#[test]
+fn rmdeath_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "rmdeath", 7)` requires the full seven-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/rmdeat Baddie",
+        3
+    )
+    .is_none());
+}
+
 // C `cmd_flag` (`command.c:2870-2937`), shared by `/god`, `/setsir`,
 // `/staff`, `/emaster`, `/devel`, `/hardcore`, and `/qmaster`
 // (`command.c:9257-9337`).

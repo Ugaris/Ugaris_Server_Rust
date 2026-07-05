@@ -1963,6 +1963,53 @@ pub(crate) async fn apply_jail_events(
     applied
 }
 
+/// `/rmdeath`'s async DB round trip (C `lookup_name`, `system/lookup.c:
+/// 42-98` + `system/database/database_lookup.c:57-83`): resolves every
+/// `World::drain_pending_rmdeath_lookups` entry (queued by a
+/// validly-shaped `/rmdeath <name>` argument - see `World::
+/// queue_rmdeath_lookup`'s and `apply_admin_character_command`'s doc
+/// comments) against the DB.
+///
+/// - no DB row -> "No character by the name %s." (C's dispatcher-level
+///   `lookup_name == -1` branch, `command.c:8896`-equivalent).
+/// - a row found -> hands off to `World::resolve_rmdeath_lookup`, which
+///   reproduces `cmd_removedeath`'s online-only deviation (see
+///   `world/rmdeath.rs`'s module doc comment) and, on a match, decrements
+///   the target's `deaths` counter (no match -> "No player by that
+///   name.").
+///
+/// No-ops entirely (silent) when no `character_repository` is configured
+/// or a query errors, matching every sibling offline-DB-lookup event.
+pub(crate) async fn apply_rmdeath_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+) -> usize {
+    let lookups = world.drain_pending_rmdeath_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        match repository.find_login_target(&lookup.target_name).await {
+            Ok(Some(_)) => {
+                world.resolve_rmdeath_lookup(lookup.caller_id, &lookup.target_name);
+            }
+            Ok(None) => {
+                world.queue_system_text(
+                    lookup.caller_id,
+                    format!("No character by the name {}.", lookup.target_name),
+                );
+            }
+            Err(_) => continue,
+        }
+        applied += 1;
+    }
+    applied
+}
+
 /// `cmd_complain`'s async DB round trip (C `command.c:2320-2350`,
 /// `lookup_name`/`db_lookup_name`, `system/lookup.c:42-98` +
 /// `system/database/database_lookup.c:57-83`): resolves every `World::
@@ -2191,6 +2238,34 @@ mod jail_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_jail_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod rmdeath_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_rmdeath_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        // Matches every other offline-DB-lookup event in this file: with
+        // no `character_repository` configured, the queue is still
+        // drained (so it doesn't grow unboundedly) but nothing is
+        // resolved and no player-facing message is sent.
+        let mut world = World::default();
+        world.queue_rmdeath_lookup(CharacterId(7), "Godmode");
+
+        let applied = apply_rmdeath_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_rmdeath_lookups().is_empty());
     }
 }
 

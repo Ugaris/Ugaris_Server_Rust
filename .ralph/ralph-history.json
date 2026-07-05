@@ -6107,21 +6107,56 @@
         "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
         "test result: FAILED. 822 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s"
       ]
+    },
+    {
+      "iteration": 192,
+      "startedAt": "2026-07-05T22:47:53.187Z",
+      "endedAt": "2026-07-05T23:04:38.467Z",
+      "durationMs": 1004582,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-server/src/commands_admin.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/commands_admin.rs",
+        "crates/ugaris-server/src/world_events.rs",
+        "crates/ugaris-core/src/world/rmdeath.rs",
+        "crates/ugaris-core/src/world/tests/rmdeath.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 826 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "PORTING_LEDGER.md:7242:- Iteration 191 did a fresh cross-reference pass (every unique `cmdcmp(ptr, \"...\")` name in `src/system/command.c` grepped against `crates/ugaris-server/src/`), which found one ",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2022 filtered out; finished in 0.00s",
+        "test result: ok. 832 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
+        "test result: ok. 2027 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s",
+        "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "122:| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_action.rs`, `crates/ugaris-core/src/world/clanmaster.rs`, `crates/ugaris-core/src/world/clanclerk.rs"
+      ]
     }
   ],
-  "totalDurationMs": 214675664,
+  "totalDurationMs": 215680246,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 191,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 192,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 64,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 65,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 55,
@@ -6645,7 +6680,7 @@
       "-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/": 2,
       "+| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/": 2,
       "test result: ok. 1707 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 3,
-      "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 29,
+      "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 30,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 549 filtered out; finished in 0.00s": 1,
       "test result: ok. 555 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 2,
       "557 passed (up from 555, our 2 new tests). Let's confirm no failures anywhere and check for compile ": 1,
@@ -6725,7 +6760,7 @@
       "All green: 1857 + 55 + 3 + 40 + 584 = 2539 tests pass, zero failures. Now let's build the server bin": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2539 tests, all green, zero failures), `c": 1,
       "test result: ok. 1845 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s": 1,
-      "test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 14,
+      "test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 15,
       "test result: FAILED. 1855 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s": 1,
       "crates/ugaris-core/src/world/clanclerk.rs:773:            Err(ClanDungeonUseError::InvalidRequest) =": 1,
       "crates/ugaris-core/src/world/clanclerk.rs:779:            Err(ClanDungeonUseError::OverBudget(cost))": 1,
@@ -6960,7 +6995,13 @@
       "6. **Verification**: `cargo fmt --all`, `cargo test --workspace` (2022/55/3/40/826, all green, zero ": 1,
       "test result: ok. 2022 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s": 1,
       "test result: ok. 816 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s": 1,
-      "test result: FAILED. 822 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s": 1
+      "test result: FAILED. 822 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s": 1,
+      "test result: ok. 826 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s": 1,
+      "PORTING_LEDGER.md:7242:- Iteration 191 did a fresh cross-reference pass (every unique `cmdcmp(ptr, \"": 1,
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2022 filtered out; finished in 0.00s": 1,
+      "test result: ok. 832 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s": 1,
+      "test result: ok. 2027 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s": 1,
+      "122:| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

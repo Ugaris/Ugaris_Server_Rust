@@ -40,6 +40,7 @@ mod npc_fight;
 mod npc_idle;
 mod npc_messages;
 mod regen;
+mod rmdeath;
 mod skills;
 mod spawn;
 mod special_item;

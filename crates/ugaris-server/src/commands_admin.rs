@@ -4444,6 +4444,28 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/rmdeath <name>` (`command.c:8884-8903` dispatch ->
+    // `cmd_removedeath`, `command.c:2006-2019`), `CF_GOD`-gated, full-word
+    // only (`cmdcmp`'s `minlen` is 7, the full length of "rmdeath", no
+    // abbreviation accepted). Trims leading whitespace off the argument,
+    // then hands it to `World::queue_rmdeath_lookup`, which does all
+    // further validation and DB resolution - see that function's and
+    // `world/rmdeath.rs`'s module doc comment for the full behavior.
+    // Always returns a `default()` result immediately; the real reply
+    // arrives later via `World::queue_system_text`, matching C's own
+    // fire-and-forget async `lookup_name` DB-worker round-trip (same
+    // pattern as `/jail`/`/unjail` above).
+    if lower == "rmdeath" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        world.queue_rmdeath_lookup(character_id, rest.trim_start());
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/showflags` (`command.c:8798-8805`, `cmd_show_flags`,
     // `command.c:4839-5061`), `CF_GOD`-gated, full-word only (`cmdcmp`'s
     // `minlen` is 9, the full length of "showflags", so no abbreviation

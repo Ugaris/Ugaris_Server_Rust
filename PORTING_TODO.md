@@ -7061,7 +7061,10 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `unpunish` additionally need the DB task-queue half (`task_punish_
   player`/`do_rename`/etc., `task.c`) to actually apply their mutation,
   which is still unported - that pattern doesn't fully unblock them by
-  itself.
+  itself. `/rmdeath` done (see iteration 192 - reused the `/jail`/
+  `/unjail` DB-confirm-then-online-scan pattern rather than the
+  task-queue one, since its own mutation is a plain in-memory field
+  decrement, not an offline DB write).
 
   Progress Log (iteration 158): ported the admin-teleport family -
   `/goto` (`command.c:8453-8567`, gated on `is_lqmaster`), `/jump`
@@ -8528,6 +8531,64 @@ Unlocks every quest NPC. Do these before any P4 area work.
   GOD-only debug/stats commands above (`checksanity` et al.) have not
   been individually read yet - do that before assuming any is a quick
   win.
+
+  Progress Log (iteration 192): read and ported `/rmdeath <name>`
+  (`command.c:8884-8903` dispatch -> `cmd_removedeath`, `command.c:
+  2006-2019`), `CF_GOD`-gated, full-word only (`cmdcmp`'s `minlen` is 7,
+  the full length of "rmdeath"). C's dispatcher gates on `lookup_name`
+  succeeding first (invalid shape -> immediate "No character by the name
+  %s."; valid shape -> DB round trip), then `cmd_removedeath` mutates
+  `ch[co].deaths--` directly with only a bounds check (`co < MAXCHARS`) -
+  effectively always true in C's architecture, where every character
+  that has ever existed keeps a permanent, always-resident `ch[]` slot
+  whether online or not. `World` has no such permanent record for
+  offline characters, so - reusing the exact `/jail`/`/unjail` pattern
+  from iteration 158 rather than inventing a new one - added
+  `World::queue_rmdeath_lookup`/`resolve_rmdeath_lookup`
+  (`crates/ugaris-core/src/world/rmdeath.rs`, new file, `pending_
+  rmdeath_lookups: Vec<RmdeathLookup>` field on `World`) plus
+  `ugaris-server`'s `apply_rmdeath_events` (`world_events.rs`, wired into
+  the game loop in `main.rs` right after `apply_jail_events`): an
+  invalidly-shaped name resolves immediately; a validly-shaped one is
+  queued, DB-confirmed via `find_login_target` (read-only, no DB write -
+  `cmd_removedeath`'s only mutation is the in-memory `deaths` field,
+  never a direct DB call, matching `update_char`'s normal "mark dirty
+  for the next periodic save" semantics used by countless other stat
+  changes in this codebase), then resolved against an online-only scan
+  (`World::find_online_player_by_name`) - a DB-confirmed-but-offline
+  account reports "No player by that name." instead of silently
+  mutating an absent in-memory record, the same deliberate deviation
+  `/jail`/`/unjail` already established for this identical architecture
+  gap. `deaths` decrements via `saturating_sub(1)` (C's plain `int--`
+  would go negative; `Character::deaths` is `u32` here). Wired dispatch
+  in `apply_admin_character_command` (`commands_admin.rs`) right after
+  `/jail`/`/unjail`. 5 new tests in `crates/ugaris-core/src/world/tests/
+  rmdeath.rs` (invalid name rejected immediately, valid name queued with
+  no immediate reply, resolve with no online match, resolve decrements
+  deaths and messages the caller, decrement saturates at zero rather
+  than wrapping), 2 in `world_events.rs`'s own test module (no-op with
+  nothing queued, missing-repository leaves the queue drained but
+  unresolved), and 4 in `crates/ugaris-server/src/tests/commands_admin.rs`
+  (GOD-gate rejection, valid-name queuing, invalid-name immediate
+  rejection, abbreviation-not-recognized). `cargo fmt --all`, `cargo test
+  --workspace` (2027 ugaris-core [+5] + 55 db + 3 net + 40 protocol + 832
+  server [+6], all green, zero failures), `cargo build -p ugaris-server`
+  / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic. REMAINING: same
+  ~83 uncross-referenced entries as before (now minus `/rmdeath`); the
+  `ac*`/`macro*` families remain the largest unexamined chunk (see
+  iteration 191's note on the missing sync-command/async-repository
+  bridge); the other GOD-only debug/stats commands (`checksanity`,
+  `memstats`, `poolstats`, `profinfo`, `querystats`,
+  `clearmerchantstores`, `respawn`, `exterminate`,
+  `setnpcbodytimearea32`, `look`, `klog`, `col`, `values`/`showvalues`,
+  `summonmacro`) still have not been individually read - do that before
+  assuming any is a quick win (note `exterminate` calls the DB
+  task-queue `exterminate()` function plus the unported `server_chat`
+  cross-area relay, so it is likely blocked on the same infra as
+  `punish`/`rename`; `respawn`'s `respawn_check()` is a C-internal
+  respawn-tracker consistency logger with no clear Rust equivalent given
+  this codebase's different NPC-respawn architecture, likely low value).
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

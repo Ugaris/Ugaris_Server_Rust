@@ -51,6 +51,7 @@ mod npc_fight;
 mod npc_idle;
 mod npc_messages;
 mod regen;
+mod rmdeath;
 mod skills;
 mod spawn;
 mod special_item;
@@ -106,6 +107,7 @@ pub(crate) use npc_idle::*;
 pub(crate) use npc_messages::*;
 #[allow(unused_imports)]
 pub(crate) use regen::*;
+pub use rmdeath::*;
 pub use skills::*;
 #[allow(unused_imports)]
 pub(crate) use spawn::*;
@@ -344,6 +346,9 @@ pub struct World {
     /// `/jail`/`/unjail` targets not found among the currently loaded
     /// characters yet - see `world/jail.rs`'s module doc comment.
     pending_jail_lookups: Vec<JailLookup>,
+    /// `/rmdeath` targets not found among the currently loaded characters
+    /// yet - see `world/rmdeath.rs`'s module doc comment.
+    pending_rmdeath_lookups: Vec<RmdeathLookup>,
     /// `/god`/`/setsir`/`/staff`/`/emaster`/`/devel`/`/hardcore`/
     /// `/qmaster` targets not found among the currently loaded
     /// characters - see `world/admin_flag.rs`'s module doc comment.
