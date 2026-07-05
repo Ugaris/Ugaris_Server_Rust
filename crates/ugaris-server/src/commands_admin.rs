@@ -2656,6 +2656,64 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `cmd_labsolved` (`command.c:3081-3130`, dispatched from
+    // `/labsolved`, `command.c:6043-6046`, `CF_GOD`-gated): the same
+    // self-or-named-target + trailing-value parsing shape as `/exp`/
+    // `/milexp` above (empty text, or text starting with a digit, means
+    // self and that leading text is the value; otherwise the first word is
+    // a target name and the value follows it) - reused via the shared
+    // `parse_exp_command_target` helper rather than re-deriving it. A
+    // nonzero value toggles that lab number's solved bit (valid range
+    // `1..=63`, XOR not OR - invoking it twice on the same number
+    // un-solves it again) in `PlayerRuntime::lab_solved_bits`; a value
+    // outside that range reports "Lab number is out of bounds." without
+    // toggling anything. Either way (including a zero/absent value, which
+    // is display-only) every currently-solved lab number is then listed,
+    // one message per solved bit, lowest to highest. C's `cmdcmp(ptr,
+    // "labsolved", 8)` accepts the 8-char prefix `labsolve` too, not just
+    // the full 9-char word.
+    if lower.len() >= 8 && "labsolved".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let (target_id, target_name, val) = parse_exp_command_target(world, character_id, rest);
+        if !world.characters.contains_key(&target_id) {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {target_name} around.")],
+                ..Default::default()
+            });
+        }
+
+        let Some(player) = runtime.player_for_character_mut(target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Could not get lab data for {target_name}.")],
+                ..Default::default()
+            });
+        };
+
+        let mut messages = Vec::new();
+        if val != 0 {
+            if !(1..=63).contains(&val) {
+                messages.push("Lab number is out of bounds.".to_string());
+            } else {
+                player.lab_solved_bits ^= 1u64 << val;
+            }
+        }
+        for n in 0..64u32 {
+            if player.lab_solved_bits & (1u64 << n) != 0 {
+                messages.push(format!("{target_name} has solved lab {n}."));
+            }
+        }
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
     // C `cmd_milinfo` (`command.c:5071-5160`, `CF_GOD`-gated,
     // `command.c:10085-10091`): full-word `/milinfo [name]`, self if no
     // name given.

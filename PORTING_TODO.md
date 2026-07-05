@@ -7008,8 +7008,12 @@ Unlocks every quest NPC. Do these before any P4 area work.
    `cleartunnel` edit an explicit named online target's `tunnel_ppd`
    (no self-fallback, unlike `/setrd`'s `parse_exp_command_target`);
    `/solvetunnel` is self-only and message-only in the C oracle itself,
-   since its own reward call is commented out there) (see the Progress
-   Log entries
+   since its own reward call is commented out there); `/labsolved` done
+   (see iteration 186 - `command.c:3081-3130`/`6043-6046`, `CF_GOD`-
+   gated, pure dispatch wiring over the pre-existing
+   `parse_exp_command_target` helper and `PlayerRuntime::lab_solved_bits`
+   field, no new backing model needed unlike its pentagram-debug
+   neighbors) (see the Progress Log entries
   pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
@@ -8268,6 +8272,32 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cmdcmp` tail (mostly `ac*` anticheat, `macro*` macro-detection, plus
   `/depotsort`, `/punish`/`/rename`/`/showppd` family already flagged as
   blocked above) is still mostly unported.
+
+  Progress Log (iteration 186): ported `/labsolved [name] [number]`
+  (`cmd_labsolved`, `command.c:3081-3130`, dispatched at
+  `command.c:6043-6046`, `CF_GOD`-gated, `cmdcmp(..., 8)` so the 8-char
+  prefix `/labsolve` works too). Pure dispatch wiring over two
+  already-ported pieces - no new backing model needed, unlike the
+  sibling pentagram debug commands right next to it in C (still
+  unported, see the note above): reused `parse_exp_command_target`
+  unchanged for the self-or-named-target + trailing-value parsing
+  (`cmd_labsolved` copies `cmd_exp`'s own parsing block verbatim) and
+  the already-fully-ported `PlayerRuntime::lab_solved_bits` field. A
+  nonzero value in `1..=63` XORs (not ORs) that lab's solved bit -
+  toggling it twice un-solves it again, a real C quirk preserved as-is;
+  out of range reports "Lab number is out of bounds." without
+  mutating anything; either way every solved lab 0..63 is listed
+  lowest-to-highest, matching C's unconditional trailing loop. 5 new
+  tests in `commands_admin.rs` (`CF_GOD` gate + 8-vs-7-char prefix
+  boundary, self toggle-on/off/second-lab/out-of-bounds sequence,
+  named-target success + not-found message, missing-runtime fallback).
+  `cargo fmt --all`, `cargo test --workspace` (2022 ugaris-core + 55 db
+  + 3 net + 40 protocol + 795 server [+4], all green, zero failures),
+  `cargo build -p ugaris-server` / `cargo build --workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop"
+  with no panic. REMAINING: unchanged otherwise - still ~90
+  uncross-referenced `cmdcmp` entries (now minus `/labsolved`), mostly
+  blocked on unported infra as documented above.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

@@ -3165,6 +3165,158 @@ fn milexp_command_is_god_only_full_command_and_not_found_feedback() {
     .is_none());
 }
 
+#[test]
+fn labsolved_command_is_god_only_and_supports_the_8_char_prefix() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    world.add_character(login_character(
+        character_id,
+        &login_block("Tester"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(80, 0);
+    player.character_id = Some(character_id);
+    runtime.players.insert(80, player);
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/labsolved", 1)
+            .is_none()
+    );
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+
+    // C `cmdcmp(ptr, "labsolved", 8)`: the 8-char prefix works too.
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/labsolve", 1)
+            .is_some()
+    );
+    // But a 7-char prefix does not.
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/labsolv", 1)
+            .is_none()
+    );
+}
+
+#[test]
+fn labsolved_command_toggles_bits_and_lists_solved_labs_for_self() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut god = login_character(character_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(80, 0);
+    player.character_id = Some(character_id);
+    runtime.players.insert(80, player);
+
+    // No value: display-only, nothing solved yet.
+    let empty =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/labsolved", 1)
+            .expect("god labsolved should be recognized");
+    assert!(empty.messages.is_empty());
+
+    // Toggle lab 5 on.
+    let toggled_on =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/labsolved 5", 1)
+            .expect("god labsolved toggle should be recognized");
+    assert_eq!(toggled_on.messages, vec!["Godmode has solved lab 5."]);
+    assert_eq!(
+        runtime
+            .player_for_character(character_id)
+            .unwrap()
+            .lab_solved_bits,
+        1u64 << 5
+    );
+
+    // Toggle lab 2 on too; both now list, lowest first.
+    let toggled_second =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/labsolved 2", 1)
+            .expect("god labsolved second toggle should be recognized");
+    assert_eq!(
+        toggled_second.messages,
+        vec!["Godmode has solved lab 2.", "Godmode has solved lab 5."]
+    );
+
+    // Toggling lab 5 again un-solves it (XOR, not OR).
+    let toggled_off =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/labsolved 5", 1)
+            .expect("god labsolved re-toggle should be recognized");
+    assert_eq!(toggled_off.messages, vec!["Godmode has solved lab 2."]);
+
+    // Out-of-bounds value reports the error and does not toggle anything.
+    let out_of_bounds =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/labsolved 64", 1)
+            .expect("god labsolved out-of-bounds should be recognized");
+    assert_eq!(
+        out_of_bounds.messages,
+        vec!["Lab number is out of bounds.", "Godmode has solved lab 2."]
+    );
+}
+
+#[test]
+fn labsolved_command_supports_named_target_and_missing_lookup() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    world.add_character(login_character(
+        target_id,
+        &login_block("Target"),
+        1,
+        11,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+    let mut target_player = PlayerRuntime::connected(80, 0);
+    target_player.character_id = Some(target_id);
+    runtime.players.insert(80, target_player);
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/labsolved Missing 3", 1)
+            .expect("god labsolved missing target should be handled");
+    assert_eq!(
+        missing.messages,
+        vec!["Sorry, no one by the name Missing around."]
+    );
+
+    let granted =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/labsolved Target 3", 1)
+            .expect("god labsolved named target should be recognized");
+    assert_eq!(granted.messages, vec!["Target has solved lab 3."]);
+    assert_eq!(
+        runtime
+            .player_for_character(target_id)
+            .unwrap()
+            .lab_solved_bits,
+        1u64 << 3
+    );
+}
+
+#[test]
+fn labsolved_command_reports_missing_runtime_for_online_character() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut god = login_character(character_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/labsolved", 1)
+            .expect("god labsolved should be recognized even without a runtime");
+    assert_eq!(result.messages, vec!["Could not get lab data for Godmode."]);
+}
+
 fn setup_god_and_target_with_military_ppd(
     world: &mut World,
     runtime: &mut ServerRuntime,
