@@ -6648,3 +6648,149 @@ fn pent_debug_commands_report_missing_runtime_for_online_character() {
         vec!["Could not access pent data for Target."]
     );
 }
+
+// C `command.c:9049-9057`/`3163-3192` (`/noarch`) and `command.c:9226-9235`
+// (`/noprof`).
+
+#[test]
+fn noarch_and_noprof_are_god_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    for command in ["/noarch Target", "/noprof"] {
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, target_id, command, 1)
+                .is_none(),
+            "{command} should be GOD-gated"
+        );
+    }
+}
+
+#[test]
+fn noarch_reports_no_one_by_that_name_and_sends_no_other_message() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/noarch Nobody", 1)
+            .expect("god noarch should be recognized");
+    assert_eq!(
+        missing.messages,
+        vec!["Sorry, no one by the name Nobody around."]
+    );
+
+    // A bare `/noarch` with no name at all resolves an empty-string
+    // lookup, which never matches any real character - C's own
+    // `log_char` format string has a literal space before `%s`, so an
+    // empty name produces a visible double space.
+    let no_name = apply_admin_character_command(&mut world, &mut runtime, god_id, "/noarch", 1)
+        .expect("god noarch should be recognized even with no argument");
+    assert_eq!(no_name.messages, vec!["Sorry, no one by the name  around."]);
+}
+
+#[test]
+fn noarch_caps_values_up_to_immunity_and_clears_arch_flag_with_no_confirmation() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    {
+        let target = world.characters.get_mut(&target_id).unwrap();
+        target.flags.insert(CharacterFlags::ARCH);
+        for value in target.values[1].iter_mut() {
+            *value = 100;
+        }
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/noarch Target", 1)
+            .expect("god noarch should be recognized");
+    // C sends no confirmation message on success at all.
+    assert!(result.messages.is_empty());
+
+    let target = world.characters.get(&target_id).unwrap();
+    assert!(!target.flags.contains(CharacterFlags::ARCH));
+    for n in 0..=CharacterValue::Immunity as usize {
+        assert_eq!(target.values[1][n], 50, "value index {n} should be capped");
+    }
+    // Everything past V_IMMUNITY is left untouched (C's loop is
+    // `n <= V_IMMUNITY`, not the full array).
+    for n in (CharacterValue::Immunity as usize + 1)..CHARACTER_VALUE_NAMES.len() {
+        assert_eq!(
+            target.values[1][n], 100,
+            "value index {n} should be untouched"
+        );
+    }
+}
+
+#[test]
+fn noarch_does_not_lower_values_already_at_or_below_the_cap() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    {
+        let target = world.characters.get_mut(&target_id).unwrap();
+        target.values[1][CharacterValue::Hp as usize] = 20;
+    }
+
+    apply_admin_character_command(&mut world, &mut runtime, god_id, "/noarch Target", 1)
+        .expect("god noarch should be recognized");
+
+    let target = world.characters.get(&target_id).unwrap();
+    assert_eq!(target.values[1][CharacterValue::Hp as usize], 20);
+}
+
+#[test]
+fn noprof_zeroes_the_callers_own_professions_only_with_no_confirmation() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    {
+        let god = world.characters.get_mut(&god_id).unwrap();
+        for profession in god.professions.iter_mut() {
+            *profession = 15;
+        }
+    }
+    {
+        let target = world.characters.get_mut(&target_id).unwrap();
+        for profession in target.professions.iter_mut() {
+            *profession = 15;
+        }
+    }
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/noprof", 1)
+        .expect("god noprof should be recognized");
+    // C sends no confirmation message on success at all.
+    assert!(result.messages.is_empty());
+
+    let god = world.characters.get(&god_id).unwrap();
+    assert!(god.professions.iter().all(|&value| value == 0));
+    // Unlike `/noarch`, `/noprof` never resolves a target name - it always
+    // acts on the caller, so an online bystander's own professions are
+    // left completely untouched.
+    let target = world.characters.get(&target_id).unwrap();
+    assert!(target.professions.iter().all(|&value| value == 15));
+}
+
+#[test]
+fn noprof_ignores_any_trailing_argument_text() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    {
+        let god = world.characters.get_mut(&god_id).unwrap();
+        god.professions[0] = 7;
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/noprof Target", 1)
+            .expect("god noprof should be recognized even with trailing text");
+    assert!(result.messages.is_empty());
+    let god = world.characters.get(&god_id).unwrap();
+    assert!(god.professions.iter().all(|&value| value == 0));
+}

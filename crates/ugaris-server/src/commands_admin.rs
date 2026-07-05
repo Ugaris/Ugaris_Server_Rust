@@ -4702,6 +4702,74 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/noarch` (`command.c:9049-9057`, `CF_GOD`-gated, `cmdcmp(ptr,
+    // "noarch", 6)` - `minlen == strlen("noarch")`, exact word only) plus
+    // `cmd_noarch` (`command.c:3163-3192`): looks up an online character by
+    // (case-insensitive) name - no self-fallback, a bare `/noarch` with no
+    // name resolves an empty-string lookup that never matches any real
+    // character name, reporting "Sorry, no one by the name  around." with
+    // C's characteristic double space (`name` is empty, and its own
+    // `log_char` format string has a single literal space before `%s`) -
+    // then caps every one of the target's `value[1][0..=V_IMMUNITY]`
+    // entries (indices `0..=37`, i.e. `CharacterValue::Hp` through
+    // `CharacterValue::Immunity` inclusive) at `50` and clears `CF_ARCH`.
+    // Unlike every other admin command in this file, C sends no
+    // confirmation message at all on success - only the not-found error is
+    // ever logged, and only to the caller.
+    if lower == "noarch" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (name, _) = take_legacy_alpha_name(rest.trim_start());
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+        let Some(target) = world.characters.get_mut(&target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+        for value in target.values[1]
+            .iter_mut()
+            .take(CharacterValue::Immunity as usize + 1)
+        {
+            if *value > 50 {
+                *value = 50;
+            }
+        }
+        target.flags.remove(CharacterFlags::ARCH);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `/noprof` (`command.c:9226-9235`, `CF_GOD`-gated, `cmdcmp(ptr,
+    // "noprof", 6)`, exact word only): unlike `/noarch` above, this takes
+    // no argument at all and never advances `ptr` past the matched word,
+    // so it always operates on the caller (`ch[cn]`) itself, never a named
+    // target - resets every one of the caller's own `prof[0..P_MAX]`
+    // entries (`PROFESSION_COUNT` = 20 here) to `0` and sets `CF_PROF`
+    // (client refresh flag, a no-op here since this codebase has no
+    // separate "dirty" flag propagation for professions). No message is
+    // sent to the caller on success, matching C exactly.
+    if lower == "noprof" {
+        let Some(caller) = world.characters.get_mut(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        for profession in caller.professions.iter_mut() {
+            *profession = 0;
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
     None
 }
 

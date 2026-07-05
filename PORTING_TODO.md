@@ -7030,7 +7030,14 @@ Unlocks every quest NPC. Do these before any P4 area work.
      data" display/clear side effects in `/pentinfo`/`/resetpent` since
      the whole macro-detection system is unported, matching the
      established skip-untracked-dependent-feature convention) (see the
-     Progress Log entries
+     Progress Log entries; `/noarch`/`/noprof` done (see iteration 189,
+     `command.c:9049-9057`/`3163-3192` and `command.c:9226-9235`, both
+     `CF_GOD`-gated exact-word matches with no user-visible confirmation
+     message in C on success - only the "no one by the name" error path
+     produces output; `/noarch` caps an online named target's
+     `value[1][0..=V_IMMUNITY]` at 50 and clears `CF_ARCH`, `/noprof`
+     zeroes the *caller's own* `prof[]` array, taking no name argument at
+     all, unlike its help text's `<name>` usage hint)
     pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
@@ -8388,6 +8395,46 @@ Unlocks every quest NPC. Do these before any P4 area work.
   zero failures), `cargo build -p ugaris-server` / `cargo build
   --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 189): ported `/noarch` (`command.c:9049-9057`
+  dispatch + `cmd_noarch`, `command.c:3163-3192`) and `/noprof`
+  (`command.c:9226-9235`), both `CF_GOD`-gated exact-word `cmdcmp`
+  matches, into `apply_admin_character_command` (`commands_admin.rs`).
+  `/noarch` looks up an online character by name (no self-fallback; a
+  bare `/noarch` with no name produces C's literal-double-space "Sorry,
+  no one by the name  around." since the empty lookup string never
+  matches), then caps every one of `values[1][0..=37]` (`CharacterValue::
+  Hp` through `::Immunity` inclusive, matching `V_IMMUNITY = 37`
+  digit-for-digit) at `50` without ever lowering values already at or
+  below the cap, and clears `CF_ARCH`. `/noprof` is a real behavioral
+  trap: it takes no argument at all in C (`ptr` is never advanced past
+  the matched word) and always operates on the caller's own `prof[]`
+  array (zeroed, `PROFESSION_COUNT` = 20 here matching `P_MAX`), never a
+  named target - despite the pre-existing (and, it turns out, misleading)
+  `/noprof <name> - Remove professions from a player` help-text line in
+  `commands_player.rs` that a prior iteration must have written
+  aspirationally rather than from the C source; ported the real
+  self-only C behavior rather than the help text's implied one. Neither
+  command sends any confirmation message to anyone on success in C
+  (`/noarch`'s only output is the caller-facing not-found error;
+  `/noprof` has no `log_char` call at all) - both return
+  `KeyringCommandResult::default()` on the success path. 6 new tests in
+  `tests/commands_admin.rs`: GOD gate for both, `/noarch`'s not-found and
+  bare-no-argument double-space error text, `/noarch`'s value-capping
+  (including the untouched-above-`V_IMMUNITY` and
+  not-raised-below-the-cap edge cases) and flag-clearing with empty
+  success messages, `/noprof`'s self-only zeroing (an online bystander's
+  professions are left untouched) and its ignoring of any trailing
+  argument text. `cargo fmt --all`, `cargo test --workspace` (2022
+  ugaris-core + 55 db + 3 net + 40 protocol + 811 server [+6], all green,
+  zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic. REMAINING: unchanged
+  otherwise - still ~87 uncross-referenced `cmdcmp` entries (now minus
+  `/noarch`/`/noprof`), mostly blocked on unported infra as documented
+  above; the anticheat (`ac*`) and macro-detection (`macro*`) families
+  remain the largest unexamined chunk and would benefit from their own
+  dedicated cross-reference pass before the next slice is picked.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
