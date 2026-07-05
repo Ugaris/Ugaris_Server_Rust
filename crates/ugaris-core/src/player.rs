@@ -412,6 +412,7 @@ const TWOCITY_PPD_THIEF_KILLED_OFFSET: usize = 10 * 4;
 const TWOCITY_PPD_SANWYN_STATE_OFFSET: usize = 16 * 4;
 const TWOCITY_PPD_SKELLY_STATE_OFFSET: usize = 27 * 4;
 const TWOCITY_PPD_ALCHEMIST_STATE_OFFSET: usize = 28 * 4;
+const MISC_PPD_SWAPPED_OFFSET: usize = 20;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
 // `struct lostcon_ppd` field offsets (`src/module/lostcon.h:18-36`), in
@@ -4974,6 +4975,33 @@ impl PlayerRuntime {
         encoded
     }
 
+    /// C `char_swap`'s `ppd->swapped = realtime;` (`do.c:1671-1673`, only
+    /// reached when the swap-initiating character is `CF_PLAYER`), stamping
+    /// the real-time-seconds timestamp read by the give-item anti-scam
+    /// cooldown check (`do.c:511-514`: `realtime - ppd->swapped < 20`
+    /// blocks giving an item to a character who swapped places in the last
+    /// 20 seconds; that read side isn't ported yet).
+    pub fn record_swap(&mut self, realtime_seconds: i32) {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            self.misc_ppd.resize(LEGACY_MISC_PPD_SIZE, 0);
+        }
+        write_i32(
+            &mut self.misc_ppd,
+            MISC_PPD_SWAPPED_OFFSET,
+            realtime_seconds,
+        );
+    }
+
+    /// Reads back the `char_swap` timestamp set by [`Self::record_swap`].
+    /// Returns `0` (matching a freshly zeroed C `struct misc_ppd`) if no
+    /// swap has ever been recorded.
+    pub fn swapped_at(&self) -> i32 {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.misc_ppd, MISC_PPD_SWAPPED_OFFSET)
+    }
+
     pub fn touch_xmas_tree(
         &mut self,
         area_id: u16,
@@ -7551,6 +7579,20 @@ mod tests {
         );
         assert_eq!(read_i32(&player.misc_ppd, MISC_PPD_GIFT_YEAR_OFFSET), 2026);
         assert_eq!(player.misc_ppd[MISC_PPD_TREEDONE_OFFSET], 0b0000_0010);
+    }
+
+    #[test]
+    fn record_swap_stamps_and_reads_back_the_swapped_offset() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.swapped_at(), 0);
+
+        player.record_swap(123_456);
+
+        assert_eq!(player.swapped_at(), 123_456);
+        assert_eq!(read_i32(&player.misc_ppd, MISC_PPD_SWAPPED_OFFSET), 123_456);
+        // Unrelated fields untouched.
+        assert_eq!(player.misc_ppd[MISC_PPD_TREEDONE_OFFSET], 0);
+        assert_eq!(read_i32(&player.misc_ppd, MISC_PPD_GIFT_YEAR_OFFSET), 0);
     }
 
     #[test]

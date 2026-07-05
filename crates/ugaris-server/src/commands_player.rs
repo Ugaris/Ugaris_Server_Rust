@@ -571,6 +571,43 @@ pub(crate) fn apply_wimp_command(command: &str) -> Option<KeyringCommandResult> 
     })
 }
 
+/// C `/swap` (`command.c:8985-8988`, `cmdcmp(ptr, "swap", 0)`): swaps
+/// places with the character directly in front, via [`World::char_swap`]
+/// (already ported for the walk-into-someone auto-swap mechanic,
+/// `world/actions.rs`'s `walk_swap_or_use_driver`). C's `minlen` of `0`
+/// technically lets any non-empty prefix match, but which prefix length
+/// actually reaches this `cmdcmp` call depends on the exact order of the
+/// ~9000-line `command.c` if-chain (many other minlen-0 commands, e.g.
+/// `say`/`shout`, are checked first and would swallow a bare `/s`); since
+/// this port's dispatcher doesn't replicate that whole chain, only the
+/// full word is accepted here, matching the same simplification already
+/// used for the other minlen-0 chat commands (see
+/// `commands_chat.rs::LocalSpeechKind::from_verb`). On success, stamps
+/// `PlayerRuntime::record_swap` (C `ppd->swapped = realtime;`,
+/// `do.c:1671-1673`). Neither C nor this port reports anything to the
+/// player on success or failure (the C caller never inspects `char_swap`'s
+/// `error`/return value).
+pub(crate) fn apply_swap_command(
+    world: &mut World,
+    player: &mut PlayerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("swap") {
+        return None;
+    }
+
+    if world.char_swap(character_id) {
+        let realtime_seconds = (world.tick.0 / TICKS_PER_SECOND) as i32;
+        player.record_swap(realtime_seconds);
+    }
+    Some(KeyringCommandResult::default())
+}
+
 pub(crate) fn apply_autoturn_command(
     character: &Character,
     player: &mut PlayerRuntime,

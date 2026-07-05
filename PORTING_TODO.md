@@ -6950,7 +6950,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   anticheat, `macro*` macro-detection, plus one-off commands like
   `/depotsort` (the character's own `DRD_DEPOT_PPD` depot, a whole
   unported storage system - not the same as `/accountdepotsort`, which
-  is done), `/swap`, `/steal`, `/logout`, `/complain`, `/kick`,
+  is done), `/steal`, `/logout`, `/complain`, `/kick`,
   `/punish`, `/shutdown`, `/rename`, `/showppd`/`/showvalues`,
   `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
   `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
@@ -7445,6 +7445,46 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cargo test --workspace` (1986 ugaris-core + 55 db + 3 net + 40
   protocol + 695 server [+1], all green, zero failures), `cargo build -p
   ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 170): ported `/swap` (`command.c:8985-8988`,
+  `cmdcmp(ptr, "swap", 0)`, no permission gate). The map-mutation core
+  (`World::char_swap`) turned out to already exist in `world/actions.rs`,
+  ported for the unrelated walk-into-someone auto-swap mechanic
+  (`walk_swap_or_use_driver`) with tests in `world/tests/actions.rs` -
+  only the standalone text command was missing. Added
+  `apply_swap_command` in `commands_player.rs`, which requires the exact
+  word "swap" rather than replicating C's `minlen 0` (any-prefix-length)
+  behavior: C's own dispatcher relies on if-chain *order* to disambiguate
+  single-letter abbreviations against dozens of other `minlen 0` commands
+  (e.g. a bare `/s` actually resolves to `/shout`, checked earlier in the
+  9000-line chain, never reaching `swap` at all) - this port's dispatcher
+  doesn't replicate that whole chain, so it uses the same
+  exact-word-only simplification already established for the other
+  `minlen 0` chat commands (`commands_chat.rs::LocalSpeechKind::
+  from_verb`). On success, stamps the swap timestamp via new
+  `PlayerRuntime::record_swap`/`swapped_at` (C `ppd->swapped = realtime`,
+  `do.c:1671-1673`, offset 20 in `struct misc_ppd` - added
+  `MISC_PPD_SWAPPED_OFFSET` next to the existing tree/gift-year offset
+  constants), which is read by the still-unported give-item anti-scam
+  cooldown (`do.c:511-514`, `realtime - ppd->swapped < 20`) - that read
+  side is a separate, not-yet-started task (the whole `AC_GIVE` action
+  queue/cooldown chain isn't ported). Matching C's own bare
+  `char_swap(cn); return 1;` caller, neither C nor this port reports
+  anything to the player on success or failure. 1 new test in
+  `player.rs` for the offset codec round trip, 2 new tests in
+  `tests/commands_player.rs` (successful swap + timestamp stamp;
+  abbreviation-rejected/silent-no-op-on-failure). Also investigated
+  `/kick` and `/complain` as candidate slices and confirmed they're
+  properly blocked, not just uncross-referenced: both funnel through C's
+  `write_scrollback` (`player.c:3512`), which is not a simple audit-log
+  call but a whole scrollback-dump-to-email feature (`curl`+`sendmail`
+  to `game@ugaris.com`) with no Rust equivalent infrastructure - do not
+  attempt either without that infra (or a decision to skip the email
+  side) first. `cargo fmt --all`, `cargo test --workspace` (1987
+  ugaris-core [+1] + 55 db + 3 net + 40 protocol + 697 server [+2], all
+  green, zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every

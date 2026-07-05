@@ -215,6 +215,58 @@ fn hints_command_toggles_lostcon_hint_flag_with_legacy_feedback() {
 }
 
 #[test]
+fn swap_command_exchanges_positions_and_stamps_swapped_timestamp() {
+    let mut world = World::default();
+    world.tick.0 = 5 * TICKS_PER_SECOND;
+    let mut actor = login_character(CharacterId(1), &login_block("Actor"), 1, 10, 10);
+    actor.dir = Direction::Right as u8;
+    assert!(world.spawn_character(actor, 10, 10));
+    let target = login_character(CharacterId(2), &login_block("Target"), 1, 11, 10);
+    assert!(world.spawn_character(target, 11, 10));
+
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.swapped_at(), 0);
+
+    let result = apply_swap_command(&mut world, &mut player, CharacterId(1), "/swap")
+        .expect("swap command should be recognized");
+    assert_eq!(result, KeyringCommandResult::default());
+
+    assert_eq!(
+        (
+            world.characters[&CharacterId(1)].x,
+            world.characters[&CharacterId(1)].y
+        ),
+        (11, 10)
+    );
+    assert_eq!(
+        (
+            world.characters[&CharacterId(2)].x,
+            world.characters[&CharacterId(2)].y
+        ),
+        (10, 10)
+    );
+    assert_eq!(player.swapped_at(), 5);
+}
+
+#[test]
+fn swap_command_requires_exact_word_and_is_a_silent_no_op_when_blocked() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    assert!(apply_swap_command(&mut world, &mut player, CharacterId(1), "/swa").is_none());
+    assert!(apply_swap_command(&mut world, &mut player, CharacterId(1), "/swapx").is_none());
+
+    // No character at all in the world: `char_swap` fails, but C's caller
+    // (`command.c`'s bare `char_swap(cn); return 1;`) never inspects the
+    // return value, so the command is still "recognized" with no feedback
+    // and no timestamp stamped.
+    let result = apply_swap_command(&mut world, &mut player, CharacterId(1), "/swap")
+        .expect("full word should be recognized even when the swap itself fails");
+    assert_eq!(result, KeyringCommandResult::default());
+    assert_eq!(player.swapped_at(), 0);
+}
+
+#[test]
 fn wimp_command_emits_non_live_quest_fallback() {
     let result = apply_wimp_command("/wimp").expect("wimp command should be recognized");
     assert_eq!(

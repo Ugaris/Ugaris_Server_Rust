@@ -1678,6 +1678,14 @@ async fn main() -> anyhow::Result<()> {
                                     continue;
                                 }
                             }
+                            if let Some(result) =
+                                apply_swap_command(&mut world, player, character_id, &command)
+                            {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
                             if let Some(character) = world.characters.get(&character_id) {
                                 if let Some(result) =
                                     apply_lag_control_toggle_command(character, player, &command)

@@ -447,7 +447,7 @@ Current implemented slices:
 - `src/system/drvlib.c` / `src/system/effect.c` simple-baddy direct-ball task selection now ports the C `calc_steps_ball(cn, from, target) > tile_dist * 2 - 5` gate before adding the weighted `ball` task. Rust traces the same fixed-point half-tile projectile path, treats `MF_TMOVEBLOCK` and non-`MF_FIRETHRU` `MF_MOVEBLOCK` tiles as blockers unless occupied by the caster, and preserves the existing C-shaped random target offset when the task is selected. Focused core tests cover successful distant ball setup, random offset use, and suppression when an early wall collision would make the projectile fail. Remaining fight-driver gaps include full randomized task scorer/priority ordering, distance3/distance7 spacing task parity, flee/secure movement details, exact global RNG parity, and exact NPC scheduling.
 - `src/system/drvlib.c` `distance_driver` distance-3 spell-spacing now has a Rust simple-baddy attack slice for the C active Flash/Freeze spacing path: visible enemies are checked after offensive spell/pulse attempts and before attack-back/melee fallback, active Flash blocks only when the existing carried `IDR_FLASH` spell prevents adding another Flash, active Freeze uses the existing freeze-value/may-add gates, and already-at-distance-3 cases perform the C `do_idle(TICKS / 4)` fallback while stamping `lastfight`. Focused core tests cover the active-Flash spell-slot gate and already-at-distance idle behavior. Remaining fight-driver gaps include full randomized task scorer/priority ordering, distance7/fireball spacing, fireball line-of-hit repositioning, flee/secure movement details, exact global RNG parity, and exact NPC scheduling.
 - `src/system/drvlib.c` fight-driver task ordering now uses the injected runtime RNG for the C `RANDOM(sillyness)` value jitter before sorting tasks, instead of the previous deterministic placeholder. Focused core tests cover task-order jitter changing simple-baddy action choice and preserve the existing ball target-offset random rolls after ordering. Remaining fight-driver gaps include exact global RNG stream wiring, full randomized task scorer parity beyond currently represented tasks, fireball line-of-hit repositioning edge cases, flee/secure movement details, and exact NPC scheduling.
-- `src/system/do.c` `char_swap` and `src/system/drvlib.c` `walk_swap_or_use_driver` now have Rust world primitives: failed walk attempts can turn, swap with idle visible `CF_PLAYER`/`CF_PLAYERLIKE`/`CF_ALLOWSWAP` characters while preserving peace/underwater gates and map occupancy, then fall back to item use when no swap is possible. Focused core tests cover successful swaps, invisible-target rejection, and use fallback. Remaining swap-movement gaps are the full `swap_move_driver` pathfinder target callback used by area-specific NPC drivers and exact misc-PPD swapped timestamp/audit logging.
+- `src/system/do.c` `char_swap` and `src/system/drvlib.c` `walk_swap_or_use_driver` now have Rust world primitives: failed walk attempts can turn, swap with idle visible `CF_PLAYER`/`CF_PLAYERLIKE`/`CF_ALLOWSWAP` characters while preserving peace/underwater gates and map occupancy, then fall back to item use when no swap is possible. Focused core tests cover successful swaps, invisible-target rejection, and use fallback. As of iteration 170, the standalone `/swap` text command (`command.c:8985-8988`) also calls `World::char_swap` directly and stamps the C `ppd->swapped` real-time timestamp via new `PlayerRuntime::record_swap`/`swapped_at` (fixed `misc_ppd` offset 20) - see the iteration 170 bullet below. Remaining swap-movement gaps are the full `swap_move_driver` pathfinder target callback used by area-specific NPC drivers and the give-item anti-scam cooldown that reads `ppd->swapped` (`do.c:511-514`, not wired into the still-unported give-item action queue) plus exact audit logging.
 - `src/area/31/warrmines.c` `IDR_OXYPOTION` now dispatches from the area item-driver path with the legacy area-31 guard, carried-item requirement, silent one-minute `IDR_OXYGEN` timed spell installation, source potion destruction, spell-remove timer scheduling, and inventory/update flag mutation covered by focused core/world tests. Remaining Warrmines item gaps include lizard flower/berry PPD cooldowns, flower mixing, exact area driver feedback/audit logging, and live-data smoke coverage.
 - `src/system/drvlib.c` `distance_driver` distance-7 fireball-spacing now has a Rust simple-baddy attack slice for the C active Fireball spacing path: after offensive spell/pulse and distance-3 attempts, simple baddies with active Fireball, enough mana, useful fireball damage, an available Flash spell slot, and effective Fireball above effective Flash try to path to seven steps from the target without the distance-3 idle fallback. Focused core tests cover successful distance-seven movement and the Fireball-vs-Flash gate. Remaining fight-driver gaps include full randomized task scorer/priority ordering, fireball line-of-hit repositioning, flee/secure movement details, exact global RNG parity, and exact NPC scheduling.
 - `src/system/drvlib.c` in-combat `fight_driver_attack_enemy` self-preservation tasks now have a Rust simple-baddy attack slice: visible-enemy processing tries C-style low-HP self-heal, low-lifeshield magic shield, unblessed self-bless, and half-second regeneration idle before offensive/movement fallback, using the existing timed action bridges and stamping `lastfight`. Focused core tests cover heal priority over fireball, magic shield before melee, self-bless admission, and regeneration idle. Remaining fight-driver gaps include exact randomized task scorer/priority ordering, fireball line-of-hit repositioning, flee/secure movement details, exact global RNG parity, and exact NPC scheduling.
@@ -7136,3 +7136,48 @@ startup log line unchanged.
   55 db + 3 net + 40 protocol + 695 server [+1], all green, zero
   failures), `cargo build -p ugaris-server` clean with zero warnings,
   10s boot-smoke confirmed "entering Rust game loop" with no panic.
+
+- Iteration 170 ported `/swap` (`src/system/command.c:8985-8988`,
+  `cmdcmp(ptr, "swap", 0)`, no permission gate). The map-mutation core
+  turned out to already exist: `World::char_swap`
+  (`crates/ugaris-core/src/world/actions.rs`) was ported for the
+  unrelated walk-into-someone auto-swap mechanic
+  (`walk_swap_or_use_driver`) with its own tests already in
+  `world/tests/actions.rs` - only the standalone text command was
+  missing. Added `apply_swap_command`
+  (`crates/ugaris-server/src/commands_player.rs`), which requires the
+  exact word `swap` rather than replicating C's `minlen 0` (any-prefix)
+  behavior: C's dispatcher relies on if-chain *order* to disambiguate
+  single-letter abbreviations against dozens of other `minlen 0`
+  commands (a bare `/s` actually resolves to `/shout`, checked earlier
+  in the ~9000-line chain, never reaching `swap`), and this port's
+  dispatcher doesn't replicate that whole chain - so it uses the same
+  exact-word-only simplification already established for the other
+  `minlen 0` chat commands (`commands_chat.rs::LocalSpeechKind::
+  from_verb`). On success it stamps the swap timestamp via new
+  `PlayerRuntime::record_swap`/`swapped_at`
+  (`crates/ugaris-core/src/player.rs`, C `ppd->swapped = realtime`,
+  `do.c:1671-1673`, offset 20 in `struct misc_ppd` - added
+  `MISC_PPD_SWAPPED_OFFSET` alongside the existing tree/gift-year offset
+  constants), which is read by the still-unported give-item anti-scam
+  cooldown (`do.c:511-514`, `realtime - ppd->swapped < 20`) - that read
+  side is a separate task (the whole `AC_GIVE` action/cooldown chain
+  isn't ported yet). Matching C's own bare `char_swap(cn); return 1;`
+  caller, neither C nor this port reports anything to the player on
+  success or failure. Wired into the main dispatch chain in `main.rs`
+  right after `apply_autoturn_command`. 1 new test in `player.rs` for
+  the offset codec round trip, 2 new tests in
+  `tests/commands_player.rs` (successful swap + timestamp stamp;
+  abbreviation-rejected/silent-no-op-on-failure cases). Also
+  investigated `/kick` and `/complain` as candidate slices and confirmed
+  both are properly blocked, not merely uncross-referenced: both funnel
+  through C's `write_scrollback` (`src/system/player.c:3512`), which is
+  not a simple audit-log call but a whole scrollback-dump-to-email
+  feature (`curl`+`sendmail` to `game@ugaris.com`) with no Rust
+  equivalent infrastructure - do not attempt either without that infra
+  (or an explicit decision to skip the email side) first. `cargo fmt
+  --all`, `cargo test --workspace` (1987 ugaris-core [+1] + 55 db + 3
+  net + 40 protocol + 697 server [+2], all green, zero failures), `cargo
+  build -p ugaris-server` / `cargo build --workspace` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panic.
