@@ -526,6 +526,83 @@ fn allowbless_command_toggles_nobless_flag_and_shows_status() {
     assert!(apply_allowbless_command(&mut world, &player, character_id, "/allo").is_none());
 }
 
+/// C `cmdcmp(ptr, "killbless", 5)`: no permission gate, any prefix from
+/// `"killb"` (the 5-char `minlen`) up to the full word matches.
+#[test]
+fn killbless_command_destroys_bless_item_and_reports_done() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.inventory[29] = Some(ItemId(500));
+    world.add_character(character);
+    world.add_item(Item {
+        id: ItemId(500),
+        name: "Bless".to_string(),
+        description: "A Spell of Bless.".to_string(),
+        flags: ItemFlags::USED,
+        sprite: 0,
+        value: 0,
+        min_level: 0,
+        max_level: 0,
+        needs_class: 0,
+        template_id: 0,
+        owner_id: 0,
+        modifier_index: [0; 5],
+        modifier_value: [0; 5],
+        x: 0,
+        y: 0,
+        carried_by: Some(character_id),
+        contained_in: None,
+        content_id: 0,
+        driver: ugaris_core::spell::IDR_BLESS,
+        driver_data: Vec::new(),
+        serial: 500,
+    });
+
+    let result = apply_killbless_command(&mut world, character_id, "/killbless")
+        .expect("killbless command should be recognized");
+    assert_eq!(result.messages, vec!["Done.".to_string()]);
+    assert!(result.inventory_changed);
+    assert!(world
+        .characters
+        .get(&character_id)
+        .unwrap()
+        .inventory
+        .iter()
+        .all(Option::is_none));
+}
+
+#[test]
+fn killbless_command_reports_no_bless_found_when_absent() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+
+    let result = apply_killbless_command(&mut world, character_id, "/killbless")
+        .expect("killbless command should be recognized");
+    assert_eq!(result.messages, vec!["No Bless found.".to_string()]);
+    assert!(!result.inventory_changed);
+}
+
+#[test]
+fn killbless_command_prefix_matching_and_rejection() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+
+    // Below the 5-char `minlen` ("kill" is only 4 chars): no match.
+    assert!(apply_killbless_command(&mut world, character_id, "/kill").is_none());
+    // At/above minlen and a valid prefix: matches.
+    assert!(apply_killbless_command(&mut world, character_id, "/killb").is_some());
+    // A sibling command sharing the "kill" prefix must not match.
+    assert!(apply_killbless_command(&mut world, character_id, "/killclan").is_none());
+}
+
 /// C `cmdcmp(ptr, "lastseen", 4)`: any prefix from `"last"` up to the full
 /// word matches case-insensitively; anything shorter (or a different
 /// word entirely) is not recognized at all.

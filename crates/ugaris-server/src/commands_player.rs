@@ -898,6 +898,38 @@ pub(crate) fn apply_allowbless_command(
     apply_status_command(character, player, "/status")
 }
 
+/// C `/killbless` (`command.c:9605-9617`), `cmdcmp(ptr, "killbless", 5)`:
+/// no permission gate, any prefix from `"killb"` (5 chars, the `minlen`)
+/// up to the full word matches, case-insensitively. Destroys the
+/// caller's own bless spell item, if any (see `World::kill_bless_item`'s
+/// doc comment for the exact scan/removal behavior), logging "Done." on
+/// success or "No Bless found." otherwise.
+pub(crate) fn apply_killbless_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 5 || !"killbless".starts_with(&lower) {
+        return None;
+    }
+
+    let destroyed = world.kill_bless_item(character_id);
+    Some(KeyringCommandResult {
+        messages: vec![if destroyed {
+            "Done.".to_string()
+        } else {
+            "No Bless found.".to_string()
+        }],
+        inventory_changed: destroyed,
+        ..Default::default()
+    })
+}
+
 /// C `/lastseen <name>` (`command.c:9027-9046`), `cmdcmp(ptr, "lastseen",
 /// 4)` so any prefix from `"last"` up to the full word matches, case-
 /// insensitively, no permission gate (every player can use it). Trims
@@ -1267,6 +1299,7 @@ pub(crate) fn apply_help_command(
         "/autoturn - Toggle automatic turning toward enemies".to_string(),
         "/autopulse - Toggle automatic pulse casting".to_string(),
         "/allowbless - Toggle allowing other players to bless you".to_string(),
+        "/killbless - Destroy your own active Bless spell".to_string(),
         "== Miscellaneous Commands ==".to_string(),
         "/logout - Safely log out when standing on a blue square".to_string(),
         "/wimp - Exit from a Live Quest (may have consequences)".to_string(),

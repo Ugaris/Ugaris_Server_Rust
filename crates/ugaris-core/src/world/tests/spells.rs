@@ -1487,3 +1487,75 @@ fn world_fdemon_cannon_pulse_shoots_target_and_drains_loader() {
         Some(293)
     );
 }
+
+#[test]
+fn kill_bless_item_destroys_carried_bless_and_effect() {
+    let mut world = World::default();
+    world.tick = Tick(100);
+    let mut character = character(1);
+    character.flags.insert(CharacterFlags::PLAYER);
+    character.mana = 10 * POWERSCALE;
+    character.values[0][CharacterValue::Bless as usize] = 40;
+    character.values[1][CharacterValue::Intelligence as usize] = 20;
+    character.values[1][CharacterValue::Wisdom as usize] = 20;
+    character.values[1][CharacterValue::Agility as usize] = 20;
+    character.values[1][CharacterValue::Strength as usize] = 20;
+    world.add_character(character);
+
+    assert!(world.install_bless_spell(CharacterId(1), 40, 2_880));
+    let spell_id = world.characters.get(&CharacterId(1)).unwrap().inventory[29].unwrap();
+    assert!(world.items.contains_key(&spell_id));
+    assert_eq!(world.effects.len(), 1);
+    assert_eq!(
+        world.characters.get(&CharacterId(1)).unwrap().values[0]
+            [CharacterValue::Intelligence as usize],
+        30
+    );
+
+    assert!(world.kill_bless_item(CharacterId(1)));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(character.inventory[29], None);
+    assert!(!world.items.contains_key(&spell_id));
+    assert!(world.effects.is_empty());
+    // Back to the raised baseline (20) once the bless item is destroyed
+    // and `update_char` recomputes modifiers.
+    assert_eq!(
+        character.values[0][CharacterValue::Intelligence as usize],
+        20
+    );
+}
+
+#[test]
+fn kill_bless_item_returns_false_and_is_a_no_op_without_a_bless_item() {
+    let mut world = World::default();
+    let character = character(1);
+    world.add_character(character);
+
+    assert!(!world.kill_bless_item(CharacterId(1)));
+    assert!(world
+        .characters
+        .get(&CharacterId(1))
+        .unwrap()
+        .inventory
+        .iter()
+        .all(Option::is_none));
+}
+
+#[test]
+fn kill_bless_item_ignores_non_bless_items_in_equip_slots() {
+    let mut world = World::default();
+    let mut character = character(1);
+    character.inventory[15] = Some(ItemId(5));
+    world.add_character(character);
+    let mut sword = item(5, ItemFlags::WNRHAND);
+    sword.carried_by = Some(CharacterId(1));
+    world.add_item(sword);
+
+    assert!(!world.kill_bless_item(CharacterId(1)));
+    assert!(world.items.contains_key(&ItemId(5)));
+    assert_eq!(
+        world.characters.get(&CharacterId(1)).unwrap().inventory[15],
+        Some(ItemId(5))
+    );
+}

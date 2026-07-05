@@ -6999,7 +6999,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
    backed entirely by the already-ported `PlayerRuntime::
    random_shrine_used_words`/`random_shrine_continuity` fields;
    `/tunnels`/`/demonlords` were already done
-   earlier - see their own entries above) (see the Progress Log entries
+   earlier - see their own entries above); `/killbless` done (see
+   iteration 184, `command.c:9605-9617`, no permission gate, destroys the
+   caller's own bless spell item) (see the Progress Log entries
   pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
@@ -8162,6 +8164,46 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cmdcmp` tail (anticheat `ac*`/`macro*` family, `/depotsort`,
   `/showppd`, `punish`/`rename`/etc.) noted above is still unported and
   still needs a fresh cross-reference pass before the next slice.
+
+  Progress Log (iteration 184): a fresh cross-reference pass (grepping
+  every `cmdcmp(ptr, "...")` name in `command.c` against the full
+  `crates/ugaris-server/src` and `crates/ugaris-core/src` trees, not just
+  the handful of dispatcher files, since a prior pass's naive grep had
+  missed already-ported commands living in their own modules like
+  `keyring.rs`) found `/killbless` (`command.c:9605-9617`, `cmdcmp(ptr,
+  "killbless", 5)`, no permission gate) genuinely unported. Ported it:
+  added `World::kill_bless_item` (`world/spells.rs`, next to the sibling
+  `install_bless_spell`) which scans equip slots 12..30
+  (`SPELL_SLOT_START..SPELL_SLOT_END`) for the first item with
+  `IDR_BLESS` driver, and if found removes the `EF_BLESS` show-effect
+  (`remove_show_effect_type`), destroys the item (`destroy_item`, which
+  also clears the inventory slot exactly like C's `ch[cn].item[n] = 0`),
+  and calls `update_character`, matching C's own
+  `destroy_effect_type`/`destroy_item`/`update_char` sequence digit for
+  digit; returns `false` (caller logs "No Bless found.") when no bless
+  item is carried. Added `apply_killbless_command` in
+  `commands_player.rs`, matching the existing `/allowbless` prefix-match
+  style (`cmdcmp`'s `minlen` semantics: any prefix from `"killb"` (5
+  chars) up to the full word matches, case-insensitively), wired at the
+  same `main.rs` call site as `/allowbless`/`/lastseen` with
+  `inventory_changed` triggering the existing inventory-refresh path. 3
+  new `ugaris-core` tests (`world/tests/spells.rs`: destroys carried
+  bless item + effect and recomputes values back to baseline, false/no-op
+  with no bless item present, ignores non-bless items in the same equip
+  slot range) and 3 new `ugaris-server` tests (`tests/
+  commands_player.rs`: end-to-end command dispatch producing "Done."
+  with `inventory_changed`, "No Bless found." when absent, and prefix-
+  matching/rejection including the sibling `/killclan` non-collision).
+  `cargo fmt --all`, `cargo test --workspace` (2022 ugaris-core [+3] + 55
+  db + 3 net + 40 protocol + 783 server [+3], all green, zero failures),
+  `cargo build -p ugaris-server` / `cargo build --workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
+  no panic. REMAINING: the ~90-entry `cmdcmp` tail is still mostly
+  unported - still needs a fresh cross-reference pass before the next
+  slice (this iteration's pass only fully verified `/killbless`; it did
+  not exhaustively re-verify every other name in the prior REMAINING
+  list, several of which were previously miscategorized by naive
+  grepping too).
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

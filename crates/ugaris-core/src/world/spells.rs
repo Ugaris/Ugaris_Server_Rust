@@ -918,6 +918,38 @@ impl World {
         true
     }
 
+    /// C `/killbless` (`command.c:9605-9617`, `cmdcmp(ptr, "killbless",
+    /// 5)`, no permission gate): scans equip slots 12..30 (`SPELL_SLOT_
+    /// START..SPELL_SLOT_END`) for the first item with `IDR_BLESS`
+    /// driver; if found, removes the `EF_BLESS` show-effect, destroys the
+    /// item (which also clears the inventory slot, C's `ch[cn].item[n] =
+    /// 0`), calls `update_char`, and returns `true` (caller logs "Done.").
+    /// Returns `false` when no bless item is present (caller logs "No
+    /// Bless found.").
+    pub fn kill_bless_item(&mut self, character_id: CharacterId) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let bless_item_id = character.inventory[SPELL_SLOT_START..SPELL_SLOT_END]
+            .iter()
+            .flatten()
+            .find(|&&item_id| {
+                self.items
+                    .get(&item_id)
+                    .is_some_and(|item| item.driver == IDR_BLESS)
+            })
+            .copied();
+
+        let Some(item_id) = bless_item_id else {
+            return false;
+        };
+
+        self.remove_show_effect_type(character_id, EF_BLESS);
+        self.destroy_item(item_id);
+        self.update_character(character_id);
+        true
+    }
+
     pub fn install_bonus_spell(
         &mut self,
         target_id: CharacterId,

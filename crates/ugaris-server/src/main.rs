@@ -2048,6 +2048,17 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             }
                             if let Some(result) =
+                                apply_killbless_command(&mut world, character_id, &command)
+                            {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                if result.inventory_changed {
+                                    command_inventory_refresh.push(character_id);
+                                }
+                                continue;
+                            }
+                            if let Some(result) =
                                 apply_lastseen_command(&mut world, character_id, &command)
                             {
                                 for message in result.messages {
