@@ -313,3 +313,152 @@ fn check_easter_event_starts_and_ends_halving_and_restoring_lucky_pentagram_chan
     assert_eq!(transition, Some(false));
     assert_eq!(settings.lucky_pentagram_chance, 50);
 }
+
+fn decoration_test_loader() -> ZoneLoader {
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_item_templates_str(
+            r#"
+                xmastree_deco:
+                    name="Christmas Tree"
+                    sprite=900
+                    flag=IF_MOVEBLOCK
+                ;
+                "#,
+        )
+        .unwrap();
+    loader
+}
+
+#[test]
+fn spawn_event_decoration_places_item_and_records_its_id() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let mut loader = decoration_test_loader();
+    let mut decoration = EventDecoration::new("xmastree_deco", 5, 5, 0);
+
+    assert!(spawn_event_decoration(
+        &mut world,
+        &mut loader,
+        &mut decoration
+    ));
+
+    let item_id = decoration
+        .spawned_item
+        .expect("decoration should be spawned");
+    let item = world.items.get(&item_id).unwrap();
+    assert_eq!(item.name, "Christmas Tree");
+    assert_eq!((item.x, item.y), (5, 5));
+    assert_eq!(world.map.tile(5, 5).unwrap().item, item_id.0);
+}
+
+#[test]
+fn spawn_event_decoration_is_a_noop_when_already_spawned() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let mut loader = decoration_test_loader();
+    let mut decoration = EventDecoration::new("xmastree_deco", 5, 5, 0);
+
+    assert!(spawn_event_decoration(
+        &mut world,
+        &mut loader,
+        &mut decoration
+    ));
+    let first_id = decoration.spawned_item;
+    assert!(!spawn_event_decoration(
+        &mut world,
+        &mut loader,
+        &mut decoration
+    ));
+    assert_eq!(decoration.spawned_item, first_id);
+    // Only one item was ever created.
+    assert_eq!(world.items.len(), 1);
+}
+
+#[test]
+fn spawn_event_decoration_respects_area_gate() {
+    let mut world = World::default();
+    world.area_id = 3;
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let mut loader = decoration_test_loader();
+    let mut wrong_area = EventDecoration::new("xmastree_deco", 5, 5, 7);
+
+    assert!(!spawn_event_decoration(
+        &mut world,
+        &mut loader,
+        &mut wrong_area
+    ));
+    assert!(wrong_area.spawned_item.is_none());
+    assert!(world.items.is_empty());
+
+    let mut right_area = EventDecoration::new("xmastree_deco", 6, 6, 3);
+    assert!(spawn_event_decoration(
+        &mut world,
+        &mut loader,
+        &mut right_area
+    ));
+    assert!(right_area.spawned_item.is_some());
+
+    let mut any_area = EventDecoration::new("xmastree_deco", 7, 7, 0);
+    assert!(spawn_event_decoration(
+        &mut world,
+        &mut loader,
+        &mut any_area
+    ));
+    assert!(any_area.spawned_item.is_some());
+}
+
+#[test]
+fn remove_event_decoration_destroys_item_and_clears_map_tile() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let mut loader = decoration_test_loader();
+    let mut decoration = EventDecoration::new("xmastree_deco", 5, 5, 0);
+    spawn_event_decoration(&mut world, &mut loader, &mut decoration);
+    let item_id = decoration.spawned_item.unwrap();
+
+    remove_event_decoration(&mut world, &mut decoration);
+
+    assert!(decoration.spawned_item.is_none());
+    assert!(!world.items.contains_key(&item_id));
+    assert_eq!(world.map.tile(5, 5).unwrap().item, 0);
+}
+
+#[test]
+fn remove_event_decoration_is_a_noop_when_not_spawned_or_already_removed() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let mut decoration = EventDecoration::new("xmastree_deco", 5, 5, 0);
+
+    // Never spawned: no panic, stays `None`.
+    remove_event_decoration(&mut world, &mut decoration);
+    assert!(decoration.spawned_item.is_none());
+
+    // Spawned then already removed by some other means (e.g. destroyed
+    // directly): matches C's `it[decoration->in].flags` liveness guard.
+    let mut loader = decoration_test_loader();
+    spawn_event_decoration(&mut world, &mut loader, &mut decoration);
+    let item_id = decoration.spawned_item.unwrap();
+    world.destroy_item(item_id);
+    remove_event_decoration(&mut world, &mut decoration);
+    assert!(decoration.spawned_item.is_none());
+}
+
+#[test]
+fn remove_event_decoration_respects_area_gate() {
+    let mut world = World::default();
+    world.area_id = 3;
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let mut loader = decoration_test_loader();
+    let mut decoration = EventDecoration::new("xmastree_deco", 5, 5, 3);
+    spawn_event_decoration(&mut world, &mut loader, &mut decoration);
+    let item_id = decoration.spawned_item.unwrap();
+
+    world.area_id = 4; // area changed out from under the decoration
+    remove_event_decoration(&mut world, &mut decoration);
+
+    // Not removed: the decoration still thinks it's spawned, and the item
+    // is untouched, matching C's early-return on an area mismatch.
+    assert_eq!(decoration.spawned_item, Some(item_id));
+    assert!(world.items.contains_key(&item_id));
+}

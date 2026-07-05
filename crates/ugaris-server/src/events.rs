@@ -9,14 +9,21 @@ use super::*;
 // boosted-rate events under `src/module/events/recurring/*` and their
 // modifier hooks, plus the Easter seasonal event
 // (`src/module/events/seasonal/easter_event.c`, including
-// `calculate_easter_date`). The Christmas seasonal event
-// (`src/module/events/seasonal/christmas_event.c`) already has its own
-// independently-ported date logic in `xmas.rs` and is left as-is (same
-// precedent Easter follows here, kept in this file instead of a new one
-// since it reuses `is_date_in_range`/`CalendarNow` directly); the generic
-// `EventDecoration` spawn/remove plumbing is still not ported (Easter has
-// zero decorations in C: `static EventDecoration easter_decorations[] =
-// {}`, so this slice needs none of it - see `PORTING_TODO.md`).
+// `calculate_easter_date`), plus the generic `EventDecoration`
+// spawn/remove primitives (`spawn_event_decoration`/
+// `remove_event_decoration`, `events.c:186-224`). The Christmas seasonal
+// event (`src/module/events/seasonal/christmas_event.c`) already has its
+// own independently-ported date logic in `xmas.rs` and is left as-is
+// (same precedent Easter follows here, kept in this file instead of a new
+// one since it reuses `is_date_in_range`/`CalendarNow` directly). No
+// currently-ported event actually defines any decorations (Easter's C
+// `easter_decorations[]` array is empty; Christmas's tree is static zone
+// data, not a runtime spawn/remove) - `EventDecoration`/
+// `spawn_event_decoration`/`remove_event_decoration` are ported here as
+// generic, independently-tested primitives ready for a future event that
+// needs them, `#[allow(dead_code)]`'d until one does (same precedent as
+// `dungeon.rs`/`snapshots.rs`/`depot.rs`'s pre-wired-but-not-yet-called
+// code).
 //
 // Like `xmas::current_xmas_event`, calendar math runs in UTC rather than
 // replicating C's `localtime(time(NULL))` host-timezone lookup - the same
@@ -566,4 +573,90 @@ pub(crate) fn check_easter_event(
     } else {
         None
     }
+}
+
+// ------------------------------------------------------------ decorations
+
+/// C `events.h`'s `EventDecoration` struct: a single seasonal-event map
+/// decoration item (e.g. a Christmas tree), spawned when its owning event
+/// starts and removed when it ends. `spawn_area == 0` matches C's "spawn
+/// in every area" convention; a nonzero value gates the decoration to a
+/// single area id (C's `areaID` global, [`World::area_id`] here).
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) struct EventDecoration {
+    pub(crate) item_template: &'static str,
+    pub(crate) spawn_x: usize,
+    pub(crate) spawn_y: usize,
+    pub(crate) spawn_area: u16,
+    /// C's `in` field: the spawned item's id, `None` (C: `0`) meaning "not
+    /// currently spawned".
+    pub(crate) spawned_item: Option<ItemId>,
+}
+
+#[allow(dead_code)]
+impl EventDecoration {
+    pub(crate) fn new(
+        item_template: &'static str,
+        spawn_x: usize,
+        spawn_y: usize,
+        spawn_area: u16,
+    ) -> Self {
+        Self {
+            item_template,
+            spawn_x,
+            spawn_y,
+            spawn_area,
+            spawned_item: None,
+        }
+    }
+}
+
+/// C `spawn_event_decoration` (`events.c:186-206`): instantiates the
+/// decoration's item template and drops it at its configured tile (with
+/// C `drop_item`'s neighbor-search fallback if that exact tile is
+/// blocked), no-op if already spawned or gated to a different area.
+#[allow(dead_code)]
+pub(crate) fn spawn_event_decoration(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    decoration: &mut EventDecoration,
+) -> bool {
+    if decoration.spawned_item.is_some() {
+        return false;
+    }
+    if decoration.spawn_area != 0 && decoration.spawn_area != world.area_id {
+        return false;
+    }
+    let Ok(mut item) = loader.instantiate_item_template(decoration.item_template, None) else {
+        return false;
+    };
+    if !world
+        .map
+        .drop_item(&mut item, decoration.spawn_x, decoration.spawn_y)
+    {
+        return false;
+    }
+    decoration.spawned_item = Some(item.id);
+    world.add_item(item);
+    true
+}
+
+/// C `remove_event_decoration` (`events.c:211-224`): removes and destroys
+/// the previously-spawned decoration item (a no-op if it was already
+/// removed by some other means - C's `it[decoration->in].flags` liveness
+/// check, matched here by a `World::items` lookup), no-op if not spawned
+/// or gated to a different area.
+#[allow(dead_code)]
+pub(crate) fn remove_event_decoration(world: &mut World, decoration: &mut EventDecoration) {
+    let Some(item_id) = decoration.spawned_item else {
+        return;
+    };
+    if decoration.spawn_area != 0 && decoration.spawn_area != world.area_id {
+        return;
+    }
+    if world.items.contains_key(&item_id) {
+        world.destroy_item(item_id);
+    }
+    decoration.spawned_item = None;
 }

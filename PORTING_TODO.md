@@ -6699,18 +6699,16 @@ Unlocks every quest NPC. Do these before any P4 area work.
 - [~] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +
   each recurring event's modifier hooks (`event_drop_rate` modifier is
-  referenced by loot JSON). REMAINING: the generic seasonal
-  `EventDecoration` spawn/remove plumbing (`spawn_event_decoration`/
-  `remove_event_decoration`) is still unported - no currently-ported
-  seasonal event needs it (Christmas keeps its own independent tree logic
-  in `xmas.rs`; Easter has zero decorations in C). `RecurrenceType::Daily`/
-  `Monthly` branches of `should_event_be_active` are also unported (no
-  currently-ported event needs them). The `event_drop_rate` loot modifier
-  is stored/settable but has no consumer yet (blocked on the separate
-  "Death-mode loot tables" task's JSON roll engine). The four
-  `mining_*_multiplier` settings the Mining Monday/Wednesday events scale
-  are likewise still dead/unwired outside `GameSettings` (blocked on
-  porting the mining "dig" mechanic itself, not part of this task).
+  referenced by loot JSON). REMAINING: `RecurrenceType::Daily`/`Monthly`
+  branches of `should_event_be_active` are unported (no currently-ported
+  event needs them - all five recurring events are Weekly/Biweekly, and
+  Easter's `RECUR_YEARLY` is handled directly by `check_easter_event`).
+  The `event_drop_rate` loot modifier is stored/settable but has no
+  consumer yet (blocked on the separate "Death-mode loot tables" task's
+  JSON roll engine). The four `mining_*_multiplier` settings the Mining
+  Monday/Wednesday events scale are likewise still dead/unwired outside
+  `GameSettings` (blocked on porting the mining "dig" mechanic itself, not
+  part of this task).
 
   Progress Log (iteration 153): ported the Easter seasonal event
   (`src/module/events/seasonal/easter_event.c`) end-to-end -
@@ -6734,6 +6732,32 @@ Unlocks every quest NPC. Do these before any P4 area work.
   modifier). `cargo fmt --all`, `cargo test --workspace` (623 passed, 0
   failed), `cargo build -p ugaris-server` clean with zero warnings, 10s
   boot-smoke confirmed "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 154): ported the generic `EventDecoration`
+  spawn/remove primitives (`spawn_event_decoration`/
+  `remove_event_decoration`, `events.c:186-224`) - `EventDecoration`
+  struct (item template/spawn tile/area gate/spawned-item-id), instantiate
+  + `MapGrid::drop_item` (C `drop_item`'s neighbor-search fallback) +
+  `World::add_item` for spawn, `World::items`-existence check (C's
+  `it[decoration->in].flags` liveness guard) + `World::destroy_item` for
+  remove (which already internally does C's separate `remove_item_map`
+  call), both gated on the `spawn_area != 0 && spawn_area != areaID`
+  early-return. No currently-ported event defines any decorations
+  (Christmas's tree is static zone data in `xmas.rs`, not a runtime
+  spawn/remove; Easter's C `easter_decorations[]` is empty), so these are
+  `#[allow(dead_code)]`'d pending a future event that needs them - same
+  precedent as `dungeon.rs`/`snapshots.rs`/`depot.rs`'s pre-wired code.
+  6 new unit tests (spawn places the item and records its id, spawn is a
+  no-op when already spawned, spawn respects the area gate for both a
+  mismatched and matching `spawn_area`, remove destroys the item and
+  clears the map tile, remove is a no-op when never spawned or already
+  removed by other means, remove respects the area gate). This still
+  doesn't close the task - `RecurrenceType::Daily`/`Monthly` and the two
+  loot/mining modifier consumers remain blocked on other unstarted tasks,
+  see the updated REMAINING note above. `cargo fmt --all`, `cargo test
+  --workspace` (629 passed, 0 failed), `cargo build -p ugaris-server`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic.
 
 - [ ] **Death-mode loot tables (`src/system/loot/loot.c`)** - JSON tables
   under `ugaris_data/loot/`. Port the loader + roll engine + pity
