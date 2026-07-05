@@ -6954,12 +6954,22 @@ Unlocks every quest NPC. Do these before any P4 area work.
   command) done (see iteration 166); `/killclub`/`/renclub` done (see
   iteration 173 - both `ClubRegistry` methods they need already existed
   unused since iteration 136, so this was pure dispatch wiring alongside
-  the already-ported `/killclan`/`/renclan`), and the rest of the ~90
-  remaining `cmdcmp` entries in `command.c` (mostly `CF_GOD`-gated `ac*`
+  the already-ported `/killclan`/`/renclan`), `/kick` done (see
+  iteration 174 - `CF_STAFF|CF_GOD`-gated, exact-word only per C's
+  `cmdcmp(ptr, "kick", 4)`, finds an online `CF_PLAYER` character by
+  name and signals the full `exit_char`+`player_client_exit` teardown
+  via a new `KeyringCommandResult::kick_target` field handled at the
+  same `main.rs` call site as `/logout`'s deferred teardown, just
+  targeting someone else; `dlog` and `write_scrollback` - which emails
+  the caller's own scrollback buffer to game@ugaris.com as moderation
+  evidence, not a plain log - are both skipped, matching the
+  established untracked-C-side-effect convention, since no email/CURL
+  infra exists in this codebase), and the rest of the ~90 remaining
+  `cmdcmp` entries in `command.c` (mostly `CF_GOD`-gated `ac*`
   anticheat, `macro*` macro-detection, plus one-off commands like
   `/depotsort` (the character's own `DRD_DEPOT_PPD` depot, a whole
   unported storage system - not the same as `/accountdepotsort`, which
-  is done), `/steal`, `/complain`, `/kick`,
+  is done), `/steal`, `/complain`,
   `/punish`, `/shutdown`, `/rename`, `/showppd`/`/showvalues`,
   `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
   `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
@@ -7625,6 +7635,45 @@ Unlocks every quest NPC. Do these before any P4 area work.
   all green, zero failures), `cargo build -p ugaris-server` / `cargo
   build --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 174): ported `/kick <name>` (`command.c:
+  8668-8698`, gated `CF_STAFF|CF_GOD`, exact-word only per C's
+  `cmdcmp(ptr, "kick", 4)`). Added the dispatch in
+  `apply_admin_character_command` (`commands_admin.rs`), right between
+  the existing `/summon`/`/summonall`: it scans `world.characters` for
+  a `CF_PLAYER` character whose name case-insensitively matches the
+  remainder of the line (mirroring C's `strcasecmp` loop over `ch[]`
+  filtered by `CF_PLAYER`), tells the caller "Kicked %s." using the
+  *typed* name (matching C's `log_char(cn, ..., "Kicked %s.", ptr)`,
+  which echoes the argument as typed, not the stored character name) on
+  a match, or "No player by the name %s." on a miss. Rather than
+  performing the `exit_char`/`player_client_exit` teardown inline
+  (which needs `&mut ServerRuntime` plus an async DB save the command
+  layer doesn't have), added a new `KeyringCommandResult::kick_target:
+  Option<CharacterId>` field and handled it at the `main.rs` call site
+  right alongside the pre-existing `/logout`-teardown block, reusing
+  the identical save-snapshot-at-rest-position + `account_depots.
+  remove` + `world.remove_character` + `SV_EXIT` + `SessionCommand::
+  Disconnect` sequence, just keyed on the kicked target's id (via
+  `ServerRuntime::player_for_character`) instead of the command
+  caller's own session. The C `dlog` staff-action audit log and
+  `write_scrollback` (which, per reading `player.c:3512-3585`, emails
+  the *caller's own* client-side scrollback buffer to game@ugaris.com
+  as moderation evidence via curl/sendmail - not a plain log line) are
+  both skipped: there is no email/CURL infrastructure anywhere in this
+  codebase, matching the established convention already applied to
+  every other bare `dlog`-only C side effect (`/summon`, clan/club
+  daemons, etc.). 4 new tests in `commands_admin.rs` (non-staff
+  rejection, staff success returning the "Kicked lydia." message and
+  `kick_target` while leaving the character present in `world.
+  characters` since the actual teardown is deferred to the async
+  call site, NPC-by-name is correctly ignored via the `CF_PLAYER`
+  filter, unknown name reports "No player by the name Nobody.").
+  `cargo fmt --all`, `cargo test --workspace` (1987 ugaris-core + 55 db
+  + 3 net + 40 protocol + 714 server [+4], all green, zero failures),
+  `cargo build -p ugaris-server` / `cargo build --workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop"
+  with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

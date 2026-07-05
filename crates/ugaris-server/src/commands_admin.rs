@@ -3866,6 +3866,49 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/kick <name>` (`command.c:8668-8698`), gated on `CF_STAFF|CF_GOD`
+    // (no abbreviation, `cmdcmp(ptr, "kick", 4)` requires the exact
+    // 4-letter word). Finds the first `CF_PLAYER` character whose name
+    // case-insensitively matches the remainder of the line; on a match,
+    // tells the caller "Kicked %s." (C `log_char`) and signals the call
+    // site (via `kick_target`) to perform the full `exit_char` (save at
+    // rest position + despawn) + `player_client_exit` (send `SV_EXIT`
+    // with the kick reason, disconnect) teardown on the target - the same
+    // deferred side effects as `/logout`, just targeting someone else.
+    // On no match, tells the caller "No player by the name %s." The C
+    // `dlog` staff-action audit log and `write_scrollback` (which emails
+    // the *caller's own* scrollback buffer to game@ugaris.com as
+    // moderation evidence - there is no email/CURL infra in this
+    // codebase) are both skipped, matching the established convention for
+    // untracked audit-only C side effects (see `/summon` above).
+    if lower == "kick" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let name = rest.trim_start();
+        let target = world.characters.values().find(|character| {
+            character.flags.contains(CharacterFlags::PLAYER)
+                && character.name.eq_ignore_ascii_case(name)
+        });
+        return Some(match target {
+            Some(target) => KeyringCommandResult {
+                messages: vec![format!("Kicked {}.", name)],
+                kick_target: Some(target.id),
+                ..Default::default()
+            },
+            None => KeyringCommandResult {
+                messages: vec![format!("No player by the name {name}.")],
+                ..Default::default()
+            },
+        });
+    }
+
     // C `/summonall` (`command.c:8653-8667`), `CF_GOD`-gated. Teleports
     // every `CF_PLAYER` character next to the caller, one at a time (the
     // caller themselves is included in the iteration but is a no-op since

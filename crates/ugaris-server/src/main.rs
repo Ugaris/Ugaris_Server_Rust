@@ -1488,6 +1488,67 @@ async fn main() -> anyhow::Result<()> {
                                         runtime.send_to_session(session_id, payload.clone());
                                     }
                                 }
+                                if let Some(target_id) = result.kick_target {
+                                    // C `/kick` (`command.c:8668-8698`):
+                                    // `exit_char` saves the target at its
+                                    // rest position then despawns it, then
+                                    // `player_client_exit` sends `SV_EXIT`
+                                    // with the kick reason and drops the
+                                    // connection - identical teardown to
+                                    // `/logout` above, but targeting the
+                                    // kicked character instead of the
+                                    // command caller.
+                                    if let Some(character) = world.characters.get(&target_id) {
+                                        if let Some(repository) = &character_repository {
+                                            if let Some(player) =
+                                                runtime.player_for_character(target_id)
+                                            {
+                                                let account_depot = runtime
+                                                    .account_depots
+                                                    .get(&target_id)
+                                                    .cloned();
+                                                let mut save_character = character.clone();
+                                                save_character.x = character.rest_x;
+                                                save_character.y = character.rest_y;
+                                                let request = character_save_request(
+                                                    &world,
+                                                    player,
+                                                    &save_character,
+                                                    account_depot.as_ref(),
+                                                    config.area_id,
+                                                    config.mirror_id,
+                                                );
+                                                match repository
+                                                    .save_character_snapshot(request)
+                                                    .await
+                                                {
+                                                    Ok(true) => {
+                                                        info!(character_id = target_id.0, "saved DB-backed character snapshot on /kick");
+                                                    }
+                                                    Ok(false) => {
+                                                        warn!(character_id = target_id.0, "DB character snapshot save was skipped by area guard on /kick");
+                                                    }
+                                                    Err(err) => {
+                                                        warn!(character_id = target_id.0, error = %err, "failed to save DB-backed character snapshot on /kick");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    runtime.account_depots.remove(&target_id);
+                                    world.remove_character(target_id);
+                                    debug!(target: "client_log", character_id = target_id.0, "Used /kick");
+                                    let mut builder = PacketBuilder::new();
+                                    builder.exit("You have been kicked by game administration.");
+                                    let payload = builder.into_payload();
+                                    for (sid, _) in runtime.sessions_for_character(target_id) {
+                                        runtime.send_to_session(sid, payload.clone());
+                                        runtime.flush_session(sid);
+                                        if let Some(commands) = runtime.sessions.get(&sid) {
+                                            let _ = commands.try_send(SessionCommand::Disconnect);
+                                        }
+                                    }
+                                }
                                 continue;
                             }
                             if let Some(result) =

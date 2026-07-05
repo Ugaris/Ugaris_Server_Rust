@@ -4613,6 +4613,98 @@ fn summon_command_unknown_name_is_a_silent_no_op() {
 }
 
 #[test]
+fn kick_command_requires_staff_or_god() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    assert!(world.spawn_character(
+        login_character(caller_id, &login_block("Ralph"), 1, 10, 10),
+        10,
+        10
+    ));
+    let target_id = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(target_id, &login_block("Lydia"), 1, 90, 90),
+        90,
+        90
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/kick Lydia", 1)
+            .is_none()
+    );
+    assert!(world.characters.contains_key(&target_id));
+}
+
+#[test]
+fn kick_command_signals_target_teardown_for_staff() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let target_id = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(target_id, &login_block("Lydia"), 1, 90, 90),
+        90,
+        90
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/kick lydia", 1)
+            .expect("staff kick command should be recognized");
+    assert_eq!(result.messages, vec!["Kicked lydia.".to_string()]);
+    assert_eq!(result.kick_target, Some(target_id));
+    // Command dispatch only signals the teardown; the actual save/
+    // despawn/disconnect happens at the async call site in main.rs, so
+    // the character is still present here.
+    assert!(world.characters.contains_key(&target_id));
+}
+
+#[test]
+fn kick_command_ignores_npcs_by_name() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let npc_id = CharacterId(2);
+    let mut npc = login_character(npc_id, &login_block("Goblin"), 1, 90, 90);
+    npc.flags.remove(CharacterFlags::PLAYER);
+    npc.flags.insert(CharacterFlags::ALIVE);
+    assert!(world.spawn_character(npc, 90, 90));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/kick goblin", 1)
+            .expect("god kick command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["No player by the name goblin.".to_string()]
+    );
+    assert_eq!(result.kick_target, None);
+}
+
+#[test]
+fn kick_command_unknown_name_reports_not_found() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/kick Nobody", 1)
+            .expect("god kick command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["No player by the name Nobody.".to_string()]
+    );
+}
+
+#[test]
 fn summonall_command_requires_god() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);

@@ -53,6 +53,14 @@ pub(crate) struct KeyringCommandResult {
     /// from the world, then send `SV_EXIT` and disconnect every session
     /// attached to it.
     pub(crate) logout_requested: bool,
+    /// Set to the target's id when `/kick` (C `command.c:8668-8698`) found
+    /// an online player by name. The call site must perform the same
+    /// `exit_char`/`player_client_exit` teardown as `logout_requested`,
+    /// but against this target character instead of the command caller:
+    /// save its snapshot at its rest position, remove it from the world,
+    /// then send `SV_EXIT` (with the kick-specific reason text) and
+    /// disconnect every session attached to it.
+    pub(crate) kick_target: Option<CharacterId>,
 }
 
 pub(crate) fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {
