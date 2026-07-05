@@ -5635,15 +5635,51 @@
         "test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 720 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s"
       ]
+    },
+    {
+      "iteration": 177,
+      "startedAt": "2026-07-05T18:21:28.722Z",
+      "endedAt": "2026-07-05T18:48:08.803Z",
+      "durationMs": 1599262,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/player.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-server/src/commands_player.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/commands_player.rs",
+        "crates/ugaris-server/src/world_events.rs",
+        "crates/ugaris-core/src/world/complain.rs",
+        "crates/ugaris-core/src/world/tests/complain.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 720 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && grep -n \"macrostats\\|macrohistory\\|macrolist\\|summonmacro\\|macroimmune\\|macrosuspicion\\|macrokarma\\|macrofailures\\|macroreset\"",
+        "PORTING_LEDGER.md:120:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.r",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2004 filtered out; finished in 0.00s",
+        "assertion failed: std::str::from_utf8(&result.message_bytes[0]).unwrap_or_default().contains(\"Complaints are meant\")",
+        "test result: FAILED. 729 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`",
+        "test result: ok. 730 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 2009 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s"
+      ]
     }
   ],
-  "totalDurationMs": 198750998,
+  "totalDurationMs": 200350260,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 176,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 177,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -5695,7 +5731,7 @@
       "The task for this iteration is complete: I implemented the `CL_FASTSELL` merchant-sell path (P0 task": 1,
       "test tests::merchants::fast_sell_sells_inventory_slot_to_active_merchant ... FAILED": 1,
       "test result: FAILED. 339 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 1,
-      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 11,
+      "error: test failed, to rerun pass `-p ugaris-server --bin ugaris-server`": 12,
       "test result: ok. 1053 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Now let's check the third failing test in item_outcomes.rs:": 1,
       "5. Verified: `cargo fmt --all`, `cargo test --workspace` (all passing, 0 failures), `cargo build -p ": 1,
@@ -6428,9 +6464,16 @@
       "assertion failed: victim.inventory[30].is_none()": 1,
       "- Verified: `cargo fmt --all`, `cargo test --workspace` (2004 core + 55 db + 3 net + 40 protocol + 7": 1,
       "test result: ok. 717 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s": 1,
-      "test result: ok. 720 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s": 1,
+      "test result: ok. 720 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s": 2,
       "test result: ok. 2004 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 1,
-      "test result: ok. 720 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s": 1
+      "test result: ok. 720 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s": 1,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && grep -n \"macrostats\\|macro": 1,
+      "PORTING_LEDGER.md:120:| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-c": 1,
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2004 filtered out; finished in 0.00s": 1,
+      "assertion failed: std::str::from_utf8(&result.message_bytes[0]).unwrap_or_default().contains(\"Compla": 1,
+      "test result: FAILED. 729 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s": 1,
+      "test result: ok. 730 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s": 1,
+      "test result: ok. 2009 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

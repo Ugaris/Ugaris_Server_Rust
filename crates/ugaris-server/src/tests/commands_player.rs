@@ -579,6 +579,232 @@ fn lastseen_command_with_no_argument_replies_immediately() {
     assert_eq!(texts[0].message, "No character by the name .");
 }
 
+/// C `cmdcmp(ptr, "complain", 4)`: any prefix from `"comp"` up to the full
+/// word matches case-insensitively; anything shorter is not recognized.
+#[test]
+fn complain_command_recognizes_legacy_abbreviations_and_rejects_short_prefixes() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    let character_id = CharacterId(7);
+
+    assert!(apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/complain Someone",
+        false,
+        1_000
+    )
+    .is_some());
+    assert!(apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/COMP Someone",
+        false,
+        1_000
+    )
+    .is_some());
+    assert!(apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/com Someone",
+        false,
+        1_000
+    )
+    .is_none());
+}
+
+/// Empty argument: the "need at least the name" message, no PPD write
+/// (C `command.c:2292-2296`).
+#[test]
+fn complain_command_with_no_argument_replies_immediately_without_touching_the_ppd() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    let character_id = CharacterId(7);
+
+    let result = apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/complain",
+        false,
+        1_000,
+    )
+    .expect("complain command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![
+            "Sorry, you need to enter at least the name of the player you're complaining about."
+                .to_string()
+        ]
+    );
+    assert_eq!(player.complaint_date(), 0);
+}
+
+/// First-ever `/complain`: the one-time `COL_LIGHT_RED` disclaimer,
+/// stamping `complaint_date = 1` (C `command.c:2298-2308`).
+#[test]
+fn complain_command_shows_the_one_time_disclaimer_and_stamps_complaint_date_to_one() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    let character_id = CharacterId(7);
+
+    let result = apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/complain Someone",
+        false,
+        1_000,
+    )
+    .expect("complain command should be recognized");
+    assert!(result.messages.is_empty());
+    assert_eq!(result.message_bytes.len(), 1);
+    assert_eq!(
+        result.message_bytes[0],
+        legacy_light_red_text_bytes(
+            "Complaints are meant as a way to complain about verbal attacks by another \
+             player, or to report a scam. If you wish to complain about something else, \
+             please email game@ugaris.com. No complaint has been sent. Repeat the command \
+             if you still want to send your complaint."
+        )
+    );
+    assert_eq!(player.complaint_date(), 1);
+    assert!(world.drain_pending_complain_lookups().is_empty());
+}
+
+/// A non-`CF_GOD` caller retrying within 60 seconds is rate-limited, and
+/// - a genuine C quirk - `complaint_date` is restamped to the rejected
+/// attempt's own timestamp (`command.c:2306-2309`), not left alone.
+#[test]
+fn complain_command_rate_limits_non_god_callers_and_restamps_on_rejection() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.record_complaint(1_000);
+    let character_id = CharacterId(7);
+
+    let result = apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/complain Someone",
+        false,
+        1_030,
+    )
+    .expect("complain command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, we do not accept more than one complaint per minute.".to_string()]
+    );
+    assert_eq!(player.complaint_date(), 1_030);
+}
+
+/// `CF_GOD` callers bypass the rate limit entirely (C `command.c:2305`'s
+/// `!(ch[cn].flags & CF_GOD)` guard).
+#[test]
+fn complain_command_exempts_god_callers_from_the_rate_limit() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.record_complaint(1_000);
+    let character_id = CharacterId(7);
+
+    let result = apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/complain Someone",
+        true,
+        1_005,
+    )
+    .expect("complain command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_complain_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].target_name, "Someone");
+}
+
+/// The `"lag"`/`"laggy"` name blocklist (`command.c:2332-2335`) - a
+/// distinct message from the generic not-found rejection, no PPD write.
+#[test]
+fn complain_command_rejects_lag_complaints_with_a_dedicated_message() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.record_complaint(1_000);
+    let character_id = CharacterId(7);
+
+    let result = apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/complain laggy",
+        false,
+        2_000,
+    )
+    .expect("complain command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![
+            "Sorry, the complaint command is meant to complain about players, not lag.".to_string()
+        ]
+    );
+    assert!(world.drain_pending_complain_lookups().is_empty());
+}
+
+/// The generic-word blocklist (`command.c:2336-2339`) - these common
+/// English words parse as a plausible-looking alpha "name" but are
+/// rejected before ever reaching the DB lookup.
+#[test]
+fn complain_command_rejects_generic_words_as_names() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.record_complaint(1_000);
+    let character_id = CharacterId(7);
+
+    let result = apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/complain why did you do that",
+        false,
+        2_000,
+    )
+    .expect("complain command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, no player by the name 'why' found.".to_string()]
+    );
+    assert!(world.drain_pending_complain_lookups().is_empty());
+}
+
+/// A plausible name is queued for the async DB round-trip (see
+/// `World::queue_complain_lookup`), producing no immediate reply.
+#[test]
+fn complain_command_queues_valid_names_without_an_immediate_reply() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.record_complaint(1_000);
+    let character_id = CharacterId(7);
+
+    let result = apply_complain_command(
+        &mut world,
+        &mut player,
+        character_id,
+        "/complain Godmode being a jerk",
+        false,
+        2_000,
+    )
+    .expect("complain command should be recognized");
+    assert!(result.messages.is_empty());
+
+    let queued = world.drain_pending_complain_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].requester_id, character_id);
+    assert_eq!(queued[0].target_name, "Godmode");
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
 #[test]
 fn description_command_sanitizes_and_reports_legacy_text() {
     let mut world = World::default();

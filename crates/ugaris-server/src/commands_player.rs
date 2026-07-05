@@ -906,6 +906,120 @@ pub(crate) fn apply_lastseen_command(
     Some(KeyringCommandResult::default())
 }
 
+/// C `/complain <name> [reason...]` (`command.c:8769-8776`, `cmdcmp(ptr,
+/// "complain", 4)` so any prefix from `"comp"` up to the full word
+/// matches, case-insensitively, no permission gate), dispatching to
+/// `cmd_complain` (`system/command.c:2281-2352`). Trims only leading
+/// whitespace off the argument, matching the dispatcher's own `while
+/// (isspace(*ptr)) ptr++;`.
+///
+/// Every branch that needs only the caller's own state is handled
+/// synchronously here, in C source order:
+/// - empty argument -> the "need at least the name" message, no PPD
+///   write.
+/// - `misc_ppd.complaint_date() == 0` (never seen the disclaimer) -> the
+///   one-time `COL_LIGHT_RED` disclaimer, stamping `complaint_date = 1`
+///   so a repeated invocation passes this gate.
+/// - non-`CF_GOD` caller within 60 seconds of the last `complaint_date`
+///   stamp -> the rate-limit message, *also* restamping `complaint_date
+///   = realtime` - a genuine C quirk (`command.c:2306-2309`) that resets
+///   the cooldown window on every rejected retry, not just on a
+///   successful complaint; preserved as-is.
+/// - the parsed name (`isalpha` run, capped at 75 bytes) matching
+///   `"lag"`/`"laggy"` -> the lag-specific rejection, no PPD write.
+/// - the parsed name matching `"bug"`/`"why"`/`"the"`/`"too"`/`"this"`/
+///   `"can"` -> the generic "no player by that name" rejection, no PPD
+///   write.
+///
+/// Anything else is handed to `World::queue_complain_lookup`, which
+/// applies C's own tighter `3..=40` length bound and (if it passes)
+/// queues the DB round trip resolved by `ugaris-server`'s
+/// `apply_complain_events` - see that function's doc comment for the
+/// success/failure reply shapes and the deferred `complaint_date =
+/// realtime` stamp on success. C's `write_scrollback` (emailing the
+/// complaint to `game@ugaris.com`) has no Rust equivalent (no email/CURL
+/// infra exists in this codebase - the same established omission as
+/// `/kick`'s `dlog`).
+pub(crate) fn apply_complain_command(
+    world: &mut World,
+    player: &mut PlayerRuntime,
+    character_id: CharacterId,
+    command: &str,
+    is_god: bool,
+    realtime_seconds: u64,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if verb.len() < 4 || !"complain".starts_with(&verb.to_ascii_lowercase()) {
+        return None;
+    }
+    let rest = rest.trim_start();
+    let realtime_seconds = realtime_seconds.min(i32::MAX as u64) as i32;
+
+    if rest.is_empty() {
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Sorry, you need to enter at least the name of the player you're complaining about."
+                    .to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+
+    if player.complaint_date() == 0 {
+        player.record_complaint(1);
+        return Some(KeyringCommandResult {
+            message_bytes: vec![legacy_light_red_text_bytes(
+                "Complaints are meant as a way to complain about verbal attacks by another \
+                 player, or to report a scam. If you wish to complain about something else, \
+                 please email game@ugaris.com. No complaint has been sent. Repeat the command \
+                 if you still want to send your complaint.",
+            )],
+            ..Default::default()
+        });
+    }
+
+    if !is_god && realtime_seconds - player.complaint_date() < 60 {
+        player.record_complaint(realtime_seconds);
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Sorry, we do not accept more than one complaint per minute.".to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphabetic())
+        .take(75)
+        .collect();
+    let lower = name.to_ascii_lowercase();
+    if lower == "lag" || lower == "laggy" {
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Sorry, the complaint command is meant to complain about players, not lag."
+                    .to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+    if matches!(
+        lower.as_str(),
+        "bug" | "why" | "the" | "too" | "this" | "can"
+    ) {
+        return Some(KeyringCommandResult {
+            messages: vec![format!("Sorry, no player by the name '{name}' found.")],
+            ..Default::default()
+        });
+    }
+
+    world.queue_complain_lookup(character_id, &name);
+    Some(KeyringCommandResult::default())
+}
+
 pub(crate) fn apply_time_command(date: GameDate, command: &str) -> Option<KeyringCommandResult> {
     let (verb, _) = command
         .split_once(char::is_whitespace)

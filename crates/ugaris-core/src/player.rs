@@ -412,6 +412,7 @@ const TWOCITY_PPD_THIEF_KILLED_OFFSET: usize = 10 * 4;
 const TWOCITY_PPD_SANWYN_STATE_OFFSET: usize = 16 * 4;
 const TWOCITY_PPD_SKELLY_STATE_OFFSET: usize = 27 * 4;
 const TWOCITY_PPD_ALCHEMIST_STATE_OFFSET: usize = 28 * 4;
+const MISC_PPD_COMPLAINT_DATE_OFFSET: usize = 4;
 const MISC_PPD_SWAPPED_OFFSET: usize = 20;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
@@ -5027,6 +5028,29 @@ impl PlayerRuntime {
         read_i32(&self.misc_ppd, MISC_PPD_SWAPPED_OFFSET)
     }
 
+    /// C `cmd_complain`'s `ppd->complaint_date` read (`system/command.c:
+    /// 2287,2306`). `0` (matching a freshly zeroed C `struct misc_ppd`)
+    /// means the caller has never seen the `/complain` disclaimer yet.
+    pub fn complaint_date(&self) -> i32 {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.misc_ppd, MISC_PPD_COMPLAINT_DATE_OFFSET)
+    }
+
+    /// C `cmd_complain`'s three `ppd->complaint_date = ...` writes
+    /// (`system/command.c:2306,2308,2347`): `1` after the caller sees the
+    /// one-time disclaimer, `realtime` both when a rate-limited retry is
+    /// rejected (a real C quirk - this resets the cooldown window on every
+    /// rejected attempt, not just on a successful complaint) and when a
+    /// complaint is actually sent.
+    pub fn record_complaint(&mut self, value: i32) {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            self.misc_ppd.resize(LEGACY_MISC_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.misc_ppd, MISC_PPD_COMPLAINT_DATE_OFFSET, value);
+    }
+
     pub fn touch_xmas_tree(
         &mut self,
         area_id: u16,
@@ -7618,6 +7642,25 @@ mod tests {
         // Unrelated fields untouched.
         assert_eq!(player.misc_ppd[MISC_PPD_TREEDONE_OFFSET], 0);
         assert_eq!(read_i32(&player.misc_ppd, MISC_PPD_GIFT_YEAR_OFFSET), 0);
+    }
+
+    #[test]
+    fn record_complaint_stamps_and_reads_back_the_complaint_date_offset() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.complaint_date(), 0);
+
+        player.record_complaint(1);
+        assert_eq!(player.complaint_date(), 1);
+
+        player.record_complaint(123_456);
+        assert_eq!(player.complaint_date(), 123_456);
+        assert_eq!(
+            read_i32(&player.misc_ppd, MISC_PPD_COMPLAINT_DATE_OFFSET),
+            123_456
+        );
+        // Unrelated fields untouched.
+        assert_eq!(read_i32(&player.misc_ppd, MISC_PPD_SWAPPED_OFFSET), 0);
+        assert_eq!(player.misc_ppd[MISC_PPD_TREEDONE_OFFSET], 0);
     }
 
     #[test]

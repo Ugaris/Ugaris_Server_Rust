@@ -12,6 +12,7 @@ mod clanclerk;
 mod clanmaster;
 mod clubmaster;
 mod combat;
+mod complain;
 mod date;
 mod death;
 mod doors;

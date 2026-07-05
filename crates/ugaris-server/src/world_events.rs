@@ -1915,6 +1915,71 @@ fn lastseen_reply_message(info: &ugaris_db::LastSeenInfo, now_unix: i64) -> Stri
     )
 }
 
+/// `cmd_complain`'s async DB round trip (C `command.c:2320-2350`,
+/// `lookup_name`/`db_lookup_name`, `system/lookup.c:42-98` +
+/// `system/database/database_lookup.c:57-83`): resolves every `World::
+/// drain_pending_complain_lookups` entry (queued by a validly-shaped
+/// `/complain <name>` argument - see `World::queue_complain_lookup`'s and
+/// `ugaris-server`'s `apply_complain_command`'s doc comments for every
+/// other, purely synchronous branch) against the DB.
+///
+/// - no DB row -> "Sorry, no player by the name '%s' found." delivered
+///   via `World::queue_system_text` (matching `cmd_complain`'s own
+///   `ret < 0` branch, `command.c:2341-2343`).
+/// - a row found -> `ppd->complaint_date = realtime;` (`command.c:2346`)
+///   is applied to the *requester's* own `PlayerRuntime` if they're still
+///   online (a real gap from C, where the whole function runs inside one
+///   blocking call so the caller can never have logged out mid-lookup;
+///   silently skipped here otherwise, matching every other
+///   offline-DB-lookup event in this file) plus the "Your complaint about
+///   '%s' has been sent to game management." confirmation, using the
+///   DB's properly-capitalized name (C's `realname` out-parameter).
+///   `write_scrollback` (emailing the complaint) has no Rust equivalent -
+///   see `apply_complain_command`'s doc comment.
+///
+/// No-ops entirely (silent) when no `character_repository` is configured
+/// or a query errors, matching every sibling offline-DB-lookup event.
+pub(crate) async fn apply_complain_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    now_unix: i64,
+) -> usize {
+    let lookups = world.drain_pending_complain_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let found_name = match repository.find_login_target(&lookup.target_name).await {
+            Ok(Some(summary)) => summary.name,
+            Ok(None) => {
+                world.queue_system_text(
+                    lookup.requester_id,
+                    format!(
+                        "Sorry, no player by the name '{}' found.",
+                        lookup.target_name
+                    ),
+                );
+                continue;
+            }
+            Err(_) => continue,
+        };
+        if let Some(player) = runtime.player_for_character_mut(lookup.requester_id) {
+            player.record_complaint(now_unix as i32);
+        }
+        world.queue_system_text(
+            lookup.requester_id,
+            format!("Your complaint about '{found_name}' has been sent to game management."),
+        );
+        applied += 1;
+    }
+    applied
+}
+
 /// C `cmd_flag`'s offline fallback, `task_set_flags`/`set_flags`
 /// (`task.c:198-211,385-394`), resolved for every `World::
 /// drain_pending_admin_flag_toggles` entry queued by `World::
@@ -2046,6 +2111,36 @@ mod lastseen_tests {
             lastseen_reply_message(&info, 500),
             "Player was last seen 0 days, 0 hours, 0 minutes ago."
         );
+    }
+}
+
+#[cfg(test)]
+mod complain_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        let applied = apply_complain_events(&mut world, &mut runtime, &None, 1_000).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        // Matches every other offline-DB-lookup event in this file: with
+        // no `character_repository` configured, the queue is still
+        // drained (so it doesn't grow unboundedly) but nothing is
+        // resolved and no player-facing message is sent.
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        world.queue_complain_lookup(CharacterId(7), "Godmode");
+
+        let applied = apply_complain_events(&mut world, &mut runtime, &None, 1_000).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_complain_lookups().is_empty());
     }
 }
 

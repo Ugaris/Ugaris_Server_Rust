@@ -1892,6 +1892,30 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
+                            {
+                                let is_god = world
+                                    .characters
+                                    .get(&character_id)
+                                    .is_some_and(|character| {
+                                        character.flags.contains(CharacterFlags::GOD)
+                                    });
+                                if let Some(result) = apply_complain_command(
+                                    &mut world,
+                                    player,
+                                    character_id,
+                                    &command,
+                                    is_god,
+                                    realtime_seconds,
+                                ) {
+                                    for message in result.messages {
+                                        command_feedback.push((character_id, message));
+                                    }
+                                    for message in result.message_bytes {
+                                        command_feedback_bytes.push((character_id, message));
+                                    }
+                                    continue;
+                                }
+                            }
                             if let Some(character) = world.characters.get(&character_id) {
                                 if let Some(result) = apply_status_command(character, player, &command) {
                                     for message in result.messages {
@@ -6348,6 +6372,25 @@ async fn main() -> anyhow::Result<()> {
                         lastseen_events_applied,
                         tick = world.tick.0,
                         "applied /lastseen lookups"
+                    );
+                }
+                // `/complain <name>`'s async DB round-trip (C
+                // `cmd_complain`'s `lookup_name`/`db_lookup_name`,
+                // `system/lookup.c:42-98` + `system/database/
+                // database_lookup.c:57-83`), queued by
+                // `apply_complain_command` above.
+                let complain_events_applied = apply_complain_events(
+                    &mut world,
+                    &mut runtime,
+                    &character_repository,
+                    current_unix_time(),
+                )
+                .await;
+                if complain_events_applied != 0 {
+                    info!(
+                        complain_events_applied,
+                        tick = world.tick.0,
+                        "applied /complain lookups"
                     );
                 }
                 // `/god`/`/setsir`/`/staff`/`/emaster`/`/devel`/

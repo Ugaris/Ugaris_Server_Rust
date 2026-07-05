@@ -22,6 +22,7 @@ mod clanclerk;
 mod clanmaster;
 mod clubmaster;
 mod combat;
+mod complain;
 mod date;
 mod death;
 mod doors;
@@ -73,6 +74,7 @@ pub use clanclerk::*;
 pub use clanmaster::*;
 pub use clubmaster::*;
 pub(crate) use combat::*;
+pub use complain::*;
 pub use death::*;
 pub use doors::*;
 pub use dungeon_master::*;
@@ -336,6 +338,7 @@ pub struct World {
     pending_dungeon_jewel_steals: Vec<DungeonJewelStealEvent>,
     pending_death_loot_rolls: Vec<PendingDeathLootRoll>,
     pending_lastseen_lookups: Vec<LastSeenLookup>,
+    pending_complain_lookups: Vec<ComplainLookup>,
     /// `/god`/`/setsir`/`/staff`/`/emaster`/`/devel`/`/hardcore`/
     /// `/qmaster` targets not found among the currently loaded
     /// characters - see `world/admin_flag.rs`'s module doc comment.

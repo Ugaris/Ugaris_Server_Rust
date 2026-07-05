@@ -6970,7 +6970,8 @@ Unlocks every quest NPC. Do these before any P4 area work.
   anticheat, `macro*` macro-detection, plus one-off commands like
   `/depotsort` (the character's own `DRD_DEPOT_PPD` depot, a whole
   unported storage system - not the same as `/accountdepotsort`, which
-   is done), `/steal` done (see iteration 175), `/complain`,
+   is done), `/steal` done (see iteration 175), `/complain` done (see
+   iteration 177),
    `/punish`, `/shutdown`, `/rename`, `/showppd`/`/showvalues`,
    `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
   `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
@@ -6991,7 +6992,16 @@ Unlocks every quest NPC. Do these before any P4 area work.
   blocked on the unported async offline-name-lookup cache (`lookup_name`/
   `lookup.c`) and DB task-queue (`task_punish_player`/`do_rename`/etc.,
   `task.c`), not just `server_chat` - do not attempt a small slice of
-  these without that infra first.
+  these without that infra first. Iteration 177 ported `/complain`'s own
+  `lookup_name` resolution (the closest sibling gap that turned out to
+  need only the name-lookup half, not the task-queue half - see that
+  entry's note and `world/complain.rs`'s module doc comment for the
+  reusable `World::queue_*_lookup` + `ugaris-server::apply_*_events`
+  pattern), but `punish`/`shutup`/`rename`/`lockname`/`unlockname`/
+  `unpunish` additionally need the DB task-queue half (`task_punish_
+  player`/`do_rename`/etc., `task.c`) to actually apply their mutation,
+  which is still unported - that pattern doesn't fully unblock them by
+  itself.
 
   Progress Log (iteration 158): ported the admin-teleport family -
   `/goto` (`command.c:8453-8567`, gated on `is_lqmaster`), `/jump`
@@ -7767,6 +7777,71 @@ Unlocks every quest NPC. Do these before any P4 area work.
   the DB task queue, or a whole missing storage system like the
   per-character `DRD_DEPOT_PPD` legacy depot behind `/depotsort`); no
   other equally self-contained ready gap was found this iteration.
+
+  Progress Log (iteration 177): ported `/complain <name> [reason...]`
+  (`command.c:8769-8776`, `cmdcmp(ptr, "complain", 4)`, no permission
+  gate, dispatching to `cmd_complain`, `system/command.c:2281-2352`) -
+  the one item in this task's own REMAINING note explicitly flagged as
+  "blocked on the unported async offline-name-lookup cache" that turned
+  out to need only that lookup, not the DB task-queue half the sibling
+  `punish`/`shutup`/`rename` gaps also need. Investigated C's
+  `lookup_name`/`db_lookup_name` (`system/lookup.c:42-98` +
+  `system/database/database_lookup.c:57-83`) and found they're not
+  actually a fire-and-poll-later async mechanism - `db_lookup_name` runs
+  a *blocking* MySQL query inline before `lookup_name` re-checks its own
+  cache, so the whole round trip completes within one synchronous C call.
+  Modeled this in Rust the same way `/lastseen` (iteration 161) already
+  had to for an equivalent blocking-DB-call-in-disguise: a new `World::
+  queue_complain_lookup`/`drain_pending_complain_lookups` pair
+  (`world/complain.rs`) that synchronously fast-paths C's own tighter
+  `3..=40` name-length bound (checked before `lookup_name`'s own `2..=38`
+  gate would even run) and otherwise queues the name for resolution one
+  or more ticks later against the already-existing `PgCharacterRepository
+  ::find_login_target` (no new DB query needed - it already does a
+  case-insensitive name-to-id-plus-properly-capitalized-name lookup,
+  exactly `lookup_name`'s contract) in a new `apply_complain_events`
+  (`world_events.rs`), which also applies the deferred `ppd->
+  complaint_date = realtime` stamp to the *requester's* own
+  `PlayerRuntime` (via `ServerRuntime::player_for_character_mut`) on a
+  successful resolution - silently skipped if they've since logged out,
+  a real (and unavoidable) divergence from C's single-blocking-call
+  model where the caller can never disappear mid-lookup. Every other
+  `cmd_complain` branch (empty-argument message, the one-time
+  `COL_LIGHT_RED` disclaimer, the non-`CF_GOD` 60-second rate limit -
+  including the genuine C quirk that a *rejected* retry still restamps
+  `complaint_date` to its own timestamp, not just a successful complaint
+  - and the `"lag"`/`"laggy"`/`"bug"`/`"why"`/`"the"`/`"too"`/`"this"`/
+  `"can"` name blocklist) needs only the caller's own state, so it's
+  handled synchronously in a new `apply_complain_command`
+  (`commands_player.rs`), added `PlayerRuntime::complaint_date`/
+  `record_complaint` (`player.rs`, the previously-unused `struct
+  misc_ppd.complaint_date` field at byte offset 4) following the
+  existing `swapped_at`/`record_swap` accessor pattern. `write_scrollback`
+  (emailing the complaint to game@ugaris.com) has no Rust equivalent -
+  same established omission as `/kick`'s `dlog`, no email/CURL infra
+  exists in this codebase. Wired into `main.rs`'s command-dispatch chain
+  right after `/lastseen` (needs `&mut PlayerRuntime`, unlike its
+  neighbor) and `apply_complain_events` into the tick loop right after
+  `apply_lastseen_events`. 5 new `ugaris-core` tests (`player.rs`'s
+  accessor round trip; `world/tests/complain.rs`'s valid-name queueing,
+  short/overlong-name fast-path rejection, and the `3`/`40` boundary
+  lengths both queueing) and 11 new `ugaris-server` tests (`tests/
+  commands_player.rs`: abbreviation/prefix recognition, the empty-
+  argument/disclaimer/rate-limit/god-exemption/lag-blocklist/generic-
+  word-blocklist branches, and valid-name queueing; `world_events.rs`'s
+  `complain_tests`: the no-lookups and missing-repository no-op paths,
+  matching the sibling `admin_flag_tests`/`lastseen_tests` shape - no
+  live-DB round-trip test, matching every other offline-DB-lookup event
+  in this file). `cargo fmt --all`, `cargo test --workspace` (2009
+  ugaris-core [+5] + 55 db + 3 net + 40 protocol + 730 server [+13], all
+  green, zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic. REMAINING for this task
+  overall: unchanged from the note above - still ~90 uncross-referenced
+  `cmdcmp` entries, mostly blocked on unported infra (DB task queue,
+  anticheat/macro-detection systems, the per-character depot storage
+  system) or genuinely out of scope (anti-cheat is explicitly deferred
+  per this file's "Not Applicable / Deferred" section).
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
