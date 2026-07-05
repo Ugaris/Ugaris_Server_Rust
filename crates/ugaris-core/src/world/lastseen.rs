@@ -53,8 +53,11 @@ impl World {
 }
 
 /// C `lookup_name`'s validity gate (`lookup.c:44-59`): non-empty, every
-/// byte alphabetic (`isalpha`), and length in `2..=38`.
-fn is_valid_lookup_name(name: &str) -> bool {
+/// byte alphabetic (`isalpha`), and length in `2..=38`. `pub(super)`
+/// (rather than private) so sibling modules with their own
+/// `lookup_name`-gated offline fallback (e.g. `world/admin_flag.rs`'s
+/// `cmd_flag` port) can reuse it instead of duplicating the gate.
+pub(super) fn is_valid_lookup_name(name: &str) -> bool {
     let len = name.len();
     (2..=38).contains(&len) && name.bytes().all(|b| b.is_ascii_alphabetic())
 }

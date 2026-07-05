@@ -6896,7 +6896,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/allow`/clan invite commands, admin teleports (`/goto`), `/mirror`,
   `/seen`, `/top`. REMAINING: admin teleports done (`/goto`, `/jump`,
   `/gotolist`, `/gotosearch`, `/summon`, `/summonall`, `/office`);
-  `/lastseen` done; `/club` done. Still unported: `/allow` (not a clan-invite command -
+  `/lastseen` done; `/club` done; the `cmd_flag` family done (`/god`,
+  `/setsir`, `/staff`, `/emaster`, `/devel`, `/hardcore`, `/qmaster`).
+  Still unported: `/allow` (not a clan-invite command -
   see its Progress Log entry - it's `allow_body`, the cross-server
   corpse-loot-access grant, blocked on the unported `server_chat`
   cross-area DB chat relay), no standalone `/mirror` command actually
@@ -6904,7 +6906,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   both already ported), no `/top` command exists in `command.c` either
   (both were aspirational notes in an earlier iteration, not real
   `cmdcmp` entries - verified by grepping `command.c` for `cmdcmp(ptr,
-  "top` / `"mirror"`), and the rest of the ~250 remaining `cmdcmp`
+  "top` / `"mirror"`), and the rest of the ~243 remaining `cmdcmp`
   entries in `command.c` (mostly `CF_GOD`-gated tuning/anticheat/admin
   commands: `set*` game-constant knobs, `ac*` anticheat, `macro*`
   macro-detection, `mil*` military-mission admin, item/skill/tunnel
@@ -7096,6 +7098,61 @@ Unlocks every quest NPC. Do these before any P4 area work.
   cross-referenced (mostly `CF_GOD`-gated tuning/anticheat/admin
   commands) are unchanged from iteration 161's note; `/allow` is
   unchanged (blocked on the unported cross-area `server_chat` relay).
+
+  Progress Log (iteration 163): ported C's generic by-name character-
+  flag toggle, `cmd_flag` (`command.c:2870-2937`), and the seven text
+  commands sharing its body: `/god` (`CF_GOD`), `/setsir` (`CF_WON`),
+  `/staff` (`CF_STAFF`), `/emaster` (`CF_EVENTMASTER`), `/devel`
+  (`CF_DEVELOPER`), `/hardcore` (`CF_HARDCORE`), and `/qmaster`
+  (`CF_LQMASTER`), dispatched at `command.c:9257-9337`, all `CF_GOD`-
+  gated and full-word-only (no abbreviation accepted for any of the
+  seven, since `cmdcmp`'s `minlen` equals each command's own length).
+  Unlike the pre-existing self-toggle commands (`/immortal`,
+  `/invisible`, `/xray`, `/spy`), `cmd_flag` always targets a *named*
+  character rather than the caller. New core module `world/
+  admin_flag.rs` adds `World::apply_cmd_flag_command`: an online branch
+  (full-table scan, no `CF_PLAYER` filter, matching C's `getfirst_char`/
+  `getnext_char` walk) that toggles in-memory and replies "Set {name}
+  {flag_name} to {on/off}." immediately, and - since `World` has no DB
+  handle or synchronous name-index cache, same constraint as `/lastseen`
+  and clanmaster's `rank:`/`fire:` fallback - an offline branch that
+  defers both of C's messages to a DB round-trip: an invalid name shape
+  (reusing `world/lastseen.rs`'s `is_valid_lookup_name` gate, promoted
+  from private to `pub(super)` rather than duplicated) gets the
+  immediate "Sorry, no player by the name %s.", a validly-shaped
+  unmatched name is queued as `AdminFlagToggle` with no immediate reply.
+  New `ugaris-server` function `apply_admin_flag_events`
+  (`world_events.rs`) resolves the queue every tick: missing DB row ->
+  "Sorry, no player..."; found -> immediate "Update scheduled."
+  (`command.c:2896`, sent regardless of the mutation's own success, C's
+  fire-and-forget `task_set_flags` semantics) -> C `set_task`'s "online
+  somewhere else" silent no-op guard (`task.c:250-253`) -> flag mutation
+  -> guarded `CharacterSaveMode::Backup` save -> "Set flag on {name} to
+  {on/off}." (`task.c:208` - genuinely different wording from the
+  online branch, since `set_flags`'s task-queue completion handler has
+  no access to `cmd_flag`'s own `fptr` name lookup; preserved as a real
+  quirk, not "fixed"). Wired into `apply_admin_character_command`
+  (`commands_admin.rs`, inserted after the `renclan` block, reusing
+  `take_legacy_alpha_name` for C's `isalpha`-only name scan) and
+  `apply_admin_flag_events` into the tick loop right after
+  `apply_lastseen_events`. 15 new tests: 6 in `world/tests/admin_flag.rs`
+  (online toggle-on/toggle-off, case-insensitive no-`CF_PLAYER`-filter
+  match, invalid/empty-name immediate rejection, valid-unmatched-name
+  queuing), 7 in `tests/commands_admin.rs` (permission gate, online
+  toggle with correct flag name and on/off wording for all seven
+  commands, invalid-shape immediate rejection, valid-unmatched-name
+  queuing, `/god` abbreviation rejection), 2 in `world_events.rs`
+  (empty-queue no-op, missing-repository no-op that still drains the
+  queue). `cargo fmt --all`, `cargo test --workspace` (1985 ugaris-core
+  [+6] + 55 db + 3 net + 40 protocol + 675 server [+9], all green, zero
+  failures), `cargo build -p ugaris-server` / `cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. REMAINING for this task, updated: the ~243
+  remaining `cmdcmp` entries in `command.c` not yet cross-referenced
+  (mostly `CF_GOD`-gated tuning/anticheat/admin commands) are unchanged
+  in kind from iteration 161's note (now minus the 7 just closed);
+  `/allow` is unchanged (blocked on the unported cross-area
+  `server_chat` relay).
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

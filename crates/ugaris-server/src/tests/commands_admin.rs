@@ -4121,3 +4121,181 @@ fn office_command_abbreviation_is_not_recognized() {
     );
     assert_eq!(world.characters.get(&caller_id).unwrap().x, 10);
 }
+
+// C `cmd_flag` (`command.c:2870-2937`), shared by `/god`, `/setsir`,
+// `/staff`, `/emaster`, `/devel`, `/hardcore`, and `/qmaster`
+// (`command.c:9257-9337`).
+
+#[test]
+fn god_command_requires_god_permission() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    assert!(world.spawn_character(
+        login_character(caller_id, &login_block("Ralph"), 1, 10, 10),
+        10,
+        10
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/god Ralph", 1)
+            .is_none()
+    );
+}
+
+#[test]
+fn god_command_toggles_a_named_online_character_and_names_the_flag() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let target_id = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(target_id, &login_block("Target"), 1, 20, 20),
+        20,
+        20
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/god Target", 1)
+            .expect("god command should be recognized");
+    assert_eq!(result.messages, vec!["Set Target god to on.".to_string()]);
+    assert!(world.characters[&target_id]
+        .flags
+        .contains(CharacterFlags::GOD));
+
+    // Toggling again turns it back off and reports "off".
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/god Target", 1)
+            .expect("god command should be recognized");
+    assert_eq!(result.messages, vec!["Set Target god to off.".to_string()]);
+    assert!(!world.characters[&target_id]
+        .flags
+        .contains(CharacterFlags::GOD));
+}
+
+#[test]
+fn god_command_with_invalid_shape_name_reports_no_player_immediately() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    // C's `isalpha`-only name scan stops at the first non-alphabetic
+    // byte (`command.c:2874-2876`), so `/god a1` only ever sees `"a"`.
+    let result = apply_admin_character_command(&mut world, &mut runtime, caller_id, "/god a1", 1)
+        .expect("god command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, no player by the name a.".to_string()]
+    );
+    assert!(world.drain_pending_admin_flag_toggles().is_empty());
+}
+
+#[test]
+fn god_command_with_validly_shaped_unmatched_name_is_queued_with_no_immediate_message() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/god Nobodyhome", 1)
+            .expect("god command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_admin_flag_toggles();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, caller_id);
+    assert_eq!(queued[0].target_name, "Nobodyhome");
+    assert_eq!(queued[0].flag, CharacterFlags::GOD);
+}
+
+#[test]
+fn setsir_command_toggles_won_and_reports_sir_lady_flag_name() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let target_id = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(target_id, &login_block("Target"), 1, 20, 20),
+        20,
+        20
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/setsir Target", 1)
+            .expect("setsir command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Set Target sir/lady to on.".to_string()]
+    );
+    assert!(world.characters[&target_id]
+        .flags
+        .contains(CharacterFlags::WON));
+}
+
+#[test]
+fn staff_emaster_devel_hardcore_qmaster_toggle_their_own_flags() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let target_id = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(target_id, &login_block("Target"), 1, 20, 20),
+        20,
+        20
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    let cases: [(&str, CharacterFlags, &str); 5] = [
+        ("/staff Target", CharacterFlags::STAFF, "staff"),
+        (
+            "/emaster Target",
+            CharacterFlags::EVENTMASTER,
+            "master of events",
+        ),
+        ("/devel Target", CharacterFlags::DEVELOPER, "developer"),
+        ("/hardcore Target", CharacterFlags::HARDCORE, "hardcore"),
+        ("/qmaster Target", CharacterFlags::LQMASTER, "qmaster"),
+    ];
+    for (command, flag, flag_name) in cases {
+        let result = apply_admin_character_command(&mut world, &mut runtime, caller_id, command, 1)
+            .unwrap_or_else(|| panic!("{command} should be recognized"));
+        assert_eq!(
+            result.messages,
+            vec![format!("Set Target {flag_name} to on.")],
+            "{command}"
+        );
+        assert!(
+            world.characters[&target_id].flags.contains(flag),
+            "{command}"
+        );
+    }
+}
+
+#[test]
+fn god_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "god", 3)` requires the full three-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/go Target", 1)
+            .is_none()
+    );
+}

@@ -6141,6 +6141,20 @@ async fn main() -> anyhow::Result<()> {
                         "applied /lastseen lookups"
                     );
                 }
+                // `/god`/`/setsir`/`/staff`/`/emaster`/`/devel`/
+                // `/hardcore`/`/qmaster`'s async DB round-trip (C
+                // `cmd_flag`'s offline fallback, `task_set_flags`/
+                // `set_flags`, `task.c:198-211,385-394`), queued by
+                // `World::apply_cmd_flag_command` above.
+                let admin_flag_events_applied =
+                    apply_admin_flag_events(&mut world, &character_repository).await;
+                if admin_flag_events_applied != 0 {
+                    info!(
+                        admin_flag_events_applied,
+                        tick = world.tick.0,
+                        "applied admin flag-toggle events"
+                    );
+                }
                 // C `military_master_driver`: the mission-giving Military
                 // Master NPC (`src/module/military.c`).
                 world.process_military_master_actions(config.area_id, current_unix_time());

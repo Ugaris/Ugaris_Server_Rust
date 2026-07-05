@@ -2441,6 +2441,41 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `cmd_flag` (`command.c:2870-2937`), the shared by-name flag-
+    // toggle body of `/god` (`CF_GOD`), `/setsir` (`CF_WON`), `/staff`
+    // (`CF_STAFF`), `/emaster` (`CF_EVENTMASTER`), `/devel`
+    // (`CF_DEVELOPER`), `/hardcore` (`CF_HARDCORE`), and `/qmaster`
+    // (`CF_LQMASTER`) - all dispatched at `command.c:9257-9337`, all
+    // `CF_GOD`-gated, all full-word only (`cmdcmp`'s `minlen` equals the
+    // command's own length for every one of these seven, so no
+    // abbreviation is accepted - matched with `lower == "..."`, not
+    // `starts_with`). See `World::apply_cmd_flag_command`'s doc comment
+    // for the online/offline message-shape split.
+    if let Some((flag, flag_name)) = match lower.as_str() {
+        "god" => Some((CharacterFlags::GOD, "god")),
+        "setsir" => Some((CharacterFlags::WON, "sir/lady")),
+        "staff" => Some((CharacterFlags::STAFF, "staff")),
+        "emaster" => Some((CharacterFlags::EVENTMASTER, "master of events")),
+        "devel" => Some((CharacterFlags::DEVELOPER, "developer")),
+        "hardcore" => Some((CharacterFlags::HARDCORE, "hardcore")),
+        "qmaster" => Some((CharacterFlags::LQMASTER, "qmaster")),
+        _ => None,
+    } {
+        if !world
+            .characters
+            .get(&character_id)
+            .is_some_and(|caller| caller.flags.contains(CharacterFlags::GOD))
+        {
+            return None;
+        }
+        let (name, _remainder) = take_legacy_alpha_name(rest.trim_start());
+        let messages = world.apply_cmd_flag_command(character_id, name, flag, flag_name);
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
     // C `/goto` (`src/system/command.c:8453-8567`), gated on
     // `is_lqmaster(cn)` (`command.c:3331-3344`: `CF_GOD`, `CF_EVENTMASTER`,
     // or `CF_LQMASTER` while `areaID == 20`). See [`resolve_goto_jump_args`]

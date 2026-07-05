@@ -12,6 +12,7 @@
 
 mod aclerk;
 mod actions;
+mod admin_flag;
 mod area_mech;
 mod arena;
 mod assembly;
@@ -61,6 +62,7 @@ mod turn_seyan;
 mod weather;
 
 pub use actions::*;
+pub use admin_flag::*;
 pub(crate) use area_mech::*;
 pub use arena::*;
 pub(crate) use assembly::*;
@@ -332,6 +334,10 @@ pub struct World {
     pending_dungeon_jewel_steals: Vec<DungeonJewelStealEvent>,
     pending_death_loot_rolls: Vec<PendingDeathLootRoll>,
     pending_lastseen_lookups: Vec<LastSeenLookup>,
+    /// `/god`/`/setsir`/`/staff`/`/emaster`/`/devel`/`/hardcore`/
+    /// `/qmaster` targets not found among the currently loaded
+    /// characters - see `world/admin_flag.rs`'s module doc comment.
+    pending_admin_flag_toggles: Vec<AdminFlagToggle>,
 }
 
 impl Default for Tick {

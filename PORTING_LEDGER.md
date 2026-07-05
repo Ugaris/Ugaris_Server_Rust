@@ -6848,3 +6848,66 @@ startup log line unchanged.
   the ~250 remaining `cmdcmp` entries in `command.c` (mostly `CF_GOD`-
   gated tuning/anticheat/admin commands) not yet cross-referenced
   (tracked under the "Remaining `/` and `#` text commands" P3 task).
+
+- Iteration 163 ported C's generic by-name character-flag toggle,
+  `cmd_flag` (`command.c:2870-2937`), and the seven text commands that
+  share its body: `/god` (`CF_GOD`), `/setsir` (`CF_WON`), `/staff`
+  (`CF_STAFF`), `/emaster` (`CF_EVENTMASTER`), `/devel`
+  (`CF_DEVELOPER`), `/hardcore` (`CF_HARDCORE`), and `/qmaster`
+  (`CF_LQMASTER`) - all dispatched at `command.c:9257-9337`, all
+  `CF_GOD`-gated, all full-word only (`cmdcmp`'s `minlen` equals each
+  command's own length, so no abbreviation is accepted for any of the
+  seven). Unlike the pre-existing self-toggle commands
+  (`/immortal`/`/invisible`/`/xray`/`/spy`), `cmd_flag` always targets a
+  *named* character, never the caller implicitly. New core module
+  `crates/ugaris-core/src/world/admin_flag.rs` adds
+  `World::apply_cmd_flag_command`: an online branch
+  (`find_loaded_character_by_name`, a full-table scan with no
+  `CF_PLAYER` filter, matching C's `getfirst_char`/`getnext_char` walk -
+  distinct from the `CF_PLAYER`-filtered `find_online_player_by_name` in
+  `world/clanmaster.rs`/`world/trader.rs`) that toggles the flag
+  in-memory immediately and replies `"Set {name} {flag_name} to
+  {on/off}."` (`command.c:2932-2936`), and an offline branch that -
+  since `World` has no DB handle or synchronous name-index cache, same
+  constraint as `world/lastseen.rs`'s `/lastseen` and
+  `world/clanmaster.rs`'s `rank:`/`fire:` fallback - defers *both* of
+  C's two synchronous messages to a single async DB round-trip: an
+  invalid name shape (reusing `world/lastseen.rs`'s `is_valid_lookup_name`
+  gate, promoted from private to `pub(super)` for this reuse rather than
+  duplicated) gets the immediate "Sorry, no player by the name %s."
+  text, while a validly-shaped unmatched name is queued as
+  `AdminFlagToggle` with no immediate reply. New `ugaris-server`
+  function `apply_admin_flag_events` (`world_events.rs`) resolves the
+  queue every tick via `find_login_target` -> "Sorry, no player..." on a
+  missing DB row, else the immediate "Update scheduled." acknowledgement
+  (`command.c:2896`, sent regardless of whether the mutation below
+  succeeds - C's fire-and-forget `task_set_flags` semantics) ->
+  `load_character_snapshot` -> C `set_task`'s "online somewhere else"
+  guard (`task.c:250-253`, silent `xlog`-only no-op on
+  `current_area != 0`) -> flag mutation -> guarded
+  `CharacterSaveMode::Backup` save -> `"Set flag on {name} to
+  {on/off}."` (`task.c:208` - genuinely different wording from the
+  online branch, since `set_flags`'s task-queue completion handler has
+  no access to `cmd_flag`'s own `fptr` name lookup; preserved as a real
+  quirk, not "fixed"). Wired the dispatch into
+  `apply_admin_character_command` (`commands_admin.rs`, inserted after
+  the `renclan` block/before `goto`, reusing `take_legacy_alpha_name` for
+  C's `isalpha`-only name scan) and `apply_admin_flag_events` into the
+  tick loop right after `apply_lastseen_events`. 15 new focused tests: 6
+  in `crates/ugaris-core/src/world/tests/admin_flag.rs` (online
+  toggle-on/toggle-off, case-insensitive no-`CF_PLAYER`-filter match,
+  invalid/empty-name immediate rejection, valid-unmatched-name queuing),
+  7 in `tests/commands_admin.rs` (permission gate, online toggle with
+  correct flag name and on/off wording for all seven commands, invalid-
+  shape immediate rejection, valid-unmatched-name queuing, abbreviation
+  rejection for `/god`), 2 in `world_events.rs` (empty-queue no-op,
+  missing-repository no-op that still drains the queue). `cargo fmt
+  --all`, `cargo test --workspace` (1985 ugaris-core [+6] + 55 db + 3
+  net + 40 protocol + 675 server [+9], all green, zero failures), `cargo
+  build -p ugaris-server`/`cargo build --workspace` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panic. Remaining `/`/`#` command gaps, updated: `/allow` (still
+  blocked on cross-server chat relay), and the rest of the ~243
+  remaining `cmdcmp` entries in `command.c` (mostly `CF_GOD`-gated
+  tuning/anticheat/admin commands) not yet cross-referenced (tracked
+  under the "Remaining `/` and `#` text commands" P3 task).

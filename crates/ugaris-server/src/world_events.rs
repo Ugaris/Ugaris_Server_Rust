@@ -1915,6 +1915,93 @@ fn lastseen_reply_message(info: &ugaris_db::LastSeenInfo, now_unix: i64) -> Stri
     )
 }
 
+/// C `cmd_flag`'s offline fallback, `task_set_flags`/`set_flags`
+/// (`task.c:198-211,385-394`), resolved for every `World::
+/// drain_pending_admin_flag_toggles` entry queued by `World::
+/// apply_cmd_flag_command` (see that method's doc comment and
+/// `world/admin_flag.rs`'s module doc comment for the full message-shape
+/// breakdown):
+/// - no DB row at all -> "Sorry, no player by the name %s." (C's
+///   synchronous `lookup_name == -1` case, deferred here since this
+///   codebase has no synchronous name-index cache to check first).
+/// - a row found -> immediate "Update scheduled." feedback
+///   (`command.c:2896`), sent regardless of whether the mutation below
+///   actually succeeds (C's fire-and-forget `task_set_flags` semantics).
+/// - target already online elsewhere -> silent no-op beyond the above
+///   (C `set_task`'s "online somewhere else" guard, `task.c:250-253`,
+///   only `xlog`s).
+/// - otherwise -> mutate the flag, guarded save
+///   (`CharacterSaveMode::Backup`, pinning the expected offline
+///   `current_area`/`current_mirror` exactly like every other
+///   offline-DB-mutation event in this file), then `"Set flag on %s to
+///   %s."` (`task.c:208` - genuinely different wording from the online
+///   branch's `"Set %s %s to %s."`, since `set_flags`'s task-queue
+///   completion handler has no access to `cmd_flag`'s `fptr` name
+///   lookup; preserved as-is, not "fixed").
+pub(crate) async fn apply_admin_flag_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+) -> usize {
+    let toggles = world.drain_pending_admin_flag_toggles();
+    if toggles.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for toggle in toggles {
+        let Ok(Some(summary)) = repository.find_login_target(&toggle.target_name).await else {
+            world.queue_system_text(
+                toggle.caller_id,
+                format!("Sorry, no player by the name {}.", toggle.target_name),
+            );
+            continue;
+        };
+        world.queue_system_text(toggle.caller_id, "Update scheduled.".to_string());
+
+        let Ok(Some(snapshot)) = repository.load_character_snapshot(summary.id).await else {
+            continue;
+        };
+        // C `set_task`'s "online somewhere else" guard (`task.c:250-253`):
+        // silent no-op (only an `xlog`, no player-facing message).
+        if snapshot.current_area != 0 {
+            continue;
+        }
+
+        let mut character = snapshot.character;
+        character.flags.toggle(toggle.flag);
+        let state = if character.flags.contains(toggle.flag) {
+            "on"
+        } else {
+            "off"
+        };
+        let target_display_name = character.name.clone();
+
+        let request = ugaris_db::CharacterSaveRequest {
+            character,
+            items: snapshot.items,
+            ppd_blob: snapshot.ppd_blob,
+            subscriber_blob: snapshot.subscriber_blob,
+            mode: ugaris_db::CharacterSaveMode::Backup {
+                expected_current_area: snapshot.current_area,
+                expected_current_mirror: snapshot.current_mirror,
+                mirror: snapshot.mirror,
+            },
+        };
+        if !matches!(repository.save_character_snapshot(request).await, Ok(true)) {
+            continue;
+        }
+
+        world.queue_system_text(
+            toggle.caller_id,
+            format!("Set flag on {target_display_name} to {state}."),
+        );
+        applied += 1;
+    }
+    applied
+}
+
 #[cfg(test)]
 mod lastseen_tests {
     use super::*;
@@ -1959,5 +2046,35 @@ mod lastseen_tests {
             lastseen_reply_message(&info, 500),
             "Player was last seen 0 days, 0 hours, 0 minutes ago."
         );
+    }
+}
+
+#[cfg(test)]
+mod admin_flag_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_toggles_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_admin_flag_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_toggle_queued_state_untouched_but_drained() {
+        // Matches every other offline-DB-lookup event in this file: with
+        // no `character_repository` configured, the queue is still
+        // drained (so it doesn't grow unboundedly) but nothing is
+        // resolved and no player-facing message is sent.
+        let mut world = World::default();
+        let messages =
+            world.apply_cmd_flag_command(CharacterId(1), "Nobodyhome", CharacterFlags::GOD, "god");
+        assert!(messages.is_empty());
+
+        let applied = apply_admin_flag_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_admin_flag_toggles().is_empty());
     }
 }
