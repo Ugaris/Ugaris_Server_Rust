@@ -53,10 +53,25 @@ fn calculate_weather_effects_matches_c_table_at_every_boundary() {
         WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP | WEATHER_EFFECT_SKILL
     );
 
-    // Heavy storm: slow+blind+slip+skill, no damage.
+    // Heavy storm: slow+blind+slip+skill, no damage, but a nonzero
+    // `lightning_chance` (30%) so `WEATHER_EFFECT_LIGHTNING` is set too -
+    // the only weather/intensity cell where that bit ever appears.
     assert_eq!(
         calculate_weather_effects(2, 3),
-        WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP | WEATHER_EFFECT_SKILL
+        WEATHER_EFFECT_SLOW
+            | WEATHER_EFFECT_BLIND
+            | WEATHER_EFFECT_SLIP
+            | WEATHER_EFFECT_SKILL
+            | WEATHER_EFFECT_LIGHTNING
+    );
+    // Light/moderate storm also carry the lightning bit (5%/15% chance).
+    assert_eq!(
+        calculate_weather_effects(2, 1),
+        WEATHER_EFFECT_SLOW
+            | WEATHER_EFFECT_BLIND
+            | WEATHER_EFFECT_SLIP
+            | WEATHER_EFFECT_SKILL
+            | WEATHER_EFFECT_LIGHTNING
     );
 
     // Light sandstorm already has damage=1 (unlike moderate/heavy-only
@@ -97,6 +112,69 @@ fn weather_damage_amount_matches_sandstorm_table_and_is_zero_elsewhere() {
     assert_eq!(weather_damage_amount(1, 3), 0); // Rain never damages.
     assert_eq!(weather_damage_amount(0, 1), 0); // Clear never damages.
     assert_eq!(weather_damage_amount(1, 0), 0); // Invalid intensity.
+}
+
+#[test]
+fn weather_damage_message_only_sandstorm_is_reachable_today() {
+    // `MOD_WEATHER_SANDSTORM` is the only weather type with a nonzero
+    // `damage` in the current `WEATHER_EFFECTS` table, so it's the only
+    // branch `main.rs`'s tick loop can actually reach - but the switch
+    // itself is transcribed for all three cases per C source.
+    assert_eq!(
+        weather_damage_message(2), // MOD_WEATHER_STORM
+        Some("Lightning strikes nearby!")
+    );
+    assert_eq!(
+        weather_damage_message(3), // MOD_WEATHER_SNOW
+        Some("The freezing cold bites into you!")
+    );
+    assert_eq!(
+        weather_damage_message(4), // MOD_WEATHER_SANDSTORM
+        Some("The stinging sand hurts you!")
+    );
+    assert_eq!(weather_damage_message(0), None); // Clear.
+    assert_eq!(weather_damage_message(1), None); // Rain.
+    assert_eq!(weather_damage_message(5), None); // Fog.
+}
+
+#[test]
+fn lightning_strike_chance_matches_storm_table_and_is_zero_elsewhere() {
+    assert_eq!(lightning_strike_chance(2, 1), 5); // Light storm.
+    assert_eq!(lightning_strike_chance(2, 2), 15); // Moderate storm.
+    assert_eq!(lightning_strike_chance(2, 3), 30); // Heavy storm.
+    assert_eq!(lightning_strike_chance(1, 3), 0); // Rain never has lightning.
+    assert_eq!(lightning_strike_chance(4, 3), 0); // Sandstorm never has lightning.
+    assert_eq!(lightning_strike_chance(2, 0), 0); // Invalid intensity.
+}
+
+#[test]
+fn lightning_strike_damage_amount_matches_c_switch_at_every_intensity() {
+    // `RANDOM(n)` here always returns 0, isolating the base value at each
+    // intensity boundary.
+    assert_eq!(lightning_strike_damage_amount(1, |_| 0), 10); // Light: 10-20.
+    assert_eq!(lightning_strike_damage_amount(1, |_| 9), 19);
+    assert_eq!(lightning_strike_damage_amount(2, |_| 0), 20); // Moderate: 20-40.
+    assert_eq!(lightning_strike_damage_amount(2, |_| 19), 39);
+    assert_eq!(lightning_strike_damage_amount(3, |_| 0), 40); // Heavy: 40-80.
+    assert_eq!(lightning_strike_damage_amount(3, |_| 39), 79);
+    // Unreachable-in-practice `default` branch (intensity 0/None).
+    assert_eq!(lightning_strike_damage_amount(0, |_| 0), 15);
+}
+
+#[test]
+fn thunder_screen_flash_intensity_wraps_around_past_dist_twenty() {
+    // C `broadcast_weather_thunder_effect`'s `(uint8_t)(200 - dist*10)`
+    // cast happens *before* the `< 50` floor check, so far-away players
+    // (beyond `dist=20`) see the subtraction go negative and wrap back up
+    // into the 200s instead of being floored to 50 - replicating a real
+    // C integer-truncation quirk, not a bug in this port.
+    assert_eq!(thunder_screen_flash_intensity(0), 200); // Epicenter.
+    assert_eq!(thunder_screen_flash_intensity(10), 100);
+    assert_eq!(thunder_screen_flash_intensity(15), 50); // Exactly at floor.
+    assert_eq!(thunder_screen_flash_intensity(16), 50); // Floored (40 < 50).
+    assert_eq!(thunder_screen_flash_intensity(20), 50); // Floored (0 < 50).
+    assert_eq!(thunder_screen_flash_intensity(21), 246); // Wraps: -10 as u8.
+    assert_eq!(thunder_screen_flash_intensity(24), 216); // Wraps: -40 as u8.
 }
 
 #[test]
@@ -348,6 +426,64 @@ fn broadcast_weather_packet_skips_areas_without_weather() {
     assert_eq!(payloads.len(), 1);
     assert_eq!(payloads[0][0], SV_MOD2);
     assert_eq!(payloads[0][3], 1);
+}
+
+#[test]
+fn broadcast_weather_thunder_effect_sends_bolt_and_fading_flash_within_radius() {
+    let mut world = World::default();
+    // Struck character, at the epicenter itself.
+    let struck_id = CharacterId(1);
+    let mut struck = login_character(struck_id, &login_block("Struck"), 1, 50, 50);
+    struck.x = 50;
+    struck.y = 50;
+    world.add_character(struck);
+    // Within the radius-12 box but far enough to hit the flash-intensity
+    // floor (dist = 10 + 10 = 20 <= radius on both axes).
+    let nearby_id = CharacterId(2);
+    let mut nearby = login_character(nearby_id, &login_block("Nearby"), 1, 60, 60);
+    nearby.x = 60;
+    nearby.y = 60;
+    world.add_character(nearby);
+    // Outside the radius-12 box entirely.
+    let far_id = CharacterId(3);
+    let mut far = login_character(far_id, &login_block("Far"), 1, 100, 100);
+    far.x = 100;
+    far.y = 100;
+    world.add_character(far);
+
+    let mut runtime = ServerRuntime::default();
+    for (session_id, character_id) in [(1u64, struck_id), (2, nearby_id), (3, far_id)] {
+        let (commands, _rx) = mpsc::channel(16);
+        runtime.connect(session_id, commands, 0);
+        if let Some(player) = runtime.players.get_mut(&session_id) {
+            player.character_id = Some(character_id);
+        }
+    }
+
+    broadcast_weather_thunder_effect(&world, &mut runtime, 50, 50, 12, 3);
+
+    // The struck player and the in-range nearby player each get exactly
+    // two SFX packets (bolt + screen flash); the far player gets none.
+    let struck_payloads = runtime.tick_out.get(&1).expect("struck player queued SFX");
+    assert_eq!(struck_payloads.len(), 2);
+    assert_eq!(struck_payloads[0][0], SV_MOD2);
+    assert_eq!(struck_payloads[0][2], ugaris_protocol::mod_sfx::SV_VIS_SFX);
+    assert_eq!(
+        struck_payloads[0][3],
+        ugaris_protocol::mod_sfx::SFX_LIGHTNING_STRIKE
+    );
+    assert_eq!(struck_payloads[0][8], 255); // Heavy intensity bolt.
+    assert_eq!(
+        struck_payloads[1][3],
+        ugaris_protocol::mod_sfx::SFX_SCREEN_FLASH
+    );
+    assert_eq!(struck_payloads[1][8], 200); // dist=0 -> no fade.
+
+    let nearby_payloads = runtime.tick_out.get(&2).expect("nearby player queued SFX");
+    assert_eq!(nearby_payloads.len(), 2);
+    assert_eq!(nearby_payloads[1][8], 50); // dist=20 -> floored.
+
+    assert!(runtime.tick_out.get(&3).is_none());
 }
 
 #[test]

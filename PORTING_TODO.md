@@ -5147,14 +5147,35 @@ Unlocks every quest NPC. Do these before any P4 area work.
   - a real gap vs. C (which folds the same modifier into every `speed()`
   call, not just walking), left as a documented simplification pending a
   future slice that threads `map`/weather through those signatures too.
-  Lightning strikes
-  (`handle_lightning_strike`) and elemental debuffs
-  (`apply_elemental_debuffs`/`get_elemental_debuff`/
-  `modify_fire_resistance`/`modify_cold_resistance`/
-  `modify_attack_speed`/`modify_spell_power`) are unported (the
-  `WEATHER_EFFECT_LIGHTNING`/`WEATHER_EFFECT_COMBAT`/
-  `WEATHER_EFFECT_ELEMENTAL` C-internal flags have no Rust
-  representation - only the 5 client-visible bits are computed). Slip
+  Lightning strikes (`handle_lightning_strike`) were ported in iteration
+  127 - see Progress Log. `modify_visibility_range`/`modify_skill_value`
+  are additionally confirmed **permanently dead code in C**, not just
+  unwired: verified with a full-tree grep (`grep -rln
+  "modify_visibility_range\|modify_skill_value" src/`) - the only C file
+  referencing either function is `weather.c` itself (their own
+  definitions); no other `.c` file anywhere in the tree calls them, and
+  `vis_mod`/`skill_mods[` (the table columns they'd read) are likewise
+  never referenced outside `weather.c`. Same for `modify_attack_speed`/
+  `modify_spell_power`/`modify_fire_resistance`/`modify_cold_resistance`
+  (only called by each other, never from outside `weather.c`) and
+  `send_weather_screen_flash` (declared, defined, never called). By
+  contrast `apply_elemental_debuffs`/`handle_lightning_strike` genuinely
+  *are* called (from `apply_weather_effects`, gated on
+  `WEATHER_EFFECT_ELEMENTAL`/`WEATHER_EFFECT_LIGHTNING`, both reachable
+  given the live table's nonzero `elemental_debuff_type`/
+  `lightning_chance` cells) - `handle_lightning_strike` is now ported;
+  `apply_elemental_debuffs` still isn't (REMAINING below), though note its
+  *mechanical* effect is itself unreachable today since the only 4
+  functions that would ever consume `get_elemental_debuff`'s result
+  (`modify_attack_speed`/`modify_spell_power`/`modify_fire_resistance`/
+  `modify_cold_resistance`) are the dead ones above - porting
+  `apply_elemental_debuffs` today would only ever produce its own
+  periodic flavor-text log messages ("You are getting soaked by the
+  rain."/etc.), not any actual gameplay modifier, until a future slice
+  also wires one of those 4 dead functions into real combat/resistance
+  code (which would itself first require finding or inventing a *new*
+  non-dead C call site, since none exists - a bigger design question than
+  "port this function", left for a future slice/decision). Slip
   itself (`can_slip`/`reset_slip_cooldown`) is intentionally not ported:
   C's own `apply_weather_effects` has it permanently disabled ("was too
   disruptive to gameplay"), dead code in the C tree too. The multi-server
@@ -5291,6 +5312,77 @@ Unlocks every quest NPC. Do these before any P4 area work.
   failures), `cargo build -p ugaris-server` clean with zero warnings,
   10s boot-smoke confirmed "entering Rust game loop" with no panics
   (this iteration touches the runtime tick loop).
+  Progress Log (iteration 127): ported `handle_lightning_strike`
+  (`weather.c:534-575`) end-to-end, plus fixed a genuine pre-existing gap
+  in the already-ported `handle_weather_damage` tick (the per-weather-type
+  `log_char` message on an actual damage hit - "Lightning strikes
+  nearby!"/"The freezing cold bites into you!"/"The stinging sand hurts
+  you!" - was never queued at all). Added `lightning_chance` as a real
+  field to `WeatherEffectData`/`WEATHER_EFFECTS` (only
+  `MOD_WEATHER_STORM` has a nonzero value: 5/15/30% at Light/Moderate/
+  Heavy) and a new server-internal `WEATHER_EFFECT_LIGHTNING` (`0x100`)
+  bit in `calculate_weather_effects`. New `World::
+  character_weather_eligible` (`crates/ugaris-core/src/world/weather.rs`)
+  factors the shared player-only/no-gods-immortals/no-indoors guard out
+  of `apply_weather_damage` (unchanged behavior, all existing tests still
+  pass) and a new sibling `World::apply_lightning_strike_damage` (same
+  guards, `armor_divisor=0` instead of `1` - lightning bypasses armor
+  entirely, matching C's `hurt(cn, dam, 0, 0, 50, 50)` vs. weather
+  damage's `hurt(cn, dam, 0, 1, 50, 50)`). Server side (`crates/
+  ugaris-server/src/weather.rs`): `lightning_strike_chance`/
+  `lightning_strike_damage_amount` (the intensity-scaled `10+RANDOM(10)`/
+  `20+RANDOM(20)`/`40+RANDOM(40)` roll) table lookups, and a full port of
+  `broadcast_weather_thunder_effect` (`weather_client.c:313-337`) as a new
+  `SV_MOD2`/`SV_VIS_SFX` protocol packet family (`crates/ugaris-protocol/
+  src/mod_sfx.rs`, new module, byte-exact 12-byte `sv_sfx_packet` against
+  the sibling `Ugaris_Protocol` repo's `mod_sfx.h`) - sends every player
+  within the strike's radius-12 box both a positional lightning-bolt SFX
+  (intensity scaled by weather intensity: 180/220/255) and a screen-wide
+  flash SFX that fades with Manhattan distance from the strike. Preserved
+  a genuine C integer-truncation quirk digit-for-digit: the flash
+  intensity's `(uint8_t)(200 - dist*10)` cast happens *before* the `< 50`
+  floor check, so for `dist >= 21` the negative subtraction wraps back up
+  into the 200s instead of being floored - `thunder_screen_flash_intensity`
+  replicates this exactly (locked in by a dedicated boundary test) rather
+  than "fixing" it to a sane clamp. Wired into `main.rs`'s per-tick loop
+  right after the weather-damage roll, with the same per-player
+  independent-roll structure, checking `character_weather_eligible`
+  *before* spending an RNG call (matching C's guard-before-roll order
+  exactly - no wasted `RANDOM()` calls for gods/indoor players).
+  Confirmed via full-tree grep that C's own nearby-players text broadcast
+  (`log_char(co, LOG_INFO, 0, "Lightning strikes nearby with a thunderous
+  crack!")`) is unreachable dead code in the real C server - `log_char`'s
+  `LOG_INFO` gate is `if (type==LOG_INFO && !char_see_char(cn, dat1))
+  return 0;`, this call site hardcodes `dat1=0`, and `char_see_char`'s own
+  first check is `if (co==0) return 0;`, so the gate always fails and the
+  message is never delivered to any player in C either - intentionally
+  not ported, documented inline at the call site rather than silently
+  dropped. 19 new tests: 8 in `ugaris-core` (`character_weather_eligible`
+  covering all 4 guards, `apply_lightning_strike_damage` covering
+  zero/negative damage, non-player, god/immortal, indoors, and unknown-
+  character), 2 in `ugaris-protocol` (`sv_sfx_packet` wire layout, screen-
+  wide `SFX_POS_SCREEN` sentinel), and 9 in `ugaris-server`
+  (`lightning_strike_chance`/`lightning_strike_damage_amount` table
+  lookups at every intensity boundary, `weather_damage_message`'s 3-case
+  switch, `thunder_screen_flash_intensity`'s wraparound quirk at the
+  dist=20/21 boundary, and an integration test asserting
+  `broadcast_weather_thunder_effect` sends exactly 2 packets to in-range
+  players and 0 to a far player) plus updated 2 existing `calculate_
+  weather_effects`/`/setweather` tests for the new `WEATHER_EFFECT_
+  LIGHTNING` bit on storm. REMAINING (updated): visibility
+  (`modify_visibility_range`)/skill-value (`modify_skill_value`)
+  modifiers, and the 4 combat modifiers they'd parallel
+  (`modify_attack_speed`/`modify_spell_power`/`modify_fire_resistance`/
+  `modify_cold_resistance`), are now confirmed permanently dead C code
+  (see above) rather than merely unwired - deprioritized accordingly.
+  `apply_elemental_debuffs` (the log-message-only half) is still
+  unported. `speed_ticks`'s other ~25 non-walking call sites remain a
+  real, documented gap. `cargo fmt --all`, `cargo test --workspace` (1725
+  ugaris-core [+7] + 55 protocol [+2] + 3 net + 38 db + 580 server [+9,
+  net of the 2 updated], all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panics (this iteration touches the
+  runtime tick loop).
 
 - [ ] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +

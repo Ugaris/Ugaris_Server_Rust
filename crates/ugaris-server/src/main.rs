@@ -178,6 +178,10 @@ use ugaris_db::{
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
 
 use ugaris_protocol::{
+    mod_sfx::{
+        sv_sfx_packet, SFX_COLOR_DEFAULT, SFX_COLOR_WHITE, SFX_LIGHTNING_STRIKE, SFX_POS_SCREEN,
+        SFX_SCREEN_FLASH,
+    },
     mod_weather::{sv_weather_packet, MOD_WEATHER_EFFECT_INDOOR},
     packet::{
         CharacterMapAction, CharacterMapStatus, MapLayer, MapPosition, PacketBuilder,
@@ -826,30 +830,111 @@ async fn main() -> anyhow::Result<()> {
                     } else {
                         100
                     };
-                if runtime.weather.weather_effects & WEATHER_EFFECT_DAMAGE != 0
-                    && area_has_weather(i64::from(config.area_id))
-                {
-                    let damage = weather_damage_amount(
-                        runtime.weather.current_weather,
-                        runtime.weather.weather_intensity,
-                    );
-                    if damage > 0 {
-                        // C `handle_weather_damage` (`weather.c:435-471`):
-                        // each player rolls its own independent "Only apply
-                        // damage occasionally (every ~12 seconds)"
-                        // `RANDOM(TICKS * 12)` check every tick (the C call
-                        // site is inside the per-character `tick_char`
-                        // loop), so every player gets its own chance rather
-                        // than all-or-nothing for the whole area.
-                        let player_character_ids: Vec<CharacterId> = world
-                            .characters
-                            .values()
-                            .filter(|character| character.flags.contains(CharacterFlags::PLAYER))
-                            .map(|character| character.id)
-                            .collect();
-                        for character_id in player_character_ids {
-                            if runtime_random_below((TICKS_PER_SECOND * 12) as i32) == 0 {
-                                world.apply_weather_damage(character_id, damage);
+                if area_has_weather(i64::from(config.area_id)) {
+                    let player_character_ids: Vec<CharacterId> = world
+                        .characters
+                        .values()
+                        .filter(|character| character.flags.contains(CharacterFlags::PLAYER))
+                        .map(|character| character.id)
+                        .collect();
+                    if runtime.weather.weather_effects & WEATHER_EFFECT_DAMAGE != 0 {
+                        let damage = weather_damage_amount(
+                            runtime.weather.current_weather,
+                            runtime.weather.weather_intensity,
+                        );
+                        if damage > 0 {
+                            // C `handle_weather_damage` (`weather.c:435-471`):
+                            // each player rolls its own independent "Only
+                            // apply damage occasionally (every ~12 seconds)"
+                            // `RANDOM(TICKS * 12)` check every tick (the C
+                            // call site is inside the per-character
+                            // `tick_char` loop), so every player gets its own
+                            // chance rather than all-or-nothing for the
+                            // whole area. On an actual hit, also queues the
+                            // matching per-weather-type `log_char` message -
+                            // previously missing from this port, see
+                            // `weather_damage_message`.
+                            for &character_id in &player_character_ids {
+                                if runtime_random_below((TICKS_PER_SECOND * 12) as i32) == 0
+                                    && world.apply_weather_damage(character_id, damage).is_some()
+                                {
+                                    if let Some(message) =
+                                        weather_damage_message(runtime.weather.current_weather)
+                                    {
+                                        world.queue_system_text(character_id, message);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // C `handle_lightning_strike` (`weather.c:534-575`),
+                    // called from the same per-player `apply_weather_effects`
+                    // tick hook as the damage roll above: an independent
+                    // per-player `RANDOM(100*TICKS*60) < lightning_chance*100`
+                    // roll (only `MOD_WEATHER_STORM` ever has a nonzero
+                    // `lightning_chance`), gated on the same
+                    // `character_weather_eligible` guards (player-only,
+                    // never gods/immortals, never indoors) *before* the RNG
+                    // call so ineligible characters never consume a roll,
+                    // matching C's guard-before-roll order exactly.
+                    if runtime.weather.weather_effects & WEATHER_EFFECT_LIGHTNING != 0 {
+                        let lightning_chance = lightning_strike_chance(
+                            runtime.weather.current_weather,
+                            runtime.weather.weather_intensity,
+                        );
+                        if lightning_chance > 0 {
+                            for &character_id in &player_character_ids {
+                                if !world.character_weather_eligible(character_id) {
+                                    continue;
+                                }
+                                if runtime_random_below(100 * TICKS_PER_SECOND as i32 * 60)
+                                    >= lightning_chance * 100
+                                {
+                                    continue;
+                                }
+                                let base_damage = lightning_strike_damage_amount(
+                                    runtime.weather.weather_intensity,
+                                    &mut runtime_random_below,
+                                );
+                                if world
+                                    .apply_lightning_strike_damage(character_id, base_damage)
+                                    .is_some()
+                                {
+                                    world.queue_system_text(
+                                        character_id,
+                                        "CRACK! Lightning strikes you!",
+                                    );
+                                    if let Some(character) =
+                                        world.characters.get(&character_id)
+                                    {
+                                        let (x, y) = (character.x, character.y);
+                                        let weather_intensity = runtime.weather.weather_intensity;
+                                        broadcast_weather_thunder_effect(
+                                            &world,
+                                            &mut runtime,
+                                            x,
+                                            y,
+                                            12,
+                                            weather_intensity,
+                                        );
+                                    }
+                                    // C's own nearby-players text broadcast
+                                    // (`log_char(co, LOG_INFO, 0, "Lightning
+                                    // strikes nearby with a thunderous
+                                    // crack!")`, `weather.c:606-608`) is
+                                    // intentionally NOT ported: `log_char`'s
+                                    // own `LOG_INFO` gate is `if (type ==
+                                    // LOG_INFO && !char_see_char(cn, dat1))
+                                    // return 0;`, and this call site hardcodes
+                                    // `dat1 = 0`, so `char_see_char(co, 0)`
+                                    // always returns `0` (its own `co == 0`
+                                    // early-return) - the gate always fails
+                                    // and the message is *never* delivered to
+                                    // anyone in the real C server. Verified:
+                                    // no other C caller passes `dat1 = 0` to
+                                    // `LOG_INFO`; every other `LOG_INFO` call
+                                    // site passes a real acting character id.
+                                }
                             }
                         }
                     }

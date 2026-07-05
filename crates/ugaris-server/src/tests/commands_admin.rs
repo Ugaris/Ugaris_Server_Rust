@@ -3351,7 +3351,11 @@ fn weather_admin_commands_mutate_runtime_state_with_legacy_feedback() {
     assert_eq!(weather.weather_intensity, 3);
     assert_eq!(
         weather.weather_effects,
-        WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP | WEATHER_EFFECT_SKILL
+        WEATHER_EFFECT_SLOW
+            | WEATHER_EFFECT_BLIND
+            | WEATHER_EFFECT_SLIP
+            | WEATHER_EFFECT_SKILL
+            | WEATHER_EFFECT_LIGHTNING
     );
     assert!(weather.is_transitioning);
     assert_eq!(weather.transition_start, 48);
