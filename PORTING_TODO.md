@@ -6696,19 +6696,28 @@ Unlocks every quest NPC. Do these before any P4 area work.
     clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
     loop" with no panics.
 
-- [~] **Events (`src/module/events/**`)** - recurring boosted-rate events
+- [x] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +
   each recurring event's modifier hooks (`event_drop_rate` modifier is
-  referenced by loot JSON). REMAINING: `RecurrenceType::Daily`/`Monthly`
-  branches of `should_event_be_active` are unported (no currently-ported
-  event needs them - all five recurring events are Weekly/Biweekly, and
-  Easter's `RECUR_YEARLY` is handled directly by `check_easter_event`).
-  The `event_drop_rate` loot modifier is stored/settable but has no
-  consumer yet (blocked on the separate "Death-mode loot tables" task's
-  JSON roll engine). The four `mining_*_multiplier` settings the Mining
-  Monday/Wednesday events scale are likewise still dead/unwired outside
-  `GameSettings` (blocked on porting the mining "dig" mechanic itself, not
-  part of this task).
+  referenced by loot JSON). NOTE: `RecurrenceType::Daily`/`Monthly`
+  branches of `should_event_be_active` are intentionally unported - grepping
+  the whole C tree confirms no event (recurring or seasonal) ever sets
+  `RECUR_DAILY` or `RECUR_MONTHLY` (all five recurring events are
+  Weekly/Biweekly, and both seasonal events - Christmas, Easter - use
+  `RECUR_YEARLY`, handled directly by `check_easter_event`/`xmas.rs`'s own
+  date logic), so these branches would be untestable dead code; same for
+  C's generic `schedule_one_time_event`/`cancel_event`/
+  `get_event_bonus_multiplier` API (`RECUR_NONE`, `bonus_multiplier`) -
+  grepping the C tree shows no call site outside `events.c` itself ever
+  invokes them. The `event_drop_rate` loot modifier now has a real
+  consumer: `world/loot.rs`'s `compose_loot_modifier` reads
+  `GameSettings::get_loot_modifier` for every table/group whose JSON
+  `"modifiers"` array names it (closed by the "Death-mode loot tables"
+  task, iteration 155). The four `mining_*_multiplier` settings the Mining
+  Monday/Wednesday events scale are still dead/unwired outside
+  `GameSettings` - this is expected and out of scope here; their consumer
+  is the P4 "Area 12 - `mine.c`" task's `handle_mining_result` reward
+  cascade, not this task.
 
   Progress Log (iteration 153): ported the Easter seasonal event
   (`src/module/events/seasonal/easter_event.c`) end-to-end -
@@ -6758,6 +6767,29 @@ Unlocks every quest NPC. Do these before any P4 area work.
   --workspace` (629 passed, 0 failed), `cargo build -p ugaris-server`
   clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
   loop" with no panic.
+
+  Progress Log (iteration 156): no new code - this task's remaining
+  blocker (`event_drop_rate` had no consumer) was resolved as a side
+  effect of the "Death-mode loot tables" task landing in iteration 155
+  (`world/loot.rs`'s `compose_loot_modifier` now calls
+  `GameSettings::get_loot_modifier("event_drop_rate")` for every table/
+  group whose JSON names it - verified live by reading `loot.rs` and
+  `events.rs`'s `set_loot_modifier(EVENT_DROP_RATE_MODIFIER, ...)` call
+  sites in `DoubleDropTuesday`/`BonusWeekend`'s start/end hooks). Also
+  re-verified against the C tree (`grep -rn "RECUR_DAILY\|RECUR_MONTHLY\|
+  schedule_one_time_event\|cancel_event\|get_event_bonus_multiplier"
+  src/module/events/`) that none of these C primitives have any call site
+  outside `events.c` itself in the whole legacy tree, confirming they are
+  genuinely dead/unreachable code with no gameplay behavior to port -
+  same standing precedent this repo already follows elsewhere (skip dead
+  C call sites, port only live ones). Closing this task: the only
+  previously-listed gap left (`mining_*_multiplier` consumer) was always
+  explicitly out of scope for this task (belongs to the P4 "Area 12 -
+  `mine.c`" task's `handle_mining_result` cascade). Reworded the task
+  note accordingly. `cargo fmt --all`, `cargo test --workspace` (629
+  server passed, 1968 ugaris-core passed, 0 failed total), `cargo build
+  -p ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
 
 - [~] **Death-mode loot tables (`src/system/loot/loot.c`)** - JSON tables
   under `ugaris_data/loot/`. Port the loader + roll engine + pity
@@ -7365,3 +7397,15 @@ Add one line per completed task: date, task, ledger section touched.
   warnings, 12s boot-smoke confirmed "entering Rust game loop" with no
   panics. Ledger section "Ralph Loop - Events (Recurring Boosted-Rate)"
   added.
+- 2026-07-05: Events (`src/module/events/**`) (P3) - no new code; closed
+  this `[~]` task to `[x]` after confirming its last blocker
+  (`event_drop_rate` had no loot consumer) was already resolved by the
+  "Death-mode loot tables" task's `world/loot.rs::compose_loot_modifier`
+  (iteration 155), and that `RecurrenceType::Daily`/`Monthly` plus C's
+  generic `schedule_one_time_event`/`cancel_event`/
+  `get_event_bonus_multiplier` API have zero call sites anywhere in the
+  legacy C tree outside `events.c` itself (verified via grep) - genuinely
+  dead code, not a porting gap. `mining_*_multiplier`'s consumer stays
+  explicitly out of scope (belongs to the unstarted P4 "Area 12 -
+  `mine.c`" task). Ledger row for `events.c`/`.h`/`recurring/*.c`/
+  `easter_event.c` updated accordingly.
