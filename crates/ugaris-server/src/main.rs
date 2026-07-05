@@ -6007,6 +6007,10 @@ async fn main() -> anyhow::Result<()> {
                         "applied dungeon-raid catacomb build events"
                     );
                 }
+                // C `dungeonfighter`/`dungeon_potion`: the `CDR_DUNGEONFIGHTER`
+                // warrior/mage/seyan raid-guard NPCs' potion-drinking driver
+                // (`src/area/13/dungeon.c:1956-2161`).
+                world.process_dungeonfighter_actions();
                 // C `clubmaster_driver`: the club foundations/
                 // administration NPC (`src/system/clubmaster.c`).
                 world.process_clubmaster_actions(config.area_id, current_unix_time());

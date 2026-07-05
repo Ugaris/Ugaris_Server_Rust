@@ -93,9 +93,10 @@ pub const CDR_DUNGEONMASTER: u16 = 51;
 /// C `#define CDR_DUNGEONFIGHTER 52` (`src/system/drvlib.h`): the
 /// autonomous raid-boss combat driver (`dungeon.c::dungeonfighter`/
 /// `dungeon_potion`/`fighter_dead`, `dungeon.c:1956-2161`) spawned inside
-/// a live catacomb. Not wired yet - see the "Clan system" task in
-/// `PORTING_TODO.md`'s REMAINING notes; kept here only so the numeric
-/// compatibility constant exists for whichever future slice ports it.
+/// a live catacomb. The message-loop/potion half is ported - see
+/// `world/dungeon_fighter.rs`'s `process_dungeonfighter_actions`; its own
+/// module doc comment lists what's still REMAINING (the SimpleBaddy-AI
+/// tail call and `fighter_dead`).
 pub const CDR_DUNGEONFIGHTER: u16 = 52;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
@@ -177,6 +178,7 @@ pub enum CharacterDriverState {
     ArenaFighter(ArenaFighterDriverData),
     ArenaManager(ArenaManagerDriverData),
     Dungeonmaster(DungeonmasterDriverData),
+    Dungeonfighter(DungeonfighterDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -752,6 +754,26 @@ pub struct DungeonmasterDriverData {
     pub created_by_clan: [u16; DUNGEON_SLOT_COUNT],
     /// C `memcleartimer`.
     pub memcleartimer: u64,
+}
+
+/// C `struct dungeonfighter_data` (`dungeon.c:2027-2032`): the
+/// `CDR_DUNGEONFIGHTER` driver's per-NPC damage/potion-budget counters.
+/// Unlike C's `set_data`, which stores this independently of whatever
+/// `struct simplebaddy_data` the same character might also carry, this
+/// occupies the character's one `driver_state` slot outright (see
+/// `world/dungeon_fighter.rs`'s module doc comment for the resulting
+/// SimpleBaddy-AI gap). C never resets any of these four counters, so
+/// they accumulate for the NPC's entire lifetime (matched here).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DungeonfighterDriverData {
+    /// C `damage_done`.
+    pub damage_done: i32,
+    /// C `damage_taken`.
+    pub damage_taken: i32,
+    /// C `simple_pots_taken`.
+    pub simple_pots_taken: i32,
+    /// C `alc_pots_taken`.
+    pub alc_pots_taken: i32,
 }
 
 /// C `struct qa qa[]` (`src/area/13/dungeon.c:91-99`): `dungeonmaster`'s
@@ -2424,7 +2446,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::ArenaMaster(_)
             | CharacterDriverState::ArenaFighter(_)
             | CharacterDriverState::ArenaManager(_)
-            | CharacterDriverState::Dungeonmaster(_),
+            | CharacterDriverState::Dungeonmaster(_)
+            | CharacterDriverState::Dungeonfighter(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

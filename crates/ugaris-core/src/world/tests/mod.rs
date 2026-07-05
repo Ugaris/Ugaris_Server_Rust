@@ -14,6 +14,7 @@ mod combat;
 mod date;
 mod death;
 mod doors;
+mod dungeon_fighter;
 mod dungeon_master;
 mod effect_tick;
 mod effects;

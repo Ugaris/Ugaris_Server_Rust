@@ -480,7 +480,8 @@ impl World {
                 | CharacterDriverState::ArenaMaster(_)
                 | CharacterDriverState::ArenaFighter(_)
                 | CharacterDriverState::ArenaManager(_)
-                | CharacterDriverState::Dungeonmaster(_) => None,
+                | CharacterDriverState::Dungeonmaster(_)
+                | CharacterDriverState::Dungeonfighter(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

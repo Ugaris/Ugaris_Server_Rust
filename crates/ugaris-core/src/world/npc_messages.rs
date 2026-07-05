@@ -192,7 +192,8 @@ impl World {
                 | CharacterDriverState::ArenaMaster(_)
                 | CharacterDriverState::ArenaFighter(_)
                 | CharacterDriverState::ArenaManager(_)
-                | CharacterDriverState::Dungeonmaster(_) => None,
+                | CharacterDriverState::Dungeonmaster(_)
+                | CharacterDriverState::Dungeonfighter(_) => None,
             })
             .unwrap_or_default()
     }

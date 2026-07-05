@@ -3273,20 +3273,38 @@ Unlocks every quest NPC. Do these before any P4 area work.
   the tick-loop call site (`process_dungeonmaster_actions`/
   `apply_dungeonmaster_events` in `crates/ugaris-server/src/main.rs`,
   right after `clanclerk`) - were all ported and wired in iteration 145
-  (see Progress Log). REMAINING now: `immortal_dead`'s one-line bug-log
+  (see Progress Log). Iteration 146 ported the `CDR_DUNGEONFIGHTER`
+  driver's message-loop/potion half (`dungeonfighter`/`dungeon_potion`,
+  `dungeon.c:1956-2161`, new `crates/ugaris-core/src/world/
+  dungeon_fighter.rs` + `CharacterDriverState::Dungeonfighter` variant,
+  see Progress Log). REMAINING now: `immortal_dead`'s one-line bug-log
   message (`ch_died_driver` for `CDR_DUNGEONMASTER`, trivial and
-  unreachable in practice since this NPC is never meant to die), and
-  `dungeonfighter`/`dungeon_potion`/`fighter_dead` (the separate
-  combat-adjacent `CDR_DUNGEONFIGHTER` driver, `dungeon.c:1956-2161` -
-  the constant exists, see `character_driver::CDR_DUNGEONFIGHTER`, but
-  nothing implements it yet), plus `dungeondoor`'s own `first_solve`
-  jewel-stealing/`NTID_DUNGEON`-notify side effects
+  unreachable in practice since this NPC is never meant to die);
+  `fighter_dead` (confirmed dead code in C itself - its only effect
+  decrements a `clan[cnr].dungeon.{warrior,mage,seyan}[0][level]`
+  sub-array that is never incremented anywhere in the C tree, so its
+  `> 0` guard never passes - not ported, per `dungeon_fighter.rs`'s
+  module doc comment); and the biggest remaining piece, giving
+  `CDR_DUNGEONFIGHTER` NPCs their actual idle-wander/auto-attack combat
+  AI (C's own `dungeonfighter` ends with `char_driver(CDR_SIMPLEBADDY,
+  CDT_DRIVER, cn, ret, lastact)`, reusing the SimpleBaddy driver's full
+  behavior on a character whose own `ch[cn].driver` is
+  `CDR_DUNGEONFIGHTER` - every existing Rust `process_simple_baddy_*`
+  dispatch function requires *both* `character.driver ==
+  CDR_SIMPLEBADDY` and a `CharacterDriverState::SimpleBaddy` payload,
+  neither of which these NPCs have now that their `driver_state` holds
+  this iteration's own `DungeonfighterDriverData` instead - unlike C's
+  `set_data`, which lets one character hold independent named data
+  blobs for both drivers at once, `Character::driver_state` is a
+  single-variant slot, so wiring this in is a real architecture change
+  (either a second driver-state field on `Character`, or merging the
+  two structs), not a one-line fix - left for a future slice). Also
+  still open: `dungeondoor`'s own `first_solve` jewel-stealing/
+  `NTID_DUNGEON`-notify side effects
   (`item_driver::area13_dungeon::dungeon_door_driver` already computes
   `first_solve`/`catacomb` but `world::item_outcomes`'s
   `DungeonDoorSolved` handler only teleports the winner today - a
-  pre-existing gap, not introduced this iteration, now documented here
-  since it's the natural next slice once `CDR_DUNGEONFIGHTER` exists to
-  receive the `NTID_DUNGEON` notify). The potion
+  pre-existing gap, not introduced this iteration). The potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
   reachable slice, not blocked on anything, since the alchemy-potion
@@ -4730,6 +4748,63 @@ Unlocks every quest NPC. Do these before any P4 area work.
     confirmed "entering Rust game loop" with no panics (area 13 is where
     the real `CDR_DUNGEONMASTER` NPC now lives). REMAINING per the updated
     note above: `CDR_DUNGEONFIGHTER`, `immortal_dead`, and
+    `dungeondoor`'s jewel-steal/notify gap.
+  - 2026-07-05 (iteration 146): ported the `CDR_DUNGEONFIGHTER` driver's
+    message-loop/potion half (`dungeonfighter`/`dungeon_potion`,
+    `dungeon.c:1956-2161`) as a new `crates/ugaris-core/src/world/
+    dungeon_fighter.rs` module. Added `DungeonfighterDriverData` (C
+    `struct dungeonfighter_data`'s 4 damage/potion-budget counters,
+    never reset by C, matched here) and a
+    `CharacterDriverState::Dungeonfighter` variant in
+    `character_driver.rs` (updated the 4 exhaustive matches on
+    `CharacterDriverState` across `character_driver.rs`/`npc_messages.rs`/
+    `npc_fight.rs`/`npc_idle.rs` accordingly), wired at zone-template
+    instantiation in `zone.rs` (mirroring the `CDR_DUNGEONMASTER` case).
+    `World::process_dungeonfighter_actions`/`process_dungeonfighter_messages`
+    port the `NT_DIDHIT`/`NT_GOTHIT` accumulation and the three simple-
+    potion (mana/hp/combo) drink checks in C's exact order/gating
+    (`good_damage` gate, the combo block's `&& !flag` "only if neither
+    specific potion already fired" rule, the shared big/medium/small
+    tier-selection shape factored into `pick_simple_pot`).
+    `World::dungeon_potion` ports the alchemy stat-potion grant: picks
+    the highest `V_INT`-qualifying stocked tier, installs a 10-minute
+    `IDR_POTION_SP` item (Attack/Parry/Immunity for `CF_WARRIOR`, else
+    Flash/MagicShield/Immunity), matching `install_beyond_potion_spell`'s
+    item-creation shape but as its own dedicated function since that
+    helper requires an existing carried source item to consume and this
+    potion is synthesized outright, with no `EF_POTION` show-effect
+    (C's own `dungeon_potion` doesn't call one either, unlike the
+    alchemy-flask install path). C's actual stock-consumption side
+    effect for both potion kinds is a `server_chat(1028, ...)` message
+    to a master server owning the authoritative `struct clan` array
+    (`clan.c`'s `clan_dungeon_chat`, cases `'s'`/`'a'`) - since this
+    codebase has no master/slave server split, added
+    `ClanRegistry::consume_simple_pot`/`consume_alc_pot` (direct local
+    decrement) matching the existing `add_alc_potion`/`bump_simple_pot`
+    increment-side precedent, called directly instead of round-tripping
+    an unported IPC channel. Confirmed via a fresh C-tree grep that
+    `fighter_dead`'s own `server_chat(1028, ...)` message is dead code in
+    the original C (decrements a `[0]` sub-array that is never
+    incremented anywhere), so it was deliberately not ported - documented
+    in the module doc comment rather than guessed at. Wired
+    `process_dungeonfighter_actions` into the tick loop in `main.rs`
+    right after the `CDR_DUNGEONMASTER` call site. 16 new tests in
+    `crates/ugaris-core/src/world/tests/dungeon_fighter.rs` covering
+    both `dungeon_potion` (warrior/non-warrior modifier sets, highest-
+    qualifying-tier selection, no-stock/no-free-slot failure paths) and
+    the message loop (damage accumulation, each of the three tiers, the
+    combo-only-when-neither-specific-fired rule, the 5-potion budget
+    cap, the alchemy-potion didhit/health gates, and driver-filtering).
+    `cargo fmt --all`, `cargo test --workspace` (1927 ugaris-core [+16] +
+    55 db + 3 net + 40 protocol + 602 server, all green, zero failures),
+    `cargo build -p ugaris-server`/`--workspace` clean with zero
+    warnings, 10s boot-smoke on area 1 confirmed "entering Rust game
+    loop" with no panics. REMAINING (see updated note above): giving
+    these NPCs their actual SimpleBaddy idle/combat AI (a real
+    architecture change - `Character::driver_state` can only hold one
+    variant, so a `CDR_DUNGEONFIGHTER` character can't simultaneously
+    carry `SimpleBaddy` state the way C's `set_data` lets one character
+    hold both drivers' data blobs at once), `immortal_dead`, and
     `dungeondoor`'s jewel-steal/notify gap.
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist

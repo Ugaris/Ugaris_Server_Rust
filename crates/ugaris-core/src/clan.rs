@@ -1371,6 +1371,25 @@ impl ClanRegistry {
         true
     }
 
+    /// C `clan_dungeon_chat`'s `'a'` case consumption side (`clan.c:1391-
+    /// 1396`): `if (clan[cnr].dungeon.alc_pot[nr][str] > 0) { clan[cnr].
+    /// dungeon.alc_pot[nr][str]--; }`. Same single-server direct-
+    /// consumption simplification as [`Self::consume_simple_pot`] -
+    /// `crate::world::dungeon_fighter`'s `dungeon_potion` port is the one
+    /// caller, replacing C's `dungeon_potion` -> `server_chat(1028, ...)`
+    /// -> master-server `clan_dungeon_chat` round trip.
+    pub fn consume_alc_pot(&mut self, cnr: u16, kind: usize, tier: usize) -> bool {
+        let Some(identity) = self.identity_mut(cnr) else {
+            return false;
+        };
+        if identity.economy.alc_pot[kind][tier] == 0 {
+            return false;
+        }
+        identity.economy.alc_pot[kind][tier] -= 1;
+        self.dirty = true;
+        true
+    }
+
     /// C `add_simple_potion`'s per-match stockpile increment
     /// (`clan.c:1487-1521`'s nine `if (flag) { ... clan[nr].dungeon.
     /// simple_pot[k][s]++; }` branches) - given an already-classified
@@ -1384,6 +1403,29 @@ impl ClanRegistry {
             return false;
         };
         identity.economy.simple_pot[kind][size] += 1;
+        self.dirty = true;
+        true
+    }
+
+    /// C `clan_dungeon_chat`'s `'s'` case consumption side (`clan.c:1379-
+    /// 1384`): `if (clan[cnr].dungeon.simple_pot[nr][str] > 0) {
+    /// clan[cnr].dungeon.simple_pot[nr][str]--; }`. In C this runs on the
+    /// master server in response to a `server_chat(1028, ...)` message a
+    /// `dungeonfighter` NPC sent after drinking a stockpiled potion; this
+    /// codebase has no master/slave server split (single area server per
+    /// process), so `crate::world::dungeon_fighter`'s `dungeonfighter`
+    /// port calls this directly and locally instead, matching
+    /// [`Self::bump_simple_pot`]'s own increment-side precedent. Returns
+    /// `false` (no-op, matching C's own `> 0` guard and the nonexistent-
+    /// clan case) when there is nothing to consume.
+    pub fn consume_simple_pot(&mut self, cnr: u16, kind: usize, size: usize) -> bool {
+        let Some(identity) = self.identity_mut(cnr) else {
+            return false;
+        };
+        if identity.economy.simple_pot[kind][size] == 0 {
+            return false;
+        }
+        identity.economy.simple_pot[kind][size] -= 1;
         self.dirty = true;
         true
     }

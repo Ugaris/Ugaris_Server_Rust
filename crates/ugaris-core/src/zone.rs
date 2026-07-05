@@ -530,6 +530,14 @@ impl ZoneLoader {
                 DungeonmasterDriverData::default(),
             ));
         }
+        if template.driver == crate::character_driver::CDR_DUNGEONFIGHTER {
+            // C's `set_data(cn, DRD_DUNGEONFIGHTER, ...)` zero-initializes
+            // `struct dungeonfighter_data` on first tick too - no zone-file
+            // args to read here either.
+            character.driver_state = Some(CharacterDriverState::Dungeonfighter(
+                crate::character_driver::DungeonfighterDriverData::default(),
+            ));
+        }
         if template.driver == crate::character_driver::CDR_MILITARY_MASTER {
             character.driver_state = Some(CharacterDriverState::MilitaryMaster(
                 crate::character_driver::parse_military_master_driver_args(&template.args),
