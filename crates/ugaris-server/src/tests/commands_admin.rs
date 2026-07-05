@@ -693,6 +693,157 @@ fn renclan_requires_staff_or_god() {
 }
 
 #[test]
+fn god_killclub_command_bankrupts_an_existing_club_without_deleting_it() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    let nr = world.club_registry.create_club("Doomed", 0).unwrap();
+    assert!(world.club_registry.exists(nr));
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/killclub {nr}"),
+        1,
+    )
+    .expect("god killclub command should be recognized");
+    assert!(result.messages.is_empty(), "C emits no feedback either");
+    // C's `kill_club` doesn't clear the name - it zeroes `money`/sets
+    // `paid = 1` so the next weekly `tick_billing` deletes it for
+    // nonpayment, matching `killclan`'s own delayed-deletion trick.
+    assert!(world.club_registry.exists(nr));
+    assert_eq!(
+        world.club_registry.tick_billing(3, 1),
+        Some(ugaris_core::club::ClubBillingEvent::Deleted {
+            club: nr,
+            name: "Doomed".to_string(),
+        })
+    );
+    assert!(!world.club_registry.exists(nr));
+}
+
+#[test]
+fn killclub_requires_god_and_ignores_numbers_at_or_past_the_buggy_maxclan_cap() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/killclub 1",
+        1
+    )
+    .is_none());
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+    // C bug: bounds-checked against MAXCLAN (32), not MAXCLUB (16384), so
+    // a club number of exactly 32 (a legal club number) is silently
+    // ignored by this command.
+    let nr = world.club_registry.create_club("Safe", 0).unwrap();
+    apply_admin_character_command(&mut world, &mut runtime, character_id, "/killclub 32", 1)
+        .expect("still recognized, just a no-op past the buggy cap");
+    assert!(world.club_registry.exists(nr));
+}
+
+#[test]
+fn staff_renclub_command_renames_an_existing_club_in_aston() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::STAFF);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    let nr = world.club_registry.create_club("Old Name", 0).unwrap();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/renclub {nr} New Name"),
+        3,
+    )
+    .expect("staff renclub command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![format!("Club {nr} name changed to \"New Name\".")]
+    );
+    assert_eq!(world.club_registry.name(nr), Some("New Name"));
+}
+
+#[test]
+fn renclub_is_rejected_outside_aston_and_for_illegal_names() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    let nr = world.club_registry.create_club("Old Name", 0).unwrap();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/renclub {nr} New Name"),
+        1,
+    )
+    .expect("renclub should still be recognized outside Aston");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, this command only works nearby a clubmaster."]
+    );
+    assert_eq!(world.club_registry.name(nr), Some("Old Name"));
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        &format!("/renclub {nr} Illegal123"),
+        3,
+    )
+    .expect("renclub should still be recognized for illegal names");
+    assert_eq!(
+        result.messages,
+        vec!["That didn't work. The name is either taken or illegal."]
+    );
+    assert_eq!(world.club_registry.name(nr), Some("Old Name"));
+}
+
+#[test]
+fn renclub_requires_staff_or_god() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/renclub 1 Name",
+        3,
+    )
+    .is_none());
+}
+
+#[test]
 fn god_setxmas_command_sets_runtime_christmas_override() {
     let mut world = World::default();
     let character_id = CharacterId(7);

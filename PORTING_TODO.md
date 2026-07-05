@@ -6951,8 +6951,11 @@ Unlocks every quest NPC. Do these before any P4 area work.
   one, which only needed the already-ported `first_kill_ppd` bitmask);
   `reloadloot`/`setlootmod` done (see iteration 165); `global`
   (`command.c:8226-8322`, the "dump every setting" admin display
-  command) done (see iteration 166), and the rest of the ~90 remaining
-  `cmdcmp` entries in `command.c` (mostly `CF_GOD`-gated `ac*`
+  command) done (see iteration 166); `/killclub`/`/renclub` done (see
+  iteration 173 - both `ClubRegistry` methods they need already existed
+  unused since iteration 136, so this was pure dispatch wiring alongside
+  the already-ported `/killclan`/`/renclan`), and the rest of the ~90
+  remaining `cmdcmp` entries in `command.c` (mostly `CF_GOD`-gated `ac*`
   anticheat, `macro*` macro-detection, plus one-off commands like
   `/depotsort` (the character's own `DRD_DEPOT_PPD` depot, a whole
   unported storage system - not the same as `/accountdepotsort`, which
@@ -6966,7 +6969,10 @@ Unlocks every quest NPC. Do these before any P4 area work.
   pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
-  drifted out of sync with actual progress more than once). `/showflags`/
+  drifted out of sync with actual progress more than once - iteration
+  173 did one such pass and found `/killclub`/`/renclub` above as the
+  only genuinely ready gap; everything else it checked was already
+  correctly categorized somewhere in this note). `/showflags`/
   `/toggleflag` done (see iteration 168); `/showppd` is NOT done (it
   needs many more named `area1_ppd`/`area3_ppd` field accessors than
   currently exist in `player.rs` - see that iteration's note).
@@ -7582,6 +7588,43 @@ Unlocks every quest NPC. Do these before any P4 area work.
   failures), `cargo build -p ugaris-server` / `cargo build --workspace`
   clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
   loop" with no panic.
+
+  Progress Log (iteration 173): did the "fresh cross-reference pass"
+  this note has recommended since iteration 158 - every `cmdcmp(ptr,
+  "...")` entry in `command.c` checked against `commands_*.rs`/
+  `weather.rs`/`clan_command.rs` - and found `/killclub`
+  (`command.c:6484-6497`, `CF_GOD`) and `/renclub` (`cmd_renclub`,
+  `command.c:4548-4585`, dispatched at `command.c:9650` gated
+  `CF_STAFF|CF_GOD`) as the only genuinely ready-to-wire gap: both
+  `crate::club::ClubRegistry::kill_club`/`rename_club` have existed
+  fully implemented and unit-tested since iteration 136, and both
+  commands were already listed correctly in `/help` output
+  (`commands_player.rs`) - only the dispatch wiring itself was missing.
+  Wired both into `apply_admin_character_command`
+  (`commands_admin.rs`), right next to the already-ported
+  `/killclan`/`/renclan` they mirror. Preserved a genuine C bug
+  verbatim rather than fixing it: `/killclub`'s bounds check compares
+  the target number against `MAXCLAN` (32), not `MAXCLUB` (16384) - an
+  evident copy-paste leftover from the adjacent `killclan` dispatch
+  block in C - so club numbers `>= 32` (otherwise perfectly legal) can
+  never be killed via this command; `club.c`'s own `kill_club(int
+  cnr)` function correctly bounds-checks against `MAXCLUB`, so the bug
+  is command-layer only. `/killclub` (like `/killclan`) sets the club
+  bankrupt (`paid = 1`, `money = 0`) rather than deleting it outright,
+  so the already-ported `ClubRegistry::tick_billing` weekly pass
+  performs the actual deletion on the next call. `/renclub` reuses
+  `ClubRegistry::rename_club` unchanged, folding its three distinct
+  `Err` variants into the one combined "That didn't work. The name is
+  either taken or illegal." message C's own `rename_club` returning `0`
+  produces for all three. 6 new tests in
+  `crates/ugaris-server/src/tests/commands_admin.rs`. Investigated the
+  remaining ~90 uncross-referenced `cmdcmp` entries during the pass but
+  found no other equally self-contained gap (see the updated task note
+  above for the breakdown). `cargo fmt --all`, `cargo test --workspace`
+  (1987 ugaris-core + 55 db + 3 net + 40 protocol + 710 server [+5],
+  all green, zero failures), `cargo build -p ugaris-server` / `cargo
+  build --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

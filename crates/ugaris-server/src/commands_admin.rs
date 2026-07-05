@@ -3539,6 +3539,29 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `killclub` (`src/system/command.c:6484-6497`), `CF_GOD`-gated.
+    // Genuine C bug kept for fidelity: the bounds check guarding the
+    // `kill_club` call compares `nr` against `MAXCLAN` (32,
+    // `crate::commands_chat::LEGACY_MAX_CLAN`'s C counterpart), not
+    // `MAXCLUB` (16384) - copy-paste leftover from the adjacent
+    // `killclan` block above (`club.c`'s own `kill_club(int cnr)` itself
+    // correctly bounds-checks against `MAXCLUB`, so this cap only bites
+    // at the command layer). `kill_club` (`club.c:132-138`) doesn't clear
+    // the club's name - it zeroes `money` and sets `paid = 1` so the next
+    // `ClubRegistry::tick_billing` weekly pass deletes it for
+    // nonpayment, exactly like `killclan`'s `kill_clan`/`update_treasure`
+    // relationship. No player feedback either way, matched exactly.
+    if lower == "killclub" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let nr = legacy_atoi_prefix(rest.trim_start());
+        if (1..LEGACY_MAX_CLAN).contains(&nr) {
+            world.club_registry.kill_club(nr as u16);
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `cmd_renclan` (`src/system/command.c:4497-4531`), dispatched at
     // `command.c:9646` gated on `CF_STAFF | CF_GOD`. Renames an existing
     // clan; only usable while standing in Aston (`areaID == 3`).
@@ -3573,6 +3596,56 @@ pub(crate) fn apply_admin_character_command(
         let messages = match world.clan_registry.set_name(nr as u16, &name) {
             Ok(()) => vec![format!("Clan {nr} name changed to \"{name}\".")],
             Err(_) => vec![format!("No clan by that number ({nr}).")],
+        };
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
+    // C `cmd_renclub` (`src/system/command.c:4548-4585`), dispatched at
+    // `command.c:9650` gated on `CF_STAFF | CF_GOD`. Renames an existing
+    // club; only usable "nearby a clubmaster" per C's message text, but
+    // the actual gate C checks is the same `areaID == 3` as `/renclan`
+    // (`club.c` has no clubmaster-proximity concept - the message is
+    // aspirational/copy-pasted text, not a real distinct check).
+    // `ClubRegistry::rename_club` folds C's three separate failure modes
+    // (invalid characters, name too long, name already taken) into one
+    // `Err`, matching C's own single combined "didn't work" message for
+    // all three (`rename_club` returning `0`).
+    if lower == "renclub" {
+        if !character
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        if area_id != 3 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Sorry, this command only works nearby a clubmaster.".to_string()],
+                ..Default::default()
+            });
+        }
+        let rest = rest.trim_start();
+        let nr = legacy_atoi_prefix(rest);
+        let name = rest
+            .trim_start_matches(|ch: char| ch.is_ascii_digit())
+            .trim_start();
+        if !(1..LEGACY_MAX_CLUB).contains(&nr) {
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Club number must be between 1 and {}.",
+                    LEGACY_MAX_CLUB - 1
+                )],
+                ..Default::default()
+            });
+        }
+        let name: String = name.chars().take(78).collect();
+        let messages = match world.club_registry.rename_club(nr as u16, &name) {
+            Ok(()) => vec![format!("Club {nr} name changed to \"{name}\".")],
+            Err(_) => {
+                vec!["That didn't work. The name is either taken or illegal.".to_string()]
+            }
         };
         return Some(KeyringCommandResult {
             messages,
