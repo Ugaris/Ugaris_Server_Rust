@@ -325,6 +325,60 @@ fn lag_command_blocks_enabling_in_arena_or_with_hate() {
     );
 }
 
+/// C `cmdcmp(ptr, "lastseen", 4)`: any prefix from `"last"` up to the full
+/// word matches case-insensitively; anything shorter (or a different
+/// word entirely) is not recognized at all.
+#[test]
+fn lastseen_command_recognizes_legacy_abbreviations_and_rejects_short_prefixes() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+
+    assert!(apply_lastseen_command(&mut world, character_id, "/lastseen Godmode").is_some());
+    assert!(apply_lastseen_command(&mut world, character_id, "/LAST Godmode").is_some());
+    assert!(apply_lastseen_command(&mut world, character_id, "/lastse Godmode").is_some());
+    assert!(apply_lastseen_command(&mut world, character_id, "/las Godmode").is_none());
+    assert!(apply_lastseen_command(&mut world, character_id, "/lag").is_none());
+}
+
+/// A valid-looking name is queued for the async DB round-trip (see
+/// `World::queue_lastseen_lookup`), producing no immediate reply.
+#[test]
+fn lastseen_command_queues_valid_names_without_an_immediate_reply() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+
+    let result = apply_lastseen_command(&mut world, character_id, "/lastseen Godmode")
+        .expect("lastseen command should be recognized");
+    assert!(result.messages.is_empty());
+
+    let queued = world.drain_pending_lastseen_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].requester_id, character_id);
+    assert_eq!(queued[0].target_name, "Godmode");
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+/// Only leading whitespace is trimmed (`while (isspace(*ptr)) ptr++;`,
+/// `command.c:9033-9035`) - an invalidly-shaped name (empty, or one
+/// containing a non-alphabetic byte) is answered immediately via
+/// `World::queue_system_text` instead of being queued, matching C's
+/// synchronous `lookup_name` `-1` fast path.
+#[test]
+fn lastseen_command_with_no_argument_replies_immediately() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+
+    let result = apply_lastseen_command(&mut world, character_id, "/lastseen")
+        .expect("lastseen command should be recognized");
+    assert!(result.messages.is_empty());
+    assert!(world.drain_pending_lastseen_lookups().is_empty());
+
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].character_id, character_id);
+    assert_eq!(texts[0].message, "No character by the name .");
+}
+
 #[test]
 fn description_command_sanitizes_and_reports_legacy_text() {
     let mut world = World::default();

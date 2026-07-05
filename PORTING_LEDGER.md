@@ -6784,3 +6784,67 @@ startup log line unchanged.
   (`lastseen`), `/top`, and the rest of the dozens not yet cross-
   referenced against `command.c` (tracked under the "Remaining `/` and
   `#` text commands" P3 task).
+
+- Player text command `/lastseen <name>` from `src/system/command.c:
+  9027-9046` (`cmdcmp(ptr, "lastseen", 4)`, no permission gate), backed
+  by C `lastseen`/`db_lastseen`
+  (`src/system/database/database_lookup.c:142-157` +
+  `src/system/database/database_notes.c:352-390`). Split the same way as
+  `world/clanmaster.rs`'s `rank:`/`fire:` offline-name fallback since
+  `World` has no DB handle: new module `crates/ugaris-core/src/world/
+  lastseen.rs` adds `World::queue_lastseen_lookup`, which reproduces C
+  `lookup_name`'s early-return validity gate (`lookup.c:44-59`) fully
+  synchronously - empty / non-alphabetic byte / length outside `2..=38`
+  all resolve to the exact "No character by the name %s." text C's `-1`
+  case prints, without ever reaching the DB, including the genuine quirk
+  that only *leading* whitespace is trimmed at the call site so a
+  trailing space also fails the alpha scan (reproduced as-is, not
+  "fixed") - while a validly-shaped name is queued as `LastSeenLookup`.
+  New `ugaris-server` function `apply_lastseen_events`
+  (`world_events.rs`) drains that queue each tick and calls a new
+  `CharacterRepository::find_last_seen` (`crates/ugaris-db/src/
+  character.rs`, one query against `characters`: `name, flags_bits,
+  login_time, logout_time, created_at`, computing `last_activity =
+  max(login_time, logout_time, created_at)` in SQL via `extract(epoch
+  from ...)` casts so no chrono/timezone dependency is needed in Rust),
+  delivering the reply through `World::queue_system_text` (this
+  codebase's direct-to-character system-text channel, standing in for
+  C's `tell_chat(0, rID, 1, ...)`): `CF_GOD` rows get the fixed "%s was
+  seen quite recently." (C never computes an elapsed time for staff),
+  everyone else gets "%s was last seen %d days, %d hours, %d minutes
+  ago." from `now - last_activity`, and no DB row reuses the identical
+  "No character by the name %s." text as the invalid-shape fast path
+  (both funnel through the same `lookup_name == -1` dispatcher branch in
+  C, so a player can't tell them apart). Command handler
+  `apply_lastseen_command` (`commands_player.rs`) wired into `main.rs`'s
+  dispatch chain right after `/lag`; `apply_lastseen_events` wired into
+  the tick loop right after `apply_clubmaster_events`, before
+  `send_pending_world_system_texts` drains the reply. No live-DB test
+  for `find_last_seen` itself - matches the existing, equally-untested
+  `find_login_target` precedent (both are single-query, `&self.pool`-
+  based, non-transactional methods that don't fit this module's
+  transaction-scoped live-test harness). 12 new focused tests: 6 in
+  `crates/ugaris-core/src/world/tests/lastseen.rs` (valid-name queuing
+  with no immediate reply, empty/too-short/too-long/non-alphabetic/
+  trailing-whitespace immediate rejection), 3 in `tests/commands_player.
+  rs` (legacy abbreviation prefix matching from `"last"` through the
+  full word, valid-name queuing, no-argument immediate reply), 3 pure
+  `lastseen_reply_message` unit tests in `world_events.rs` (`CF_GOD`
+  fixed message, day/hour/minute arithmetic, zero-elapsed edge case).
+  Also corrected the "Remaining `/` and `#` text commands" task's own
+  REMAINING note: `/allow` is not a clan-invite command - it's
+  `allow_body`, the cross-server corpse-loot-access grant, blocked on
+  the unported `server_chat` cross-area DB chat relay (left unported,
+  now noted precisely); and neither a standalone `/mirror` command nor a
+  `/top` command actually exists anywhere in `command.c` (verified by
+  grep - both were aspirational notes from an earlier iteration, not
+  real `cmdcmp` entries), so both were dropped from the "still needs
+  porting" list. `cargo fmt --all`, `cargo test --workspace` (1979
+  ugaris-core [+6] + 55 db + 3 net + 40 protocol + 661 server [+6], all
+  green, zero failures), `cargo build -p ugaris-server`/`cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic. Remaining `/`/`#` command
+  gaps: `/allow` (blocked on cross-server chat relay), and the rest of
+  the ~250 remaining `cmdcmp` entries in `command.c` (mostly `CF_GOD`-
+  gated tuning/anticheat/admin commands) not yet cross-referenced
+  (tracked under the "Remaining `/` and `#` text commands" P3 task).

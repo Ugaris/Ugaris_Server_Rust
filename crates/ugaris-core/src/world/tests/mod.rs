@@ -26,6 +26,7 @@ mod item_outcomes;
 mod items;
 mod janitor;
 mod lab2_undead;
+mod lastseen;
 mod light;
 mod loot;
 mod lostcon;

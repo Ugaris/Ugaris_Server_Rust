@@ -37,6 +37,7 @@ mod item_outcomes;
 mod items;
 mod janitor;
 mod lab2_undead;
+mod lastseen;
 mod light;
 mod loot;
 mod lostcon;
@@ -85,6 +86,7 @@ pub(crate) use item_outcomes::*;
 pub(crate) use items::*;
 #[allow(unused_imports)]
 pub(crate) use lab2_undead::*;
+pub use lastseen::*;
 pub(crate) use light::*;
 pub use loot::*;
 pub use lq::*;
@@ -329,6 +331,7 @@ pub struct World {
     pending_dungeon_raid_builds: Vec<DungeonRaidBuildRequest>,
     pending_dungeon_jewel_steals: Vec<DungeonJewelStealEvent>,
     pending_death_loot_rolls: Vec<PendingDeathLootRoll>,
+    pending_lastseen_lookups: Vec<LastSeenLookup>,
 }
 
 impl Default for Tick {

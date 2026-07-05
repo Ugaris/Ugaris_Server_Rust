@@ -647,6 +647,33 @@ pub(crate) fn apply_lag_command(
     })
 }
 
+/// C `/lastseen <name>` (`command.c:9027-9046`), `cmdcmp(ptr, "lastseen",
+/// 4)` so any prefix from `"last"` up to the full word matches, case-
+/// insensitively, no permission gate (every player can use it). Trims
+/// only leading whitespace off the argument (`while (isspace(*ptr))
+/// ptr++;`, `command.c:9033-9035`) before handing it to `World::
+/// queue_lastseen_lookup`, which does all further validation and DB
+/// resolution - see that function's and `ugaris-server`'s
+/// `apply_lastseen_events`'s doc comments for the full behavior. Always
+/// returns a `default()` result immediately; the real reply arrives
+/// later via `World::queue_system_text`, matching C's own fire-and-
+/// forget async `lastseen()`/`db_lastseen()` DB-worker round-trip.
+pub(crate) fn apply_lastseen_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, rest) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if verb.len() < 4 || !"lastseen".starts_with(&verb.to_ascii_lowercase()) {
+        return None;
+    }
+    world.queue_lastseen_lookup(character_id, rest.trim_start());
+    Some(KeyringCommandResult::default())
+}
+
 pub(crate) fn apply_time_command(date: GameDate, command: &str) -> Option<KeyringCommandResult> {
     let (verb, _) = command
         .split_once(char::is_whitespace)

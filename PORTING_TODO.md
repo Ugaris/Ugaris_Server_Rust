@@ -6895,10 +6895,20 @@ Unlocks every quest NPC. Do these before any P4 area work.
   note as you go). Priority: `/help` completeness, `/who` variants,
   `/allow`/clan invite commands, admin teleports (`/goto`), `/mirror`,
   `/seen`, `/top`. REMAINING: admin teleports done (`/goto`, `/jump`,
-  `/gotolist`, `/gotosearch`, `/summon`, `/summonall`, `/office`); still
-  unported: `/allow`/clan invite commands, `/mirror`, `/seen`
-  (`lastseen`), `/top`, and the rest of the dozens of `/`/`#` commands not
-  yet cross-referenced against `command.c` (see the Progress Log entries
+  `/gotolist`, `/gotosearch`, `/summon`, `/summonall`, `/office`);
+  `/lastseen` done. Still unported: `/allow` (not a clan-invite command -
+  see its Progress Log entry - it's `allow_body`, the cross-server
+  corpse-loot-access grant, blocked on the unported `server_chat`
+  cross-area DB chat relay), no standalone `/mirror` command actually
+  exists in `command.c` (only a `<mirror>` argument on `/goto`/`/jump`,
+  both already ported), no `/top` command exists in `command.c` either
+  (both were aspirational notes in an earlier iteration, not real
+  `cmdcmp` entries - verified by grepping `command.c` for `cmdcmp(ptr,
+  "top` / `"mirror"`), and the rest of the ~250 remaining `cmdcmp`
+  entries in `command.c` (mostly `CF_GOD`-gated tuning/anticheat/admin
+  commands: `set*` game-constant knobs, `ac*` anticheat, `macro*`
+  macro-detection, `mil*` military-mission admin, item/skill/tunnel
+  editors) not yet cross-referenced (see the Progress Log entries
   below for what's been checked off so far).
 
   Progress Log (iteration 158): ported the admin-teleport family -
@@ -6993,6 +7003,63 @@ Unlocks every quest NPC. Do these before any P4 area work.
   zero failures), `cargo build -p ugaris-server` / `cargo build
   --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 161): ported `/lastseen <name>` (`command.c:
+  9027-9046`, `cmdcmp(ptr, "lastseen", 4)`, no permission gate),
+  dispatching to C `lastseen`/`db_lastseen`
+  (`src/system/database/database_lookup.c:142-157` +
+  `src/system/database/database_notes.c:352-390`). Since `World` has no
+  DB handle, split it the same way as `world/clanmaster.rs`'s `rank:`/
+  `fire:` offline-name fallback: `World::queue_lastseen_lookup`
+  (`world/lastseen.rs`, new module) reproduces C's `lookup_name` early-
+  return validity gate synchronously (empty / non-alphabetic byte /
+  length outside `2..=38` all resolve to the same "No character by the
+  name %s." message C's `-1` case prints, without ever touching the DB -
+  including the genuine quirk that only *leading* whitespace is trimmed,
+  so a trailing space also fails the alpha scan and produces the same
+  message, reproduced as-is not "fixed"); a validly-shaped name is queued
+  as `LastSeenLookup` and resolved in `ugaris-server`'s new
+  `apply_lastseen_events` (`world_events.rs`), which calls a new
+  `CharacterRepository::find_last_seen` (`ugaris-db`'s `character.rs`,
+  one query: `name, flags_bits, login_time, logout_time, created_at`
+  from `characters`, computing `last_activity = max(login_time,
+  logout_time, created_at)` in SQL via `extract(epoch ...)` - no chrono
+  dependency needed) and delivers the reply via `World::
+  queue_system_text` (this codebase's direct-to-character system-text
+  channel, standing in for C's `tell_chat(0, rID, 1, ...)`): `CF_GOD`
+  rows get the fixed "%s was seen quite recently." (C never computes an
+  elapsed time for staff), everyone else gets "%s was last seen %d days,
+  %d hours, %d minutes ago." from `now - last_activity`; no DB row uses
+  the same "No character by the name %s." text as the invalid-shape
+  fast path (a player can't tell the two cases apart in C either, since
+  both funnel through the identical `lookup_name == -1` dispatcher
+  branch). Wired the command handler (`apply_lastseen_command`,
+  `commands_player.rs`) into `main.rs`'s dispatch chain right after `/lag`,
+  and `apply_lastseen_events` into the tick loop right after
+  `apply_clubmaster_events` (before `send_pending_world_system_texts`
+  drains the reply). No live-DB test for `find_last_seen` itself, matching
+  the existing `find_login_target` precedent (also untested at the DB
+  layer - both are single-query, `&self.pool`-based, non-transactional
+  methods that don't fit the module's transaction-scoped live-test
+  harness); covered instead with 6 new `world/tests/lastseen.rs` unit
+  tests (valid-name queuing, empty/too-short/too-long/non-alphabetic/
+  trailing-whitespace rejection), 3 new `commands_player.rs` dispatcher
+  tests (legacy abbreviation prefix matching, valid-name queuing, no-
+  argument immediate reply), and 3 new pure `lastseen_reply_message` unit
+  tests in `world_events.rs` (GOD fixed message, day/hour/minute
+  arithmetic, zero-elapsed edge case). Also corrected this task's own
+  REMAINING note: `/allow` is not a clan-invite command (it's
+  `allow_body`, the cross-server corpse-loot-access grant, blocked on the
+  unported `server_chat` DB chat relay - left unported, noted precisely),
+  and neither a standalone `/mirror` command nor a `/top` command
+  actually exists anywhere in `command.c` (verified by grep; both were
+  aspirational notes from an earlier iteration, not real `cmdcmp`
+  entries) - removed from the "still needs porting" list accordingly.
+  `cargo fmt --all`, `cargo test --workspace` (1979 ugaris-core [+6] + 55
+  db + 3 net + 40 protocol + 661 server [+6], all green, zero failures),
+  `cargo build -p ugaris-server` / `cargo build --workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
+  no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

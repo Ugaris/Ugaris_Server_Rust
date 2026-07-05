@@ -1847,3 +1847,117 @@ pub(crate) fn apply_arena_master_events(
     }
     applied
 }
+
+/// C `command.c`'s `lastseen:` handler's async DB round-trip
+/// (`lastseen`/`db_lastseen`, `database_lookup.c:142-157` +
+/// `database_notes.c:352-390`): resolves every `World::
+/// drain_pending_lastseen_lookups` entry (queued by validly-shaped
+/// `/lastseen <name>` arguments - see `World::queue_lastseen_lookup`'s
+/// doc comment for the synchronous invalid-name fast path) against the
+/// DB and delivers the reply via `World::queue_system_text` (C's
+/// `tell_chat(0, rID, 1, ...)`, this codebase's direct-to-character
+/// system-text channel).
+///
+/// Message shape mirrors `db_lastseen` exactly:
+/// - no DB row -> "No character by the name %s." - the exact same text
+///   the command dispatcher's own `lookup_name` `== -1` branch uses
+///   (`command.c:9041`), since a player can't tell the two cases apart.
+/// - `CF_GOD` row -> "%s was seen quite recently." (C never computes an
+///   elapsed time for staff, `database_notes.c:378-379`).
+/// - otherwise -> "%s was last seen %d days, %d hours, %d minutes ago.",
+///   from `now - last_activity` where `last_activity` is `LastSeenInfo::
+///   last_activity_unix` (already `max(login_time, logout_time,
+///   created_at)`, computed in SQL - see `ugaris-db`'s `FIND_LAST_SEEN_SQL`
+///   doc comment).
+///
+/// No-ops entirely (silent, matching every other offline-DB-lookup event
+/// in this file) when no `character_repository` is configured or the
+/// query itself errors.
+pub(crate) async fn apply_lastseen_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    now_unix: i64,
+) -> usize {
+    let lookups = world.drain_pending_lastseen_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let reply = match repository.find_last_seen(&lookup.target_name).await {
+            Ok(Some(info)) => lastseen_reply_message(&info, now_unix),
+            Ok(None) => format!("No character by the name {}.", lookup.target_name),
+            Err(_) => continue,
+        };
+        world.queue_system_text(lookup.requester_id, reply);
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_lastseen_events`], split out so
+/// the day/hour/minute arithmetic (`database_notes.c:381-386`) can be
+/// unit-tested without a live database.
+fn lastseen_reply_message(info: &ugaris_db::LastSeenInfo, now_unix: i64) -> String {
+    if info.is_god {
+        return format!("{} was seen quite recently.", info.name);
+    }
+    let elapsed = now_unix - info.last_activity_unix;
+    format!(
+        "{} was last seen {} days, {} hours, {} minutes ago.",
+        info.name,
+        elapsed / (60 * 60 * 24),
+        (elapsed / (60 * 60)) % 24,
+        (elapsed / 60) % 60
+    )
+}
+
+#[cfg(test)]
+mod lastseen_tests {
+    use super::*;
+    use ugaris_db::LastSeenInfo;
+
+    #[test]
+    fn god_characters_get_the_fixed_recently_message() {
+        let info = LastSeenInfo {
+            name: "Godmode".to_string(),
+            is_god: true,
+            last_activity_unix: 0,
+        };
+        assert_eq!(
+            lastseen_reply_message(&info, 1_000_000),
+            "Godmode was seen quite recently."
+        );
+    }
+
+    #[test]
+    fn elapsed_time_is_broken_into_days_hours_minutes() {
+        let info = LastSeenInfo {
+            name: "Player".to_string(),
+            is_god: false,
+            last_activity_unix: 0,
+        };
+        // 2 days, 3 hours, 4 minutes = 2*86400 + 3*3600 + 4*60 seconds.
+        let now = 2 * 86_400 + 3 * 3_600 + 4 * 60;
+        assert_eq!(
+            lastseen_reply_message(&info, now),
+            "Player was last seen 2 days, 3 hours, 4 minutes ago."
+        );
+    }
+
+    #[test]
+    fn recently_active_player_reports_zero_across_the_board() {
+        let info = LastSeenInfo {
+            name: "Player".to_string(),
+            is_god: false,
+            last_activity_unix: 500,
+        };
+        assert_eq!(
+            lastseen_reply_message(&info, 500),
+            "Player was last seen 0 days, 0 hours, 0 minutes ago."
+        );
+    }
+}

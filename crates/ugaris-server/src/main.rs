@@ -1675,6 +1675,14 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
+                            if let Some(result) =
+                                apply_lastseen_command(&mut world, character_id, &command)
+                            {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
                             if let Some(character) = world.characters.get(&character_id) {
                                 if let Some(result) = apply_status_command(character, player, &command) {
                                     for message in result.messages {
@@ -6117,6 +6125,20 @@ async fn main() -> anyhow::Result<()> {
                         clubmaster_events_applied,
                         tick = world.tick.0,
                         "applied clubmaster founding/membership events"
+                    );
+                }
+                // `/lastseen <name>`'s async DB round-trip (C `lastseen`/
+                // `db_lastseen`, `database_lookup.c:142-157` +
+                // `database_notes.c:352-390`), queued by
+                // `apply_lastseen_command` above.
+                let lastseen_events_applied =
+                    apply_lastseen_events(&mut world, &character_repository, current_unix_time())
+                        .await;
+                if lastseen_events_applied != 0 {
+                    info!(
+                        lastseen_events_applied,
+                        tick = world.tick.0,
+                        "applied /lastseen lookups"
                     );
                 }
                 // C `military_master_driver`: the mission-giving Military

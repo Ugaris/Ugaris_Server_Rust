@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sqlx::{postgres::PgArguments, query::Query, types::Json, PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 use ugaris_core::{
-    entity::{Character, Item, INVENTORY_SIZE},
+    entity::{Character, CharacterFlags, Item, INVENTORY_SIZE},
     ids::{CharacterId, ItemId},
 };
 
@@ -70,6 +70,22 @@ pub struct CharacterSummary {
     pub mirror_id: i32,
 }
 
+/// C `db_lastseen`'s `charinfo` row shape (`database_notes.c:352-390`):
+/// the properly-capitalized name, whether the row's `class` carries
+/// `CF_GOD` (staff never gets an elapsed-time readout), and the most
+/// recent of `login_time`/`logout_time`/`created_at` as a unix
+/// timestamp (C's own `last_activity = max(login_time, logout_time,
+/// creation_time)` chain, computed here in SQL via `greatest` semantics
+/// so no chrono/timezone dependency is needed in Rust - see
+/// `ugaris-server`'s `apply_lastseen_events` doc comment for the caller
+/// side of this).
+#[derive(Debug, Clone)]
+pub struct LastSeenInfo {
+    pub name: String,
+    pub is_god: bool,
+    pub last_activity_unix: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CharacterSaveMode {
     Backup {
@@ -109,6 +125,7 @@ pub struct CharacterSnapshot {
 #[async_trait]
 pub trait CharacterRepository: Send + Sync {
     async fn find_login_target(&self, name: &str) -> anyhow::Result<Option<CharacterSummary>>;
+    async fn find_last_seen(&self, name: &str) -> anyhow::Result<Option<LastSeenInfo>>;
     async fn begin_login(&self, request: LoginRequest) -> anyhow::Result<LoginOutcome>;
     async fn save_character_snapshot(&self, request: CharacterSaveRequest) -> anyhow::Result<bool>;
     async fn load_character_snapshot(
@@ -145,6 +162,24 @@ impl CharacterRepository for PgCharacterRepository {
             area_id,
             mirror_id,
         }))
+    }
+
+    async fn find_last_seen(&self, name: &str) -> anyhow::Result<Option<LastSeenInfo>> {
+        let row = sqlx::query_as::<_, (String, String, i64, i64, i64)>(FIND_LAST_SEEN_SQL)
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        Ok(
+            row.map(|(name, flags_bits, login_time, logout_time, created_at)| {
+                let flags = CharacterFlags::from_bits_truncate(flags_bits.parse().unwrap_or(0));
+                LastSeenInfo {
+                    name,
+                    is_god: flags.contains(CharacterFlags::GOD),
+                    last_activity_unix: login_time.max(logout_time).max(created_at),
+                }
+            }),
+        )
     }
 
     async fn begin_login(&self, request: LoginRequest) -> anyhow::Result<LoginOutcome> {
@@ -269,6 +304,16 @@ $16, $17, $18, $19, $20, $21, $22, $23, $24, now())";
 
 const LOAD_CHARACTER_SNAPSHOT_SQL: &str = "select character_json, ppd_blob, subscriber_blob, \
 current_area, current_mirror, allowed_area, mirror from characters where id = $1";
+
+/// C `db_lastseen` (`database_notes.c:352-390`): `login_time`/
+/// `logout_time` are nullable (never-logged-in-since-this-column-existed
+/// rows), coalesced to `0` matching C's plain `int` columns defaulting to
+/// `0` rather than NULL; `created_at` always exists.
+const FIND_LAST_SEEN_SQL: &str = "select name, flags_bits, \
+coalesce(extract(epoch from login_time)::bigint, 0), \
+coalesce(extract(epoch from logout_time)::bigint, 0), \
+extract(epoch from created_at)::bigint \
+from characters where lower(name) = lower($1)";
 
 const LOAD_CHARACTER_ITEMS_SQL: &str = "select item_json from character_items \
 where character_id = $1 order by coalesce(inventory_slot, 2147483647), \
