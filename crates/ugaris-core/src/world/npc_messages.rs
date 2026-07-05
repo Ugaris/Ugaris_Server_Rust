@@ -188,7 +188,8 @@ impl World {
                 | CharacterDriverState::Clanclerk(_)
                 | CharacterDriverState::MilitaryMaster(_)
                 | CharacterDriverState::MilitaryAdvisor(_)
-                | CharacterDriverState::ArenaMaster(_) => None,
+                | CharacterDriverState::ArenaMaster(_)
+                | CharacterDriverState::ArenaFighter(_) => None,
             })
             .unwrap_or_default()
     }

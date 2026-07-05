@@ -59,10 +59,12 @@
 //!   clears `cursor_item` the same tick it is set.
 use super::*;
 use crate::character_driver::{
-    analyse_text_qa, ArenaContender, TextAnalysisOutcome, ARENA_MAX_CONTENDER, ARENA_QA,
-    CDR_ARENAMASTER, MS_FIGHT, MS_IN, MS_PAIR, NTID_ARENA,
+    analyse_text_qa, ArenaContender, TextAnalysisOutcome, ARENA_FIGHTER_MASTER_POS,
+    ARENA_MAX_CONTENDER, ARENA_QA, CDR_ARENAFIGHTER, CDR_ARENAMASTER, FS_ENTER, FS_FIGHT,
+    FS_LEISURE, FS_REGISTER, FS_START, FS_WAIT, FS_WAIT2, MS_FIGHT, MS_IN, MS_PAIR, NTID_ARENA,
 };
 use crate::drvlib::offset2dx;
+use crate::player::{PlayerRuntime, ARENA_PPD_NEWCOMER_SCORE};
 
 /// C `#define MAXCONTENDER 50`'s sibling ranking-table size, `struct
 /// toplist { struct entry entry[100]; }` (`arena.c:232-234`).
@@ -865,6 +867,412 @@ impl World {
 
         for master_id in master_ids {
             self.arena_master_tick(master_id, area_id, &mut arena_score_of);
+        }
+    }
+
+    /// This fighter bot's own local arena rating - see
+    /// [`crate::character_driver::ArenaFighterDriverData`]'s doc comment
+    /// for why it lives on `driver_state` instead of a real
+    /// `PlayerRuntime::arena_score`. Reproduces C's `!ppd->fights`
+    /// newcomer reseed (`arena.c:437-443`), matching
+    /// `PlayerRuntime::arena_score` exactly.
+    pub fn arena_fighter_score(&self, fighter_id: CharacterId) -> Option<i32> {
+        match self.characters.get(&fighter_id)?.driver_state.as_ref()? {
+            CharacterDriverState::ArenaFighter(data) => Some(if data.fights == 0 {
+                ARENA_PPD_NEWCOMER_SCORE
+            } else {
+                data.score
+            }),
+            _ => None,
+        }
+    }
+
+    /// Winner-side half of `score_fight` (`arena.c:432-534`) for a fighter
+    /// bot combatant with no `PlayerRuntime` - the `World`-local
+    /// counterpart to `PlayerRuntime::apply_arena_win`, called by
+    /// `crates/ugaris-server/src/world_events.rs::apply_arena_master_events`
+    /// whenever a `FightScored` participant isn't a real player. See that
+    /// function's own doc comment for why this takes only the loser's
+    /// pre-fight score rather than a second simultaneous mutable borrow.
+    pub fn apply_arena_fighter_win(
+        &mut self,
+        fighter_id: CharacterId,
+        loser_score_before: i32,
+    ) -> Option<i32> {
+        let Some(CharacterDriverState::ArenaFighter(mut data)) = self
+            .characters
+            .get(&fighter_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return None;
+        };
+        let winner_score_before = if data.fights == 0 {
+            ARENA_PPD_NEWCOMER_SCORE
+        } else {
+            data.score
+        };
+        let worth = PlayerRuntime::arena_fight_worth(winner_score_before - loser_score_before);
+        let new_score = winner_score_before + worth;
+        data.score = new_score;
+        data.fights += 1;
+        data.wins += 1;
+        if let Some(character) = self.characters.get_mut(&fighter_id) {
+            character.driver_state = Some(CharacterDriverState::ArenaFighter(data));
+        }
+        Some(new_score)
+    }
+
+    /// Loser-side half - see [`World::apply_arena_fighter_win`]'s doc
+    /// comment.
+    pub fn apply_arena_fighter_loss(
+        &mut self,
+        fighter_id: CharacterId,
+        winner_score_before: i32,
+    ) -> Option<i32> {
+        let Some(CharacterDriverState::ArenaFighter(mut data)) = self
+            .characters
+            .get(&fighter_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return None;
+        };
+        let loser_score_before = if data.fights == 0 {
+            ARENA_PPD_NEWCOMER_SCORE
+        } else {
+            data.score
+        };
+        let worth = PlayerRuntime::arena_fight_worth(winner_score_before - loser_score_before);
+        let new_score = loser_score_before - worth;
+        data.score = new_score;
+        data.fights += 1;
+        data.losses += 1;
+        if let Some(character) = self.characters.get_mut(&fighter_id) {
+            character.driver_state = Some(CharacterDriverState::ArenaFighter(data));
+        }
+        Some(new_score)
+    }
+
+    /// Locates the arena tournament master this fighter bot should talk
+    /// to. C's `say(cn, "register")`/`say(cn, "enter")` rely on the
+    /// generic `log_area` broadcast finding whichever `master_driver` NPC
+    /// is within earshot; since this port calls the master's own
+    /// (private, same-module) handlers directly instead of faking a say
+    /// (no generic "NPC speech also reaches other NPCs' `NT_TEXT` queues"
+    /// plumbing exists yet - only player speech does, in
+    /// `ugaris-server::commands_chat`), this picks the nearest
+    /// `CDR_ARENAMASTER` NPC the fighter can currently see instead - by
+    /// construction the fighter only calls this once it has already
+    /// walked to [`ARENA_FIGHTER_MASTER_POS`], so there is normally only
+    /// one candidate in range.
+    fn arena_fighter_find_master(&self, fighter_id: CharacterId) -> Option<CharacterId> {
+        let fighter = self.characters.get(&fighter_id)?;
+        self.characters
+            .values()
+            .filter(|master| {
+                master.driver == CDR_ARENAMASTER && master.flags.contains(CharacterFlags::USED)
+            })
+            .filter(|master| char_see_char(master, fighter, &self.map, self.date.daylight))
+            .min_by_key(|master| {
+                i32::from(master.x).abs_diff(i32::from(fighter.x))
+                    + i32::from(master.y).abs_diff(i32::from(fighter.y))
+            })
+            .map(|master| master.id)
+    }
+
+    /// C `fighter_driver`'s message loop (`arena.c:850-878`), narrowed to
+    /// the `NT_GIVE` (destroy any gift immediately, C's `NT_TEXT`/
+    /// `NT_CHAR` branches are dead code - both only ever assign to a
+    /// commented-out local `co`) and `NT_NPC`/`NTID_ARENA` branches (the
+    /// same 6 signals `master_driver` sends, see `arena_notify_char`'s
+    /// call sites): `0`=paired-wait-for-enter, `1`=attack-now (`dat3` =
+    /// opponent), `2`=fight-over, `3`=registered, `4`=entered-ok,
+    /// `5`=rejected/kicked-out. Each is only honored from the matching
+    /// prior state, exactly like C's own state guards.
+    fn process_arena_fighter_messages(&mut self, fighter_id: CharacterId) {
+        let messages = self
+            .characters
+            .get_mut(&fighter_id)
+            .map(|character| std::mem::take(&mut character.driver_messages))
+            .unwrap_or_default();
+        let Some(CharacterDriverState::ArenaFighter(mut data)) = self
+            .characters
+            .get(&fighter_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return;
+        };
+
+        // C `-TICKS*60*5` (`arena.c:955, 966, 972`): an absolute deeply-
+        // negative `lastact`, guaranteeing the very next tick's `ticker -
+        // lastact` reads as "long enough ago" without an artificial wait,
+        // same trick as the `NT_CREATE` seed (`arena.c:854`).
+        let far_past = -(TICKS_PER_SECOND as i64) * 60 * 5;
+
+        for message in &messages {
+            if message.message_type == NT_GIVE {
+                if let Some(item_id) = self
+                    .characters
+                    .get_mut(&fighter_id)
+                    .and_then(|character| character.cursor_item.take())
+                {
+                    self.destroy_item(item_id);
+                }
+                continue;
+            }
+            if message.message_type != NT_NPC || message.dat1 != NTID_ARENA {
+                continue;
+            }
+            match message.dat2 {
+                0 if data.state == FS_WAIT => {
+                    data.state = FS_ENTER;
+                    data.last_act = far_past;
+                }
+                1 if data.state == FS_WAIT2 => {
+                    data.state = FS_FIGHT;
+                    data.enemy = Some(CharacterId(message.dat3.max(0) as u32));
+                    data.enemy_visible = false;
+                }
+                2 if data.state == FS_FIGHT || data.state == FS_WAIT2 => {
+                    data.state = FS_LEISURE;
+                    data.last_act = self.tick.0 as i64;
+                }
+                3 if data.state == FS_REGISTER => {
+                    data.state = FS_WAIT;
+                    data.last_act = far_past;
+                }
+                4 if data.state == FS_ENTER => {
+                    data.state = FS_WAIT2;
+                    data.last_act = far_past;
+                }
+                5 => {
+                    data.state = FS_LEISURE;
+                    data.last_act = self.tick.0 as i64;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(character) = self.characters.get_mut(&fighter_id) {
+            character.driver_state = Some(CharacterDriverState::ArenaFighter(data));
+        }
+    }
+
+    /// C `fight_driver_update`'s narrowed single-enemy equivalent (see
+    /// `world/gate_fight.rs`'s module doc comment for why this codebase
+    /// never ported the generic 10-slot `struct fight_driver_data`):
+    /// refreshes `enemy_visible`/last-known position for the one enemy
+    /// `FS_FIGHT` was handed (`arena.c:872-875`'s `fight_driver_add_enemy`
+    /// call), or gives up if the enemy's character has vanished entirely.
+    fn arena_fighter_update_enemy_visibility(&mut self, fighter_id: CharacterId) {
+        let Some(CharacterDriverState::ArenaFighter(mut data)) = self
+            .characters
+            .get(&fighter_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return;
+        };
+        let Some(enemy_id) = data.enemy else { return };
+
+        match self
+            .characters
+            .get(&fighter_id)
+            .cloned()
+            .zip(self.characters.get(&enemy_id).cloned())
+        {
+            Some((fighter, enemy)) => {
+                if char_see_char(&fighter, &enemy, &self.map, self.date.daylight) {
+                    data.enemy_visible = true;
+                    data.enemy_last_x = enemy.x;
+                    data.enemy_last_y = enemy.y;
+                } else {
+                    data.enemy_visible = false;
+                }
+            }
+            None => {
+                data.enemy = None;
+                data.enemy_visible = false;
+            }
+        }
+
+        if let Some(character) = self.characters.get_mut(&fighter_id) {
+            character.driver_state = Some(CharacterDriverState::ArenaFighter(data));
+        }
+    }
+
+    /// C `if (dat->storage_state > 3) { switch (dat->state) { ... } }`
+    /// (`arena.c:920-967`) - the storage gate is always true here, same
+    /// simplification as `arena_master_tournament_tick`. Returns C's
+    /// early `return` (`true` skips `spell_self_driver`/`do_idle` this
+    /// tick, matching every branch that itself performed a move/attack).
+    fn arena_fighter_state_action(&mut self, fighter_id: CharacterId, area_id: u16) -> bool {
+        self.arena_fighter_update_enemy_visibility(fighter_id);
+
+        let Some(CharacterDriverState::ArenaFighter(mut data)) = self
+            .characters
+            .get(&fighter_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return false;
+        };
+        let Some(fighter) = self.characters.get(&fighter_id).cloned() else {
+            return false;
+        };
+        let tick = self.tick.0 as i64;
+
+        let acted = match data.state {
+            // C `case FS_LEISURE` (`arena.c:921-929`).
+            FS_LEISURE => {
+                let (rest_x, rest_y) = (fighter.rest_x, fighter.rest_y);
+                let far = i32::from(fighter.x).abs_diff(i32::from(rest_x)) > 2
+                    || i32::from(fighter.y).abs_diff(i32::from(rest_y)) > 2;
+                if far
+                    && self.setup_walk_toward(
+                        fighter_id,
+                        usize::from(rest_x),
+                        usize::from(rest_y),
+                        2,
+                        area_id,
+                        false,
+                    )
+                {
+                    true
+                } else if tick - data.last_act < TICKS_PER_SECOND as i64 * 60 * 3 {
+                    false
+                } else {
+                    data.state = FS_START;
+                    false
+                }
+            }
+            // C `case FS_START` (`arena.c:930-936`).
+            FS_START => {
+                let (master_x, master_y) = ARENA_FIGHTER_MASTER_POS;
+                let close = i32::from(fighter.x).abs_diff(i32::from(master_x)) < 5
+                    && i32::from(fighter.y).abs_diff(i32::from(master_y)) < 5;
+                if close {
+                    data.state = FS_REGISTER;
+                    false
+                } else {
+                    self.setup_walk_toward(
+                        fighter_id,
+                        usize::from(master_x),
+                        usize::from(master_y),
+                        4,
+                        area_id,
+                        false,
+                    )
+                }
+            }
+            // C `case FS_REGISTER` (`arena.c:937-943`): keeps re-saying
+            // "register" every 30 seconds (C's own `dat->state++` advance
+            // is commented out) until `master_driver`'s `NT_NPC` dat2=3
+            // ack moves it to `FS_WAIT`.
+            FS_REGISTER => {
+                if tick - data.last_act < TICKS_PER_SECOND as i64 * 30 {
+                    false
+                } else {
+                    self.npc_say(fighter_id, "register");
+                    if let Some(master_id) = self.arena_fighter_find_master(fighter_id) {
+                        let score = self
+                            .arena_fighter_score(fighter_id)
+                            .unwrap_or(ARENA_PPD_NEWCOMER_SCORE);
+                        self.arena_add_contender(master_id, fighter_id, score);
+                    }
+                    data.last_act = tick;
+                    false
+                }
+            }
+            // C `case FS_WAIT`: `break;` (`arena.c:944-945`).
+            FS_WAIT => false,
+            // C `case FS_ENTER` (`arena.c:946-952`): same re-say pattern
+            // as `FS_REGISTER`.
+            FS_ENTER => {
+                if tick - data.last_act < TICKS_PER_SECOND as i64 * 30 {
+                    false
+                } else {
+                    self.npc_say(fighter_id, "enter");
+                    if let Some(master_id) = self.arena_fighter_find_master(fighter_id) {
+                        self.arena_handle_enter(master_id, fighter_id);
+                    }
+                    data.last_act = tick;
+                    false
+                }
+            }
+            // C `case FS_WAIT2`: `break;` (`arena.c:953-954`).
+            FS_WAIT2 => false,
+            // C `case FS_FIGHT` (`arena.c:955-961`):
+            // `fight_driver_attack_visible`/`fight_driver_follow_invisible`
+            // narrowed to the single tracked enemy (see
+            // `arena_fighter_update_enemy_visibility`'s doc comment).
+            FS_FIGHT => {
+                if data.enemy_visible {
+                    match data.enemy {
+                        Some(enemy_id) => self.attack_driver_direct(fighter_id, enemy_id, area_id),
+                        None => false,
+                    }
+                } else if data.enemy.is_some() {
+                    let (last_x, last_y) = (data.enemy_last_x, data.enemy_last_y);
+                    let arrived = fighter.x.abs_diff(last_x) < 2 && fighter.y.abs_diff(last_y) < 2;
+                    if arrived {
+                        data.enemy = None;
+                        false
+                    } else {
+                        self.secure_move_driver(
+                            fighter_id,
+                            last_x,
+                            last_y,
+                            Direction::Down as u8,
+                            0,
+                            0,
+                            area_id,
+                        )
+                    }
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+
+        if let Some(character) = self.characters.get_mut(&fighter_id) {
+            character.driver_state = Some(CharacterDriverState::ArenaFighter(data));
+        }
+        acted
+    }
+
+    fn arena_fighter_tick(&mut self, fighter_id: CharacterId, area_id: u16) {
+        self.process_arena_fighter_messages(fighter_id);
+        if self.arena_fighter_state_action(fighter_id, area_id) {
+            return;
+        }
+        // C `if (spell_self_driver(cn)) return; ... do_idle(cn, TICKS);`
+        // (`arena.c:963-969`, minus the no-op storage-management switch -
+        // see the module doc comment).
+        if self.spell_self_simple_baddy(fighter_id) {
+            return;
+        }
+        self.idle_simple_baddy(fighter_id);
+    }
+
+    /// Arena tournament practice-bot NPC tick (`CDR_ARENAFIGHTER`, C
+    /// `fighter_driver`): processes its own `driver_messages`, walks
+    /// home/to the master, registers/enters/fights on its own, entirely
+    /// self-contained (its own local win/loss ledger lives on
+    /// `ArenaFighterDriverData`, not `PlayerRuntime` - see that struct's
+    /// doc comment).
+    pub fn process_arena_fighter_actions(&mut self, area_id: u16) {
+        let fighter_ids: Vec<CharacterId> = self
+            .characters
+            .values()
+            .filter(|character| {
+                character.driver == CDR_ARENAFIGHTER
+                    && character.flags.contains(CharacterFlags::USED)
+                    && !character.flags.contains(CharacterFlags::DEAD)
+            })
+            .map(|character| character.id)
+            .collect();
+
+        for fighter_id in fighter_ids {
+            self.arena_fighter_tick(fighter_id, area_id);
         }
     }
 }

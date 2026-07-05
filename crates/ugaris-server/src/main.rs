@@ -6036,6 +6036,12 @@ async fn main() -> anyhow::Result<()> {
                         .map(|player| player.arena_score())
                         .unwrap_or(ARENA_PPD_NEWCOMER_SCORE)
                 });
+                // C `fighter_driver`: the autonomous tournament practice-bot
+                // (`CDR_ARENAFIGHTER`) - walks home/to the master, registers/
+                // enters/fights on its own, entirely self-contained within
+                // `World` (its own local win/loss ledger lives on
+                // `ArenaFighterDriverData`, not `PlayerRuntime`).
+                world.process_arena_fighter_actions(config.area_id);
                 let arena_master_events_applied =
                     apply_arena_master_events(&mut world, &mut runtime, current_unix_time());
                 if arena_master_events_applied != 0 {

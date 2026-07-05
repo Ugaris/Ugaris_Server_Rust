@@ -1416,6 +1416,14 @@ pub(crate) async fn apply_clan_economy_tick(
 /// exists), and finally folds the resulting post-fight scores into
 /// `World::arena_update_toplist` (C's `update_toplist` call inside
 /// `score_fight` itself, `arena.c:533`).
+///
+/// A combatant may instead be a `CDR_ARENAFIGHTER` practice bot (no
+/// `PlayerRuntime` at all) - `runtime.player_for_character` returns
+/// `None` for it, so each side falls back to
+/// `World::arena_fighter_score`/`apply_arena_fighter_win`/
+/// `apply_arena_fighter_loss` (the bot's own local win/loss ledger, see
+/// `ArenaFighterDriverData`'s doc comment) instead of skipping the event
+/// outright.
 pub(crate) fn apply_arena_master_events(
     world: &mut World,
     runtime: &mut ServerRuntime,
@@ -1433,29 +1441,39 @@ pub(crate) fn apply_arena_master_events(
         ) else {
             continue;
         };
-        let Some(winner_score_before) = runtime
-            .player_for_character(winner_id)
-            .map(|p| p.arena_score())
-        else {
+        let winner_score_before = match runtime.player_for_character(winner_id) {
+            Some(player) => Some(player.arena_score()),
+            None => world.arena_fighter_score(winner_id),
+        };
+        let Some(winner_score_before) = winner_score_before else {
             continue;
         };
-        let Some(loser_score_before) = runtime
-            .player_for_character(loser_id)
-            .map(|p| p.arena_score())
-        else {
+        let loser_score_before = match runtime.player_for_character(loser_id) {
+            Some(player) => Some(player.arena_score()),
+            None => world.arena_fighter_score(loser_id),
+        };
+        let Some(loser_score_before) = loser_score_before else {
             continue;
         };
         let now = i32::try_from(now_unix).unwrap_or(i32::MAX);
-        let Some(new_winner_score) = runtime
-            .player_for_character_mut(winner_id)
-            .map(|p| p.apply_arena_win(loser_score_before, now))
-        else {
+        let new_winner_score = if runtime.player_for_character(winner_id).is_some() {
+            runtime
+                .player_for_character_mut(winner_id)
+                .map(|p| p.apply_arena_win(loser_score_before, now))
+        } else {
+            world.apply_arena_fighter_win(winner_id, loser_score_before)
+        };
+        let Some(new_winner_score) = new_winner_score else {
             continue;
         };
-        let Some(new_loser_score) = runtime
-            .player_for_character_mut(loser_id)
-            .map(|p| p.apply_arena_loss(winner_score_before, now))
-        else {
+        let new_loser_score = if runtime.player_for_character(loser_id).is_some() {
+            runtime
+                .player_for_character_mut(loser_id)
+                .map(|p| p.apply_arena_loss(winner_score_before, now))
+        } else {
+            world.apply_arena_fighter_loss(loser_id, winner_score_before)
+        };
+        let Some(new_loser_score) = new_loser_score else {
             continue;
         };
         world.arena_update_toplist(

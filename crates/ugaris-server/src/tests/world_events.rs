@@ -1,4 +1,7 @@
 use super::*;
+use ugaris_core::character_driver::{
+    ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER, MS_FIGHT,
+};
 use ugaris_core::world::LegacyHurtOutcome;
 
 #[test]
@@ -946,4 +949,79 @@ async fn clan_economy_tick_advances_training_update_timestamp_after_an_hour() {
             .last_training_update,
         3_600
     );
+}
+
+#[test]
+fn apply_arena_master_events_falls_back_to_fighter_bots_own_ledger_when_a_combatant_has_no_player_runtime(
+) {
+    // A real player (winner) and a `CDR_ARENAFIGHTER` practice bot (loser,
+    // no `PlayerRuntime`) just finished an arena fight - the bot fled the
+    // box, so `check_fight` scores the player as the winner.
+    let mut world = World::default();
+    let master_id = CharacterId(1);
+    let winner_id = CharacterId(2);
+    let loser_id = CharacterId(3);
+
+    let mut master = login_character(master_id, &login_block("Arenamaster"), 3, 236, 145);
+    master.flags.remove(CharacterFlags::PLAYER);
+    master.driver = CDR_ARENAMASTER;
+    master.driver_state = Some(CharacterDriverState::ArenaMaster(ArenaMasterDriverData {
+        state: MS_FIGHT,
+        fight1: Some(winner_id),
+        fight2: Some(loser_id),
+        timeout: 1_000,
+        ..Default::default()
+    }));
+    world.add_character(master);
+
+    let mut winner = login_character(winner_id, &login_block("Godmode"), 3, 235, 140);
+    winner.x = 235;
+    winner.y = 140;
+    world.add_character(winner);
+
+    // The fighter bot fled the arena box (outside the `234..=242,
+    // 133..=141` bounds), so it loses by default this tick.
+    let mut loser = login_character(loser_id, &login_block("Fighter"), 3, 10, 10);
+    loser.flags.remove(CharacterFlags::PLAYER);
+    loser.x = 10;
+    loser.y = 10;
+    loser.driver = CDR_ARENAFIGHTER;
+    loser.driver_state = Some(CharacterDriverState::ArenaFighter(
+        ArenaFighterDriverData::default(),
+    ));
+    world.add_character(loser);
+
+    let mut runtime = ServerRuntime::default();
+    let mut winner_player = PlayerRuntime::connected(20, 0);
+    winner_player.character_id = Some(winner_id);
+    runtime.players.insert(20, winner_player);
+
+    world.process_arena_master_actions(0, |character_id| {
+        runtime
+            .player_for_character(character_id)
+            .map(|player| player.arena_score())
+            .unwrap_or(ARENA_PPD_NEWCOMER_SCORE)
+    });
+
+    let applied = apply_arena_master_events(&mut world, &mut runtime, 1_000_000);
+
+    assert_eq!(applied, 1);
+    // The winner's real `PlayerRuntime` arena_ppd was updated.
+    let new_winner_score = runtime
+        .player_for_character(winner_id)
+        .unwrap()
+        .arena_score();
+    assert_eq!(
+        new_winner_score,
+        ARENA_PPD_NEWCOMER_SCORE + ugaris_core::player::PlayerRuntime::arena_fight_worth(0)
+    );
+    // The loser has no `PlayerRuntime` at all - its own local ledger
+    // (`ArenaFighterDriverData`) was updated instead.
+    assert_eq!(
+        world.arena_fighter_score(loser_id),
+        Some(ARENA_PPD_NEWCOMER_SCORE - ugaris_core::player::PlayerRuntime::arena_fight_worth(0))
+    );
+    let entries = world.arena_toplist_entries();
+    assert!(entries.iter().any(|e| e.name == "Godmode"));
+    assert!(entries.iter().any(|e| e.name == "Fighter"));
 }

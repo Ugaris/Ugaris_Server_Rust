@@ -68,8 +68,8 @@ pub const CDR_ARENAMASTER: u16 = 48;
 /// C `#define CDR_ARENAFIGHTER 49` (`src/system/drvlib.h`): the
 /// autonomous tournament "fighter" bot (`arena.c::fighter_driver`) that
 /// registers itself, enters, and fights via the generic `fight_driver_*`
-/// helpers. Not yet ported - see the "Arena rankings" task's REMAINING
-/// notes.
+/// helpers (narrowed here to a single tracked enemy, same simplification
+/// as `CDR_GATE_FIGHT` - see `world/arena.rs`'s `process_arena_fighter_actions`).
 pub const CDR_ARENAFIGHTER: u16 = 49;
 /// C `#define CDR_ARENAMANAGER 50` (`src/system/drvlib.h`): the paid
 /// arena-rental NPC (`arena.c::manager_driver`, `rent`/`invite:`/`enter`/
@@ -152,6 +152,7 @@ pub enum CharacterDriverState {
     MilitaryMaster(MilitaryMasterDriverData),
     MilitaryAdvisor(MilitaryAdvisorDriverData),
     ArenaMaster(ArenaMasterDriverData),
+    ArenaFighter(ArenaFighterDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -548,6 +549,60 @@ pub const MS_FIGHT: u8 = 2;
 
 /// C `#define MAXCONTENDER 50` (`arena.c:213`).
 pub const ARENA_MAX_CONTENDER: usize = 50;
+
+/// C `#define FS_LEISURE 0` ... `#define FS_FIGHT 6` (`arena.c:790-796`):
+/// `fighter_driver`'s (`CDR_ARENAFIGHTER`) autonomous tournament
+/// practice-bot state machine.
+pub const FS_LEISURE: u8 = 0;
+pub const FS_START: u8 = 1;
+pub const FS_REGISTER: u8 = 2;
+pub const FS_WAIT: u8 = 3;
+pub const FS_ENTER: u8 = 4;
+pub const FS_WAIT2: u8 = 5;
+pub const FS_FIGHT: u8 = 6;
+
+/// C `#define MASTER_POSX 236` / `#define MASTER_POSY 145`
+/// (`arena.c:798-799`): the tile `fighter_driver`'s `FS_START` state walks
+/// toward to register for the tournament.
+pub const ARENA_FIGHTER_MASTER_POS: (u16, u16) = (236, 145);
+
+/// C `fighter_driver`'s `NT_CREATE` handler hardcoding `ch[cn].restx =
+/// 247; ch[cn].resty = 148;` (`arena.c:850-851`) regardless of the NPC's
+/// actual zone-file spawn tile.
+pub const ARENA_FIGHTER_REST_POS: (u16, u16) = (247, 148);
+
+/// C `struct fighter_data` (`arena.c:800-812`), minus the generic
+/// `storage_state`/`storage_version`/`storage_ID`/`lastsave` storage-blob
+/// state machine (no storage-blob primitive exists yet - same
+/// simplification as [`ArenaMasterDriverData`], see `world/arena.rs`'s
+/// module doc comment) and its `struct fighter_storage { struct
+/// arena_ppd ppd; }` payload, which is instead tracked directly as plain
+/// fields here (`score`/`fights`/`wins`/`losses`) since this bot has no
+/// `PlayerRuntime` to own a real `arena_ppd` - resets on respawn/server
+/// restart, a real (if minor) gap from C's persistent per-bot win/loss
+/// record, documented at the "Arena rankings" `PORTING_TODO.md` task.
+/// `lastact` is signed (unlike every tick-stamp elsewhere in this
+/// codebase) specifically to reproduce C's `dat->lastact = -TICKS*60*6`
+/// on creation (`arena.c:854`), which forces the very first `FS_LEISURE`
+/// tick to already read as "long enough ago" without an initial
+/// multi-minute idle delay.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArenaFighterDriverData {
+    pub state: u8,
+    pub enemy: Option<CharacterId>,
+    /// Narrowed single-enemy stand-in for C's `struct fight_driver_data`'s
+    /// per-slot `visible`/`lastx`/`lasty` (`drvlib.c:2170-2220`) - see
+    /// `world/arena.rs::arena_fighter_update_enemy_visibility`'s doc
+    /// comment for why the generic 10-slot list was never ported.
+    pub enemy_visible: bool,
+    pub enemy_last_x: u16,
+    pub enemy_last_y: u16,
+    pub last_act: i64,
+    pub score: i32,
+    pub fights: i32,
+    pub wins: i32,
+    pub losses: i32,
+}
 
 /// C `struct qa qa[]` (`src/system/arena.c:83-97`), shared verbatim by
 /// `master_driver`'s and `manager_driver`'s `analyse_text_driver` calls.
@@ -2085,7 +2140,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Clanclerk(_)
             | CharacterDriverState::MilitaryMaster(_)
             | CharacterDriverState::MilitaryAdvisor(_)
-            | CharacterDriverState::ArenaMaster(_),
+            | CharacterDriverState::ArenaMaster(_)
+            | CharacterDriverState::ArenaFighter(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

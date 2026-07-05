@@ -5083,13 +5083,18 @@ Unlocks every quest NPC. Do these before any P4 area work.
   timeout detection/scoring) was ported and wired into the live tick loop
   in iteration 130 (see Progress Log) - `fighter_driver`
   (`CDR_ARENAFIGHTER`, the autonomous practice-bot that auto-registers/
-  enters/fights) and `manager_driver` (`CDR_ARENAMANAGER`, the paid
-  arena-rental `rent`/`invite:` system) are still unported, both separate
-  NPC state machines of their own (`arena.c:790-1039`); without
-  `fighter_driver`, no bot ever actually registers for a tournament, so
-  `master_driver`'s pairing logic today only fires between real players
-  who both say "register" - matching C's own real-player path exactly,
-  just without the AI opponent. The server-wide `struct toplist`/
+  enters/fights) was ported and wired into the live tick loop in
+  iteration 132 (see Progress Log): the bot now really does register/
+  enter/fight on its own, so `master_driver`'s pairing logic can pair two
+  bots, or a bot and a real player, not just two real players. Its own
+  win/loss ledger lives directly on `ArenaFighterDriverData` (a real
+  `PlayerRuntime`-backed `arena_ppd` isn't reachable for an NPC), which is
+  a real, if minor, persistence gap: it resets on respawn/server restart
+  (same class of gap as the ranking table's own missing DB persistence,
+  see below) - `manager_driver` (`CDR_ARENAMANAGER`, the paid
+  arena-rental `rent`/`invite:` system) is still unported, its own
+  separate NPC state machine (`arena.c:1019-1039` plus shared logic
+  through `arena.c:1039`). The server-wide `struct toplist`/
   `update_toplist` 100-entry ranking table is ported and wired
   (in-memory only, no DB/file persistence - `ugaris-db` still has no
   generic "storage blob" concept, so this resets on restart, same gap as
@@ -5178,6 +5183,63 @@ Unlocks every quest NPC. Do these before any P4 area work.
     boot-smoke confirmed "entering Rust game loop" with no panics. Not
     ported this slice, see REMAINING above: `fighter_driver`/
     `manager_driver`, and DB/file persistence for the ranking table.
+  - 2026-07-05 (iteration 132): ported `fighter_driver` (`arena.c:790-969`),
+    the autonomous arena tournament practice bot, end-to-end:
+    `CharacterDriverState::ArenaFighter(ArenaFighterDriverData)` (C
+    `struct fighter_data`, minus the generic storage-blob state machine -
+    same simplification as `ArenaMasterDriverData` - plus its `struct
+    fighter_storage.ppd` payload tracked as plain `score`/`fights`/
+    `wins`/`losses` fields directly on the driver state, since this NPC
+    has no `PlayerRuntime` to own a real `arena_ppd`), the `FS_LEISURE`/
+    `FS_START`/`FS_REGISTER`/`FS_WAIT`/`FS_ENTER`/`FS_WAIT2`/`FS_FIGHT`
+    state constants, and `ARENA_FIGHTER_MASTER_POS`/`ARENA_FIGHTER_REST_POS`
+    (`MASTER_POSX`/`Y`, and the `NT_CREATE` handler's hardcoded `restx`/
+    `resty=247,148`) in `character_driver.rs`; zone-spawn wiring in
+    `zone.rs` (hardcodes the rest position and seeds `last_act` deeply in
+    the past, matching C's own `-TICKS*60*6` immediate-advance trick,
+    exactly like the `NT_CREATE` handler would). The full per-tick body
+    lives in `crates/ugaris-core/src/world/arena.rs`:
+    `process_arena_fighter_messages` (the `NT_GIVE`/`NT_NPC`+`NTID_ARENA`
+    dat2 0-5 state transitions `master_driver` drives it through),
+    `arena_fighter_update_enemy_visibility`/`arena_fighter_state_action`
+    (the `FS_*` switch, narrowed to a single tracked enemy instead of
+    porting the generic 10-slot `fight_driver_data` - same precedent as
+    `world/gate_fight.rs`, since `fighter_driver` itself only ever calls
+    `fight_driver_add_enemy` once per fight), reusing
+    `World::attack_driver_direct`/`secure_move_driver`/
+    `spell_self_simple_baddy`/`idle_simple_baddy` for combat/movement/
+    idle exactly like `gate_fight.rs` does. Since this port calls the
+    master's `arena_add_contender`/`arena_handle_enter` directly (no
+    generic "NPC speech also reaches other NPCs' `NT_TEXT` queues"
+    plumbing exists - only player speech does, in
+    `ugaris-server::commands_chat`), added `World::
+    arena_fighter_find_master` (nearest visible `CDR_ARENAMASTER`) instead
+    of faking a say, while still emitting the real "register"/"enter"
+    `npc_say` text for player-visible flavor parity with C's own
+    `say(cn, ...)`. Extended `apply_arena_master_events`
+    (`crates/ugaris-server/src/world_events.rs`) to fall back to two new
+    `World::arena_fighter_score`/`apply_arena_fighter_win`/
+    `apply_arena_fighter_loss` methods (the bot's own local ledger,
+    reusing `PlayerRuntime::arena_fight_worth`'s pure ladder function)
+    whenever a `FightScored` participant has no `PlayerRuntime` at all,
+    instead of silently dropping the event - so a fight against (or
+    between) fighter bots now really does get scored and folded into the
+    toplist, not just player-vs-player fights. Wired
+    `World::process_arena_fighter_actions` into `main.rs`'s tick loop
+    right after `process_arena_master_actions`. 25 new tests in
+    `crates/ugaris-core/src/world/tests/arena.rs` (every `FS_*` state
+    transition and message-driven advance, register/enter wiring with a
+    real nearby master, attack-visible/fight-over, give-message, local
+    ledger win/loss math) plus 1 in `crates/ugaris-server/src/tests/
+    world_events.rs` proving `apply_arena_master_events` scores a
+    fighter-bot loser via its own local ledger while the real player
+    winner still goes through `PlayerRuntime` as before. `cargo fmt
+    --all`, `cargo test --workspace` (1763 ugaris-core + 55 db + 3 net +
+    40 protocol + 584 server, all green, zero failures), `cargo build -p
+    ugaris-server` clean with zero warnings, 12s boot-smoke confirmed
+    "entering Rust game loop" with no panics. Not ported this slice:
+    `manager_driver`, and DB/file persistence for both the ranking table
+    and the fighter bot's own local win/loss ledger.
 
 - [x] **Weather driver (`src/module/weather/weather.c`)** - server-side
   state machine exists in `crates/ugaris-server/src/weather.rs` (admin

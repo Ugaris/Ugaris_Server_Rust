@@ -1,7 +1,10 @@
 use super::*;
 use crate::character_driver::{
-    ArenaMasterDriverData, CDR_ARENAMASTER, MS_FIGHT, MS_IN, MS_PAIR, NTID_ARENA,
+    ArenaFighterDriverData, ArenaMasterDriverData, ARENA_FIGHTER_MASTER_POS,
+    ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMASTER, FS_ENTER, FS_FIGHT, FS_LEISURE,
+    FS_REGISTER, FS_START, FS_WAIT, FS_WAIT2, MS_FIGHT, MS_IN, MS_PAIR, NTID_ARENA,
 };
+use crate::player::PlayerRuntime;
 use crate::world::arena::{ArenaMasterEvent, ArenaToplistRecord, ARENA_TOPLIST_SIZE};
 
 fn arena_master(id: u32) -> Character {
@@ -478,4 +481,361 @@ fn arena_update_toplist_evicts_entries_stale_for_over_a_week() {
 
     let entries = world.arena_toplist_entries();
     assert!(!entries.iter().any(|e| e.name == "Stale"));
+}
+
+// `CDR_ARENAFIGHTER` (`fighter_driver`) tests below.
+
+fn arena_fighter(id: u32) -> Character {
+    let mut fighter = character(id);
+    fighter.name = "Fighter".into();
+    fighter.driver = CDR_ARENAFIGHTER;
+    fighter.rest_x = ARENA_FIGHTER_REST_POS.0;
+    fighter.rest_y = ARENA_FIGHTER_REST_POS.1;
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        last_act: -(TICKS_PER_SECOND as i64) * 60 * 6,
+        ..Default::default()
+    }));
+    fighter
+}
+
+fn fighter_data(world: &World, id: CharacterId) -> ArenaFighterDriverData {
+    match world
+        .characters
+        .get(&id)
+        .and_then(|c| c.driver_state.clone())
+    {
+        Some(CharacterDriverState::ArenaFighter(data)) => data,
+        _ => panic!("expected arena fighter driver state"),
+    }
+}
+
+#[test]
+fn fighter_leisure_advances_to_start_once_home_and_settled() {
+    let mut world = World::default();
+    let (rest_x, rest_y) = ARENA_FIGHTER_REST_POS;
+    assert!(world.spawn_character(arena_fighter(1), rest_x as usize, rest_y as usize));
+
+    world.process_arena_fighter_actions(0);
+
+    assert_eq!(fighter_data(&world, CharacterId(1)).state, FS_START);
+}
+
+#[test]
+fn fighter_leisure_walks_home_when_far_away() {
+    let mut world = World::default();
+    let (rest_x, rest_y) = ARENA_FIGHTER_REST_POS;
+    world
+        .map
+        .tile_mut(rest_x as usize, rest_y as usize)
+        .unwrap()
+        .light = 255;
+    assert!(world.spawn_character(arena_fighter(1), (rest_x - 3) as usize, rest_y as usize));
+
+    world.process_arena_fighter_actions(0);
+
+    let fighter = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(fighter.action, action::WALK);
+    // The move consumed this tick's action (C's early `return`), so the
+    // state hasn't advanced yet.
+    assert_eq!(fighter_data(&world, CharacterId(1)).state, FS_LEISURE);
+}
+
+#[test]
+fn fighter_start_advances_to_register_when_near_master_position() {
+    let mut world = World::default();
+    let (master_x, master_y) = ARENA_FIGHTER_MASTER_POS;
+    let mut fighter = arena_fighter(1);
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        state: FS_START,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(fighter, master_x as usize, master_y as usize));
+
+    world.process_arena_fighter_actions(0);
+
+    assert_eq!(fighter_data(&world, CharacterId(1)).state, FS_REGISTER);
+}
+
+#[test]
+fn fighter_start_walks_toward_master_when_far() {
+    let mut world = World::default();
+    let (master_x, master_y) = ARENA_FIGHTER_MASTER_POS;
+    world
+        .map
+        .tile_mut(master_x as usize, master_y as usize)
+        .unwrap()
+        .light = 255;
+    let mut fighter = arena_fighter(1);
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        state: FS_START,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(fighter, (master_x - 10) as usize, master_y as usize));
+
+    world.process_arena_fighter_actions(0);
+
+    let fighter = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(fighter.action, action::WALK);
+    assert_eq!(fighter_data(&world, CharacterId(1)).state, FS_START);
+}
+
+#[test]
+fn fighter_register_state_says_register_and_registers_with_nearby_master() {
+    let mut world = World::default();
+    let (master_x, master_y) = ARENA_FIGHTER_MASTER_POS;
+    assert!(world.spawn_character(arena_master(1), master_x as usize, master_y as usize));
+    let mut fighter = arena_fighter(2);
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        state: FS_REGISTER,
+        last_act: -(TICKS_PER_SECOND as i64) * 60 * 5,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(fighter, master_x as usize, master_y as usize));
+
+    world.process_arena_fighter_actions(0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Fighter says: \"register\"")));
+    let data = master_data(&world, CharacterId(1));
+    assert_eq!(data.contenders.len(), 1);
+    assert_eq!(data.contenders[0].character_id, CharacterId(2));
+    assert_eq!(data.contenders[0].score, -2000);
+}
+
+#[test]
+fn fighter_register_state_keeps_saying_register_until_thirty_seconds_pass() {
+    let mut world = World::default();
+    let mut fighter = arena_fighter(1);
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        state: FS_REGISTER,
+        last_act: 100,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(fighter, 10, 10));
+    world.tick = Tick(100 + TICKS_PER_SECOND * 30 - 1);
+
+    world.process_arena_fighter_actions(0);
+
+    assert!(world.drain_pending_area_texts().is_empty());
+    assert_eq!(fighter_data(&world, CharacterId(1)).last_act, 100);
+}
+
+#[test]
+fn fighter_wait_transitions_to_enter_on_paired_message() {
+    let mut world = World::default();
+    let mut fighter = arena_fighter(1);
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        state: FS_WAIT,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(fighter, 10, 10));
+    if let Some(f) = world.characters.get_mut(&CharacterId(1)) {
+        f.push_driver_message(NT_NPC, NTID_ARENA, 0, 0);
+    }
+
+    world.process_arena_fighter_actions(0);
+
+    // The message handler seeds `last_act` deeply in the past
+    // (`-TICKS*60*5`, matching C's `arena.c:955`), which the very same
+    // tick's `FS_ENTER` action branch then immediately reads as "long
+    // enough ago" and overwrites with the current tick after saying
+    // "enter" - exactly like C's own chained same-tick state advance.
+    let data = fighter_data(&world, CharacterId(1));
+    assert_eq!(data.state, FS_ENTER);
+    assert_eq!(data.last_act, world.tick.0 as i64);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Fighter says: \"enter\"")));
+}
+
+#[test]
+fn fighter_enter_state_enters_the_box_when_invited() {
+    let mut world = World::default();
+    assert!(world.spawn_character(arena_master(1), 10, 10));
+    let mut fighter = arena_fighter(2);
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        state: FS_ENTER,
+        last_act: -(TICKS_PER_SECOND as i64) * 60 * 5,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(fighter, 10, 10));
+    let mut master_data_val = ArenaMasterDriverData {
+        state: MS_IN,
+        fight1: Some(CharacterId(2)),
+        fight2: Some(CharacterId(99)),
+        ..Default::default()
+    };
+    master_data_val.timeout = 1000;
+    if let Some(master) = world.characters.get_mut(&CharacterId(1)) {
+        master.driver_state = Some(CharacterDriverState::ArenaMaster(master_data_val));
+    }
+
+    world.process_arena_fighter_actions(0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Fighter says: \"enter\"")));
+    let fighter = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!((fighter.x, fighter.y), (235, 140));
+}
+
+#[test]
+fn fighter_wait2_transitions_to_fight_with_enemy_on_attack_now_message() {
+    let mut world = World::default();
+    let mut fighter = arena_fighter(1);
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        state: FS_WAIT2,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(fighter, 10, 10));
+    // The assigned enemy must be a real character, or this same tick's
+    // `FS_FIGHT` visibility scan (`arena_fighter_update_enemy_visibility`,
+    // C's `fight_driver_update` trashing a stale/deleted enemy slot)
+    // immediately clears it again.
+    assert!(world.spawn_character(character(42), 11, 10));
+    if let Some(f) = world.characters.get_mut(&CharacterId(1)) {
+        f.push_driver_message(NT_NPC, NTID_ARENA, 1, 42);
+    }
+
+    world.process_arena_fighter_actions(0);
+
+    let data = fighter_data(&world, CharacterId(1));
+    assert_eq!(data.state, FS_FIGHT);
+    assert_eq!(data.enemy, Some(CharacterId(42)));
+}
+
+#[test]
+fn fighter_fight_state_attacks_visible_enemy() {
+    let mut world = World::default();
+    let mut fighter = arena_fighter(1);
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        state: FS_FIGHT,
+        enemy: Some(CharacterId(2)),
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(fighter, 10, 10));
+    assert!(world.spawn_character(character(2), 11, 10));
+
+    world.process_arena_fighter_actions(0);
+
+    let fighter = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(fighter.action, action::ATTACK1);
+    assert!(fighter_data(&world, CharacterId(1)).enemy_visible);
+}
+
+#[test]
+fn fighter_fight_state_resets_to_leisure_on_fight_over_message() {
+    let mut world = World::default();
+    let mut fighter = arena_fighter(1);
+    fighter.driver_state = Some(CharacterDriverState::ArenaFighter(ArenaFighterDriverData {
+        state: FS_FIGHT,
+        enemy: Some(CharacterId(2)),
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(fighter, 10, 10));
+    if let Some(f) = world.characters.get_mut(&CharacterId(1)) {
+        f.push_driver_message(NT_NPC, NTID_ARENA, 2, 0);
+    }
+    world.tick = Tick(500);
+
+    world.process_arena_fighter_actions(0);
+
+    let data = fighter_data(&world, CharacterId(1));
+    assert_eq!(data.state, FS_LEISURE);
+    assert_eq!(data.last_act, 500);
+}
+
+#[test]
+fn fighter_give_message_destroys_the_item() {
+    let mut world = World::default();
+    assert!(world.spawn_character(arena_fighter(1), 10, 10));
+    let item_id = ItemId(700);
+    world.items.insert(
+        item_id,
+        crate::entity::Item {
+            id: item_id,
+            name: "Junk".into(),
+            description: String::new(),
+            flags: ItemFlags::empty(),
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [0; MAX_MODIFIERS],
+            modifier_value: [0; MAX_MODIFIERS],
+            x: 0,
+            y: 0,
+            carried_by: None,
+            contained_in: None,
+            content_id: 0,
+            driver: 0,
+            driver_data: Vec::new(),
+            serial: 0,
+        },
+    );
+    if let Some(f) = world.characters.get_mut(&CharacterId(1)) {
+        f.cursor_item = Some(item_id);
+        f.push_driver_message(NT_GIVE, 0, 0, 0);
+    }
+
+    world.process_arena_fighter_actions(0);
+
+    assert!(!world.items.contains_key(&item_id));
+    assert!(world
+        .characters
+        .get(&CharacterId(1))
+        .unwrap()
+        .cursor_item
+        .is_none());
+}
+
+#[test]
+fn arena_fighter_score_seeds_newcomer_until_first_recorded_fight() {
+    let mut world = World::default();
+    assert!(world.spawn_character(arena_fighter(1), 10, 10));
+
+    assert_eq!(world.arena_fighter_score(CharacterId(1)), Some(-2000));
+}
+
+#[test]
+fn apply_arena_fighter_win_updates_local_ledger() {
+    let mut world = World::default();
+    assert!(world.spawn_character(arena_fighter(1), 10, 10));
+
+    let new_score = world
+        .apply_arena_fighter_win(CharacterId(1), -2000)
+        .unwrap();
+
+    let expected = -2000 + PlayerRuntime::arena_fight_worth(0);
+    assert_eq!(new_score, expected);
+    let data = fighter_data(&world, CharacterId(1));
+    assert_eq!(data.score, expected);
+    assert_eq!(data.fights, 1);
+    assert_eq!(data.wins, 1);
+    assert_eq!(data.losses, 0);
+}
+
+#[test]
+fn apply_arena_fighter_loss_updates_local_ledger() {
+    let mut world = World::default();
+    assert!(world.spawn_character(arena_fighter(1), 10, 10));
+
+    let new_score = world
+        .apply_arena_fighter_loss(CharacterId(1), -2000)
+        .unwrap();
+
+    let expected = -2000 - PlayerRuntime::arena_fight_worth(0);
+    assert_eq!(new_score, expected);
+    let data = fighter_data(&world, CharacterId(1));
+    assert_eq!(data.score, expected);
+    assert_eq!(data.fights, 1);
+    assert_eq!(data.losses, 1);
+    assert_eq!(data.wins, 0);
 }
