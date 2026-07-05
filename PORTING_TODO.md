@@ -3277,10 +3277,13 @@ Unlocks every quest NPC. Do these before any P4 area work.
   driver's message-loop/potion half (`dungeonfighter`/`dungeon_potion`,
   `dungeon.c:1956-2161`, new `crates/ugaris-core/src/world/
   dungeon_fighter.rs` + `CharacterDriverState::Dungeonfighter` variant,
-  see Progress Log). REMAINING now: `immortal_dead`'s one-line bug-log
-  message (`ch_died_driver` for `CDR_DUNGEONMASTER`, trivial and
-  unreachable in practice since this NPC is never meant to die);
-  `fighter_dead` (confirmed dead code in C itself - its only effect
+   see Progress Log). `immortal_dead`'s one-line bug-log message
+   (`ch_died_driver` for `CDR_DUNGEONMASTER`, trivial and unreachable in
+   practice since this NPC is never meant to die) was ported in
+   iteration 148 as `apply_dungeonmaster_death_from_hurt_event`
+   (`crates/ugaris-server/src/world_events.rs`, mirroring the existing
+   `CDR_GATE_WELCOME` precedent), see Progress Log. REMAINING now:
+   `fighter_dead` (confirmed dead code in C itself - its only effect
   decrements a `clan[cnr].dungeon.{warrior,mage,seyan}[0][level]`
   sub-array that is never incremented anywhere in the C tree, so its
   `> 0` guard never passes - not ported, per `dungeon_fighter.rs`'s
@@ -3385,6 +3388,29 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `key`) remain out of scope, unchanged from before.
 
   Progress Log:
+  - 2026-07-05 (iteration 148): ported `immortal_dead`'s one-line
+    bug-log message for `CDR_DUNGEONMASTER` (`dungeon.c:1735-1737,
+    2197-2200`) as `apply_dungeonmaster_death_from_hurt_event`
+    (`crates/ugaris-server/src/world_events.rs`), mirroring the
+    already-ported `apply_gate_welcome_death_from_hurt_event`
+    (`CDR_GATE_WELCOME`) precedent exactly: same `charlog`-only "I JUST
+    DIED! I'M SUPPOSED TO BE IMMORTAL!" text via the existing
+    `debug!`-as-`charlog`/`format_client_log_message` pattern, no
+    client-visible message, wired into `apply_pk_hate_from_hurt_events`'s
+    per-event dispatch list right after the gate-welcome call. Added
+    `CDR_DUNGEONMASTER` to `main.rs`'s `character_driver` import list. 2
+    new tests in `tests::world_events`
+    (`dungeonmaster_death_is_handled_but_sends_no_client_message`/
+    `dungeonmaster_death_handler_ignores_non_matching_driver_and_non_lethal_hits`)
+    mirror the existing gate-welcome test pair. This NPC template also
+    carries `CF_IMMORTAL` so the path is unreachable through normal
+    combat, same caveat as the gate-welcome case - ported anyway for
+    fidelity, matching precedent. `cargo fmt --all`, `cargo test
+    --workspace` (604 tests, up from 602, all green), `cargo build -p
+    ugaris-server` clean with zero warnings, boot-smoke confirmed
+    "entering Rust game loop" with no panic. `fighter_dead` (dead code)
+    and the `CDR_DUNGEONFIGHTER`/SimpleBaddy AI architecture change
+    remain the only items left in this task's REMAINING note.
   - 2026-07-05 (iteration 147): ported `dungeondoor`'s `first_solve`
     block (`area/13/dungeon.c:1855-1891`) - the previously-unwired gap
     the last two iterations' notes flagged: `world::item_outcomes`'s

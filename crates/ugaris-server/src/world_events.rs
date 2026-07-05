@@ -100,6 +100,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_lab2_undead_death_from_hurt_event(runtime, world, event);
         apply_gate_fight_death_from_hurt_event(runtime, world, event, loader);
         apply_gate_welcome_death_from_hurt_event(world, event);
+        apply_dungeonmaster_death_from_hurt_event(world, event);
 
         let eligible = match (
             world.characters.get(&event.target_id),
@@ -366,6 +367,37 @@ pub(crate) fn apply_gate_welcome_death_from_hurt_event(
         return false;
     };
     if target.driver != CDR_GATE_WELCOME {
+        return false;
+    }
+    debug!(
+        target: "client_log",
+        "{}",
+        format_client_log_message(
+            &target.name,
+            target.id.0,
+            "I JUST DIED! I'M SUPPOSED TO BE IMMORTAL!"
+        )
+    );
+    true
+}
+
+/// C `ch_died_driver`/`CDR_DUNGEONMASTER` dispatch (`area/13/dungeon.c:
+/// 2197-2200`) routes any death of the dungeonmaster NPC to
+/// `immortal_dead(cn, co)` (`dungeon.c:1735-1737`), the identical
+/// `charlog`-only bug line already ported for `CDR_GATE_WELCOME` above
+/// (`gatekeeper.c:701-703`) - same text, same immortal-so-unreachable-in-
+/// practice caveat (this NPC template also carries `CF_IMMORTAL`).
+pub(crate) fn apply_dungeonmaster_death_from_hurt_event(
+    world: &World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(target) = world.characters.get(&event.target_id) else {
+        return false;
+    };
+    if target.driver != CDR_DUNGEONMASTER {
         return false;
     }
     debug!(

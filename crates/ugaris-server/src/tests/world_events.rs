@@ -864,6 +864,79 @@ fn gate_welcome_death_handler_ignores_non_matching_driver_and_non_lethal_hits() 
     ));
 }
 
+#[test]
+fn dungeonmaster_death_is_handled_but_sends_no_client_message() {
+    // C `ch_died_driver`/`CDR_DUNGEONMASTER` -> `immortal_dead`
+    // (`dungeon.c:1735-1737,2197-2200`) is the same `charlog`-only bug
+    // line as `CDR_GATE_WELCOME`'s - no client message, no reward/
+    // teleport side effects.
+    let mut world = World::default();
+    let mut dungeonmaster_npc =
+        login_character(CharacterId(1), &login_block("Dungeonmaster"), 1, 190, 200);
+    dungeonmaster_npc.flags.remove(CharacterFlags::PLAYER);
+    dungeonmaster_npc.driver = CDR_DUNGEONMASTER;
+    dungeonmaster_npc.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Godmode"), 1, 191, 200);
+    world.add_character(dungeonmaster_npc);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    let texts = world.drain_pending_system_texts();
+    assert!(!texts.iter().any(|text| text.message.contains("IMMORTAL")));
+}
+
+#[test]
+fn dungeonmaster_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
+    let mut world = World::default();
+    let mut other_npc = login_character(CharacterId(1), &login_block("Other"), 1, 190, 200);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    other_npc.hp = POWERSCALE * 5;
+    world.add_character(other_npc);
+
+    let non_lethal = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: false,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_dungeonmaster_death_from_hurt_event(
+        &world, non_lethal
+    ));
+
+    let mut world2 = World::default();
+    let mut dungeonmaster_npc =
+        login_character(CharacterId(1), &login_block("Dungeonmaster"), 1, 190, 200);
+    dungeonmaster_npc.flags.remove(CharacterFlags::PLAYER);
+    dungeonmaster_npc.driver = CDR_GATE_FIGHT; // not CDR_DUNGEONMASTER
+    world2.add_character(dungeonmaster_npc);
+
+    let lethal_wrong_driver = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_dungeonmaster_death_from_hurt_event(
+        &world2,
+        lethal_wrong_driver
+    ));
+}
+
 #[tokio::test]
 async fn clan_economy_tick_escalates_mutual_relation_request_immediately() {
     // `apply_clan_economy_tick`'s relation half wires `ClanRelations::
