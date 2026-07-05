@@ -8053,6 +8053,56 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/showppd`, `punish`/`rename`/etc.) noted above is still unported and
   still needs a fresh cross-reference pass before the next slice.
 
+  Progress Log (iteration 182): ported `/jail`/`/unjail <name>`
+  (`command.c:8839-8858`/`8861-8882` dispatch -> `cmd_jail_player`/
+  `cmd_unjail_player`, `command.c:2022-2041`/`2230-2249` ->
+  `jail_player`/`unjail_player`, `src/system/tool.c:4392-4425`), both
+  `CF_STAFF|CF_GOD`-gated, full-word only (`cmdcmp`'s `minlen` equals
+  each full word's length). Reproduced C's real double-gate quirk: the
+  dispatcher's own `lookup_name` DB-existence check must succeed first
+  (an invalid name shape resolves immediately - "No character by the
+  name %s."), and only then does `cmd_jail_player`/`cmd_unjail_player`
+  run their own, entirely separate online-only `CF_PLAYER` name scan (a
+  known account that isn't currently online gets a *different* message,
+  "No player by that name."). Since `World` has no DB handle, followed
+  the exact `world/lastseen.rs`/`world/admin_flag.rs` offline-lookup
+  convention: new `world/jail.rs` (`JailAction`/`JailLookup`,
+  `World::queue_jail_lookup`/`drain_pending_jail_lookups`/
+  `resolve_jail_lookup`) queues a validly-shaped name, resolved against
+  Postgres in a new `ugaris-server::world_events::apply_jail_events`
+  (reusing the existing `PgCharacterRepository::find_login_target` used
+  by the sibling `/rank`/`/fire`/`cmd_flag` offline fallbacks - no new DB
+  query needed) which then calls back into `resolve_jail_lookup` for the
+  online-scan/mutation half via the pre-existing `world/clanmaster.rs`
+  `find_online_player_by_name` helper. `jail_player`/`unjail_player`
+  themselves (previously entirely unported) unconditionally set the
+  target's `rest_x`/`rest_y`/`rest_area` to the already-wired
+  `GameSettings::jail_*`/`aston_*` location (`/setjaillocation`/
+  `/setastonlocation`, done since iteration ~164), plus `CF_RESPAWN` for
+  jail only (a real asymmetry vs unjail, preserved as-is), message both
+  parties via `World::queue_system_text`, then either
+  `World::teleport_char_driver` locally (this area server's `area_id`
+  already equals the jail/aston area) or - since cross-area `change_area`
+  isn't ported - the same "Nothing happens - target area server is
+  down." substitution used by every other cross-area teleport in this
+  codebase, sent to the caller. 6 new `ugaris-core` tests
+  (`world/tests/jail.rs`: invalid-name immediate rejection, valid-name
+  queuing, no-online-match fallback message, jail vs unjail respawn-
+  point/flag asymmetry, and the cross-area no-local-teleport-but-
+  message-sent case) and 8 new `ugaris-server` tests (`tests/
+  commands_admin.rs`: permission gating, exact-word-only matching for
+  both verbs, valid-name queuing with the correct `JailAction`, and the
+  immediate-rejection message path; `world_events.rs`'s own test module:
+  no-lookups and missing-repository no-ops, matching every sibling
+  offline-DB-lookup event). `cargo fmt --all`, `cargo test --workspace`
+  (2015 ugaris-core [+6] + 55 db + 3 net + 40 protocol + 766 server [+8],
+  all green, zero failures), `cargo build -p ugaris-server` / `cargo
+  build --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic. REMAINING: the ~90-entry
+  `cmdcmp` tail (anticheat `ac*`/`macro*` family, `/depotsort`,
+  `/showppd`, `punish`/`rename`/etc.) noted above is still unported and
+  still needs a fresh cross-reference pass before the next slice.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

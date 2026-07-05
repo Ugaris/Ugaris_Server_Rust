@@ -6520,6 +6520,19 @@ async fn main() -> anyhow::Result<()> {
                         "applied /lastseen lookups"
                     );
                 }
+                // `/jail`/`/unjail <name>`'s async DB round-trip (C
+                // `lookup_name`, `system/lookup.c:42-98` + `system/
+                // database/database_lookup.c:57-83`), queued by
+                // `apply_admin_character_command` above.
+                let jail_events_applied =
+                    apply_jail_events(&mut world, &character_repository).await;
+                if jail_events_applied != 0 {
+                    info!(
+                        jail_events_applied,
+                        tick = world.tick.0,
+                        "applied /jail lookups"
+                    );
+                }
                 // `/complain <name>`'s async DB round-trip (C
                 // `cmd_complain`'s `lookup_name`/`db_lookup_name`,
                 // `system/lookup.c:42-98` + `system/database/

@@ -1915,6 +1915,54 @@ fn lastseen_reply_message(info: &ugaris_db::LastSeenInfo, now_unix: i64) -> Stri
     )
 }
 
+/// `/jail`/`/unjail`'s async DB round trip (C `lookup_name`,
+/// `system/lookup.c:42-98` + `system/database/database_lookup.c:57-83`):
+/// resolves every `World::drain_pending_jail_lookups` entry (queued by a
+/// validly-shaped `/jail`/`/unjail <name>` argument - see `World::
+/// queue_jail_lookup`'s and `apply_admin_character_command`'s doc
+/// comments) against the DB.
+///
+/// - no DB row -> "No character by the name %s." (C's dispatcher-level
+///   `lookup_name == -1` branch, `command.c:9041`-equivalent for
+///   `jail`/`unjail`).
+/// - a row found -> hands off to `World::resolve_jail_lookup`, which
+///   reproduces `cmd_jail_player`/`cmd_unjail_player`'s own separate
+///   online-only `CF_PLAYER` name scan and, on a match, applies the
+///   jail/unjail mutation (no match -> "No player by that name.", the
+///   exact text both C functions share).
+///
+/// No-ops entirely (silent) when no `character_repository` is configured
+/// or a query errors, matching every sibling offline-DB-lookup event.
+pub(crate) async fn apply_jail_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+) -> usize {
+    let lookups = world.drain_pending_jail_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        match repository.find_login_target(&lookup.target_name).await {
+            Ok(Some(_)) => {
+                world.resolve_jail_lookup(lookup.caller_id, &lookup.target_name, lookup.action);
+            }
+            Ok(None) => {
+                world.queue_system_text(
+                    lookup.caller_id,
+                    format!("No character by the name {}.", lookup.target_name),
+                );
+            }
+            Err(_) => continue,
+        }
+        applied += 1;
+    }
+    applied
+}
+
 /// `cmd_complain`'s async DB round trip (C `command.c:2320-2350`,
 /// `lookup_name`/`db_lookup_name`, `system/lookup.c:42-98` +
 /// `system/database/database_lookup.c:57-83`): resolves every `World::
@@ -2111,6 +2159,38 @@ mod lastseen_tests {
             lastseen_reply_message(&info, 500),
             "Player was last seen 0 days, 0 hours, 0 minutes ago."
         );
+    }
+}
+
+#[cfg(test)]
+mod jail_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_jail_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        // Matches every other offline-DB-lookup event in this file: with
+        // no `character_repository` configured, the queue is still
+        // drained (so it doesn't grow unboundedly) but nothing is
+        // resolved and no player-facing message is sent.
+        let mut world = World::default();
+        world.queue_jail_lookup(
+            CharacterId(7),
+            "Godmode",
+            ugaris_core::world::JailAction::Jail,
+        );
+
+        let applied = apply_jail_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_jail_lookups().is_empty());
     }
 }
 

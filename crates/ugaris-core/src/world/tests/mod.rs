@@ -26,6 +26,7 @@ mod gatekeeper;
 mod hurt;
 mod item_outcomes;
 mod items;
+mod jail;
 mod janitor;
 mod lab2_undead;
 mod lastseen;

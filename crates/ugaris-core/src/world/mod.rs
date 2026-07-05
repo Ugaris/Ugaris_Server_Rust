@@ -37,6 +37,7 @@ mod helpers;
 mod hurt;
 mod item_outcomes;
 mod items;
+mod jail;
 mod janitor;
 mod lab2_undead;
 mod lastseen;
@@ -89,6 +90,7 @@ pub use hurt::*;
 #[allow(unused_imports)]
 pub(crate) use item_outcomes::*;
 pub(crate) use items::*;
+pub use jail::*;
 #[allow(unused_imports)]
 pub(crate) use lab2_undead::*;
 pub use lastseen::*;
@@ -339,6 +341,9 @@ pub struct World {
     pending_death_loot_rolls: Vec<PendingDeathLootRoll>,
     pending_lastseen_lookups: Vec<LastSeenLookup>,
     pending_complain_lookups: Vec<ComplainLookup>,
+    /// `/jail`/`/unjail` targets not found among the currently loaded
+    /// characters yet - see `world/jail.rs`'s module doc comment.
+    pending_jail_lookups: Vec<JailLookup>,
     /// `/god`/`/setsir`/`/staff`/`/emaster`/`/devel`/`/hardcore`/
     /// `/qmaster` targets not found among the currently loaded
     /// characters - see `world/admin_flag.rs`'s module doc comment.

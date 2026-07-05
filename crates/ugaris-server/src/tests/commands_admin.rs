@@ -5067,6 +5067,123 @@ fn office_command_abbreviation_is_not_recognized() {
     assert_eq!(world.characters.get(&caller_id).unwrap().x, 10);
 }
 
+// C `/jail`/`/unjail <name>` (`command.c:8839-8882`), `CF_STAFF|CF_GOD`-
+// gated, full-word only. Both commands defer to `World::
+// queue_jail_lookup`/`apply_jail_events` for the actual DB round trip and
+// online-scan/mutation (see `world/jail.rs`'s tests for that half), so
+// these dispatch-level tests only cover permission gating, exact-word
+// matching, and that a valid-looking name is queued rather than answered
+// immediately.
+
+#[test]
+fn jail_command_requires_staff_or_god() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    assert!(world.spawn_character(
+        login_character(caller_id, &login_block("Ralph"), 3, 10, 10),
+        10,
+        10
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/jail Baddie", 3)
+            .is_none()
+    );
+    assert!(world.drain_pending_jail_lookups().is_empty());
+}
+
+#[test]
+fn jail_command_queues_a_lookup_for_a_valid_name() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/jail Baddie", 3)
+            .expect("staff jail command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_jail_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, caller_id);
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].action, ugaris_core::world::JailAction::Jail);
+}
+
+#[test]
+fn unjail_command_queues_a_lookup_with_the_unjail_action() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/unjail Baddie", 3)
+            .expect("god unjail command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_jail_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].action, ugaris_core::world::JailAction::Unjail);
+}
+
+#[test]
+fn jail_command_with_an_invalid_name_is_rejected_immediately() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    // C `lookup_name`'s `strlen(name) < 2` gate (`lookup.c:57-59`).
+    let result = apply_admin_character_command(&mut world, &mut runtime, caller_id, "/jail A", 3)
+        .expect("god jail command should be recognized");
+    assert!(result.messages.is_empty());
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].character_id, caller_id);
+    assert_eq!(texts[0].message, "No character by the name A.");
+    assert!(world.drain_pending_jail_lookups().is_empty());
+}
+
+#[test]
+fn jail_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "jail", 4)` requires the full four-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/jai Baddie", 3)
+            .is_none()
+    );
+}
+
+#[test]
+fn unjail_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "unjail", 6)` requires the full six-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/unjai Baddie", 3)
+            .is_none()
+    );
+}
+
 // C `cmd_flag` (`command.c:2870-2937`), shared by `/god`, `/setsir`,
 // `/staff`, `/emaster`, `/devel`, `/hardcore`, and `/qmaster`
 // (`command.c:9257-9337`).

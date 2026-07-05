@@ -4171,6 +4171,35 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/jail <name>`/`/unjail <name>` (`command.c:8861-8882`/
+    // `8839-8858`), `CF_STAFF|CF_GOD`-gated, full-word only (`cmdcmp`'s
+    // `minlen` equals each full word's length, no abbreviation accepted).
+    // Trims leading whitespace off the argument, then hands it to
+    // `World::queue_jail_lookup`, which does all further validation and
+    // DB resolution - see that function's and `ugaris-server`'s
+    // `apply_jail_events`'s doc comments for the full behavior. Always
+    // returns a `default()` result immediately; the real reply arrives
+    // later via `World::queue_system_text`, matching C's own fire-and-
+    // forget async `lookup_name` DB-worker round-trip.
+    if lower == "jail" || lower == "unjail" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let action = if lower == "jail" {
+            ugaris_core::world::JailAction::Jail
+        } else {
+            ugaris_core::world::JailAction::Unjail
+        };
+        world.queue_jail_lookup(character_id, rest.trim_start(), action);
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/showflags` (`command.c:8798-8805`, `cmd_show_flags`,
     // `command.c:4839-5061`), `CF_GOD`-gated, full-word only (`cmdcmp`'s
     // `minlen` is 9, the full length of "showflags", so no abbreviation
