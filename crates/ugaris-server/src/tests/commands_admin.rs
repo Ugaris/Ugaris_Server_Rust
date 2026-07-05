@@ -2911,6 +2911,145 @@ fn listchars_is_god_only_and_rejects_too_short_prefix() {
 }
 
 #[test]
+fn god_clearmerchantstores_resets_gold_and_clears_every_ware() {
+    use ugaris_core::character_driver::CDR_MERCHANT;
+    use ugaris_core::world::StoreWare;
+
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+
+    let merchant_id = CharacterId(20);
+    let mut merchant = login_character(merchant_id, &login_block("Dolf"), 1, 11, 10);
+    merchant.flags.remove(CharacterFlags::PLAYER);
+    merchant.driver = CDR_MERCHANT;
+    world.add_character(merchant);
+    assert!(world.ensure_merchant_store(merchant_id));
+    {
+        let store = world.merchant_stores.get_mut(&merchant_id).unwrap();
+        store.gold = 42;
+        store.wares[0] = Some(StoreWare {
+            item: test_item(ItemId(900), 1234, ItemFlags::TAKE),
+            count: 3,
+            always: true,
+        });
+    }
+
+    let mut runtime = ServerRuntime::default();
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/clearmerchantstores 20",
+        1,
+    )
+    .expect("god clearmerchantstores should be recognized");
+
+    assert_eq!(
+        result.messages,
+        vec!["Merchant Dolf (ID: 20) inventory cleared and gold reset"]
+    );
+    assert_eq!(result.clear_merchant_store_requested, Some(merchant_id));
+    let store = world.merchant_stores.get(&merchant_id).unwrap();
+    assert_eq!(store.gold, 10_000);
+    assert!(store.wares.iter().all(Option::is_none));
+}
+
+#[test]
+fn clearmerchantstores_rejects_non_merchant_and_missing_ids() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+
+    let non_merchant_id = CharacterId(8);
+    world.add_character(login_character(
+        non_merchant_id,
+        &login_block("Player"),
+        1,
+        11,
+        10,
+    ));
+
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/clearmerchantstores 8",
+        1,
+    )
+    .expect("clearmerchantstores should still respond for a non-merchant target");
+    assert_eq!(
+        result.messages,
+        vec!["Invalid merchant ID or not a merchant character"]
+    );
+    assert!(result.clear_merchant_store_requested.is_none());
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/clearmerchantstores 999",
+        1,
+    )
+    .expect("clearmerchantstores should still respond for an unknown target");
+    assert_eq!(
+        result.messages,
+        vec!["Invalid merchant ID or not a merchant character"]
+    );
+}
+
+#[test]
+fn clearmerchantstores_is_god_only_and_rejects_too_short_prefix() {
+    use ugaris_core::character_driver::CDR_MERCHANT;
+
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    world.add_character(login_character(
+        character_id,
+        &login_block("Tester"),
+        1,
+        10,
+        10,
+    ));
+    let merchant_id = CharacterId(20);
+    let mut merchant = login_character(merchant_id, &login_block("Dolf"), 1, 11, 10);
+    merchant.driver = CDR_MERCHANT;
+    world.add_character(merchant);
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/clearmerchantstores 20",
+        1,
+    )
+    .is_none());
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/clearmerc 20",
+        1,
+    )
+    .is_none());
+    assert!(world.merchant_stores.get(&merchant_id).is_none());
+}
+
+#[test]
 fn itemname_and_itemdesc_are_god_only_and_require_cursor_item() {
     let mut world = World::default();
     let character_id = CharacterId(7);

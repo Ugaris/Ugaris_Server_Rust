@@ -89,6 +89,16 @@ pub(crate) struct KeyringCommandResult {
     /// isn't ported yet (see `PORTING_TODO.md`'s `/saveall` note), so
     /// there is nothing to save and claiming otherwise would be dishonest.
     pub(crate) save_all_requested: bool,
+    /// Set by `/clearmerchantstores <id>` (C `command.c:7510-7538`,
+    /// `CF_GOD`-gated) to the merchant's `CharacterId` after the command
+    /// layer has already reset the in-memory store (gold to 10000, every
+    /// ware slot cleared). The command layer has no DB handle of its own
+    /// (same reason `/saveall`'s merchant sweep is deferred to the
+    /// `main.rs` call site instead of here), so the call site must persist
+    /// the cleared store via `save_merchant_store_if_configured`, matching
+    /// C's own `save_merchant_inventory(merchant_cn)` call right after the
+    /// mutation.
+    pub(crate) clear_merchant_store_requested: Option<CharacterId>,
     /// Plain-text system messages addressed to a character other than the
     /// command caller (e.g. `/changetunnel`/`/settunnel`/`/cleartunnel`,
     /// C `command.c:2045-2199`, notifying the edited target player). Kept

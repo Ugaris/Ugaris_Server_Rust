@@ -7064,7 +7064,10 @@ Unlocks every quest NPC. Do these before any P4 area work.
   itself. `/rmdeath` done (see iteration 192 - reused the `/jail`/
   `/unjail` DB-confirm-then-online-scan pattern rather than the
   task-queue one, since its own mutation is a plain in-memory field
-  decrement, not an offline DB write).
+  decrement, not an offline DB write). `/clearmerchantstores` done (see
+  iteration 193 - pure in-memory `MerchantStore` reset plus a persist
+  hook at the `main.rs` call site, no new infra needed since the
+  merchant-store save path already existed).
 
   Progress Log (iteration 158): ported the admin-teleport family -
   `/goto` (`command.c:8453-8567`, gated on `is_lqmaster`), `/jump`
@@ -8589,6 +8592,61 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `punish`/`rename`; `respawn`'s `respawn_check()` is a C-internal
   respawn-tracker consistency logger with no clear Rust equivalent given
   this codebase's different NPC-respawn architecture, likely low value).
+
+  Progress Log (iteration 193): read and ported `/clearmerchantstores
+  <id>` (`command.c:7510-7538`, `CF_GOD`-gated, `cmdcmp` `minlen` 10) -
+  one of the GOD-only debug/stats commands iteration 191 surfaced but
+  hadn't been individually read yet. C resets `ch[merchant_cn].gold`
+  directly and destroys each carried store item one at a time
+  (`remove_item_char`/`destroy_item` over the global `it[]` table); the
+  Rust `MerchantStore` abstraction (`crates/ugaris-core/src/world/
+  merchant.rs`) already keeps a merchant's store gold and every ware as
+  owned data in `world.merchant_stores`, so the port is just: look up
+  the target by numeric id (`CharacterId(legacy_atoi_prefix(rest))`,
+  following the `ItemId(legacy_atoi_prefix(...))` precedent `/listitem`
+  already established), verify `driver == CDR_MERCHANT` (newly imported
+  into `main.rs`'s `character_driver::{...}` re-export list), call the
+  pre-existing `World::ensure_merchant_store` to guarantee an entry
+  exists (matching C's unconditional field writes regardless of whether
+  the merchant has ever actually traded), then set `store.gold =
+  10_000` and every `wares` slot to `None`. Persistence needed a new
+  `KeyringCommandResult::clear_merchant_store_requested:
+  Option<CharacterId>` field (the command layer has no DB handle of its
+  own, same reason `/saveall`'s merchant sweep is deferred to the
+  `main.rs` call site) - wired there to call the pre-existing
+  `save_merchant_store_if_configured`, matching C's own
+  `save_merchant_inventory(merchant_cn)` call right after the mutation.
+  Added into the existing `apply_admin_character_command` if-chain
+  (`commands_admin.rs`), right after `/listchars`. The `/help`-text line
+  for this command already existed in `commands_player.rs` with no real
+  dispatch handler behind it - the same trap iterations 183/189/190
+  found for `/tunnel`/`/noarch`/`/fixit`. 3 new tests in
+  `crates/ugaris-server/src/tests/commands_admin.rs`: a full success
+  round trip (pre-seeded nonzero gold and an `always` ware both reset/
+  cleared, exact message text, the result field set), the shared
+  "Invalid merchant ID or not a merchant character" error for both a
+  non-merchant online character and a nonexistent id, and the `CF_GOD`
+  gate plus the 10-char minlen prefix rejection (confirming no merchant
+  store is created as a side effect of a rejected call). `cargo fmt
+  --all`, `cargo test --workspace` (2027 ugaris-core + 55 db + 3 net +
+  40 protocol + 835 server [+3], all green, zero failures), `cargo build
+  -p ugaris-server` / `cargo build --workspace` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panic. REMAINING: same ~83 uncross-referenced entries as before (now
+  minus `/clearmerchantstores`); the `ac*`/`macro*` families remain the
+  largest unexamined chunk; `checksanity` needs a Rust port of
+  `consistency_check_items`/`_map`/`_chars`/`_containers`
+  (`src/system/consistency.c`, 453 lines, invariant checks over C's
+  fixed-size global arrays) adapted to the `HashMap`-based `World`
+  model - a nontrivial chunk of its own, not a quick win; `memstats`/
+  `poolstats`/`querystats`/`profinfo` all read C-only instrumentation
+  counters (`mem_usage`/`used_chars`/`query_cnt`/connection-pool
+  stats/a profiler) with no Rust equivalent tracked anywhere yet -
+  porting any of them means designing and wiring a whole new
+  stats-counter subsystem first, not just adding a command handler; the
+  remaining unread ones (`respawn`, `exterminate`,
+  `setnpcbodytimearea32`, `look`, `klog`, `col`, `values`/`showvalues`,
+  `summonmacro`) are unchanged from iteration 192's note.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

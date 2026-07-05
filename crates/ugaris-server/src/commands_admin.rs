@@ -2524,6 +2524,60 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/clearmerchantstores <id>` (`command.c:7510-7538`), `CF_GOD`-gated
+    // (`cmdcmp(ptr, "clearmerchantstores", 10)`). Resets an online
+    // merchant's inventory to empty and its gold to the default starting
+    // amount (`ch[merchant_cn].gold = 10000`), matching C's
+    // "Default starting gold" comment verbatim. Unlike C, which destroys
+    // each carried item entity one at a time (`remove_item_char`/
+    // `destroy_item` over `it[]`), the Rust `MerchantStore.wares` slots own
+    // their `Item` data directly (no separate item-table entries to free),
+    // so clearing is just overwriting every slot with `None`.
+    if lower.len() >= 10 && "clearmerchantstores".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        let merchant_id = CharacterId(legacy_atoi_prefix(rest.trim_start()).max(0) as u32);
+        let Some(merchant) = world.characters.get(&merchant_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Invalid merchant ID or not a merchant character".to_string()],
+                ..Default::default()
+            });
+        };
+        if merchant.driver != CDR_MERCHANT {
+            return Some(KeyringCommandResult {
+                messages: vec!["Invalid merchant ID or not a merchant character".to_string()],
+                ..Default::default()
+            });
+        }
+        let merchant_name = merchant.name.clone();
+
+        world.ensure_merchant_store(merchant_id);
+        let Some(store) = world.merchant_stores.get_mut(&merchant_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Invalid merchant ID or not a merchant character".to_string()],
+                ..Default::default()
+            });
+        };
+        store.gold = 10_000;
+        for ware in store.wares.iter_mut() {
+            *ware = None;
+        }
+
+        return Some(KeyringCommandResult {
+            messages: vec![format!(
+                "Merchant {} (ID: {}) inventory cleared and gold reset",
+                merchant_name, merchant_id.0
+            )],
+            clear_merchant_store_requested: Some(merchant_id),
+            ..Default::default()
+        });
+    }
+
     if lower == "setskill" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());

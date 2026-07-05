@@ -110,7 +110,7 @@ use ugaris_core::{
     area_sound::area_sound_special,
     character_driver::{
         needs_next_lab, CharacterDriverState, CDR_CALIGARSKELLY, CDR_DUNGEONMASTER, CDR_GATE_FIGHT,
-        CDR_GATE_WELCOME, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC, CDR_PALACEISLENA,
+        CDR_GATE_WELCOME, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC, CDR_MERCHANT, CDR_PALACEISLENA,
         CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT, NTID_GATEKEEPER, NT_NPC,
     },
     clan::{ClanRelations, ClanTreasuryEvent},
@@ -1721,6 +1721,18 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                         }
                                     }
+                                }
+                                if let Some(merchant_id) = result.clear_merchant_store_requested {
+                                    // C `/clearmerchantstores` (`command.c:
+                                    // 7510-7538`): `save_merchant_inventory
+                                    // (merchant_cn)` persists the cleared
+                                    // store right after the mutation.
+                                    save_merchant_store_if_configured(
+                                        &world,
+                                        &merchant_repository,
+                                        merchant_id,
+                                    )
+                                    .await;
                                 }
                                 continue;
                             }
