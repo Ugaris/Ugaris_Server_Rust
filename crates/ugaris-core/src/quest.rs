@@ -993,6 +993,20 @@ impl QuestLog {
         &self.quests
     }
 
+    /// True when every quest slot is still at its untouched default
+    /// (`done == 0 && flags == 0`) - i.e. this player's quest log has
+    /// never recorded any progress. Rust keeps `QuestLog` as a plain,
+    /// always-present field rather than C's lazily-allocated `del_data`
+    /// block, so this is the equivalent of "the `DRD_QUESTLOG_PPD` block
+    /// was never `set_data`'d" for callers (`/clearppd questlog`,
+    /// `command.c:4258-4260`/`4275-4287`) that need to distinguish
+    /// "there was nothing to clear" from "cleared".
+    pub fn is_empty(&self) -> bool {
+        self.quests
+            .iter()
+            .all(|entry| *entry == QuestEntry::default())
+    }
+
     /// C `questlog_open(cn, qnr)` (`src/system/questlog.c:204-219`): sets
     /// `flags` to exactly `QF_OPEN`, discarding any prior `QF_DONE` bit
     /// (C assigns, it doesn't OR). The caller is responsible for the C

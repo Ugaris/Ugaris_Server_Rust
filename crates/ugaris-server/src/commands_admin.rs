@@ -4852,6 +4852,129 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/clearppd <ppdname> [player]` (`command.c:10144-10146` dispatch,
+    // `CF_GOD | CF_STAFF`-gated, `cmdcmp(ptr, "clearppd", 8)` - exact word
+    // only; `cmd_clearppd`, `command.c:4214-4288`). A raw, PPD-name-
+    // agnostic admin wipe over C's generic `del_data(co, ppd_id)` linked-
+    // list removal - unlike every other command in this file, it performs
+    // NO resend of the cleared data to either party (verified by reading
+    // the whole C function body: no `send*`/`log_char` other than the
+    // three messages reproduced below). Supports exactly three PPD names
+    // (`keyring`, `questlog`, `alias`), matched case-insensitively.  An
+    // optional second, whitespace-separated argument targets an online
+    // *player* character (`ch[co].flags & CF_PLAYER`, so - unlike most
+    // name-lookup commands in this file - NPCs never match) by exact
+    // case-insensitive full-string match against the ENTIRE remaining
+    // text (C's `strcasecmp(ch[co].name, ptr)`, not just a leading name
+    // token - so any trailing text after a valid name breaks the match, a
+    // genuine quirk reproduced here by using the raw trimmed remainder
+    // rather than `take_legacy_alpha_name`); the miss message is "Player
+    // '%s' not found." (deliberately distinct from every other command's
+    // "Sorry, no one by the name %s around." - copied letter for
+    // letter). Self-targets when no second argument is given. Since Rust
+    // keeps these three PPDs as always-present plain fields rather than
+    // lazily-allocated `del_data` blocks, "the PPD existed" (`del_data`'s
+    // nonzero return) is modeled as "the field is currently non-default"
+    // - exactly the set of players for whom C would actually have called
+    // `set_data` at least once - so the found/not-found message split
+    // matches observable behavior.
+    if lower == "clearppd" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let caller_name = caller.name.clone();
+
+        let rest = rest.trim_start();
+        if rest.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec![
+                    "Usage: #clearppd <ppdname> [player]".to_string(),
+                    "Available PPDs: keyring, questlog, alias".to_string(),
+                ],
+                ..Default::default()
+            });
+        }
+
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        let ppd_name = parts.next().unwrap_or("").to_ascii_lowercase();
+        let player_arg = parts.next().unwrap_or("").trim_start();
+
+        let (target_id, target_name) = if player_arg.is_empty() {
+            (character_id, caller_name.clone())
+        } else {
+            let found = world.characters.values().find(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(player_arg)
+            });
+            let Some(target) = found else {
+                return Some(KeyringCommandResult {
+                    messages: vec![format!("Player '{player_arg}' not found.")],
+                    ..Default::default()
+                });
+            };
+            (target.id, target.name.clone())
+        };
+
+        let ppd_display_name = match ppd_name.as_str() {
+            "keyring" => "keyring",
+            "questlog" => "questlog",
+            "alias" => "alias",
+            _ => {
+                return Some(KeyringCommandResult {
+                    messages: vec![
+                        format!("Unknown PPD: {ppd_name}"),
+                        "Available PPDs: keyring, questlog, alias".to_string(),
+                    ],
+                    ..Default::default()
+                });
+            }
+        };
+
+        let Some(target_player) = runtime.player_for_character_mut(target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Failed to get player data.".to_string()],
+                ..Default::default()
+            });
+        };
+
+        let existed = match ppd_display_name {
+            "keyring" => !target_player.keyring.is_empty(),
+            "questlog" => !target_player.quest_log.is_empty(),
+            _ => !target_player.aliases.is_empty(),
+        };
+        if existed {
+            match ppd_display_name {
+                "keyring" => target_player.keyring.clear(),
+                "questlog" => target_player.quest_log = QuestLog::default(),
+                _ => target_player.aliases.clear(),
+            }
+        }
+
+        let mut result = KeyringCommandResult::default();
+        if existed {
+            result
+                .messages
+                .push(format!("Cleared {ppd_display_name} PPD for {target_name}."));
+            if target_id != character_id {
+                result.other_messages.push((
+                    target_id,
+                    format!("Your {ppd_display_name} data has been cleared by {caller_name}."),
+                ));
+            }
+        } else {
+            result.messages.push(format!(
+                "No {ppd_display_name} PPD found for {target_name}."
+            ));
+        }
+        return Some(result);
+    }
+
     None
 }
 

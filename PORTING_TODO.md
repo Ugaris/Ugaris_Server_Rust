@@ -8473,6 +8473,62 @@ Unlocks every quest NPC. Do these before any P4 area work.
   largest unexamined chunk and would benefit from their own dedicated
   cross-reference pass before the next slice is picked.
 
+  Progress Log (iteration 191): a fresh cross-reference pass (grepping
+  every unique `cmdcmp(ptr, "...")` name in `command.c` against
+  `crates/ugaris-server/src/`) turned up 55 apparent gaps, of which all
+  but one were already correctly categorized in this note (the `ac*`/
+  `macro*` families, `punish`/`rename`/`lockname`/`unlockname`/
+  `unpunish`, `showppd`, `depotsort`, and a handful of GOD-only debug/
+  stats commands - `checksanity`, `memstats`, `poolstats`, `profinfo`,
+  `querystats`, `clearmerchantstores`, `respawn`, `rmdeath`,
+  `exterminate`, `setnpcbodytimearea32`, `look`, `klog`, `col`,
+  `values`/`showvalues`, `summonmacro` - none examined yet, still
+  unaccounted for). The one genuine gap: `/clearppd <ppdname> [player]`
+  (`command.c:10144-10146` dispatch + `cmd_clearppd`, `command.c:4214-
+  4288`), `CF_GOD | CF_STAFF`-gated - a raw, PPD-name-agnostic admin wipe
+  over three PPDs (`keyring`, `questlog`, `alias`, all already fully
+  ported as plain `PlayerRuntime` fields). Ported into
+  `apply_admin_character_command` (`commands_admin.rs`). Verified by
+  reading the whole C function body that it performs NO resend of the
+  cleared data to either party (unlike every neighboring PPD-editor
+  command in this file) - just two `log_char` messages. Reproduced two
+  genuine quirks verbatim: the not-found message is "Player '%s' not
+  found." (distinct from every other command's "Sorry, no one by the
+  name %s around."), and the optional player-name argument is matched
+  via `strcasecmp` against the ENTIRE remaining text (not just a leading
+  name token), so trailing garbage after a valid name breaks the match -
+  and the search is restricted to `CF_PLAYER`-flagged characters only
+  (unlike most name-lookup commands in this file, which reuse the
+  NPC-inclusive `find_online_character_by_name` helper). Since Rust
+  keeps these three PPDs as always-present plain fields rather than C's
+  lazily-allocated `del_data` blocks, "the PPD existed" (`del_data`'s
+  nonzero return, gating the "Cleared ..." vs "No ... PPD found"
+  message) is modeled as "the field is currently non-default" - added
+  `QuestLog::is_empty` for this purpose (`keyring`/`aliases` just check
+  `Vec::is_empty`). 10 new tests in `tests/commands_admin.rs`: GOD-only
+  caller rejected, STAFF-only caller accepted, no-argument usage text,
+  unknown-PPD-name error, the distinct "Player '...' not found." text,
+  empty-vs-populated keyring found/not-found split plus the actual
+  clear, named-target alias clear with the correct message sent to both
+  sides, self-target sends no second message, questlog clear, and a
+  non-`CF_PLAYER` character sharing the target name is correctly
+  skipped. `cargo fmt --all`, `cargo test --workspace` (2022 ugaris-core
+  + 55 db + 3 net + 40 protocol + 826 server [+10], all green, zero
+  failures), `cargo build -p ugaris-server` / `cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. REMAINING: same ~84 uncross-referenced entries as
+  before (now minus `/clearppd`); the `ac*`/`macro*` families are still
+  the largest unexamined chunk (there IS a `PgAntiCheatRepository`/
+  `AntiCheatRepository` trait already in `crates/ugaris-db/src/
+  anticheat.rs`, fully async and entirely unwired into `ugaris-server` -
+  no command, no call site anywhere - so porting even one `ac*` command
+  requires first designing the sync-command/async-repository bridge
+  pattern this codebase doesn't have yet; that bridge design should be
+  its own slice before picking a first `ac*` command). The newly-listed
+  GOD-only debug/stats commands above (`checksanity` et al.) have not
+  been individually read yet - do that before assuming any is a quick
+  win.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

@@ -6908,3 +6908,252 @@ fn questfix_clears_the_callers_own_sentinel_and_leaves_the_named_targets_log_unt
     assert!(target_player.quest_log.is_init_complete());
     assert_eq!(target_player.quest_log.entries()[0].done, 5);
 }
+
+// C `/clearppd <ppdname> [player]` (`command.c:10144-10146` dispatch,
+// `CF_GOD | CF_STAFF`-gated; `cmd_clearppd`, `command.c:4214-4288`).
+
+#[test]
+fn clearppd_requires_god_or_staff() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "/clearppd keyring",
+        1
+    )
+    .is_none());
+}
+
+/// Registers a connected `PlayerRuntime` for `character_id` on a fresh
+/// session, so self-target `/clearppd` calls (whose caller is also the
+/// target) have somewhere to read/write PPD fields.
+fn insert_runtime_for(runtime: &mut ServerRuntime, session_id: u64, character_id: CharacterId) {
+    let mut player = PlayerRuntime::connected(session_id, 0);
+    player.character_id = Some(character_id);
+    runtime.players.insert(session_id, player);
+}
+
+#[test]
+fn clearppd_staff_without_god_is_accepted() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    insert_runtime_for(&mut runtime, 90, god_id);
+    // Demote the caller to STAFF-only, matching C's `CF_GOD | CF_STAFF`
+    // gate accepting either flag.
+    {
+        let god = world.characters.get_mut(&god_id).unwrap();
+        god.flags.remove(CharacterFlags::GOD);
+        god.flags.insert(CharacterFlags::STAFF);
+    }
+    let _ = target_id;
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/clearppd keyring", 1)
+            .expect("STAFF-only caller should still be recognized");
+    assert_eq!(result.messages, vec!["No keyring PPD found for Godmode."]);
+}
+
+#[test]
+fn clearppd_with_no_arguments_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/clearppd", 1)
+        .expect("god clearppd should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![
+            "Usage: #clearppd <ppdname> [player]",
+            "Available PPDs: keyring, questlog, alias"
+        ]
+    );
+}
+
+#[test]
+fn clearppd_rejects_unknown_ppd_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/clearppd bogus", 1)
+            .expect("god clearppd should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![
+            "Unknown PPD: bogus",
+            "Available PPDs: keyring, questlog, alias"
+        ]
+    );
+}
+
+#[test]
+fn clearppd_reports_player_not_found_with_its_own_distinct_message() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/clearppd keyring Nobody",
+        1,
+    )
+    .expect("god clearppd should be recognized");
+    // Deliberately NOT "Sorry, no one by the name %s around." - C's
+    // `cmd_clearppd` uses its own distinct wording.
+    assert_eq!(result.messages, vec!["Player 'Nobody' not found."]);
+}
+
+#[test]
+fn clearppd_keyring_reports_not_found_when_already_empty_and_clears_when_populated() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    insert_runtime_for(&mut runtime, 90, god_id);
+
+    // Empty keyring (default) -> "No ... PPD found".
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/clearppd keyring", 1)
+            .expect("god clearppd should be recognized");
+    assert_eq!(result.messages, vec!["No keyring PPD found for Godmode."]);
+
+    // Populate it, then clear for real.
+    {
+        let god_player = runtime.player_for_character_mut(god_id).unwrap();
+        god_player.keyring.push(ugaris_core::player::KeyringEntry {
+            template_id: 1,
+            name: "Test Key".to_string(),
+            description: String::new(),
+            sprite: 0,
+            flags: 0,
+            value: 0,
+            driver: 0,
+            driver_data: Vec::new(),
+            expire_serial: 0,
+        });
+    }
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/clearppd keyring", 1)
+            .expect("god clearppd should be recognized");
+    assert_eq!(result.messages, vec!["Cleared keyring PPD for Godmode."]);
+    assert!(runtime
+        .player_for_character(god_id)
+        .unwrap()
+        .keyring
+        .is_empty());
+}
+
+#[test]
+fn clearppd_targets_a_named_player_and_notifies_both_sides() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    {
+        let target_player = runtime.player_for_character_mut(target_id).unwrap();
+        target_player
+            .aliases
+            .push(ugaris_core::player::CommandAlias {
+                from: "gg".to_string(),
+                to: "grin".to_string(),
+            });
+    }
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/clearppd alias Target",
+        1,
+    )
+    .expect("god clearppd should be recognized");
+    assert_eq!(result.messages, vec!["Cleared alias PPD for Target."]);
+    assert_eq!(
+        result.other_messages,
+        vec![(
+            target_id,
+            "Your alias data has been cleared by Godmode.".to_string()
+        )]
+    );
+    assert!(runtime
+        .player_for_character(target_id)
+        .unwrap()
+        .aliases
+        .is_empty());
+}
+
+#[test]
+fn clearppd_self_target_sends_no_other_message() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    insert_runtime_for(&mut runtime, 90, god_id);
+
+    {
+        let god_player = runtime.player_for_character_mut(god_id).unwrap();
+        god_player.aliases.push(ugaris_core::player::CommandAlias {
+            from: "gg".to_string(),
+            to: "grin".to_string(),
+        });
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/clearppd alias", 1)
+            .expect("god clearppd should be recognized");
+    assert_eq!(result.messages, vec!["Cleared alias PPD for Godmode."]);
+    assert!(result.other_messages.is_empty());
+}
+
+#[test]
+fn clearppd_questlog_clears_and_reports_success() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    insert_runtime_for(&mut runtime, 90, god_id);
+
+    {
+        let god_player = runtime.player_for_character_mut(god_id).unwrap();
+        god_player.quest_log.set_raw(0, 1, 1);
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/clearppd questlog", 1)
+            .expect("god clearppd should be recognized");
+    assert_eq!(result.messages, vec!["Cleared questlog PPD for Godmode."]);
+    assert!(runtime
+        .player_for_character(god_id)
+        .unwrap()
+        .quest_log
+        .is_empty());
+}
+
+#[test]
+fn clearppd_only_matches_online_player_flagged_characters() {
+    // A non-CF_PLAYER character sharing the target name must not match
+    // (C's search loop skips any `co` without `CF_PLAYER`).
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    {
+        let target = world.characters.get_mut(&target_id).unwrap();
+        target.flags.remove(CharacterFlags::PLAYER);
+    }
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/clearppd keyring Target",
+        1,
+    )
+    .expect("god clearppd should be recognized");
+    assert_eq!(result.messages, vec!["Player 'Target' not found."]);
+}
