@@ -19,11 +19,34 @@
 //! (both real `World` mutations, not pure decisions), the `do`/`while`
 //! `create_maze`+loop-over-`build_cell` retry that actually spins up the
 //! map (`crates/ugaris-server/src/dungeon.rs` already has every builder
-//! this needs), `destroy_dungeon`'s `build_remove`/`build_empty` map
-//! teardown sweep (needs player-eviction/`change_area`/`exit_char`
-//! logic this pure module has none of), and `dungeonfighter`/
-//! `dungeon_potion`/`fighter_dead` (the separate combat-adjacent
-//! driver).
+//! this needs), and `dungeonfighter`/`dungeon_potion`/`fighter_dead`
+//! (the separate combat-adjacent driver).
+//!
+//! `destroy_dungeon`'s `build_remove`/`build_empty` map-teardown sweep
+//! (`dungeon.c:725-786,1343-1364`) *is* ported below as
+//! [`World::destroy_dungeon`] (plus its `build_remove_tile`/
+//! `build_empty_tile` per-tile helpers) even though it is a real
+//! mutation, not a pure decision, because - unlike the rest of this
+//! module's remaining gaps - every primitive it needs
+//! (`teleport_character_same_area`/`remove_character`/`destroy_item`/
+//! `remove_effect_from_map`/`set_item_expire`/`queue_system_text`)
+//! already exists on `World`. One real gap remains: C's
+//! `build_remove` falls back from four same-area `teleport_char_driver`
+//! attempts to `change_area(cn, ch[cn].resta, ch[cn].restx,
+//! ch[cn].resty)` (the player's stored rest/recall point, which may be
+//! in a *different* area) before finally giving up with `exit_char(cn)`.
+//! This codebase runs one area per server process (see `World::area_id`'s
+//! own doc comment) with no cross-area transfer yet (`PORTING_TODO.md`'s
+//! "Cross-area transfer" P4 task - every existing cross-area path in
+//! `crates/ugaris-server` reports "target area server is down" instead of
+//! actually moving the character, see `transport.rs`'s
+//! `TransportTravelResult::CrossArea`). `build_remove_tile` mirrors that
+//! same precedent: if the evicted player's own `rest_area` happens to
+//! equal this running area, their rest point is honored as a same-area
+//! teleport (exactly what `change_area` would reduce to in that case);
+//! otherwise the cross-area case is unreachable here and the player is
+//! evicted via `remove_character` exactly like C's `exit_char(cn)`
+//! fallback.
 //!
 //! `struct master_data`'s 9-slot catacomb-tracking arrays are ported as
 //! [`DungeonmasterDriverData`], passed by reference rather than stored
@@ -363,5 +386,146 @@ impl World {
             })
             .map(|character| character.id)
             .collect()
+    }
+
+    /// C `build_remove(x, y)` (`dungeon.c:743-786`): evicts whatever
+    /// occupies one map tile - a player (evicted via a same-area
+    /// teleport chain, see this module's doc comment for the
+    /// `change_area` gap), an NPC (removed outright, matching
+    /// `remove_destroy_char`), any item (a takeable item or non-takeable
+    /// player body is scattered nearby and destroyed/timed-out, exactly
+    /// as C does), and every effect anchored to the tile.
+    pub fn build_remove_tile(&mut self, x: usize, y: usize) {
+        let character_id = self.map.tile(x, y).and_then(|tile| {
+            (tile.character != 0).then_some(CharacterId(u32::from(tile.character)))
+        });
+        if let Some(character_id) = character_id {
+            let is_player = self
+                .characters
+                .get(&character_id)
+                .is_some_and(|character| character.flags.contains(CharacterFlags::PLAYER));
+            if is_player {
+                self.queue_system_text(character_id, "The catacomb collapsed on you.");
+                let escaped = self.teleport_character_same_area(character_id, 245, 250, false)
+                    || self.teleport_character_same_area(character_id, 240, 250, false)
+                    || self.teleport_character_same_area(character_id, 235, 250, false)
+                    || self.teleport_character_same_area(character_id, 230, 250, false);
+                if !escaped {
+                    // C: `change_area(cn, ch[cn].resta, ch[cn].restx,
+                    // ch[cn].resty)`, falling back to `exit_char(cn)` on
+                    // failure - see this module's doc comment for why
+                    // only the same-area case of `change_area` is
+                    // reachable here.
+                    let rest = self
+                        .characters
+                        .get(&character_id)
+                        .map(|character| (character.rest_area, character.rest_x, character.rest_y));
+                    let recalled = matches!(rest, Some((area, _, _)) if area == self.area_id)
+                        && rest.is_some_and(|(_, rest_x, rest_y)| {
+                            self.teleport_character_same_area(character_id, rest_x, rest_y, false)
+                        });
+                    if !recalled {
+                        self.remove_character(character_id);
+                    }
+                }
+            } else {
+                // C `remove_destroy_char(cn)`.
+                self.remove_character(character_id);
+            }
+        }
+
+        let item_id = self
+            .map
+            .tile(x, y)
+            .and_then(|tile| (tile.item != 0).then_some(ItemId(tile.item)));
+        if let Some(item_id) = item_id {
+            let is_player_body = self
+                .items
+                .get(&item_id)
+                .is_some_and(|item| item.flags.contains(ItemFlags::PLAYERBODY));
+            let is_takeable = self
+                .items
+                .get(&item_id)
+                .is_some_and(|item| item.flags.contains(ItemFlags::TAKE));
+            if is_player_body {
+                let dropped = if let Some(item) = self.items.get_mut(&item_id) {
+                    self.map.remove_item_map(item);
+                    [(250, 245), (250, 240), (250, 235), (250, 230)]
+                        .into_iter()
+                        .any(|(dx, dy)| self.map.drop_item(item, dx, dy))
+                } else {
+                    false
+                };
+                if dropped {
+                    let decay = self.settings.item_decay_time.max(1) as u64;
+                    self.set_item_expire(item_id, decay);
+                } else {
+                    self.destroy_item(item_id);
+                }
+            } else if is_takeable {
+                self.destroy_item(item_id);
+            }
+        }
+
+        let effect_ids: Vec<u32> = self
+            .map
+            .tile(x, y)
+            .map(|tile| tile.effects)
+            .unwrap_or([0; 4])
+            .into_iter()
+            .filter(|&effect_id| effect_id != 0)
+            .map(u32::from)
+            .collect();
+        for effect_id in effect_ids {
+            self.remove_effect_from_map(effect_id);
+            self.effects.remove(&effect_id);
+        }
+    }
+
+    /// C `build_empty(x, y)` (`dungeon.c:725-736`): destroys any item
+    /// still on the tile (after [`Self::build_remove_tile`] has already
+    /// evicted characters/effects) and resets the tile itself to a bare
+    /// indoors floor with the catacomb's own 3x3-tiled floor sprite
+    /// (`59130 + x%3 + (y%3)*3`).
+    pub fn build_empty_tile(&mut self, x: usize, y: usize) {
+        let item_id = self
+            .map
+            .tile(x, y)
+            .and_then(|tile| (tile.item != 0).then_some(ItemId(tile.item)));
+        if let Some(item_id) = item_id {
+            self.destroy_item(item_id);
+        }
+
+        if let Some(tile) = self.map.tile_mut(x, y) {
+            tile.flags = MapFlags::INDOORS;
+            tile.foreground_sprite = 0;
+            tile.ground_sprite = 59130 + (x % 3) as u32 + (y % 3) as u32 * 3;
+            tile.daylight = 0;
+            tile.light = 0;
+        }
+    }
+
+    /// C `destroy_dungeon(nr)` (`dungeon.c:1343-1364`): tears down the
+    /// given 0-based catacomb slot's whole 81x81 map block, first
+    /// evicting every occupant/item/effect tile-by-tile
+    /// ([`Self::build_remove_tile`]), then resetting every tile to bare
+    /// floor ([`Self::build_empty_tile`]) - in that order, exactly
+    /// matching C's own two separate sweeps.
+    pub fn destroy_dungeon(&mut self, slot: usize) {
+        let xf = (slot % 3) * 81 + 2;
+        let xt = xf + 80;
+        let yf = (slot / 3) * 81 + 2;
+        let yt = yf + 80;
+
+        for x in xf..xt {
+            for y in yf..yt {
+                self.build_remove_tile(x, y);
+            }
+        }
+        for x in xf..xt {
+            for y in yf..yt {
+                self.build_empty_tile(x, y);
+            }
+        }
     }
 }

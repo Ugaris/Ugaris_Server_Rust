@@ -419,6 +419,225 @@ fn list_dungeon_lines_formats_each_occupied_slot() {
 }
 
 #[test]
+fn build_remove_tile_evicts_non_player_character_outright() {
+    let mut world = World::default();
+    let mut npc = character(9);
+    npc.x = 10;
+    npc.y = 10;
+    assert!(world.spawn_character(npc, 10, 10));
+
+    world.build_remove_tile(10, 10);
+
+    assert!(!world.characters.contains_key(&CharacterId(9)));
+    assert_eq!(world.map.tile(10, 10).unwrap().character, 0);
+}
+
+#[test]
+fn build_remove_tile_teleports_player_to_the_safe_zone_and_warns_them() {
+    let mut world = World::default();
+    let mut raider = player(1, "Raider");
+    raider.x = 10;
+    raider.y = 10;
+    assert!(world.spawn_character(raider, 10, 10));
+
+    world.build_remove_tile(10, 10);
+
+    let moved = &world.characters[&CharacterId(1)];
+    assert_eq!((moved.x, moved.y), (245, 250));
+    assert_eq!(
+        world.drain_pending_system_texts(),
+        vec![WorldSystemText {
+            character_id: CharacterId(1),
+            message: "The catacomb collapsed on you.".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn build_remove_tile_falls_back_to_rest_point_in_the_same_area_when_the_safe_zone_is_blocked() {
+    let mut world = World::default();
+    world.area_id = 13;
+    let mut raider = player(1, "Raider");
+    raider.x = 10;
+    raider.y = 10;
+    raider.rest_area = 13;
+    raider.rest_x = 50;
+    raider.rest_y = 60;
+    assert!(world.spawn_character(raider, 10, 10));
+
+    // Block every one of `build_remove`'s four candidate safe-zone tiles
+    // (and their `drop_char`-style neighbor offsets) with walls so all
+    // four `teleport_char_driver` attempts fail, forcing the
+    // `change_area` fallback.
+    for (x, y) in [(245, 250), (240, 250), (235, 250), (230, 250)] {
+        for dx in -1..=1_i32 {
+            for dy in -1..=1_i32 {
+                let tx = (x as i32 + dx) as usize;
+                let ty = (y as i32 + dy) as usize;
+                world.map.tile_mut(tx, ty).unwrap().flags |= MapFlags::MOVEBLOCK;
+            }
+        }
+    }
+
+    world.build_remove_tile(10, 10);
+
+    let moved = &world.characters[&CharacterId(1)];
+    assert_eq!((moved.x, moved.y), (50, 60));
+}
+
+#[test]
+fn build_remove_tile_evicts_the_player_when_the_rest_point_is_in_a_different_area() {
+    let mut world = World::default();
+    world.area_id = 13;
+    let mut raider = player(1, "Raider");
+    raider.x = 10;
+    raider.y = 10;
+    raider.rest_area = 3; // a different area - unreachable, no cross-area transfer
+    raider.rest_x = 50;
+    raider.rest_y = 60;
+    assert!(world.spawn_character(raider, 10, 10));
+
+    for (x, y) in [(245, 250), (240, 250), (235, 250), (230, 250)] {
+        for dx in -1..=1_i32 {
+            for dy in -1..=1_i32 {
+                let tx = (x as i32 + dx) as usize;
+                let ty = (y as i32 + dy) as usize;
+                world.map.tile_mut(tx, ty).unwrap().flags |= MapFlags::MOVEBLOCK;
+            }
+        }
+    }
+
+    world.build_remove_tile(10, 10);
+
+    assert!(!world.characters.contains_key(&CharacterId(1)));
+}
+
+#[test]
+fn build_remove_tile_destroys_a_plain_takeable_item() {
+    let mut world = World::default();
+    let mut sword = item(5, ItemFlags::TAKE);
+    assert!(world.map.set_item_map(&mut sword, 10, 10));
+    world.add_item(sword);
+
+    world.build_remove_tile(10, 10);
+
+    assert!(!world.items.contains_key(&ItemId(5)));
+    assert_eq!(world.map.tile(10, 10).unwrap().item, 0);
+}
+
+#[test]
+fn build_remove_tile_scatters_a_player_body_nearby_and_arms_its_decay_timer() {
+    let mut world = World::default();
+    let mut body = item(6, ItemFlags::PLAYERBODY);
+    assert!(world.map.set_item_map(&mut body, 10, 10));
+    world.add_item(body);
+
+    world.build_remove_tile(10, 10);
+
+    // The body must have moved off the original tile (dropped near
+    // (250, 245)) rather than staying at (10, 10) or being destroyed.
+    let moved = &world.items[&ItemId(6)];
+    assert_ne!((moved.x, moved.y), (10, 10));
+    assert_eq!(world.timers.used_timers(), 1);
+}
+
+#[test]
+fn build_remove_tile_destroys_a_player_body_when_no_space_is_available() {
+    let mut world = World::default();
+    let mut body = item(6, ItemFlags::PLAYERBODY);
+    assert!(world.map.set_item_map(&mut body, 10, 10));
+    world.add_item(body);
+
+    // Block every drop-offset candidate around all four scatter origins
+    // so none of `drop_item`'s attempts can place the body anywhere.
+    for (x, y) in [(250, 245), (250, 240), (250, 235), (250, 230)] {
+        for dx in -1..=1_i32 {
+            for dy in -1..=1_i32 {
+                let tx = (x as i32 + dx) as usize;
+                let ty = (y as i32 + dy) as usize;
+                world.map.tile_mut(tx, ty).unwrap().flags |= MapFlags::MOVEBLOCK;
+            }
+        }
+    }
+
+    world.build_remove_tile(10, 10);
+
+    assert!(!world.items.contains_key(&ItemId(6)));
+}
+
+#[test]
+fn build_remove_tile_removes_every_effect_anchored_to_the_tile() {
+    let mut world = World::default();
+    let index = 10 + 10 * world.map.width();
+    let mut effect = Effect::new(1, 1, 0, 100);
+    effect.fields.push(index as i32);
+    world.effects.insert(42, effect);
+    world.map.tile_mut(10, 10).unwrap().effects[0] = 42;
+
+    world.build_remove_tile(10, 10);
+
+    assert!(!world.effects.contains_key(&42));
+    assert_eq!(world.map.tile(10, 10).unwrap().effects, [0; 4]);
+}
+
+#[test]
+fn build_empty_tile_destroys_any_remaining_item_and_resets_the_tile() {
+    let mut world = World::default();
+    let mut junk = item(5, ItemFlags::TAKE);
+    assert!(world.map.set_item_map(&mut junk, 10, 11));
+    world.add_item(junk);
+    {
+        let tile = world.map.tile_mut(10, 11).unwrap();
+        tile.flags |= MapFlags::MOVEBLOCK;
+        tile.foreground_sprite = 12345;
+        tile.daylight = 5;
+        tile.light = 5;
+    }
+
+    world.build_empty_tile(10, 11);
+
+    assert!(!world.items.contains_key(&ItemId(5)));
+    let tile = world.map.tile(10, 11).unwrap();
+    assert_eq!(tile.flags, MapFlags::INDOORS);
+    assert_eq!(tile.foreground_sprite, 0);
+    assert_eq!(tile.ground_sprite, 59130 + 10 % 3 + (11 % 3) * 3);
+    assert_eq!(tile.daylight, 0);
+    assert_eq!(tile.light, 0);
+}
+
+#[test]
+fn destroy_dungeon_tears_down_only_the_given_slots_own_81x81_block() {
+    let mut world = World::default();
+
+    // Slot 4 (index 4, the center slot): xoff = (4%3)*81+2 = 83, yoff =
+    // (4/3)*81+2 = 83, so the block spans x,y in [83, 163).
+    let mut inside = character(1);
+    inside.x = 100;
+    inside.y = 100;
+    assert!(world.spawn_character(inside, 100, 100));
+
+    let mut outside = character(2);
+    outside.x = 10;
+    outside.y = 10;
+    assert!(world.spawn_character(outside, 10, 10));
+    world
+        .map
+        .tile_mut(10, 10)
+        .unwrap()
+        .flags
+        .insert(MapFlags::MOVEBLOCK);
+
+    world.destroy_dungeon(4);
+
+    assert!(!world.characters.contains_key(&CharacterId(1)));
+    assert!(world.characters.contains_key(&CharacterId(2)));
+    let inside_tile = world.map.tile(100, 100).unwrap();
+    assert_eq!(inside_tile.flags, MapFlags::INDOORS);
+    let outside_tile = world.map.tile(10, 10).unwrap();
+    assert!(outside_tile.flags.contains(MapFlags::MOVEBLOCK));
+}
+
+#[test]
 fn characters_in_dungeon_slot_filters_by_area_block_and_player_flag() {
     let mut world = World::default();
     let mut inside = player(1, "Inside");

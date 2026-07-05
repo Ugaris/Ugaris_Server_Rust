@@ -3253,9 +3253,16 @@ Unlocks every quest NPC. Do these before any P4 area work.
   in iteration 143 as `crates/ugaris-core/src/world/dungeon_master.rs`
   (`DungeonmasterDriverData`/`World::plan_create_dungeon`/
   `plan_enter_dungeon`/`list_dungeon_lines`/`characters_in_dungeon_slot`,
-  see Progress Log) - REMAINING now: `destroy_dungeon`'s `build_remove`/
-  `build_empty` map-teardown sweep (needs player-eviction/`change_area`/
-  `exit_char` logic, none of which this pure module has), the actual
+  see Progress Log) - `destroy_dungeon`'s `build_remove`/`build_empty`
+  map-teardown sweep (`dungeon.c:725-786,1343-1364`) was ported in
+  iteration 144 as `World::destroy_dungeon`/`build_remove_tile`/
+  `build_empty_tile` (`crates/ugaris-core/src/world/dungeon_master.rs`,
+  see Progress Log) - since this codebase runs one area per server
+  process with no cross-area transfer yet, C's `change_area` fallback
+  (evicting a cornered player to their stored rest point, which may be
+  in a different area) is only reachable for its same-area case; the
+  cross-area case falls through to `exit_char` exactly like every other
+  unported cross-area path in this codebase. REMAINING now: the actual
   `CDR_DUNGEONMASTER`/`CDR_DUNGEONFIGHTER` driver wiring (constants,
   `CharacterDriverState` variant, message-loop entry point, tick-loop
   call site), the do-while `create_maze`+`build_cell`-retry-until-
@@ -6774,3 +6781,25 @@ Add one line per completed task: date, task, ledger section touched.
   loop on the existing once-a-minute gate for every connected character;
   3 new tests in `tests/achievement.rs`; ledger section "Ralph Loop -
   Achievements Core Data Model" extended.
+- 2026-07-05: Clan system (P3, still `[~]`) - ported `destroy_dungeon`'s
+  `build_remove`/`build_empty` map-teardown sweep (`dungeon.c:725-786,
+  1343-1364`) as `World::destroy_dungeon`/`build_remove_tile`/
+  `build_empty_tile` in `crates/ugaris-core/src/world/dungeon_master.rs`:
+  evicts a player via a same-area teleport chain (with a system-text
+  warning) or removes an NPC outright, scatters/destroys any item
+  (arming the standard item-decay timer for a body that found space),
+  and clears every effect anchored to the tile, then a second sweep
+  resets every tile to bare indoors floor. Documented the one real
+  simplification this needed: C's `change_area` fallback (moving a
+  cornered player to their stored rest point, possibly in a different
+  area) is only reachable for its same-area case here, since this
+  codebase runs one area per server process with no cross-area transfer
+  yet (matching the existing "target area server is down" precedent in
+  `crates/ugaris-server/src/transport.rs`); the cross-area case falls
+  through to the same `remove_character` eviction C's `exit_char`
+  fallback would produce. 13 new tests in
+  `crates/ugaris-core/src/world/tests/dungeon_master.rs`. `cargo fmt
+  --all`, `cargo test --workspace` (1900 core + 55 db + 3 net + 40
+  protocol + 602 server, all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings. Ledger section "Ralph Loop -
+  Clan System" extended.
