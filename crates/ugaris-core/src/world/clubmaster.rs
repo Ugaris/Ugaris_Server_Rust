@@ -4,17 +4,14 @@
 //! `found:`/`accept:`/`join:`/`leave!` handshake (club founding is a
 //! single-step 10,000-gold payment - no Clan-Jewel two-step handoff, so
 //! `found:` alone creates the club and installs the founder), the
-//! `deposit:`/`withdraw:` club-treasury commands, the generic small-talk
-//! qa table ([`CLUBMASTER_QA`]), the periodic greeting, the idle-murmur
-//! table, and the 12h driver-memory clear timer.
-//!
-//! REMAINING (documented in `PORTING_TODO.md`'s "Clan system" task, not
-//! silently dropped - same phased approach `world/clanmaster.rs` itself
-//! took, whose own `rank:`/`fire:` handlers and offline-DB fallback
-//! landed in later iterations after this same core slice):
-//! - `rank:`/`fire:` (leader rank-management text commands,
-//!   `clubmaster.c:379-483`), including their `lookup_name`/
-//!   `task_set_clan_rank`/`task_fire_from_clan` offline-player fallback.
+//! `deposit:`/`withdraw:` club-treasury commands, the `rank:`/`fire:`
+//! leader rank-management commands (including their `lookup_name`/
+//! `task_set_clan_rank`/`task_fire_from_clan` offline-player fallback,
+//! same [`super::clanmaster::ClanmasterEvent::OfflineRankLookup`]/
+//! `OfflineFire` shape - see [`ClubmasterEvent::OfflineRankLookup`]/
+//! [`ClubmasterEvent::OfflineFire`]), the generic small-talk qa table
+//! ([`CLUBMASTER_QA`]), the periodic greeting, the idle-murmur table, and
+//! the 12h driver-memory clear timer.
 //!
 //! Deviations from C (documented here, not silent):
 //! - The `NT_CHAR` greeting handler's membership check is a genuine C bug
@@ -95,6 +92,34 @@ pub enum ClubmasterEvent {
     /// (`clubmaster.c:360-368`): `ACHIEVEMENT_CLUB_MEMBER`, awarded to
     /// the new member.
     MemberAdded { member_id: CharacterId },
+    /// C `rank:`'s offline-name fallback (`clubmaster.c:420-432`):
+    /// `lookup_name` resolves `target_name` against the DB rather than an
+    /// online character, so C schedules `task_set_clan_rank` (the same
+    /// shared task-queue worker `clanmaster.c` uses, dispatching on
+    /// `set->clan < CLUBOFFSET` internally - `clubmaster.c` always passes
+    /// `get_char_club(co) + CLUBOFFSET`, taking its `else` branch). No
+    /// task queue exists in this codebase, so `ugaris-server`'s
+    /// `apply_clubmaster_events` resolves the DB lookup, validation,
+    /// mutation, and feedback synchronously instead - see
+    /// `ClanmasterEvent::OfflineRankLookup`'s doc comment for the same
+    /// shape applied to clans.
+    OfflineRankLookup {
+        clubmaster_id: CharacterId,
+        club_nr: u16,
+        target_name: String,
+        rank: u8,
+        setter_name: String,
+    },
+    /// Same shape as [`ClubmasterEvent::OfflineRankLookup`] but for
+    /// `fire:`'s offline fallback (`clubmaster.c:468-481`,
+    /// `task_fire_from_clan`/`fire_from_clan`'s `else` branch,
+    /// `task.c:133-168`).
+    OfflineFire {
+        clubmaster_id: CharacterId,
+        club_nr: u16,
+        target_name: String,
+        setter_name: String,
+    },
 }
 
 impl World {
@@ -237,6 +262,18 @@ impl World {
         if let Some(pos) = lower.find("withdraw:") {
             let rest = text[pos + 9..].to_string();
             self.clubmaster_handle_withdraw_command(clubmaster_id, speaker_id, &rest);
+        }
+        // C: `ptr += 6` after the `strcasestr` match (one past "rank:"/
+        // "fire:"'s own 5 characters) - see `world/clanmaster.rs`'s
+        // sibling dispatch for why this is *not* the same `+= <keyword
+        // length>` offset `found:`/`accept:`/`join:` use above.
+        if let Some(pos) = lower.find("rank:") {
+            let rest = text.get(pos + 6..).unwrap_or("").to_string();
+            self.clubmaster_handle_rank_command(clubmaster_id, speaker_id, &rest);
+        }
+        if let Some(pos) = lower.find("fire:") {
+            let rest = text.get(pos + 6..).unwrap_or("").to_string();
+            self.clubmaster_handle_fire_command(clubmaster_id, speaker_id, &rest);
         }
     }
 
@@ -585,6 +622,175 @@ impl World {
                 &format!("The club does not have that much gold, {speaker_name}."),
             );
         }
+    }
+
+    /// C `clubmaster_driver`'s `rank:` handler (`clubmaster.c:379-435`).
+    /// Unlike `clanmaster_driver`'s `rank:` (leader rank `>= 4`, target
+    /// range 0-4), a club's own `rank:` only requires rank `>= 2` (the
+    /// founder) and the target range is 0-1, plus a founder-can't-be-
+    /// retargeted guard C's clan `rank:` doesn't have (a clan's own rank 4
+    /// is unique to the leader by construction of `add_member`, but a
+    /// club founder (`clan_rank == 2`) is a distinct, protected rank a
+    /// club's `rank:` must explicitly reject retargeting). An unmatched
+    /// online name is queued as [`ClubmasterEvent::OfflineRankLookup`]
+    /// for `ugaris-server` to resolve against the DB - see the module doc
+    /// comment.
+    fn clubmaster_handle_rank_command(
+        &mut self,
+        clubmaster_id: CharacterId,
+        speaker_id: CharacterId,
+        rest: &str,
+    ) {
+        let Some(speaker_name) = self.characters.get(&speaker_id).map(|c| c.name.clone()) else {
+            return;
+        };
+        let Some(club_nr) = self.char_club_if_rank(speaker_id, 2) else {
+            self.npc_quiet_say(
+                clubmaster_id,
+                &format!("You are not a club founder, {speaker_name}."),
+            );
+            return;
+        };
+        let (target_name, remainder) = super::clanmaster::take_name_token(rest);
+        if target_name.is_empty() {
+            return;
+        }
+        // C: `rank = atoi(ptr)`, `ptr` being whatever followed the parsed
+        // name (`clubmaster.c:395`).
+        let rank = super::clanclerk::parse_int_atoi(remainder);
+        if !(0..=1).contains(&rank) {
+            self.npc_quiet_say(clubmaster_id, "You must use a rank between 0 and 1.");
+            return;
+        }
+        let rank = rank as u8;
+
+        let Some(target_id) = self.find_online_player_by_name(&target_name) else {
+            // C: falls through to `lookup_name`/`task_set_clan_rank`
+            // (`clubmaster.c:420-432`) - see
+            // `ClubmasterEvent::OfflineRankLookup`'s doc comment.
+            self.pending_clubmaster_events
+                .push(ClubmasterEvent::OfflineRankLookup {
+                    clubmaster_id,
+                    club_nr,
+                    target_name,
+                    rank,
+                    setter_name: speaker_name,
+                });
+            return;
+        };
+        let target_display_name = self
+            .characters
+            .get(&target_id)
+            .map(|c| c.name.clone())
+            .unwrap_or(target_name);
+        let target_is_paid = self
+            .characters
+            .get(&target_id)
+            .is_some_and(|c| c.flags.contains(CharacterFlags::PAID));
+        if !target_is_paid && rank > 0 {
+            self.npc_quiet_say(
+                clubmaster_id,
+                &format!(
+                    "{target_display_name} is not a paying player, you cannot set the rank higher than 0."
+                ),
+            );
+            return;
+        }
+        // C: `else if (ch[cc].clan_rank == 2)` (`clubmaster.c:412`) -
+        // checked before, not as part of, the same-club membership test.
+        if self
+            .characters
+            .get(&target_id)
+            .is_some_and(|c| c.clan_rank == 2)
+        {
+            self.npc_quiet_say(
+                clubmaster_id,
+                &format!("{target_display_name} is the club's founder, cannot change rank."),
+            );
+            return;
+        }
+        if self.char_club_if_rank(target_id, 0) == Some(club_nr) {
+            if let Some(target) = self.characters.get_mut(&target_id) {
+                target.clan_rank = rank;
+            }
+            self.npc_quiet_say(
+                clubmaster_id,
+                &format!("Set {target_display_name}'s rank to {rank}."),
+            );
+        } else {
+            self.npc_quiet_say(
+                clubmaster_id,
+                "You cannot change the rank of those not belonging to your club.",
+            );
+        }
+    }
+
+    /// C `clubmaster_driver`'s `fire:` handler (`clubmaster.c:436-483`).
+    /// Unlike `clanmaster_driver`'s `fire:` (leader rank `>= 4`), a
+    /// club's own `fire:` only requires rank `>= 1`, and rejects firing
+    /// the founder (`clan_rank == 2`) rather than clan's implicit
+    /// "leader is always unique" invariant. An unmatched online name is
+    /// queued as [`ClubmasterEvent::OfflineFire`] for `ugaris-server` to
+    /// resolve against the DB - see the module doc comment.
+    fn clubmaster_handle_fire_command(
+        &mut self,
+        clubmaster_id: CharacterId,
+        speaker_id: CharacterId,
+        rest: &str,
+    ) {
+        let Some(speaker_name) = self.characters.get(&speaker_id).map(|c| c.name.clone()) else {
+            return;
+        };
+        let Some(club_nr) = self.char_club_if_rank(speaker_id, 1) else {
+            self.npc_quiet_say(
+                clubmaster_id,
+                &format!("You are not a club leader, {speaker_name}."),
+            );
+            return;
+        };
+        let (target_name, _remainder) = super::clanmaster::take_name_token(rest);
+        if target_name.is_empty() {
+            return;
+        }
+        let Some(target_id) = self.find_online_player_by_name(&target_name) else {
+            // C: falls through to `lookup_name`/`task_fire_from_clan`
+            // (`clubmaster.c:468-481`) - see
+            // `ClubmasterEvent::OfflineFire`'s doc comment.
+            self.pending_clubmaster_events
+                .push(ClubmasterEvent::OfflineFire {
+                    clubmaster_id,
+                    club_nr,
+                    target_name,
+                    setter_name: speaker_name,
+                });
+            return;
+        };
+        if self.char_club_if_rank(target_id, 0) != Some(club_nr) {
+            self.npc_quiet_say(
+                clubmaster_id,
+                "You cannot fire those not belonging to your club.",
+            );
+            return;
+        }
+        let Some(target_display_name) = self.characters.get(&target_id).map(|c| c.name.clone())
+        else {
+            return;
+        };
+        // C: `if (ch[cc].clan_rank < 2) { remove_member(...) } else {
+        // "cannot fire the founder" }` (`clubmaster.c:459-464`).
+        if self
+            .characters
+            .get(&target_id)
+            .is_some_and(|c| c.clan_rank >= 2)
+        {
+            self.npc_quiet_say(clubmaster_id, "You cannot fire the founder of the club.");
+            return;
+        }
+        let Some(target) = self.characters.get_mut(&target_id) else {
+            return;
+        };
+        self.clan_registry.remove_member(target);
+        self.npc_quiet_say(clubmaster_id, &format!("Fired: {target_display_name}."));
     }
 
     /// C `clubmaster_driver`'s `NT_GIVE` branch (`clubmaster.c:526-540`):

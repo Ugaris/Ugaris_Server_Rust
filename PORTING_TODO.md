@@ -3228,14 +3228,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `clan_trade_bonus` - ported iteration 103, see Progress Log),
   clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
-  (transport module has the seam). REMAINING: the `CDR_CLUBMASTER`
-  founding NPC driver's `rank:`/`fire:` leader rank-management text
-  commands plus their offline-player DB-task fallback (`clubmaster.c:
-  379-483`) - the core of that driver (`found:`/`accept:`/`join:`/
-  `leave!`/`deposit:`/`withdraw:`, achievement wiring, greeting/idle
-  chatter) was ported in iteration 137 (see Progress Log), so a real club
-  can now actually be founded/joined by a player in a live game - and the
-  raid-spawn consumer of
+  (transport module has the seam). REMAINING: the raid-spawn consumer of
   `get_clan_dungeon` itself (`area/13/dungeon.c`, unported) - the potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
@@ -4339,12 +4332,64 @@ Unlocks every quest NPC. Do these before any P4 area work.
      [+23] + 55 db + 3 net + 40 protocol + 584 server, all green, zero
      failures), `cargo build -p ugaris-server` clean with zero warnings,
      10s boot-smoke confirmed "entering Rust game loop" with no panics
-     (this iteration adds a `World` field, a new tick-loop call site, and
-     a new spawn-wiring branch in `zone.rs`). REMAINING for the "Clan
-     system" task overall, updated: `CDR_CLUBMASTER`'s `rank:`/`fire:`
-     handlers (online + offline-DB-fallback) and the raid-spawn consumer
-     of `get_clan_dungeon` (blocked on unported `area/13/dungeon.c`) are
-     the only two gaps left.
+      (this iteration adds a `World` field, a new tick-loop call site, and
+      a new spawn-wiring branch in `zone.rs`). REMAINING for the "Clan
+      system" task overall, updated: `CDR_CLUBMASTER`'s `rank:`/`fire:`
+      handlers (online + offline-DB-fallback) and the raid-spawn consumer
+      of `get_clan_dungeon` (blocked on unported `area/13/dungeon.c`) are
+      the only two gaps left.
+  - 2026-07-05 (iteration 138): ported `CDR_CLUBMASTER`'s `rank:`/`fire:`
+      leader rank-management text commands (`clubmaster.c:379-483`),
+      closing the last club-driver gap from iteration 137's REMAINING
+      note, in `crates/ugaris-core/src/world/clubmaster.rs`:
+      `clubmaster_handle_rank_command` (founder rank `>= 2` gate, target
+      range 0-1, unpaid-target-above-rank-0 rejection, and a
+      club-specific founder-can't-be-retargeted guard clan's own `rank:`
+      doesn't need) and `clubmaster_handle_fire_command` (leader rank
+      `>= 1` gate, founder-can't-be-fired guard). Reused
+      `world::clanmaster`'s `take_name_token`/`find_online_player_by_name`
+      helpers directly (both promoted from private to `pub(super)`) rather
+      than duplicating them, since `clubmaster.c`'s own `rank:`/`fire:`
+      name-token parsing and `getfirst_char`/`getnext_char` online-search
+      loop are byte-for-byte identical to `clanmaster.c`'s. An unmatched
+      online name is queued as new `ClubmasterEvent::OfflineRankLookup`/
+      `OfflineFire` variants (same shape as `ClanmasterEvent`'s own, since
+      C's `task_set_clan_rank`/`task_fire_from_clan` are the exact same
+      shared DB-task-queue functions clan's `rank:`/`fire:` already call,
+      just with `get_char_club(co) + CLUBOFFSET` taking their `else`
+      (club) branch) and resolved synchronously in `ugaris-server`'s
+      `apply_clubmaster_events` (extended with a new
+      `character_repository` parameter and two new
+      `apply_offline_club_rank`/`apply_offline_club_fire` helpers mirroring
+      `apply_offline_clan_rank`/`apply_offline_clan_fire` but following
+      `set_clan_rank`/`fire_from_clan`'s club (`else`) branch: rank range
+      0-1, "not a paying player...higher than 0", founder
+      (`clan_rank == 2`) can't be retargeted/fired, and critically *no*
+      clan-log entry at all - unlike the clan branch, C's own club branch
+      of both functions never calls `add_clanlog` (there is no club-log
+      table), so `setter_name`/`master_name` end up genuinely dead state
+      in both the online and offline club paths, documented inline at each
+      call site rather than silently dropped). Online-success `rank:`/
+      `fire:` need no `ClubmasterEvent` at all for the same reason (no
+      persisted log to write, no achievement tied to a rank change).
+      14 new tests in `world/tests/clubmaster.rs` (rank: leader-rank-gate/
+      out-of-range/unpaid-above-0/founder-can't-be-retargeted/target-
+      outside-club/success-with-no-event/offline-lookup-queued; fire:
+      leader-rank-gate/target-outside-club/can't-fire-founder/removes-
+      membership-with-no-event/offline-lookup-queued), noting the offline-
+      lookup tests had to relax their "no area text" assertion to "no
+      Update-scheduled/Sorry text" since `clubmaster_driver`'s own greeting
+      C-bug (documented in iteration 137's log) fires for every nearby
+      player regardless of membership, including the founder issuing the
+      command. `cargo fmt --all`, `cargo test --workspace` (1857
+      ugaris-core [+12] + 55 db + 3 net + 40 protocol + 584 server, all
+      green, zero failures), `cargo
+      build -p ugaris-server` clean with zero warnings, 10s boot-smoke
+      confirmed "entering Rust game loop" with no panics (touches the tick
+      loop's `apply_clubmaster_events` call site). REMAINING for the "Clan
+      system" task overall, updated: only the raid-spawn consumer of
+      `get_clan_dungeon` (`area/13/dungeon.c`, unported) is left - tracked
+      as a P4 "Area 13" task, not a clan-system gap of its own.
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

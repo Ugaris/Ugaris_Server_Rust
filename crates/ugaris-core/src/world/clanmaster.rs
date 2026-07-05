@@ -177,7 +177,7 @@ pub enum ClanmasterEvent {
 /// loop, still pointing *at* the delimiter rather than past it - `rank:`
 /// feeds this straight into `atoi`, which skips leading whitespace
 /// itself).
-fn take_name_token(text: &str) -> (String, &str) {
+pub(super) fn take_name_token(text: &str) -> (String, &str) {
     let bytes = text.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] as char).is_ascii_whitespace() {
@@ -564,10 +564,12 @@ impl World {
 
     /// C `find_char_byname` (`base.c:4189-4201`) as used by the `rank:`/
     /// `fire:` handlers' own `getfirst_char`/`getnext_char` search loop
-    /// (`clanmaster.c:465-467,522-524`): first `CF_PLAYER` character
-    /// whose name case-insensitively matches. See `world/trader.rs`'s
-    /// sibling helper/module doc comment for the iteration-order caveat.
-    fn find_online_player_by_name(&self, name: &str) -> Option<CharacterId> {
+    /// (`clanmaster.c:465-467,522-524`, and `clubmaster.c:403-407,
+    /// 452-456` - identical loop, reused rather than duplicated).
+    /// First `CF_PLAYER` character whose name case-insensitively matches.
+    /// See `world/trader.rs`'s sibling helper/module doc comment for the
+    /// iteration-order caveat.
+    pub(super) fn find_online_player_by_name(&self, name: &str) -> Option<CharacterId> {
         let mut candidates: Vec<&Character> = self
             .characters
             .values()

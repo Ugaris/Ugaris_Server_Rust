@@ -1151,12 +1151,18 @@ async fn apply_offline_clan_fire(
 /// sites (`src/system/clubmaster.c:305-306,364`) - same shape as
 /// [`apply_clanmaster_events`], minus any clan-log persistence (club
 /// founding/deposit/withdraw only ever hit C's bare, non-persisted
-/// `dlog`, see `crate::world::clubmaster`'s module doc comment) and minus
-/// any offline-DB fallback (club's `rank:`/`fire:` aren't ported yet).
+/// `dlog`, see `crate::world::clubmaster`'s module doc comment) - plus
+/// (for `OfflineRankLookup`/`OfflineFire`) the DB-backed offline-target
+/// lookup/validation/mutation C performs via its shared
+/// `task_set_clan_rank`/`task_fire_from_clan` async DB-task queue, same
+/// shape as [`apply_offline_clan_rank`]/[`apply_offline_clan_fire`] but
+/// following `set_clan_rank`/`fire_from_clan`'s `else` (club) branch - see
+/// [`apply_offline_club_rank`]/[`apply_offline_club_fire`].
 pub(crate) async fn apply_clubmaster_events(
     world: &mut World,
     runtime: &mut ServerRuntime,
     achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
 ) -> usize {
     let mut applied = 0;
     for event in world.drain_pending_clubmaster_events() {
@@ -1188,9 +1194,234 @@ pub(crate) async fn apply_clubmaster_events(
                 .await;
                 applied += 1;
             }
+            ClubmasterEvent::OfflineRankLookup {
+                clubmaster_id,
+                club_nr,
+                target_name,
+                rank,
+                setter_name,
+            } => {
+                apply_offline_club_rank(
+                    world,
+                    character_repository,
+                    clubmaster_id,
+                    club_nr,
+                    &target_name,
+                    rank,
+                    &setter_name,
+                )
+                .await;
+                applied += 1;
+            }
+            ClubmasterEvent::OfflineFire {
+                clubmaster_id,
+                club_nr,
+                target_name,
+                setter_name,
+            } => {
+                apply_offline_club_fire(
+                    world,
+                    character_repository,
+                    clubmaster_id,
+                    club_nr,
+                    &target_name,
+                    &setter_name,
+                )
+                .await;
+                applied += 1;
+            }
         }
     }
     applied
+}
+
+/// C `clubmaster_driver`'s `rank:` offline fallback (`clubmaster.c:
+/// 420-432`, `task_set_clan_rank`/`set_clan_rank`'s `else` (club) branch,
+/// `task.c:96-124`): resolves `target_name` against the DB directly (this
+/// codebase's synchronous stand-in for C's cached `lookup_name` + async
+/// task-queue worker - see `ClubmasterEvent::OfflineRankLookup`'s doc
+/// comment), then mirrors `set_clan_rank`'s club-branch validation/
+/// mutation/feedback exactly (no clan-log entry - clubs have none, see
+/// `apply_clubmaster_events`'s doc comment):
+/// - no DB row at all -> "Sorry, no player by the name %s found."
+/// - a row found -> immediate "Update scheduled (%s,%d)." feedback,
+///   matching C's fire-and-forget `task_set_clan_rank` semantics.
+/// - target already online elsewhere -> silent no-op (`task.c:238-243`).
+/// - not a member of `club_nr` -> "%s is not a member of your club, you
+///   cannot set the rank."
+/// - not paid and `rank > 0` -> "%s is not a paying player, you cannot
+///   set the rank higher than 0."
+/// - target is the founder (`clan_rank == 2`) -> "%s is the club's
+///   founder, can't change rank."
+/// - otherwise -> mutate, guarded save, "Set %s's rank to %d." feedback.
+async fn apply_offline_club_rank(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    clubmaster_id: CharacterId,
+    club_nr: u16,
+    target_name: &str,
+    rank: u8,
+    // C's own `set_clan_rank` (`task.c:87-124`) never reads `set->
+    // master_name` in its club (`else`) branch either - there is no
+    // club-log equivalent of `add_clanlog` to attribute it to - so this
+    // is genuinely dead here, kept only for call-site symmetry with
+    // `apply_offline_clan_rank`.
+    _setter_name: &str,
+) {
+    let Some(repository) = character_repository else {
+        return;
+    };
+    let Ok(Some(summary)) = repository.find_login_target(target_name).await else {
+        world.npc_quiet_say(
+            clubmaster_id,
+            &format!("Sorry, no player by the name {target_name} found."),
+        );
+        return;
+    };
+    world.npc_quiet_say(
+        clubmaster_id,
+        &format!("Update scheduled ({target_name},{rank})."),
+    );
+
+    let Ok(Some(snapshot)) = repository.load_character_snapshot(summary.id).await else {
+        return;
+    };
+    if snapshot.current_area != 0 {
+        return;
+    }
+
+    let mut character = snapshot.character;
+    if world.club_registry.get_char_club(&mut character) != Some(club_nr) {
+        world.npc_quiet_say(
+            clubmaster_id,
+            &format!(
+                "{} is not a member of your club, you cannot set the rank.",
+                character.name
+            ),
+        );
+        return;
+    }
+    if !character.flags.contains(CharacterFlags::PAID) && rank > 0 {
+        world.npc_quiet_say(
+            clubmaster_id,
+            &format!(
+                "{} is not a paying player, you cannot set the rank higher than 0.",
+                character.name
+            ),
+        );
+        return;
+    }
+    if character.clan_rank == 2 {
+        world.npc_quiet_say(
+            clubmaster_id,
+            &format!(
+                "{} is the club's founder, can't change rank.",
+                character.name
+            ),
+        );
+        return;
+    }
+    character.clan_rank = rank;
+    let target_display_name = character.name.clone();
+
+    let request = ugaris_db::CharacterSaveRequest {
+        character,
+        items: snapshot.items,
+        ppd_blob: snapshot.ppd_blob,
+        subscriber_blob: snapshot.subscriber_blob,
+        mode: ugaris_db::CharacterSaveMode::Backup {
+            expected_current_area: snapshot.current_area,
+            expected_current_mirror: snapshot.current_mirror,
+            mirror: snapshot.mirror,
+        },
+    };
+    if !matches!(repository.save_character_snapshot(request).await, Ok(true)) {
+        return;
+    }
+
+    world.npc_quiet_say(
+        clubmaster_id,
+        &format!("Set {target_display_name}'s rank to {rank}."),
+    );
+}
+
+/// Same shape as [`apply_offline_club_rank`] but for `fire:`'s offline
+/// fallback (`clubmaster.c:468-481`, `task_fire_from_clan`/
+/// `fire_from_clan`'s `else` (club) branch, `task.c:142-168`): "Update
+/// scheduled (%s)." carries no rank, a successful mutation clears
+/// `clan`/`clan_rank` (`remove_member`'s effect), and the founder
+/// (`clan_rank > 1`) cannot be fired ("You cannot fire %s, he is the
+/// founder of the club.").
+async fn apply_offline_club_fire(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    clubmaster_id: CharacterId,
+    club_nr: u16,
+    target_name: &str,
+    setter_name: &str,
+) {
+    let _ = setter_name;
+    let Some(repository) = character_repository else {
+        return;
+    };
+    let Ok(Some(summary)) = repository.find_login_target(target_name).await else {
+        world.npc_quiet_say(
+            clubmaster_id,
+            &format!("Sorry, no player by the name {target_name} found."),
+        );
+        return;
+    };
+    world.npc_quiet_say(clubmaster_id, &format!("Update scheduled ({target_name})."));
+
+    let Ok(Some(snapshot)) = repository.load_character_snapshot(summary.id).await else {
+        return;
+    };
+    if snapshot.current_area != 0 {
+        return;
+    }
+
+    let mut character = snapshot.character;
+    if world.club_registry.get_char_club(&mut character) != Some(club_nr) {
+        world.npc_quiet_say(
+            clubmaster_id,
+            &format!(
+                "{} is not a member of your club, you cannot fire him/her.",
+                character.name
+            ),
+        );
+        return;
+    }
+    if character.clan_rank > 1 {
+        world.npc_quiet_say(
+            clubmaster_id,
+            &format!(
+                "You cannot fire {}, he is the founder of the club.",
+                character.name
+            ),
+        );
+        return;
+    }
+    character.clan = 0;
+    character.clan_rank = 0;
+    character.clan_serial = 0;
+    let target_display_name = character.name.clone();
+
+    let request = ugaris_db::CharacterSaveRequest {
+        character,
+        items: snapshot.items,
+        ppd_blob: snapshot.ppd_blob,
+        subscriber_blob: snapshot.subscriber_blob,
+        mode: ugaris_db::CharacterSaveMode::Backup {
+            expected_current_area: snapshot.current_area,
+            expected_current_mirror: snapshot.current_mirror,
+            mirror: snapshot.mirror,
+        },
+    };
+    if !matches!(repository.save_character_snapshot(request).await, Ok(true)) {
+        return;
+    }
+
+    world.npc_quiet_say(clubmaster_id, &format!("Fired {target_display_name}."));
 }
 
 /// Applies each [`ClanclerkEvent`] queued by `World::process_clanclerk_actions`:

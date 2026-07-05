@@ -453,6 +453,365 @@ fn withdraw_command_rejects_insufficient_treasury() {
 }
 
 #[test]
+fn rank_command_requires_club_founder_rank() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut leader = player(2, "Leader");
+    leader.clan = CLUB_OFFSET + club_nr;
+    leader.clan_serial = world.club_registry.serial(club_nr);
+    leader.clan_rank = 1; // below the rank-2 founder threshold
+    assert!(world.spawn_character(leader, 10, 10));
+    let mut member = player(3, "Bob");
+    member.clan = CLUB_OFFSET + club_nr;
+    member.clan_serial = world.club_registry.serial(club_nr);
+    member.clan_rank = 0;
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "rank: Bob 1");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You are not a club founder, Leader.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan_rank, 0);
+}
+
+#[test]
+fn rank_command_rejects_out_of_range_rank() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+    let mut member = player(3, "Bob");
+    member.clan = CLUB_OFFSET + club_nr;
+    member.clan_serial = world.club_registry.serial(club_nr);
+    member.clan_rank = 0;
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "rank: Bob 7");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You must use a rank between 0 and 1.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan_rank, 0);
+}
+
+#[test]
+fn rank_command_rejects_non_paying_target_above_rank_0() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+    let mut member = player(3, "Bob");
+    member.flags.remove(CharacterFlags::PAID);
+    member.clan = CLUB_OFFSET + club_nr;
+    member.clan_serial = world.club_registry.serial(club_nr);
+    member.clan_rank = 0;
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "rank: Bob 1");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Bob is not a paying player, you cannot set the rank higher than 0.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan_rank, 0);
+}
+
+#[test]
+fn rank_command_rejects_retargeting_the_founder() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "rank: Leader 0");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Leader is the club's founder, cannot change rank.")));
+    assert_eq!(world.characters.get(&CharacterId(2)).unwrap().clan_rank, 2);
+}
+
+#[test]
+fn rank_command_rejects_target_outside_club() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    let other_nr = world.club_registry.create_club("Others", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+    let mut outsider = player(3, "Eve");
+    outsider.clan = CLUB_OFFSET + other_nr;
+    outsider.clan_serial = world.club_registry.serial(other_nr);
+    assert!(world.spawn_character(outsider, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "rank: Eve 1");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("You cannot change the rank of those not belonging to your club.")));
+}
+
+#[test]
+fn rank_command_sets_rank_with_no_persisted_event() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+    let mut member = player(3, "Bob");
+    member.clan = CLUB_OFFSET + club_nr;
+    member.clan_serial = world.club_registry.serial(club_nr);
+    member.clan_rank = 0;
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "rank: Bob 1");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Set Bob's rank to 1.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan_rank, 1);
+    // Unlike clans, club rank changes have no persisted log, so no event
+    // is queued for the online-target success path.
+    assert!(world.drain_pending_clubmaster_events().is_empty());
+}
+
+#[test]
+fn rank_command_queues_offline_lookup_for_unmatched_name() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "rank: Ghost 1");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    // C's own `rank:` offline branch emits no immediate feedback (it
+    // depends on the async DB-task queue's outcome) - but unlike
+    // `clanmaster_driver`, `clubmaster_driver`'s greeting always fires
+    // regardless of the visitor's own membership (see the module doc
+    // comment's `cn`-vs-`co` C-bug), so the founder's own greeting text
+    // is still expected here.
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .all(|t| !t.message.contains("Update scheduled") && !t.message.contains("Sorry")));
+    let events = world.drain_pending_clubmaster_events();
+    assert_eq!(
+        events,
+        vec![ClubmasterEvent::OfflineRankLookup {
+            clubmaster_id: CharacterId(1),
+            club_nr,
+            target_name: "Ghost".into(),
+            rank: 1,
+            setter_name: "Leader".into(),
+        }]
+    );
+}
+
+#[test]
+fn fire_command_requires_club_leader_rank() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut plain = player(2, "Plain");
+    plain.clan = CLUB_OFFSET + club_nr;
+    plain.clan_serial = world.club_registry.serial(club_nr);
+    plain.clan_rank = 0; // below the rank-1 leader threshold
+    assert!(world.spawn_character(plain, 10, 10));
+    let mut member = player(3, "Bob");
+    member.clan = CLUB_OFFSET + club_nr;
+    member.clan_serial = world.club_registry.serial(club_nr);
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "fire: Bob");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You are not a club leader, Plain.")));
+    assert_eq!(
+        world.characters.get(&CharacterId(3)).unwrap().clan,
+        CLUB_OFFSET + club_nr
+    );
+}
+
+#[test]
+fn fire_command_rejects_target_outside_club() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    let other_nr = world.club_registry.create_club("Others", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+    let mut outsider = player(3, "Eve");
+    outsider.clan = CLUB_OFFSET + other_nr;
+    outsider.clan_serial = world.club_registry.serial(other_nr);
+    assert!(world.spawn_character(outsider, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "fire: Eve");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("You cannot fire those not belonging to your club.")));
+    assert_eq!(
+        world.characters.get(&CharacterId(3)).unwrap().clan,
+        CLUB_OFFSET + other_nr
+    );
+}
+
+#[test]
+fn fire_command_rejects_firing_the_founder() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+    let mut deputy = player(3, "Deputy");
+    deputy.clan = CLUB_OFFSET + club_nr;
+    deputy.clan_serial = world.club_registry.serial(club_nr);
+    deputy.clan_rank = 1;
+    assert!(world.spawn_character(deputy, 10, 10));
+
+    // The deputy (rank 1) tries to fire the founder (rank 2).
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(3), "fire: Leader");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("You cannot fire the founder of the club.")));
+    assert_eq!(
+        world.characters.get(&CharacterId(2)).unwrap().clan,
+        CLUB_OFFSET + club_nr
+    );
+}
+
+#[test]
+fn fire_command_removes_membership_with_no_persisted_event() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+    let mut member = player(3, "Bob");
+    member.clan = CLUB_OFFSET + club_nr;
+    member.clan_serial = world.club_registry.serial(club_nr);
+    member.clan_rank = 0;
+    assert!(world.spawn_character(member, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "fire: Bob");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains("Fired: Bob.")));
+    assert_eq!(world.characters.get(&CharacterId(3)).unwrap().clan, 0);
+    assert!(world.drain_pending_clubmaster_events().is_empty());
+}
+
+#[test]
+fn fire_command_queues_offline_lookup_for_unmatched_name() {
+    let mut world = World::default();
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
+    assert!(world.spawn_character(clubmaster_npc(1), 10, 10));
+    let mut founder = player(2, "Leader");
+    founder.clan = CLUB_OFFSET + club_nr;
+    founder.clan_serial = world.club_registry.serial(club_nr);
+    founder.clan_rank = 2;
+    assert!(world.spawn_character(founder, 10, 10));
+
+    if let Some(clubmaster) = world.characters.get_mut(&CharacterId(1)) {
+        clubmaster.push_driver_text_message(CharacterId(2), "fire: Ghost");
+    }
+    world.process_clubmaster_actions(0, 0);
+
+    // See `rank_command_queues_offline_lookup_for_unmatched_name`'s
+    // comment: the founder's own greeting text still fires.
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .all(|t| !t.message.contains("Update scheduled") && !t.message.contains("Sorry")));
+    let events = world.drain_pending_clubmaster_events();
+    assert_eq!(
+        events,
+        vec![ClubmasterEvent::OfflineFire {
+            clubmaster_id: CharacterId(1),
+            club_nr,
+            target_name: "Ghost".into(),
+            setter_name: "Leader".into(),
+        }]
+    );
+}
+
+#[test]
 fn greeting_fires_for_every_nearby_player_matching_c_bug() {
     // C's own `if (!get_char_club(cn) && !get_char_clan(cn))` checks the
     // clubmaster NPC's own membership (always false), not the visitor's

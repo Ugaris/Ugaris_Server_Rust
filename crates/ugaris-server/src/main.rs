@@ -5977,9 +5977,13 @@ async fn main() -> anyhow::Result<()> {
                 // C `clubmaster_driver`: the club foundations/
                 // administration NPC (`src/system/clubmaster.c`).
                 world.process_clubmaster_actions(config.area_id, current_unix_time());
-                let clubmaster_events_applied =
-                    apply_clubmaster_events(&mut world, &mut runtime, &achievement_repository)
-                        .await;
+                let clubmaster_events_applied = apply_clubmaster_events(
+                    &mut world,
+                    &mut runtime,
+                    &achievement_repository,
+                    &character_repository,
+                )
+                .await;
                 if clubmaster_events_applied != 0 {
                     info!(
                         clubmaster_events_applied,
