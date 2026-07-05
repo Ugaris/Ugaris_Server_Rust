@@ -168,6 +168,17 @@ pub enum ClanmasterEvent {
         target_name: String,
         setter_name: String,
     },
+    /// C `clanspawn_driver`'s clanned-winner branch (`area/30/
+    /// clanmaster.c:1373-1388`) via `clan_dungeon_chat`'s `'X'` case
+    /// (`clan.c:1358-1372`, prio 5): "%s won a jewel from level %d
+    /// spawn". Queued by [`World::resolve_clan_spawn_jewel_award`] (the
+    /// channel-5 broadcast already happened synchronously there, same
+    /// split as every other `ClanmasterEvent`).
+    JewelWonFromSpawner {
+        player_id: CharacterId,
+        clan_nr: u16,
+        level: u8,
+    },
 }
 
 /// C `rank:`/`fire:`'s shared name-token parser (`clanmaster.c:472-480,
@@ -197,6 +208,61 @@ pub(super) fn take_name_token(text: &str) -> (String, &str) {
 impl World {
     pub fn drain_pending_clanmaster_events(&mut self) -> Vec<ClanmasterEvent> {
         std::mem::take(&mut self.pending_clanmaster_events)
+    }
+
+    /// C `clanspawn_driver`'s post-award announcement (`area/30/
+    /// clanmaster.c:1373-1397`), called once the clan jewel spawner item
+    /// driver has already consumed a jewel (`ItemDriverOutcome::
+    /// ClanSpawnAward`, applied by `ugaris-server`'s `grant_clan_jewel`).
+    /// Resolves the winner's clan via the same self-healing
+    /// [`crate::clan::ClanRegistry::get_char_clan`] every other
+    /// clan-membership check uses, then broadcasts the "won a Jewel" line
+    /// on channel 5 (`COL_LIME`/`Clan`, `clan.c` `cname[5]`) - the
+    /// clanned/unclanned wordings differ verbatim. For a clanned winner,
+    /// also queues the `clan_dungeon_chat`'s `'X'` case's `add_clanlog`
+    /// entry (see [`ClanmasterEvent::JewelWonFromSpawner`]) for
+    /// `ugaris-server` to write.
+    ///
+    /// C's `clan[cnr].treasure.jewels += 1` at this same call site is a
+    /// dead, commented-out line (`clan.c:1361`, "I like this better. -
+    /// Dar") even in the legacy source, so the treasury only actually
+    /// gains a jewel once the awarded item is later handed to the
+    /// clanclerk NPC (already wired via `ClanRegistry::add_jewel`) -
+    /// preserved here by simply not touching the treasury.
+    pub fn resolve_clan_spawn_jewel_award(&mut self, character_id: CharacterId, level: u8) {
+        let Some(character_name) = self.characters.get(&character_id).map(|c| c.name.clone())
+        else {
+            return;
+        };
+        let clan_nr = {
+            let Some(character) = self.characters.get_mut(&character_id) else {
+                return;
+            };
+            self.clan_registry.get_char_clan(character)
+        };
+
+        let mut broadcast = b"0000000000".to_vec();
+        broadcast.extend_from_slice(crate::text::COL_CHAT_CLAN);
+        if let Some(clan_nr) = clan_nr {
+            let clan_name = self.clan_registry.name(clan_nr).unwrap_or("").to_string();
+            broadcast.extend_from_slice(
+                format!("Clan: {character_name} won a Jewel for {clan_name} from level {level}!")
+                    .as_bytes(),
+            );
+            self.queue_channel_broadcast(5, broadcast);
+            self.pending_clanmaster_events
+                .push(ClanmasterEvent::JewelWonFromSpawner {
+                    player_id: character_id,
+                    clan_nr,
+                    level,
+                });
+        } else {
+            broadcast.extend_from_slice(
+                format!("Clan: Unclanned {character_name} won a Jewel from level {level}!")
+                    .as_bytes(),
+            );
+            self.queue_channel_broadcast(5, broadcast);
+        }
     }
 
     /// Whether `character_id` currently belongs to a clan or club, per

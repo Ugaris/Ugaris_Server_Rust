@@ -3183,7 +3183,14 @@ async fn main() -> anyhow::Result<()> {
                                             )));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnAward { character_id, .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnAward { character_id, level, .. } => {
+                                            // C fires the "won a Jewel" broadcast/clan-log
+                                            // (`clanmaster.c:1373-1397`) unconditionally, before
+                                            // even calling `award_clan_jewel` - it never checks
+                                            // that call's return value, so the announcement
+                                            // still fires even if item delivery fails (e.g. a
+                                            // full inventory).
+                                            world.resolve_clan_spawn_jewel_award(character_id, level);
                                             if grant_clan_jewel(&mut world, &mut zone_loader, character_id) {
                                                 executed += 1;
                                             } else {

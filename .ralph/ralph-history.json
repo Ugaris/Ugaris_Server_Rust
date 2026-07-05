@@ -4840,15 +4840,46 @@
         "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 151,
+      "startedAt": "2026-07-05T10:58:03.270Z",
+      "endedAt": "2026-07-05T11:15:14.197Z",
+      "durationMs": 1030282,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/clanmaster.rs",
+        "crates/ugaris-core/src/world/tests/clanmaster.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/world_events.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 604 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "1324:            .ok_or(ClanDungeonUseError::InvalidRequest)?;",
+        "1326:            return Err(ClanDungeonUseError::InvalidRequest);",
+        "1335:            return Err(ClanDungeonUseError::InvalidRequest);",
+        "1349:            return Err(ClanDungeonUseError::OverBudget(cost));",
+        "2533:            Err(ClanDungeonUseError::InvalidRequest)",
+        "2537:            Err(ClanDungeonUseError::InvalidRequest)",
+        "2542:            Err(ClanDungeonUseError::InvalidRequest)",
+        "2547:            Err(ClanDungeonUseError::InvalidRequest)"
+      ]
     }
   ],
-  "totalDurationMs": 172250727,
+  "totalDurationMs": 173281009,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 150,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 151,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -5513,7 +5544,7 @@
       "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 1889 filtered out; finished in 0.01s": 1,
       "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 1908 filtered out; finished in 0.01s": 1,
       "- Added 2 new tests mirroring the gate-welcome test pair; all 604 server tests (up from 602) and the": 1,
-      "test result: ok. 604 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 3,
+      "test result: ok. 604 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 4,
       "-| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_act": 1,
       "+| `src/system/clan.c` / `clan.h` | `crates/ugaris-core/src/clan.rs`, `crates/ugaris-core/src/do_act": 1,
       "| `src/system/club.c` / `club.h` (+ `src/system/database/database_clubs.c` for reference) | `crates/": 1,
@@ -5523,7 +5554,15 @@
       "test world::tests::dungeon_fighter::dungeon_potion_fails_without_free_spell_slot ... ok": 1,
       "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 1920 filtered out; finished in 0.00s": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (1947 ugaris-core + 55 db + 3 net + 40 pro": 1,
-      "test result: ok. 1940 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 1
+      "test result: ok. 1940 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 1,
+      "1324:            .ok_or(ClanDungeonUseError::InvalidRequest)?;": 1,
+      "1326:            return Err(ClanDungeonUseError::InvalidRequest);": 1,
+      "1335:            return Err(ClanDungeonUseError::InvalidRequest);": 1,
+      "1349:            return Err(ClanDungeonUseError::OverBudget(cost));": 1,
+      "2533:            Err(ClanDungeonUseError::InvalidRequest)": 1,
+      "2537:            Err(ClanDungeonUseError::InvalidRequest)": 1,
+      "2542:            Err(ClanDungeonUseError::InvalidRequest)": 1,
+      "2547:            Err(ClanDungeonUseError::InvalidRequest)": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

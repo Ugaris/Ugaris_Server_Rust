@@ -3225,7 +3225,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   protocol + 489 server, all unchanged/green, zero failures), `cargo
   build -p ugaris-server` clean with zero warnings.
 
-- [~] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
+- [x] **Clan system (`src/system/clan.c` + DB)** - membership lives in DB;
   Rust has direct clan fields only. Port clan repository
   (`crates/ugaris-db/src/clan.rs`), clan trade bonus (merchants call
   `clan_trade_bonus` - ported iteration 103, see Progress Log),
@@ -3409,11 +3409,71 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (`show_clan_pots`, `clan.c:1426-1455`) was ported in iteration 99 (see
   Progress Log) - it now reads a new `ClanEconomy::alc_pot`/
   `simple_pot` pair (added this iteration, all-zero until the
-  alchemy-potion economy feeds them); the guard-count fields of
-  `struct clan_dungeon` (`warrior`/`mage`/`seyan`/`teleport`/`fake`/
-  `key`) remain out of scope, unchanged from before.
+  alchemy-potion economy feeds them); the guard-count "total" (`[0]`
+  index) fields of `struct clan_dungeon` (`warrior`/`mage`/`seyan`/
+  `teleport`/`fake`/`key`) were fully audited in iteration 151: every one
+  of `clan_dungeon_chat`'s (`clan.c:1272-1370`) `'T'`/`'F'`/`'K'`/`'W'`/
+  `'M'`/`'S'` cases only ever decrements that clan's `[0]` "total" slot
+  behind an `if (...[0] > 0)` guard, and a whole-tree grep confirms
+  nothing anywhere ever *increments* those `[0]` slots (the only would-be
+  writer, the clanmaster NPC's `buy` command, is C's own confirmed-dead,
+  unconditionally-disabled code per the note below) - so this guard can
+  never pass and these six cases are permanently dead, exactly like
+  `fighter_dead`'s already-documented precedent (see `dungeon_fighter.rs`
+  module doc comment). Not ported, on purpose. The remaining `'X'` case
+  (`clan.c:1358-1372`, the *reachable* one: the clan jewel spawner
+  item's "won a Jewel" announcement/clan-log, triggered from
+  `clanmaster.c:1373-1397`'s `clanspawn_driver`, unrelated to the dead
+  `[0]` pool above) was closed this same iteration - see Progress Log.
+  With `'X'` now wired, every `clan_dungeon_chat` case is accounted for
+  (`'J'` in iteration 147, `'s'`/`'a'` in iteration 135, `'T'`/`'F'`/
+  `'K'`/`'W'`/`'M'`/`'S'` confirmed dead just above, `'X'` this
+  iteration) and the `struct clan_dungeon` guard-count fields note is
+  fully closed out - no further action needed on it.
 
    Progress Log:
+   - 2026-07-05 (iteration 151): audited every remaining case of
+     `clan_dungeon_chat` (`clan.c:1272-1370`) against the whole C tree to
+     close out this task's last open "guard-count fields" note (see
+     above) - confirmed `'T'`/`'F'`/`'K'`/`'W'`/`'M'`/`'S'` are
+     permanently dead code (their `clan[cnr].dungeon.{warrior,mage,
+     seyan,teleport,fake,key}[0]` "total" pool is never incremented
+     anywhere, since the only writer, the clanmaster NPC's `buy`
+     command, is itself confirmed-dead per its own "Buying has been
+     disabled" unconditional early-return) and ported the one real
+     remaining gap: the `'X'` case (`clan.c:1358-1372`), the clan jewel
+     spawner item's (`IDR_CLANSPAWN`, `clanspawn_driver`,
+     `clanmaster.c:1373-1397`) "won a Jewel" announcement and clan-log
+     entry. Added `World::resolve_clan_spawn_jewel_award`
+     (`crates/ugaris-core/src/world/clanmaster.rs`): resolves the
+     winner's clan via the same self-healing
+     `ClanRegistry::get_char_clan` every other clan-membership check
+     uses, broadcasts the clanned/unclanned "Clan: %s won a Jewel..."
+     wording verbatim on channel 5 (`queue_channel_broadcast`, C's
+     `COL_LIME`/`cname[5]` "Clan" channel), and for a clanned winner
+     queues a new `ClanmasterEvent::JewelWonFromSpawner` for
+     `ugaris-server` to write the `add_clanlog` entry (needs a DB handle
+     `World` doesn't have, same split as every other `ClanmasterEvent`) -
+     handled in `apply_clanmaster_events`
+     (`crates/ugaris-server/src/world_events.rs`). Wired at the one
+     production call site: `ugaris-server/src/main.rs`'s
+     `ItemDriverOutcome::ClanSpawnAward` handler now calls this
+     unconditionally *before* `grant_clan_jewel`, matching C's own
+     ordering and the fact that C never gates the announcement on
+     `award_clan_jewel`'s return value (it still fires even if item
+     delivery fails, e.g. a full inventory). C's `clan[cnr].treasure.
+     jewels += 1` at this same call site is itself dead, commented-out
+     code even in the legacy source ("I like this better. - Dar"), so
+     the treasury genuinely isn't touched by this path in C either -
+     preserved as-is (a spawner-won jewel only feeds the treasury once
+     handed to the clanclerk NPC, already wired via `ClanRegistry::
+     add_jewel`). 2 new tests in `world::tests::clanmaster` (clanned
+     winner broadcast wording + queued clan-log event; unclanned winner
+     wording + no event queued). `cargo fmt --all`, `cargo test
+     --workspace` (1949 ugaris-core + 55 db + 3 net + 40 protocol + 604
+     server, all green, zero failures), `cargo build -p ugaris-server`
+     clean with zero warnings, 10s boot-smoke showed "entering Rust game
+     loop" with no panics.
    - 2026-07-05 (iteration 150): wired `show_clan_info` (`clan.c:294-
      309`) and `show_club_info` (`club.c:65-80`) - the two lines this
      task's own notes and the "Look at character" task's REMAINING note

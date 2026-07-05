@@ -868,3 +868,46 @@ fn fire_command_queues_offline_lookup_for_unmatched_name() {
         }]
     );
 }
+
+#[test]
+fn resolve_clan_spawn_jewel_award_broadcasts_and_queues_clan_log_for_clanned_winner() {
+    let mut world = World::default();
+    let nr = world.clan_registry.found_clan("Leaders", 0).unwrap();
+    let mut winner = player(2, "Alice");
+    let _ = world.clan_registry.add_member(&mut winner, nr);
+    assert!(world.spawn_character(winner, 10, 10));
+
+    world.resolve_clan_spawn_jewel_award(CharacterId(2), 5);
+
+    let broadcasts = world.drain_pending_channel_broadcasts();
+    assert_eq!(broadcasts.len(), 1);
+    assert_eq!(broadcasts[0].channel, 5);
+    let text = String::from_utf8_lossy(&broadcasts[0].message_bytes);
+    assert!(text.contains("Clan: Alice won a Jewel for Leaders from level 5!"));
+
+    let events = world.drain_pending_clanmaster_events();
+    assert_eq!(
+        events,
+        vec![ClanmasterEvent::JewelWonFromSpawner {
+            player_id: CharacterId(2),
+            clan_nr: nr,
+            level: 5,
+        }]
+    );
+}
+
+#[test]
+fn resolve_clan_spawn_jewel_award_uses_unclanned_wording_and_queues_no_clan_log() {
+    let mut world = World::default();
+    assert!(world.spawn_character(player(2, "Bob"), 10, 10));
+
+    world.resolve_clan_spawn_jewel_award(CharacterId(2), 3);
+
+    let broadcasts = world.drain_pending_channel_broadcasts();
+    assert_eq!(broadcasts.len(), 1);
+    assert_eq!(broadcasts[0].channel, 5);
+    let text = String::from_utf8_lossy(&broadcasts[0].message_bytes);
+    assert!(text.contains("Clan: Unclanned Bob won a Jewel from level 3!"));
+
+    assert!(world.drain_pending_clanmaster_events().is_empty());
+}

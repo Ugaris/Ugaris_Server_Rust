@@ -6447,10 +6447,64 @@ unported (cosmetic-only gap).
   ugaris-core [+4] + 55 db + 3 net + 40 protocol + 604 server [+1], all
   green, zero failures), `cargo build -p ugaris-server` clean with zero
   warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
-  panics. REMAINING for the "Clan system" task, updated: only
-  club-variant achievement wiring (blocked on unported `club.c`'s
-  founding/joining) remains as a real gap; `fighter_dead` stays
-  intentionally unported dead code, and the DB-backed
-  `struct clan_dungeon` guard-count fields (`warrior`/`mage`/`seyan`/
-  `teleport`/`fake`/`key`) remain out of scope as noted in
-  PORTING_TODO.md.
+   panics. REMAINING for the "Clan system" task, updated: only
+   club-variant achievement wiring (blocked on unported `club.c`'s
+   founding/joining) remains as a real gap; `fighter_dead` stays
+   intentionally unported dead code, and the DB-backed
+   `struct clan_dungeon` guard-count fields (`warrior`/`mage`/`seyan`/
+   `teleport`/`fake`/`key`) remain out of scope as noted in
+   PORTING_TODO.md.
+
+- Ralph Loop iteration 151 - closed the P3 "Clan system" task's last open
+  note, the `struct clan_dungeon` guard-count fields
+  (`warrior`/`mage`/`seyan`/`teleport`/`fake`/`key`): audited every
+  remaining case of `clan_dungeon_chat` (`src/system/clan.c:1272-1370`,
+  the chat-channel-1028 handler these fields' only reader/writer routes
+  through) against the whole C tree. Confirmed `'T'`/`'F'`/`'K'`/`'W'`/
+  `'M'`/`'S'` - the six cases decrementing each field's `[0]` "total"
+  slot - are permanently dead code: a full-tree grep shows nothing ever
+  increments those `[0]` slots (the only would-be writer, the clanmaster
+  NPC's `buy` command, is itself C's own confirmed-dead, unconditionally
+  `return`-before-doing-anything code, `clanmaster.c:803-806`), so their
+  `if (...[0] > 0)` guard can never pass - same precedent as
+  `fighter_dead`, not ported, documented in `PORTING_TODO.md`. Ported
+  the one real remaining case, `'X'` (`clan.c:1358-1372`): the clan
+  jewel spawner item's (`IDR_CLANSPAWN`, `clanspawn_driver`,
+  `area/30/clanmaster.c:1373-1397`) "won a Jewel" announcement and
+  clan-log entry, previously missing from the already-ported
+  `ItemDriverOutcome::ClanSpawnAward` handler (`grant_clan_jewel`,
+  `crates/ugaris-server/src/area_apply.rs`, only created/gave the item
+  itself). Added `World::resolve_clan_spawn_jewel_award`
+  (`crates/ugaris-core/src/world/clanmaster.rs`): resolves the winner's
+  clan via the same self-healing `ClanRegistry::get_char_clan` every
+  other clan-membership check uses, broadcasts the clanned/unclanned
+  "Clan: %s won a Jewel..." wording verbatim on channel 5
+  (`World::queue_channel_broadcast`, C's `COL_LIME`/`cname[5]` "Clan"
+  channel), and for a clanned winner queues a new
+  `ClanmasterEvent::JewelWonFromSpawner` (needs a DB handle `World`
+  doesn't have, same split as every other `ClanmasterEvent`) for
+  `ugaris-server`'s `apply_clanmaster_events`
+  (`crates/ugaris-server/src/world_events.rs`) to write the
+  `add_clanlog` entry. Wired at the one production call site:
+  `main.rs`'s `ItemDriverOutcome::ClanSpawnAward` handler now calls this
+  unconditionally *before* `grant_clan_jewel`, matching C's own ordering
+  and the fact that C never gates the announcement on
+  `award_clan_jewel`'s return value (it still fires even on a failed
+  item delivery, e.g. a full inventory). C's own
+  `clan[cnr].treasure.jewels += 1` at this same call site is dead,
+  commented-out code even in the legacy source ("I like this better. -
+  Dar"), so the treasury genuinely isn't touched by this path in C
+  either - preserved as-is (a spawner-won jewel only feeds the treasury
+  once handed to the clanclerk NPC, already wired via
+  `ClanRegistry::add_jewel`). 2 new tests in `world::tests::clanmaster`
+  (clanned winner: broadcast wording + queued clan-log event; unclanned
+  winner: wording + no event queued). `cargo fmt --all`, `cargo test
+  --workspace` (1949 ugaris-core [+2] + 55 db + 3 net + 40 protocol +
+  604 server, all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panics. With this closed and no other open REMAINING
+  note left anywhere in the task's text (verified by grepping the whole
+  task block for "not ported"/"unwired"/"still needs"/etc. - every hit
+  is historical narration of a gap already closed in an earlier
+  iteration), marked the P3 "Clan system" task `[x]` in
+  `PORTING_TODO.md`.

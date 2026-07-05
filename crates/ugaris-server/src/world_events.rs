@@ -975,6 +975,30 @@ pub(crate) async fn apply_clanmaster_events(
                 .await;
                 applied += 1;
             }
+            ClanmasterEvent::JewelWonFromSpawner {
+                player_id,
+                clan_nr,
+                level,
+            } => {
+                let Some(player_name) = world.characters.get(&player_id).map(|c| c.name.clone())
+                else {
+                    continue;
+                };
+                let serial = world.clan_registry.serial(clan_nr);
+                // C `clan_dungeon_chat`'s `'X'` case (`clan.c:1358-1372`,
+                // prio 5): "%s won a jewel from level %d spawn".
+                crate::clan_log::write_clan_log_entry(
+                    clan_log_repository,
+                    clan_nr,
+                    serial,
+                    player_id,
+                    5,
+                    format!("{player_name} won a jewel from level {level} spawn"),
+                    now_unix,
+                )
+                .await;
+                applied += 1;
+            }
         }
     }
     applied
