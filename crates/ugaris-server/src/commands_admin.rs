@@ -2593,6 +2593,60 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/summon <name>` (`command.c:8628-8649`), `CF_GOD`-gated. Finds the
+    // first character slot (any flags set, not just `CF_PLAYER` - so NPCs
+    // can be summoned too) whose name case-insensitively matches the whole
+    // remainder of the line, then teleports it next to the caller via
+    // `teleport_char_driver` (C `drvlib.c:2651-2673`). No user-visible
+    // message on success or failure - only the C `dlog` staff-action log
+    // entry, approximated here with a `debug!` trace.
+    if lower.len() >= 3 && "summon".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (cx, cy) = (caller.x, caller.y);
+        let name = rest.trim_start();
+        if let Some(target_id) = find_online_character_by_name(world, name) {
+            if world.teleport_char_driver(target_id, cx, cy) {
+                if let Some(target) = world.characters.get(&target_id) {
+                    debug!(target: "client_log", name = %target.name, id = target_id.0, "summon teleport");
+                }
+            }
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `/summonall` (`command.c:8653-8667`), `CF_GOD`-gated. Teleports
+    // every `CF_PLAYER` character next to the caller, one at a time (the
+    // caller themselves is included in the iteration but is a no-op since
+    // `teleport_char_driver` refuses moves under Manhattan distance 2).
+    if lower == "summonall" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (cx, cy) = (caller.x, caller.y);
+        let player_ids: Vec<CharacterId> = world
+            .characters
+            .values()
+            .filter(|character| character.flags.contains(CharacterFlags::PLAYER))
+            .map(|character| character.id)
+            .collect();
+        for target_id in player_ids {
+            if world.teleport_char_driver(target_id, cx, cy) {
+                if let Some(target) = world.characters.get(&target_id) {
+                    debug!(target: "client_log", name = %target.name, id = target_id.0, "summonall teleport");
+                }
+            }
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
     None
 }
 

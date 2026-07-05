@@ -6736,3 +6736,28 @@ startup log line unchanged.
   admin-teleport gaps: `/summon`, `/summonall`, and `/office` (still
   unported); real cross-area `change_area` handoff (tracked separately as
   the `Cross-area transfer` P3 task).
+
+- Player/staff text commands now cover `/summon <name>` and `/summonall`
+  from `src/system/command.c:8628-8667`, both `CF_GOD`-gated, added to
+  `apply_admin_character_command` (`commands_admin.rs`). Both delegate
+  entirely to the already-ported `World::teleport_char_driver` - no new
+  `World` logic needed. `/summon` reuses `find_online_character_by_name`
+  (matches by name regardless of `CF_PLAYER`, mirroring C's
+  skip-empty-slot-only `!(ch[co].flags)` check, so NPCs are summonable
+  too); `/summonall` collects every `CF_PLAYER` character id into a `Vec`
+  first (to avoid aliasing `world` while mutating) and teleports each,
+  including the caller (harmless no-op via the distance guard), matching
+  C's unfiltered `for (co = 1; co < MAXCHARS; co++)` loop with no
+  self-exclusion. Neither command produces a `log_char` message in C
+  (only the `dlog` staff-action log, approximated with a `debug!` trace
+  matching the `/goto`/`/jump` precedent), so both always return
+  `KeyringCommandResult::default()`. 6 new focused tests in
+  `tests/commands_admin.rs` (permission gates, named/every-player
+  teleport, unknown-name and NPC-exclusion no-ops). `cargo fmt --all`,
+  `cargo test --workspace` (1973 ugaris-core + 55 db + 3 net + 40
+  protocol + 651 server [+6], all green, zero failures), `cargo build -p
+  ugaris-server`/`cargo build --workspace` clean with zero warnings, 10s
+  boot-smoke confirmed "entering Rust game loop" with no panic. Remaining
+  admin-teleport gaps: `/office` (still unported); real cross-area
+  `change_area` handoff (tracked separately as the `Cross-area transfer`
+  P3 task).

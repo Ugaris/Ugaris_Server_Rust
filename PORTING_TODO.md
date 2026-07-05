@@ -6895,7 +6895,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   note as you go). Priority: `/help` completeness, `/who` variants,
   `/allow`/clan invite commands, admin teleports (`/goto`), `/mirror`,
   `/seen`, `/top`. REMAINING: admin teleports done (`/goto`, `/jump`,
-  `/gotolist`, `/gotosearch`); still unported: `/summon`, `/summonall`,
+  `/gotolist`, `/gotosearch`, `/summon`, `/summonall`); still unported:
   `/office`, `/allow`/clan invite commands, `/mirror`, `/seen`
   (`lastseen`), `/top`, and the rest of the dozens of `/`/`#` commands not
   yet cross-referenced against `command.c` (see the Progress Log entries
@@ -6947,6 +6947,32 @@ Unlocks every quest NPC. Do these before any P4 area work.
   server [+15], all green, zero failures), `cargo build -p ugaris-server`
   / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
   confirmed "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 159): ported `/summon <name>` (`command.c:
+  8628-8649`) and `/summonall` (`command.c:8653-8667`), both
+  `CF_GOD`-gated, into `apply_admin_character_command`
+  (`commands_admin.rs`), delegating to the already-ported
+  `World::teleport_char_driver` (no new World logic needed). `/summon`
+  reuses `find_online_character_by_name` (matches by name regardless of
+  `CF_PLAYER`, exactly like C's `!(ch[co].flags)` skip-empty-slot-only
+  check, so NPCs can be summoned too); `/summonall` iterates every
+  `CF_PLAYER` character (collecting IDs into a `Vec` first to avoid
+  aliasing `world` while mutating), including the caller themselves,
+  matching C's `for (co = 1; co < MAXCHARS; co++)` with no self-exclusion
+  (harmless since `teleport_char_driver` no-ops under Manhattan distance
+  2). Neither command produces a user-visible `log_char` message in C
+  (only the `dlog` staff-action log), so both return
+  `KeyringCommandResult::default()` on every path; approximated C's
+  `dlog` with a `debug!(target: "client_log", ...)` trace on success,
+  matching the existing `/goto`/`/jump` precedent. 6 new tests in
+  `tests/commands_admin.rs`: permission gate, named-teleport success,
+  unknown-name silent no-op for `/summon`; permission gate,
+  every-player-teleported (caller stays put), NPC-not-teleported for
+  `/summonall`. `cargo fmt --all`, `cargo test --workspace` (1973
+  ugaris-core + 55 db + 3 net + 40 protocol + 651 server [+6], all green,
+  zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

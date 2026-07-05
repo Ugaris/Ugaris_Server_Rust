@@ -3910,3 +3910,144 @@ fn gotosearch_command_is_case_sensitive_like_c_strstr() {
         ]
     );
 }
+
+#[test]
+fn summon_command_requires_god() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    assert!(world.spawn_character(
+        login_character(caller_id, &login_block("Ralph"), 1, 10, 10),
+        10,
+        10
+    ));
+    let target_id = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(target_id, &login_block("Lydia"), 1, 90, 90),
+        90,
+        90
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/summon Lydia", 1)
+            .is_none()
+    );
+    assert_eq!(world.characters.get(&target_id).unwrap().x, 90);
+}
+
+#[test]
+fn summon_command_teleports_named_character_next_to_caller() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let target_id = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(target_id, &login_block("Lydia"), 1, 90, 90),
+        90,
+        90
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/summon lydia", 1)
+            .expect("god summon command should be recognized");
+    assert!(result.messages.is_empty());
+    let target = world.characters.get(&target_id).unwrap();
+    assert!((i32::from(target.x) - 10).abs() + (i32::from(target.y) - 10).abs() < 2);
+}
+
+#[test]
+fn summon_command_unknown_name_is_a_silent_no_op() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/summon Nobody", 1)
+            .expect("god summon command should be recognized");
+    assert!(result.messages.is_empty());
+}
+
+#[test]
+fn summonall_command_requires_god() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    assert!(world.spawn_character(
+        login_character(caller_id, &login_block("Ralph"), 1, 10, 10),
+        10,
+        10
+    ));
+    let other_id = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(other_id, &login_block("Lydia"), 1, 90, 90),
+        90,
+        90
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/summonall", 1)
+            .is_none()
+    );
+    assert_eq!(world.characters.get(&other_id).unwrap().x, 90);
+}
+
+#[test]
+fn summonall_command_teleports_every_player_next_to_caller() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let other_a = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(other_a, &login_block("Lydia"), 1, 90, 90),
+        90,
+        90
+    ));
+    let other_b = CharacterId(3);
+    assert!(world.spawn_character(
+        login_character(other_b, &login_block("Gwendylon"), 1, 200, 200),
+        200,
+        200
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/summonall", 1)
+            .expect("god summonall command should be recognized");
+    assert!(result.messages.is_empty());
+    for id in [other_a, other_b] {
+        let character = world.characters.get(&id).unwrap();
+        assert!((i32::from(character.x) - 10).abs() + (i32::from(character.y) - 10).abs() < 2);
+    }
+    // The caller themselves stays put (`teleport_char_driver` is a no-op
+    // under Manhattan distance 2, and the caller is already at (10,10)).
+    assert_eq!(world.characters.get(&caller_id).unwrap().x, 10);
+}
+
+#[test]
+fn summonall_command_does_not_teleport_npcs() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let npc_id = CharacterId(2);
+    let mut npc = login_character(npc_id, &login_block("Goblin"), 1, 90, 90);
+    npc.flags.remove(CharacterFlags::PLAYER);
+    npc.flags.insert(CharacterFlags::ALIVE);
+    assert!(world.spawn_character(npc, 90, 90));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/summonall", 1)
+            .expect("god summonall command should be recognized");
+    assert!(result.messages.is_empty());
+    assert_eq!(world.characters.get(&npc_id).unwrap().x, 90);
+}
