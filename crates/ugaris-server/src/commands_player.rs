@@ -44,6 +44,15 @@ pub(crate) struct KeyringCommandResult {
     /// must send the client a `mirror` packet, matching the same-area
     /// transport-travel mirror-change path.
     pub(crate) mirror_changed: Option<u32>,
+    /// Set when `/logout` was used while standing on a blue square (C
+    /// `cmd_logout`, `command.c:4457-4471`, gated on `MF_RESTAREA`). The
+    /// character is still fully live in the world at this point; the call
+    /// site must perform the actual `exit_char`/`player_client_exit`
+    /// teardown: save its snapshot (at its rest position, matching C's
+    /// `tmpx/tmpy = restx/resty` swap before `kick_char`'s save), remove it
+    /// from the world, then send `SV_EXIT` and disconnect every session
+    /// attached to it.
+    pub(crate) logout_requested: bool,
 }
 
 pub(crate) fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {
@@ -606,6 +615,49 @@ pub(crate) fn apply_swap_command(
         player.record_swap(realtime_seconds);
     }
     Some(KeyringCommandResult::default())
+}
+
+/// C `/logout` (`command.c:9737-9740` dispatch -> `cmd_logout`,
+/// `player.c:4457-4471`), no permission gate but `minlen=6` so the full
+/// word must be typed (`cmdcmp(ptr, "logout", 6)`, no abbreviation). Only
+/// works while standing on a blue square (`MF_RESTAREA`); otherwise C logs
+/// "You are not on a blue square." and does nothing else. On success C
+/// silently (no `log_char` feedback) calls `exit_char` (save+despawn at the
+/// character's rest position) then `player_client_exit` (send `SV_EXIT`
+/// with reason text, drop the connection) - the actual save/despawn/
+/// disconnect side effects are session-level and performed by the call
+/// site when `logout_requested` is set; this function only validates the
+/// blue-square precondition, matching C's own gate check.
+pub(crate) fn apply_logout_command(
+    world: &World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("logout") {
+        return None;
+    }
+
+    let character = world.characters.get(&character_id)?;
+    let on_rest_area = world
+        .map
+        .tile(usize::from(character.x), usize::from(character.y))
+        .is_some_and(|tile| tile.flags.contains(MapFlags::RESTAREA));
+
+    if !on_rest_area {
+        return Some(KeyringCommandResult {
+            messages: vec!["You are not on a blue square.".to_string()],
+            ..Default::default()
+        });
+    }
+
+    Some(KeyringCommandResult {
+        logout_requested: true,
+        ..Default::default()
+    })
 }
 
 pub(crate) fn apply_autoturn_command(

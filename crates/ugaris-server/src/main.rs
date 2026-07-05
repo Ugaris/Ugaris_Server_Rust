@@ -1490,6 +1490,73 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
+                            if let Some(result) =
+                                apply_logout_command(&world, character_id, &command)
+                            {
+                                if result.logout_requested {
+                                    // C `cmd_logout` (`player.c:4457-4471`):
+                                    // `exit_char` saves the character at its
+                                    // rest position (`tmpx/tmpy = restx/
+                                    // resty` before `kick_char`'s save),
+                                    // then despawns it (no lostcon linger,
+                                    // unlike a network disconnect), then
+                                    // `player_client_exit` sends `SV_EXIT`
+                                    // and drops the connection.
+                                    if let Some(character) = world.characters.get(&character_id) {
+                                        if let Some(repository) = &character_repository {
+                                            if let Some(player) = runtime.players.get(&session_id) {
+                                                let account_depot = runtime
+                                                    .account_depots
+                                                    .get(&character_id)
+                                                    .cloned();
+                                                let mut save_character = character.clone();
+                                                save_character.x = character.rest_x;
+                                                save_character.y = character.rest_y;
+                                                let request = character_save_request(
+                                                    &world,
+                                                    player,
+                                                    &save_character,
+                                                    account_depot.as_ref(),
+                                                    config.area_id,
+                                                    config.mirror_id,
+                                                );
+                                                match repository
+                                                    .save_character_snapshot(request)
+                                                    .await
+                                                {
+                                                    Ok(true) => {
+                                                        info!(character_id = character_id.0, "saved DB-backed character snapshot on /logout");
+                                                    }
+                                                    Ok(false) => {
+                                                        warn!(character_id = character_id.0, "DB character snapshot save was skipped by area guard on /logout");
+                                                    }
+                                                    Err(err) => {
+                                                        warn!(character_id = character_id.0, error = %err, "failed to save DB-backed character snapshot on /logout");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    runtime.account_depots.remove(&character_id);
+                                    world.remove_character(character_id);
+                                    debug!(target: "client_log", character_id = character_id.0, "Used /logout");
+                                    let mut builder = PacketBuilder::new();
+                                    builder.exit("Logout upon player request.");
+                                    let payload = builder.into_payload();
+                                    for (sid, _) in runtime.sessions_for_character(character_id) {
+                                        runtime.send_to_session(sid, payload.clone());
+                                        runtime.flush_session(sid);
+                                        if let Some(commands) = runtime.sessions.get(&sid) {
+                                            let _ = commands.try_send(SessionCommand::Disconnect);
+                                        }
+                                    }
+                                } else {
+                                    for message in result.messages {
+                                        command_feedback.push((character_id, message));
+                                    }
+                                }
+                                continue;
+                            }
                             if let Some(result) = apply_achievement_command(
                                 &mut world,
                                 &mut runtime,

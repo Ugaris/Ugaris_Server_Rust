@@ -6950,7 +6950,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   anticheat, `macro*` macro-detection, plus one-off commands like
   `/depotsort` (the character's own `DRD_DEPOT_PPD` depot, a whole
   unported storage system - not the same as `/accountdepotsort`, which
-  is done), `/steal`, `/logout`, `/complain`, `/kick`,
+  is done), `/steal`, `/complain`, `/kick`,
   `/punish`, `/shutdown`, `/rename`, `/showppd`/`/showvalues`,
   `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
   `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
@@ -7486,6 +7486,51 @@ Unlocks every quest NPC. Do these before any P4 area work.
   green, zero failures), `cargo build -p ugaris-server` / `cargo build
   --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 171): ported `/logout` (`command.c:9737-9740`
+  dispatch -> `cmd_logout`, `player.c:4457-4471`), no permission gate,
+  `minlen=6` so the full word must be typed (no abbreviation). Added
+  `apply_logout_command` (`commands_player.rs`), which only validates the
+  `MF_RESTAREA` ("blue square") precondition and returns the existing
+  `KeyringCommandResult` shape plus a new `logout_requested: bool` field,
+  since the actual side effects (`exit_char`'s save-at-rest-position-then-
+  despawn, `player_client_exit`'s `SV_EXIT` + disconnect) are session-level
+  concerns the command layer has no access to. Wired `logout_requested`
+  at the `main.rs` dispatch call site (inserted before the
+  `apply_achievement_command` slice, ahead of the loop's shared mutable
+  `player` borrow to avoid a `runtime` field-borrow conflict): builds the
+  same `character_save_request` used by lostcon-expiry saves, but against
+  a cloned `Character` with `x/y` overwritten to `rest_x/rest_y` (C's own
+  `tmpx/tmpy = restx/resty` swap in `exit_char` before `kick_char`'s
+  save - this port has no `tmpa`/`allowed_area` distinct-target-area
+  equivalent since every server process is already pinned to one
+  `config.area_id`, so only the in-area position moves), saves via the DB
+  repository when configured, drops the account depot entry, calls the
+  same `World::remove_character` the lostcon-expiry path uses (instant
+  despawn, no lostcon linger - matching C's real behavior difference
+  between a voluntary `/logout` and a network disconnect), then sends
+  `SV_EXIT` with "Logout upon player request." and a `SessionCommand::
+  Disconnect` to every session tied to the character, mirroring the
+  existing login-reject `player_client_exit` precedent. The later
+  `SessionEvent::Disconnected` that arrives once the net task's socket
+  loop actually closes is a no-op by construction: `enter_lostcon_on_
+  disconnect` fails (the character is already gone from `world.
+  characters`) and its fallback DB-save/`remove_character` calls both
+  find nothing to do. 3 new tests in `tests/commands_player.rs`: exact-
+  word requirement (no character in world is a silent no-op, matching
+  every command that comes from a live character in practice), "You are
+  not on a blue square." message off a rest-area tile, `logout_requested`
+  set on a rest-area tile (`world.map.set_flags(..., MapFlags::RESTAREA)`
+  precedent from `tests/zone.rs`). The session-level save/despawn/
+  disconnect wiring itself has no dedicated integration test (no existing
+  precedent for driving the full net-session/DB-repository loop from a
+  unit test in this codebase - every other command's session-level
+  effects, e.g. `/goto`'s mirror packet, are boot-smoke-verified only)
+  `cargo fmt --all`, `cargo test --workspace` (1987 ugaris-core + 55 db +
+  3 net + 40 protocol + 700 server [+3], all green, zero failures),
+  `cargo build -p ugaris-server` / `cargo build --workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
+  no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

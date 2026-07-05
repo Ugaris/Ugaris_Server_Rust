@@ -7181,3 +7181,41 @@ startup log line unchanged.
   build -p ugaris-server` / `cargo build --workspace` clean with zero
   warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
   panic.
+
+- Iteration 171 ported `/logout` (`src/system/command.c:9737-9740`
+  dispatch -> `cmd_logout`, `src/system/player.c:4457-4471`), no
+  permission gate, `minlen=6` so the full word must be typed. Added
+  `apply_logout_command` (`crates/ugaris-server/src/commands_player.rs`),
+  which only validates the `MF_RESTAREA` ("blue square") precondition and
+  reports a new `logout_requested: bool` on `KeyringCommandResult` - the
+  actual `exit_char`/`player_client_exit` side effects (save-at-rest-
+  position, despawn, `SV_EXIT`, disconnect) are session-level and handled
+  at the `main.rs` dispatch call site instead, inserted ahead of the
+  loop's shared mutable `player` borrow to avoid a `runtime` field-borrow
+  conflict. The save reuses the same `character_save_request` helper the
+  lostcon-expiry path already uses, against a cloned `Character` with
+  `x`/`y` overwritten to `rest_x`/`rest_y` (C's `tmpx/tmpy = restx/resty`
+  swap inside `exit_char` before `kick_char`'s save - no `tmpa`/
+  `allowed_area` equivalent exists or is needed since every server
+  process is already pinned to one `config.area_id`), then calls the
+  same `World::remove_character` the lostcon-expiry path uses (instant
+  despawn, no lostcon linger - a real behavior difference between a
+  voluntary `/logout` and a network disconnect), then sends `SV_EXIT`
+  ("Logout upon player request.") plus a `SessionCommand::Disconnect` to
+  every session tied to the character, mirroring the existing login-
+  reject `player_client_exit` precedent. The later `SessionEvent::
+  Disconnected` that arrives once the net task's socket loop actually
+  closes is a no-op by construction (the character is already gone from
+  `world.characters`, so both `enter_lostcon_on_disconnect`'s fallback DB
+  save and its `remove_character` call find nothing to do). 3 new tests
+  in `tests/commands_player.rs` covering the exact-word requirement, the
+  "You are not on a blue square." message off a rest-area tile, and
+  `logout_requested` being set on one; the session-level save/despawn/
+  disconnect wiring has no dedicated integration test (no prior
+  precedent for driving the full net-session/DB-repository loop from a
+  unit test in this codebase - boot-smoke-verified only, same as every
+  other command's session-level side effects). `cargo fmt --all`, `cargo
+  test --workspace` (1987 ugaris-core + 55 db + 3 net + 40 protocol + 700
+  server [+3], all green, zero failures), `cargo build -p ugaris-server`
+  / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic.

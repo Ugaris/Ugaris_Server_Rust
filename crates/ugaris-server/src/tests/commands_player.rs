@@ -267,6 +267,54 @@ fn swap_command_requires_exact_word_and_is_a_silent_no_op_when_blocked() {
 }
 
 #[test]
+fn logout_command_requires_exact_word_and_is_a_silent_no_op_when_absent() {
+    let world = World::default();
+
+    assert!(apply_logout_command(&world, CharacterId(1), "/log").is_none());
+    assert!(apply_logout_command(&world, CharacterId(1), "/logoutx").is_none());
+    // No character at all in the world: C's own bounds/flag checks in
+    // `cmd_logout` would read out-of-range `ch[cn]` state that never
+    // happens in practice (a command always comes from a live character),
+    // so this port just no-ops rather than guessing.
+    assert!(apply_logout_command(&world, CharacterId(1), "/logout").is_none());
+}
+
+#[test]
+fn logout_command_reports_not_on_blue_square_off_rest_area() {
+    let mut world = World::default();
+    let actor = login_character(CharacterId(1), &login_block("Actor"), 1, 10, 10);
+    assert!(world.spawn_character(actor, 10, 10));
+
+    let result = apply_logout_command(&world, CharacterId(1), "/logout")
+        .expect("logout command should be recognized");
+    assert_eq!(
+        result,
+        KeyringCommandResult {
+            messages: vec!["You are not on a blue square.".to_string()],
+            ..Default::default()
+        }
+    );
+}
+
+#[test]
+fn logout_command_requests_logout_on_blue_square() {
+    let mut world = World::default();
+    let actor = login_character(CharacterId(1), &login_block("Actor"), 1, 10, 10);
+    assert!(world.spawn_character(actor, 10, 10));
+    world.map.set_flags(10, 10, MapFlags::RESTAREA);
+
+    let result = apply_logout_command(&world, CharacterId(1), "/logout")
+        .expect("logout command should be recognized");
+    assert_eq!(
+        result,
+        KeyringCommandResult {
+            logout_requested: true,
+            ..Default::default()
+        }
+    );
+}
+
+#[test]
 fn wimp_command_emits_non_live_quest_fallback() {
     let result = apply_wimp_command("/wimp").expect("wimp command should be recognized");
     assert_eq!(
