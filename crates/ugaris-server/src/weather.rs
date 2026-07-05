@@ -11,6 +11,15 @@ pub(crate) struct WeatherState {
     pub(crate) prev_weather: i32,
     pub(crate) weather_change_time: u64,
     pub(crate) affected_areas: Vec<u16>,
+    /// C `world_weather.seasonal_influence` (`weather.h`'s `struct
+    /// weather_data`): the last `get_current_season()` result the
+    /// autonomous cycle (`update_weather_tick`) observed, used to detect
+    /// season changes. Seeded from the live game date at server startup
+    /// (`main`'s pre-loop init, matching C `init_weather`'s `world_weather.
+    /// seasonal_influence = get_current_season();`) rather than defaulting
+    /// to `0`/spring, so the very first tick doesn't see a spurious season
+    /// change.
+    pub(crate) seasonal_influence: i32,
 }
 
 pub(crate) const WEATHER_EFFECT_SLOW: u32 = 0x01;
@@ -21,7 +30,33 @@ pub(crate) const WEATHER_EFFECT_DAMAGE: u32 = 0x04;
 
 pub(crate) const WEATHER_EFFECT_SLIP: u32 = 0x08;
 
+/// `mod_weather.h`'s `MOD_WEATHER_EFFECT_SKILL`: set whenever the current
+/// weather/intensity cell has a nonzero `skill_mods` entry
+/// (`weather.c:148-192`'s `weather_effects` table). The per-skill
+/// modifier application itself (`modify_skill_value`) isn't wired yet -
+/// see `PORTING_TODO.md`.
+pub(crate) const WEATHER_EFFECT_SKILL: u32 = 0x10;
+
 pub(crate) const WEATHER_INTENSITY_NAMES: [&str; 4] = ["None", "Light", "Moderate", "Heavy"];
+
+/// C `weather.h`'s `WEATHER_TRANSITION_TIME` (`TICKS * 60 * 2`): the
+/// autonomous cycle's transition length for a normal periodic weather
+/// change (`update_weather`'s main branch uses this value directly; the
+/// season-change branch uses `WEATHER_TRANSITION_TIME * 2`). Distinct from
+/// the `/setweather`/`/clearweather` admin commands, which C hardcodes to
+/// a flat one-minute `TICKS * 60` transition (`command.c`'s `cmd_setweather`/
+/// `cmd_clearweather`) - already matched by `apply_weather_admin_command`
+/// below.
+pub(crate) const WEATHER_TRANSITION_TIME: u64 = TICKS_PER_SECOND * 60 * 2;
+/// C `weather.h`'s `WEATHER_DURATION_MIN` (`TICKS * 60 * 30`).
+pub(crate) const WEATHER_DURATION_MIN: u64 = TICKS_PER_SECOND * 60 * 30;
+/// C `weather.h`'s `WEATHER_DURATION_MAX` (`TICKS * 60 * 60`).
+pub(crate) const WEATHER_DURATION_MAX: u64 = TICKS_PER_SECOND * 60 * 60;
+
+pub(crate) const SEASON_SPRING: i32 = 0;
+pub(crate) const SEASON_SUMMER: i32 = 1;
+pub(crate) const SEASON_AUTUMN: i32 = 2;
+pub(crate) const SEASON_WINTER: i32 = 3;
 
 impl Default for WeatherState {
     fn default() -> Self {
@@ -35,6 +70,7 @@ impl Default for WeatherState {
             prev_weather: 0,
             weather_change_time: 0,
             affected_areas: Vec::new(),
+            seasonal_influence: SEASON_SPRING,
         }
     }
 }
@@ -95,29 +131,231 @@ pub(crate) fn weather_type_list_messages() -> Vec<String> {
     ]
 }
 
+/// C `weather.c:148-192`'s `static const struct weather_effect_data
+/// weather_effects[MOD_WEATHER_MAX][4]` (one row per weather type, index 0
+/// of each row is the C table's unused "no intensity" placeholder - real
+/// intensities are 1=Light/2=Moderate/3=Heavy, gated by
+/// `is_valid_weather_intensity`). Only the fields this iteration actually
+/// wires up (`move_mod`/`vis_mod`/`damage`/`slip_chance`/whether any
+/// `skill_mods` entry is nonzero) are ported; `attack_speed_mod`/
+/// `spell_power_mod`/`lightning_chance`/`elemental_debuff_type` and the
+/// per-skill `V_PERCEPT`/`V_STEALTH` values are C table columns not yet
+/// consumed by any Rust code path - see `PORTING_TODO.md`.
+#[derive(Debug, Clone, Copy)]
+struct WeatherEffectData {
+    move_mod: i32,
+    vis_mod: i32,
+    damage: i32,
+    slip_chance: i32,
+    has_skill_mod: bool,
+}
+
+const NO_EFFECT: WeatherEffectData = WeatherEffectData {
+    move_mod: 100,
+    vis_mod: 100,
+    damage: 0,
+    slip_chance: 0,
+    has_skill_mod: false,
+};
+
+/// `[weather_type][intensity]`, transcribed digit-for-digit from
+/// `weather.c:148-192`.
+const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
+    // MOD_WEATHER_CLEAR
+    [NO_EFFECT, NO_EFFECT, NO_EFFECT, NO_EFFECT],
+    // MOD_WEATHER_RAIN
+    [
+        NO_EFFECT,
+        WeatherEffectData {
+            move_mod: 95,
+            vis_mod: 90,
+            damage: 0,
+            slip_chance: 15,
+            has_skill_mod: false,
+        },
+        WeatherEffectData {
+            move_mod: 90,
+            vis_mod: 80,
+            damage: 0,
+            slip_chance: 25,
+            has_skill_mod: true,
+        },
+        WeatherEffectData {
+            move_mod: 80,
+            vis_mod: 70,
+            damage: 0,
+            slip_chance: 35,
+            has_skill_mod: true,
+        },
+    ],
+    // MOD_WEATHER_STORM
+    [
+        NO_EFFECT,
+        WeatherEffectData {
+            move_mod: 90,
+            vis_mod: 80,
+            damage: 0,
+            slip_chance: 20,
+            has_skill_mod: true,
+        },
+        WeatherEffectData {
+            move_mod: 80,
+            vis_mod: 60,
+            damage: 0,
+            slip_chance: 30,
+            has_skill_mod: true,
+        },
+        WeatherEffectData {
+            move_mod: 70,
+            vis_mod: 40,
+            damage: 0,
+            slip_chance: 40,
+            has_skill_mod: true,
+        },
+    ],
+    // MOD_WEATHER_SNOW
+    [
+        NO_EFFECT,
+        WeatherEffectData {
+            move_mod: 90,
+            vis_mod: 85,
+            damage: 0,
+            slip_chance: 20,
+            has_skill_mod: true,
+        },
+        WeatherEffectData {
+            move_mod: 80,
+            vis_mod: 70,
+            damage: 0,
+            slip_chance: 30,
+            has_skill_mod: true,
+        },
+        WeatherEffectData {
+            move_mod: 70,
+            vis_mod: 55,
+            damage: 0,
+            slip_chance: 40,
+            has_skill_mod: true,
+        },
+    ],
+    // MOD_WEATHER_SANDSTORM
+    [
+        NO_EFFECT,
+        WeatherEffectData {
+            move_mod: 85,
+            vis_mod: 75,
+            damage: 1,
+            slip_chance: 15,
+            has_skill_mod: true,
+        },
+        WeatherEffectData {
+            move_mod: 70,
+            vis_mod: 50,
+            damage: 2,
+            slip_chance: 25,
+            has_skill_mod: true,
+        },
+        WeatherEffectData {
+            move_mod: 55,
+            vis_mod: 25,
+            damage: 3,
+            slip_chance: 35,
+            has_skill_mod: true,
+        },
+    ],
+    // MOD_WEATHER_FOG
+    [
+        NO_EFFECT,
+        WeatherEffectData {
+            move_mod: 95,
+            vis_mod: 70,
+            damage: 0,
+            slip_chance: 0,
+            has_skill_mod: true,
+        },
+        WeatherEffectData {
+            move_mod: 90,
+            vis_mod: 50,
+            damage: 0,
+            slip_chance: 0,
+            has_skill_mod: true,
+        },
+        WeatherEffectData {
+            move_mod: 85,
+            vis_mod: 30,
+            damage: 0,
+            slip_chance: 0,
+            has_skill_mod: true,
+        },
+    ],
+];
+
+fn weather_effect_data(weather_type: i32, intensity: usize) -> WeatherEffectData {
+    WEATHER_EFFECTS[weather_type as usize][intensity]
+}
+
 pub(crate) fn calculate_weather_effects(weather_type: i32, intensity: usize) -> u32 {
     if !is_valid_weather_type(i64::from(weather_type))
         || !is_valid_weather_intensity(intensity as i64)
     {
         return 0;
     }
-    match weather_type {
-        1 | 2 | 3 => WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP,
-        4 => {
-            WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_DAMAGE | WEATHER_EFFECT_SLIP
-        }
-        5 => WEATHER_EFFECT_BLIND,
-        _ => 0,
+    let data = weather_effect_data(weather_type, intensity);
+    let mut effects = 0;
+    if data.move_mod < 100 {
+        effects |= WEATHER_EFFECT_SLOW;
     }
+    if data.vis_mod < 100 {
+        effects |= WEATHER_EFFECT_BLIND;
+    }
+    if data.damage > 0 {
+        effects |= WEATHER_EFFECT_DAMAGE;
+    }
+    if data.slip_chance > 0 {
+        effects |= WEATHER_EFFECT_SLIP;
+    }
+    if data.has_skill_mod {
+        effects |= WEATHER_EFFECT_SKILL;
+    }
+    effects
+}
+
+/// C `handle_weather_damage` (`weather.c:435-471`)'s damage lookup:
+/// `weather_effects[world_weather.current_weather][world_weather.
+/// weather_intensity].damage`.
+pub(crate) fn weather_damage_amount(weather_type: i32, intensity: usize) -> i32 {
+    if !is_valid_weather_type(i64::from(weather_type))
+        || !is_valid_weather_intensity(intensity as i64)
+    {
+        return 0;
+    }
+    weather_effect_data(weather_type, intensity).damage
+}
+
+/// C `weather.c:104-127`'s per-area config table's `has_weather = false`
+/// entries: underground/indoor/arena areas where weather never applies at
+/// all (`area_has_weather`).
+const NO_WEATHER_AREAS: &[i64] = &[4, 8, 11, 12, 13, 14, 16, 17, 18, 22, 25, 32, 33, 34, 36, 37];
+
+/// C `weather.c:104-127`'s desert entries (areas 19/20, `WEATHER_DESERT`).
+/// `weather.h`'s `WEATHER_DESERT` macro is `WEATHER_ALLOW_CLEAR` only
+/// ("Only clear until sandstorm is ready" - fog/sandstorm are globally
+/// disabled pending further development, matching `WEATHER_ALL`/
+/// `WEATHER_OUTDOOR_NORMAL` never including those two bits either), so
+/// deserts currently behave like the no-weather areas for allowed-type
+/// purposes even though `has_weather` is `true` for them.
+const DESERT_AREAS: &[i64] = &[19, 20];
+
+/// C `area_has_weather` (`weather.c:140-147`).
+pub(crate) fn area_has_weather(area: i64) -> bool {
+    !NO_WEATHER_AREAS.contains(&area)
 }
 
 pub(crate) fn is_weather_allowed_in_area(weather_type: i64, area: i64) -> bool {
     if !is_valid_weather_type(weather_type) || !(0..=255).contains(&area) {
         return false;
     }
-    const NO_WEATHER_AREAS: &[i64] =
-        &[4, 8, 11, 12, 13, 14, 16, 17, 18, 22, 25, 32, 33, 34, 36, 37];
-    if NO_WEATHER_AREAS.contains(&area) {
+    if NO_WEATHER_AREAS.contains(&area) || DESERT_AREAS.contains(&area) {
         return weather_type == 0;
     }
     matches!(weather_type, 0..=3)
@@ -343,4 +581,257 @@ pub(crate) fn apply_weather_command(
         messages,
         ..Default::default()
     })
+}
+
+// ============================================================================
+// Autonomous weather cycle (`weather.c:937-1059`'s `update_weather`, minus
+// the multi-server mirror storage sync (`tick_weather_storage`,
+// `weather.c:797-935`) and DB persistence (`save_weather_state`/
+// `load_weather_state`) - both N/A: this Rust process is always a single
+// area's only server (no `areaM` mirror concept), and there is no "global
+// blob storage" primitive in `ugaris-db` yet (same architectural gap noted
+// for the Arena rankings task's toplist in `PORTING_TODO.md`). Every area
+// this process runs always behaves like C's `WEATHER_MASTER_MIRROR`.
+// ============================================================================
+
+/// C `get_current_season` (`weather.c:258-274`), using the already-ported
+/// `GameDate` fields instead of the global `yday`/`*_equinox`/`*_solstice`
+/// C globals.
+pub(crate) fn current_season(date: &GameDate) -> i32 {
+    if date.spring_equinox || (date.yday >= 90 && date.yday < 180) {
+        SEASON_SPRING
+    } else if date.summer_solstice || (date.yday >= 180 && date.yday < 270) {
+        SEASON_SUMMER
+    } else if date.fall_equinox || (date.yday >= 270 && date.yday < 360) {
+        SEASON_AUTUMN
+    } else {
+        SEASON_WINTER
+    }
+}
+
+/// C `weather.c:70-77`'s `seasonal_weather_chance[MAX_SEASONS][MOD_WEATHER_MAX]`.
+/// Indices 4 (Sandstorm)/5 (Fog) are `0` in every season, matching "Fog and
+/// Sandstorm disabled pending further development".
+const SEASONAL_WEATHER_CHANCE: [[i32; 6]; 4] = [
+    [45, 35, 20, 0, 0, 0], // Spring
+    [70, 15, 15, 0, 0, 0], // Summer
+    [35, 40, 25, 0, 0, 0], // Autumn
+    [35, 5, 10, 50, 0, 0], // Winter
+];
+
+/// C `update_weather`'s inlined weighted-random weather selection (used
+/// identically by both the season-change branch, `weather.c:1005-1029`,
+/// and the periodic-change branch, `weather.c:1038-1049`): roll
+/// `RANDOM(total_chance)` and walk the cumulative distribution. Falls back
+/// to `MOD_WEATHER_CLEAR` (`0`) if `total_chance` is `0` (never happens
+/// with the real table above, but matches C's `new_weather = MOD_WEATHER_
+/// CLEAR` initializer if the loop never breaks).
+pub(crate) fn pick_seasonal_weather(
+    season: usize,
+    mut random_below: impl FnMut(i32) -> i32,
+) -> i32 {
+    let chances = SEASONAL_WEATHER_CHANCE[season];
+    let total: i32 = chances.iter().sum();
+    let roll = random_below(total);
+    let mut cumulative = 0;
+    for (weather_type, chance) in chances.iter().enumerate() {
+        cumulative += chance;
+        if roll < cumulative {
+            return weather_type as i32;
+        }
+    }
+    0
+}
+
+/// C `update_weather`'s inlined intensity roll (identical in both
+/// branches, `weather.c:1013-1021`/`1051-1059`): 50% Light, 30% Moderate,
+/// 20% Heavy.
+pub(crate) fn pick_intensity(mut random_below: impl FnMut(i32) -> i32) -> usize {
+    let roll = random_below(100);
+    if roll < 50 {
+        1
+    } else if roll < 80 {
+        2
+    } else {
+        3
+    }
+}
+
+/// C `start_weather_transition` (`weather.c:762-774`). Recomputes
+/// `weather_effects` from `new_weather` paired with the *current* (not yet
+/// updated) `weather.weather_intensity`, exactly like C - both call sites
+/// (`update_weather`'s two branches) set `weather_intensity` to its new
+/// value only *after* calling this, so the effects bitmask legitimately
+/// lags the intensity update by construction until the next transition;
+/// this is a faithful port of that quirk, not a bug.
+fn start_weather_transition(
+    weather: &mut WeatherState,
+    new_weather: i32,
+    tick: u64,
+    duration: u64,
+) {
+    weather.prev_weather = weather.current_weather;
+    weather.current_weather = new_weather;
+    weather.is_transitioning = true;
+    weather.transition_start = tick;
+    weather.transition_duration = duration;
+    weather.weather_effects = calculate_weather_effects(new_weather, weather.weather_intensity);
+}
+
+/// C `update_weather_transition` (`weather.c:777-786`).
+fn update_weather_transition_tick(weather: &mut WeatherState, tick: u64) {
+    if !weather.is_transitioning {
+        return;
+    }
+    if tick
+        >= weather
+            .transition_start
+            .saturating_add(weather.transition_duration)
+    {
+        weather.is_transitioning = false;
+        weather.prev_weather = weather.current_weather;
+    }
+}
+
+/// C `update_weather` (`weather.c:937-1059`), minus the mirror/storage
+/// sync described above. Returns whether the weather actually changed
+/// this tick (either the season-change branch or the periodic-change
+/// branch started a new transition), so the caller knows whether to
+/// broadcast an `SV_MOD2`/`SV_VIS_WEATHER` packet (mirroring C's own
+/// `broadcast_weather_change()` calls, which only happen on those same
+/// two branches).
+pub(crate) fn update_weather_tick(
+    weather: &mut WeatherState,
+    date: &GameDate,
+    tick: u64,
+    mut random_below: impl FnMut(i32) -> i32,
+) -> bool {
+    update_weather_transition_tick(weather, tick);
+
+    let mut changed = false;
+    let season = current_season(date);
+    if season != weather.seasonal_influence {
+        weather.seasonal_influence = season;
+        if weather.current_weather != 0 && random_below(100) < 25 {
+            let new_weather = pick_seasonal_weather(season as usize, &mut random_below);
+            if new_weather != weather.current_weather {
+                start_weather_transition(weather, new_weather, tick, WEATHER_TRANSITION_TIME * 2);
+                weather.weather_intensity = pick_intensity(&mut random_below);
+                changed = true;
+            }
+        }
+    }
+
+    if tick < weather.weather_change_time {
+        return changed;
+    }
+
+    let mut new_weather = pick_seasonal_weather(season as usize, &mut random_below);
+    if new_weather == weather.current_weather {
+        new_weather = (new_weather + 1) % 6;
+    }
+    start_weather_transition(weather, new_weather, tick, WEATHER_TRANSITION_TIME);
+    weather.weather_intensity = pick_intensity(&mut random_below);
+    weather.weather_change_time = tick
+        + WEATHER_DURATION_MIN
+        + u64::from(
+            random_below((WEATHER_DURATION_MAX - WEATHER_DURATION_MIN) as i32).max(0) as u32,
+        );
+    true
+}
+
+// ============================================================================
+// Client packet (`weather_client.c`'s `send_weather_update`/
+// `broadcast_weather_packet`, `mod_send_weather`).
+// ============================================================================
+
+/// C `calculate_transition_progress` (`weather_client.c:57-64`).
+pub(crate) fn transition_progress_byte(weather: &WeatherState, tick: u64) -> u8 {
+    if !weather.is_transitioning {
+        return 255;
+    }
+    let elapsed = tick.saturating_sub(weather.transition_start) as f32;
+    let duration = weather.transition_duration.max(1) as f32;
+    ((elapsed / duration).clamp(0.0, 1.0) * 255.0) as u8
+}
+
+/// C `calculate_day_night_position` (`weather_client.c:27-52`): `hour`/
+/// `minute`/`sunrise`/`sunset` are all already in the compressed game-day
+/// units `GameDate` uses (`HOUR_LEN`/`MIN_LEN`/`DAY_LEN`), so the same
+/// integer-ratio formula applies unchanged.
+pub(crate) fn day_night_position(date: &GameDate) -> u8 {
+    let daylight_time = (date.sunset - date.sunrise).max(1);
+    let current_time = date.hour * HOUR_LEN + date.minute * MIN_LEN;
+    let position = if current_time < date.sunrise {
+        (current_time * 64) / date.sunrise.max(1)
+    } else if current_time < date.sunset {
+        64 + ((current_time - date.sunrise) * 128) / daylight_time
+    } else {
+        let night_remaining = (DAY_LEN - date.sunset + date.sunrise).max(1);
+        192 + ((current_time - date.sunset) * 64) / night_remaining
+    };
+    position.clamp(0, 255) as u8
+}
+
+/// C `mod_send_weather`'s payload (`weather_client.c:69-93`/`96-131`):
+/// both `send_weather_update` and `broadcast_weather_packet` send
+/// `world_weather.current_weather`/`weather_intensity` as-is (no
+/// `is_weather_allowed_in_area` coercion at broadcast time - only the
+/// admin commands' validation gates what `current_weather` can *become*).
+/// `effects` is masked to the 5 client-visible bits and the caller adds
+/// `MOD_WEATHER_EFFECT_INDOOR` per player.
+pub(crate) fn weather_packet_bytes(
+    weather: &WeatherState,
+    date: &GameDate,
+    tick: u64,
+    indoor: bool,
+) -> [u8; ugaris_protocol::mod_weather::SV_WEATHER_PACKET_SIZE] {
+    let mut effects = (weather.weather_effects & 0x1F) as u8;
+    if indoor {
+        effects |= MOD_WEATHER_EFFECT_INDOOR;
+    }
+    sv_weather_packet(
+        weather.current_weather as u8,
+        weather.weather_intensity as u8,
+        transition_progress_byte(weather, tick),
+        day_night_position(date),
+        effects,
+    )
+}
+
+/// C `broadcast_weather_packet` (`weather_client.c:96-131`): sends every
+/// connected player the current weather state, adding
+/// `MOD_WEATHER_EFFECT_INDOOR` for players `is_player_indoors` reports
+/// true for. Gated on `area_has_weather` exactly like C ("For no-weather
+/// areas... don't broadcast weather changes - Players in these areas
+/// already have CLEAR + INDOOR set on entry" - that initial per-login send
+/// isn't wired yet, see `PORTING_TODO.md`).
+pub(crate) fn broadcast_weather_packet(world: &World, runtime: &mut ServerRuntime, area_id: u16) {
+    if !area_has_weather(i64::from(area_id)) {
+        return;
+    }
+    let weather = runtime.weather.clone();
+    let tick = world.tick.0;
+    let targets: Vec<(u64, CharacterId)> = runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            player
+                .character_id
+                .map(|character_id| (player.session_id, character_id))
+        })
+        .collect();
+    for (session_id, character_id) in targets {
+        let indoors = world
+            .characters
+            .get(&character_id)
+            .and_then(|character| {
+                world
+                    .map
+                    .tile(usize::from(character.x), usize::from(character.y))
+            })
+            .is_some_and(|tile| tile.flags.contains(MapFlags::INDOORS));
+        let bytes = weather_packet_bytes(&weather, &world.date, tick, indoors);
+        runtime.send_to_session(session_id, bytes::BytesMut::from(&bytes[..]));
+    }
 }

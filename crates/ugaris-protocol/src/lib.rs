@@ -3,6 +3,7 @@ pub mod command;
 pub mod frame;
 pub mod login;
 pub mod mod_achievements;
+pub mod mod_weather;
 pub mod packet;
 
 pub use client::{client_command_size, ClientCommand, ClientCommandDecoder, ClientCommandKind};

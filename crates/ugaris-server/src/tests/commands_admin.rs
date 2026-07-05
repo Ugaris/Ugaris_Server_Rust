@@ -3309,6 +3309,7 @@ fn weather_command_reports_god_debug_info() {
         prev_weather: 0,
         weather_change_time: 240,
         affected_areas: vec![1, 3],
+        seasonal_influence: SEASON_SPRING,
     };
 
     let result = apply_weather_command(&world, character_id, 1, &weather, "/weather")
@@ -3350,7 +3351,7 @@ fn weather_admin_commands_mutate_runtime_state_with_legacy_feedback() {
     assert_eq!(weather.weather_intensity, 3);
     assert_eq!(
         weather.weather_effects,
-        WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP
+        WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP | WEATHER_EFFECT_SKILL
     );
     assert!(weather.is_transitioning);
     assert_eq!(weather.transition_start, 48);

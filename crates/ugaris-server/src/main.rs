@@ -115,8 +115,8 @@ use ugaris_core::{
     },
     game_settings::GameSettings,
     game_time::{
-        GameDate, DAYS_PER_MOON_CYCLE, DAYS_PER_YEAR, FALL_EQUINOX_DAY, HALF_MOON_CYCLE, HOUR_LEN,
-        MIN_LEN, SPRING_EQUINOX_DAY, START_TIME, SUMMER_SOLSTICE_DAY,
+        GameDate, DAYS_PER_MOON_CYCLE, DAYS_PER_YEAR, DAY_LEN, FALL_EQUINOX_DAY, HALF_MOON_CYCLE,
+        HOUR_LEN, MIN_LEN, SPRING_EQUINOX_DAY, START_TIME, SUMMER_SOLSTICE_DAY,
     },
     ids::{CharacterId, ItemId},
     item_driver::{
@@ -178,6 +178,7 @@ use ugaris_db::{
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
 
 use ugaris_protocol::{
+    mod_weather::{sv_weather_packet, MOD_WEATHER_EFFECT_INDOOR},
     packet::{
         CharacterMapAction, CharacterMapStatus, MapLayer, MapPosition, PacketBuilder,
         CMF_SINK_ANKLE, CMF_SINK_BELLY, CMF_SINK_CHEST, CMF_SINK_KNEE, CMF_TAKE, CMF_UNDERWATER,
@@ -767,6 +768,19 @@ async fn main() -> anyhow::Result<()> {
         config.area_id,
         (runtime.dlight_override != 0).then_some(runtime.dlight_override),
     );
+    // C `init_weather` (`src/module/weather/weather.c:204-256`): seed the
+    // autonomous cycle's season tracking and first change time from the
+    // live game date/tick before the loop starts, so the very first
+    // `update_weather_tick` call doesn't see a spurious season change or
+    // fire the periodic-change branch instantly (`weather_change_time`
+    // defaults to `0`, which is always in the past).
+    runtime.weather.seasonal_influence = current_season(&world.date);
+    runtime.weather.weather_change_time = world.tick.0
+        + WEATHER_DURATION_MIN
+        + u64::from(
+            runtime_random_below((WEATHER_DURATION_MAX - WEATHER_DURATION_MIN) as i32).max(0)
+                as u32,
+        );
     info!(
         area_id = config.area_id,
         mirror_id = config.mirror_id,
@@ -783,6 +797,49 @@ async fn main() -> anyhow::Result<()> {
                     (runtime.dlight_override != 0).then_some(runtime.dlight_override),
                 );
                 world.regenerate_characters(runtime.regen_time, config.area_id);
+                // C `server.c:210`'s `update_weather()` + `act.c:2268`'s
+                // per-player `apply_weather_effects` (`src/module/weather/
+                // weather.c`): advance the autonomous seasonal weather
+                // cycle every tick, broadcast an `SV_MOD2`/`SV_VIS_WEATHER`
+                // packet to every connected player when it changes, and
+                // roll the periodic outdoor damage tick.
+                let weather_changed = update_weather_tick(
+                    &mut runtime.weather,
+                    &world.date,
+                    world.tick.0,
+                    runtime_random_below,
+                );
+                if weather_changed {
+                    broadcast_weather_packet(&world, &mut runtime, config.area_id);
+                }
+                if runtime.weather.weather_effects & WEATHER_EFFECT_DAMAGE != 0
+                    && area_has_weather(i64::from(config.area_id))
+                {
+                    let damage = weather_damage_amount(
+                        runtime.weather.current_weather,
+                        runtime.weather.weather_intensity,
+                    );
+                    if damage > 0 {
+                        // C `handle_weather_damage` (`weather.c:435-471`):
+                        // each player rolls its own independent "Only apply
+                        // damage occasionally (every ~12 seconds)"
+                        // `RANDOM(TICKS * 12)` check every tick (the C call
+                        // site is inside the per-character `tick_char`
+                        // loop), so every player gets its own chance rather
+                        // than all-or-nothing for the whole area.
+                        let player_character_ids: Vec<CharacterId> = world
+                            .characters
+                            .values()
+                            .filter(|character| character.flags.contains(CharacterFlags::PLAYER))
+                            .map(|character| character.id)
+                            .collect();
+                        for character_id in player_character_ids {
+                            if runtime_random_below((TICKS_PER_SECOND * 12) as i32) == 0 {
+                                world.apply_weather_damage(character_id, damage);
+                            }
+                        }
+                    }
+                }
                 // C `lostcon_driver`'s `!ch[cn].player && ticker >
                 // dat->timeout` branch + `exit_char`/`kick_char`: save and
                 // despawn characters whose disconnect linger expired
@@ -1116,12 +1173,21 @@ async fn main() -> anyhow::Result<()> {
                                 .get(&character_id)
                                 .map(|character| character.flags)
                                 .unwrap_or_else(CharacterFlags::empty);
+                            let weather_before_admin_command = runtime.weather.clone();
                             if let Some(result) = apply_weather_admin_command(
                                 &world,
                                 character_id,
                                 &mut runtime.weather,
                                 &command,
                             ) {
+                                // C `cmd_setweather`/`cmd_clearweather`/
+                                // `cmd_setareaweather` (`command.c`) each
+                                // call `broadcast_weather_packet()`
+                                // immediately on success (not just on the
+                                // next `update_weather()` tick).
+                                if runtime.weather != weather_before_admin_command {
+                                    broadcast_weather_packet(&world, &mut runtime, config.area_id);
+                                }
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }

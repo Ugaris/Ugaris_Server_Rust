@@ -5120,11 +5120,80 @@ Unlocks every quest NPC. Do these before any P4 area work.
   warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
   panics. No runtime/NPC/networking wiring yet - see REMAINING above.
 
-- [ ] **Weather driver (`src/module/weather/weather.c`)** - server-side
+- [~] **Weather driver (`src/module/weather/weather.c`)** - server-side
   state machine exists in `crates/ugaris-server/src/weather.rs` (admin
   commands only). Port the actual per-tick weather effects: `SV_*`
   weather packets to clients (check client protocol), movement slow,
-  visibility reduction, damage weather, area gating.
+  visibility reduction, damage weather, area gating. REMAINING: movement-
+  speed/visibility-range/skill-value modifiers (`modify_movement_speed`/
+  `modify_visibility_range`/`modify_skill_value`, `weather.c:477-527`)
+  aren't wired into `do_action::speed_ticks`/`see::char_see_char` -
+  `WeatherState` lives in `ugaris-server`, not `World`, and `speed_ticks`/
+  `char_see_char` have many call sites across `do_action.rs`/`actions.rs`/
+  `npc_fight.rs`/`spells.rs`/`see.rs`, so plumbing a weather modifier
+  through needs its own slice (the `weather_effect_data` table already
+  has `move_mod`/`vis_mod` ready for it). Lightning strikes
+  (`handle_lightning_strike`) and elemental debuffs
+  (`apply_elemental_debuffs`/`get_elemental_debuff`/
+  `modify_fire_resistance`/`modify_cold_resistance`/
+  `modify_attack_speed`/`modify_spell_power`) are unported (the
+  `WEATHER_EFFECT_LIGHTNING`/`WEATHER_EFFECT_COMBAT`/
+  `WEATHER_EFFECT_ELEMENTAL` C-internal flags have no Rust
+  representation - only the 5 client-visible bits are computed). Slip
+  itself (`can_slip`/`reset_slip_cooldown`) is intentionally not ported:
+  C's own `apply_weather_effects` has it permanently disabled ("was too
+  disruptive to gameplay"), dead code in the C tree too. The multi-server
+  mirror storage sync (`tick_weather_storage`) and DB persistence
+  (`save_weather_state`/`load_weather_state`) are N/A - this Rust process
+  is always a single area's only server (no `areaM` mirror concept), and
+  there's no "global blob storage" primitive in `ugaris-db` yet (same
+  architectural gap as the Arena rankings task's toplist). The initial
+  per-login/area-change weather send (`init_player_weather`/
+  `send_indoor_state`) isn't wired - new players don't get a weather
+  packet until the next autonomous change or admin command broadcasts
+  one.
+  Progress Log: ported the autonomous weather cycle end-to-end. Replaced
+  the previous hand-rolled `calculate_weather_effects` (which didn't
+  match C's table - e.g. it never set `WEATHER_EFFECT_SLOW` for Fog even
+  though C's own table has `move_mod < 100` at every Fog intensity) with
+  a digit-for-digit port of `weather.c:148-192`'s `weather_effects`
+  table (`crates/ugaris-server/src/weather.rs`'s `WeatherEffectData`/
+  `WEATHER_EFFECTS`), plus the new `WEATHER_EFFECT_SKILL` bit. Fixed
+  `is_weather_allowed_in_area` to treat the desert areas (19/20) as
+  clear-only, matching `weather.h`'s `WEATHER_DESERT` macro (sandstorm/
+  fog are globally disabled pending further development) - previously
+  they were incorrectly treated as full outdoor weather. Ported
+  `get_current_season`/`update_weather`'s season-change and periodic-
+  change branches (`current_season`/`pick_seasonal_weather`/
+  `pick_intensity`/`start_weather_transition`/
+  `update_weather_transition_tick`/`update_weather_tick`, all RNG-
+  injectable via the existing `impl FnMut(i32) -> i32` pattern from
+  `rng.rs`/`spawns.rs`, wired to the real `runtime_random_below` at the
+  one real call site in `main.rs`'s tick loop). Added the `SV_MOD2`/
+  `SV_VIS_WEATHER` client packet (`crates/ugaris-protocol/src/
+  mod_weather.rs`, byte-exact against the sibling `Ugaris_Protocol` repo's
+  header) plus `weather_packet_bytes`/`day_night_position`/
+  `transition_progress_byte`/`broadcast_weather_packet`, wired into the
+  tick loop (broadcast on autonomous change) and the `/setweather`/
+  `/clearweather`/`/setareaweather` admin commands (broadcast immediately
+  on mutation, matching C's `cmd_set*weather` each calling
+  `broadcast_weather_packet()` synchronously). Added real per-tick
+  outdoor damage: `World::apply_weather_damage`
+  (`crates/ugaris-core/src/world/weather.rs`, the `CF_GOD`/`CF_IMMORTAL`/
+  indoors/`CF_PLAYER` guard clauses from `handle_weather_damage`) wired
+  per-player with an independent `RANDOM(TICKS*12)` roll each tick
+  (matching C's per-character call site, not one shared roll for the
+  whole area) and `weather_damage_amount` for the table lookup. 19 new
+  `ugaris-server` tests (effect-table boundaries incl. the Fog fix,
+  desert-area fix, season thresholds/equinox overrides, weighted weather/
+  intensity picks, the periodic no-repeat rule, transition completion,
+  day/night and transition-progress byte formulas, packet layout,
+  broadcast area-gating) + 6 new `ugaris-core`/`ugaris-protocol` tests
+  (`apply_weather_damage` gating, packet byte layout). `cargo fmt --all`,
+  `cargo test --workspace` (1715 ugaris-core + 55 protocol + 3 net + 38
+  db + 571 server, all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panics.
 
 - [ ] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +

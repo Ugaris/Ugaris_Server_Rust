@@ -52,6 +52,7 @@ mod text;
 mod trader;
 mod traps_hazards;
 mod turn_seyan;
+mod weather;
 
 pub use actions::*;
 pub(crate) use area_mech::*;
