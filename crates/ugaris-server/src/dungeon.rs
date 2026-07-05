@@ -1,31 +1,44 @@
-//! Clan-dungeon raid-guard NPC generation, ported from
+//! Clan-dungeon raid-guard NPC/map generation, ported from
 //! `src/area/13/dungeon.c`'s `build_warrior`/`build_mage`/`build_seyan`
 //! (`dungeon.c:217-700`), together with the per-level base-stat tables from
-//! `src/area/13/dungeon_tab.c` (`warrior_tab`/`mage_tab`/`seyan_tab`).
+//! `src/area/13/dungeon_tab.c` (`warrior_tab`/`mage_tab`/`seyan_tab`), plus
+//! the map-tile/item builders (`build_wall`/`build_fake`/`build_door`/
+//! `build_key`/`build_teleport`, `dungeon.c:715-850`) and `build_cell`'s own
+//! dispatch of a generated [`ugaris_core::dungeon_maze::MazeCell`]'s
+//! `special` code into all of the above (`dungeon.c:851-937`).
 //!
-//! These three functions instantiate a "warrior"/"mage"/"seyan" character
-//! template (`ugaris_data/zones/13/dungeon.chr`), scale every skill the
-//! template already carries to a per-level `base` value from the matching
-//! table via a per-skill formula, then attach four "spell of equipment"
-//! items (`equip1`/`equip2`/`armor_spell`/`weapon_spell`, carried in
-//! non-worn inventory slots 12-15 exactly like C's `ch[cn].item[12..15]`)
-//! whose modifier values are computed from `level2maxitem`/the character's
-//! own raised skills, matching the average player's gear power at that
-//! level.
+//! `build_warrior`/`build_mage`/`build_seyan` instantiate a
+//! "warrior"/"mage"/"seyan" character template
+//! (`ugaris_data/zones/13/dungeon.chr`), scale every skill the template
+//! already carries to a per-level `base` value from the matching table via
+//! a per-skill formula, then attach four "spell of equipment" items
+//! (`equip1`/`equip2`/`armor_spell`/`weapon_spell`, carried in non-worn
+//! inventory slots 12-15 exactly like C's `ch[cn].item[12..15]`) whose
+//! modifier values are computed from `level2maxitem`/the character's own
+//! raised skills, matching the average player's gear power at that level.
+//!
+//! `build_wall` overwrites a map tile with an opaque wall; `build_fake`/
+//! `build_door`/`build_key`/`build_teleport` instantiate the matching
+//! `ugaris_data/zones/13/dungeon.itm` item template (`fake_wall`/
+//! `dungeon_door`/`maze_key_spawn`/`teleport_trap`) with the driver_data
+//! layout the already-ported `item_driver::area13_dungeon` readers expect,
+//! and place it on the map. `build_cell` ties a single [`MazeCell`]'s four
+//! wall segments and one `special` placement code into calls to all seven
+//! of the above.
 //!
 //! Deliberately **not** wired here (a separate, larger future slice per
-//! `PORTING_TODO.md`'s Clan system task): `build_cell`'s dispatch of a
-//! generated `dungeon_maze::MazeCell`'s `special` code into calls to these
-//! functions (`dungeon.c:849-937`), and the `dungeonmaster`/
-//! `dungeonfighter` NPC drivers that orchestrate a full raid. This module
-//! only provides the three NPC-generation functions themselves, each
-//! independently unit-tested against the C formulas.
+//! `PORTING_TODO.md`'s Clan system task): the `dungeonmaster`/
+//! `dungeonfighter` NPC drivers (`create_dungeon`/`enter_dungeon`/
+//! `list_dungeon`/`warn_dungeon`/`dungeonfighter`/`fighter_dead`) that
+//! actually call `create_maze`+loop-over-`build_cell` to spin up a live
+//! catacomb, track its owning clan/target/expiry, and tear it down
+//! (`destroy_dungeon`'s `build_remove`/`build_empty` sweep). `build_cell`
+//! itself takes `xoff`/`yoff`/`maze_clan`/`maze_base`/`maze_level` as
+//! explicit parameters (C's own file-scope statics,
+//! `dungeon.c:214-215`) rather than reading globals, so it is exercised
+//! directly by tests today and ready to be driven by that future
+//! orchestrator without any signature change.
 
-// Not yet wired into any call site: `build_cell`'s dispatch of a generated
-// `dungeon_maze::MazeCell`'s `special` code into `build_warrior`/
-// `build_mage`/`build_seyan` calls (`dungeon.c:849-937`) is a separate,
-// larger future slice per `PORTING_TODO.md`'s Clan system task. Exercised
-// directly by `crates/ugaris-server/src/tests/dungeon.rs` in the meantime.
 #![allow(dead_code)]
 
 use super::*;
@@ -558,5 +571,246 @@ pub(crate) fn seyan_stat_value(index: usize, base: i32, level: i32) -> i32 {
         i if i == Tactics as usize => (base - 5).max(1),
         i if i == Percept as usize => (base - 10).max(1),
         _ => (base - 50).max(1),
+    }
+}
+
+/// C `DEV_ID_MAZE1`/`DEV_ID_MAZE2` (`common/item_id.h:29-33`) - the
+/// "generated keys in clan catacombs"/"generated keys in random dungeon"
+/// device-id bytes used by `MAKE_ITEMID` when a door's key requirement is
+/// created (`dungeon.c:820,825`).
+const DEV_ID_MAZE1: u32 = 0x03;
+const DEV_ID_MAZE2: u32 = 0x04;
+
+/// C `MAKE_ITEMID(dev_id, nr)` (`common/item_id.h:58`:
+/// `(((dev_id) << 24) | (nr))`).
+const fn make_maze_item_id(dev_id: u32, nr: u32) -> u32 {
+    (dev_id << 24) | nr
+}
+
+fn ensure_driver_data_len(item: &mut Item, len: usize) {
+    if item.driver_data.len() < len {
+        item.driver_data.resize(len, 0);
+    }
+}
+
+fn set_driver_data_u16(item: &mut Item, idx: usize, value: u16) {
+    ensure_driver_data_len(item, idx + 2);
+    item.driver_data[idx..idx + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn set_driver_data_u32(item: &mut Item, idx: usize, value: u32) {
+    ensure_driver_data_len(item, idx + 4);
+    item.driver_data[idx..idx + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+/// C `build_wall(x, y)` (`dungeon.c:715-723`): overwrites one map tile
+/// with an opaque, impassable, sound/shout-blocking wall tile. The
+/// foreground sprite cycles through 4 brick-texture variants purely from
+/// the tile's own coordinates (no RNG involved, unlike most other
+/// "random-looking" legacy tile choices).
+pub(crate) fn build_wall(world: &mut World, x: usize, y: usize) {
+    if let Some(tile) = world.map.tile_mut(x, y) {
+        tile.flags = MapFlags::INDOORS
+            | MapFlags::SIGHTBLOCK
+            | MapFlags::SOUNDBLOCK
+            | MapFlags::SHOUTBLOCK
+            | MapFlags::MOVEBLOCK;
+        tile.foreground_sprite = 59171 + (((x & 3) + (y & 3)) % 4) as u32;
+        tile.ground_sprite = 0;
+    }
+}
+
+/// C `build_teleport(x, y)` (`dungeon.c:786-798`): places a
+/// `teleport_trap` item (driven by the already-ported
+/// `item_driver::area13_dungeon::dungeon_teleport_driver`) whose stored
+/// destination is always the catacomb's own entrance area (`xoff+2`,
+/// `yoff+78` - the bottom of the 81x81 catacomb block), never the trap's
+/// own placement coordinates.
+pub(crate) fn build_teleport(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    x: usize,
+    y: usize,
+    xoff: usize,
+    yoff: usize,
+    maze_clan: i32,
+) {
+    let Ok(mut item) = loader.instantiate_item_template("teleport_trap", None) else {
+        return;
+    };
+    set_driver_data_u16(&mut item, 0, (xoff + 2) as u16);
+    set_driver_data_u16(&mut item, 2, (yoff + 78) as u16);
+    set_driver_data_u16(&mut item, 4, maze_clan as u16);
+    if world.map.set_item_map(&mut item, x, y) {
+        world.items.insert(item.id, item);
+    }
+}
+
+/// C `build_fake(x, y)` (`dungeon.c:800-813`): places a `fake_wall` item
+/// (driven by `item_driver::area13_dungeon::dungeon_fake_driver`) on an
+/// otherwise-open floor tile - the item template itself carries the
+/// `IF_MOVEBLOCK|IF_SIGHTBLOCK` flags that make it look and behave like a
+/// real wall until a player "uses" it to break through.
+pub(crate) fn build_fake(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    x: usize,
+    y: usize,
+    maze_clan: i32,
+) {
+    let Ok(mut item) = loader.instantiate_item_template("fake_wall", None) else {
+        return;
+    };
+    set_driver_data_u16(&mut item, 0, maze_clan as u16);
+    if world.map.set_item_map(&mut item, x, y) {
+        world.items.insert(item.id, item);
+    }
+}
+
+/// C `build_door(x, y, keyid, keys)` (`dungeon.c:814-835`): places a
+/// `dungeon_door` item (driven by
+/// `item_driver::area13_dungeon::dungeon_door_driver`). `keys` selects how
+/// many of the two key-requirement slots are populated (`0`, `1`, or `2`);
+/// every `build_cell` call site passes `maze_base` as `keyid`, matching
+/// the corresponding `build_key` spawn's own stored id.
+pub(crate) fn build_door(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    x: usize,
+    y: usize,
+    keyid: u32,
+    keys: i32,
+    maze_clan: i32,
+) {
+    let Ok(mut item) = loader.instantiate_item_template("dungeon_door", None) else {
+        return;
+    };
+    let key1 = if keys > 0 {
+        make_maze_item_id(DEV_ID_MAZE1, keyid)
+    } else {
+        0
+    };
+    let key2 = if keys > 1 {
+        make_maze_item_id(DEV_ID_MAZE2, keyid)
+    } else {
+        0
+    };
+    set_driver_data_u32(&mut item, 0, key1);
+    set_driver_data_u32(&mut item, 4, key2);
+    set_driver_data_u16(&mut item, 8, maze_clan as u16);
+    if world.map.set_item_map(&mut item, x, y) {
+        world.items.insert(item.id, item);
+    }
+}
+
+/// C `build_key(x, y, nr, keyid)` (`dungeon.c:836-850`): places a
+/// `maze_key_spawn` item (driven by
+/// `item_driver::area13_dungeon::dungeon_key_driver`); `nr` selects which
+/// of the two key slots this spawn grants (`1` or `2`), and `keyid` is
+/// always `maze_base` at every `build_cell` call site, matching the
+/// corresponding door's own `MAKE_ITEMID`-wrapped requirement.
+pub(crate) fn build_key(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    x: usize,
+    y: usize,
+    nr: u8,
+    keyid: u32,
+    maze_clan: i32,
+) {
+    let Ok(mut item) = loader.instantiate_item_template("maze_key_spawn", None) else {
+        return;
+    };
+    item.driver_data.clear();
+    item.driver_data.resize(4, 0);
+    item.driver_data[0] = nr;
+    item.driver_data[1] = maze_clan as u8;
+    item.driver_data[2] = 0;
+    set_driver_data_u32(&mut item, 4, keyid);
+    if world.map.set_item_map(&mut item, x, y) {
+        world.items.insert(item.id, item);
+    }
+}
+
+/// C `build_cell(cx, cy, cell)` (`dungeon.c:851-937`): builds one 4x4
+/// maze cell's top/left wall segments (each with a possible fake-wall
+/// substitution at its middle tile) and dispatches the cell's own
+/// `special` placement code - keys (`3`/`4`), the six warrior/mage/seyan
+/// tiers (`5..=22`, `+2` maze-level bump per tier per `build_cell`'s own
+/// `case` groupings), teleport traps (`23..=27`, one of five in-cell
+/// positions), and the exit door variants (`28..=30`) - into the matching
+/// builder above. `xoff`/`yoff`/`maze_clan`/`maze_base`/`maze_level` are
+/// C's own file-scope statics (`dungeon.c:214-215`), taken here as
+/// explicit parameters since `World` holds no such per-raid state yet
+/// (see this module's doc comment).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_cell(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    cx: usize,
+    cy: usize,
+    cell: &MazeCell,
+    xoff: usize,
+    yoff: usize,
+    maze_clan: i32,
+    maze_base: u32,
+    maze_level: i32,
+) {
+    let cell_x = cx * 4 + xoff;
+    let cell_y = cy * 4 + yoff;
+
+    build_wall(world, cell_x, cell_y);
+    if cell.top_wall {
+        build_wall(world, cell_x + 1, cell_y);
+        if cell.special == 2 {
+            build_fake(world, loader, cell_x + 2, cell_y, maze_clan);
+        } else {
+            build_wall(world, cell_x + 2, cell_y);
+        }
+        build_wall(world, cell_x + 3, cell_y);
+    }
+    if cell.left_wall {
+        build_wall(world, cell_x, cell_y + 1);
+        if cell.special == 1 {
+            build_fake(world, loader, cell_x, cell_y + 2, maze_clan);
+        } else {
+            build_wall(world, cell_x, cell_y + 2);
+        }
+        build_wall(world, cell_x, cell_y + 3);
+    }
+
+    let center_x = cell_x + 2;
+    let center_y = cell_y + 2;
+
+    match cell.special {
+        3 => build_key(world, loader, center_x, center_y, 1, maze_base, maze_clan),
+        4 => build_key(world, loader, center_x, center_y, 2, maze_base, maze_clan),
+        5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 => {
+            let tier = (cell.special - 5) / 3;
+            let kind = (cell.special - 5) % 3;
+            let level = maze_level + tier * 2;
+            let (cx, cy) = (center_x as u16, center_y as u16);
+            match kind {
+                0 => {
+                    build_warrior(world, loader, runtime, cx, cy, level, maze_clan, maze_level);
+                }
+                1 => {
+                    build_mage(world, loader, runtime, cx, cy, level, maze_clan, maze_level);
+                }
+                _ => {
+                    build_seyan(world, loader, runtime, cx, cy, level, maze_clan, maze_level);
+                }
+            }
+        }
+        23 => build_teleport(world, loader, center_x, center_y, xoff, yoff, maze_clan),
+        24 => build_teleport(world, loader, cell_x + 1, center_y, xoff, yoff, maze_clan),
+        25 => build_teleport(world, loader, cell_x + 3, center_y, xoff, yoff, maze_clan),
+        26 => build_teleport(world, loader, center_x, cell_y + 1, xoff, yoff, maze_clan),
+        27 => build_teleport(world, loader, center_x, cell_y + 3, xoff, yoff, maze_clan),
+        28 => build_door(world, loader, center_x, center_y, maze_base, 0, maze_clan),
+        29 => build_door(world, loader, center_x, center_y, maze_base, 1, maze_clan),
+        30 => build_door(world, loader, center_x, center_y, maze_base, 2, maze_clan),
+        _ => {}
     }
 }

@@ -114,6 +114,7 @@ use ugaris_core::{
         can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy, ItemUseRequest,
     },
     drvlib::char_dist,
+    dungeon_maze::MazeCell,
     effect::Effect,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,

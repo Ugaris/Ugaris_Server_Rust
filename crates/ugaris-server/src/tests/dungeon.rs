@@ -168,6 +168,28 @@ const DUNGEON_ITM: &str = r#"
       mod_index=V_WEAPON
       mod_value=1
     ;
+    teleport_trap:
+      name="Teleport Trap"
+      flag=IF_STEPACTION
+    ;
+    fake_wall:
+      name="Fake Wall"
+      flag=IF_USE
+      flag=IF_MOVEBLOCK
+      flag=IF_SIGHTBLOCK
+      flag=IF_SOUNDBLOCK
+      sprite=59172
+    ;
+    dungeon_door:
+      name="Dungeon Door"
+      flag=IF_USE
+      sprite=19
+    ;
+    maze_key_spawn:
+      name="Key"
+      flag=IF_USE
+      sprite=50004
+    ;
 "#;
 
 fn dungeon_loader() -> ZoneLoader {
@@ -489,5 +511,255 @@ fn warrior_stat_value_default_and_negative_base_branches() {
     assert_eq!(
         warrior_stat_value(CharacterValue::Rage as usize, 51, 40, true),
         31
+    );
+}
+
+// C `build_wall(x, y)` (`dungeon.c:715-723`).
+#[test]
+fn build_wall_sets_indoor_blocking_flags_and_cycling_sprite() {
+    let mut world = World::default();
+
+    build_wall(&mut world, 10, 10);
+    let tile = world.map.tile(10, 10).unwrap();
+    assert_eq!(
+        tile.flags,
+        MapFlags::INDOORS
+            | MapFlags::SIGHTBLOCK
+            | MapFlags::SOUNDBLOCK
+            | MapFlags::SHOUTBLOCK
+            | MapFlags::MOVEBLOCK
+    );
+    assert_eq!(tile.foreground_sprite, 59171 + ((10 & 3) + (10 & 3)) % 4);
+    assert_eq!(tile.ground_sprite, 0);
+
+    // Different (x,y) parity picks a different sprite variant.
+    build_wall(&mut world, 11, 12);
+    let tile = world.map.tile(11, 12).unwrap();
+    assert_eq!(tile.foreground_sprite, 59171 + ((11 & 3) + (12 & 3)) % 4);
+}
+
+// C `build_teleport(x, y)` (`dungeon.c:786-798`): destination is always
+// `xoff+2`, `yoff+78`, never the trap's own placement coordinates.
+#[test]
+fn build_teleport_places_item_with_fixed_entrance_target() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+
+    build_teleport(&mut world, &mut loader, 20, 20, 2, 2, 5);
+
+    let tile = world.map.tile(20, 20).unwrap();
+    assert_ne!(tile.item, 0);
+    let item = world.items.get(&ItemId(tile.item)).unwrap();
+    assert_eq!(item.name, "Teleport Trap");
+    assert_eq!(
+        u16::from_le_bytes([item.driver_data[0], item.driver_data[1]]),
+        4
+    ); // xoff+2
+    assert_eq!(
+        u16::from_le_bytes([item.driver_data[2], item.driver_data[3]]),
+        80
+    ); // yoff+78
+    assert_eq!(
+        u16::from_le_bytes([item.driver_data[4], item.driver_data[5]]),
+        5
+    ); // maze_clan
+}
+
+// C `build_fake(x, y)` (`dungeon.c:800-813`).
+#[test]
+fn build_fake_places_wall_like_item_and_stores_clan() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+
+    build_fake(&mut world, &mut loader, 20, 20, 7);
+
+    let tile = world.map.tile(20, 20).unwrap();
+    assert_ne!(tile.item, 0);
+    // The fake_wall item's own IF_MOVEBLOCK/IF_SIGHTBLOCK carried through
+    // to the tile via the ordinary `set_item_map` propagation.
+    assert!(tile.flags.contains(MapFlags::TMOVEBLOCK));
+    assert!(tile.flags.contains(MapFlags::TSIGHTBLOCK));
+    let item = world.items.get(&ItemId(tile.item)).unwrap();
+    assert_eq!(item.driver_data[0], 7);
+}
+
+// C `build_door(x, y, keyid, keys)` (`dungeon.c:814-835`): `keys`
+// controls how many `MAKE_ITEMID`-wrapped key slots get populated.
+#[test]
+fn build_door_wraps_key_ids_by_keys_count() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+
+    build_door(&mut world, &mut loader, 20, 20, 0xABCD, 2, 9);
+    let tile = world.map.tile(20, 20).unwrap();
+    let item = world.items.get(&ItemId(tile.item)).unwrap();
+    let key1 = u32::from_le_bytes(item.driver_data[0..4].try_into().unwrap());
+    let key2 = u32::from_le_bytes(item.driver_data[4..8].try_into().unwrap());
+    assert_eq!(key1, (0x03 << 24) | 0xABCD); // DEV_ID_MAZE1
+    assert_eq!(key2, (0x04 << 24) | 0xABCD); // DEV_ID_MAZE2
+    assert_eq!(
+        u16::from_le_bytes([item.driver_data[8], item.driver_data[9]]),
+        9
+    );
+
+    build_door(&mut world, &mut loader, 21, 20, 0xABCD, 0, 9);
+    let tile = world.map.tile(21, 20).unwrap();
+    let item = world.items.get(&ItemId(tile.item)).unwrap();
+    let key1 = u32::from_le_bytes(item.driver_data[0..4].try_into().unwrap());
+    let key2 = u32::from_le_bytes(item.driver_data[4..8].try_into().unwrap());
+    assert_eq!(key1, 0);
+    assert_eq!(key2, 0);
+
+    build_door(&mut world, &mut loader, 22, 20, 0xABCD, 1, 9);
+    let tile = world.map.tile(22, 20).unwrap();
+    let item = world.items.get(&ItemId(tile.item)).unwrap();
+    let key1 = u32::from_le_bytes(item.driver_data[0..4].try_into().unwrap());
+    let key2 = u32::from_le_bytes(item.driver_data[4..8].try_into().unwrap());
+    assert_eq!(key1, (0x03 << 24) | 0xABCD);
+    assert_eq!(key2, 0);
+}
+
+// C `build_key(x, y, nr, keyid)` (`dungeon.c:836-850`).
+#[test]
+fn build_key_stores_nr_clan_and_raw_keyid() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+
+    build_key(&mut world, &mut loader, 20, 20, 2, 0x1122_3344, 6);
+
+    let tile = world.map.tile(20, 20).unwrap();
+    let item = world.items.get(&ItemId(tile.item)).unwrap();
+    assert_eq!(item.driver_data[0], 2); // nr
+    assert_eq!(item.driver_data[1], 6); // maze_clan
+    assert_eq!(item.driver_data[2], 0); // not yet taken
+    let keyid = u32::from_le_bytes(item.driver_data[4..8].try_into().unwrap());
+    assert_eq!(keyid, 0x1122_3344); // stored raw, not MAKE_ITEMID-wrapped
+}
+
+// C `build_cell(cx, cy, cell)` (`dungeon.c:851-937`): wall segments plus a
+// warrior-tier NPC spawn dispatch.
+#[test]
+fn build_cell_builds_walls_and_dispatches_warrior_special_code() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(400);
+
+    let cell = MazeCell {
+        top_wall: true,
+        left_wall: true,
+        visited: true,
+        special: 8, // warrior, tier 1 (+2 maze_level)
+    };
+
+    build_cell(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        1,
+        1,
+        &cell,
+        2,
+        2,
+        3,
+        999,
+        20,
+    );
+
+    // Walls: cell_x=1*4+2=6, cell_y=6. top_wall builds (7,6)/(8,6)/(9,6);
+    // left_wall builds (6,7)/(6,8)/(6,9), plus the corner (6,6).
+    for (x, y) in [(6, 6), (7, 6), (8, 6), (9, 6), (6, 7), (6, 8), (6, 9)] {
+        assert!(
+            world
+                .map
+                .tile(x, y)
+                .unwrap()
+                .flags
+                .contains(MapFlags::MOVEBLOCK),
+            "expected wall at ({x},{y})"
+        );
+    }
+
+    // special=8 => warrior at maze_level(20)+2=22, spawned at the cell
+    // center (6+2, 6+2) = (8,8).
+    let character = world.characters.get(&CharacterId(400)).unwrap();
+    assert_eq!((character.x, character.y), (8, 8));
+    assert_eq!(character.name, "Warrior22");
+}
+
+// `build_cell` dispatch for the door/key/teleport special codes (28-30,
+// 3-4, 23-27) - just confirms routing, since the individual builders are
+// already unit-tested above.
+#[test]
+fn build_cell_dispatches_door_key_and_teleport_special_codes() {
+    let mut world = World::default();
+    let mut loader = dungeon_loader();
+    let mut runtime = ServerRuntime::default();
+
+    let door_cell = MazeCell {
+        special: 29,
+        ..Default::default()
+    };
+    build_cell(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        2,
+        2,
+        &door_cell,
+        2,
+        2,
+        3,
+        555,
+        20,
+    );
+    let center = world.map.tile(2 * 4 + 2 + 2, 2 * 4 + 2 + 2).unwrap();
+    assert_ne!(center.item, 0);
+    assert_eq!(
+        world.items.get(&ItemId(center.item)).unwrap().name,
+        "Dungeon Door"
+    );
+
+    let key_cell = MazeCell {
+        special: 3,
+        ..Default::default()
+    };
+    build_cell(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        3,
+        2,
+        &key_cell,
+        2,
+        2,
+        3,
+        555,
+        20,
+    );
+    let center = world.map.tile(3 * 4 + 2 + 2, 2 * 4 + 2 + 2).unwrap();
+    assert_eq!(world.items.get(&ItemId(center.item)).unwrap().name, "Key");
+
+    let teleport_cell = MazeCell {
+        special: 23,
+        ..Default::default()
+    };
+    build_cell(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        4,
+        2,
+        &teleport_cell,
+        2,
+        2,
+        3,
+        555,
+        20,
+    );
+    let center = world.map.tile(4 * 4 + 2 + 2, 2 * 4 + 2 + 2).unwrap();
+    assert_eq!(
+        world.items.get(&ItemId(center.item)).unwrap().name,
+        "Teleport Trap"
     );
 }

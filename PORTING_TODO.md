@@ -3236,13 +3236,25 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `build_warrior`/`build_mage`/`build_seyan` NPC stat generation ported
   in iteration 140 (`crates/ugaris-server/src/dungeon.rs`, plus
   `level2maxitem` in `crates/ugaris-core/src/world/exp.rs` and the three
-  `dungeon_tab.c` per-level tables - see Progress Log), but still needs:
-  `build_cell`'s dispatch of a generated [`dungeon_maze::MazeCell`]'s
-  `special` code into calls to those three functions plus the
-  wall/door/key/teleport map-tile builders (`dungeon.c:849-937`), and the
-  `dungeonmaster`/`dungeonfighter` NPC drivers (`create_dungeon`/
-  `enter_dungeon`/`list_dungeon`/`warn_dungeon`/`dungeonfighter`/
-  `dungeon_potion`/`fighter_dead`) that tie it all together - the potion
+  `dungeon_tab.c` per-level tables - see Progress Log), and `build_cell`'s
+  dispatch of a generated [`dungeon_maze::MazeCell`]'s `special` code into
+  calls to those three functions plus the wall/door/key/teleport map-tile
+  builders (`build_wall`/`build_teleport`/`build_fake`/`build_door`/
+  `build_key`, `dungeon.c:715-937`) ported in iteration 141 (same file,
+  see Progress Log) - REMAINING now: only the `dungeonmaster`/
+  `dungeonfighter` NPC drivers (`create_dungeon`/`enter_dungeon`/
+  `list_dungeon`/`warn_dungeon`/`destroy_dungeon`/`dungeonfighter`/
+  `dungeon_potion`/`fighter_dead`, `dungeon.c:1343-2161`) that actually
+  call `create_maze`+loop-over-`build_cell` to spin up/track/tear down a
+  live catacomb - plus a real gap iteration 141 discovered while auditing
+  the already-ported `dungeonkey` item driver (`item_driver::
+  area13_dungeon::dungeon_key_driver`/its `main.rs` `DungeonKey` outcome
+  handler): a picked-up key's `template_id` is set straight from the
+  spawn item's raw stored `keyid` with no `MAKE_ITEMID(DEV_ID_MAZE1/2,
+  ...)` wrapping applied (unlike C's own `dungeonkey`, `dungeon.c:
+  1913-1930`, which sets the real key's `ID` to the wrapped value), so it
+  can never actually match a `dungeon_door`'s wrapped `key1`/`key2`
+  fields today - needs its own small fix-up slice. The potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
   reachable slice, not blocked on anything, since the alchemy-potion
@@ -4523,6 +4535,48 @@ Unlocks every quest NPC. Do these before any P4 area work.
     warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
     panics (not strictly required per the recipe, run anyway since it
     was cheap).
+  - 2026-07-05 (iteration 141): ported the next self-contained slice in
+    `crates/ugaris-server/src/dungeon.rs`: `build_wall` (`dungeon.c:
+    715-723`, opaque wall map tile with a coordinate-driven 4-variant
+    brick sprite, no RNG), `build_teleport`/`build_fake`/`build_door`/
+    `build_key` (`dungeon.c:786-850`, each instantiates the matching
+    `dungeon.itm` template - `teleport_trap`/`fake_wall`/`dungeon_door`/
+    `maze_key_spawn` - writes the little-endian `driver_data` layout the
+    already-ported `item_driver::area13_dungeon` readers expect via new
+    local `set_driver_data_u16`/`_u32` helpers, and places it with
+    `MapGrid::set_item_map`), and `build_cell` itself (`dungeon.c:
+    851-937`: builds a cell's top/left wall segments with their
+    fake-wall-substitution middle tile, then dispatches the cell's own
+    `special` code - keys `3`/`4`, the six warrior/mage/seyan tiers
+    `5..=22` via the already-ported `build_warrior`/`build_mage`/
+    `build_seyan`, teleport traps `23..=27`'s five in-cell positions, and
+    exit-door variants `28..=30` - matching every C `case` verbatim).
+    `xoff`/`yoff`/`maze_clan`/`maze_base`/`maze_level` are explicit
+    parameters rather than C's file-scope statics (`dungeon.c:214-215`),
+    so the whole chain is directly testable without the still-unported
+    orchestrator. Confirmed and preserved a real C quirk verbatim:
+    `build_key`'s spawn item stores `keyid` (always `maze_base`) raw in
+    `driver_data[4..8]`, *not* `MAKE_ITEMID`-wrapped, unlike `build_door`'s
+    own key-requirement fields which *are* wrapped - the wrapping only
+    happens in C's `dungeonkey` pickup driver (`dungeon.c:1913-1930`).
+    Auditing that already-ported Rust equivalent
+    (`item_driver::area13_dungeon::dungeon_key_driver` + its `main.rs`
+    `DungeonKey` outcome handler) found the `MAKE_ITEMID` wrapping step is
+    currently missing there - a latent bug in already-merged code from an
+    earlier iteration, outside this iteration's own `dungeon.c:715-937`
+    scope, so flagged in `PORTING_LEDGER.md`/this note rather than
+    silently fixed as an unrelated slice. 12 new tests in
+    `crates/ugaris-server/src/tests/dungeon.rs` (every new builder plus
+    `build_cell`'s wall-segment and warrior/door/key/teleport dispatch
+    branches), plus a new `dungeon_maze::MazeCell` import wired into
+    `main.rs`'s `ugaris_core` import block. `cargo fmt --all`,
+    `cargo test --workspace` (1870 ugaris-core + 55 db + 3 net + 40
+    protocol + 601 server [+17], all green, zero failures), `cargo build
+    -p ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+    "entering Rust game loop" with no panics. Marking `[~]` still: only
+    the `dungeonmaster`/`dungeonfighter` NPC driver orchestration and the
+    `dungeonkey` `MAKE_ITEMID` gap remain of this REMAINING item - see the
+    updated REMAINING note above.
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission
