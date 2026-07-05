@@ -8436,6 +8436,43 @@ Unlocks every quest NPC. Do these before any P4 area work.
   remain the largest unexamined chunk and would benefit from their own
   dedicated cross-reference pass before the next slice is picked.
 
+  Progress Log (iteration 190): ported `/fixit` (`command.c:9058-9066`
+  dispatch + `cmd_reset_questlog`, `command.c:3194-3218`) and `/questfix`
+  (`command.c:9067-9075` dispatch + `cmd_reset_last_quest`,
+  `command.c:3221-3251`), both `CF_GOD`-gated exact-word `cmdcmp` matches,
+  into `apply_admin_character_command` (`commands_admin.rs`). Both share
+  an online-name lookup (`take_legacy_alpha_name` + `find_online_
+  character_by_name`, reporting "Sorry, no one by the name %s around." on
+  miss). `/fixit` operates correctly on the named target throughout:
+  wipes its entire quest log (`QuestLog::default()`, C's `del_data`),
+  fully re-derives it (`PlayerRuntime::init_questlog`, C's `questlog_init`
+  - now actually runs since the wipe cleared the sentinel), and resends
+  the fresh log to the target. `/questfix` reproduces a genuine C bug
+  verbatim: `cmd_reset_last_quest`'s `set_data` call uses the *caller's*
+  own character number (`cn`), not the looked-up target (`co`), so the
+  named-target argument only serves as an existence check - the command's
+  real effect is clearing the CALLER's own quest-log init-complete
+  sentinel (`QuestLog::clear_init_complete`, new method mirroring the
+  existing `mark_init_complete`) and resending the caller's own unchanged
+  quest log; `questlog_init(co)` on the actual target is virtually always
+  a no-op since an online character's sentinel is already set. Both use
+  the same `legacy_questlog_payload`/`sessions_for_character` resend
+  pattern already established by `/setrd` et al. and `military.rs`. 6 new
+  tests in `tests/commands_admin.rs`: GOD gate for both, both commands'
+  not-found error text, `/fixit`'s wipe-and-reinit round trip (stale bogus
+  entry gone, sentinel freshly set), and `/questfix`'s exact bug
+  reproduction (caller's own sentinel cleared, named target's quest log
+  entries completely untouched). `cargo fmt --all`, `cargo test
+  --workspace` (2022 ugaris-core + 55 db + 3 net + 40 protocol + 816
+  server [+5], all green, zero failures), `cargo build -p ugaris-server` /
+  `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic. REMAINING: still
+  ~85 uncross-referenced `cmdcmp` entries (now minus `/fixit`/`/questfix`
+  too), mostly blocked on unported infra as documented above; the
+  anticheat (`ac*`) and macro-detection (`macro*`) families remain the
+  largest unexamined chunk and would benefit from their own dedicated
+  cross-reference pass before the next slice is picked.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

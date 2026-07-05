@@ -158,7 +158,7 @@ use ugaris_core::{
         MAX_TUNNEL_USES, MILITARY_PPD_MAXADVISOR, MIN_TUNNEL_LEVEL, SWEAR_SENTENCE_COUNT,
         SWEAR_SENTENCE_LEN,
     },
-    quest::{QuestReopenResult, QF_OPEN},
+    quest::{QuestLog, QuestReopenResult, QF_OPEN},
     spell::{
         is_one_carry_driver, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD,
         EF_EARTHRAIN, EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,

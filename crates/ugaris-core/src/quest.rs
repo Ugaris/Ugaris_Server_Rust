@@ -1152,6 +1152,18 @@ impl QuestLog {
         }
     }
 
+    /// C `/questfix`'s `quest[MAXQUEST - 1].done = 0;`
+    /// (`src/system/command.c:3245`): clears the init-complete sentinel
+    /// without touching any other entry, so the next
+    /// [`PlayerRuntime::init_questlog`] call (typically the character's
+    /// next login) fully re-derives every quest slot from its area PPD
+    /// state again.
+    pub fn clear_init_complete(&mut self) {
+        if let Some(entry) = self.quests.last_mut() {
+            entry.done = 0;
+        }
+    }
+
     /// Raw `done`/`flags` setter used by the PPD codec
     /// (`PlayerRuntime::decode_legacy_questlog_ppd`) to unpack the
     /// persisted `struct quest { unsigned char done:6; flags:2; }`

@@ -4770,6 +4770,88 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/fixit` (`command.c:9058-9066`, `CF_GOD`-gated, `cmdcmp(ptr,
+    // "fixit", 5)` - exact word only) plus `cmd_reset_questlog`
+    // (`command.c:3194-3218`): looks up an *online* character by name
+    // (alpha-only prefix, matching `take_legacy_alpha_name`; C's
+    // `strcasecmp` requires an exact match against the full character
+    // name, no self-fallback), reports "Sorry, no one by the name %s
+    // around." on failure, otherwise wipes the target's entire quest log
+    // PPD (`del_data`, reproduced as `QuestLog::default()`), fully
+    // re-derives it (`questlog_init`, reproduced as
+    // `PlayerRuntime::init_questlog`, which now actually runs since the
+    // sentinel was just cleared by the wipe) and resends the fresh quest
+    // log to the TARGET (`sendquestlog(co, ch[co].player)` - unlike
+    // `/questfix` right below, this one operates on the right character
+    // throughout).
+    if lower == "fixit" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (name, _) = take_legacy_alpha_name(rest.trim_start());
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+        if let Some(target_player) = runtime.player_for_character_mut(target_id) {
+            target_player.quest_log = QuestLog::default();
+            target_player.init_questlog();
+            let payload = legacy_questlog_payload(target_player);
+            for (session_id, _) in runtime.sessions_for_character(target_id) {
+                runtime.send_to_session(session_id, payload.clone());
+            }
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `/questfix` (`command.c:9067-9075`, `CF_GOD`-gated, `cmdcmp(ptr,
+    // "questfix", 8)` - exact word only) plus `cmd_reset_last_quest`
+    // (`command.c:3221-3251`): shares `/fixit`'s name-lookup/not-found
+    // path above, but its action is a genuine C bug - `set_data` is
+    // called with the ACTING character `cn`, not the looked-up target
+    // `co`, so it clears the CALLER's own quest-log init-complete
+    // sentinel (`quest[MAXQUEST - 1].done = 0`), then calls
+    // `questlog_init(co)` on the target (almost always a no-op, since an
+    // online character's sentinel is virtually always already set), and
+    // finally resends the CALLER's own now-desynced quest log
+    // (`sendquestlog(cn, ch[cn].player)`). The practical effect: the
+    // named argument only serves as an online-character existence check;
+    // the caller's own quest log gets marked for full re-derivation on
+    // their *next* login (the immediate resend still reflects the
+    // unchanged pre-existing entries, since `init_questlog` is never
+    // called on `cn` here). Reproduced verbatim, bug and all.
+    if lower == "questfix" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (name, _) = take_legacy_alpha_name(rest.trim_start());
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+        if let Some(target_player) = runtime.player_for_character_mut(target_id) {
+            target_player.init_questlog();
+        }
+        if let Some(caller_player) = runtime.player_for_character_mut(character_id) {
+            caller_player.quest_log.clear_init_complete();
+            let payload = legacy_questlog_payload(caller_player);
+            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                runtime.send_to_session(session_id, payload.clone());
+            }
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
     None
 }
 

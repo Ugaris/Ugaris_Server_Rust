@@ -6794,3 +6794,117 @@ fn noprof_ignores_any_trailing_argument_text() {
     let god = world.characters.get(&god_id).unwrap();
     assert!(god.professions.iter().all(|&value| value == 0));
 }
+
+// C `command.c:9058-9066`/`3194-3218` (`/fixit`) and `command.c:9067-
+// 9075`/`3221-3251` (`/questfix`).
+
+#[test]
+fn fixit_and_questfix_are_god_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    for command in ["/fixit Target", "/questfix Target"] {
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, target_id, command, 1)
+                .is_none(),
+            "{command} should be GOD-gated"
+        );
+    }
+}
+
+#[test]
+fn fixit_reports_no_one_by_that_name_when_target_is_offline() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/fixit Nobody", 1)
+            .expect("god fixit should be recognized");
+    assert_eq!(
+        missing.messages,
+        vec!["Sorry, no one by the name Nobody around."]
+    );
+}
+
+#[test]
+fn fixit_wipes_and_reinitializes_the_targets_own_quest_log_with_no_confirmation() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    {
+        let target_player = runtime.player_for_character_mut(target_id).unwrap();
+        // Simulate a corrupted/stale quest log: already "initialized"
+        // (sentinel set) but with a bogus entry that a fresh derive
+        // would never produce.
+        target_player.quest_log.mark_init_complete();
+        target_player.quest_log.set_raw(0, 63, 3);
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/fixit Target", 1)
+            .expect("god fixit should be recognized");
+    // C sends no confirmation message to the caller at all.
+    assert!(result.messages.is_empty());
+
+    let target_player = runtime.player_for_character(target_id).unwrap();
+    // The bogus entry is gone (wiped, then re-derived from scratch) and
+    // the log is freshly marked complete again (re-init actually ran).
+    assert_ne!(target_player.quest_log.entries()[0].done, 63);
+    assert!(target_player.quest_log.is_init_complete());
+}
+
+#[test]
+fn questfix_reports_no_one_by_that_name_when_target_is_offline() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/questfix Nobody", 1)
+            .expect("god questfix should be recognized");
+    assert_eq!(
+        missing.messages,
+        vec!["Sorry, no one by the name Nobody around."]
+    );
+}
+
+#[test]
+fn questfix_clears_the_callers_own_sentinel_and_leaves_the_named_targets_log_untouched() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    // Give the calling GOD their own connected PlayerRuntime too (C's
+    // real bug operates on `cn`, the caller, not the named target `co`).
+    let mut god_player = PlayerRuntime::connected(90, 0);
+    god_player.character_id = Some(god_id);
+    god_player.quest_log.mark_init_complete();
+    runtime.players.insert(90, god_player);
+    {
+        let target_player = runtime.player_for_character_mut(target_id).unwrap();
+        target_player.quest_log.mark_init_complete();
+        target_player.quest_log.set_raw(0, 5, 3);
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/questfix Target", 1)
+            .expect("god questfix should be recognized");
+    assert!(result.messages.is_empty());
+
+    // The caller's own sentinel was cleared (marked for full re-derive on
+    // next login) even though the command targeted "Target".
+    assert!(!runtime
+        .player_for_character(god_id)
+        .unwrap()
+        .quest_log
+        .is_init_complete());
+    // The named target's quest log is completely untouched - C's bug
+    // means `questlog_init(co)` is a no-op since `co`'s sentinel was
+    // already set.
+    let target_player = runtime.player_for_character(target_id).unwrap();
+    assert!(target_player.quest_log.is_init_complete());
+    assert_eq!(target_player.quest_log.entries()[0].done, 5);
+}
