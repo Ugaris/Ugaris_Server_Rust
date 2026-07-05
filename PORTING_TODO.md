@@ -3228,8 +3228,19 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `clan_trade_bonus` - ported iteration 103, see Progress Log),
   clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
-  (transport module has the seam). REMAINING: the raid-spawn consumer of
-  `get_clan_dungeon` itself (`area/13/dungeon.c`, unported) - the potion
+  (transport module has the seam). REMAINING (updated iteration 139): the
+  raid-spawn consumer of `get_clan_dungeon` itself (`area/13/dungeon.c`)
+  now has its pure maze-generation algorithm ported
+  (`crates/ugaris-core/src/dungeon_maze.rs` - `build_maze`/
+  `special_fill`/`create_maze`, see Progress Log) but still needs:
+  `build_warrior`/`build_mage`/`build_seyan` NPC stat generation
+  (`dungeon_tab.c`'s three per-level tables), `build_cell`'s dispatch of
+  a generated [`dungeon_maze::MazeCell`]'s `special` code into real
+  `World` map tiles/items/NPCs (reusing `ugaris-server/src/spawns.rs`'s
+  existing template-instantiation pattern), and the `dungeonmaster`/
+  `dungeonfighter` NPC drivers (`create_dungeon`/`enter_dungeon`/
+  `list_dungeon`/`warn_dungeon`/`dungeonfighter`/`dungeon_potion`/
+  `fighter_dead`) that tie it all together - the potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
   reachable slice, not blocked on anything, since the alchemy-potion
@@ -4390,6 +4401,72 @@ Unlocks every quest NPC. Do these before any P4 area work.
       system" task overall, updated: only the raid-spawn consumer of
       `get_clan_dungeon` (`area/13/dungeon.c`, unported) is left - tracked
       as a P4 "Area 13" task, not a clan-system gap of its own.
+  - 2026-07-05 (iteration 139): started on `area/13/dungeon.c`'s
+    raid-spawn consumer, the sole remaining gap. Ported the first
+    self-contained slice: the *pure* maze-generation algorithm, in new
+    module `crates/ugaris-core/src/dungeon_maze.rs`. `build_maze`
+    (`dungeon.c:1005-1101`, the explicit-stack recursive-backtracker
+    maze carver - ported the `goto repeat`-based control flow exactly,
+    including a subtle real quirk: the origin cell's own `v`/visited
+    flag is never initialized, so it sometimes receives one redundant
+    "back-edge" from whichever neighbor exhausts every other option
+    last, producing a single-cycle "braided" maze (400 edges) instead of
+    a strict N-1 spanning tree (399 edges) - both occur depending on
+    carving order, confirmed by sweeping 2000 seeds in a test, and both
+    are always fully connected; reproduced faithfully rather than
+    "fixed", per this repo's porting rules), `special_fill`
+    (`dungeon.c:968-1003`, the recursive shortest-path/reachability
+    flood fill respecting carved walls and a `999` "preserved path"
+    sentinel), and `create_maze`'s own orchestration
+    (`dungeon.c:1134-1329`, *not* including its final `build_cell`
+    map-instantiation loop or `show_maze` debug printer, both deferred -
+    see below): the three-corner path-length scoring
+    (`path1`/`path2`/`path3` + the `cbrt`-based difficulty `score`
+    formula), the fake-wall midpoint-of-path selection and
+    connectivity-invalidation check, the exit-door key-requirement
+    placement (`keys` 0/1/2 -> specials 28/29/30), the start/end maze-key
+    placement, and the shared-budget (`maxi`=50 total NPCs,
+    `panic`=200 total placement attempts, both pools shared across every
+    warrior/mage/seyan tier and type, not reset per-tier - replicated
+    exactly, with a regression test proving the shared budget still
+    guarantees termination even when every requested count vastly
+    exceeds it or every cell is already occupied) NPC/teleport-trap
+    placement loops. Random numbers reuse the existing seeded-LCG helper
+    shape from `world/mod.rs`'s `legacy_random_below_from_seed` (not a
+    real bit-exact `srand`/`rand()` port - already established
+    throughout the codebase as an intentional simplification), with
+    `create_maze`'s own `base` parameter seeding a fresh *local* sequence
+    exactly like C's `srand(base)`, not touching any shared/world-level
+    RNG state. 12 new unit tests covering: maze connectivity across many
+    seeds, determinism for a fixed seed, divergence across different
+    seeds, `special_fill`'s straight-line distance computation and its
+    `999`-sentinel early-return behavior (both against small hand-built
+    corridor grids, independent of `build_maze`'s randomness),
+    `create_maze`'s determinism, its exit-door/key placement per the
+    `keys` parameter, its shared NPC-count cap, its shared attempt-budget
+    termination guarantee, and that a teleport trap is never placed on
+    the maze's own start cell. Explicitly deferred to a future slice (see
+    this file's updated REMAINING note above and the new module's own
+    doc comment): `build_warrior`/`build_mage`/`build_seyan` NPC stat
+    generation from `dungeon_tab.c`'s three per-level tables (data
+    already present in `ugaris_data/zones/13/dungeon.chr`/`.itm`),
+    `build_cell`'s dispatch of a generated maze's per-cell `special`
+    code into real `World` map tiles/items/NPCs (the existing
+    `ugaris-server/src/spawns.rs` template-instantiation pattern is
+    directly reusable, confirmed by research this iteration), and the
+    `dungeonmaster`/`dungeonfighter` NPC drivers that call into all of
+    the above (`create_dungeon`/`enter_dungeon`/`list_dungeon`/
+    `warn_dungeon`/`destroy_dungeon`/`dungeon_potion`/`fighter_dead`,
+    `dungeon.c:1343-2161`). No `World`/runtime wiring this iteration (a
+    standalone, currently-unreferenced `ugaris-core` module), so this is
+    pure groundwork - not yet reachable from any live game system.
+    `cargo fmt --all`, `cargo test --workspace` (1869 ugaris-core [+12] +
+    55 db + 3 net + 40 protocol + 584 server, all green, zero failures),
+    `cargo build -p ugaris-server` clean with zero warnings, 10s
+    boot-smoke confirmed "entering Rust game loop" with no panics (not
+    strictly required per the recipe since this touches no runtime
+    loop/login/map-sync/protocol code, but run anyway since it was
+    cheap).
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

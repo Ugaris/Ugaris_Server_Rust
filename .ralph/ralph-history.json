@@ -4439,15 +4439,44 @@
         "assertion failed: world.drain_pending_area_texts().is_empty()",
         "test result: FAILED. 1855 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s"
       ]
+    },
+    {
+      "iteration": 139,
+      "startedAt": "2026-07-05T06:28:55.850Z",
+      "endedAt": "2026-07-05T06:48:36.564Z",
+      "durationMs": 1180114,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/lib.rs",
+        "crates/ugaris-core/src/dungeon_maze.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 584 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "crates/ugaris-core/src/world/clanclerk.rs:773:            Err(ClanDungeonUseError::InvalidRequest) => {",
+        "crates/ugaris-core/src/world/clanclerk.rs:779:            Err(ClanDungeonUseError::OverBudget(cost)) => {",
+        "crates/ugaris-core/src/clan.rs:1295:            .ok_or(ClanDungeonUseError::InvalidRequest)?;",
+        "crates/ugaris-core/src/clan.rs:1297:            return Err(ClanDungeonUseError::InvalidRequest);",
+        "crates/ugaris-core/src/clan.rs:1306:            return Err(ClanDungeonUseError::InvalidRequest);",
+        "crates/ugaris-core/src/clan.rs:1320:            return Err(ClanDungeonUseError::OverBudget(cost));",
+        "crates/ugaris-core/src/clan.rs:2461:            Err(ClanDungeonUseError::InvalidRequest)",
+        "crates/ugaris-core/src/clan.rs:2465:            Err(ClanDungeonUseError::InvalidRequest)"
+      ]
     }
   ],
-  "totalDurationMs": 156153097,
+  "totalDurationMs": 157333211,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 138,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 139,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -5028,7 +5057,7 @@
       "test world::tests::arena::fighter_wait_transitions_to_enter_on_paired_message ... FAILED": 1,
       "Now fix the \"outside listening box\" test position and the rent-command-reserves test failure (which ": 1,
       "Let's check the core test counts to confirm nothing failed there.": 1,
-      "test result: ok. 584 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 5,
+      "test result: ok. 584 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 6,
       "test world::tests::arena::manager_ignores_messages_from_outside_the_listening_box ... FAILED": 1,
       "test world::tests::arena::manager_leave_command_from_non_renter_does_not_clear_reservation ... FAILE": 1,
       "test world::tests::arena::manager_leave_command_teleports_speaker_back_and_clears_renter ... FAILED": 1,
@@ -5058,7 +5087,15 @@
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2539 tests, all green, zero failures), `c": 1,
       "test result: ok. 1845 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s": 1,
       "test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
-      "test result: FAILED. 1855 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s": 1
+      "test result: FAILED. 1855 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s": 1,
+      "crates/ugaris-core/src/world/clanclerk.rs:773:            Err(ClanDungeonUseError::InvalidRequest) =": 1,
+      "crates/ugaris-core/src/world/clanclerk.rs:779:            Err(ClanDungeonUseError::OverBudget(cost))": 1,
+      "crates/ugaris-core/src/clan.rs:1295:            .ok_or(ClanDungeonUseError::InvalidRequest)?;": 1,
+      "crates/ugaris-core/src/clan.rs:1297:            return Err(ClanDungeonUseError::InvalidRequest);": 1,
+      "crates/ugaris-core/src/clan.rs:1306:            return Err(ClanDungeonUseError::InvalidRequest);": 1,
+      "crates/ugaris-core/src/clan.rs:1320:            return Err(ClanDungeonUseError::OverBudget(cost));": 1,
+      "crates/ugaris-core/src/clan.rs:2461:            Err(ClanDungeonUseError::InvalidRequest)": 1,
+      "crates/ugaris-core/src/clan.rs:2465:            Err(ClanDungeonUseError::InvalidRequest)": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

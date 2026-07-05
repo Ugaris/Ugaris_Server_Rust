@@ -10,6 +10,7 @@ pub mod config;
 pub mod direction;
 pub mod do_action;
 pub mod drvlib;
+pub mod dungeon_maze;
 pub mod effect;
 pub mod entity;
 pub mod error;
