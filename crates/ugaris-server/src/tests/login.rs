@@ -113,6 +113,7 @@ fn login_bootstrap_payloads_include_visible_client_effect_slots() {
     let mut effect_cache = ClientEffectCache::default();
 
     let pk_relations = PkRelationSnapshot::default();
+    let weather = WeatherState::default();
     let payloads = login_bootstrap_payloads(
         &world,
         &character,
@@ -121,6 +122,7 @@ fn login_bootstrap_payloads_include_visible_client_effect_slots() {
         10,
         2,
         &mut effect_cache,
+        &weather,
     );
 
     assert!(payloads.iter().any(|payload| {

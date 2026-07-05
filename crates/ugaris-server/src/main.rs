@@ -6431,6 +6431,7 @@ async fn main() -> anyhow::Result<()> {
                                     world.tick.0,
                                     view_distance,
                                     runtime.effect_caches.entry(id.0).or_default(),
+                                    &runtime.weather,
                                 )
                             })
                             .unwrap_or_else(|| {
@@ -6458,6 +6459,7 @@ async fn main() -> anyhow::Result<()> {
                                     world.tick.0,
                                     view_distance,
                                     runtime.effect_caches.entry(id.0).or_default(),
+                                    &runtime.weather,
                                 )
                             });
                         let payload_count = payloads.len();

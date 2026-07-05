@@ -804,8 +804,8 @@ pub(crate) fn weather_packet_bytes(
 /// `MOD_WEATHER_EFFECT_INDOOR` for players `is_player_indoors` reports
 /// true for. Gated on `area_has_weather` exactly like C ("For no-weather
 /// areas... don't broadcast weather changes - Players in these areas
-/// already have CLEAR + INDOOR set on entry" - that initial per-login send
-/// isn't wired yet, see `PORTING_TODO.md`).
+/// already have CLEAR + INDOOR set on entry" via `init_player_weather_packet`
+/// at login, see below).
 pub(crate) fn broadcast_weather_packet(world: &World, runtime: &mut ServerRuntime, area_id: u16) {
     if !area_has_weather(i64::from(area_id)) {
         return;
@@ -834,4 +834,79 @@ pub(crate) fn broadcast_weather_packet(world: &World, runtime: &mut ServerRuntim
         let bytes = weather_packet_bytes(&weather, &world.date, tick, indoors);
         runtime.send_to_session(session_id, bytes::BytesMut::from(&bytes[..]));
     }
+}
+
+/// C `get_area_weather` (`weather.c:328-345`): returns `world_weather.
+/// current_weather` unless a specific set of `affected_areas` has been
+/// pinned (`/weather affect <area>`) and this area isn't one of them, in
+/// which case it's forced clear. An empty `affected_areas` list means
+/// "global weather, applies to every area" (C's `num_affected_areas == 0`
+/// branch).
+fn area_weather_type(weather: &WeatherState, area_id: u16) -> i32 {
+    if weather.affected_areas.is_empty() || weather.affected_areas.contains(&area_id) {
+        weather.current_weather
+    } else {
+        0 // MOD_WEATHER_CLEAR
+    }
+}
+
+/// C `init_player_weather` (`weather_client.c:155-169`), inlining the two
+/// helpers it calls (`update_player_indoor_state`/`send_indoor_state`,
+/// `play_weather_effects`/`send_weather_update`) down to the single packet
+/// their combined effect always produces exactly once per login/area-change
+/// (C's `reset_player_indoor_state` unconditionally clears the cached
+/// indoor flag first, so `update_player_indoor_state`'s "only send on
+/// change" guard either fires immediately when the fresh read is `true`,
+/// or is skipped and `play_weather_effects` sends instead when it's
+/// `false` - the two paths are mutually exclusive and exhaustive, so
+/// exactly one packet is always produced):
+/// - no-weather area (`!area_has_weather`): forced indoor Clear, matching
+///   `send_indoor_state`'s `!area_has_weather(areaID)` branch
+///   (`weather_client.c:1321-1325`) - `weather=CLEAR`, `intensity=0`,
+///   `transition=255`, `day_night=0`, `effects=INDOOR` only.
+/// - indoor tile in a weather-capable area: `send_indoor_state`'s `else`
+///   branch (`weather_client.c:1326-1331`) - real area weather/intensity
+///   with the `INDOOR` bit added, `transition=255`, `day_night=0` (both
+///   hardcoded in that C call site, not computed).
+/// - outdoors: `send_weather_update` (`weather_client.c:69-93`) - real
+///   area weather (coerced to Clear if `!is_weather_allowed_in_area`),
+///   real intensity/transition/day-night/effects, no `INDOOR` bit.
+pub(crate) fn init_player_weather_packet(
+    weather: &WeatherState,
+    date: &GameDate,
+    tick: u64,
+    area_id: u16,
+    indoor_tile: bool,
+) -> [u8; ugaris_protocol::mod_weather::SV_WEATHER_PACKET_SIZE] {
+    if !area_has_weather(i64::from(area_id)) {
+        return sv_weather_packet(
+            0, /* MOD_WEATHER_CLEAR */
+            0,
+            255,
+            0,
+            MOD_WEATHER_EFFECT_INDOOR,
+        );
+    }
+    if indoor_tile {
+        let area_weather = area_weather_type(weather, area_id) as u8;
+        let effects = (weather.weather_effects & 0x1F) as u8 | MOD_WEATHER_EFFECT_INDOOR;
+        return sv_weather_packet(
+            area_weather,
+            weather.weather_intensity as u8,
+            255,
+            0,
+            effects,
+        );
+    }
+    let mut area_weather = area_weather_type(weather, area_id);
+    if !is_weather_allowed_in_area(i64::from(area_weather), i64::from(area_id)) {
+        area_weather = 0; // MOD_WEATHER_CLEAR
+    }
+    sv_weather_packet(
+        area_weather as u8,
+        weather.weather_intensity as u8,
+        transition_progress_byte(weather, tick),
+        day_night_position(date),
+        (weather.weather_effects & 0x1F) as u8,
+    )
 }

@@ -349,3 +349,107 @@ fn broadcast_weather_packet_skips_areas_without_weather() {
     assert_eq!(payloads[0][0], SV_MOD2);
     assert_eq!(payloads[0][3], 1);
 }
+
+#[test]
+fn init_player_weather_packet_no_weather_area_forces_indoor_clear() {
+    // C `send_indoor_state`'s `!area_has_weather(areaID)` branch
+    // (`weather_client.c:1321-1325`): area 12 (Mines) never has weather,
+    // so login always sends forced Clear + Indoor regardless of the live
+    // `WeatherState`, tile, or time of day.
+    let weather = WeatherState {
+        current_weather: 2,
+        weather_intensity: 3,
+        weather_effects: WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND,
+        ..WeatherState::default()
+    };
+    let date = GameDate {
+        hour: 12,
+        ..GameDate::default()
+    };
+
+    let bytes = init_player_weather_packet(&weather, &date, 0, 12, false);
+    assert_eq!(bytes[3], 0); // MOD_WEATHER_CLEAR
+    assert_eq!(bytes[4], 0); // intensity forced to 0.
+    assert_eq!(bytes[5], 255);
+    assert_eq!(bytes[6], 0);
+    assert_eq!(bytes[7], MOD_WEATHER_EFFECT_INDOOR);
+
+    // Even an indoor tile in a no-weather area produces the same packet.
+    let indoor_bytes = init_player_weather_packet(&weather, &date, 0, 12, true);
+    assert_eq!(indoor_bytes, bytes);
+}
+
+#[test]
+fn init_player_weather_packet_indoor_tile_keeps_real_weather_but_adds_indoor_flag() {
+    // C `send_indoor_state`'s `else` branch (`weather_client.c:1326-1331`):
+    // an indoor tile in a weather-capable area still reports the real area
+    // weather/intensity/effects (so the UI/`/weather` command works), just
+    // with the `INDOOR` bit set and `transition`/`day_night` hardcoded.
+    let weather = WeatherState {
+        current_weather: 1,
+        weather_intensity: 2,
+        weather_effects: WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND,
+        ..WeatherState::default()
+    };
+    let date = GameDate {
+        hour: 12,
+        ..GameDate::default()
+    };
+
+    let bytes = init_player_weather_packet(&weather, &date, 0, 1, true);
+    assert_eq!(bytes[3], 1);
+    assert_eq!(bytes[4], 2);
+    assert_eq!(bytes[5], 255);
+    assert_eq!(bytes[6], 0);
+    assert_eq!(
+        bytes[7],
+        (WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND) as u8 | MOD_WEATHER_EFFECT_INDOOR
+    );
+}
+
+#[test]
+fn init_player_weather_packet_outdoors_matches_send_weather_update() {
+    // C `send_weather_update` (`weather_client.c:69-93`): outdoors gets the
+    // real computed transition/day-night bytes and no `INDOOR` flag.
+    let mut weather = WeatherState {
+        current_weather: 2,
+        weather_intensity: 3,
+        weather_effects: WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND,
+        ..WeatherState::default()
+    };
+    weather.transition_start = 0;
+    weather.transition_duration = 0;
+    let date = GameDate {
+        sunrise: HOUR_LEN * 6,
+        sunset: HOUR_LEN * 18,
+        hour: 12,
+        minute: 0,
+        ..GameDate::default()
+    };
+
+    let bytes = init_player_weather_packet(&weather, &date, 0, 1, false);
+    assert_eq!(bytes[3], 2);
+    assert_eq!(bytes[4], 3);
+    assert_eq!(bytes[5], 255); // not transitioning.
+    assert_eq!(bytes[6], 128); // noon.
+    assert_eq!(bytes[7], (WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND) as u8);
+}
+
+#[test]
+fn init_player_weather_packet_outdoors_coerces_disallowed_weather_to_clear() {
+    // C `send_weather_update`'s `!is_weather_allowed_in_area` coercion:
+    // the weather byte is forced to Clear but intensity/effects are left
+    // as-is (matching C's own behavior exactly, quirk and all).
+    let weather = WeatherState {
+        current_weather: 4, // MOD_WEATHER_SANDSTORM, not allowed in area 1.
+        weather_intensity: 2,
+        weather_effects: WEATHER_EFFECT_SLOW,
+        ..WeatherState::default()
+    };
+    let date = GameDate::default();
+
+    let bytes = init_player_weather_packet(&weather, &date, 0, 1, false);
+    assert_eq!(bytes[3], 0); // coerced to Clear.
+    assert_eq!(bytes[4], 2); // intensity left untouched.
+    assert_eq!(bytes[7], WEATHER_EFFECT_SLOW as u8); // effects left untouched.
+}

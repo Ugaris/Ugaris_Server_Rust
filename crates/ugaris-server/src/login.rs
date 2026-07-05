@@ -203,6 +203,7 @@ pub(crate) fn login_bootstrap_payloads(
     tick: u64,
     view_distance: usize,
     effect_cache: &mut ClientEffectCache,
+    weather: &WeatherState,
 ) -> Vec<bytes::BytesMut> {
     let mut payloads = vec![login_payload(world, character, mirror_id, tick)];
     payloads.extend(initial_map_payloads(
@@ -216,6 +217,19 @@ pub(crate) fn login_bootstrap_payloads(
         character,
         view_distance,
         effect_cache,
+    ));
+    // C `login_ok` (`src/system/player.c:637`): `init_player_weather(cn)`
+    // runs unconditionally right after the area-info/welcome-message send,
+    // for both a fresh login and an area change, so every player gets an
+    // immediate weather packet instead of waiting for the next autonomous
+    // change or admin `/weather set` broadcast (`weather_client.c:155-169`,
+    // see `init_player_weather_packet`).
+    let indoor_tile = world
+        .map
+        .tile(usize::from(character.x), usize::from(character.y))
+        .is_some_and(|tile| tile.flags.contains(MapFlags::INDOORS));
+    payloads.push(bytes::BytesMut::from(
+        &init_player_weather_packet(weather, &world.date, tick, world.area_id, indoor_tile)[..],
     ));
     payloads
 }

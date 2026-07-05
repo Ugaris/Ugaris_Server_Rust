@@ -5149,9 +5149,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   there's no "global blob storage" primitive in `ugaris-db` yet (same
   architectural gap as the Arena rankings task's toplist). The initial
   per-login/area-change weather send (`init_player_weather`/
-  `send_indoor_state`) isn't wired - new players don't get a weather
-  packet until the next autonomous change or admin command broadcasts
-  one.
+  `send_indoor_state`) was wired in iteration 125 - see Progress Log.
   Progress Log: ported the autonomous weather cycle end-to-end. Replaced
   the previous hand-rolled `calculate_weather_effects` (which didn't
   match C's table - e.g. it never set `WEATHER_EFFECT_SLOW` for Fog even
@@ -5194,6 +5192,43 @@ Unlocks every quest NPC. Do these before any P4 area work.
   db + 571 server, all green, zero failures), `cargo build -p
   ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panics.
+  Progress Log (iteration 125): ported the initial per-login/area-change
+  weather send. C `init_player_weather` (`weather_client.c:155-169`)
+  combines `update_player_indoor_state`/`send_indoor_state` and
+  `play_weather_effects`/`send_weather_update` into exactly one packet
+  per login (the "reset indoor flag to false, then only send on change"
+  guard and the "send if outdoors" call are mutually exclusive and
+  exhaustive) - ported that as a single pure function,
+  `init_player_weather_packet` (`crates/ugaris-server/src/weather.rs`),
+  covering all three C branches: no-weather area (forced indoor Clear,
+  `send_indoor_state`'s `!area_has_weather` branch), indoor tile in a
+  weather-capable area (real area weather/intensity + `INDOOR` bit,
+  hardcoded `transition=255`/`day_night=0`), and outdoors (real computed
+  transition/day-night bytes via the existing `weather_packet_bytes`
+  helpers, weather coerced to Clear if `!is_weather_allowed_in_area`
+  matching C's own quirk of leaving intensity/effects untouched in that
+  case). Added the `area_weather_type` helper (C `get_area_weather`,
+  `weather.c:328-345`) for the `affected_areas` pinning gate. Wired into
+  `login_bootstrap_payloads` (`crates/ugaris-server/src/login.rs`,
+  gained a `weather: &WeatherState` parameter): computes the login
+  character's indoor-tile flag the same way `broadcast_weather_packet`
+  already does, and appends the weather packet to the bootstrap payload
+  list sent on every login (fresh spawn, DB-loaded, or reclaimed
+  lostcon) - this Rust server has no in-process area-change path yet
+  (see the Cross-area transfer task), so only the "first login" call
+  site exists to wire. Updated both call sites in `main.rs` to pass
+  `&runtime.weather`. 4 new tests (no-weather-area forced-clear
+  indoor/outdoor equivalence, indoor-tile-in-weather-area real-weather-
+  plus-indoor-flag, outdoors real transition/day-night bytes, outdoors
+  disallowed-weather-coercion quirk) plus updated the existing
+  `login_bootstrap_payloads` test call site for the new parameter.
+  REMAINING (unchanged from before): movement/visibility/skill modifier
+  wiring, lightning/elemental debuffs, toplist-style storage gaps - see
+  above. `cargo fmt --all`, `cargo test --workspace` (1715 ugaris-core +
+  55 db + 3 net + 38 protocol + 575 server, all green, zero failures,
+  +4 new server tests), `cargo build -p ugaris-server` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panics.
 
 - [ ] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +
