@@ -1,6 +1,6 @@
 use super::*;
 use ugaris_core::character_driver::{MilitaryMasterDriverData, CDR_MILITARY_MASTER};
-use ugaris_core::world::{SingleMission, MISSION_TYPE_DEMON};
+use ugaris_core::world::{MilitaryMissionKillCheck, SingleMission, MISSION_TYPE_DEMON};
 
 // C `complete_mission`'s mercenary bonus gold goes through `give_money`
 // (`military.c:1391`), which also tracks the `achievement_add_gold_earned`
@@ -134,4 +134,88 @@ async fn apply_military_master_events_is_a_no_op_for_wealth_achievement_without_
 
     let character = &world.characters[&player_id];
     assert_eq!(character.gold, 0);
+}
+
+// C `check_military_solve` (`death.c:290-383`): both the demon and ratling
+// branches call `sendquestlog(cn, ch[cn].player)` as soon as a kill matches
+// the active mission's type/class/level target, resending the up-to-date
+// quest log to the killer's client. `apply_military_mission_kill_check`
+// (`crate::military`) reproduces the legacy `SV_QUESTLOG` half of that call.
+#[test]
+fn apply_military_mission_kill_check_resends_questlog_on_progress() {
+    let killer_id = CharacterId(1);
+    let mut world = World::default();
+
+    let mut runtime = ServerRuntime::default();
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    {
+        let player = runtime.players.get_mut(&1).unwrap();
+        player.character_id = Some(killer_id);
+        player.set_military_took_mission(1); // slot index 0
+        player.set_military_mission(
+            0,
+            SingleMission {
+                mission_type: MISSION_TYPE_DEMON,
+                opt1: 5,
+                opt2: 40,
+                pts: 1,
+                exp: 1,
+            },
+        );
+    }
+
+    apply_military_mission_kill_check(
+        &mut world,
+        &mut runtime,
+        MilitaryMissionKillCheck {
+            killer_id,
+            victim_class: 52, // pent demon class range
+            victim_level: 39, // target - 1, still a match
+        },
+    );
+
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("killer session got a resent questlog packet");
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0][0], ugaris_protocol::packet::SV_QUESTLOG);
+
+    // The mission progress feedback text is queued separately (drained by
+    // the tick loop), not sent directly.
+    let texts = world.drain_pending_system_text_bytes();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].character_id, killer_id);
+}
+
+// A kill that doesn't match the active mission's target (`NoMatch`) must not
+// resend the quest log at all - C's `check_military_solve` never reaches its
+// `sendquestlog` call in that case.
+#[test]
+fn apply_military_mission_kill_check_is_a_no_op_on_no_match() {
+    let killer_id = CharacterId(1);
+    let mut world = World::default();
+
+    let mut runtime = ServerRuntime::default();
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    {
+        let player = runtime.players.get_mut(&1).unwrap();
+        player.character_id = Some(killer_id);
+        // No active mission taken.
+    }
+
+    apply_military_mission_kill_check(
+        &mut world,
+        &mut runtime,
+        MilitaryMissionKillCheck {
+            killer_id,
+            victim_class: 52,
+            victim_level: 39,
+        },
+    );
+
+    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(world.drain_pending_system_text_bytes().is_empty());
 }

@@ -4177,11 +4177,14 @@ Unlocks every quest NPC. Do these before any P4 area work.
   site, via the already-existing `award_swap_money_converted_achievement`
   helper - `complete_mission`'s own gold-received text still goes
   through `queue_system_text_bytes` rather than `npc_quiet_say`
-  unaffected by that wiring (see below). The
-  `SV_QUEST_EXT` mod-packet that shows the active mission in the client's
-  quest log (so `check_military_solve`'s own `sendquestlog` calls are
-  also not reproduced yet - cosmetic only, the progress state itself is
-  correct); and `complete_mission`'s own reward text still goes through
+  unaffected by that wiring (see below). `check_military_solve`'s own
+  `sendquestlog` calls (`death.c:333,362`, firing on every mission-progress
+  or mission-solved kill) now resend the legacy `SV_QUESTLOG` packet to the
+  killer, closed in iteration 122 (see Progress Log) - the Ugaris-specific
+  `SV_QUEST_EXT` mod-packet half of `sendquestlog` (and the unrelated
+  `mod_send_info_sync` call it also makes) remain unported - cosmetic
+  only, the progress state itself is correct and visible via the standard
+  quest log; and `complete_mission`'s own reward text still goes through
   `World::queue_system_text`/`queue_system_text_bytes` instead of
   `npc_quiet_say` from the Master NPC (a pre-existing simplification from
   an earlier iteration, not tightened this iteration to avoid touching
@@ -4193,6 +4196,45 @@ Unlocks every quest NPC. Do these before any P4 area work.
     `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
       so there is nothing to port here; dropping this as a documentation
        correction, not a real gap).
+  Progress Log (iteration 122): closed the `check_military_solve`
+    `sendquestlog` gap the previous iteration's REMAINING note flagged -
+    C's `check_military_solve` (`death.c:290-383`) calls
+    `sendquestlog(cn, ch[cn].player)` in both its demon (`death.c:333`)
+    and sewer-ratling (`death.c:362`) branches as soon as a kill matches
+    the active mission's type/class/level target, i.e. on both the
+    `Progress` and `Solved` outcomes (never on `NoMatch`), so the
+    client's quest log immediately reflects the new `mis[nr].opt1`
+    remaining count or the just-flipped `solved_mission` flag.
+    `ugaris-server/src/military.rs`'s `apply_military_mission_kill_check`
+    (the existing wiring for this check, previously only queuing the
+    progress/solved text message) now also builds a legacy `SV_QUESTLOG`
+    payload via the existing `legacy_questlog_payload` helper (reused
+    from `login.rs`, same one `CL_GETQUESTLOG`/`ReopenQuest` already use)
+    whenever the outcome isn't `NoMatch`, and sends it directly to every
+    session for the killer character via `sessions_for_character`/
+    `send_to_session` - before the progress-text message is queued,
+    matching C's own call order (`sendquestlog` then `log_char`). Only
+    the legacy `SV_QUESTLOG` half of `sendquestlog` is reproduced (as
+    with every other `sendquestlog` call site in this crate); the
+    Ugaris-specific `SV_QUEST_EXT` mod-packet and the unrelated
+    `mod_send_info_sync` call `sendquestlog` also makes remain unported
+    (checked: neither is tracked by any other open task either - the
+    only call site of `mod_send_info_sync`/`mod_send_questlog_ext` in the
+    whole C tree is this one `sendquestlog` function, so this is now the
+    single remaining gap for both). 2 new focused tests in
+    `crates/ugaris-server/src/tests/military.rs`: one asserting a
+    `Progress`-outcome kill check produces exactly one `SV_QUESTLOG`
+    packet in `tick_out` (plus the separate queued text message), one
+    asserting a `NoMatch` kill check sends nothing and queues no text.
+    `cargo fmt --all`, `cargo test --workspace` (1707 ugaris-core + 55 db
+    + 3 net + 37 protocol + 557 server [+2], all green, zero failures),
+    `cargo build -p ugaris-server` clean with zero warnings, 10s
+    boot-smoke confirmed "entering Rust game loop" with no panics.
+    REMAINING for the "Military ranks" task overall: only the cosmetic
+    `SV_QUEST_EXT`/`mod_send_info_sync` mod-packet halves of
+    `sendquestlog`, and `complete_mission`/`promote`'s reward/promotion
+    text still going through `queue_system_text` rather than
+    `npc_quiet_say`.
   Progress Log (iteration 121): closed the wealth-achievement ladder gap
     the previous iteration's REMAINING note flagged - C's `complete_
     mission` pays its mercenary bonus gold through `give_money`

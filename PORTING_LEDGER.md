@@ -6064,6 +6064,44 @@ unported (cosmetic-only gap).
   added to `character_driver.rs`'s `TextQaEntry` tables), the storage
   state machines + `dat->storage_data` per-difficulty counters (needs the
   storage-blob architectural decision shared with Arena rankings),
-  `handle_specific_mission_request` and `process_clan_recommendation`/
-  `process_advisor_recommendation`, the wealth-achievement ladder wiring,
-  and `SV_QUEST_EXT`.
+   `handle_specific_mission_request` and `process_clan_recommendation`/
+   `process_advisor_recommendation`, the wealth-achievement ladder wiring,
+   and `SV_QUEST_EXT`.
+
+- Ralph Loop iteration 122 - `src/system/death.c` `check_military_solve`
+  continued (P3 "Military ranks" task, resuming its `[~]` entry): closed
+  the `sendquestlog` gap the iteration-121 REMAINING note flagged. C's
+  `check_military_solve` (`death.c:290-383`) calls `sendquestlog(cn,
+  ch[cn].player)` in both its demon (`death.c:333`) and sewer-ratling
+  (`death.c:362`) branches the instant a kill matches the active
+  mission's type/class/level target - i.e. on both the `Progress` and
+  `Solved` outcomes, never on `NoMatch` - so the client's quest log
+  immediately reflects the new remaining count or the just-flipped
+  `solved_mission` flag. `crates/ugaris-server/src/military.rs`'s
+  `apply_military_mission_kill_check` (the existing wiring for this
+  check) now also builds a legacy `SV_QUESTLOG` payload via the
+  already-existing `legacy_questlog_payload` helper (`login.rs`, the same
+  one `CL_GETQUESTLOG`/`ReopenQuest` already reuse) whenever the outcome
+  isn't `NoMatch`, and sends it directly to every session for the killer
+  character via `sessions_for_character`/`send_to_session` - before the
+  progress-text message is queued, matching C's own call order
+  (`sendquestlog` then `log_char`). Only the legacy `SV_QUESTLOG` half of
+  `sendquestlog` is reproduced, matching every other `sendquestlog` call
+  site already ported in this crate; the Ugaris-specific `SV_QUEST_EXT`
+  mod-packet and the unrelated `mod_send_info_sync` call `sendquestlog`
+  also makes remain unported - checked the whole C tree: this
+  `sendquestlog` function is the only call site of either, so this is now
+  the single remaining gap for both, not two separate ones. 2 new focused
+  tests in `crates/ugaris-server/src/tests/military.rs`: one drives
+  `apply_military_mission_kill_check` with a `Progress`-matching kill and
+  asserts exactly one `SV_QUESTLOG` packet lands in `tick_out` alongside
+  the separately-queued progress text; one drives a non-matching kill and
+  asserts neither a packet nor queued text appear. `cargo fmt --all`,
+  `cargo test --workspace` (1707 ugaris-core + 55 db + 3 net + 37
+  protocol + 557 server [+2], all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panics. REMAINING for "Military
+  ranks" overall: only the cosmetic `SV_QUEST_EXT`/`mod_send_info_sync`
+  mod-packet halves of `sendquestlog`, and `complete_mission`/`promote`'s
+  reward/promotion text still going through `queue_system_text` rather
+  than `npc_quiet_say`.

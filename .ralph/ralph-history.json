@@ -3871,15 +3871,44 @@
         "122:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/`get_army_rank_string`/`give_military_pts`/`give_military_pts_no_npc`) | `crates/ugaris-core/src/",
         "| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.rs`, `crates/ugaris-core/src/player.rs`, `crates/ugaris-server/src/achievement.rs`, `crates/ugaris-ser"
       ]
+    },
+    {
+      "iteration": 122,
+      "startedAt": "2026-07-04T23:59:13.736Z",
+      "endedAt": "2026-07-05T00:07:47.958Z",
+      "durationMs": 513634,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/military.rs",
+        "crates/ugaris-server/src/tests/military.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "557 passed (up from 555, our 2 new tests). Let's confirm no failures anywhere and check for compile warnings.",
+        "No failures or warnings. Let's build the server and boot-smoke test since this touches the runtime/kill path.",
+        "All green: 1707 + 55 + 3 + 37 + 557 = 2359 tests passing, zero failures. Build already confirmed clean, boot-smoke confirmed. Let's do a final `cargo build -p ugaris-server` to double check after fmt.",
+        "**Verification:** `cargo fmt --all`, `cargo test --workspace` (2359 tests total, all green, zero failures), `cargo build -p ugaris-server` clean with zero warnings, and a 10s boot-smoke confirming \"en",
+        "test result: ok. 555 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 557 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error|warning\" | head -30",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 132840804,
+  "totalDurationMs": 133354438,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 121,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 122,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -3888,9 +3917,9 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 43,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 37,
-      "test error::tests::error_constants_match_legacy_header ... ok": 23,
-      "test error::tests::error_strings_match_legacy_table ... ok": 18,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 38,
+      "test error::tests::error_constants_match_legacy_header ... ok": 24,
+      "test error::tests::error_strings_match_legacy_table ... ok": 19,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 13,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
@@ -4411,7 +4440,12 @@
       "test result: ok. 1707 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 3,
       "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 549 filtered out; finished in 0.00s": 1,
-      "test result: ok. 555 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
+      "test result: ok. 555 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 2,
+      "557 passed (up from 555, our 2 new tests). Let's confirm no failures anywhere and check for compile ": 1,
+      "No failures or warnings. Let's build the server and boot-smoke test since this touches the runtime/k": 1,
+      "All green: 1707 + 55 + 3 + 37 + 557 = 2359 tests passing, zero failures. Build already confirmed cle": 1,
+      "**Verification:** `cargo fmt --all`, `cargo test --workspace` (2359 tests total, all green, zero fai": 1,
+      "test result: ok. 557 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

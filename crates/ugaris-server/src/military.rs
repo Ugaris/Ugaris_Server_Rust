@@ -41,6 +41,19 @@ pub(crate) fn apply_military_mission_kill_check(
     };
     let outcome = player.check_military_solve(check.victim_class, check.victim_level as i32);
 
+    // C `check_military_solve` (`death.c:333,362`): both the demon and
+    // ratling branches call `sendquestlog(cn, ch[cn].player)` as soon as
+    // the kill matches the active mission's type/class/level target -
+    // i.e. on both `Progress` and `Solved`, never on `NoMatch` - so the
+    // client's quest log reflects the new `mis[nr].opt1` remaining count
+    // (or the just-flipped `solved_mission` flag) immediately. Only the
+    // legacy `SV_QUESTLOG` half of `sendquestlog` is reproduced here
+    // (matching every other `sendquestlog` call site in this crate); the
+    // Ugaris-specific `SV_QUEST_EXT`/`mod_send_info_sync` mod-protocol
+    // extensions `sendquestlog` also fires remain unported.
+    let questlog_payload = (!matches!(outcome, MilitaryMissionProgress::NoMatch))
+        .then(|| legacy_questlog_payload(player));
+
     let message: Option<Vec<u8>> = match outcome {
         MilitaryMissionProgress::NoMatch => None,
         MilitaryMissionProgress::Progress {
@@ -75,6 +88,12 @@ pub(crate) fn apply_military_mission_kill_check(
             Some(b"You solved your mission. Talk to the governor to claim your reward.".to_vec())
         }
     };
+
+    if let Some(payload) = questlog_payload {
+        for (session_id, _) in runtime.sessions_for_character(check.killer_id) {
+            runtime.send_to_session(session_id, payload.clone());
+        }
+    }
 
     if let Some(message) = message {
         world.queue_system_text_bytes(check.killer_id, message);
