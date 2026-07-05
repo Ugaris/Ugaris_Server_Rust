@@ -6982,9 +6982,8 @@ Unlocks every quest NPC. Do these before any P4 area work.
    matching C's real `backup_players` behavior; its pentagram-record
    third of the C command is skipped, that feature has no Rust port at
    all yet),
-    `/punish`, `/rename`, `/showppd`/`/showvalues`, various pentagram
-   `setpent*`/`resetpent` admin commands, and clan/tunnel editors like
-   `/changetunnel`/`/settunnel`/`/cleartunnel`) not yet cross-referenced
+    `/punish`, `/rename`, `/showppd`/`/showvalues`, and clan/tunnel editors
+   like `/changetunnel`/`/settunnel`/`/cleartunnel`) not yet cross-referenced
    (`/shutdown` done - see iteration
    179, `start_shutdown`/`shutdown_bg`/`shutdown_warn`, new
    `shutdown.rs`, which also wired the pre-existing but previously-dead
@@ -7016,9 +7015,23 @@ Unlocks every quest NPC. Do these before any P4 area work.
     neighbors); `/setseyan <name>` done (see iteration 187,
     `command.c:3055-3078`/`9989-9996`, `CF_GOD`-gated, exact-word only
     per C's `cmdcmp(ptr, "setseyan", 8)` - pure dispatch wiring over the
-    already-ported `turn_seyan`/`World::apply_turn_seyan` that the
-    gate-fight class-8 reward already drives) (see the Progress Log entries
-   pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
+     already-ported `turn_seyan`/`World::apply_turn_seyan` that the
+     gate-fight class-8 reward already drives); the pentagram-debug family
+     `/pentinfo`/`/setpentcount`/`/setpentstatus`/`/setpentbonus`/
+     `/resetpent` done (see iteration 188, `command.c:1136-1360`/`10416-
+     10465`, all `CF_GOD`-gated exact-word matches, `pent_find_player` has
+     no self-fallback unlike the `/milinfo` family - a name is always
+     required; added the new `PlayerRuntime::pentagram_debug`
+     (`PentagramDebugData`) field mirroring C's `DRD_PENT_NPPD` struct,
+     which is also the real Area 4 pentagram-solving gameplay struct
+     (`pents.c`'s `pentagram_player_data`) - a future port of that
+     unported gameplay should reuse these same fields rather than
+     duplicating them; skipped the C original's `macro_ppd` "saved pent
+     data" display/clear side effects in `/pentinfo`/`/resetpent` since
+     the whole macro-detection system is unported, matching the
+     established skip-untracked-dependent-feature convention) (see the
+     Progress Log entries
+    pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
   drifted out of sync with actual progress more than once - iteration
@@ -8330,6 +8343,51 @@ Unlocks every quest NPC. Do these before any P4 area work.
   REMAINING: unchanged otherwise - still ~89 uncross-referenced `cmdcmp`
   entries (now minus `/setseyan`), mostly blocked on unported infra as
   documented above.
+
+  Progress Log (iteration 188): ported the pentagram-debug GOD command
+  family - `/pentinfo`, `/setpentcount`, `/setpentstatus`,
+  `/setpentbonus`, `/resetpent` (`command.c:1136-1360`, dispatched at
+  `command.c:10416-10465`, all `CF_GOD`-gated with `cmdcmp` `minlen` equal
+  to each word's full length, so no abbreviations are accepted). Added
+  `PlayerRuntime::pentagram_debug: PentagramDebugData` (`player.rs`) - a
+  new grouped field mirroring C's `struct pent_debug_data`/`struct
+  pentagram_player_data` (`command.c:1136-1143`, `area/4/pents.c:130-139`)
+  stored at `DRD_PENT_NPPD`, which (unlike every neighboring `_PPD` id in
+  `drdata.h`) carries no `PERSISTENT_PLAYER_DATA` bit; kept as a plain
+  `#[serde(default)]` field like the rest of `PlayerRuntime` since this
+  port has no separate volatile-vs-persistent storage tier and the
+  distinction has no observable effect on a debug-only feature. This is
+  also the exact struct the real (still-unported) Area 4 pentagram-
+  solving gameplay reads/writes via `get_pent_data` in `pents.c` - a
+  future port of that gameplay task should reuse these same fields
+  instead of duplicating them, rather than treating this as pure debug
+  scaffolding. `pent_find_player` (`command.c:1150-1160`) has no self-
+  fallback unlike the `/milinfo` family, so all five commands require an
+  explicit online player name and use their own distinct "Player '%s' not
+  found online."/"Could not access pent data for %s." message text rather
+  than the `/milinfo`-family's "Sorry, no one by the name ... around.".
+  Added a small `parse_pent_name_and_int` helper reproducing C's
+  `sscanf(args, "%79s %d", name, &value) != 2` semantics exactly (name
+  token required, integer token must start with an optional sign then at
+  least one digit, unlike `legacy_atoi_prefix`'s silent-zero-on-no-digit
+  fallback used by the self-fallback command families elsewhere in this
+  file) for the three `setpent*` commands. Skipped the C original's
+  `macro_ppd` "saved pent data" display (`/pentinfo`) and clear
+  (`/resetpent`) side effects, and both commands' `dlog` moderation-log
+  calls, since the whole macro-detection system is unported and `dlog`
+  itself is already an established untracked-side-effect skip elsewhere
+  in this file (e.g. `/kick`). 8 new tests in `commands_admin.rs`: GOD
+  gate across all five commands, `/pentinfo` usage/missing-target/empty-
+  data/populated-data (including the out-of-range `pent_color` -> `"?"`
+  fallback), the three `setpent*` commands' successful mutation +
+  `/setpentcount`'s usage/missing-integer/missing-target error paths, and
+  `/resetpent`'s usage/missing-target/full-zero-reset (`PentagramDebugData
+  ::default()` equality check) plus the shared "online character but no
+  runtime" edge case. `cargo fmt --all`, `cargo test --workspace` (2022
+  ugaris-core + 55 db + 3 net + 40 protocol + 805 server [+8], all green,
+  zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

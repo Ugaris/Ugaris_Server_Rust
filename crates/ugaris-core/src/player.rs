@@ -901,6 +901,36 @@ pub struct PlayerRuntime {
     pub saltmine_ladder_last_seconds: [u64; SALTMINE_LADDER_COUNT],
     #[serde(default)]
     pub saltmine_pending_salt: u32,
+    /// C `struct pent_debug_data`/`struct pentagram_player_data`
+    /// (`command.c:1136-1143`, `area/4/pents.c:130-139`), stored at
+    /// `DRD_PENT_NPPD`. Unlike every neighboring `_PPD` id in
+    /// `drdata.h`, `DRD_PENT_NPPD` has no `PERSISTENT_PLAYER_DATA` bit,
+    /// so C treats it as session-only scratch memory reset whenever the
+    /// character isn't loaded; kept here as a plain `#[serde(default)]`
+    /// field like the rest of `PlayerRuntime` since this port has no
+    /// separate volatile-vs-persistent storage tier and the distinction
+    /// has no observable effect on this debug-only feature. Backs the
+    /// `/pentinfo`/`/setpentcount`/`/setpentstatus`/`/setpentbonus`/
+    /// `/resetpent` GOD debug commands; the real Area 4 pentagram-solving
+    /// gameplay (`pents.c`) that also reads/writes this same struct via
+    /// `get_pent_data` is not yet ported (see `PORTING_TODO.md`'s Area 4
+    /// task) - a future port of that gameplay should reuse these same
+    /// fields rather than duplicating them.
+    #[serde(default)]
+    pub pentagram_debug: PentagramDebugData,
+}
+
+/// See [`PlayerRuntime::pentagram_debug`]'s doc comment.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PentagramDebugData {
+    pub status: i32,
+    pub pent_it: [i32; 6],
+    pub pent_color: [i32; 6],
+    pub pent_value: [i32; 6],
+    pub pent_worth: [i32; 6],
+    pub bonus: i32,
+    pub pent_cnt: i32,
+    pub lucky_pents_this_solve: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1037,6 +1067,7 @@ impl PlayerRuntime {
             twocity_solved_library: false,
             saltmine_ladder_last_seconds: [0; SALTMINE_LADDER_COUNT],
             saltmine_pending_salt: 0,
+            pentagram_debug: PentagramDebugData::default(),
         }
     }
 

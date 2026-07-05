@@ -152,10 +152,11 @@ use ugaris_core::{
     map::{MapFlags, MapTile},
     player::{
         CaligarSkellyDeathResult, CommandAlias, DemonShrineResult, IgnoreToggleResult,
-        KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
-        XmasTreeResult, ARENA_PPD_NEWCOMER_SCORE, DEFERRED_ACHIEVEMENTS, DEFERRED_AUCTION,
-        LEGACY_SWEAR_PPD_SIZE, MAX_TUNNEL_LEVEL, MAX_TUNNEL_USES, MILITARY_PPD_MAXADVISOR,
-        MIN_TUNNEL_LEVEL, SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
+        KeyringAddResult, PentagramDebugData, PlayerActionCode, PlayerConnectionState,
+        PlayerRuntime, QueuedAction, XmasTreeResult, ARENA_PPD_NEWCOMER_SCORE,
+        DEFERRED_ACHIEVEMENTS, DEFERRED_AUCTION, LEGACY_SWEAR_PPD_SIZE, MAX_TUNNEL_LEVEL,
+        MAX_TUNNEL_USES, MILITARY_PPD_MAXADVISOR, MIN_TUNNEL_LEVEL, SWEAR_SENTENCE_COUNT,
+        SWEAR_SENTENCE_LEN,
     },
     quest::{QuestReopenResult, QF_OPEN},
     spell::{

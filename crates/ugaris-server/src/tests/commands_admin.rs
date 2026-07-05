@@ -6376,3 +6376,275 @@ fn solvetunnel_is_god_only() {
     )
     .is_none());
 }
+
+fn setup_god_and_online_target(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+) -> (CharacterId, CharacterId) {
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    world.add_character(login_character(
+        target_id,
+        &login_block("Target"),
+        1,
+        11,
+        10,
+    ));
+    let mut target_player = PlayerRuntime::connected(80, 0);
+    target_player.character_id = Some(target_id);
+    runtime.players.insert(80, target_player);
+    (god_id, target_id)
+}
+
+// C `command.c:1136-1360`/`10416-10465`: the `/pentinfo`, `/setpentcount`,
+// `/setpentstatus`, `/setpentbonus` and `/resetpent` GOD debug commands
+// over the `DRD_PENT_NPPD` scratch struct (`PlayerRuntime::pentagram_
+// debug`).
+
+#[test]
+fn pent_debug_commands_are_god_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    for command in [
+        "/pentinfo Target",
+        "/setpentcount Target 3",
+        "/setpentstatus Target 1",
+        "/setpentbonus Target 100",
+        "/resetpent Target",
+    ] {
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, target_id, command, 1)
+                .is_none(),
+            "{command} should be GOD-gated"
+        );
+    }
+}
+
+#[test]
+fn pentinfo_requires_a_player_name_and_reports_unknown_players() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let usage = apply_admin_character_command(&mut world, &mut runtime, god_id, "/pentinfo", 1)
+        .expect("god pentinfo should be recognized");
+    assert_eq!(usage.messages, vec!["Usage: /pentinfo <player>"]);
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/pentinfo Nobody", 1)
+            .expect("god pentinfo missing target should be handled");
+    assert_eq!(missing.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn pentinfo_shows_empty_data_then_active_pentagrams_after_mutation() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let empty =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/pentinfo Target", 1)
+            .expect("god pentinfo should be recognized");
+    assert_eq!(
+        empty.messages,
+        vec![
+            "=== Pentagram Data for Target ===",
+            "Status: 0 (0=normal, 1=5-of-color)",
+            "Pent Count: 0 (current run)",
+            "Lucky Pents: 0 (this solve)",
+            "Bonus: 0 exp",
+            "Active Pentagrams: 0/6",
+        ]
+    );
+
+    {
+        let player = runtime.player_for_character_mut(target_id).unwrap();
+        player.pentagram_debug.pent_it[0] = 42;
+        player.pentagram_debug.pent_color[0] = 2;
+        player.pentagram_debug.pent_value[0] = 5;
+        player.pentagram_debug.pent_worth[0] = 100;
+        player.pentagram_debug.pent_it[3] = 7;
+        player.pentagram_debug.pent_color[3] = 9; // out-of-range -> "?"
+        player.pentagram_debug.pent_value[3] = 1;
+        player.pentagram_debug.pent_worth[3] = 2;
+    }
+
+    let filled =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/pentinfo Target", 1)
+            .expect("god pentinfo should be recognized");
+    assert_eq!(
+        filled.messages,
+        vec![
+            "=== Pentagram Data for Target ===",
+            "Status: 0 (0=normal, 1=5-of-color)",
+            "Pent Count: 0 (current run)",
+            "Lucky Pents: 0 (this solve)",
+            "Bonus: 0 exp",
+            "Active Pentagrams: 2/6",
+            "  [0] color=green value=5 worth=100",
+            "  [3] color=? value=1 worth=2",
+        ]
+    );
+}
+
+#[test]
+fn setpentcount_setpentstatus_setpentbonus_mutate_the_named_targets_data() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let count = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setpentcount Target 3",
+        1,
+    )
+    .expect("god setpentcount should be recognized");
+    assert_eq!(count.messages, vec!["Set pent_cnt for Target: 0 -> 3"]);
+    assert_eq!(
+        runtime
+            .player_for_character(target_id)
+            .unwrap()
+            .pentagram_debug
+            .pent_cnt,
+        3
+    );
+
+    let status = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setpentstatus Target 1",
+        1,
+    )
+    .expect("god setpentstatus should be recognized");
+    assert_eq!(status.messages, vec!["Set pent status for Target: 0 -> 1"]);
+    assert_eq!(
+        runtime
+            .player_for_character(target_id)
+            .unwrap()
+            .pentagram_debug
+            .status,
+        1
+    );
+
+    let bonus = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setpentbonus Target -50",
+        1,
+    )
+    .expect("god setpentbonus should be recognized");
+    assert_eq!(bonus.messages, vec!["Set pent bonus for Target: 0 -> -50"]);
+    assert_eq!(
+        runtime
+            .player_for_character(target_id)
+            .unwrap()
+            .pentagram_debug
+            .bonus,
+        -50
+    );
+}
+
+#[test]
+fn setpentcount_requires_both_a_name_and_an_integer_value() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    for command in [
+        "/setpentcount",
+        "/setpentcount Target",
+        "/setpentcount Target abc",
+    ] {
+        let result = apply_admin_character_command(&mut world, &mut runtime, god_id, command, 1)
+            .expect("god setpentcount should always be recognized");
+        assert_eq!(
+            result.messages,
+            vec!["Usage: /setpentcount <player> <count>"],
+            "{command} should report usage"
+        );
+    }
+
+    let missing = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setpentcount Nobody 3",
+        1,
+    )
+    .expect("god setpentcount missing target should be handled");
+    assert_eq!(missing.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn resetpent_requires_a_name_and_zeroes_every_field() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let usage = apply_admin_character_command(&mut world, &mut runtime, god_id, "/resetpent", 1)
+        .expect("god resetpent should be recognized");
+    assert_eq!(usage.messages, vec!["Usage: /resetpent <player>"]);
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/resetpent Nobody", 1)
+            .expect("god resetpent missing target should be handled");
+    assert_eq!(missing.messages, vec!["Player 'Nobody' not found online."]);
+
+    {
+        let player = runtime.player_for_character_mut(target_id).unwrap();
+        player.pentagram_debug.pent_cnt = 5;
+        player.pentagram_debug.status = 1;
+        player.pentagram_debug.bonus = 200;
+        player.pentagram_debug.pent_it[0] = 1;
+    }
+
+    let reset =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/resetpent Target", 1)
+            .expect("god resetpent should be recognized");
+    assert_eq!(reset.messages, vec!["Reset all pentagram data for Target."]);
+    assert_eq!(
+        runtime
+            .player_for_character(target_id)
+            .unwrap()
+            .pentagram_debug,
+        PentagramDebugData::default()
+    );
+}
+
+#[test]
+fn pent_debug_commands_report_missing_runtime_for_online_character() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    // Target exists in `world.characters` but has no `PlayerRuntime`
+    // (never actually connected), matching C's "found in `ch[]` but
+    // `set_data` fails" edge case.
+    world.add_character(login_character(
+        target_id,
+        &login_block("Target"),
+        1,
+        11,
+        10,
+    ));
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/pentinfo Target", 1)
+            .expect("god pentinfo should be recognized even without a runtime");
+    assert_eq!(
+        result.messages,
+        vec!["Could not access pent data for Target."]
+    );
+}
