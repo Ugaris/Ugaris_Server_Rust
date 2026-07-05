@@ -1926,6 +1926,20 @@ impl PlayerRuntime {
         self.pk_last_kill = realtime_seconds.min(i32::MAX as u64) as u32;
     }
 
+    /// C `add_pk_steal` (`src/system/tool.c:894-908`), called from `/steal`
+    /// (`cmd_steal`, `prof.c:226`) after a successful theft. A genuine C
+    /// quirk: unlike [`Self::add_pk_kill`] this does **not** increment
+    /// `pk_kills` - it only bumps `pk_last_kill` (`ppd->last_kill =
+    /// realtime;`), reusing the kill timestamp field for steal events too.
+    /// C gates the whole thing on `ch[cn].flags & (CF_PLAYER|CF_PK)`
+    /// inside `add_pk_steal` itself; callers here are expected to check
+    /// that on the `Character` first (matching the `add_pk_kill`/
+    /// `add_pk_death` convention of gating at the call site, see
+    /// `ugaris-server`'s `world_events.rs`).
+    pub fn add_pk_steal(&mut self, realtime_seconds: u64) {
+        self.pk_last_kill = realtime_seconds.min(i32::MAX as u64) as u32;
+    }
+
     pub fn add_pk_death(&mut self, realtime_seconds: u64) {
         self.pk_deaths = self.pk_deaths.saturating_add(1);
         self.pk_last_death = realtime_seconds.min(i32::MAX as u64) as u32;

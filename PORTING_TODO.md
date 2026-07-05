@@ -6969,9 +6969,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
   anticheat, `macro*` macro-detection, plus one-off commands like
   `/depotsort` (the character's own `DRD_DEPOT_PPD` depot, a whole
   unported storage system - not the same as `/accountdepotsort`, which
-  is done), `/steal`, `/complain`,
-  `/punish`, `/shutdown`, `/rename`, `/showppd`/`/showvalues`,
-  `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
+   is done), `/steal` done (see iteration 175), `/complain`,
+   `/punish`, `/shutdown`, `/rename`, `/showppd`/`/showvalues`,
+   `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
   `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
   like `/changetunnel`/`/settunnel`/`/cleartunnel`/`/setrd`/`/clearrd`/
   `/solverd`) not yet cross-referenced (see the Progress Log entries
@@ -7674,6 +7674,52 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cargo build -p ugaris-server` / `cargo build --workspace` clean with
   zero warnings, 10s boot-smoke confirmed "entering Rust game loop"
   with no panic.
+
+  Progress Log (iteration 175): ported `/steal` (`command.c:9732-9735`,
+  no permission gate, dispatching to `cmd_steal`, `src/system/prof.c:
+  106-222`). Added `World::attempt_steal` (new `world/steal.rs`) as the
+  canonical port of the full C function body: thief-profession/idle/
+  cursor-item/out-of-map/no-target gates, the `can_attack` + arena-or-
+  clan-tile + player-only + `CDR_LOSTCON`-lagging + Live-Quests(area 20)
+  + victim-busy-or-just-regenerated checks, the stealable-item scan
+  (every worn/carried inventory slot *except* the spell-slot range 12-
+  29, matching C's `if (n >= 12 && n < 30) continue;` - so equipped
+  items are stealable too, a real C quirk copied as-is), the `40 +
+  (stealth-percept)/2` chance formula capped by `thief_points*3`, and
+  the three-way `diff = chance - RANDOM(100)` outcome split (would-be-
+  caught before any dice roll, caught-and-notified with no item
+  transfer, stolen-but-noticed, stolen-unnoticed), returning a new
+  `StealOutcome` enum so `ugaris-server` owns all the player-facing
+  text. Added two small dependencies along the way: `can_carry` in
+  `item_ops.rs` (C `tool.c:1101-1132`'s one-carry-driver-at-a-time and
+  `IF_BONDTAKE`-ownership gate, reusing the already-existing
+  `spell::is_one_carry_driver` instead of re-deriving the
+  `IDR_CLANJEWEL|IDR_PALACEBOMB|IDR_PALACECAP` predicate), and
+  `PlayerRuntime::add_pk_steal` (C `tool.c:894-908` - a genuine C quirk:
+  it does *not* increment `pk_kills`, it only bumps `pk_last_kill`,
+  reusing the kill-timestamp field for steal events too; no new PPD
+  field needed). Command-layer wiring is `apply_steal_command`
+  (`commands_player.rs`, exact-word match per C's `cmdcmp(ptr, "steal",
+  5)` with `minlen == strlen`), turning each `StealOutcome` into the
+  caller's plain-text message plus (for `Caught`/`StolenNoticed`) a
+  `COL_LIGHT_RED` `target_message_bytes` notification to the victim,
+  applying `add_pk_steal` only when the thief has both `CF_PLAYER` and
+  `CF_PK` (matching C's internal gate), and setting `inventory_changed`
+  on a successful theft; wired into `main.rs`'s command-dispatch chain
+  right after `apply_pk_hate_command` since both need the already-
+  fetched `&mut PlayerRuntime`. 18 new `World::attempt_steal` unit tests
+  in `world/tests/steal.rs` (every gate, quest-item exclusion, one-
+  carry-conflict exclusion, and the three dice-roll buckets driven by
+  seeds brute-forced against the real `legacy_random_below_from_seed`
+  LCG) plus 3 new `ugaris-server` integration tests in `tests/
+  commands_player.rs` (exact-word dispatch gating, the not-a-thief
+  message, and a full success path asserting the item moved, the victim
+  notification, `inventory_changed`, and the `pk_last_kill` bump).
+  `cargo fmt --all`, `cargo test --workspace` (2004 ugaris-core [+18] +
+  55 db + 3 net + 40 protocol + 717 server [+3], all green, zero
+  failures), `cargo build -p ugaris-server` / `cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

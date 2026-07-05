@@ -1000,3 +1000,85 @@ fn demonlords_command_falls_through_without_a_live_player_runtime() {
     let runtime = ServerRuntime::default();
     assert!(apply_demonlords_command(&world, &runtime, CharacterId(1), "/demonlords").is_none());
 }
+
+/// C `cmdcmp(ptr, "steal", 5)`: `minlen == strlen("steal")`, an exact
+/// case-insensitive word match, not a prefix abbreviation like `/thief`.
+#[test]
+fn steal_command_requires_exact_word_match() {
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+
+    assert!(apply_steal_command(&mut world, &mut player, CharacterId(1), "/st", 0).is_none());
+    assert!(apply_steal_command(&mut world, &mut player, CharacterId(1), "/stealing", 0).is_none());
+    assert!(apply_steal_command(&mut world, &mut player, CharacterId(1), "/STEAL", 0).is_some());
+}
+
+#[test]
+fn steal_command_reports_not_a_thief() {
+    let mut world = World::default();
+    let mut attacker = login_character(CharacterId(1), &login_block("Thief"), 1, 10, 10);
+    attacker.dir = Direction::Right as u8;
+    assert!(world.spawn_character(attacker, 10, 10));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+
+    let result = apply_steal_command(&mut world, &mut player, CharacterId(1), "/steal", 0)
+        .expect("steal command should be recognized");
+
+    assert_eq!(
+        result.messages,
+        vec!["You are not a thief, you cannot steal.".to_string()]
+    );
+}
+
+/// End-to-end success path: the item moves, the victim gets a
+/// `COL_LIGHT_RED` notification, the caller's inventory is flagged for
+/// refresh, and (since both are `CF_PK`) `add_pk_steal` bumps
+/// `pk_last_kill` (C's own quirky reuse of the kill timestamp field for
+/// steal events, see `PlayerRuntime::add_pk_steal`'s doc comment).
+#[test]
+fn steal_command_success_notifies_victim_and_bumps_pk_steal_stat() {
+    let mut world = World::default();
+    // Brute-forced against the exact `legacy_random_below_from_seed` LCG:
+    // with `chance == 50` (`stealth 20 - percept 0 == 20 -> diff 10 ->
+    // 40+10`), seed `1` lands in the `diff >= 0` "unnoticed" bucket after
+    // the item-pick draw (`RANDOM(1)`) and the dice draw (`RANDOM(100)`).
+    world.legacy_random_seed = 1;
+    world.tick = ugaris_core::Tick(TICKS_PER_SECOND * 10);
+
+    let mut attacker = login_character(CharacterId(1), &login_block("Thief"), 1, 10, 10);
+    attacker.professions[profession::THIEF] = 20;
+    attacker.values[0][CharacterValue::Stealth as usize] = 20;
+    attacker.dir = Direction::Right as u8;
+    attacker.flags.insert(CharacterFlags::PK);
+    assert!(world.spawn_character(attacker, 10, 10));
+
+    let mut victim = login_character(CharacterId(2), &login_block("Victim"), 1, 11, 10);
+    victim.flags.insert(CharacterFlags::PK);
+    victim.inventory[30] = Some(ItemId(900));
+    assert!(world.spawn_character(victim, 11, 10));
+
+    let mut stolen_item = test_item(ItemId(900), 0, ItemFlags::USED);
+    stolen_item.carried_by = Some(CharacterId(2));
+    world.items.insert(ItemId(900), stolen_item);
+
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(1));
+
+    let result = apply_steal_command(&mut world, &mut player, CharacterId(1), "/steal", 500)
+        .expect("steal command should be recognized");
+
+    assert_eq!(
+        result.messages,
+        vec!["You stole a Item without Victim noticing.".to_string()]
+    );
+    assert!(result.target_message_bytes.is_empty());
+    assert!(result.inventory_changed);
+    assert_eq!(player.pk_last_kill, 500);
+
+    let attacker = world.characters.get(&CharacterId(1)).unwrap();
+    assert!(attacker.inventory.contains(&Some(ItemId(900))));
+    let victim = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(victim.inventory[30].is_none());
+}

@@ -1695,6 +1695,125 @@ pub(crate) fn apply_pk_hate_command(
     }
 }
 
+/// C `/steal` (`command.c:9732-9735`, `cmdcmp(ptr, "steal", 5)`, no
+/// permission gate - any player can try) dispatching unconditionally to
+/// `cmd_steal` (`src/system/prof.c:106-222`). All of the actual game logic
+/// lives in [`ugaris_core::world::World::attempt_steal`]; this function
+/// only turns its [`ugaris_core::world::StealOutcome`] into player-facing
+/// text/bytes and applies the one epiphenomenon `World` can't own itself:
+/// the `add_pk_steal` PK-ppd bump (C `prof.c:226`), which lives on
+/// `PlayerRuntime` in `ugaris-server`, not `World`.
+pub(crate) fn apply_steal_command(
+    world: &mut World,
+    player: &mut PlayerRuntime,
+    character_id: CharacterId,
+    command: &str,
+    realtime_seconds: u64,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    // C `cmdcmp(ptr, "steal", 5)`: `minlen == strlen("steal")`, so this is
+    // an exact case-insensitive word match, not a prefix abbreviation.
+    if !verb.eq_ignore_ascii_case("steal") {
+        return None;
+    }
+
+    let outcome = world.attempt_steal(character_id);
+
+    let self_message = match &outcome {
+        StealOutcome::NotAThief => Some("You are not a thief, you cannot steal.".to_string()),
+        StealOutcome::NotIdle => Some("You can only steal when standing still.".to_string()),
+        StealOutcome::HandFull => Some("Please free your hand (mouse cursor) first.".to_string()),
+        StealOutcome::OutOfMap => Some("Out of map.".to_string()),
+        StealOutcome::NoOneThere => Some("There's no one to steal from.".to_string()),
+        StealOutcome::CannotAttack => {
+            Some("You cannot steal from someone you are not allowed to attack.".to_string())
+        }
+        StealOutcome::ArenaOrClan => Some("You cannot steal inside an arena.".to_string()),
+        StealOutcome::NotAPlayer => Some("You can only steal from players.".to_string()),
+        StealOutcome::Lagging => Some("You cannot steal from lagging players.".to_string()),
+        StealOutcome::LiveQuests => Some("You cannot steal in Live Quests.".to_string()),
+        StealOutcome::VictimBusy => {
+            Some("You cannot steal from someone if your victim is not standing still.".to_string())
+        }
+        StealOutcome::NothingToSteal => Some("You could not find anything to steal.".to_string()),
+        StealOutcome::WouldBeCaught => {
+            Some("You'd get caught for sure. You decide not to try.".to_string())
+        }
+        // C: `destroy_item(in); elog(...); return;` - no message at all.
+        StealOutcome::ItemLostSilently => None,
+        StealOutcome::Caught { victim_name, .. } => Some(format!(
+            "{victim_name} noticed your attempt and stopped you from stealing."
+        )),
+        StealOutcome::StolenNoticed {
+            victim_name,
+            item_name,
+            ..
+        } => Some(format!(
+            "{victim_name} noticed your theft, but you managed to steal a {item_name} anyway."
+        )),
+        StealOutcome::StolenUnnoticed {
+            victim_name,
+            item_name,
+        } => Some(format!(
+            "You stole a {item_name} without {victim_name} noticing."
+        )),
+    };
+
+    let mut result = KeyringCommandResult {
+        messages: self_message.into_iter().collect(),
+        ..Default::default()
+    };
+
+    let attacker_name = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+        .unwrap_or_default();
+
+    match &outcome {
+        StealOutcome::Caught { victim_id, .. } => {
+            result.target_message_bytes.push((
+                *victim_id,
+                legacy_light_red_text_bytes(&format!("{attacker_name} tried to steal from you!")),
+            ));
+        }
+        StealOutcome::StolenNoticed {
+            victim_id,
+            item_name,
+            ..
+        } => {
+            result.target_message_bytes.push((
+                *victim_id,
+                legacy_light_red_text_bytes(&format!("{attacker_name} stole your {item_name}!")),
+            ));
+        }
+        _ => {}
+    }
+
+    if matches!(
+        outcome,
+        StealOutcome::StolenNoticed { .. } | StealOutcome::StolenUnnoticed { .. }
+    ) {
+        result.inventory_changed = true;
+        let is_pk = world
+            .characters
+            .get(&character_id)
+            .is_some_and(|character| {
+                character
+                    .flags
+                    .contains(CharacterFlags::PLAYER | CharacterFlags::PK)
+            });
+        if is_pk {
+            player.add_pk_steal(realtime_seconds);
+        }
+    }
+
+    Some(result)
+}
+
 fn legacy_achievement_colored_line(color: &[u8], text: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(color.len() + text.len() + COL_RESET.len());
     out.extend_from_slice(color);

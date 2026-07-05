@@ -173,7 +173,8 @@ use ugaris_core::{
         BankEvent, ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest,
         FirstKillCheck, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent,
         LookMapRequest, LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll,
-        RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent, WorldActionCompletion,
+        MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -1786,6 +1787,24 @@ async fn main() -> anyhow::Result<()> {
                                     command_feedback.push((character_id, message));
                                 }
                                 command_name_refresh.extend(result.name_refresh);
+                                continue;
+                            }
+                            if let Some(result) = apply_steal_command(
+                                &mut world,
+                                player,
+                                character_id,
+                                &command,
+                                realtime_seconds,
+                            ) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                for (target_id, message) in result.target_message_bytes {
+                                    command_feedback_bytes.push((target_id, message));
+                                }
+                                if result.inventory_changed {
+                                    command_inventory_refresh.push(character_id);
+                                }
                                 continue;
                             }
                             if let Some(result) = apply_maxlag_command(player, &command) {

@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
     entity::{Character, CharacterFlags, Item, ItemFlags, INVENTORY_SIZE},
+    ids::ItemId,
     legacy::{INVENTORY_LAST_SPELLS, INVENTORY_START_INVENTORY, INVENTORY_START_SPELLS},
+    spell::is_one_carry_driver,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,6 +51,39 @@ pub fn count_free_inventory_slots(character: &Character) -> usize {
 
 pub fn can_use_inventory_slot(slot: usize) -> bool {
     slot < INVENTORY_SIZE && !(INVENTORY_START_SPELLS..=INVENTORY_LAST_SPELLS).contains(&slot)
+}
+
+/// C `can_carry` (`src/system/tool.c:1101-1132`). Checks whether `character`
+/// may pick up/carry `item`: at most one carried item of an
+/// [`is_one_carry_driver`] driver at a time (worn/spell slots 12-29
+/// excluded from the scan, matching C's `if (n >= 12 && n < 30) continue;`),
+/// and `IF_BONDTAKE` items may only be carried by their original owner.
+/// Unlike C's `quiet` parameter (which only gates an extra `log_char` on
+/// the one-carry rejection), this returns a plain bool; callers that need
+/// the C message should check [`is_one_carry_driver`] themselves for the
+/// player-facing wording.
+pub fn can_carry(character: &Character, item: &Item, items: &HashMap<ItemId, Item>) -> bool {
+    if is_one_carry_driver(item.driver) {
+        let already_carrying = character
+            .inventory
+            .iter()
+            .enumerate()
+            .filter(|(slot, _)| can_use_inventory_slot(*slot))
+            .chain(std::iter::once((usize::MAX, &character.cursor_item)))
+            .any(|(_, slot)| {
+                slot.and_then(|other_id| items.get(&other_id))
+                    .is_some_and(|other| other.driver == item.driver)
+            });
+        if already_carrying {
+            return false;
+        }
+    }
+
+    if item.flags.contains(ItemFlags::BONDTAKE) && item.owner_id != character.id.0 as i32 {
+        return false;
+    }
+
+    true
 }
 
 pub fn give_item_to_character(

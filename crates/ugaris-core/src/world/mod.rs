@@ -54,6 +54,7 @@ mod spawn;
 mod special_item;
 mod speed;
 mod spells;
+mod steal;
 mod teleport;
 mod text;
 mod trader;
@@ -106,6 +107,7 @@ pub use skills::*;
 pub(crate) use spawn::*;
 #[allow(unused_imports)]
 pub(crate) use spells::*;
+pub use steal::*;
 #[allow(unused_imports)]
 pub(crate) use teleport::*;
 pub use text::*;

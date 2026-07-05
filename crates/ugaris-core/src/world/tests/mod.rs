@@ -43,6 +43,7 @@ mod spawn;
 mod special_item;
 mod speed;
 mod spells;
+mod steal;
 mod teleport;
 mod text;
 mod trader;
