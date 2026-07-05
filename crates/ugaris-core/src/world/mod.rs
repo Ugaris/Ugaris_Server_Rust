@@ -123,6 +123,7 @@ use crate::{
         NT_GOTHIT, NT_ITEM, NT_NPC, NT_SEEHIT, NT_SPELL, NT_TEXT,
     },
     clan::ClanRegistry,
+    club::ClubRegistry,
     direction::Direction,
     do_action::{
         act_attack, act_drop, act_heal, act_magicshield, act_take, act_use, act_walk,
@@ -243,6 +244,15 @@ pub struct World {
     /// any clan pair", so this wiring is a behavior no-op until clans are
     /// actually founded.
     pub clan_registry: ClanRegistry,
+    /// Club identity/serial registry (`src/system/club.c`), the parallel
+    /// larger-scale variant of [`Self::clan_registry`] distinguished by
+    /// `Character.clan >= CLUB_OFFSET`. Not yet persisted and not yet
+    /// mutated by any live `/joinclub`/`/killclub`/`/renclub` command or
+    /// the `CDR_CLUBMASTER` founding NPC - see the "Clan system" P3 task
+    /// in `PORTING_TODO.md` and `crate::club`'s module doc comment. Today
+    /// only reachable from `world::clanmaster::is_club_member`'s
+    /// membership gate.
+    pub club_registry: ClubRegistry,
     /// Military Master NPC-scoped storage blobs (`src/module/
     /// military.c`'s `struct military_master_storage`), keyed by each
     /// NPC's zone-file `storage=N;` id. In-memory only, no DB

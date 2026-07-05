@@ -3229,7 +3229,11 @@ Unlocks every quest NPC. Do these before any P4 area work.
   clan-vs-clan attack policy in
   `can_attack`, clan chat channel gating, clan hall transport access
   (transport module has the seam). REMAINING: club-variant achievement
-  wiring (blocked on unported `club.c`), and the raid-spawn consumer of
+  wiring (blocked on the unported `CDR_CLUBMASTER` founding NPC driver,
+  `clubmaster.c` - `club.c`'s own core identity/serial registry was
+  ported in iteration 136, see Progress Log, and is now wired into
+  `clanmaster.rs`'s membership gate, but nothing yet creates a real club
+  in a live game), and the raid-spawn consumer of
   `get_clan_dungeon` itself (`area/13/dungeon.c`, unported) - the potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
@@ -4215,6 +4219,62 @@ Unlocks every quest NPC. Do these before any P4 area work.
     half of each guard-count pair (`buy`'s own C-dead-code target) and
     the `doraid` clamp remain intentionally unported per their own
     established precedent (see the module doc comment).
+  - 2026-07-05 (iteration 136): made a first dent in the "club-variant
+    achievement wiring (blocked on unported `club.c`)" gap by porting
+    `club.c`'s own identity/serial registry as a new, self-contained
+    `crates/ugaris-core/src/club.rs` module: `ClubRegistry` (a serial
+    array that survives deletion + a sparse `HashMap<u16, ClubIdentity>`,
+    since `MAXCLUB`=16384 is far too large for `ClanRegistry`'s own
+    fixed-array approach) with `create_club`/`rename_club`/`kill_club`
+    (`club.c:140-212,132-138`, including C's letters-and-spaces-only name
+    validation, the empty-name-always-collides quirk, `rename_club`'s
+    "can create at an unused slot without bumping its serial" admin-tool
+    quirk, and `create_club` always bumping the serial on reuse - unlike
+    `ClanRegistry::found_clan`, which preserves it), `get_char_club`
+    (`club.c:29-61`, the same self-healing stale-reference-clear idiom as
+    `get_char_clan`), and `tick_billing` (`tick_club`'s `areaID == 3`
+    weekly-rent-or-bankruptcy branch, `club.c:82-111`, processing at most
+    one due club per call, matching C's `break`). Wired the first real
+    call site: `World` gained a `club_registry: ClubRegistry` field, and
+    `crate::world::clanmaster::is_club_member` (previously a bare `clan
+    >= CLUB_OFFSET` range-check approximation, since removed) now calls
+    `self.club_registry.get_char_club(character)` for real validation at
+    its one live call site (the clanmaster NPC's "already a member of a
+    clan or club" founding-rejection gate). Not ported this iteration
+    (documented in the new module's doc comment, not silently dropped):
+    any DB persistence (no migration/repository exists, same state
+    `ClanRegistry` was in before its own DB wiring), `tick_club`'s
+    `areaID != 3` DB-resync branch (nothing to resync from yet),
+    `show_club_info`/`showclub` (the `look_char`/`/club` text formatters
+    - deferred alongside the still-unported `show_clan_info`, see the
+    "Look at character" task's own REMAINING note), the `/joinclub`/
+    `/killclub`/`/renclub` GM commands (not wired to any dispatcher yet),
+    and - the big remaining piece - the `CDR_CLUBMASTER` founding/joining
+    NPC driver (`clubmaster.c`, driver 113, 628 lines, a separate future
+    slice: nothing ever actually creates a real club in a live game yet,
+    so the club-variant achievement award still has no reachable call
+    site; only its blocking foundation now exists). 21 new tests in
+    `club.rs` (create/rename/kill validation and quirks, slot-reuse
+    serial-bump, `get_char_club`'s success/stale-serial/deleted-club/
+    clan-number/no-membership cases, `tick_billing`'s pay/delete/skip/
+    one-per-call/area-gating cases), plus updated the pre-existing
+    `world/tests/clanmaster.rs::name_command_rejects_existing_club_member`
+    to create a real `ClubRegistry` entry (with a matching serial)
+    instead of a bare `character.clan` field assignment, since the old
+    approximation no longer applies. `cargo fmt --all`, `cargo test
+    --workspace` (1822 ugaris-core [+21] + 55 db + 3 net + 40 protocol +
+    584 server, all green, zero failures), `cargo build -p ugaris-server`
+    clean with zero warnings, 10s boot-smoke confirmed "entering Rust
+    game loop" with no panics (this iteration adds a field to `World` and
+    a new call site inside the clanmaster driver's per-tick logic).
+    REMAINING for the "Clan system" task overall, updated: club-variant
+    achievement wiring is still blocked, but now specifically on the
+    `CDR_CLUBMASTER` founding NPC driver rather than on `club.c` itself
+    (whose core registry now exists and is tested); the raid-spawn
+    consumer of `get_clan_dungeon` (blocked on unported
+    `area/13/dungeon.c`) is unchanged. Neither is a self-contained slice
+    of this task by itself - each is its own separate, larger future NPC-
+    driver/area port.
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

@@ -28,12 +28,13 @@
 //!   commands - needs 8+ new `clan.rs` functions - money, jewel-in-vault
 //!   count, bonuses, relation-by-command, raid flags - that don't exist
 //!   yet).
-//! - Club founding/joining: `get_char_club` is approximated here as a
-//!   bare `clan >= CLUB_OFFSET` range check (`is_club_member`) since
-//!   `club.c` itself isn't ported (no club registry to validate against);
-//!   this driver never actually joins anyone to a club (clanmaster.c
-//!   itself doesn't either - that's `clubmaster`/driver 113, a different
-//!   NPC entirely), it only *gates* on "already in a clan or club".
+//! - Club founding/joining: this driver never actually joins anyone to a
+//!   club (clanmaster.c itself doesn't either - that's `clubmaster`/
+//!   driver 113, a different NPC entirely, still unported), it only
+//!   *gates* on "already in a clan or club" via real
+//!   [`crate::club::ClubRegistry::get_char_club`] validation (ported in
+//!   `crate::club`; previously approximated here as a bare `clan >=
+//!   CLUB_OFFSET` range check before that registry existed).
 //!
 //! Like `world/trader.rs`/`world/bank.rs`, achievement awards and clan-log
 //! persistence need `ServerRuntime`/DB handles `World` doesn't have, so
@@ -61,7 +62,6 @@ use crate::character_driver::{
     mem_add_driver, mem_check_driver, mem_erase_driver, ClanFoundData, ClanmasterDriverData,
     CLANMASTER_QA,
 };
-use crate::clan::CLUB_OFFSET;
 
 const CLANMASTER_GREET_DISTANCE: i32 = 10;
 const CLANMASTER_QA_DISTANCE: i32 = 12;
@@ -170,13 +170,6 @@ pub enum ClanmasterEvent {
     },
 }
 
-/// C `get_char_club` (`src/system/club.c:29-51`) approximated as a bare
-/// range check, since `club.c` itself isn't ported (see the module doc
-/// comment).
-fn is_club_member(character: &Character) -> bool {
-    character.clan >= CLUB_OFFSET
-}
-
 /// C `rank:`/`fire:`'s shared name-token parser (`clanmaster.c:472-480,
 /// 517-525`): skip leading whitespace, then take up to 79 bytes stopping
 /// at the first quote/whitespace/end. Returns `(name, remainder)`, where
@@ -215,7 +208,8 @@ impl World {
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        self.clan_registry.get_char_clan(character).is_some() || is_club_member(character)
+        self.clan_registry.get_char_clan(character).is_some()
+            || self.club_registry.get_char_club(character).is_some()
     }
 
     fn char_clan_if_leader(&mut self, character_id: CharacterId, min_rank: u8) -> Option<u16> {

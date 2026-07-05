@@ -129,8 +129,10 @@ fn name_command_rejects_existing_clan_member() {
 fn name_command_rejects_existing_club_member() {
     let mut world = World::default();
     assert!(world.spawn_character(clanmaster_npc(1), 10, 10));
+    let club_nr = world.club_registry.create_club("Rovers", 0).unwrap();
     let mut member = player(2, "Godmode");
-    member.clan = CLUB_OFFSET + 3;
+    member.clan = CLUB_OFFSET + club_nr;
+    member.clan_serial = world.club_registry.serial(club_nr);
     assert!(world.spawn_character(member, 10, 10));
 
     if let Some(clanmaster) = world.characters.get_mut(&CharacterId(1)) {

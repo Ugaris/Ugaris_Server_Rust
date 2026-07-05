@@ -4,6 +4,7 @@ pub mod area_sound;
 pub mod attack;
 pub mod character_driver;
 pub mod clan;
+pub mod club;
 pub mod combat;
 pub mod config;
 pub mod direction;
