@@ -27,6 +27,7 @@ mod items;
 mod janitor;
 mod lab2_undead;
 mod light;
+mod loot;
 mod lostcon;
 mod lq;
 mod merchant;

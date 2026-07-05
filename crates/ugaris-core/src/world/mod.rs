@@ -38,6 +38,7 @@ mod items;
 mod janitor;
 mod lab2_undead;
 mod light;
+mod loot;
 mod lostcon;
 mod lq;
 mod merchant;
@@ -85,6 +86,7 @@ pub(crate) use items::*;
 #[allow(unused_imports)]
 pub(crate) use lab2_undead::*;
 pub(crate) use light::*;
+pub use loot::*;
 pub use lq::*;
 pub use merchant::*;
 pub use military::*;
@@ -287,6 +289,12 @@ pub struct World {
     pub lq_npc_respawns: Vec<(usize, u64)>,
     pub npc_respawn_slots: Vec<NpcRespawnSlot>,
     pub merchant_stores: HashMap<CharacterId, MerchantStore>,
+    /// Parsed death/spawn-mode loot tables (`src/system/loot/loot.c`'s
+    /// `tables[]`/`n_tables` plus `pity_counters[]`) - see
+    /// [`LootRegistry`]'s doc comment for the `ugaris-server`
+    /// file-scanning split. In-memory only; reset on restart, same as
+    /// every other server-wide registry above.
+    pub loot_registry: LootRegistry,
     /// Server-wide arena tournament ranking table (C's `static struct
     /// toplist *tops`, `arena.c:255`). In-memory only, no DB/storage-blob
     /// persistence yet (resets on restart) - same architectural gap as
@@ -320,6 +328,7 @@ pub struct World {
     pending_arena_master_events: Vec<ArenaMasterEvent>,
     pending_dungeon_raid_builds: Vec<DungeonRaidBuildRequest>,
     pending_dungeon_jewel_steals: Vec<DungeonJewelStealEvent>,
+    pending_death_loot_rolls: Vec<PendingDeathLootRoll>,
 }
 
 impl Default for Tick {

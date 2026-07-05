@@ -27,6 +27,7 @@ mod inventory;
 mod item_apply;
 mod keyring;
 mod login;
+mod loot;
 mod lostcon;
 mod map_sync;
 mod merchants;
@@ -62,6 +63,7 @@ pub(crate) use inventory::*;
 pub(crate) use item_apply::*;
 pub(crate) use keyring::*;
 pub(crate) use login::*;
+pub(crate) use loot::*;
 pub(crate) use lostcon::*;
 pub(crate) use map_sync::*;
 pub(crate) use merchants::*;
@@ -170,8 +172,8 @@ use ugaris_core::{
         level2maxitem, level_value, merchant_buy_price, merchant_sales_price, ArenaMasterEvent,
         BankEvent, ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest,
         FirstKillCheck, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent,
-        LookMapRequest, MerchantTradeResult, RaiseSkillOutcome, StoreWare, TraderEvent,
-        WorldActionCompletion, MERCHANT_STORE_SIZE,
+        LookMapRequest, LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll,
+        RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -717,6 +719,20 @@ async fn main() -> anyhow::Result<()> {
     } else {
         warn!("zone root not found; using empty scaffold map");
     }
+    // C `init_loot` (`server.c:541`): scan `ugaris_data/loot/` for JSON
+    // loot tables before any character/loot roll can reference them.
+    if let Some(loot_root) = resolve_loot_root(None) {
+        let summary = load_loot_tables(&mut world.loot_registry, &loot_root);
+        info!(
+            root = %loot_root.display(),
+            files_scanned = summary.files_scanned,
+            tables_added = summary.tables_added,
+            warnings = summary.warnings,
+            "loaded loot tables"
+        );
+    } else {
+        warn!("loot root not found; loot tables unavailable");
+    }
     let spawn_tile = choose_spawn_tile(&world);
     info!(
         x = spawn_tile.0,
@@ -1246,6 +1262,19 @@ async fn main() -> anyhow::Result<()> {
                 // C kill_char check_military_solve.
                 for check in world.drain_pending_military_mission_checks() {
                     apply_military_mission_kill_check(&mut world, &mut runtime, check);
+                }
+                // C die_char apply_death_loot_for_template.
+                let death_loot_rolls = world.drain_pending_death_loot_rolls();
+                if !death_loot_rolls.is_empty() {
+                    let added = apply_pending_death_loot_rolls(
+                        &mut world,
+                        &runtime,
+                        &mut zone_loader,
+                        death_loot_rolls,
+                    );
+                    if added != 0 {
+                        info!(added, tick = world.tick.0, "rolled death-mode loot into corpses");
+                    }
                 }
                 let timer_feedback = timer_outcome_feedback(&timer_outcomes);
                 if !timer_feedback.is_empty() {

@@ -252,6 +252,59 @@ fn npc_death_drops_lootable_body_with_inventory_and_money() {
 }
 
 #[test]
+fn npc_death_queues_death_loot_roll_for_its_template() {
+    // C `die_char` (`death.c:741`): `apply_death_loot_for_template(ct, co,
+    // tmp)` runs right after the natural inventory transfer, for every
+    // non-player death that got a container - regardless of whether the
+    // template actually has a `loot_table_death` set (that check is
+    // `apply_death_loot_for_template`'s own early return, ported
+    // server-side once the `ZoneLoader::character_templates` lookup is
+    // available - see `PendingDeathLootRoll`'s doc comment).
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.hp = POWERSCALE;
+    npc.gold = 10;
+    npc.template_key = "grolm_tmpl".to_string();
+    assert!(world.spawn_character(npc, 10, 10));
+    let mut killer = character(2);
+    killer.flags |= CharacterFlags::PLAYER;
+    assert!(world.spawn_character(killer, 11, 10));
+
+    lethal_hurt(&mut world, 1, 2);
+    run_death_animation(&mut world);
+
+    let body_id = world
+        .items
+        .values()
+        .find(|item| item.name == "Body")
+        .expect("dead body dropped")
+        .id;
+    let rolls = world.drain_pending_death_loot_rolls();
+    assert_eq!(rolls.len(), 1);
+    assert_eq!(rolls[0].container_id, body_id);
+    assert_eq!(rolls[0].killer_id, Some(CharacterId(2)));
+    assert_eq!(rolls[0].template_key, "grolm_tmpl");
+}
+
+#[test]
+fn player_death_never_queues_a_death_loot_roll() {
+    let mut world = World::default();
+    let mut victim = character(1);
+    victim.hp = POWERSCALE;
+    victim.flags |= CharacterFlags::PLAYER;
+    victim.template_key = "player_tmpl".to_string();
+    assert!(world.spawn_character(victim, 10, 10));
+    let mut killer = character(2);
+    killer.flags |= CharacterFlags::PLAYER;
+    assert!(world.spawn_character(killer, 11, 10));
+
+    lethal_hurt(&mut world, 1, 2);
+    run_death_animation(&mut world);
+
+    assert!(world.drain_pending_death_loot_rolls().is_empty());
+}
+
+#[test]
 fn npc_death_without_loot_leaves_no_body() {
     let mut world = World::default();
     let mut npc = character(1);

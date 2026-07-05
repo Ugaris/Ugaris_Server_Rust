@@ -80,6 +80,21 @@ pub struct MilitaryMissionKillCheck {
     pub victim_level: u32,
 }
 
+/// Queued `apply_death_loot_for_template(ct, co, tmp)` call
+/// (`src/system/create.c:1569-1572`, invoked from `death.c:741` right
+/// after the natural inventory transfer into the corpse container),
+/// fired for every non-player death that got a lootable body/container.
+/// Server-side (which owns the parsed `LootRegistry` behind
+/// [`World::loot_apply_to_container`] and the killer's `PlayerRuntime`
+/// quest log for condition evaluation) drains this and rolls the dead
+/// character template's `loot_table_death` (if any) into the container.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingDeathLootRoll {
+    pub container_id: ItemId,
+    pub killer_id: Option<CharacterId>,
+    pub template_key: String,
+}
+
 impl World {
     /// C `kill_char(cn, co)` follow-up run once `hurt` marked the character
     /// dead: death-driver dispatch and NT_DEAD fan-out already happened in
@@ -261,6 +276,12 @@ impl World {
         std::mem::take(&mut self.pending_military_mission_checks)
     }
 
+    /// Drain queued `apply_death_loot_for_template` calls for the server
+    /// loot-table roll path.
+    pub fn drain_pending_death_loot_rolls(&mut self) -> Vec<PendingDeathLootRoll> {
+        std::mem::take(&mut self.pending_death_loot_rolls)
+    }
+
     /// Schedule item destruction, mirroring C `set_expire` for bodies.
     pub fn set_item_expire(&mut self, item_id: ItemId, delay_ticks: u64) {
         self.timers.set_timer(
@@ -344,7 +365,7 @@ impl World {
             return false;
         };
         let is_pk_death = character.act2 != 0;
-        let _killer_id = (character.act1 > 0).then(|| CharacterId(character.act1 as u32));
+        let killer_id = (character.act1 > 0).then(|| CharacterId(character.act1 as u32));
         let is_player = character.flags.contains(CharacterFlags::PLAYER);
         let x = character.x;
         let y = character.y;
@@ -352,6 +373,7 @@ impl World {
         let dir = character.dir;
         let name = character.name.clone();
         let flags = character.flags;
+        let template_key = character.template_key.clone();
 
         // C: remove_char(cn) + destroy_chareffects(cn).
         self.remove_character_from_map(character_id);
@@ -408,6 +430,19 @@ impl World {
         } else if !flags.contains(CharacterFlags::ITEMDEATH) {
             if let Some(body) = dropped_body {
                 self.fill_body_container(character_id, body, is_player);
+                // C `die_char` (`death.c:741`): `if (!(ch[cn].flags &
+                // CF_PLAYER)) apply_death_loot_for_template(ct, co, tmp);`
+                // - runs after the natural inventory transfer so existing
+                // drops aren't displaced. Deferred to the server drain
+                // since rolling needs the killer's `PlayerRuntime` quest
+                // log for condition evaluation (see `PendingDeathLootRoll`).
+                if !is_player {
+                    self.pending_death_loot_rolls.push(PendingDeathLootRoll {
+                        container_id: body,
+                        killer_id,
+                        template_key,
+                    });
+                }
             } else {
                 self.destroy_all_carried_items(character_id);
             }

@@ -6759,11 +6759,71 @@ Unlocks every quest NPC. Do these before any P4 area work.
   clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
   loop" with no panic.
 
-- [ ] **Death-mode loot tables (`src/system/loot/loot.c`)** - JSON tables
+- [~] **Death-mode loot tables (`src/system/loot/loot.c`)** - JSON tables
   under `ugaris_data/loot/`. Port the loader + roll engine + pity
   counters + `apply_death_loot_for_template` into the body-container fill
   in `world/death.rs`. Only pents data exists today; add tests with
-  fixture JSON.
+  fixture JSON. REMAINING: spawn-mode (`loot_table=` /
+  `loot_apply_to_npc`, `create.c:1125`) is not wired - only death-mode
+  (`loot_table_death=` / `loot_apply_to_container`) is. Spawn-mode needs
+  its own NPC-inventory "sink" (C places into `ch[cn].item[30..]` at
+  creation time inside `pop_create_char`/`ZoneLoader::create_character*`)
+  and isn't required by any currently-shipped table (both real
+  `ugaris_data/loot/pents/*.json` tables are `mode=death` or the implicit
+  spawn default with no live `loot_table=` zone-file reference yet
+  either). `loot_reload` (the admin `/` command hot-reload half,
+  `command.c:8193`) also isn't wired to any admin command yet - only the
+  one-time startup scan (`LootRegistry::clear_tables` exists for it, but
+  no call site).
+
+  Progress Log (iteration 155): ported the full loot data model + JSON
+  parser + roll engine as `crates/ugaris-core/src/world/loot.rs`
+  (`LootTable`/`LootGroup`/`LootEntry`/`LootCondition`/`LootPity`,
+  `LootRegistry` with `load_str`/`find`/`pity_get`/`pity_set`/
+  `clear_tables`, transcribed digit-for-digit from `loot.c`'s
+  `parse_entry`/`parse_condition`/`parse_group`/`parse_table`/
+  `parse_document`/`roll_group`/`roll_table`/`pick_weighted`/
+  `compose_modifier`/`eval_condition` - including the `LCOND_QUEST_OPEN`
+  "permissive `!questlog_isdone` proxy, not real `is_open`" quirk called
+  out in the C source's own comment). Reuses the already-ported
+  `GameSettings::loot_modifiers` for the modifier registry (closing that
+  field's "eventual consumer" doc-comment loop) rather than duplicating
+  it; pity counters are new state on `LootRegistry` since C has no
+  equivalent store yet. Condition evaluation takes a `LootQuestContext`
+  trait object (implemented for `crate::quest::QuestLog` directly) plus a
+  `LootKiller` bundle (character id, level, quest ref) so the core roll
+  engine never depends on the server-owned `PlayerRuntime` - `World::
+  characters` supplies the level directly, and the caller supplies the
+  quest log. `World::die_character` now queues a `PendingDeathLootRoll`
+  (container id, killer id, template key) right where C calls
+  `apply_death_loot_for_template`, for every non-player death that got a
+  body/container (`!(ch[cn].flags & CF_PLAYER)`, matching C's own gate).
+  Server-side: `crates/ugaris-server/src/loot.rs` recursively scans
+  `ugaris_data/loot/**/*.json` at startup (mirrors `resolve_zone_root`'s
+  `../` fallback), logs per-file parse warnings, and
+  `apply_pending_death_loot_rolls` drains the queue every tick (right
+  after the military-mission-check drain in `main.rs`), building the
+  killer context from `World::characters` (level, `CF_PLAYER` gate) and
+  `ServerRuntime::player_for_character` (quest log) - `None` whenever
+  either is missing, the closest reachable equivalent of C's
+  `valid_killer` for an architecture where quest state lives outside
+  `World`. Promoted `serde_json` from a `ugaris-core` dev-dependency to a
+  real one (JSON parsing now happens in production, not just tests).  29
+  new unit tests (21 in `world/tests/loot.rs` covering parsing shorthand/
+  full-form/malformed-input, every condition variant including the
+  quest-open proxy quirk, pity gating + reset, the `event_drop_rate`
+  modifier scaling both roll count and pity threshold, sub-table
+  recursion + its depth cap, and the `-1` unknown-table/wrong-mode
+  returns; 2 in `world/tests/death.rs` covering the new `PendingDeathLootRoll`
+  queuing for NPCs and its absence for players; both using the real
+  `ugaris_data/loot/pents/{demons,equipment}.json` content transcribed
+  as fixture strings). `cargo fmt --all`, `cargo test --workspace` (1968
+  ugaris-core [+21] + 55 db + 3 net + 40 protocol + 629 server [+2], all
+  green, zero failures), `cargo build --workspace` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panic and logged `loaded loot tables root=ugaris_data/loot
+  files_scanned=2 tables_added=9 warnings=0` (the real pents fixture
+  data) right before it.
 
 - [ ] **Remaining `/` and `#` text commands** - diff
   `src/system/command.c` against `crates/ugaris-server/src/commands_*.rs`
