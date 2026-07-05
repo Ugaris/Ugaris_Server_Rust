@@ -342,6 +342,9 @@ impl ServerRuntime {
         if let Some(player) = &player {
             if let Some(character_id) = player.character_id {
                 self.account_depots.remove(&character_id);
+                self.weather
+                    .elemental_debuff_last_notify
+                    .remove(&character_id);
             }
         }
         player
@@ -934,6 +937,41 @@ async fn main() -> anyhow::Result<()> {
                                     // no other C caller passes `dat1 = 0` to
                                     // `LOG_INFO`; every other `LOG_INFO` call
                                     // site passes a real acting character id.
+                                }
+                            }
+                        }
+                    }
+                    // C `apply_elemental_debuffs` (`weather.c:614-655`),
+                    // called from the same per-player `apply_weather_effects`
+                    // tick hook as the damage/lightning rolls above: a
+                    // periodic (at most once per 10 real seconds per
+                    // character) flavor-text notification while standing in
+                    // wet/cold/scorching weather. Gated on the same
+                    // `character_weather_eligible` guards - see
+                    // `elemental_debuff_message`'s doc comment for why only
+                    // this notification (not the persistent debuff/expire
+                    // state) is ported.
+                    if runtime.weather.weather_effects & WEATHER_EFFECT_ELEMENTAL != 0 {
+                        if let Some(message) = elemental_debuff_message(elemental_debuff_type(
+                            runtime.weather.current_weather,
+                            runtime.weather.weather_intensity,
+                        )) {
+                            for &character_id in &player_character_ids {
+                                if !world.character_weather_eligible(character_id) {
+                                    continue;
+                                }
+                                let last_notify = runtime
+                                    .weather
+                                    .elemental_debuff_last_notify
+                                    .get(&character_id)
+                                    .copied()
+                                    .unwrap_or(0);
+                                if should_notify_elemental_debuff(last_notify, world.tick.0) {
+                                    runtime
+                                        .weather
+                                        .elemental_debuff_last_notify
+                                        .insert(character_id, world.tick.0);
+                                    world.queue_system_text(character_id, message);
                                 }
                             }
                         }

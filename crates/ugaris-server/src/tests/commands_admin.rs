@@ -3310,6 +3310,7 @@ fn weather_command_reports_god_debug_info() {
         weather_change_time: 240,
         affected_areas: vec![1, 3],
         seasonal_influence: SEASON_SPRING,
+        elemental_debuff_last_notify: HashMap::new(),
     };
 
     let result = apply_weather_command(&world, character_id, 1, &weather, "/weather")
@@ -3356,6 +3357,7 @@ fn weather_admin_commands_mutate_runtime_state_with_legacy_feedback() {
             | WEATHER_EFFECT_SLIP
             | WEATHER_EFFECT_SKILL
             | WEATHER_EFFECT_LIGHTNING
+            | WEATHER_EFFECT_ELEMENTAL
     );
     assert!(weather.is_transitioning);
     assert_eq!(weather.transition_start, 48);

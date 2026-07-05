@@ -20,6 +20,16 @@ pub(crate) struct WeatherState {
     /// to `0`/spring, so the very first tick doesn't see a spurious season
     /// change.
     pub(crate) seasonal_influence: i32,
+    /// C `apply_elemental_debuffs`'s `static int last_notify[TOTAL_MAXCHARS]`
+    /// (`weather.c:636`): the tick each character last received an
+    /// elemental-debuff flavor message, gating repeats to once per 10
+    /// seconds. Entries are removed on disconnect (`ServerRuntime::
+    /// disconnect`) since a fresh `PlayerRuntime`/character reuses the
+    /// slot with no memory of the old cooldown in C either (a
+    /// process-lifetime static array reset only on server restart, but
+    /// per-character-id here since `CharacterId`s aren't reused within a
+    /// server's lifetime the way C's fixed `TOTAL_MAXCHARS` slots are).
+    pub(crate) elemental_debuff_last_notify: HashMap<CharacterId, u64>,
 }
 
 pub(crate) const WEATHER_EFFECT_SLOW: u32 = 0x01;
@@ -42,6 +52,20 @@ pub(crate) const WEATHER_EFFECT_SKILL: u32 = 0x10;
 /// `0x20` above) set whenever the current weather/intensity cell has a
 /// nonzero `lightning_chance` (only `MOD_WEATHER_STORM` does).
 pub(crate) const WEATHER_EFFECT_LIGHTNING: u32 = 0x100;
+
+/// `weather.h`'s `WEATHER_EFFECT_ELEMENTAL` (`0x400`): a server-internal
+/// flag set whenever the current weather/intensity cell has a nonzero
+/// `elemental_debuff_type` (rain/storm = wet, snow = cold, sandstorm =
+/// scorched). Gates `apply_elemental_debuffs`'s periodic flavor-text
+/// notification - see [`elemental_debuff_type`]/[`elemental_debuff_message`].
+pub(crate) const WEATHER_EFFECT_ELEMENTAL: u32 = 0x400;
+
+/// `weather.h`'s `enum elemental_debuff_type` values, transcribed
+/// digit-for-digit.
+pub(crate) const DEBUFF_NONE: i32 = 0;
+pub(crate) const DEBUFF_WET: i32 = 1;
+pub(crate) const DEBUFF_COLD: i32 = 2;
+pub(crate) const DEBUFF_SCORCHED: i32 = 3;
 
 pub(crate) const WEATHER_INTENSITY_NAMES: [&str; 4] = ["None", "Light", "Moderate", "Heavy"];
 
@@ -77,6 +101,7 @@ impl Default for WeatherState {
             weather_change_time: 0,
             affected_areas: Vec::new(),
             seasonal_influence: SEASON_SPRING,
+            elemental_debuff_last_notify: HashMap::new(),
         }
     }
 }
@@ -147,8 +172,10 @@ pub(crate) fn weather_type_list_messages() -> Vec<String> {
 /// `attack_speed_mod`/`spell_power_mod`/`elemental_debuff_type` and the
 /// per-skill `V_PERCEPT`/`V_STEALTH` values are C table columns not yet
 /// consumed by any Rust code path (`modify_attack_speed`/
-/// `modify_spell_power`/`modify_skill_value`/`apply_elemental_debuffs` are
-/// unported - see `PORTING_TODO.md`).
+/// `modify_spell_power`/`modify_skill_value` are unported - see
+/// `PORTING_TODO.md`; `elemental_debuff_type` is consumed by
+/// `apply_elemental_debuffs`'s periodic-notification slice, see
+/// [`elemental_debuff_type`]).
 #[derive(Debug, Clone, Copy)]
 struct WeatherEffectData {
     move_mod: i32,
@@ -157,6 +184,7 @@ struct WeatherEffectData {
     slip_chance: i32,
     has_skill_mod: bool,
     lightning_chance: i32,
+    elemental_debuff_type: i32,
 }
 
 const NO_EFFECT: WeatherEffectData = WeatherEffectData {
@@ -166,6 +194,7 @@ const NO_EFFECT: WeatherEffectData = WeatherEffectData {
     slip_chance: 0,
     has_skill_mod: false,
     lightning_chance: 0,
+    elemental_debuff_type: DEBUFF_NONE,
 };
 
 /// `[weather_type][intensity]`, transcribed digit-for-digit from
@@ -183,6 +212,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 15,
             has_skill_mod: false,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_WET,
         },
         WeatherEffectData {
             move_mod: 90,
@@ -191,6 +221,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 25,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_WET,
         },
         WeatherEffectData {
             move_mod: 80,
@@ -199,6 +230,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 35,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_WET,
         },
     ],
     // MOD_WEATHER_STORM - the only weather type with lightning strikes
@@ -211,6 +243,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 20,
             has_skill_mod: true,
             lightning_chance: 5,
+            elemental_debuff_type: DEBUFF_WET,
         },
         WeatherEffectData {
             move_mod: 80,
@@ -219,6 +252,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 30,
             has_skill_mod: true,
             lightning_chance: 15,
+            elemental_debuff_type: DEBUFF_WET,
         },
         WeatherEffectData {
             move_mod: 70,
@@ -227,6 +261,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 40,
             has_skill_mod: true,
             lightning_chance: 30,
+            elemental_debuff_type: DEBUFF_WET,
         },
     ],
     // MOD_WEATHER_SNOW - no lightning
@@ -239,6 +274,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 20,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_COLD,
         },
         WeatherEffectData {
             move_mod: 80,
@@ -247,6 +283,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 30,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_COLD,
         },
         WeatherEffectData {
             move_mod: 70,
@@ -255,6 +292,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 40,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_COLD,
         },
     ],
     // MOD_WEATHER_SANDSTORM - no lightning
@@ -267,6 +305,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 15,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_SCORCHED,
         },
         WeatherEffectData {
             move_mod: 70,
@@ -275,6 +314,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 25,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_SCORCHED,
         },
         WeatherEffectData {
             move_mod: 55,
@@ -283,9 +323,10 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 35,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_SCORCHED,
         },
     ],
-    // MOD_WEATHER_FOG - no lightning
+    // MOD_WEATHER_FOG - no lightning, no elemental debuff
     [
         NO_EFFECT,
         WeatherEffectData {
@@ -295,6 +336,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 0,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_NONE,
         },
         WeatherEffectData {
             move_mod: 90,
@@ -303,6 +345,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 0,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_NONE,
         },
         WeatherEffectData {
             move_mod: 85,
@@ -311,6 +354,7 @@ const WEATHER_EFFECTS: [[WeatherEffectData; 4]; 6] = [
             slip_chance: 0,
             has_skill_mod: true,
             lightning_chance: 0,
+            elemental_debuff_type: DEBUFF_NONE,
         },
     ],
 ];
@@ -344,6 +388,9 @@ pub(crate) fn calculate_weather_effects(weather_type: i32, intensity: usize) -> 
     }
     if data.lightning_chance > 0 {
         effects |= WEATHER_EFFECT_LIGHTNING;
+    }
+    if data.elemental_debuff_type != DEBUFF_NONE {
+        effects |= WEATHER_EFFECT_ELEMENTAL;
     }
     effects
 }
@@ -406,6 +453,54 @@ pub(crate) fn lightning_strike_damage_amount(
         3 => 40 + random_below(40), // MOD_INTENSITY_HEAVY
         _ => 15,
     }
+}
+
+/// C `apply_elemental_debuffs` (`weather.c:614-655`)'s table lookup:
+/// `weather_effects[world_weather.current_weather][world_weather.
+/// weather_intensity].elemental_debuff_type`.
+pub(crate) fn elemental_debuff_type(weather_type: i32, intensity: usize) -> i32 {
+    if !is_valid_weather_type(i64::from(weather_type))
+        || !is_valid_weather_intensity(intensity as i64)
+    {
+        return DEBUFF_NONE;
+    }
+    weather_effect_data(weather_type, intensity).elemental_debuff_type
+}
+
+/// C `apply_elemental_debuffs` (`weather.c:636-647`)'s per-debuff-type
+/// flavor message, transcribed letter-for-letter.
+///
+/// Only the periodic notification is ported: C's own persistent
+/// `elemental_debuff[cn]`/`elemental_debuff_expire[cn]` state and the
+/// "debuff wearing off" message it would otherwise gate are genuinely
+/// unreachable dead code in the real C server - `apply_elemental_debuffs`
+/// is only ever called (`weather.c:1164-1166`) when `world_weather.
+/// weather_effects & WEATHER_EFFECT_ELEMENTAL` is set, which is derived
+/// from the exact same table lookup this function itself re-reads, so its
+/// own `debuff_type == DEBUFF_NONE` branch (the wearing-off message) can
+/// never execute; and the persistent debuff/expire state is only ever
+/// *read* by `get_elemental_debuff`, whose only 4 callers
+/// (`modify_attack_speed`/`modify_spell_power`/`modify_fire_resistance`/
+/// `modify_cold_resistance`) are themselves confirmed dead code (verified:
+/// no other `.c` file calls any of the four) - so the state has zero
+/// observable effect anywhere. Only the `last_notify[cn]`/`TICKS*10` gate
+/// on this message is real, live behavior.
+pub(crate) fn elemental_debuff_message(debuff_type: i32) -> Option<&'static str> {
+    match debuff_type {
+        DEBUFF_WET => Some("You are getting soaked by the rain."),
+        DEBUFF_COLD => Some("The cold is seeping into your bones."),
+        DEBUFF_SCORCHED => Some("The scorching heat is draining your energy."),
+        _ => None,
+    }
+}
+
+/// C `apply_elemental_debuffs` (`weather.c:636-638`)'s `static int
+/// last_notify[TOTAL_MAXCHARS]` gate: `ticker - last_notify[cn] >=
+/// TICKS*10`. `last_notify` defaults to `0` for a character never seen
+/// before, matching a fresh (or restarted) server's zero-initialized
+/// static array.
+pub(crate) fn should_notify_elemental_debuff(last_notify: u64, now: u64) -> bool {
+    now.saturating_sub(last_notify) >= TICKS_PER_SECOND * 10
 }
 
 /// C `modify_movement_speed`'s table lookup (`module/weather/weather.c:

@@ -42,20 +42,25 @@ fn calculate_weather_effects_matches_c_table_at_every_boundary() {
     // fix.
     assert_eq!(calculate_weather_effects(0, 1), 0); // Clear: never any effect.
 
-    // Light rain: slow+blind+slip, no skill mods ({0} in the C table).
+    // Light rain: slow+blind+slip+elemental (wet), no skill mods ({0} in
+    // the C table).
     assert_eq!(
         calculate_weather_effects(1, 1),
-        WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP
+        WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP | WEATHER_EFFECT_ELEMENTAL
     );
     // Moderate rain gains a skill mod (V_PERCEPT = -5).
     assert_eq!(
         calculate_weather_effects(1, 2),
-        WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SLIP | WEATHER_EFFECT_SKILL
+        WEATHER_EFFECT_SLOW
+            | WEATHER_EFFECT_BLIND
+            | WEATHER_EFFECT_SLIP
+            | WEATHER_EFFECT_SKILL
+            | WEATHER_EFFECT_ELEMENTAL
     );
 
-    // Heavy storm: slow+blind+slip+skill, no damage, but a nonzero
-    // `lightning_chance` (30%) so `WEATHER_EFFECT_LIGHTNING` is set too -
-    // the only weather/intensity cell where that bit ever appears.
+    // Heavy storm: slow+blind+slip+skill+elemental (wet), no damage, but a
+    // nonzero `lightning_chance` (30%) so `WEATHER_EFFECT_LIGHTNING` is set
+    // too - the only weather/intensity cell where that bit ever appears.
     assert_eq!(
         calculate_weather_effects(2, 3),
         WEATHER_EFFECT_SLOW
@@ -63,6 +68,7 @@ fn calculate_weather_effects_matches_c_table_at_every_boundary() {
             | WEATHER_EFFECT_SLIP
             | WEATHER_EFFECT_SKILL
             | WEATHER_EFFECT_LIGHTNING
+            | WEATHER_EFFECT_ELEMENTAL
     );
     // Light/moderate storm also carry the lightning bit (5%/15% chance).
     assert_eq!(
@@ -72,10 +78,21 @@ fn calculate_weather_effects_matches_c_table_at_every_boundary() {
             | WEATHER_EFFECT_SLIP
             | WEATHER_EFFECT_SKILL
             | WEATHER_EFFECT_LIGHTNING
+            | WEATHER_EFFECT_ELEMENTAL
+    );
+
+    // Snow carries the cold elemental debuff bit too.
+    assert_eq!(
+        calculate_weather_effects(3, 1),
+        WEATHER_EFFECT_SLOW
+            | WEATHER_EFFECT_BLIND
+            | WEATHER_EFFECT_SLIP
+            | WEATHER_EFFECT_SKILL
+            | WEATHER_EFFECT_ELEMENTAL
     );
 
     // Light sandstorm already has damage=1 (unlike moderate/heavy-only
-    // damage in the old simplified port).
+    // damage in the old simplified port), plus the scorched elemental bit.
     assert_eq!(
         calculate_weather_effects(4, 1),
         WEATHER_EFFECT_SLOW
@@ -83,10 +100,12 @@ fn calculate_weather_effects_matches_c_table_at_every_boundary() {
             | WEATHER_EFFECT_DAMAGE
             | WEATHER_EFFECT_SLIP
             | WEATHER_EFFECT_SKILL
+            | WEATHER_EFFECT_ELEMENTAL
     );
 
     // Light fog: C's table has move_mod=95 (<100), so SLOW must be set -
-    // the bug this test guards against.
+    // the bug this test guards against. Fog never carries an elemental
+    // debuff (DEBUFF_NONE at every intensity).
     assert_eq!(
         calculate_weather_effects(5, 1),
         WEATHER_EFFECT_SLOW | WEATHER_EFFECT_BLIND | WEATHER_EFFECT_SKILL
@@ -159,6 +178,54 @@ fn lightning_strike_damage_amount_matches_c_switch_at_every_intensity() {
     assert_eq!(lightning_strike_damage_amount(3, |_| 39), 79);
     // Unreachable-in-practice `default` branch (intensity 0/None).
     assert_eq!(lightning_strike_damage_amount(0, |_| 0), 15);
+}
+
+#[test]
+fn elemental_debuff_type_matches_c_table_at_every_boundary() {
+    assert_eq!(elemental_debuff_type(0, 1), DEBUFF_NONE); // Clear.
+    assert_eq!(elemental_debuff_type(1, 1), DEBUFF_WET); // Rain, every intensity.
+    assert_eq!(elemental_debuff_type(1, 3), DEBUFF_WET);
+    assert_eq!(elemental_debuff_type(2, 1), DEBUFF_WET); // Storm, every intensity.
+    assert_eq!(elemental_debuff_type(2, 3), DEBUFF_WET);
+    assert_eq!(elemental_debuff_type(3, 1), DEBUFF_COLD); // Snow, every intensity.
+    assert_eq!(elemental_debuff_type(3, 3), DEBUFF_COLD);
+    assert_eq!(elemental_debuff_type(4, 1), DEBUFF_SCORCHED); // Sandstorm.
+    assert_eq!(elemental_debuff_type(4, 3), DEBUFF_SCORCHED);
+    assert_eq!(elemental_debuff_type(5, 1), DEBUFF_NONE); // Fog: no debuff.
+    assert_eq!(elemental_debuff_type(5, 3), DEBUFF_NONE);
+    // Invalid inputs are always a no-op.
+    assert_eq!(elemental_debuff_type(6, 1), DEBUFF_NONE);
+    assert_eq!(elemental_debuff_type(1, 0), DEBUFF_NONE);
+    assert_eq!(elemental_debuff_type(1, 4), DEBUFF_NONE);
+}
+
+#[test]
+fn elemental_debuff_message_matches_c_switch_letter_for_letter() {
+    assert_eq!(
+        elemental_debuff_message(DEBUFF_WET),
+        Some("You are getting soaked by the rain.")
+    );
+    assert_eq!(
+        elemental_debuff_message(DEBUFF_COLD),
+        Some("The cold is seeping into your bones.")
+    );
+    assert_eq!(
+        elemental_debuff_message(DEBUFF_SCORCHED),
+        Some("The scorching heat is draining your energy.")
+    );
+    assert_eq!(elemental_debuff_message(DEBUFF_NONE), None);
+}
+
+#[test]
+fn should_notify_elemental_debuff_gates_to_once_per_ten_seconds() {
+    let ten_seconds = TICKS_PER_SECOND * 10;
+    // Never notified before (last_notify defaults to 0): fires once ticker
+    // reaches the threshold, not before.
+    assert!(!should_notify_elemental_debuff(0, ten_seconds - 1));
+    assert!(should_notify_elemental_debuff(0, ten_seconds));
+    // Just notified: doesn't fire again until another full 10 seconds pass.
+    assert!(!should_notify_elemental_debuff(100, 100 + ten_seconds - 1));
+    assert!(should_notify_elemental_debuff(100, 100 + ten_seconds));
 }
 
 #[test]

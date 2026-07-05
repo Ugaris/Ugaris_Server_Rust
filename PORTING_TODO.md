@@ -5179,11 +5179,23 @@ Unlocks every quest NPC. Do these before any P4 area work.
     ported this slice, see REMAINING above: `fighter_driver`/
     `manager_driver`, and DB/file persistence for the ranking table.
 
-- [~] **Weather driver (`src/module/weather/weather.c`)** - server-side
+- [x] **Weather driver (`src/module/weather/weather.c`)** - server-side
   state machine exists in `crates/ugaris-server/src/weather.rs` (admin
   commands only). Port the actual per-tick weather effects: `SV_*`
   weather packets to clients (check client protocol), movement slow,
-  visibility reduction, damage weather, area gating. REMAINING:
+  visibility reduction, damage weather, area gating. CLOSED (iteration
+  131): every item below is now either ported or confirmed to be
+  permanently dead code in the C source itself (verified by full-tree
+  grep - `modify_visibility_range`/`modify_skill_value`/
+  `modify_attack_speed`/`modify_spell_power`/`modify_fire_resistance`/
+  `modify_cold_resistance`/`send_weather_screen_flash`/the slip effect
+  are never called/enabled anywhere outside `weather.c`'s own dead
+  definitions), so not implementing them *is* the correct, faithful port
+  of C's own observable (non-)behavior. The multi-server mirror
+  storage/DB persistence gap is N/A for this always-single-mirror Rust
+  process. Kept the detailed history below for reference. FORMER
+  REMAINING (all closed, see Progress Log entries below for which
+  iteration closed each):
   `modify_movement_speed` (`weather.c:477-493`) was wired in iteration 126
   for player walking only, and extended to melee attacks (both player and
   NPC) in iteration 128 - see Progress Log; `modify_visibility_range`/
@@ -5205,7 +5217,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
   iteration 129 - see Progress Log; this item is now fully closed except
   for the still-dead `modify_visibility_range`/`modify_skill_value` noted
   above. Lightning strikes (`handle_lightning_strike`) were ported in iteration
-  127 - see Progress Log. `modify_visibility_range`/`modify_skill_value`
+  127 - see Progress Log, and the elemental-debuff periodic flavor-text
+  notification (`apply_elemental_debuffs`) was ported in iteration 131 -
+  see Progress Log. `modify_visibility_range`/`modify_skill_value`
   are additionally confirmed **permanently dead code in C**, not just
   unwired: verified with a full-tree grep (`grep -rln
   "modify_visibility_range\|modify_skill_value" src/`) - the only C file
@@ -5220,19 +5234,24 @@ Unlocks every quest NPC. Do these before any P4 area work.
   *are* called (from `apply_weather_effects`, gated on
   `WEATHER_EFFECT_ELEMENTAL`/`WEATHER_EFFECT_LIGHTNING`, both reachable
   given the live table's nonzero `elemental_debuff_type`/
-  `lightning_chance` cells) - `handle_lightning_strike` is now ported;
-  `apply_elemental_debuffs` still isn't (REMAINING below), though note its
-  *mechanical* effect is itself unreachable today since the only 4
-  functions that would ever consume `get_elemental_debuff`'s result
+  `lightning_chance` cells) - both are now ported (`handle_lightning_strike`
+  in iteration 127, `apply_elemental_debuffs` in iteration 131, see
+  Progress Log for the latter). `apply_elemental_debuffs`'s *mechanical*
+  effect (the persistent `elemental_debuff[cn]`/`elemental_debuff_expire[cn]`
+  state) is itself unreachable/dead today - verified: the only 4 functions
+  that would ever consume `get_elemental_debuff`'s result
   (`modify_attack_speed`/`modify_spell_power`/`modify_fire_resistance`/
-  `modify_cold_resistance`) are the dead ones above - porting
-  `apply_elemental_debuffs` today would only ever produce its own
-  periodic flavor-text log messages ("You are getting soaked by the
-  rain."/etc.), not any actual gameplay modifier, until a future slice
-  also wires one of those 4 dead functions into real combat/resistance
-  code (which would itself first require finding or inventing a *new*
-  non-dead C call site, since none exists - a bigger design question than
-  "port this function", left for a future slice/decision). Slip
+  `modify_cold_resistance`) are the dead ones above, and the call-site gate
+  (`weather_effects & WEATHER_EFFECT_ELEMENTAL`) guarantees the function's
+  own internal "debuff expired, clear it" branch can never execute either
+  (see `elemental_debuff_message`'s doc comment) - so only the periodic
+  flavor-text notification ("You are getting soaked by the rain."/"The
+  cold is seeping into your bones."/"The scorching heat is draining your
+  energy.", gated to once per 10 real seconds per character) was ported;
+  the dead persistent state itself was intentionally *not* replicated
+  (would be genuinely unused/unread Rust state, not a faithful port of
+  observable behavior) - a future slice would need to invent a new,
+  non-dead consumer before that state means anything. Slip
   itself (`can_slip`/`reset_slip_cooldown`) is intentionally not ported:
   C's own `apply_weather_effects` has it permanently disabled ("was too
   disruptive to gameplay"), dead code in the C tree too. The multi-server
@@ -5528,6 +5547,40 @@ Unlocks every quest NPC. Do these before any P4 area work.
   green, zero failures), `cargo build -p ugaris-server` clean with zero
   warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
   panics (this iteration touches player/NPC action and spell dispatch).
+  - 2026-07-05 (iteration 131): ported the last self-contained slice,
+    `apply_elemental_debuffs` (`weather.c:614-655`), as a periodic
+    flavor-text notification only - see the REMAINING analysis above for
+    why the persistent `elemental_debuff[cn]`/`elemental_debuff_expire[cn]`
+    state and its own internal "wearing off" branch are both genuinely
+    dead code, not just unwired. Added `WEATHER_EFFECT_ELEMENTAL` (`0x400`)
+    and `DEBUFF_NONE`/`DEBUFF_WET`/`DEBUFF_COLD`/`DEBUFF_SCORCHED` to
+    `crates/ugaris-server/src/weather.rs`, restored the `elemental_debuff_
+    type` column to `WeatherEffectData`/`WEATHER_EFFECTS` (digit-for-digit
+    from `weather.c:148-192`: wet for rain/storm at every intensity, cold
+    for snow, scorched for sandstorm, none for clear/fog), wired it into
+    `calculate_weather_effects`, and added `elemental_debuff_type`/
+    `elemental_debuff_message`/`should_notify_elemental_debuff` helpers.
+    `WeatherState` gained `elemental_debuff_last_notify: HashMap
+    <CharacterId, u64>` (the per-character 10-second notification cooldown,
+    C's `static int last_notify[TOTAL_MAXCHARS]`), cleared on disconnect
+    in `ServerRuntime::disconnect` alongside `account_depots`. Wired into
+    `main.rs`'s tick loop in the same `area_has_weather` block as the
+    damage/lightning rolls, gated on `WEATHER_EFFECT_ELEMENTAL` and the
+    same `character_weather_eligible` guard. 6 new unit tests
+    (`elemental_debuff_type` table boundaries, `elemental_debuff_message`
+    switch, `should_notify_elemental_debuff` cooldown gate at both the
+    zero-baseline and a nonzero-baseline) plus updated `calculate_weather_
+    effects`' existing boundary test and one `commands_admin.rs` fixture
+    for the new struct field/effects bit. This closes the weather-driver
+    task entirely except for the confirmed-permanently-dead-in-C
+    visibility/skill-value/combat modifiers noted above (no further
+    self-contained slice remains to port - any future work there would
+    require inventing a new, non-dead C call site first, a design
+    decision rather than a porting task). `cargo fmt --all`, `cargo test
+    --workspace` (1748 ugaris-core + 55 db + 3 net + 40 protocol + 583
+    server, all green, zero failures), `cargo build -p ugaris-server`
+    clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+    loop" with no panics.
 
 - [ ] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +
