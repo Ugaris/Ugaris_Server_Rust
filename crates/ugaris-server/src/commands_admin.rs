@@ -795,6 +795,816 @@ pub(crate) fn apply_legacy_communication_tuning_command(
     None
 }
 
+/// Shared helper for the `GameSettings`-backed `/set*` tuning knobs ported
+/// below (C `command.c`'s "Tool/Mine/Dungeon/Brannington/Pentagram/Clan/
+/// Drop probability settings" blocks, `command.c:7113-8191`). Each C
+/// handler is `cmdcmp(ptr, "<full name>", <minlen>)` gated on `CF_GOD`,
+/// reads one `atoi(ptr)`, range-checks it, and on success both `log_char`s
+/// a player-visible message and `xlog`s a server-log line; only the
+/// `log_char` message is client-visible so that's the only one ported (the
+/// same convention as the pre-existing `apply_legacy_tick_tuning_command`/
+/// `apply_legacy_communication_tuning_command` above). `min_len` is copied
+/// digit-for-digit from each `cmdcmp` call, including the cases where it is
+/// far shorter than the full command name (an intentional legacy
+/// abbreviation) - ordering of the `if let ... return` chain in the caller
+/// must match the C `if` chain's source order exactly, since a short
+/// abbreviation can be ambiguous across several of these names and C's
+/// first-match-wins semantics depend on declaration order.
+#[allow(clippy::too_many_arguments)]
+fn try_int_range_setting(
+    world: &mut World,
+    lower: &str,
+    rest: &str,
+    command: &str,
+    min_len: usize,
+    min: i32,
+    max: i32,
+    field: impl FnOnce(&mut GameSettings) -> &mut i32,
+    success_template: &str,
+    invalid: &str,
+) -> Option<KeyringCommandResult> {
+    if lower.len() < min_len || !command.starts_with(lower) {
+        return None;
+    }
+    let value = legacy_atoi_prefix(rest).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    if (min..=max).contains(&value) {
+        let field_ref = field(&mut world.settings);
+        let old = *field_ref;
+        *field_ref = value;
+        return Some(KeyringCommandResult {
+            messages: vec![success_template
+                .replace("{old}", &old.to_string())
+                .replace("{new}", &value.to_string())],
+            ..Default::default()
+        });
+    }
+    Some(KeyringCommandResult {
+        messages: vec![invalid.to_string()],
+        ..Default::default()
+    })
+}
+
+/// Same as `try_int_range_setting` but for the `atof(ptr)`-parsed `double`
+/// knobs (`%.2f` old/new feedback in C).
+#[allow(clippy::too_many_arguments)]
+fn try_f64_range_setting(
+    world: &mut World,
+    lower: &str,
+    rest: &str,
+    command: &str,
+    min_len: usize,
+    min: f64,
+    max: f64,
+    field: impl FnOnce(&mut GameSettings) -> &mut f64,
+    success_template: &str,
+    invalid: &str,
+) -> Option<KeyringCommandResult> {
+    if lower.len() < min_len || !command.starts_with(lower) {
+        return None;
+    }
+    let value = legacy_atof_prefix(rest);
+    if value >= min && value <= max {
+        let field_ref = field(&mut world.settings);
+        let old = *field_ref;
+        *field_ref = value;
+        return Some(KeyringCommandResult {
+            messages: vec![success_template
+                .replace("{old}", &format!("{old:.2}"))
+                .replace("{new}", &format!("{value:.2}"))],
+            ..Default::default()
+        });
+    }
+    Some(KeyringCommandResult {
+        messages: vec![invalid.to_string()],
+        ..Default::default()
+    })
+}
+
+/// C `command.c`'s "Remaining `/` and `#` text commands" `set*` knob
+/// family that reads/writes `world.settings` (`ugaris_core::GameSettings`)
+/// scalars already backed by `World`. Wired into `apply_admin_character_command`
+/// only for `CF_GOD` callers, mirroring `apply_legacy_tick_tuning_command`.
+fn apply_legacy_game_settings_tuning_command(
+    world: &mut World,
+    lower: &str,
+    rest: &str,
+) -> Option<KeyringCommandResult> {
+    // command.c:7113
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setsplots",
+        9,
+        1000,
+        10000,
+        |s| &mut s.sp_lots,
+        "Special item probability 'lots' category changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1000 and 10000",
+    ) {
+        return Some(r);
+    }
+    // command.c:7133
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setspmany",
+        9,
+        500,
+        5000,
+        |s| &mut s.sp_many,
+        "Special item probability 'many' category changed from {old} to {new}",
+        "Invalid value. Please specify a value between 500 and 5000",
+    ) {
+        return Some(r);
+    }
+    // command.c:7153
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setspsome",
+        9,
+        100,
+        1000,
+        |s| &mut s.sp_some,
+        "Special item probability 'some' category changed from {old} to {new}",
+        "Invalid value. Please specify a value between 100 and 1000",
+    ) {
+        return Some(r);
+    }
+    // command.c:7173
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setspfew",
+        8,
+        10,
+        200,
+        |s| &mut s.sp_few,
+        "Special item probability 'few' category changed from {old} to {new}",
+        "Invalid value. Please specify a value between 10 and 200",
+    ) {
+        return Some(r);
+    }
+    // command.c:7193
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setsprare",
+        9,
+        2,
+        50,
+        |s| &mut s.sp_rare,
+        "Special item probability 'rare' category changed from {old} to {new}",
+        "Invalid value. Please specify a value between 2 and 50",
+    ) {
+        return Some(r);
+    }
+    // command.c:7213
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setspultra",
+        10,
+        1,
+        10,
+        |s| &mut s.sp_ultra,
+        "Special item probability 'ultra' category changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 10",
+    ) {
+        return Some(r);
+    }
+    // command.c:7234
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setorbrespawndays",
+        17,
+        1,
+        90,
+        |s| &mut s.base_orb_respawn_time_days,
+        "Orb respawn time changed from {old} to {new} days",
+        "Invalid value. Please specify a value between 1 and 90 days",
+    ) {
+        return Some(r);
+    }
+    // command.c:7255
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setmaxjewelcount",
+        16,
+        1,
+        5,
+        |s| &mut s.max_jewel_count,
+        "Maximum jewel count changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 5",
+    ) {
+        return Some(r);
+    }
+    // command.c:7275
+    if let Some(r) = try_f64_range_setting(
+        world,
+        lower,
+        rest,
+        "settunnelexpdivider",
+        19,
+        1.0,
+        10.0,
+        |s| &mut s.tunnel_exp_base_value_divider,
+        "Tunnel experience base value divider changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1.0 and 10.0",
+    ) {
+        return Some(r);
+    }
+    // command.c:7296
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "settunnelmillexp",
+        16,
+        50,
+        500,
+        |s| &mut s.tunnel_mill_exp_base_value,
+        "Tunnel mill experience base value changed from {old} to {new}",
+        "Invalid value. Please specify a value between 50 and 500",
+    ) {
+        return Some(r);
+    }
+    // command.c:7317
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setraregolemchance",
+        18,
+        5,
+        100,
+        |s| &mut s.rare_golem_chance,
+        "Rare golem chance changed from {old} to {new}",
+        "Invalid value. Please specify a value between 5 and 100",
+    ) {
+        return Some(r);
+    }
+    // command.c:7337
+    {
+        let ticks = TICKS_PER_SECOND as i32;
+        let min_time = ticks * 30 * 60;
+        let max_time = ticks * 120 * 60;
+        if lower.len() >= 14 && "setdungeontime".starts_with(lower) {
+            let value =
+                legacy_atoi_prefix(rest).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+            if (min_time..=max_time).contains(&value) {
+                let old = world.settings.dungeon_time;
+                world.settings.dungeon_time = value;
+                return Some(KeyringCommandResult {
+                    messages: vec![format!(
+                        "Dungeon time limit changed from {old} to {value} ticks ({} to {} minutes)",
+                        old / (ticks * 60),
+                        value / (ticks * 60)
+                    )],
+                    ..Default::default()
+                });
+            }
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Invalid value. Please specify a time between {min_time} and {max_time} ticks (30-120 minutes)"
+                )],
+                ..Default::default()
+            });
+        }
+    }
+    // command.c:7362
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setbranfoexpbase",
+        16,
+        5000,
+        20000,
+        |s| &mut s.branfo_exp_base,
+        "Brannington Forest experience base changed from {old} to {new}",
+        "Invalid value. Please specify a value between 5000 and 20000",
+    ) {
+        return Some(r);
+    }
+    // command.c:7382
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setbranexpbase",
+        14,
+        10000,
+        30000,
+        |s| &mut s.bran_exp_base,
+        "Brannington experience base changed from {old} to {new}",
+        "Invalid value. Please specify a value between 10000 and 30000",
+    ) {
+        return Some(r);
+    }
+    // command.c:7403
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setpentvismaxpents",
+        18,
+        5,
+        20,
+        |s| &mut s.max_visible_pents,
+        "Maximum visible pentagrams changed from {old} to {new}",
+        "Invalid value. Please specify a value between 5 and 20",
+    ) {
+        return Some(r);
+    }
+    // command.c:7423
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setpentmaxpower",
+        15,
+        1000,
+        5000,
+        |s| &mut s.max_power_level,
+        "Maximum pentagram power level changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1000 and 5000",
+    ) {
+        return Some(r);
+    }
+    // command.c:7610
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setmaxsilvergolemtype",
+        6,
+        1,
+        20,
+        |s| &mut s.max_silver_golem_type,
+        "Max silver golem type changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 20",
+    ) {
+        return Some(r);
+    }
+    // command.c:7630
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setnormaldropchance",
+        6,
+        5,
+        100,
+        |s| &mut s.normal_drop_chance,
+        "Normal drop chance changed from {old} to {new}",
+        "Invalid value. Please specify a value between 5 and 100",
+    ) {
+        return Some(r);
+    }
+    // command.c:7650
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setraredropchance",
+        6,
+        20,
+        200,
+        |s| &mut s.rare_drop_chance,
+        "Rare drop chance changed from {old} to {new}",
+        "Invalid value. Please specify a value between 20 and 200",
+    ) {
+        return Some(r);
+    }
+    // command.c:7669 (C `float`, not `double` - kept as f32 to match the
+    // pre-existing `rare_drop_multiplier: f32` field).
+    if lower.len() >= 6 && "setraredropmultiplier".starts_with(lower) {
+        let value = legacy_atof_prefix(rest) as f32;
+        if (1.0..=3.0).contains(&value) {
+            let old = world.settings.rare_drop_multiplier;
+            world.settings.rare_drop_multiplier = value;
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Rare drop multiplier changed from {old:.2} to {value:.2}"
+                )],
+                ..Default::default()
+            });
+        }
+        return Some(KeyringCommandResult {
+            messages: vec!["Invalid value. Please specify a value between 1.0 and 3.0".to_string()],
+            ..Default::default()
+        });
+    }
+    // command.c:7689
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setbasedropmultiplier",
+        6,
+        1,
+        20,
+        |s| &mut s.base_drop_multiplier,
+        "Base drop multiplier changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 20",
+    ) {
+        return Some(r);
+    }
+    // command.c:7709
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setleveldivisor",
+        9,
+        1,
+        20,
+        |s| &mut s.level_divisor,
+        "Level divisor changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 20",
+    ) {
+        return Some(r);
+    }
+    // command.c:7728
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setraregolemboost",
+        6,
+        1,
+        5,
+        |s| &mut s.rare_golem_level_boost,
+        "Rare golem level boost changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 5",
+    ) {
+        return Some(r);
+    }
+    // command.c:7748
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setgolemhpmultiplier",
+        6,
+        1,
+        5,
+        |s| &mut s.rare_golem_hp_multiplier,
+        "Rare golem HP multiplier changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 5",
+    ) {
+        return Some(r);
+    }
+    // command.c:7769
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setdemonlordaccess",
+        6,
+        30,
+        300,
+        |s| &mut s.demon_lord_door_after_solve_access_time,
+        "Demon lord door access time changed from {old} to {new} seconds",
+        "Invalid value. Please specify a value between 30 and 300 seconds",
+    ) {
+        return Some(r);
+    }
+    // command.c:7790
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setsolvemaxdivisor",
+        6,
+        1,
+        10,
+        |s| &mut s.solve_max_divisor,
+        "Solve max divisor changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 10",
+    ) {
+        return Some(r);
+    }
+    // command.c:7809
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setdemonpowerdeduction",
+        6,
+        100,
+        2000,
+        |s| &mut s.demon_power_deduction,
+        "Demon power deduction changed from {old} to {new}",
+        "Invalid value. Please specify a value between 100 and 2000",
+    ) {
+        return Some(r);
+    }
+    // command.c:7829
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setpentvaluemultiplier",
+        6,
+        10,
+        100,
+        |s| &mut s.pentagram_value_multiplier,
+        "Pentagram value multiplier changed from {old} to {new}",
+        "Invalid value. Please specify a value between 10 and 100",
+    ) {
+        return Some(r);
+    }
+    // command.c:7849
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setpentworthdivisor",
+        6,
+        2,
+        20,
+        |s| &mut s.pentagram_worth_divisor,
+        "Pentagram worth divisor changed from {old} to {new}",
+        "Invalid value. Please specify a value between 2 and 20",
+    ) {
+        return Some(r);
+    }
+    // command.c:7869
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setluckypentchance",
+        6,
+        1,
+        1000,
+        |s| &mut s.lucky_pentagram_chance,
+        "Lucky pentagram chance changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 1000",
+    ) {
+        return Some(r);
+    }
+    // command.c:7889
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setpowerincrement",
+        6,
+        5,
+        50,
+        |s| &mut s.power_increment,
+        "Power increment changed from {old} to {new}",
+        "Invalid value. Please specify a value between 5 and 50",
+    ) {
+        return Some(r);
+    }
+    // command.c:7908
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setpentmaxtraining",
+        6,
+        500,
+        3000,
+        |s| &mut s.max_training_power,
+        "Maximum pentagram training power changed from {old} to {new}",
+        "Invalid value. Please specify a value between 500 and 3000",
+    ) {
+        return Some(r);
+    }
+    // command.c:7928
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setpentrandomspawn",
+        6,
+        1,
+        50,
+        |s| &mut s.random_spawn_chance,
+        "Pentagram random spawn chance changed from {old} to {new} percent",
+        "Invalid value. Please specify a value between 1 and 50 percent",
+    ) {
+        return Some(r);
+    }
+    // command.c:7948
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setpentspawncount",
+        6,
+        1,
+        10,
+        |s| &mut s.activation_spawn_count,
+        "Pentagram activation spawn count changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 10",
+    ) {
+        return Some(r);
+    }
+    // command.c:7968
+    if let Some(r) = try_f64_range_setting(
+        world,
+        lower,
+        rest,
+        "setexpsolve",
+        6,
+        0.1,
+        2.0,
+        |s| &mut s.exp_solve_multiplier,
+        "Experience solve multiplier changed from {old} to {new}",
+        "Invalid value. Please specify a value between 0.1 and 2.0",
+    ) {
+        return Some(r);
+    }
+    // command.c:7988
+    if let Some(r) = try_f64_range_setting(
+        world,
+        lower,
+        rest,
+        "setclanreflection",
+        6,
+        0.1,
+        1.0,
+        |s| &mut s.exp_clan_reflection_multiplier,
+        "Clan reflection multiplier changed from {old} to {new}",
+        "Invalid value. Please specify a value between 0.1 and 1.0",
+    ) {
+        return Some(r);
+    }
+    // command.c:8008
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setmaxclanbonus",
+        6,
+        5,
+        50,
+        |s| &mut s.max_clan_bonus_percent,
+        "Maximum clan bonus percentage changed from {old} to {new} percent",
+        "Invalid value. Please specify a value between 5 and 50 percent",
+    ) {
+        return Some(r);
+    }
+    // command.c:8030 - "int x = atoi(ptr); while(isdigit(*ptr)) ptr++; ..."
+    // triple-token parse; only the positive-x/y/area success path can be
+    // reached in practice (the isdigit-skip has a real quirk of not
+    // stepping over a leading '-' but that only matters for negative
+    // inputs, which always fail the `x > 0 && y > 0 && area > 0` guard
+    // anyway, so it is not reproduced here).
+    if lower.len() >= 6 && "setjaillocation".starts_with(lower) {
+        let (x, y, area) = parse_legacy_xyz_triple(rest);
+        if x > 0 && y > 0 && area > 0 {
+            let (old_x, old_y, old_area) = (
+                world.settings.jail_x,
+                world.settings.jail_y,
+                world.settings.jail_area,
+            );
+            world.settings.jail_x = x;
+            world.settings.jail_y = y;
+            world.settings.jail_area = area;
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Jail location changed from {old_x},{old_y} (area {old_area}) to {x},{y} (area {area})"
+                )],
+                ..Default::default()
+            });
+        }
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Invalid coordinates or area. Format: /setjaillocation x y area".to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+    // command.c:8070
+    if lower.len() >= 6 && "setastonlocation".starts_with(lower) {
+        let (x, y, area) = parse_legacy_xyz_triple(rest);
+        if x > 0 && y > 0 && area > 0 {
+            let (old_x, old_y, old_area) = (
+                world.settings.aston_x,
+                world.settings.aston_y,
+                world.settings.aston_area,
+            );
+            world.settings.aston_x = x;
+            world.settings.aston_y = y;
+            world.settings.aston_area = area;
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Aston location changed from {old_x},{old_y} (area {old_area}) to {x},{y} (area {area})"
+                )],
+                ..Default::default()
+            });
+        }
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Invalid coordinates or area. Format: /setastonlocation x y area".to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+    // command.c:8112 - C stores `get_special_item_drop_multiplier()`
+    // (a `double`) into an `int old_value` before printing it with `%d`
+    // (a real truncating-assignment quirk in the C source), then prints
+    // the new value with a bare `%f` (default 6 fractional digits).
+    if lower.len() >= 15 && "setspecialdropmult".starts_with(lower) {
+        let value = legacy_atoi_prefix(rest).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+        if (1..=10000).contains(&value) {
+            let old = world.settings.special_item_drop_multiplier as i32;
+            world.settings.special_item_drop_multiplier = f64::from(value);
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Special item drop multiplier changed from {old} to {:.6}",
+                    world.settings.special_item_drop_multiplier
+                )],
+                ..Default::default()
+            });
+        }
+        return Some(KeyringCommandResult {
+            messages: vec!["Invalid value. Please specify a value between 1 and 10000".to_string()],
+            ..Default::default()
+        });
+    }
+    // command.c:8132
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setdropproblow",
+        13,
+        1,
+        10000,
+        |s| &mut s.drop_prob_low_level,
+        "Drop probability (low level) changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 10000",
+    ) {
+        return Some(r);
+    }
+    // command.c:8152
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setdropprobmid",
+        13,
+        1,
+        10000,
+        |s| &mut s.drop_prob_mid_level,
+        "Drop probability (mid level) changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 10000",
+    ) {
+        return Some(r);
+    }
+    // command.c:8172
+    if let Some(r) = try_int_range_setting(
+        world,
+        lower,
+        rest,
+        "setdropprobhigh",
+        13,
+        1,
+        10000,
+        |s| &mut s.drop_prob_high_level,
+        "Drop probability (high level) changed from {old} to {new}",
+        "Invalid value. Please specify a value between 1 and 10000",
+    ) {
+        return Some(r);
+    }
+
+    None
+}
+
+/// Parses the `x y area` triple used by `/setjaillocation` and
+/// `/setastonlocation` (C `command.c:8036-8050`/`8076-8090`): `atoi` at the
+/// current pointer, then skip ascii digits, then skip whitespace, repeated
+/// three times.
+fn parse_legacy_xyz_triple(rest: &str) -> (i32, i32, i32) {
+    let mut ptr = rest.trim_start();
+    let x = legacy_atoi_prefix(ptr) as i32;
+    ptr = ptr.trim_start_matches(|ch: char| ch.is_ascii_digit());
+    ptr = ptr.trim_start();
+    let y = legacy_atoi_prefix(ptr) as i32;
+    ptr = ptr.trim_start_matches(|ch: char| ch.is_ascii_digit());
+    ptr = ptr.trim_start();
+    let area = legacy_atoi_prefix(ptr) as i32;
+    (x, y, area)
+}
+
 pub(crate) fn apply_admin_character_command(
     world: &mut World,
     runtime: &mut ServerRuntime,
@@ -815,6 +1625,7 @@ pub(crate) fn apply_admin_character_command(
     {
         apply_legacy_tick_tuning_command(runtime, &lower, rest)
             .or_else(|| apply_legacy_communication_tuning_command(runtime, &lower, rest))
+            .or_else(|| apply_legacy_game_settings_tuning_command(world, &lower, rest))
     } else {
         None
     } {
@@ -839,6 +1650,49 @@ pub(crate) fn apply_admin_character_command(
             | "setwhisperdist"
             | "sethollercost"
             | "setshoutcost"
+            | "setsplots"
+            | "setspmany"
+            | "setspsome"
+            | "setspfew"
+            | "setsprare"
+            | "setspultra"
+            | "setorbrespawndays"
+            | "setmaxjewelcount"
+            | "settunnelexpdivider"
+            | "settunnelmillexp"
+            | "setraregolemchance"
+            | "setdungeontime"
+            | "setbranfoexpbase"
+            | "setbranexpbase"
+            | "setpentvismaxpents"
+            | "setpentmaxpower"
+            | "setmaxsilvergolemtype"
+            | "setnormaldropchance"
+            | "setraredropchance"
+            | "setraredropmultiplier"
+            | "setbasedropmultiplier"
+            | "setleveldivisor"
+            | "setraregolemboost"
+            | "setgolemhpmultiplier"
+            | "setdemonlordaccess"
+            | "setsolvemaxdivisor"
+            | "setdemonpowerdeduction"
+            | "setpentvaluemultiplier"
+            | "setpentworthdivisor"
+            | "setluckypentchance"
+            | "setpowerincrement"
+            | "setpentmaxtraining"
+            | "setpentrandomspawn"
+            | "setpentspawncount"
+            | "setexpsolve"
+            | "setclanreflection"
+            | "setmaxclanbonus"
+            | "setjaillocation"
+            | "setastonlocation"
+            | "setspecialdropmult"
+            | "setdropproblow"
+            | "setdropprobmid"
+            | "setdropprobhigh"
     ) {
         return None;
     }

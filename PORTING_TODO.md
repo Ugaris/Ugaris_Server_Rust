@@ -6897,7 +6897,22 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/seen`, `/top`. REMAINING: admin teleports done (`/goto`, `/jump`,
   `/gotolist`, `/gotosearch`, `/summon`, `/summonall`, `/office`);
   `/lastseen` done; `/club` done; the `cmd_flag` family done (`/god`,
-  `/setsir`, `/staff`, `/emaster`, `/devel`, `/hardcore`, `/qmaster`).
+  `/setsir`, `/staff`, `/emaster`, `/devel`, `/hardcore`, `/qmaster`); the
+  `GameSettings`-backed `set*` tuning-knob family (see iteration 164) done:
+  `setsplots`, `setspmany`, `setspsome`, `setspfew`, `setsprare`,
+  `setspultra`, `setorbrespawndays`, `setmaxjewelcount`,
+  `settunnelexpdivider`, `settunnelmillexp`, `setraregolemchance`,
+  `setdungeontime`, `setbranfoexpbase`, `setbranexpbase`,
+  `setpentvismaxpents`, `setpentmaxpower`, `setmaxsilvergolemtype`,
+  `setnormaldropchance`, `setraredropchance`, `setraredropmultiplier`,
+  `setbasedropmultiplier`, `setleveldivisor`, `setraregolemboost`,
+  `setgolemhpmultiplier`, `setdemonlordaccess`, `setsolvemaxdivisor`,
+  `setdemonpowerdeduction`, `setpentvaluemultiplier`,
+  `setpentworthdivisor`, `setluckypentchance`, `setpowerincrement`,
+  `setpentmaxtraining`, `setpentrandomspawn`, `setpentspawncount`,
+  `setexpsolve`, `setclanreflection`, `setmaxclanbonus`,
+  `setjaillocation`, `setastonlocation`, `setspecialdropmult`,
+  `setdropproblow`, `setdropprobmid`, `setdropprobhigh` (42 commands).
   Still unported: `/allow` (not a clan-invite command -
   see its Progress Log entry - it's `allow_body`, the cross-server
   corpse-loot-access grant, blocked on the unported `server_chat`
@@ -6906,12 +6921,18 @@ Unlocks every quest NPC. Do these before any P4 area work.
   both already ported), no `/top` command exists in `command.c` either
   (both were aspirational notes in an earlier iteration, not real
   `cmdcmp` entries - verified by grepping `command.c` for `cmdcmp(ptr,
-  "top` / `"mirror"`), and the rest of the ~243 remaining `cmdcmp`
-  entries in `command.c` (mostly `CF_GOD`-gated tuning/anticheat/admin
-  commands: `set*` game-constant knobs, `ac*` anticheat, `macro*`
+  "top` / `"mirror"`), `setclanjewels` (`command.c:7563`, clan-treasure
+  struct + clan log, different storage than `GameSettings`, not part of
+  the just-closed knob family), `reloadloot`/`setlootmod`/`global`
+  (`command.c:8192-8330+`, the loot-table hot-reload + the "dump every
+  setting" admin display command - `set_loot_modifier` itself is already
+  wired to `GameSettings::set_loot_modifier`, only the command handler is
+  missing), and the rest of the ~200 remaining `cmdcmp` entries in
+  `command.c` (mostly `CF_GOD`-gated `ac*` anticheat, `macro*`
   macro-detection, `mil*` military-mission admin, item/skill/tunnel
-  editors) not yet cross-referenced (see the Progress Log entries
-  below for what's been checked off so far).
+  editors, `setweather`/`setareaweather`/`clearweather`) not yet
+  cross-referenced (see the Progress Log entries below for what's been
+  checked off so far).
 
   Progress Log (iteration 158): ported the admin-teleport family -
   `/goto` (`command.c:8453-8567`, gated on `is_lqmaster`), `/jump`
@@ -7153,6 +7174,64 @@ Unlocks every quest NPC. Do these before any P4 area work.
   in kind from iteration 161's note (now minus the 7 just closed);
   `/allow` is unchanged (blocked on the unported cross-area
   `server_chat` relay).
+
+  Progress Log (iteration 164): closed the largest self-contained slice
+  of the "`set*` game-constant knobs" tail noted above - the 42 commands
+  in `command.c:7113-8191` ("Tool/Mine/Dungeon/Brannington/Pentagram/
+  Clan/Drop probability settings") whose backing scalar already existed
+  as a `pub` field on `ugaris-core`'s `GameSettings`
+  (`world.settings`, most with a pre-existing `get_*`/`set_*` accessor
+  pair from an earlier iteration's `Death-mode loot tables`/mining-driver
+  work), just never had a command handler wired up. New
+  `apply_legacy_game_settings_tuning_command` (`commands_admin.rs`,
+  called from `apply_admin_character_command` alongside the pre-existing
+  `apply_legacy_tick_tuning_command`/`apply_legacy_communication_tuning_
+  command`, `CF_GOD`-gated the same way) plus two small generic helpers,
+  `try_int_range_setting`/`try_f64_range_setting`, mirroring the existing
+  `TickTuningSpec`/`CommunicationTuningSpec` table-driven convention but
+  parameterized per-call instead of via a spec array, specifically so the
+  39 calls (36 `i32` + 3 `f64`) could be interleaved in exact `command.c`
+  source order with the 3 that don't fit the generic shape
+  (`setraredropmultiplier`, a bare `f32` field; `setspecialdropmult`,
+  which reproduces a genuine C quirk - it stores `get_special_item_drop_
+  multiplier()`'s `double` into an `int old_value` before formatting with
+  `%d`, then prints the new value with a bare `%f`/6-decimals; and the
+  `setjaillocation`/`setastonlocation` `x y area` triple parser, factored
+  into a shared `parse_legacy_xyz_triple` copying the `atoi` + `isdigit`-
+  skip + whitespace-skip stepping from `command.c:8036-8050`/`8076-8090`).
+  Source-order preservation matters here because several of these C
+  handlers use a `cmdcmp` `minlen` far shorter than their own full name
+  (a real legacy abbreviation feature, e.g. `setmaxsilvergolemtype` and
+  `setmaxclanbonus` both accept `minlen=6`), so a short user abbreviation
+  like `/setmax` is genuinely ambiguous between several of these commands
+  and C's first-`if`-in-source-order-wins semantics decide the winner
+  deterministically - reproduced by calling the per-command checks in the
+  same order as their `cmdcmp` calls appear in `command.c`, verified by a
+  dedicated test. Only the `log_char` (player-visible) feedback is
+  ported, not the `xlog` server-log line, matching every pre-existing
+  tuning-command port in this codebase. Left unwired in this slice (see
+  the updated REMAINING note above): `setclanjewels` (different backing
+  storage - clan struct + clan log, not `GameSettings`), `reloadloot`/
+  `setlootmod`/`global` (loot-table hot-reload + settings-dump display
+  command - `GameSettings::set_loot_modifier` itself was already wired by
+  an earlier iteration, only the command handler is missing), and
+  `setweather`/`setareaweather`/`clearweather` (separate weather-table
+  admin commands, not scalar knobs). 5 new tests in
+  `tests/commands_admin.rs`, each covering several commands: `i32`-knob
+  success/invalid-range coverage (`setsplots`, `setdungeontime`'s tick/
+  minute math, `setmaxjewelcount`, `setdropproblow`), `f64`/`f32`-knob
+  success/invalid-range coverage (`settunnelexpdivider`, `setexpsolve`,
+  `setclanreflection`, `setraredropmultiplier`), the `setspecialdropmult`
+  truncating-`int`-assignment quirk, `setjaillocation`/
+  `setastonlocation`'s triple-int parse and invalid-coordinate rejection,
+  and a dedicated god-only/abbreviation-ordering test that exercises both
+  the "below-`minlen` never matches" floor and the "`setmax`/`setpent`
+  abbreviations resolve to whichever candidate was declared first in
+  `command.c`" quirk. `cargo fmt --all`, `cargo test --workspace` (1985
+  ugaris-core + 55 db + 3 net + 40 protocol + 680 server [+5], all green,
+  zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

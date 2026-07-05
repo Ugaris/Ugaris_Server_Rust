@@ -6911,3 +6911,64 @@ startup log line unchanged.
   remaining `cmdcmp` entries in `command.c` (mostly `CF_GOD`-gated
   tuning/anticheat/admin commands) not yet cross-referenced (tracked
   under the "Remaining `/` and `#` text commands" P3 task).
+
+- Iteration 164 closed the largest still-open slice of the "Remaining
+  `/` and `#` text commands" P3 task: the 42 `GameSettings`-backed
+  `set*` tuning-knob commands in `src/system/command.c:7113-8191` ("Tool/
+  Mine/Dungeon/Brannington/Pentagram/Clan/Drop probability settings"),
+  every one of which already had a backing `pub` field (and, for most,
+  a `get_*`/`set_*` accessor pair from an earlier iteration) on
+  `ugaris-core`'s `GameSettings` (`world.settings`) but no command
+  handler wired up. New `apply_legacy_game_settings_tuning_command`
+  (`crates/ugaris-server/src/commands_admin.rs`), called from
+  `apply_admin_character_command` alongside the pre-existing
+  `apply_legacy_tick_tuning_command`/
+  `apply_legacy_communication_tuning_command` (same `CF_GOD` gate), plus
+  two small generic helpers (`try_int_range_setting`/
+  `try_f64_range_setting`) mirroring the existing `TickTuningSpec`/
+  `CommunicationTuningSpec` table-driven convention, but called
+  per-command instead of via a spec array so the 39 calls (36 `i32` + 3
+  `f64`) could be interleaved in the exact `command.c` source order with
+  the 3 commands that don't fit the generic shape:
+  `setraredropmultiplier` (a bare `f32` field), `setspecialdropmult`
+  (reproduces a genuine C quirk - stores `get_special_item_drop_
+  multiplier()`'s `double` into an `int old_value` before formatting
+  with `%d`, then prints the new value with a bare `%f`/6 decimals), and
+  `setjaillocation`/`setastonlocation`'s `x y area` triple parser
+  (factored into a shared `parse_legacy_xyz_triple`, copying the `atoi`
+  + `isdigit`-skip + whitespace-skip stepping from `command.c:8036-
+  8050`/`8076-8090`). Preserving source order matters here because
+  several of these C handlers use a `cmdcmp` `minlen` far shorter than
+  their own full command name (a real legacy abbreviation feature, e.g.
+  both `setmaxsilvergolemtype` and `setmaxclanbonus` accept `minlen=6`),
+  so a short user abbreviation like `/setmax` is genuinely ambiguous
+  between several commands and C's first-`if`-in-source-order-wins
+  semantics decide the winner deterministically; reproduced by calling
+  the per-command checks in the same order as their `cmdcmp` calls
+  appear in `command.c`, pinned by a dedicated test. Only the
+  `log_char` (player-visible) feedback is ported, not the `xlog`
+  server-log line, matching every pre-existing tuning-command port in
+  this codebase. Left unwired (tracked in the updated P3 task note):
+  `setclanjewels` (different backing storage - clan struct + clan log,
+  not `GameSettings`), `reloadloot`/`setlootmod`/`global` (loot-table
+  hot-reload + settings-dump display command - `GameSettings::
+  set_loot_modifier` itself was already wired by an earlier iteration,
+  only the command handler is missing), and `setweather`/
+  `setareaweather`/`clearweather` (separate weather-table admin
+  commands, not scalar knobs). 5 new tests in
+  `crates/ugaris-server/src/tests/commands_admin.rs`, each covering
+  several commands: `i32`-knob success/invalid-range coverage
+  (`setsplots`, `setdungeontime`'s tick/minute math, `setmaxjewelcount`,
+  `setdropproblow`), `f64`/`f32`-knob success/invalid-range coverage
+  (`settunnelexpdivider`, `setexpsolve`, `setclanreflection`,
+  `setraredropmultiplier`), the `setspecialdropmult` truncating-`int`-
+  assignment quirk, `setjaillocation`/`setastonlocation`'s triple-int
+  parse and invalid-coordinate rejection, and a dedicated god-only/
+  abbreviation-ordering test exercising both the "below-`minlen` never
+  matches" floor and the "`setmax`/`setpent` abbreviations resolve to
+  whichever candidate was declared first in `command.c`" quirk. `cargo
+  fmt --all`, `cargo test --workspace` (1985 ugaris-core + 55 db + 3 net
+  + 40 protocol + 680 server [+5], all green, zero failures), `cargo
+  build -p ugaris-server`/`cargo build --workspace` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panic.

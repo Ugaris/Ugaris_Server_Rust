@@ -1866,6 +1866,362 @@ fn communication_tuning_commands_are_god_only_and_preserve_minimum_lengths() {
 }
 
 #[test]
+fn god_game_settings_int_tuning_commands_match_legacy_ranges_and_feedback() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    let lots =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setsplots 8000", 1)
+            .expect("god setsplots should be recognized");
+    assert_eq!(world.settings.sp_lots, 8000);
+    assert_eq!(
+        lots.messages,
+        vec!["Special item probability 'lots' category changed from 5000 to 8000"]
+    );
+
+    let invalid_lots =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setsplots 999", 1)
+            .expect("invalid setsplots should still be handled");
+    assert_eq!(world.settings.sp_lots, 8000);
+    assert_eq!(
+        invalid_lots.messages,
+        vec!["Invalid value. Please specify a value between 1000 and 10000"]
+    );
+
+    let dungeon =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setdungeontime 43200", 1)
+            .expect("god setdungeontime should be recognized");
+    assert_eq!(world.settings.dungeon_time, 43200);
+    assert_eq!(
+        dungeon.messages,
+        vec!["Dungeon time limit changed from 86400 to 43200 ticks (60 to 30 minutes)"]
+    );
+
+    let invalid_dungeon =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setdungeontime 100", 1)
+            .expect("invalid setdungeontime should still be handled");
+    assert_eq!(world.settings.dungeon_time, 43200);
+    assert_eq!(
+        invalid_dungeon.messages,
+        vec![
+            "Invalid value. Please specify a time between 43200 and 172800 ticks (30-120 minutes)"
+        ]
+    );
+
+    let jewel =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setmaxjewelcount 5", 1)
+            .expect("god setmaxjewelcount should be recognized");
+    assert_eq!(world.settings.max_jewel_count, 5);
+    assert_eq!(
+        jewel.messages,
+        vec!["Maximum jewel count changed from 2 to 5"]
+    );
+
+    let drop_low =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setdropproblow 500", 1)
+            .expect("god setdropproblow should be recognized");
+    assert_eq!(world.settings.drop_prob_low_level, 500);
+    assert_eq!(
+        drop_low.messages,
+        vec!["Drop probability (low level) changed from 1700 to 500"]
+    );
+}
+
+#[test]
+fn god_game_settings_float_tuning_commands_match_legacy_ranges_and_feedback() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    let divider = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/settunnelexpdivider 4.5",
+        1,
+    )
+    .expect("god settunnelexpdivider should be recognized");
+    assert_eq!(world.settings.tunnel_exp_base_value_divider, 4.5);
+    assert_eq!(
+        divider.messages,
+        vec!["Tunnel experience base value divider changed from 5.00 to 4.50"]
+    );
+
+    let invalid_divider = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/settunnelexpdivider 0.5",
+        1,
+    )
+    .expect("invalid settunnelexpdivider should still be handled");
+    assert_eq!(world.settings.tunnel_exp_base_value_divider, 4.5);
+    assert_eq!(
+        invalid_divider.messages,
+        vec!["Invalid value. Please specify a value between 1.0 and 10.0"]
+    );
+
+    let solve =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setexpsolve 1.5", 1)
+            .expect("god setexpsolve should be recognized");
+    assert_eq!(world.settings.exp_solve_multiplier, 1.5);
+    assert_eq!(
+        solve.messages,
+        vec!["Experience solve multiplier changed from 0.66 to 1.50"]
+    );
+
+    let reflection = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setclanreflection 0.5",
+        1,
+    )
+    .expect("god setclanreflection should be recognized");
+    assert_eq!(world.settings.exp_clan_reflection_multiplier, 0.5);
+    assert_eq!(
+        reflection.messages,
+        vec!["Clan reflection multiplier changed from 0.70 to 0.50"]
+    );
+
+    let rare_mult = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setraredropmultiplier 2.0",
+        1,
+    )
+    .expect("god setraredropmultiplier should be recognized");
+    assert_eq!(world.settings.rare_drop_multiplier, 2.0);
+    assert_eq!(
+        rare_mult.messages,
+        vec!["Rare drop multiplier changed from 1.20 to 2.00"]
+    );
+
+    let invalid_rare_mult = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setraredropmultiplier 5.0",
+        1,
+    )
+    .expect("invalid setraredropmultiplier should still be handled");
+    assert_eq!(world.settings.rare_drop_multiplier, 2.0);
+    assert_eq!(
+        invalid_rare_mult.messages,
+        vec!["Invalid value. Please specify a value between 1.0 and 3.0"]
+    );
+}
+
+#[test]
+fn god_setspecialdropmult_truncates_old_value_like_c() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    // Default `special_item_drop_multiplier` is 1.0; C stores the "old"
+    // `double` into an `int` before formatting with `%d` (a genuine
+    // truncating-assignment quirk in the C source) and prints the new
+    // value with a bare `%f` (6 fractional digits).
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setspecialdropmult 1500",
+        1,
+    )
+    .expect("god setspecialdropmult should be recognized");
+    assert_eq!(world.settings.special_item_drop_multiplier, 1500.0);
+    assert_eq!(
+        result.messages,
+        vec!["Special item drop multiplier changed from 1 to 1500.000000"]
+    );
+
+    let invalid = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setspecialdropmult 10001",
+        1,
+    )
+    .expect("invalid setspecialdropmult should still be handled");
+    assert_eq!(world.settings.special_item_drop_multiplier, 1500.0);
+    assert_eq!(
+        invalid.messages,
+        vec!["Invalid value. Please specify a value between 1 and 10000"]
+    );
+}
+
+#[test]
+fn god_setjaillocation_and_setastonlocation_update_settings_like_c() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    let jail = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setjaillocation 100 200 5",
+        1,
+    )
+    .expect("god setjaillocation should be recognized");
+    assert_eq!(
+        (
+            world.settings.jail_x,
+            world.settings.jail_y,
+            world.settings.jail_area
+        ),
+        (100, 200, 5)
+    );
+    assert_eq!(
+        jail.messages,
+        vec!["Jail location changed from 186,234 (area 3) to 100,200 (area 5)"]
+    );
+
+    let invalid_jail = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setjaillocation 0 200 5",
+        1,
+    )
+    .expect("invalid setjaillocation should still be handled");
+    assert_eq!(
+        (
+            world.settings.jail_x,
+            world.settings.jail_y,
+            world.settings.jail_area
+        ),
+        (100, 200, 5)
+    );
+    assert_eq!(
+        invalid_jail.messages,
+        vec!["Invalid coordinates or area. Format: /setjaillocation x y area"]
+    );
+
+    let aston = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setastonlocation 50 60 7",
+        1,
+    )
+    .expect("god setastonlocation should be recognized");
+    assert_eq!(
+        (
+            world.settings.aston_x,
+            world.settings.aston_y,
+            world.settings.aston_area
+        ),
+        (50, 60, 7)
+    );
+    assert_eq!(
+        aston.messages,
+        vec!["Aston location changed from 133,203 (area 3) to 50,60 (area 7)"]
+    );
+}
+
+#[test]
+fn game_settings_tuning_commands_are_god_only_and_resolve_ambiguous_abbreviations_by_source_order()
+{
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    world.add_character(login_character(
+        character_id,
+        &login_block("Tester"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    // Non-god caller: recognized-but-gated commands must return `None`.
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/setsplots 8000",
+        1,
+    )
+    .is_none());
+    assert_eq!(world.settings.sp_lots, GameSettings::default().sp_lots);
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+
+    // `setpentmaxpower`'s C `cmdcmp` `minlen` is 15 - equal to the full
+    // command's own length, i.e. no abbreviation is accepted at all.
+    // Dropping the trailing "r" (14 characters) must not match anything
+    // (C `cmdcmp` returns 0 when the matched length is short of `minlen`).
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/setpentmaxpowe 5000",
+        1,
+    )
+    .is_none());
+    assert_eq!(
+        world.settings.max_power_level,
+        GameSettings::default().max_power_level
+    );
+
+    // "setmax" (6 chars) is a valid abbreviation-length prefix of
+    // `setmaxjewelcount` (minlen 16, too short here), `setmaxsilvergolemtype`
+    // (minlen 6, matches) and `setmaxclanbonus` (minlen 6, matches) - C's
+    // first-declared-wins `if` chain resolves this to
+    // `setmaxsilvergolemtype` (`command.c:7610`, declared before
+    // `setmaxclanbonus` at `command.c:8008`), so the Rust port must too.
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/setmax 15", 1)
+            .expect("ambiguous setmax abbreviation should still resolve to a command");
+    assert_eq!(world.settings.max_silver_golem_type, 15);
+    assert_eq!(
+        world.settings.max_clan_bonus_percent,
+        GameSettings::default().max_clan_bonus_percent
+    );
+    assert_eq!(
+        result.messages,
+        vec!["Max silver golem type changed from 8 to 15"]
+    );
+
+    // Likewise "setpent" (7 chars) is too short for `setpentvismaxpents`
+    // (minlen 18) and `setpentmaxpower` (minlen 15) but long enough for
+    // `setpentvaluemultiplier` (minlen 6, declared next at
+    // `command.c:7829`), which therefore wins.
+    let pent_result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/setpent 99", 1)
+            .expect("ambiguous setpent abbreviation should still resolve to a command");
+    assert_eq!(world.settings.pentagram_value_multiplier, 99);
+    assert_eq!(
+        world.settings.max_visible_pents,
+        GameSettings::default().max_visible_pents
+    );
+    assert_eq!(
+        pent_result.messages,
+        vec!["Pentagram value multiplier changed from 50 to 99"]
+    );
+}
+
+#[test]
 fn god_listchars_reports_active_players_and_npcs_like_c() {
     let mut world = World::default();
     let god_id = CharacterId(7);
