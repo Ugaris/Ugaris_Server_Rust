@@ -471,7 +471,8 @@ impl World {
             | CharacterDriverState::MilitaryMaster(_)
             | CharacterDriverState::MilitaryAdvisor(_)
             | CharacterDriverState::ArenaMaster(_)
-            | CharacterDriverState::ArenaFighter(_) => None,
+            | CharacterDriverState::ArenaFighter(_)
+            | CharacterDriverState::ArenaManager(_) => None,
         }
     }
 

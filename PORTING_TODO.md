@@ -5076,9 +5076,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
   build -p ugaris-server` clean with zero warnings, 10s boot-smoke
   confirmed "entering Rust game loop" with no panics.
 
-- [~] **Arena rankings (`src/system/arena.c`)** - toplist formatter is
+- [x] **Arena rankings (`src/system/arena.c`)** - toplist formatter is
   ported but rankings are never stored. Port `DRD_ARENA_PPD`, win/loss
-  recording on arena kills, and the ranking table persistence. REMAINING:
+  recording on arena kills, and the ranking table persistence.
   `master_driver` (`CDR_ARENAMASTER`, contender pairing/box-entry/fight-
   timeout detection/scoring) was ported and wired into the live tick loop
   in iteration 130 (see Progress Log) - `fighter_driver`
@@ -5091,17 +5091,25 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `PlayerRuntime`-backed `arena_ppd` isn't reachable for an NPC), which is
   a real, if minor, persistence gap: it resets on respawn/server restart
   (same class of gap as the ranking table's own missing DB persistence,
-  see below) - `manager_driver` (`CDR_ARENAMANAGER`, the paid
-  arena-rental `rent`/`invite:` system) is still unported, its own
-  separate NPC state machine (`arena.c:1019-1039` plus shared logic
-  through `arena.c:1039`). The server-wide `struct toplist`/
-  `update_toplist` 100-entry ranking table is ported and wired
-  (in-memory only, no DB/file persistence - `ugaris-db` still has no
-  generic "storage blob" concept, so this resets on restart, same gap as
-  `MilitaryMasterStorageRegistry`) and `arena_toplist_lines`/
-  `toplist_driver` (`crates/ugaris-core/src/item_driver/arena.rs`) now
-  render real per-character/ranking-table data instead of emitting
-  nothing.
+  see below) - `manager_driver` (`CDR_ARENAMANAGER`, the arena-rental
+  `rent`/`invite:`/`enter`/`leave` NPC, despite this task's own original
+  "paid" description - C's `manager_driver` never touches gold) was
+  ported and wired into the live tick loop in iteration 133 (see Progress
+  Log), entirely self-contained within `World` (no `PlayerRuntime`
+  interaction at all, unlike `master_driver`/`fighter_driver`). The
+  server-wide `struct toplist`/`update_toplist` 100-entry ranking table
+  is ported and wired (in-memory only, no DB/file persistence -
+  `ugaris-db` still has no generic "storage blob" concept, so this resets
+  on restart, same gap as `MilitaryMasterStorageRegistry`, which the
+  "Military ranks" task closed `[x]` despite the identical gap) and
+  `arena_toplist_lines`/`toplist_driver`
+  (`crates/ugaris-core/src/item_driver/arena.rs`) now render real
+  per-character/ranking-table data instead of emitting nothing. Marking
+  `[x]`: every driver this task named is now ported end-to-end; the
+  remaining DB/file storage-blob persistence gap is a shared
+  architectural limitation (no generic storage-blob primitive exists
+  anywhere in this codebase yet), not a self-contained slice of this
+  task specifically.
   Progress Log: ported the first self-contained slice - the `arena_ppd`
   per-character data model + pure win/loss/score math, with zero NPC/
   networking surface: `crates/ugaris-core/src/player.rs` gained
@@ -5240,6 +5248,62 @@ Unlocks every quest NPC. Do these before any P4 area work.
     "entering Rust game loop" with no panics. Not ported this slice:
     `manager_driver`, and DB/file persistence for both the ranking table
     and the fighter bot's own local win/loss ledger.
+  - 2026-07-05 (iteration 133): ported `manager_driver` (`arena.c:1080-
+    1258`), the arena-rental NPC, end-to-end - the last unported driver
+    for this task. `CharacterDriverState::ArenaManager(ArenaManagerDriverData)`
+    (C `struct manager_data` minus its own dead `timeout` field, which
+    C writes twice but never reads anywhere in `manager_driver` - verified
+    by grep; every other `dat->timeout` in `arena.c` belongs to the
+    unrelated `struct master_data`) and `parse_arena_manager_driver_args`
+    (the `arenax`/`arenay`/`arenafx`/`arenafy`/`arenatx`/`arenaty`
+    zone-file args, verified against the real `arg=` string in
+    `ugaris_data/zones/3/above3_generic.chr`) in `character_driver.rs`;
+    zone-spawn wiring in `zone.rs`. The full per-tick body lives in
+    `crates/ugaris-core/src/world/arena.rs`: `arena_manager_evict_renter_
+    if_left` (the per-message "has the renter wandered off" check, using
+    C's own hardcoded `232..=238` x-bounds rather than the dynamic
+    listening box - a real, deliberately-preserved C quirk, not a bug),
+    `arena_manager_handle_rent`/`_leave`/`_enter` (the `rent`/`leave`/
+    `enter` `analyse_text_qa` switch, reusing the same shared `ARENA_QA`
+    table `master_driver` already established, including its long-dead
+    `rent`=6 entry), `arena_manager_handle_invite_command` (the
+    independent `strcasestr(..., "invite:")` check - runs alongside, not
+    instead of, the switch above, exactly like C), `arena_manager_is_
+    anybody_in` (the occupancy scan gating `rent`), and the message-loop/
+    return-to-post/give-message plumbing mirroring `master_driver`'s own
+    shape. Wired `World::process_arena_manager_actions` into `main.rs`'s
+    tick loop right after `process_arena_fighter_actions` - entirely
+    self-contained within `World`, unlike `master_driver`/`fighter_driver`
+    this driver never reads or writes any `PlayerRuntime` state (C's own
+    `manager_driver` never touches gold despite this task's original
+    "paid arena-rental" description). Found and fixed a real latent bug
+    while porting `leave` (which C teleports the caller onto the *manager
+    NPC's own occupied tile*, `ch[cn].x, ch[cn].y`): `arena_teleport_char_
+    driver` (shared by every arena driver) was calling `World::
+    teleport_character_exact` (exact-tile-only placement, always fails
+    onto an occupied tile) instead of `World::teleport_character`
+    (`extended=false`, C's real `drop_char`: exact tile then its 8
+    neighbors) - re-read `drop_char`'s C source to confirm its 4th
+    `nosteptrap` param is a boolean flag, not a "search radius" as a
+    prior iteration's doc comment had misread it. Fixed accordingly, and
+    corrected the one existing master test
+    (`check_fight_scores_the_survivor_when_the_loser_leaves_the_box`)
+    that had encoded the wrong assumption (asserting the winner stayed
+    exactly on the master's own tile instead of landing on a neighbor).
+    26 new tests in `crates/ugaris-core/src/world/tests/arena.rs`
+    (rent reserves/rejects-when-occupied, leave from renter/non-renter,
+    enter accepts/rejects, invite sets/rejects-non-renter, listening-box
+    filtering, the narrow-x-band renter eviction, give-message) plus 4 in
+    `character_driver.rs` (arg parsing against the real zone-file string,
+    unknown-arg tolerance, `CDR_ARENA*` constants). `cargo fmt --all`,
+    `cargo test --workspace` (1777 ugaris-core + 55 db + 3 net + 40
+    protocol + 584 server, all green, zero failures), `cargo build -p
+    ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
+    "entering Rust game loop" with no panics. Not ported: DB/file
+    persistence for the ranking table and the fighter bot's own local
+    win/loss ledger (shared architectural gap, no generic storage-blob
+    primitive exists yet anywhere in this codebase) - task marked `[x]`
+    regardless, see the task description's own closing note.
 
 - [x] **Weather driver (`src/module/weather/weather.c`)** - server-side
   state machine exists in `crates/ugaris-server/src/weather.rs` (admin

@@ -1,8 +1,9 @@
 use super::*;
 use crate::character_driver::{
-    ArenaFighterDriverData, ArenaMasterDriverData, ARENA_FIGHTER_MASTER_POS,
-    ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMASTER, FS_ENTER, FS_FIGHT, FS_LEISURE,
-    FS_REGISTER, FS_START, FS_WAIT, FS_WAIT2, MS_FIGHT, MS_IN, MS_PAIR, NTID_ARENA,
+    ArenaFighterDriverData, ArenaManagerDriverData, ArenaMasterDriverData,
+    ARENA_FIGHTER_MASTER_POS, ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER,
+    CDR_ARENAMASTER, FS_ENTER, FS_FIGHT, FS_LEISURE, FS_REGISTER, FS_START, FS_WAIT, FS_WAIT2,
+    MS_FIGHT, MS_IN, MS_PAIR, NTID_ARENA,
 };
 use crate::player::PlayerRuntime;
 use crate::world::arena::{ArenaMasterEvent, ArenaToplistRecord, ARENA_TOPLIST_SIZE};
@@ -37,6 +38,36 @@ fn master_data(world: &World, master_id: CharacterId) -> ArenaMasterDriverData {
 
 fn no_score(_: CharacterId) -> i32 {
     -2000
+}
+
+/// Zone-file-accurate rental arena bounds (`ugaris_data/zones/3/
+/// above3_generic.chr`'s first `CDR_ARENAMANAGER` instance: `arg="arenax
+/// =233;arenay=122;arenafx=230;arenafy=119;arenatx=242;arenaty=125;"`).
+fn arena_manager(id: u32) -> Character {
+    let mut manager = character(id);
+    manager.name = "Arenamanager".into();
+    manager.driver = CDR_ARENAMANAGER;
+    manager.driver_state = Some(CharacterDriverState::ArenaManager(ArenaManagerDriverData {
+        arena_x: 233,
+        arena_y: 122,
+        arena_fx: 230,
+        arena_fy: 119,
+        arena_tx: 242,
+        arena_ty: 125,
+        ..Default::default()
+    }));
+    manager
+}
+
+fn manager_data(world: &World, manager_id: CharacterId) -> ArenaManagerDriverData {
+    match world
+        .characters
+        .get(&manager_id)
+        .and_then(|c| c.driver_state.clone())
+    {
+        Some(CharacterDriverState::ArenaManager(data)) => data,
+        _ => panic!("expected arena manager driver state"),
+    }
 }
 
 #[test]
@@ -300,15 +331,16 @@ fn check_fight_scores_the_survivor_when_the_loser_leaves_the_box() {
         .iter()
         .any(|t| t.message.contains("And the winner is Alice.")));
 
-    // empty_arena's `teleport_char_driver(co, ch[cn].x, ch[cn].y)` targets
-    // the master's own tile - since the master is standing there, C's
-    // `drop_char(..., 0)` (radius 0, no nearby-tile fallback) genuinely
-    // fails in this exact scenario (a single arena master NPC, no other
-    // occupant of its own tile to bump), so the winner is left exactly
-    // where the fight ended. This matches C's real behavior, not a gap in
-    // this port.
+    // `empty_arena`'s `teleport_char_driver(co, ch[cn].x, ch[cn].y)`
+    // targets the master's own tile - since the master is standing there,
+    // the exact tile is occupied, so C's `drop_char` (which always tries
+    // the exact tile, then its 8 neighbors, regardless of its `nosteptrap`
+    // flag argument - see `World::arena_teleport_char_driver`'s doc
+    // comment) lands Alice on whichever neighbor tile it reaches first,
+    // not exactly on the master's own tile.
     let alice = world.characters.get(&CharacterId(2)).unwrap();
-    assert_eq!((alice.x, alice.y), (235, 140));
+    assert!(alice.x.abs_diff(236) <= 1 && alice.y.abs_diff(145) <= 1);
+    assert_ne!((alice.x, alice.y), (235, 140));
 }
 
 #[test]
@@ -838,4 +870,349 @@ fn apply_arena_fighter_loss_updates_local_ledger() {
     assert_eq!(data.fights, 1);
     assert_eq!(data.losses, 1);
     assert_eq!(data.wins, 0);
+}
+
+#[test]
+fn manager_rent_command_reserves_arena_and_teleports_renter_in() {
+    let mut world = World::default();
+    assert!(world.spawn_character(arena_manager(1), 100, 100));
+    // Inside the listening box (`230 < x < 242`) but outside the narrower
+    // `232..=238` occupation column `is_anybody_in` scans, so the
+    // requester's own presence never falsely reads as "already occupied"
+    // (see `manager_rent_command_rejects_when_arena_already_occupied`'s
+    // comment for why that column even matters here).
+    assert!(world.spawn_character(player(2, "Godmode"), 231, 121));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(2), "rent");
+    }
+    world.process_arena_manager_actions(0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Say 'invite: <name>' to let someone in")));
+
+    assert_eq!(
+        manager_data(&world, CharacterId(1)).renter,
+        Some(CharacterId(2))
+    );
+    let renter = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!((renter.x, renter.y), (233, 122));
+}
+
+#[test]
+fn manager_rent_command_rejects_when_arena_already_occupied() {
+    let mut world = World::default();
+    assert!(world.spawn_character(arena_manager(1), 100, 100));
+    // `Occupant` stands inside the hardcoded `232..=238` occupation
+    // column `is_anybody_in` scans; `Newcomer` deliberately stands
+    // *outside* that column (but still inside the wider listening box)
+    // so this test isolates "someone else is in the arena" from the
+    // requester's own presence also landing in that column (see
+    // `manager_rent_command_reserves_arena_and_teleports_renter_in`'s
+    // comment).
+    assert!(world.spawn_character(player(2, "Occupant"), 234, 120));
+    assert!(world.spawn_character(player(3, "Newcomer"), 240, 123));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(3), "rent");
+    }
+    world.process_arena_manager_actions(0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Sorry, this arena is already occupied.")));
+    assert_eq!(manager_data(&world, CharacterId(1)).renter, None);
+    let newcomer = world.characters.get(&CharacterId(3)).unwrap();
+    assert_eq!((newcomer.x, newcomer.y), (240, 123));
+}
+
+#[test]
+fn manager_leave_command_teleports_speaker_back_and_clears_renter() {
+    let mut world = World::default();
+    let mut manager = arena_manager(1);
+    manager.driver_state = Some(CharacterDriverState::ArenaManager(ArenaManagerDriverData {
+        renter: Some(CharacterId(2)),
+        invite: "Foo".into(),
+        arena_x: 233,
+        arena_y: 122,
+        arena_fx: 230,
+        arena_fy: 119,
+        arena_tx: 242,
+        arena_ty: 125,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(manager, 5, 5));
+    assert!(world.spawn_character(player(2, "Godmode"), 235, 121));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(2), "leave");
+    }
+    world.process_arena_manager_actions(0);
+
+    // The manager's own tile (5, 5) is occupied by the manager itself, so
+    // C's `drop_char`-style neighbor fallback lands the leaving player on
+    // one of its 8 neighbor tiles rather than the exact tile - see
+    // `World::arena_teleport_char_driver`'s doc comment.
+    let renter = world.characters.get(&CharacterId(2)).unwrap();
+    assert!(renter.x.abs_diff(5) <= 1 && renter.y.abs_diff(5) <= 1);
+    assert_ne!((renter.x, renter.y), (235, 121));
+    let data = manager_data(&world, CharacterId(1));
+    assert_eq!(data.renter, None);
+    assert!(data.invite.is_empty());
+}
+
+#[test]
+fn manager_leave_command_from_non_renter_does_not_clear_reservation() {
+    let mut world = World::default();
+    let mut manager = arena_manager(1);
+    manager.driver_state = Some(CharacterDriverState::ArenaManager(ArenaManagerDriverData {
+        renter: Some(CharacterId(2)),
+        invite: "Foo".into(),
+        arena_x: 233,
+        arena_y: 122,
+        arena_fx: 230,
+        arena_fy: 119,
+        arena_tx: 242,
+        arena_ty: 125,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(manager, 5, 5));
+    assert!(world.spawn_character(player(3, "Other"), 236, 122));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(3), "leave");
+    }
+    world.process_arena_manager_actions(0);
+
+    let other = world.characters.get(&CharacterId(3)).unwrap();
+    assert!(other.x.abs_diff(5) <= 1 && other.y.abs_diff(5) <= 1);
+    assert_ne!((other.x, other.y), (236, 122));
+    let data = manager_data(&world, CharacterId(1));
+    assert_eq!(data.renter, Some(CharacterId(2)));
+    assert_eq!(data.invite, "Foo");
+}
+
+#[test]
+fn manager_enter_command_teleports_invited_player_and_clears_lag() {
+    let mut world = World::default();
+    let mut manager = arena_manager(1);
+    manager.driver_state = Some(CharacterDriverState::ArenaManager(ArenaManagerDriverData {
+        renter: Some(CharacterId(2)),
+        invite: "Bob".into(),
+        arena_x: 233,
+        arena_y: 122,
+        arena_fx: 230,
+        arena_fy: 119,
+        arena_tx: 242,
+        arena_ty: 125,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(manager, 100, 100));
+    let mut bob = player(4, "Bob");
+    bob.flags |= CharacterFlags::LAG;
+    assert!(world.spawn_character(bob, 236, 123));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(4), "enter");
+    }
+    world.process_arena_manager_actions(0);
+
+    let bob = world.characters.get(&CharacterId(4)).unwrap();
+    assert_eq!((bob.x, bob.y), (233, 122));
+    assert!(!bob.flags.contains(CharacterFlags::LAG));
+    assert!(manager_data(&world, CharacterId(1)).invite.is_empty());
+}
+
+#[test]
+fn manager_enter_command_rejects_uninvited_player() {
+    let mut world = World::default();
+    let mut manager = arena_manager(1);
+    manager.driver_state = Some(CharacterDriverState::ArenaManager(ArenaManagerDriverData {
+        renter: Some(CharacterId(2)),
+        invite: "Bob".into(),
+        arena_x: 233,
+        arena_y: 122,
+        arena_fx: 230,
+        arena_fy: 119,
+        arena_tx: 242,
+        arena_ty: 125,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(manager, 100, 100));
+    assert!(world.spawn_character(player(5, "Eve"), 236, 123));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(5), "enter");
+    }
+    world.process_arena_manager_actions(0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You have not been invited, Eve.")));
+    let eve = world.characters.get(&CharacterId(5)).unwrap();
+    assert_eq!((eve.x, eve.y), (236, 123));
+    assert_eq!(manager_data(&world, CharacterId(1)).invite, "Bob");
+}
+
+#[test]
+fn manager_invite_command_sets_invite_and_notifies() {
+    let mut world = World::default();
+    let mut manager = arena_manager(1);
+    manager.driver_state = Some(CharacterDriverState::ArenaManager(ArenaManagerDriverData {
+        renter: Some(CharacterId(2)),
+        arena_x: 233,
+        arena_y: 122,
+        arena_fx: 230,
+        arena_fy: 119,
+        arena_tx: 242,
+        arena_ty: 125,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(manager, 100, 100));
+    assert!(world.spawn_character(player(2, "Godmode"), 235, 121));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(2), "invite: Bob");
+    }
+    world.process_arena_manager_actions(0);
+
+    assert_eq!(manager_data(&world, CharacterId(1)).invite, "Bob");
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Bob, say 'enter' if you wish to enter the arena")));
+}
+
+#[test]
+fn manager_invite_command_rejects_non_renter() {
+    let mut world = World::default();
+    let mut manager = arena_manager(1);
+    manager.driver_state = Some(CharacterDriverState::ArenaManager(ArenaManagerDriverData {
+        renter: Some(CharacterId(2)),
+        arena_x: 233,
+        arena_y: 122,
+        arena_fx: 230,
+        arena_fy: 119,
+        arena_tx: 242,
+        arena_ty: 125,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(manager, 100, 100));
+    assert!(world.spawn_character(player(3, "Trespasser"), 236, 122));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(3), "invite: Eve");
+    }
+    world.process_arena_manager_actions(0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("This is not your arena, Trespasser.")));
+    assert!(manager_data(&world, CharacterId(1)).invite.is_empty());
+}
+
+#[test]
+fn manager_ignores_messages_from_outside_the_listening_box() {
+    let mut world = World::default();
+    assert!(world.spawn_character(arena_manager(1), 100, 100));
+    assert!(world.spawn_character(player(2, "Godmode"), 50, 50));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(2), "rent");
+    }
+    world.process_arena_manager_actions(0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(!texts
+        .iter()
+        .any(|t| t.message.contains("occupied") || t.message.contains("Say 'invite")));
+    assert_eq!(manager_data(&world, CharacterId(1)).renter, None);
+    let godmode = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!((godmode.x, godmode.y), (50, 50));
+}
+
+#[test]
+fn manager_evicts_renter_who_wandered_outside_the_narrow_rental_band() {
+    let mut world = World::default();
+    let mut manager = arena_manager(1);
+    manager.driver_state = Some(CharacterDriverState::ArenaManager(ArenaManagerDriverData {
+        renter: Some(CharacterId(2)),
+        invite: "Bob".into(),
+        arena_x: 233,
+        arena_y: 122,
+        arena_fx: 230,
+        arena_fy: 119,
+        arena_tx: 242,
+        arena_ty: 125,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(manager, 100, 100));
+    // Still strictly inside the listening box (230 < 239 < 242, 119 < 121
+    // < 125) but outside the narrower hardcoded `232..=238` rental band.
+    assert!(world.spawn_character(player(2, "Godmode"), 239, 121));
+
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.push_driver_text_message(CharacterId(2), "test");
+    }
+    world.process_arena_manager_actions(0);
+
+    let data = manager_data(&world, CharacterId(1));
+    assert_eq!(data.renter, None);
+    assert!(data.invite.is_empty());
+}
+
+#[test]
+fn manager_give_message_destroys_the_item() {
+    let mut world = World::default();
+    assert!(world.spawn_character(arena_manager(1), 100, 100));
+    let item_id = ItemId(701);
+    world.items.insert(
+        item_id,
+        crate::entity::Item {
+            id: item_id,
+            name: "Junk".into(),
+            description: String::new(),
+            flags: ItemFlags::empty(),
+            sprite: 0,
+            value: 0,
+            min_level: 0,
+            max_level: 0,
+            needs_class: 0,
+            template_id: 0,
+            owner_id: 0,
+            modifier_index: [0; MAX_MODIFIERS],
+            modifier_value: [0; MAX_MODIFIERS],
+            x: 0,
+            y: 0,
+            carried_by: None,
+            contained_in: None,
+            content_id: 0,
+            driver: 0,
+            driver_data: Vec::new(),
+            serial: 0,
+        },
+    );
+    if let Some(manager) = world.characters.get_mut(&CharacterId(1)) {
+        manager.cursor_item = Some(item_id);
+        manager.push_driver_message(NT_GIVE, 0, 0, 0);
+    }
+
+    world.process_arena_manager_actions(0);
+
+    assert!(!world.items.contains_key(&item_id));
+    assert!(world
+        .characters
+        .get(&CharacterId(1))
+        .unwrap()
+        .cursor_item
+        .is_none());
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Thou hast better use for this than I do")));
 }

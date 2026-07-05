@@ -6042,6 +6042,10 @@ async fn main() -> anyhow::Result<()> {
                 // `World` (its own local win/loss ledger lives on
                 // `ArenaFighterDriverData`, not `PlayerRuntime`).
                 world.process_arena_fighter_actions(config.area_id);
+                // C `manager_driver`: the arena-rental NPC (`CDR_ARENAMANAGER`)
+                // - `rent`/`invite:`/`enter`/`leave`, entirely self-contained
+                // within `World` (never touches `PlayerRuntime`).
+                world.process_arena_manager_actions(config.area_id);
                 let arena_master_events_applied =
                     apply_arena_master_events(&mut world, &mut runtime, current_unix_time());
                 if arena_master_events_applied != 0 {

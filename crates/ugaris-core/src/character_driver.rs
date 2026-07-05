@@ -71,10 +71,11 @@ pub const CDR_ARENAMASTER: u16 = 48;
 /// helpers (narrowed here to a single tracked enemy, same simplification
 /// as `CDR_GATE_FIGHT` - see `world/arena.rs`'s `process_arena_fighter_actions`).
 pub const CDR_ARENAFIGHTER: u16 = 49;
-/// C `#define CDR_ARENAMANAGER 50` (`src/system/drvlib.h`): the paid
+/// C `#define CDR_ARENAMANAGER 50` (`src/system/drvlib.h`): the
 /// arena-rental NPC (`arena.c::manager_driver`, `rent`/`invite:`/`enter`/
-/// `leave` commands). Not yet ported - see the "Arena rankings" task's
-/// REMAINING notes.
+/// `leave` commands - despite the "paid" name, C's own `manager_driver`
+/// never touches gold at all). See `world/arena.rs`'s
+/// `process_arena_manager_actions`.
 pub const CDR_ARENAMANAGER: u16 = 50;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
@@ -153,6 +154,7 @@ pub enum CharacterDriverState {
     MilitaryAdvisor(MilitaryAdvisorDriverData),
     ArenaMaster(ArenaMasterDriverData),
     ArenaFighter(ArenaFighterDriverData),
+    ArenaManager(ArenaManagerDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -604,16 +606,71 @@ pub struct ArenaFighterDriverData {
     pub losses: i32,
 }
 
+/// C `struct manager_data` (`src/system/arena.c:1080-1093`), minus the
+/// dead `timeout` field: C writes `dat->timeout` on `NT_CREATE` (reset to
+/// `-TICKS*60*5`) and again on a successful `rent` (`ticker + TICKS*60*5`)
+/// but never reads it anywhere in `manager_driver` (verified by grep -
+/// every other `dat->timeout` reference in `arena.c` belongs to the
+/// unrelated `struct master_data`), so it has no observable effect and is
+/// not ported, matching the precedent already set for the arena master's
+/// own dead top-of-tick `citem` safety net (see `world/arena.rs`'s module
+/// doc comment). `renter` merges C's bare `ch[].ID`-style `int` into
+/// `Option<CharacterId>` (`0` -> `None`), the same simplification as
+/// `ArenaContender::character_id`. `invite` is C's `char invite[80]`
+/// (79 usable bytes plus the nul terminator) as an owned `String`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArenaManagerDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub amgivingback: i32,
+    pub renter: Option<CharacterId>,
+    #[serde(default)]
+    pub invite: String,
+    pub arena_x: u16,
+    pub arena_y: u16,
+    pub arena_fx: u16,
+    pub arena_fy: u16,
+    pub arena_tx: u16,
+    pub arena_ty: u16,
+}
+
+/// C `manager_parse` (`arena.c:1091-1109`): reads the six `arenax`/
+/// `arenay`/`arenafx`/`arenafy`/`arenatx`/`arenaty` zone-file args (e.g.
+/// `arg="arenax=233;arenay=122;arenafx=230;arenafy=119;arenatx=242;
+/// arenaty=125;"` in `ugaris_data/zones/3/above3_generic.chr`); any other
+/// name is C's `elog("unknown arg for %s (%d): %s", ...)` warning,
+/// silently dropped here as elsewhere in this file.
+pub fn parse_arena_manager_driver_args(args: &str) -> ArenaManagerDriverData {
+    let mut data = ArenaManagerDriverData::default();
+    let mut rest = args;
+    while let Some((name, value, next)) = next_legacy_name_value(rest) {
+        let parsed = value.parse::<u16>().unwrap_or(0);
+        match name {
+            "arenax" => data.arena_x = parsed,
+            "arenay" => data.arena_y = parsed,
+            "arenafx" => data.arena_fx = parsed,
+            "arenafy" => data.arena_fy = parsed,
+            "arenatx" => data.arena_tx = parsed,
+            "arenaty" => data.arena_ty = parsed,
+            _ => {}
+        }
+        rest = next;
+    }
+    data
+}
+
 /// C `struct qa qa[]` (`src/system/arena.c:83-97`), shared verbatim by
 /// `master_driver`'s and `manager_driver`'s `analyse_text_driver` calls.
 /// `master_driver` only ever switches on codes `3`/`4`/`5` (register/
-/// enter/leave, see `World::arena_handle_text_message`); code `6` ("rent")
-/// is `manager_driver`'s own command (not ported this slice - see the
-/// "Arena rankings" task's REMAINING notes) and codes `2` ("repeat"/
-/// "restart") are dead in both C drivers (`answer_code == 2` is never
-/// switched on by either), matching the equally-dead
-/// `TextAnalysisOutcome::Matched(2)` case already established by
-/// `CLANMASTER_QA`.
+/// enter/leave, see `World::arena_handle_text_message`); `manager_driver`
+/// only ever switches on codes `4`/`5`/`6` (enter/leave/rent, see
+/// `World::arena_manager_handle_text_message`) - each driver's own unused
+/// codes from the other's command set are harmless no-ops, matching C
+/// exactly (neither driver's `switch` has a matching `case` for them).
+/// Codes `2` ("repeat"/"restart") are dead in both C drivers
+/// (`answer_code == 2` is never switched on by either), matching the
+/// equally-dead `TextAnalysisOutcome::Matched(2)` case already
+/// established by `CLANMASTER_QA`.
 pub const ARENA_QA: &[TextQaEntry] = &[
     TextQaEntry {
         words: &["how", "are", "you"],
@@ -2141,7 +2198,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::MilitaryMaster(_)
             | CharacterDriverState::MilitaryAdvisor(_)
             | CharacterDriverState::ArenaMaster(_)
-            | CharacterDriverState::ArenaFighter(_),
+            | CharacterDriverState::ArenaFighter(_)
+            | CharacterDriverState::ArenaManager(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3152,6 +3210,36 @@ mod tests {
     fn cdr_clanclerk_matches_c_drvlib() {
         assert_eq!(CDR_CLANMASTER, 27);
         assert_eq!(CDR_CLANCLERK, 28);
+    }
+
+    #[test]
+    fn cdr_arena_constants_match_c_drvlib() {
+        assert_eq!(CDR_ARENAMASTER, 48);
+        assert_eq!(CDR_ARENAFIGHTER, 49);
+        assert_eq!(CDR_ARENAMANAGER, 50);
+    }
+
+    #[test]
+    fn parse_arena_manager_driver_args_reads_real_zone_file_arg() {
+        // Verbatim `arg=` from `ugaris_data/zones/3/above3_generic.chr`.
+        let data = parse_arena_manager_driver_args(
+            "arenax=233;arenay=122;arenafx=230;arenafy=119;arenatx=242;arenaty=125;",
+        );
+        assert_eq!(data.arena_x, 233);
+        assert_eq!(data.arena_y, 122);
+        assert_eq!(data.arena_fx, 230);
+        assert_eq!(data.arena_fy, 119);
+        assert_eq!(data.arena_tx, 242);
+        assert_eq!(data.arena_ty, 125);
+        assert_eq!(data.renter, None);
+        assert!(data.invite.is_empty());
+    }
+
+    #[test]
+    fn parse_arena_manager_driver_args_ignores_unknown_names() {
+        let data = parse_arena_manager_driver_args("arenax=5;bogus=9;arenay=6;");
+        assert_eq!(data.arena_x, 5);
+        assert_eq!(data.arena_y, 6);
     }
 
     #[test]

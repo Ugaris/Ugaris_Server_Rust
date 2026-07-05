@@ -33,17 +33,20 @@
 //! `CharacterId` - see [`crate::character_driver::ArenaContender`]'s doc
 //! comment for why that's a safe simplification here.
 //!
+//! `CDR_ARENAMANAGER` (`manager_driver`, `arena.c:1080-1231` -
+//! `process_arena_manager_actions`) is the arena-rental NPC: `rent`
+//! reserves the (single, hardcoded-position) rental arena for the caller
+//! if unoccupied and teleports them in, `invite: <name>` lets the renter
+//! authorize one more player, that player's own `enter` teleports them in
+//! and clears the invite, and `leave` teleports whoever said it back out
+//! to the manager's own tile (clearing the reservation only if the
+//! *renter* left). Entirely self-contained within `World` - unlike
+//! `master_driver`, C's own `manager_driver` never touches gold or any
+//! other `PlayerRuntime` state despite the "paid arena-rental" label this
+//! task's own description originally used.
+//!
 //! Deliberately out of scope for this slice (documented in the "Arena
 //! rankings" P3 task's REMAINING notes, not silently dropped):
-//! - `CDR_ARENAFIGHTER` (`fighter_driver`, the autonomous tournament
-//!   practice-bot) and `CDR_ARENAMANAGER` (`manager_driver`, the paid
-//!   arena-rental system) - both separate NPC drivers with their own
-//!   state machines, not ported this slice. The `NT_NPC`/`NTID_ARENA`
-//!   notify messages `master_driver` sends to real players (as opposed to
-//!   a future `fighter_driver` bot) are harmless no-ops in C too - only
-//!   `fighter_driver` ever reads them (verified by grep: no other C file
-//!   switches on `NTID_ARENA`), so this port's own unconsumed messages to
-//!   human players match C exactly, not a gap.
 //! - DB/storage-blob persistence for the ranking table (`struct toplist`)
 //!   and this NPC's own tournament state (`storage_state`/
 //!   `storage_version`/`storage_ID`/`lastsave`) - this codebase has no
@@ -60,8 +63,9 @@
 use super::*;
 use crate::character_driver::{
     analyse_text_qa, ArenaContender, TextAnalysisOutcome, ARENA_FIGHTER_MASTER_POS,
-    ARENA_MAX_CONTENDER, ARENA_QA, CDR_ARENAFIGHTER, CDR_ARENAMASTER, FS_ENTER, FS_FIGHT,
-    FS_LEISURE, FS_REGISTER, FS_START, FS_WAIT, FS_WAIT2, MS_FIGHT, MS_IN, MS_PAIR, NTID_ARENA,
+    ARENA_MAX_CONTENDER, ARENA_QA, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, FS_ENTER,
+    FS_FIGHT, FS_LEISURE, FS_REGISTER, FS_START, FS_WAIT, FS_WAIT2, MS_FIGHT, MS_IN, MS_PAIR,
+    NTID_ARENA,
 };
 use crate::drvlib::offset2dx;
 use crate::player::{PlayerRuntime, ARENA_PPD_NEWCOMER_SCORE};
@@ -218,9 +222,14 @@ impl World {
 
     /// C `teleport_char_driver` (`src/system/drvlib.c:2651-2673`): a no-op
     /// when already within Manhattan distance `1` of the target, otherwise
-    /// remove-and-redrop at the exact tile, falling back to the old
-    /// position on failure (both halves already handled by
-    /// [`World::teleport_character_exact`]).
+    /// remove-and-redrop trying the exact tile then its 8 neighbors (C's
+    /// `drop_char`, matching [`World::teleport_character`]'s non-extended
+    /// mode exactly - *not* the exact-tile-only
+    /// [`World::teleport_character_exact`], since `manager_driver`'s own
+    /// `leave` handler teleports onto the manager NPC's own occupied
+    /// tile, `ch[cn].x, ch[cn].y` - a real case this needs the neighbor
+    /// fallback for), falling back to the old position if every candidate
+    /// tile is blocked/occupied.
     fn arena_teleport_char_driver(&mut self, character_id: CharacterId, x: u16, y: u16) -> bool {
         let Some(character) = self.characters.get(&character_id) else {
             return false;
@@ -230,7 +239,7 @@ impl World {
         if dx.abs() + dy.abs() < 2 {
             return false;
         }
-        self.teleport_character_exact(character_id, usize::from(x), usize::from(y))
+        self.teleport_character(character_id, x, y, false)
     }
 
     /// C `add_contender` (`arena.c:257-287`), the `register` command's
@@ -1275,4 +1284,426 @@ impl World {
             self.arena_fighter_tick(fighter_id, area_id);
         }
     }
+
+    /// C `is_anybody_in` (`arena.c:1075-1084`): true if any `CF_PLAYER`
+    /// character currently stands anywhere in the inclusive box.
+    fn arena_manager_is_anybody_in(&self, min_x: u16, min_y: u16, max_x: u16, max_y: u16) -> bool {
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                if let Some(tile) = self.map.tile(usize::from(x), usize::from(y)) {
+                    if tile.character != 0 {
+                        let occupant_id = CharacterId(u32::from(tile.character));
+                        if self
+                            .characters
+                            .get(&occupant_id)
+                            .is_some_and(|c| c.flags.contains(CharacterFlags::PLAYER))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// C `manager_driver`'s `NT_TEXT` top-of-loop renter-eviction check
+    /// (`arena.c:1182-1185`): every incoming text message re-checks
+    /// whether the *current renter* has wandered outside the rental
+    /// bounds, regardless of who actually sent the message or what it
+    /// says. Uses the hardcoded `232..=238` x-range (not the dynamic
+    /// `arena_fx`/`arena_tx` listening box checked afterward) - a real,
+    /// if minor, C quirk this port preserves rather than "fixes" (see
+    /// [`ARENA_MANAGER_RENTER_MIN_X`]'s doc comment).
+    fn arena_manager_evict_renter_if_left(
+        &mut self,
+        manager_id: CharacterId,
+        speaker_id: CharacterId,
+    ) {
+        let Some(CharacterDriverState::ArenaManager(mut data)) = self
+            .characters
+            .get(&manager_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return;
+        };
+        if data.renter != Some(speaker_id) {
+            return;
+        }
+        let Some(speaker) = self.characters.get(&speaker_id) else {
+            return;
+        };
+        let left = speaker.x < ARENA_MANAGER_RENTER_MIN_X
+            || speaker.x > ARENA_MANAGER_RENTER_MAX_X
+            || speaker.y < data.arena_fy
+            || speaker.y > data.arena_ty;
+        if !left {
+            return;
+        }
+        data.renter = None;
+        data.invite.clear();
+        if let Some(manager) = self.characters.get_mut(&manager_id) {
+            manager.driver_state = Some(CharacterDriverState::ArenaManager(data));
+        }
+    }
+
+    /// C `manager_driver`'s `rent` handler (`arena.c:1191-1199`).
+    fn arena_manager_handle_rent(&mut self, manager_id: CharacterId, speaker_id: CharacterId) {
+        let Some(CharacterDriverState::ArenaManager(mut data)) = self
+            .characters
+            .get(&manager_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return;
+        };
+        if self.arena_manager_is_anybody_in(
+            ARENA_MANAGER_RENTER_MIN_X,
+            data.arena_fy,
+            ARENA_MANAGER_RENTER_MAX_X,
+            data.arena_ty,
+        ) {
+            self.npc_say(manager_id, "Sorry, this arena is already occupied.");
+            return;
+        }
+        data.renter = Some(speaker_id);
+        data.invite.clear();
+        let (arena_x, arena_y) = (data.arena_x, data.arena_y);
+        if let Some(manager) = self.characters.get_mut(&manager_id) {
+            manager.driver_state = Some(CharacterDriverState::ArenaManager(data));
+        }
+        self.arena_teleport_char_driver(speaker_id, arena_x, arena_y);
+        self.npc_say(
+            manager_id,
+            "Say 'invite: <name>' to let someone in, or say 'leave' to leave the arena.",
+        );
+    }
+
+    /// C `manager_driver`'s `leave` handler (`arena.c:1200-1206`): teleports
+    /// the speaker back to the manager's own tile, clearing the
+    /// reservation only if the speaker *was* the renter.
+    fn arena_manager_handle_leave(&mut self, manager_id: CharacterId, speaker_id: CharacterId) {
+        let Some(manager) = self.characters.get(&manager_id) else {
+            return;
+        };
+        let (manager_x, manager_y) = (manager.x, manager.y);
+        self.arena_teleport_char_driver(speaker_id, manager_x, manager_y);
+
+        let Some(CharacterDriverState::ArenaManager(mut data)) = self
+            .characters
+            .get(&manager_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return;
+        };
+        if data.renter == Some(speaker_id) {
+            data.renter = None;
+            data.invite.clear();
+            if let Some(manager) = self.characters.get_mut(&manager_id) {
+                manager.driver_state = Some(CharacterDriverState::ArenaManager(data));
+            }
+        }
+    }
+
+    /// C `manager_driver`'s `enter` handler (`arena.c:1207-1214`):
+    /// case-insensitive name match against `dat->invite`.
+    fn arena_manager_handle_enter(&mut self, manager_id: CharacterId, speaker_id: CharacterId) {
+        let Some(speaker_name) = self.characters.get(&speaker_id).map(|c| c.name.clone()) else {
+            return;
+        };
+        let Some(CharacterDriverState::ArenaManager(mut data)) = self
+            .characters
+            .get(&manager_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return;
+        };
+        if !speaker_name.eq_ignore_ascii_case(&data.invite) {
+            self.npc_say(
+                manager_id,
+                &format!("You have not been invited, {speaker_name}."),
+            );
+            return;
+        }
+        let (arena_x, arena_y) = (data.arena_x, data.arena_y);
+        data.invite.clear();
+        if let Some(manager) = self.characters.get_mut(&manager_id) {
+            manager.driver_state = Some(CharacterDriverState::ArenaManager(data));
+        }
+        self.arena_teleport_char_driver(speaker_id, arena_x, arena_y);
+        if let Some(speaker) = self.characters.get_mut(&speaker_id) {
+            speaker.flags.remove(CharacterFlags::LAG);
+        }
+    }
+
+    /// C `manager_driver`'s `strcasestr(msg->dat2, "invite:")` branch
+    /// (`arena.c:1215-1232`), checked unconditionally alongside (not
+    /// instead of) the `rent`/`leave`/`enter` `analyse_text_driver` switch
+    /// above - independent commands on the same message, matching C
+    /// exactly (e.g. a message that also happens to contain the literal
+    /// substring "invite:" anywhere still triggers this even if it
+    /// separately matched `rent`/`leave`/`enter`/nothing).
+    fn arena_manager_handle_invite_command(
+        &mut self,
+        manager_id: CharacterId,
+        speaker_id: CharacterId,
+        text: &str,
+    ) {
+        let Some(pos) = text.to_ascii_lowercase().find("invite:") else {
+            return;
+        };
+        let Some(speaker_name) = self.characters.get(&speaker_id).map(|c| c.name.clone()) else {
+            return;
+        };
+        let Some(CharacterDriverState::ArenaManager(mut data)) = self
+            .characters
+            .get(&manager_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return;
+        };
+        if data.renter != Some(speaker_id) {
+            self.npc_say(
+                manager_id,
+                &format!("This is not your arena, {speaker_name}."),
+            );
+            return;
+        }
+        let invited: String = text[pos + "invite:".len()..]
+            .trim_start()
+            .chars()
+            .take_while(|&c| c != '"')
+            .take(79)
+            .collect();
+        data.invite = invited.clone();
+        if let Some(manager) = self.characters.get_mut(&manager_id) {
+            manager.driver_state = Some(CharacterDriverState::ArenaManager(data));
+        }
+        self.npc_say(
+            manager_id,
+            &format!("{invited}, say 'enter' if you wish to enter the arena"),
+        );
+    }
+
+    /// C `manager_driver`'s `NT_TEXT` branch's shared `analyse_text_driver`
+    /// call (`arena.c:1188`): reuses the same [`ARENA_QA`] table as
+    /// `master_driver` (C's `qa[]` is one array shared by both drivers).
+    fn arena_manager_text_outcome(
+        &self,
+        manager_id: CharacterId,
+        speaker_id: CharacterId,
+        text: &str,
+    ) -> TextAnalysisOutcome {
+        let Some(manager) = self.characters.get(&manager_id) else {
+            return TextAnalysisOutcome::NoMatch;
+        };
+        let Some(speaker) = self.characters.get(&speaker_id) else {
+            return TextAnalysisOutcome::NoMatch;
+        };
+        analyse_text_qa(text, &manager.name, &speaker.name, ARENA_QA)
+    }
+
+    /// C `manager_driver`'s `NT_TEXT` branch (`arena.c:1176-1233`): the
+    /// `rent`/`leave`/`enter` switch, then (independently) the `invite:`
+    /// substring command. Returns C's `didsay` (truthy for *any* `ARENA_QA`
+    /// hit, matching `master_driver`'s own return-value semantics).
+    fn arena_manager_handle_text_message(
+        &mut self,
+        manager_id: CharacterId,
+        speaker_id: CharacterId,
+        text: &str,
+    ) -> bool {
+        let outcome = self.arena_manager_text_outcome(manager_id, speaker_id, text);
+        let didsay = !matches!(outcome, TextAnalysisOutcome::NoMatch);
+        match outcome {
+            TextAnalysisOutcome::Said(reply) => {
+                self.npc_say(manager_id, &reply);
+            }
+            TextAnalysisOutcome::Matched(4) => {
+                self.arena_manager_handle_enter(manager_id, speaker_id)
+            }
+            TextAnalysisOutcome::Matched(5) => {
+                self.arena_manager_handle_leave(manager_id, speaker_id)
+            }
+            TextAnalysisOutcome::Matched(6) => {
+                self.arena_manager_handle_rent(manager_id, speaker_id)
+            }
+            TextAnalysisOutcome::Matched(_) | TextAnalysisOutcome::NoMatch => {}
+        }
+        self.arena_manager_handle_invite_command(manager_id, speaker_id, text);
+        didsay
+    }
+
+    /// C `manager_driver`'s `NT_GIVE` branch (`arena.c:1234-1253`) - same
+    /// shape as [`World::arena_handle_give_message`] (master's own copy),
+    /// just against `ArenaManager`'s `driver_state` variant instead.
+    fn arena_manager_handle_give_message(&mut self, manager_id: CharacterId) {
+        let Some(item_id) = self
+            .characters
+            .get_mut(&manager_id)
+            .and_then(|manager| manager.cursor_item.take())
+        else {
+            return;
+        };
+        let amgivingback = match self
+            .characters
+            .get(&manager_id)
+            .and_then(|c| c.driver_state.as_ref())
+        {
+            Some(CharacterDriverState::ArenaManager(data)) => data.amgivingback,
+            _ => 0,
+        };
+        if amgivingback == 0 {
+            self.npc_say(
+                manager_id,
+                "Thou hast better use for this than I do. Well, if there is use for it at all.",
+            );
+        }
+        if let Some(CharacterDriverState::ArenaManager(data)) = self
+            .characters
+            .get_mut(&manager_id)
+            .and_then(|c| c.driver_state.as_mut())
+        {
+            data.amgivingback += 1;
+        }
+        self.destroy_item(item_id);
+    }
+
+    /// C `manager_driver`'s message loop (`arena.c:1150-1258`): every
+    /// `NT_TEXT` message first runs the renter-eviction check, then
+    /// (matching C's own `remove_message`+`continue` guards exactly) is
+    /// dropped entirely if the speaker isn't a player or isn't strictly
+    /// inside the listening box, before reaching the command dispatch.
+    /// Returns the last speaker that triggered a `didsay` hit this tick,
+    /// for the caller's `turn`-to-face step.
+    fn process_arena_manager_messages(&mut self, manager_id: CharacterId) -> Option<CharacterId> {
+        let messages = self
+            .characters
+            .get_mut(&manager_id)
+            .map(|manager| std::mem::take(&mut manager.driver_messages))
+            .unwrap_or_default();
+
+        let Some(CharacterDriverState::ArenaManager(data)) = self
+            .characters
+            .get(&manager_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return None;
+        };
+        let (fx, fy, tx, ty) = (data.arena_fx, data.arena_fy, data.arena_tx, data.arena_ty);
+
+        let mut talk_target = None;
+        let mut last_talk_tick = None;
+        for message in &messages {
+            match message.message_type {
+                NT_TEXT => {
+                    let speaker_id = CharacterId(message.dat3.max(0) as u32);
+                    self.arena_manager_evict_renter_if_left(manager_id, speaker_id);
+
+                    let Some(speaker) = self.characters.get(&speaker_id) else {
+                        continue;
+                    };
+                    if !speaker.flags.contains(CharacterFlags::PLAYER) {
+                        continue;
+                    }
+                    if speaker.x <= fx || speaker.x >= tx || speaker.y <= fy || speaker.y >= ty {
+                        continue;
+                    }
+                    let Some(text) = message.text.as_deref() else {
+                        continue;
+                    };
+                    if self.arena_manager_handle_text_message(manager_id, speaker_id, text) {
+                        last_talk_tick = Some(self.tick.0);
+                        talk_target = Some(speaker_id);
+                    }
+                }
+                NT_GIVE => self.arena_manager_handle_give_message(manager_id),
+                _ => {}
+            }
+        }
+
+        if let Some(CharacterDriverState::ArenaManager(data)) = self
+            .characters
+            .get_mut(&manager_id)
+            .and_then(|c| c.driver_state.as_mut())
+        {
+            if let Some(tick) = last_talk_tick {
+                data.last_talk = tick;
+            }
+            data.amgivingback = 0;
+        }
+        talk_target
+    }
+
+    /// C `manager_driver`'s `if (dat->last_talk + TICKS*10 < ticker) {
+    /// secure_move_driver(cn, ch[cn].tmpx, ch[cn].tmpy, DX_DOWN, ...); }`
+    /// (`arena.c:1272-1276`) - same `setup_walk_toward`/`turn` fallback
+    /// pattern as [`World::arena_master_return_to_post`].
+    fn arena_manager_return_to_post(&mut self, manager_id: CharacterId, area_id: u16) {
+        let Some(manager) = self.characters.get(&manager_id).cloned() else {
+            return;
+        };
+        let Some(CharacterDriverState::ArenaManager(data)) = manager.driver_state.clone() else {
+            return;
+        };
+        if self.tick.0 <= data.last_talk + TICKS_PER_SECOND * 10 {
+            return;
+        }
+        if self.setup_walk_toward(
+            manager_id,
+            usize::from(manager.rest_x),
+            usize::from(manager.rest_y),
+            0,
+            area_id,
+            false,
+        ) {
+            return;
+        }
+        if manager.dir != Direction::Down as u8 {
+            if let Some(manager_mut) = self.characters.get_mut(&manager_id) {
+                let _ = turn(manager_mut, Direction::Down as u8);
+            }
+        }
+    }
+
+    fn arena_manager_tick(&mut self, manager_id: CharacterId, area_id: u16) {
+        let talk_target = self.process_arena_manager_messages(manager_id);
+        if let Some(target_id) = talk_target {
+            self.arena_face_talk_target(manager_id, target_id);
+        }
+        self.arena_manager_return_to_post(manager_id, area_id);
+    }
+
+    /// Arena rental manager NPC tick: process messages (rent/invite/enter/
+    /// leave/give), face whoever last spoke, and walk/turn back to post.
+    /// Ports the per-tick body of C `manager_driver`. Entirely
+    /// self-contained within `World` - unlike `master_driver`, C's own
+    /// `manager_driver` never reads or writes any `PlayerRuntime` state.
+    pub fn process_arena_manager_actions(&mut self, area_id: u16) {
+        let manager_ids: Vec<CharacterId> = self
+            .characters
+            .values()
+            .filter(|character| {
+                character.driver == CDR_ARENAMANAGER
+                    && character.flags.contains(CharacterFlags::USED)
+                    && !character.flags.contains(CharacterFlags::DEAD)
+            })
+            .map(|character| character.id)
+            .collect();
+
+        for manager_id in manager_ids {
+            self.arena_manager_tick(manager_id, area_id);
+        }
+    }
 }
+
+/// C's hardcoded `232`/`238` x-bounds shared by `manager_driver`'s own
+/// "has the renter left" eviction check and its `is_anybody_in`
+/// occupancy scan (`arena.c:1183, 1191`) - narrower than the dynamic
+/// `arena_fx`/`arena_tx` listening box, a real (if minor) C quirk this
+/// port preserves rather than "fixes" (every rental arena in
+/// `ugaris_data/zones/3/above3_generic.chr` uses the same `230..=242`
+/// listening span but a distinct `y` row range, so the narrower
+/// hardcoded x-bounds still land inside every instance's own arena
+/// floor).
+const ARENA_MANAGER_RENTER_MIN_X: u16 = 232;
+const ARENA_MANAGER_RENTER_MAX_X: u16 = 238;

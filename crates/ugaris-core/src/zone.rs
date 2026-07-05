@@ -5,11 +5,12 @@ use thiserror::Error;
 use crate::{
     character_driver::{
         apply_lab2_undead_create_message, apply_simple_baddy_create_message,
-        parse_clanclerk_driver_args, parse_clanmaster_driver_args, ArenaFighterDriverData,
-        ArenaMasterDriverData, CharacterDriverState, GateFightDriverData, GateWelcomeDriverData,
-        JanitorDriverData, TraderDriverData, ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER,
-        CDR_ARENAMASTER, CDR_CLANCLERK, CDR_CLANMASTER, CDR_GATE_FIGHT, CDR_GATE_WELCOME,
-        CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER, NT_CREATE,
+        parse_arena_manager_driver_args, parse_clanclerk_driver_args, parse_clanmaster_driver_args,
+        ArenaFighterDriverData, ArenaMasterDriverData, CharacterDriverState, GateFightDriverData,
+        GateWelcomeDriverData, JanitorDriverData, TraderDriverData, ARENA_FIGHTER_REST_POS,
+        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_CLANCLERK, CDR_CLANMASTER,
+        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER,
+        NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -510,6 +511,11 @@ impl ZoneLoader {
                     last_act: -(crate::tick::TICKS_PER_SECOND as i64) * 60 * 6,
                     ..Default::default()
                 }));
+        }
+        if template.driver == CDR_ARENAMANAGER {
+            character.driver_state = Some(CharacterDriverState::ArenaManager(
+                parse_arena_manager_driver_args(&template.args),
+            ));
         }
         if template.driver == crate::character_driver::CDR_MILITARY_MASTER {
             character.driver_state = Some(CharacterDriverState::MilitaryMaster(
