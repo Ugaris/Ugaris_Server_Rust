@@ -6976,15 +6976,20 @@ Unlocks every quest NPC. Do these before any P4 area work.
    matching C's real `backup_players` behavior; its pentagram-record
    third of the C command is skipped, that feature has no Rust port at
    all yet),
-    `/punish`, `/rename`, `/showppd`/`/showvalues`,
-    `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
+    `/punish`, `/rename`, `/showppd`/`/showvalues`, various pentagram
    `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
    like `/changetunnel`/`/settunnel`/`/cleartunnel`/`/setrd`/`/clearrd`/
    `/solverd`) not yet cross-referenced (`/shutdown` done - see iteration
    179, `start_shutdown`/`shutdown_bg`/`shutdown_warn`, new
    `shutdown.rs`, which also wired the pre-existing but previously-dead
-   `LoginRequest::no_login`/`LoginOutcome::Shutdown` plumbing) (see the
-   Progress Log entries
+   `LoginRequest::no_login`/`LoginOutcome::Shutdown` plumbing; `/orbs`
+   and `/treasures` done - see iteration 180, both backed entirely by
+   already-ported `PlayerRuntime` state (`orb_spawns`,
+   `chest_last_access_seconds`, `treasure_dig_last_seconds`) so, contrary
+   to this note's earlier "each needs its own backing system" claim, no
+   new storage was required, just the two read-only display commands in
+   `commands_player.rs`; `/tunnels`/`/demonlords` were already done
+   earlier - see their own entries above) (see the Progress Log entries
   pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
@@ -7963,6 +7968,45 @@ Unlocks every quest NPC. Do these before any P4 area work.
   server [+9], all green, zero failures), `cargo build -p ugaris-server` /
   `cargo build --workspace` clean with zero warnings, 10s boot-smoke
   confirmed "legacy TCP listener ready", "loaded area zone map", and
+  "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 180): ported `/orbs` (`cmd_orbs`, `command.c:
+  1498-1559`, dispatched from `command.c:8905-8917` gated on `ch[cn].exp
+  >= 81000` i.e. level 30 - a plain uncolored rejection message below
+  that, reproduced in the dispatcher rather than the display function
+  itself, matching C's own split) and `/treasures` (`cmd_treasure`,
+  `command.c:1570-1704`, dispatched unconditionally from `command.c:
+  8944-8952`), both into `commands_player.rs` as
+  `apply_orbs_command`/`apply_treasures_command`, wired in `main.rs` next
+  to `/demonlords`. Contrary to this task's long-standing note claiming
+  both "need their own backing system", every byte of state they display
+  was already fully ported: `/orbs` walks `PlayerRuntime::orb_spawns`
+  (`DRD_ORBSPAWN_PPD`), decoding each `location_id` back into `x | y<<8 |
+  area<<16` using the exact same encoding `area_apply::apply_orb_spawn`
+  already writes; `/treasures` walks `PlayerRuntime::
+  chest_last_access_seconds` (`DRD_TREASURE_CHEST_PPD`, the GU mines/
+  RD99 chests, nr 56..=64 skipping to 101..=104 exactly like C's `if (nr
+  == 65) nr = 101;` loop quirk) and `PlayerRuntime::
+  treasure_dig_last_seconds` (`DRD_TREASURE_DIG_PPD`, the 5 Brannington
+  Forest dig spots), both already used by `chests.rs`/`area_apply.rs`.
+  Added a small local `legacy_area_name` helper (C `get_area_name`,
+  `command.c:1476-1494`) and a `legacy_treasure_chest_name` table (C's
+  `cmd_treasure` inline `switch (nr)`); reused the fixed 365-day-in-
+  seconds respawn constant for both chests and dig spots (C hardcodes the
+  same literal in every `switch` arm and again for dig spots). Every
+  colored-segment concatenation (`COL_ORANGE`/`COL_VIOLET`/`COL_YELLOW`/
+  `COL_LIGHT_RED`/`COL_LIGHT_GREEN`/`COL_RESET` placement, including the
+  differing " - "/" - Ready in " literal boundary between orbs' ready and
+  pending branches) was transcribed byte-for-byte from the C `snprintf`
+  format-string literal concatenation, not just the visible text. 9 new
+  tests in `tests/commands_player.rs` (exact-word dispatch for both
+  commands, the level-30 plain-rejection path, zero-orbs and zero-
+  treasures empty-state messages, a mixed ready/pending orbs case with
+  summary-average math, and a mixed ready-chest/pending-chest/ready-dig-
+  spot treasures case). `cargo fmt --all`, `cargo test --workspace` (2009
+  ugaris-core + 55 db + 3 net + 40 protocol + 750 server [+9], all green,
+  zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every

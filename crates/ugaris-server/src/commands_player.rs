@@ -2419,6 +2419,289 @@ pub(crate) fn apply_demonlords_command(
     })
 }
 
+/// C `get_area_name` (`command.c:1476-1494`): a handful of named areas plus
+/// a `"Area %d"` fallback for everything else.
+fn legacy_area_name(area_id: u32) -> String {
+    match area_id {
+        1 => "Cameron".to_string(),
+        3 => "Aston".to_string(),
+        17 => "Exkhordon".to_string(),
+        18 => "Bone Tower".to_string(),
+        25 => "Rodney's Warped World".to_string(),
+        other => format!("Area {other}"),
+    }
+}
+
+/// C `cmd_orbs` (`command.c:1498-1559`, dispatched from `command.c:8905-
+/// 8917` gated on `ch[cn].exp >= 81000`, i.e. level 30 - the gate check and
+/// its plain, uncolored rejection message live in the dispatcher, not
+/// `cmd_orbs` itself, and are reproduced here in the same order). Walks the
+/// caller's `orbspawn_ppd` (`DRD_ORBSPAWN_PPD`, ported as
+/// `PlayerRuntime::orb_spawns`), decoding each non-zero `ID[n]` back into
+/// `x | y<<8 | area<<16` (the exact encoding `apply_orb_spawn`,
+/// `area_apply.rs`, already writes), reporting "Ready to grab!" once
+/// `base_orb_respawn_time_days` have elapsed since `last_used`, else the
+/// remaining whole days, then a summary line with the average wait over
+/// the not-yet-ready orbs (`0` if every orb is ready, C's `orb_count -
+/// ready_count > 0` ternary). No permission-flag gate beyond the level-30
+/// exp check.
+pub(crate) fn apply_orbs_command(
+    world: &World,
+    runtime: &ServerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("orbs") {
+        return None;
+    }
+
+    let player = runtime.player_for_character(character_id)?;
+    let character = world.characters.get(&character_id)?;
+
+    if character.exp < 81000 {
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Thou hast to reach level 30 to fathom understanding the mysteries of the orbs and their timers."
+                    .to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+
+    if player.orb_spawns.is_empty() {
+        return Some(KeyringCommandResult {
+            message_bytes: vec![legacy_achievement_colored_line(
+                COL_LIGHT_RED,
+                "Ye have not yet discovered any orbs, brave adventurer.",
+            )],
+            ..Default::default()
+        });
+    }
+
+    let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
+    let respawn_days = i64::from(world.settings.base_orb_respawn_time_days);
+    let orb_count = player.orb_spawns.len() as i64;
+    let mut ready_count = 0i64;
+    let mut total_days = 0i64;
+
+    let mut lines = vec![legacy_achievement_colored_line(
+        COL_ORANGE,
+        "Orb Locations:",
+    )];
+    for orb in &player.orb_spawns {
+        let x = orb.location_id & 0xFF;
+        let y = (orb.location_id >> 8) & 0xFF;
+        let area = orb.location_id >> 16;
+        let area_name = legacy_area_name(area);
+        let elapsed_days =
+            (realtime_seconds.saturating_sub(orb.last_used_seconds) / (60 * 60 * 24)) as i64;
+        let days_until_spawn = respawn_days - elapsed_days;
+
+        let mut line = Vec::new();
+        line.extend_from_slice(b"Orb at ");
+        line.extend_from_slice(COL_ORANGE);
+        line.extend_from_slice(format!("({x}, {y})").as_bytes());
+        line.extend_from_slice(COL_RESET);
+        line.extend_from_slice(b" in ");
+        line.extend_from_slice(COL_VIOLET);
+        line.extend_from_slice(area_name.as_bytes());
+        line.extend_from_slice(COL_RESET);
+        if days_until_spawn <= 0 {
+            line.extend_from_slice(b" - ");
+            line.extend_from_slice(COL_YELLOW);
+            line.extend_from_slice(b"Ready to grab!");
+            line.extend_from_slice(COL_RESET);
+            ready_count += 1;
+        } else {
+            line.extend_from_slice(b" - Ready in ");
+            line.extend_from_slice(COL_LIGHT_RED);
+            line.extend_from_slice(format!(" {days_until_spawn} days").as_bytes());
+            line.extend_from_slice(COL_RESET);
+            total_days += days_until_spawn;
+        }
+        lines.push(line);
+    }
+
+    let average_days = if orb_count - ready_count > 0 {
+        total_days as f64 / (orb_count - ready_count) as f64
+    } else {
+        0.0
+    };
+    let mut summary = Vec::new();
+    summary.extend_from_slice(COL_ORANGE);
+    summary.extend_from_slice(b"Summary:");
+    summary.extend_from_slice(COL_RESET);
+    summary.extend_from_slice(format!(" {orb_count} orbs total, ").as_bytes());
+    summary.extend_from_slice(COL_YELLOW);
+    summary.extend_from_slice(format!(" {ready_count} ready ").as_bytes());
+    summary.extend_from_slice(COL_RESET);
+    summary.extend_from_slice(b", Average spawn time: ");
+    summary.extend_from_slice(COL_LIGHT_RED);
+    summary.extend_from_slice(format!(" {average_days:.1} days").as_bytes());
+    summary.extend_from_slice(COL_RESET);
+    lines.push(summary);
+
+    Some(KeyringCommandResult {
+        message_bytes: lines,
+        ..Default::default()
+    })
+}
+
+/// 365 days in seconds, the fixed respawn timer C hardcodes for every GU
+/// mines/RD99 treasure chest case in `cmd_treasure`'s switch
+/// (`command.c:1608-1650`) and for each Brannington dig spot
+/// (`command.c:1682`, `365 * 24 * 60 * 60`).
+const GU_TREASURE_RESPAWN_SECONDS: u64 = 365 * 24 * 60 * 60;
+
+/// The `(name, respawn_seconds)` table from `cmd_treasure`'s `switch (nr)`
+/// (`command.c:1608-1650`), indexed by treasure number. C iterates
+/// `nr` 56..=104 but skips straight from 65 to 101 (`if (nr == 65) { nr =
+/// 101; }`), so only 56..=64 and 101..=104 are ever named; every other `nr`
+/// in that range hits the `default: "Unknown Chest"` arm, which is
+/// unreachable in practice since the loop never visits it.
+fn legacy_treasure_chest_name(nr: u16) -> &'static str {
+    match nr {
+        56 => "Mines level 10 (GU)",
+        57 => "Mines level 20 (GU)",
+        58 => "Mines level 30 (GU)",
+        59 => "Mines level 40 (GU)",
+        60 => "Mines level 50 (GU)",
+        61 => "Mines level 60 (GU)",
+        62 => "Mines level 70 (GU)",
+        63 => "Mines level 80 (GU)",
+        64 => "RD99 chest",
+        101 => "Mines level 90 (GU)",
+        102 => "Mines level 100 (GU)",
+        103 => "Mines level 110 (GU)",
+        104 => "Mines level 120 (GU)",
+        _ => "Unknown Chest",
+    }
+}
+
+/// C `cmd_treasure` (`command.c:1570-1704`, dispatched unconditionally
+/// from `command.c:8944-8952`, no permission gate). Reports every GU
+/// mines/RD99 chest (`DRD_TREASURE_CHEST_PPD`, ported as
+/// `PlayerRuntime::chest_last_access_seconds`) and Brannington Forest dig
+/// spot (`DRD_TREASURE_DIG_PPD`, ported as
+/// `PlayerRuntime::treasure_dig_last_seconds`) the caller has ever
+/// touched, each either "Ready!"/"Ready to dig!" or a `days, hours,
+/// minutes` countdown to its 365-day respawn, then a discovered/ready
+/// summary line spanning both categories.
+pub(crate) fn apply_treasures_command(
+    world: &World,
+    runtime: &ServerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("treasures") {
+        return None;
+    }
+
+    let player = runtime.player_for_character(character_id)?;
+    let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
+
+    let mut lines = vec![legacy_achievement_colored_line(
+        COL_ORANGE,
+        "Treasures Status (only shows treasures ye have found):",
+    )];
+    let mut total_count = 0i64;
+    let mut ready_count = 0i64;
+
+    let countdown_line = |name: &str, tg: u64| -> Vec<u8> {
+        let days = tg / (60 * 60 * 24);
+        let hours = (tg / (60 * 60)) % 24;
+        let minutes = (tg / 60) % 60;
+        let mut line = Vec::new();
+        line.extend_from_slice(COL_LIGHT_GREEN);
+        line.extend_from_slice(name.as_bytes());
+        line.extend_from_slice(b":");
+        line.extend_from_slice(COL_RESET);
+        line.extend_from_slice(b" ");
+        line.extend_from_slice(COL_LIGHT_RED);
+        line.extend_from_slice(
+            format!(" {days} days, {hours} hours, {minutes} minutes").as_bytes(),
+        );
+        line.extend_from_slice(COL_RESET);
+        line.extend_from_slice(b" remain");
+        line
+    };
+
+    for nr in (56u16..=64).chain(101..=104) {
+        let last_access = player.chest_last_access_seconds(nr as u8);
+        if last_access == 0 {
+            continue;
+        }
+        total_count += 1;
+        let name = legacy_treasure_chest_name(nr);
+        let ready_at = last_access.saturating_add(GU_TREASURE_RESPAWN_SECONDS);
+        if ready_at <= realtime_seconds {
+            ready_count += 1;
+            let mut line = Vec::new();
+            line.extend_from_slice(COL_LIGHT_GREEN);
+            line.extend_from_slice(name.as_bytes());
+            line.extend_from_slice(b": ");
+            line.extend_from_slice(COL_YELLOW);
+            line.extend_from_slice(b"Ready!");
+            line.extend_from_slice(COL_RESET);
+            lines.push(line);
+        } else {
+            lines.push(countdown_line(name, ready_at - realtime_seconds));
+        }
+    }
+
+    const DIG_SPOT_NAMES: [&str; 5] = [
+        "Brannington (Forester's Quest) Dead Tree",
+        "Brannington (Forester's Quest) Heart of Fire",
+        "Brannington (Forester's Quest) Empty Bucket",
+        "Brannington (Forester's Quest) Stone Circle",
+        "Brannington (Forester's Quest) Bags",
+    ];
+    for (index, name) in DIG_SPOT_NAMES.iter().enumerate() {
+        let last_dig = player.treasure_dig_last_seconds(index as u8);
+        if last_dig == 0 {
+            continue;
+        }
+        total_count += 1;
+        let ready_at = last_dig.saturating_add(GU_TREASURE_RESPAWN_SECONDS);
+        if ready_at <= realtime_seconds {
+            ready_count += 1;
+            let mut line = Vec::new();
+            line.extend_from_slice(COL_LIGHT_GREEN);
+            line.extend_from_slice(name.as_bytes());
+            line.extend_from_slice(b": ");
+            line.extend_from_slice(COL_YELLOW);
+            line.extend_from_slice(b"Ready to dig!");
+            line.extend_from_slice(COL_RESET);
+            lines.push(line);
+        } else {
+            lines.push(countdown_line(name, ready_at - realtime_seconds));
+        }
+    }
+
+    let mut summary = Vec::new();
+    summary.extend_from_slice(COL_ORANGE);
+    summary.extend_from_slice(b"Summary:");
+    summary.extend_from_slice(COL_RESET);
+    summary.extend_from_slice(format!(" {total_count} treasures discovered, ").as_bytes());
+    summary.extend_from_slice(COL_YELLOW);
+    summary.extend_from_slice(format!(" {ready_count} ready to loot").as_bytes());
+    summary.extend_from_slice(COL_RESET);
+    lines.push(summary);
+
+    Some(KeyringCommandResult {
+        message_bytes: lines,
+        ..Default::default()
+    })
+}
+
 /// C `achievement_list`/`achievement_show_stats`/`achievement_fix_all`/
 /// `achievement_clear_all`/`achievement_sync_all` plus the `/achgive`
 /// admin-only give command (`achievement.c:1421-1810`, dispatched from

@@ -1795,6 +1795,25 @@ async fn main() -> anyhow::Result<()> {
                                 continue;
                             }
                             if let Some(result) =
+                                apply_orbs_command(&world, &runtime, character_id, &command)
+                            {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                for message in result.message_bytes {
+                                    command_feedback_bytes.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) =
+                                apply_treasures_command(&world, &runtime, character_id, &command)
+                            {
+                                for message in result.message_bytes {
+                                    command_feedback_bytes.push((character_id, message));
+                                }
+                                continue;
+                            }
+                            if let Some(result) =
                                 apply_shutup_command(
                                     &mut world,
                                     &mut runtime,

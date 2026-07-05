@@ -1,4 +1,5 @@
 use super::*;
+use ugaris_core::player::OrbSpawnAccess;
 
 #[test]
 fn character_fireball_command_queues_character_target_action() {
@@ -1225,6 +1226,268 @@ fn demonlords_command_falls_through_without_a_live_player_runtime() {
     let world = World::default();
     let runtime = ServerRuntime::default();
     assert!(apply_demonlords_command(&world, &runtime, CharacterId(1), "/demonlords").is_none());
+}
+
+/// C `cmdcmp(ptr, "orbs", 4)`: `minlen` equals the full word length, so
+/// only the exact word (case-insensitively) matches.
+#[test]
+fn orbs_command_requires_the_full_word_and_ignores_case() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 30);
+
+    assert!(apply_orbs_command(&world, &runtime, CharacterId(1), "/orbs").is_some());
+    assert!(apply_orbs_command(&world, &runtime, CharacterId(1), "/ORBS").is_some());
+    assert!(apply_orbs_command(&world, &runtime, CharacterId(1), "/orb").is_none());
+    assert!(apply_orbs_command(&world, &runtime, CharacterId(1), "/time").is_none());
+}
+
+/// C `command.c:8905-8917`'s dispatcher gate: below `exp == 81000` (level
+/// 30), the caller gets a plain, uncolored rejection and `cmd_orbs` never
+/// runs.
+#[test]
+fn orbs_command_below_level_30_reports_plain_rejection() {
+    let mut world = World::default();
+    let character = login_character(CharacterId(1), &login_block("Hero"), 1, 10, 10);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    runtime.players.get_mut(&1).unwrap().character_id = Some(CharacterId(1));
+
+    let result = apply_orbs_command(&world, &runtime, CharacterId(1), "/orbs")
+        .expect("orbs command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![
+            "Thou hast to reach level 30 to fathom understanding the mysteries of the orbs and their timers."
+                .to_string()
+        ]
+    );
+    assert!(result.message_bytes.is_empty());
+}
+
+/// C `cmd_orbs` (`command.c:1517-1521`): a level-30+ caller with zero
+/// discovered orbs gets only the `COL_LIGHT_RED` "not yet discovered" line.
+#[test]
+fn orbs_command_reports_no_orbs_discovered() {
+    let mut world = World::default();
+    let mut character = login_character(CharacterId(1), &login_block("Hero"), 1, 10, 10);
+    character.exp = 81000;
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    runtime.players.get_mut(&1).unwrap().character_id = Some(CharacterId(1));
+
+    let result = apply_orbs_command(&world, &runtime, CharacterId(1), "/orbs")
+        .expect("orbs command should be recognized");
+    assert_eq!(result.message_bytes.len(), 1);
+    let mut expected = Vec::new();
+    expected.extend_from_slice(COL_LIGHT_RED);
+    expected.extend_from_slice(b"Ye have not yet discovered any orbs, brave adventurer.");
+    expected.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected);
+}
+
+/// C `cmd_orbs` (`command.c:1522-1559`): one ready orb (elapsed time at or
+/// past `base_orb_respawn_time_days`) and one pending orb, plus a summary
+/// line whose average only counts the not-yet-ready orbs.
+#[test]
+fn orbs_command_lists_ready_and_pending_orbs_with_summary() {
+    let mut world = World::default();
+    let mut character = login_character(CharacterId(1), &login_block("Hero"), 1, 10, 10);
+    character.exp = 81000;
+    world.add_character(character);
+    assert_eq!(world.settings.base_orb_respawn_time_days, 30);
+    let realtime_seconds = 100u64 * 24 * 60 * 60;
+    world.tick = ugaris_core::Tick(TICKS_PER_SECOND * realtime_seconds);
+
+    let mut runtime = ServerRuntime::default();
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    let player = runtime.players.get_mut(&1).unwrap();
+    player.character_id = Some(CharacterId(1));
+    // Ready: last used at time 0, 100 days elapsed >= 30-day respawn.
+    player.orb_spawns.push(OrbSpawnAccess {
+        location_id: 10 + (20 << 8) + (1 << 16),
+        last_used_seconds: 0,
+    });
+    // Pending: used 10 days ago, 20 days remain.
+    player.orb_spawns.push(OrbSpawnAccess {
+        location_id: 30 + (40 << 8) + (3 << 16),
+        last_used_seconds: realtime_seconds - 10 * 24 * 60 * 60,
+    });
+
+    let result = apply_orbs_command(&world, &runtime, CharacterId(1), "/orbs")
+        .expect("orbs command should be recognized");
+    // Header + 2 orb lines + summary.
+    assert_eq!(result.message_bytes.len(), 4);
+
+    let mut expected_ready = Vec::new();
+    expected_ready.extend_from_slice(b"Orb at ");
+    expected_ready.extend_from_slice(COL_ORANGE);
+    expected_ready.extend_from_slice(b"(10, 20)");
+    expected_ready.extend_from_slice(COL_RESET);
+    expected_ready.extend_from_slice(b" in ");
+    expected_ready.extend_from_slice(COL_VIOLET);
+    expected_ready.extend_from_slice(b"Cameron");
+    expected_ready.extend_from_slice(COL_RESET);
+    expected_ready.extend_from_slice(b" - ");
+    expected_ready.extend_from_slice(COL_YELLOW);
+    expected_ready.extend_from_slice(b"Ready to grab!");
+    expected_ready.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[1], expected_ready);
+
+    let mut expected_pending = Vec::new();
+    expected_pending.extend_from_slice(b"Orb at ");
+    expected_pending.extend_from_slice(COL_ORANGE);
+    expected_pending.extend_from_slice(b"(30, 40)");
+    expected_pending.extend_from_slice(COL_RESET);
+    expected_pending.extend_from_slice(b" in ");
+    expected_pending.extend_from_slice(COL_VIOLET);
+    expected_pending.extend_from_slice(b"Aston");
+    expected_pending.extend_from_slice(COL_RESET);
+    expected_pending.extend_from_slice(b" - Ready in ");
+    expected_pending.extend_from_slice(COL_LIGHT_RED);
+    expected_pending.extend_from_slice(b" 20 days");
+    expected_pending.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[2], expected_pending);
+
+    let mut expected_summary = Vec::new();
+    expected_summary.extend_from_slice(COL_ORANGE);
+    expected_summary.extend_from_slice(b"Summary:");
+    expected_summary.extend_from_slice(COL_RESET);
+    expected_summary.extend_from_slice(b" 2 orbs total, ");
+    expected_summary.extend_from_slice(COL_YELLOW);
+    expected_summary.extend_from_slice(b" 1 ready ");
+    expected_summary.extend_from_slice(COL_RESET);
+    expected_summary.extend_from_slice(b", Average spawn time: ");
+    expected_summary.extend_from_slice(COL_LIGHT_RED);
+    expected_summary.extend_from_slice(b" 20.0 days");
+    expected_summary.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[3], expected_summary);
+}
+
+/// A disconnected/never-logged-in character has no `PlayerRuntime`, so the
+/// command falls through (`None`).
+#[test]
+fn orbs_command_falls_through_without_a_live_player_runtime() {
+    let world = World::default();
+    let runtime = ServerRuntime::default();
+    assert!(apply_orbs_command(&world, &runtime, CharacterId(1), "/orbs").is_none());
+}
+
+/// C `cmdcmp(ptr, "treasures", 9)`: an exact case-insensitive word match.
+#[test]
+fn treasures_command_requires_the_full_word_and_ignores_case() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 1);
+
+    assert!(apply_treasures_command(&world, &runtime, CharacterId(1), "/treasures").is_some());
+    assert!(apply_treasures_command(&world, &runtime, CharacterId(1), "/TREASURES").is_some());
+    assert!(apply_treasures_command(&world, &runtime, CharacterId(1), "/treasure").is_none());
+    assert!(apply_treasures_command(&world, &runtime, CharacterId(1), "/time").is_none());
+}
+
+/// C `cmd_treasure` (`command.c:1570-1704`): with nothing discovered, only
+/// the header and a `0 discovered, 0 ready` summary are shown.
+#[test]
+fn treasures_command_reports_zero_discovered_summary() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 1);
+
+    let result = apply_treasures_command(&world, &runtime, CharacterId(1), "/treasures")
+        .expect("treasures command should be recognized");
+    assert_eq!(result.message_bytes.len(), 2);
+
+    let mut expected_header = Vec::new();
+    expected_header.extend_from_slice(COL_ORANGE);
+    expected_header.extend_from_slice(b"Treasures Status (only shows treasures ye have found):");
+    expected_header.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected_header);
+
+    let mut expected_summary = Vec::new();
+    expected_summary.extend_from_slice(COL_ORANGE);
+    expected_summary.extend_from_slice(b"Summary:");
+    expected_summary.extend_from_slice(COL_RESET);
+    expected_summary.extend_from_slice(b" 0 treasures discovered, ");
+    expected_summary.extend_from_slice(COL_YELLOW);
+    expected_summary.extend_from_slice(b" 0 ready to loot");
+    expected_summary.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[1], expected_summary);
+}
+
+/// C `cmd_treasure` (`command.c:1631-1670`): a ready chest, a pending
+/// chest (with a `days, hours, minutes` countdown), and a ready dig spot,
+/// each using the fixed 365-day respawn.
+#[test]
+fn treasures_command_lists_ready_and_pending_chests_and_dig_spots() {
+    let (mut world, mut runtime) = connected_player_at_level(CharacterId(1), 1);
+    let realtime_seconds = 400u64 * 24 * 60 * 60;
+    world.tick = ugaris_core::Tick(TICKS_PER_SECOND * realtime_seconds);
+
+    let player = runtime.player_for_character_mut(CharacterId(1)).unwrap();
+    // Treasure #63 (Mines level 80 (GU)): used at second 1 (long enough
+    // ago that the 365-day respawn has elapsed by day 400) -> ready. `0`
+    // is reserved as the "never discovered" sentinel, so `1` stands in
+    // for "long ago" here.
+    player.mark_chest_access(63, 1);
+    // Treasure #56 (Mines level 10 (GU)): used 10 days ago -> 355 days,
+    // 0 hours, 0 minutes remain.
+    player.mark_chest_access(56, realtime_seconds - 10 * 24 * 60 * 60);
+    // Dig spot #0 (Dead Tree): used at second 1 -> ready to dig.
+    player.mark_treasure_dig(0, 1);
+
+    let result = apply_treasures_command(&world, &runtime, CharacterId(1), "/treasures")
+        .expect("treasures command should be recognized");
+    // Header + chest 56 + chest 63 + dig spot 0 + summary.
+    assert_eq!(result.message_bytes.len(), 5);
+
+    let mut expected_pending = Vec::new();
+    expected_pending.extend_from_slice(COL_LIGHT_GREEN);
+    expected_pending.extend_from_slice(b"Mines level 10 (GU)");
+    expected_pending.extend_from_slice(b":");
+    expected_pending.extend_from_slice(COL_RESET);
+    expected_pending.extend_from_slice(b" ");
+    expected_pending.extend_from_slice(COL_LIGHT_RED);
+    expected_pending.extend_from_slice(b" 355 days, 0 hours, 0 minutes");
+    expected_pending.extend_from_slice(COL_RESET);
+    expected_pending.extend_from_slice(b" remain");
+    assert_eq!(result.message_bytes[1], expected_pending);
+
+    let mut expected_ready_chest = Vec::new();
+    expected_ready_chest.extend_from_slice(COL_LIGHT_GREEN);
+    expected_ready_chest.extend_from_slice(b"Mines level 80 (GU)");
+    expected_ready_chest.extend_from_slice(b": ");
+    expected_ready_chest.extend_from_slice(COL_YELLOW);
+    expected_ready_chest.extend_from_slice(b"Ready!");
+    expected_ready_chest.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[2], expected_ready_chest);
+
+    let mut expected_ready_dig = Vec::new();
+    expected_ready_dig.extend_from_slice(COL_LIGHT_GREEN);
+    expected_ready_dig.extend_from_slice(b"Brannington (Forester's Quest) Dead Tree");
+    expected_ready_dig.extend_from_slice(b": ");
+    expected_ready_dig.extend_from_slice(COL_YELLOW);
+    expected_ready_dig.extend_from_slice(b"Ready to dig!");
+    expected_ready_dig.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[3], expected_ready_dig);
+
+    let mut expected_summary = Vec::new();
+    expected_summary.extend_from_slice(COL_ORANGE);
+    expected_summary.extend_from_slice(b"Summary:");
+    expected_summary.extend_from_slice(COL_RESET);
+    expected_summary.extend_from_slice(b" 3 treasures discovered, ");
+    expected_summary.extend_from_slice(COL_YELLOW);
+    expected_summary.extend_from_slice(b" 2 ready to loot");
+    expected_summary.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[4], expected_summary);
+}
+
+/// A disconnected/never-logged-in character has no `PlayerRuntime`, so the
+/// command falls through (`None`).
+#[test]
+fn treasures_command_falls_through_without_a_live_player_runtime() {
+    let world = World::default();
+    let runtime = ServerRuntime::default();
+    assert!(apply_treasures_command(&world, &runtime, CharacterId(1), "/treasures").is_none());
 }
 
 /// C `cmdcmp(ptr, "steal", 5)`: `minlen == strlen("steal")`, an exact
