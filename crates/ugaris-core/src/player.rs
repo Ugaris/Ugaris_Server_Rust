@@ -2268,24 +2268,43 @@ impl PlayerRuntime {
     ) {
         let winner_score = winner.arena_score();
         let loser_score = loser.arena_score();
+        winner.apply_arena_win(loser_score, now);
+        loser.apply_arena_loss(winner_score, now);
+    }
 
-        let winner_fights = winner.arena_fights() + 1;
-        let winner_wins = winner.arena_wins() + 1;
-        let loser_fights = loser.arena_fights() + 1;
-        let loser_losses = loser.arena_losses() + 1;
+    /// Winner-side half of `score_fight` (`arena.c:432-534`): reads this
+    /// player's own pre-fight score internally (so callers only need the
+    /// *opponent's* pre-fight score, avoiding the need for two
+    /// simultaneous `&mut PlayerRuntime` borrows when the two combatants
+    /// live in the same collection - see `crates/ugaris-server/src/
+    /// world_events.rs::apply_arena_master_events`, the only real caller
+    /// outside `record_arena_fight_result`'s own unit tests), applies the
+    /// `arena_fight_worth` ladder, and stamps `lastfight`. Returns the
+    /// resulting new score for [`crate::world::World::arena_update_toplist`].
+    pub fn apply_arena_win(&mut self, loser_score_before: i32, now: i32) -> i32 {
+        let winner_score_before = self.arena_score();
+        let worth = Self::arena_fight_worth(winner_score_before - loser_score_before);
+        let new_score = winner_score_before + worth;
+        self.write_arena_i32(ARENA_PPD_SCORE_OFFSET, new_score);
+        self.write_arena_i32(ARENA_PPD_FIGHTS_OFFSET, self.arena_fights() + 1);
+        self.write_arena_i32(ARENA_PPD_WINS_OFFSET, self.arena_wins() + 1);
+        self.write_arena_i32(ARENA_PPD_LASTFIGHT_OFFSET, now);
+        new_score
+    }
 
-        let diff = winner_score - loser_score;
-        let worth = Self::arena_fight_worth(diff);
-
-        winner.write_arena_i32(ARENA_PPD_SCORE_OFFSET, winner_score + worth);
-        winner.write_arena_i32(ARENA_PPD_FIGHTS_OFFSET, winner_fights);
-        winner.write_arena_i32(ARENA_PPD_WINS_OFFSET, winner_wins);
-        winner.write_arena_i32(ARENA_PPD_LASTFIGHT_OFFSET, now);
-
-        loser.write_arena_i32(ARENA_PPD_SCORE_OFFSET, loser_score - worth);
-        loser.write_arena_i32(ARENA_PPD_FIGHTS_OFFSET, loser_fights);
-        loser.write_arena_i32(ARENA_PPD_LOSSES_OFFSET, loser_losses);
-        loser.write_arena_i32(ARENA_PPD_LASTFIGHT_OFFSET, now);
+    /// Loser-side half of `score_fight` (`arena.c:432-534`) - see
+    /// [`Self::apply_arena_win`]'s doc comment for why this takes the
+    /// *winner's* pre-fight score rather than a second `&mut
+    /// PlayerRuntime`.
+    pub fn apply_arena_loss(&mut self, winner_score_before: i32, now: i32) -> i32 {
+        let loser_score_before = self.arena_score();
+        let worth = Self::arena_fight_worth(winner_score_before - loser_score_before);
+        let new_score = loser_score_before - worth;
+        self.write_arena_i32(ARENA_PPD_SCORE_OFFSET, new_score);
+        self.write_arena_i32(ARENA_PPD_FIGHTS_OFFSET, self.arena_fights() + 1);
+        self.write_arena_i32(ARENA_PPD_LOSSES_OFFSET, self.arena_losses() + 1);
+        self.write_arena_i32(ARENA_PPD_LASTFIGHT_OFFSET, now);
+        new_score
     }
 
     /// C `count_demon_lord_kills` (`death.c:169-190`): counts unique
@@ -7406,6 +7425,34 @@ mod tests {
         assert!(winner.arena_score() > score_after_first);
         assert_eq!(winner.arena_lastfight(), 2_000);
         assert_eq!(loser.arena_lastfight(), 2_000);
+    }
+
+    #[test]
+    fn apply_arena_win_and_loss_match_record_arena_fight_result_when_called_separately() {
+        // `apply_arena_master_events` cannot hold two simultaneous `&mut
+        // PlayerRuntime` borrows from the same `ServerRuntime::players`
+        // map (see `apply_arena_win`'s doc comment), so it calls the two
+        // halves sequentially using the *other* side's pre-fight score
+        // instead. This must produce exactly the same result as the
+        // combined `record_arena_fight_result` call.
+        let mut winner_a = PlayerRuntime::connected(1, 0);
+        let mut loser_a = PlayerRuntime::connected(2, 0);
+        PlayerRuntime::record_arena_fight_result(&mut winner_a, &mut loser_a, 42);
+
+        let mut winner_b = PlayerRuntime::connected(1, 0);
+        let mut loser_b = PlayerRuntime::connected(2, 0);
+        let winner_score_before = winner_b.arena_score();
+        let loser_score_before = loser_b.arena_score();
+        let new_winner_score = winner_b.apply_arena_win(loser_score_before, 42);
+        let new_loser_score = loser_b.apply_arena_loss(winner_score_before, 42);
+
+        assert_eq!(winner_a.arena_score(), winner_b.arena_score());
+        assert_eq!(loser_a.arena_score(), loser_b.arena_score());
+        assert_eq!(new_winner_score, winner_b.arena_score());
+        assert_eq!(new_loser_score, loser_b.arena_score());
+        assert_eq!(winner_a.arena_fights(), winner_b.arena_fights());
+        assert_eq!(winner_a.arena_wins(), winner_b.arena_wins());
+        assert_eq!(loser_a.arena_losses(), loser_b.arena_losses());
     }
 
     #[test]

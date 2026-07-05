@@ -469,7 +469,8 @@ impl World {
             | CharacterDriverState::ClanFound(_)
             | CharacterDriverState::Clanclerk(_)
             | CharacterDriverState::MilitaryMaster(_)
-            | CharacterDriverState::MilitaryAdvisor(_) => None,
+            | CharacterDriverState::MilitaryAdvisor(_)
+            | CharacterDriverState::ArenaMaster(_) => None,
         }
     }
 

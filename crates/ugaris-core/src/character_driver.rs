@@ -60,6 +60,22 @@ pub const CDR_MILITARY_MASTER: u16 = 42;
 /// mission-recommendation NPC (`src/module/military.c::
 /// military_advisor_driver`).
 pub const CDR_MILITARY_ADVISOR: u16 = 43;
+/// C `#define CDR_ARENAMASTER 48` (`src/system/drvlib.h`): the arena
+/// tournament master NPC (`src/system/arena.c::master_driver`) - pairs
+/// registered contenders, watches the fight, and scores the result. See
+/// the "Arena rankings" P3 task in `PORTING_TODO.md`.
+pub const CDR_ARENAMASTER: u16 = 48;
+/// C `#define CDR_ARENAFIGHTER 49` (`src/system/drvlib.h`): the
+/// autonomous tournament "fighter" bot (`arena.c::fighter_driver`) that
+/// registers itself, enters, and fights via the generic `fight_driver_*`
+/// helpers. Not yet ported - see the "Arena rankings" task's REMAINING
+/// notes.
+pub const CDR_ARENAFIGHTER: u16 = 49;
+/// C `#define CDR_ARENAMANAGER 50` (`src/system/drvlib.h`): the paid
+/// arena-rental NPC (`arena.c::manager_driver`, `rent`/`invite:`/`enter`/
+/// `leave` commands). Not yet ported - see the "Arena rankings" task's
+/// REMAINING notes.
+pub const CDR_ARENAMANAGER: u16 = 50;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
@@ -135,6 +151,7 @@ pub enum CharacterDriverState {
     Clanclerk(ClanclerkDriverData),
     MilitaryMaster(MilitaryMasterDriverData),
     MilitaryAdvisor(MilitaryAdvisorDriverData),
+    ArenaMaster(ArenaMasterDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -475,6 +492,150 @@ pub fn parse_clanclerk_driver_args(args: &str) -> ClanclerkDriverData {
         clan: args.trim().parse::<i32>().unwrap_or(0).max(0) as u16,
     }
 }
+
+/// C `struct contender` (`src/system/arena.c:215-220`): one tournament
+/// registrant. `character_id` merges C's `ID` (the persistent-player
+/// identity used to invalidate a stale slot) and `cn` (the live character
+/// slot) into a single `CharacterId` - the same simplification already
+/// established by `TraderDriverData::c1_id`/`c2_id` (see that struct's
+/// doc comment), since a logged-out/reconnected character gets a fresh
+/// `CharacterId` in this codebase, making the separate C `ID` field
+/// redundant here. `score` is the registrant's arena rating captured at
+/// registration time (`ppd->score`, read once and never refreshed while
+/// queued, matching C exactly) and `reg_time` is the tick the slot was
+/// filled (`arena.c:279`, used by `find_contender`'s wait-time bonus).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArenaContender {
+    pub character_id: CharacterId,
+    pub score: i32,
+    pub reg_time: u64,
+}
+
+/// C `struct master_data` (`src/system/arena.c:236-253`), minus the
+/// `storage_state`/`storage_version`/`storage_ID`/`lastsave` storage-blob
+/// bookkeeping fields: this codebase has no generic storage-blob
+/// persistence primitive yet (same architectural gap noted by the "Arena
+/// rankings" task in `PORTING_TODO.md` for the ranking table itself), so
+/// the tournament tick always runs as if `storage_state > 3` (C's own
+/// "storage is ready" gate) - the eventual real-world behavior, just
+/// without the one-time load delay, matching the precedent already
+/// established for `/killclan`'s immediate-delete simplification.
+/// `MAXCONTENDER` (50, `arena.c:213`) is enforced by
+/// [`crate::world::World::arena_add_contender`] rather than a fixed-size
+/// array field.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArenaMasterDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub amgivingback: i32,
+    /// C `dat->state`: `0` = [`MS_PAIR`], `1` = [`MS_IN`], `2` =
+    /// [`MS_FIGHT`].
+    pub state: u8,
+    pub fight1: Option<CharacterId>,
+    pub fight2: Option<CharacterId>,
+    #[serde(default)]
+    pub timeout: u64,
+    pub contenders: Vec<ArenaContender>,
+}
+
+/// C `#define MS_PAIR 0` (`arena.c:222`): searching for a contender pair.
+pub const MS_PAIR: u8 = 0;
+/// C `#define MS_IN 1` (`arena.c:223`): waiting for both fighters to step
+/// into the arena box.
+pub const MS_IN: u8 = 1;
+/// C `#define MS_FIGHT 2` (`arena.c:224`): fight in progress.
+pub const MS_FIGHT: u8 = 2;
+
+/// C `#define MAXCONTENDER 50` (`arena.c:213`).
+pub const ARENA_MAX_CONTENDER: usize = 50;
+
+/// C `struct qa qa[]` (`src/system/arena.c:83-97`), shared verbatim by
+/// `master_driver`'s and `manager_driver`'s `analyse_text_driver` calls.
+/// `master_driver` only ever switches on codes `3`/`4`/`5` (register/
+/// enter/leave, see `World::arena_handle_text_message`); code `6` ("rent")
+/// is `manager_driver`'s own command (not ported this slice - see the
+/// "Arena rankings" task's REMAINING notes) and codes `2` ("repeat"/
+/// "restart") are dead in both C drivers (`answer_code == 2` is never
+/// switched on by either), matching the equally-dead
+/// `TextAnalysisOutcome::Matched(2)` case already established by
+/// `CLANMASTER_QA`.
+pub const ARENA_QA: &[TextQaEntry] = &[
+    TextQaEntry {
+        words: &["how", "are", "you"],
+        answer: Some("I'm fine!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hello"],
+        answer: Some("Hello, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hi"],
+        answer: Some("Hi, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["greetings"],
+        answer: Some("Greetings, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hail"],
+        answer: Some("And hail to you, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what", "is", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["repeat"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["restart"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["please", "repeat"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["please", "restart"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["register"],
+        answer: None,
+        answer_code: 3,
+    },
+    TextQaEntry {
+        words: &["enter"],
+        answer: None,
+        answer_code: 4,
+    },
+    TextQaEntry {
+        words: &["leave"],
+        answer: None,
+        answer_code: 5,
+    },
+    TextQaEntry {
+        words: &["rent"],
+        answer: None,
+        answer_code: 6,
+    },
+];
 
 /// C `struct military_master_data`'s zone-file-parsed half
 /// (`src/module/military.c:355-364`), plus the two `dat`-scoped runtime
@@ -1923,7 +2084,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::ClanFound(_)
             | CharacterDriverState::Clanclerk(_)
             | CharacterDriverState::MilitaryMaster(_)
-            | CharacterDriverState::MilitaryAdvisor(_),
+            | CharacterDriverState::MilitaryAdvisor(_)
+            | CharacterDriverState::ArenaMaster(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

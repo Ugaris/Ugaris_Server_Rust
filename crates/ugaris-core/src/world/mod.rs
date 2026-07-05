@@ -13,6 +13,7 @@
 mod aclerk;
 mod actions;
 mod area_mech;
+mod arena;
 mod assembly;
 mod bank;
 mod character_values;
@@ -56,6 +57,7 @@ mod weather;
 
 pub use actions::*;
 pub(crate) use area_mech::*;
+pub use arena::*;
 pub(crate) use assembly::*;
 pub use bank::*;
 pub(crate) use character_values::*;
@@ -270,6 +272,15 @@ pub struct World {
     pub lq_npc_respawns: Vec<(usize, u64)>,
     pub npc_respawn_slots: Vec<NpcRespawnSlot>,
     pub merchant_stores: HashMap<CharacterId, MerchantStore>,
+    /// Server-wide arena tournament ranking table (C's `static struct
+    /// toplist *tops`, `arena.c:255`). In-memory only, no DB/storage-blob
+    /// persistence yet (resets on restart) - same architectural gap as
+    /// `MilitaryMasterStorageRegistry`, documented in the "Arena rankings"
+    /// P3 task in `PORTING_TODO.md`. Lazily grown to
+    /// [`arena::ARENA_TOPLIST_SIZE`] entries by
+    /// [`World::arena_update_toplist`]; empty (no entries yet) reads back
+    /// as "no rankings" via [`World::arena_toplist_entries`].
+    pub arena_toplist: Vec<ArenaToplistRecord>,
     pending_npc_respawns: Vec<NpcRespawnRequest>,
     pending_kill_exp: Vec<KillExpAward>,
     pending_kill_achievements: Vec<KillAchievementAward>,
@@ -290,6 +301,7 @@ pub struct World {
     pending_clanclerk_events: Vec<ClanclerkEvent>,
     pending_military_master_events: Vec<MilitaryMasterEvent>,
     pending_military_advisor_events: Vec<MilitaryAdvisorEvent>,
+    pending_arena_master_events: Vec<ArenaMasterEvent>,
 }
 
 impl Default for Tick {

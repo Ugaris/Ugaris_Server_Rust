@@ -1403,3 +1403,69 @@ pub(crate) async fn apply_clan_economy_tick(
 
     applied
 }
+
+/// C `score_fight`'s `PlayerRuntime`-touching half (`arena.c:432-534`),
+/// applied once `World::process_arena_master_actions`'s `check_fight` has
+/// already determined a winner/loser this tick (queued as
+/// `ArenaMasterEvent::FightScored` since `World` cannot reach
+/// `ServerRuntime::players` - see `crates/ugaris-core/src/world/
+/// arena.rs`'s module doc comment). Reads both combatants' pre-fight
+/// scores first, then mutates each side with a single `&mut
+/// PlayerRuntime` borrow at a time (`PlayerRuntime::apply_arena_win`/
+/// `apply_arena_loss`, see their own doc comments for why that split
+/// exists), and finally folds the resulting post-fight scores into
+/// `World::arena_update_toplist` (C's `update_toplist` call inside
+/// `score_fight` itself, `arena.c:533`).
+pub(crate) fn apply_arena_master_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    now_unix: i64,
+) -> usize {
+    let mut applied = 0;
+    for event in world.drain_pending_arena_master_events() {
+        let ArenaMasterEvent::FightScored {
+            winner_id,
+            loser_id,
+        } = event;
+        let (Some(winner_name), Some(loser_name)) = (
+            world.characters.get(&winner_id).map(|c| c.name.clone()),
+            world.characters.get(&loser_id).map(|c| c.name.clone()),
+        ) else {
+            continue;
+        };
+        let Some(winner_score_before) = runtime
+            .player_for_character(winner_id)
+            .map(|p| p.arena_score())
+        else {
+            continue;
+        };
+        let Some(loser_score_before) = runtime
+            .player_for_character(loser_id)
+            .map(|p| p.arena_score())
+        else {
+            continue;
+        };
+        let now = i32::try_from(now_unix).unwrap_or(i32::MAX);
+        let Some(new_winner_score) = runtime
+            .player_for_character_mut(winner_id)
+            .map(|p| p.apply_arena_win(loser_score_before, now))
+        else {
+            continue;
+        };
+        let Some(new_loser_score) = runtime
+            .player_for_character_mut(loser_id)
+            .map(|p| p.apply_arena_loss(winner_score_before, now))
+        else {
+            continue;
+        };
+        world.arena_update_toplist(
+            &winner_name,
+            &loser_name,
+            new_winner_score,
+            new_loser_score,
+            now_unix,
+        );
+        applied += 1;
+    }
+    applied
+}

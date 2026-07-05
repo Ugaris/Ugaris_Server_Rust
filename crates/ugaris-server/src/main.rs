@@ -141,8 +141,8 @@ use ugaris_core::{
     player::{
         CaligarSkellyDeathResult, CommandAlias, DemonShrineResult, IgnoreToggleResult,
         KeyringAddResult, PlayerActionCode, PlayerConnectionState, PlayerRuntime, QueuedAction,
-        XmasTreeResult, DEFERRED_ACHIEVEMENTS, DEFERRED_AUCTION, LEGACY_SWEAR_PPD_SIZE,
-        MILITARY_PPD_MAXADVISOR, SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
+        XmasTreeResult, ARENA_PPD_NEWCOMER_SCORE, DEFERRED_ACHIEVEMENTS, DEFERRED_AUCTION,
+        LEGACY_SWEAR_PPD_SIZE, MILITARY_PPD_MAXADVISOR, SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
     },
     quest::{QuestReopenResult, QF_OPEN},
     spell::{
@@ -159,10 +159,10 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::{
         army_rank_for_points, army_rank_name, exp2level, legacy_save_number, level2exp,
-        level_value, merchant_buy_price, merchant_sales_price, BankEvent, ClanclerkEvent,
-        ClanmasterEvent, FirstKillCheck, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts,
-        LegacyHurtEvent, LookMapRequest, MerchantTradeResult, RaiseSkillOutcome, StoreWare,
-        TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        level_value, merchant_buy_price, merchant_sales_price, ArenaMasterEvent, BankEvent,
+        ClanclerkEvent, ClanmasterEvent, FirstKillCheck, GateWelcomeOutcomeEvent,
+        GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest, MerchantTradeResult,
+        RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -3159,8 +3159,23 @@ async fn main() -> anyhow::Result<()> {
                                             )));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { .. } => {
-                                            // Legacy C returns without output when arena rankings are not loaded.
+                                        ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { character_id, .. } => {
+                                            // C `toplist_driver` (`arena.c:1045-1087`): top-10 lines,
+                                            // a +/-5 window around the reader's own rank, then their
+                                            // own score/wins/losses summary line.
+                                            if let Some(player) = runtime.player_for_character(character_id) {
+                                                let entries = world.arena_toplist_entries();
+                                                let lines = ugaris_core::item_driver::arena_toplist_lines(
+                                                    &entries,
+                                                    player.arena_score(),
+                                                    player.arena_wins(),
+                                                    player.arena_losses(),
+                                                    player.arena_fights(),
+                                                );
+                                                for line in lines {
+                                                    feedback.push((character_id, line));
+                                                }
+                                            }
                                             executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ZombieShrine { item_id, character_id, shrine_type } => {
@@ -5971,6 +5986,25 @@ async fn main() -> anyhow::Result<()> {
                         clan_economy_events_applied,
                         tick = world.tick.0,
                         "applied clan relation/treasury economy events"
+                    );
+                }
+                // C `master_driver`: the arena tournament master NPC
+                // (`src/system/arena.c`) - pairs registered contenders,
+                // watches the fight, and (via `apply_arena_master_events`
+                // below) scores the result.
+                world.process_arena_master_actions(config.area_id, |character_id| {
+                    runtime
+                        .player_for_character(character_id)
+                        .map(|player| player.arena_score())
+                        .unwrap_or(ARENA_PPD_NEWCOMER_SCORE)
+                });
+                let arena_master_events_applied =
+                    apply_arena_master_events(&mut world, &mut runtime, current_unix_time());
+                if arena_master_events_applied != 0 {
+                    info!(
+                        arena_master_events_applied,
+                        tick = world.tick.0,
+                        "applied arena tournament fight-scoring events"
                     );
                 }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper

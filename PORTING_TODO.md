@@ -5079,17 +5079,24 @@ Unlocks every quest NPC. Do these before any P4 area work.
 - [~] **Arena rankings (`src/system/arena.c`)** - toplist formatter is
   ported but rankings are never stored. Port `DRD_ARENA_PPD`, win/loss
   recording on arena kills, and the ranking table persistence. REMAINING:
-  the entire tournament NPC state machine that triggers an arena kill in
-  the first place (`master_driver`/`fighter_driver`, contender pairing,
-  arena-box-entry/fight-timeout detection, `CDR_ARENAMASTER`/
-  `CDR_ARENAFIGHTER`, `arena.c:222-1039` - no Rust equivalent exists),
-  the server-wide `struct toplist`/`update_toplist` 100-entry ranking
-  table and its file/blob persistence (`arena.c:226-234,375-430,
-  734-786` - needs an architectural decision, since `ugaris-db` has no
-  generic "storage blob" concept yet), and wiring `arena_toplist_lines`/
-  `toplist_driver` (`crates/ugaris-core/src/item_driver/arena.rs`) to
-  real per-character/ranking-table data (`main.rs`'s `ArenaToplist`
-  handler still emits nothing, mirroring C's `!tops`).
+  `master_driver` (`CDR_ARENAMASTER`, contender pairing/box-entry/fight-
+  timeout detection/scoring) was ported and wired into the live tick loop
+  in iteration 130 (see Progress Log) - `fighter_driver`
+  (`CDR_ARENAFIGHTER`, the autonomous practice-bot that auto-registers/
+  enters/fights) and `manager_driver` (`CDR_ARENAMANAGER`, the paid
+  arena-rental `rent`/`invite:` system) are still unported, both separate
+  NPC state machines of their own (`arena.c:790-1039`); without
+  `fighter_driver`, no bot ever actually registers for a tournament, so
+  `master_driver`'s pairing logic today only fires between real players
+  who both say "register" - matching C's own real-player path exactly,
+  just without the AI opponent. The server-wide `struct toplist`/
+  `update_toplist` 100-entry ranking table is ported and wired
+  (in-memory only, no DB/file persistence - `ugaris-db` still has no
+  generic "storage blob" concept, so this resets on restart, same gap as
+  `MilitaryMasterStorageRegistry`) and `arena_toplist_lines`/
+  `toplist_driver` (`crates/ugaris-core/src/item_driver/arena.rs`) now
+  render real per-character/ranking-table data instead of emitting
+  nothing.
   Progress Log: ported the first self-contained slice - the `arena_ppd`
   per-character data model + pure win/loss/score math, with zero NPC/
   networking surface: `crates/ugaris-core/src/player.rs` gained
@@ -5119,6 +5126,58 @@ Unlocks every quest NPC. Do these before any P4 area work.
   green, zero failures), `cargo build -p ugaris-server` clean with zero
   warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
   panics. No runtime/NPC/networking wiring yet - see REMAINING above.
+  - 2026-07-05 (iteration 130): ported `master_driver` (`arena.c:600-788`),
+    the arena tournament master NPC, end-to-end: `CDR_ARENAMASTER`=48
+    (plus the still-unported `CDR_ARENAFIGHTER`=49/`CDR_ARENAMANAGER`=50
+    constants for future slices) in `character_driver.rs`, a new
+    `ArenaMasterDriverData`/`ArenaContender` driver-state pair (merging
+    C's `ID`/`cn` contender fields into one `CharacterId`, same
+    simplification as `TraderDriverData::c1_id`), `ARENA_QA` (the
+    driver's shared `qa[]` table, register/enter/leave/rent codes 3/4/5/6
+    plus the dead 2/6), and the full tournament state machine in the new
+    `crates/ugaris-core/src/world/arena.rs`: `add_contender` (`register`),
+    `find_contender` (`MS_PAIR` pairing search - minimum `abs(score
+    diff)*100 - wait time` across all registered pairs), `check_inside`
+    (`MS_IN` - both-fighters-in-the-box gate, always advancing to
+    `MS_FIGHT` once the 30s timeout expires regardless), `check_fight`
+    (`MS_FIGHT` - box-position/timeout win/loss/draw detection),
+    `empty_arena` (post-fight kick-out - faithfully reproduces a real C
+    quirk where `teleport_char_driver`'s target is the master NPC's own
+    occupied tile, so this legitimately no-ops today with a single
+    master), and the `enter`/`leave` text commands plus the `NT_GIVE`
+    give-back-item handler (unconditional destroy, same simplification as
+    `world/bank.rs`/`world/clanmaster.rs`). Scoring a completed fight
+    needs `PlayerRuntime` (owned by `ugaris-server`), so `check_fight`
+    queues `ArenaMasterEvent::FightScored` instead of mutating PPD
+    directly - refactored `PlayerRuntime::record_arena_fight_result` into
+    two new pub halves, `apply_arena_win`/`apply_arena_loss` (each only
+    needs the *opponent's* pre-fight score, avoiding two simultaneous
+    `&mut PlayerRuntime` borrows from the same `ServerRuntime::players`
+    map), applied by a new `crates/ugaris-server/src/
+    world_events.rs::apply_arena_master_events` that also folds the
+    resulting scores into `World::arena_update_toplist` (a faithful
+    `update_toplist` port: dedup/stale-eviction/slot-98-99-insert/
+    descending sort, `crates/ugaris-core/src/world/arena.rs`) - wired into
+    `main.rs`'s tick loop right after the clan economy tick, with a new
+    `arena_score_of` closure parameter on `process_arena_master_actions`
+    (mirroring the RNG-closure-injection pattern) so `add_contender` can
+    read a registrant's live arena score without `World` needing
+    `PlayerRuntime` access itself. Also wired `main.rs`'s `ArenaToplist`
+    item-driver outcome (previously emitted nothing, "mirroring C's
+    `!tops`") to real `arena_toplist_lines` output using
+    `World::arena_toplist_entries`. 38 new tests in `crates/ugaris-core/
+    src/world/tests/arena.rs` (register add/duplicate/full, pairing
+    selection, box-entry timing incl. the "advances after timeout even
+    unentered" quirk, fight win/loss/draw/timeout, enter/leave teleports,
+    give-message once-per-batch behavior, toplist dedup/eviction/sort)
+    plus 1 in `player.rs` (`apply_arena_win`/`apply_arena_loss` proving
+    the split-call pattern matches `record_arena_fight_result` exactly).
+    `cargo fmt --all`, `cargo test --workspace` (1748 ugaris-core + 55 db
+    + 3 net + 40 protocol + 580 server, all green, zero failures), `cargo
+    build -p ugaris-server`/workspace clean with zero warnings, 12s
+    boot-smoke confirmed "entering Rust game loop" with no panics. Not
+    ported this slice, see REMAINING above: `fighter_driver`/
+    `manager_driver`, and DB/file persistence for the ranking table.
 
 - [~] **Weather driver (`src/module/weather/weather.c`)** - server-side
   state machine exists in `crates/ugaris-server/src/weather.rs` (admin

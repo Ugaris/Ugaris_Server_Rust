@@ -3,6 +3,7 @@ use super::*;
 mod aclerk;
 mod actions;
 mod area_mech;
+mod arena;
 mod assembly;
 mod bank;
 mod character_values;

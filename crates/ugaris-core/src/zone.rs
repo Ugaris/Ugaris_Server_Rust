@@ -5,10 +5,10 @@ use thiserror::Error;
 use crate::{
     character_driver::{
         apply_lab2_undead_create_message, apply_simple_baddy_create_message,
-        parse_clanclerk_driver_args, parse_clanmaster_driver_args, CharacterDriverState,
-        GateFightDriverData, GateWelcomeDriverData, JanitorDriverData, TraderDriverData,
-        CDR_CLANCLERK, CDR_CLANMASTER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_JANITOR,
-        CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER, NT_CREATE,
+        parse_clanclerk_driver_args, parse_clanmaster_driver_args, ArenaMasterDriverData,
+        CharacterDriverState, GateFightDriverData, GateWelcomeDriverData, JanitorDriverData,
+        TraderDriverData, CDR_ARENAMASTER, CDR_CLANCLERK, CDR_CLANMASTER, CDR_GATE_FIGHT,
+        CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -483,6 +483,14 @@ impl ZoneLoader {
         if template.driver == CDR_CLANCLERK {
             character.driver_state = Some(CharacterDriverState::Clanclerk(
                 parse_clanclerk_driver_args(&template.args),
+            ));
+        }
+        if template.driver == CDR_ARENAMASTER {
+            // C `master_driver` never parses zone-file args into `struct
+            // master_data` (`set_data` zero-initializes it) - no args to
+            // read here.
+            character.driver_state = Some(CharacterDriverState::ArenaMaster(
+                ArenaMasterDriverData::default(),
             ));
         }
         if template.driver == crate::character_driver::CDR_MILITARY_MASTER {
