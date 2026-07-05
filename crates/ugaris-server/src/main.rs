@@ -1459,6 +1459,9 @@ async fn main() -> anyhow::Result<()> {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));
                                 }
+                                for message in result.message_bytes {
+                                    command_feedback_bytes.push((character_id, message));
+                                }
                                 if result.inventory_changed {
                                     command_inventory_refresh.push(character_id);
                                 }

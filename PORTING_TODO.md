@@ -6923,11 +6923,10 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cmdcmp` entries - verified by grepping `command.c` for `cmdcmp(ptr,
   "top` / `"mirror"`), `setclanjewels` (`command.c:7563`, clan-treasure
   struct + clan log, different storage than `GameSettings`, not part of
-  the just-closed knob family), `reloadloot`/`setlootmod`/`global`
-  (`command.c:8192-8330+`, the loot-table hot-reload + the "dump every
-  setting" admin display command - `set_loot_modifier` itself is already
-  wired to `GameSettings::set_loot_modifier`, only the command handler is
-  missing), and the rest of the ~200 remaining `cmdcmp` entries in
+  the just-closed knob family), `reloadloot`/`setlootmod` done (see
+  iteration 165); `global` (`command.c:8226-8330+`, the "dump every
+  setting" admin display command) still unported, and the rest of the
+  ~200 remaining `cmdcmp` entries in
   `command.c` (mostly `CF_GOD`-gated `ac*` anticheat, `macro*`
   macro-detection, `mil*` military-mission admin, item/skill/tunnel
   editors, `setweather`/`setareaweather`/`clearweather`) not yet
@@ -7232,6 +7231,45 @@ Unlocks every quest NPC. Do these before any P4 area work.
   zero failures), `cargo build -p ugaris-server` / `cargo build
   --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 165): ported `#reloadloot` (`command.c:
+  8192-8200`) and `#setlootmod <name> <value>` (`command.c:8203-8221`),
+  both `CF_GOD`-gated, into `apply_legacy_game_settings_tuning_command`
+  (`commands_admin.rs`), right after the just-closed `setdropprobhigh`
+  slice, matching their source order in `command.c`. `#reloadloot`
+  composes `LootRegistry::clear_tables` with the same `resolve_loot_
+  root`/`load_loot_tables` pair `main.rs`'s startup path already uses (no
+  standalone Rust `loot_reload()` existed - there's nothing else to
+  extend, this *is* the reload path), reporting `world.loot_registry.
+  table_count()` as the "N active" count; C's `n < 0` hard-failure branch
+  has no real Rust equivalent (per-file parse errors are warned-and-
+  skipped, not fatal) so a missing `ugaris_data/loot` root is the closest
+  analogue and reuses the same red/"Loot reload failed" message text.
+  `#setlootmod` parses the first whitespace-delimited token (truncated to
+  63 bytes, matching C's `modname[64]`) plus an `atof`-style trailing
+  value via the pre-existing `legacy_atof_prefix`, validates non-empty
+  name and `value >= 0.0` before calling the already-wired `GameSettings::
+  set_loot_modifier` (a prior iteration's work - only the command handler
+  was missing). Both commands' color-coded success messages
+  (`COL_LIGHT_GREEN`/`COL_LIGHT_RED` + `COL_RESET`, letter-for-letter from
+  `command.c`) needed the `KeyringCommandResult::message_bytes` channel
+  rather than plain `messages`, which required also wiring
+  `apply_admin_character_command`'s `main.rs` call site to forward
+  `result.message_bytes` into `command_feedback_bytes` (mirroring the
+  neighboring `apply_achievement_command` call site) - no other admin
+  command had needed colored output before this. Added both new verbs to
+  the non-GOD exclusion `matches!` list. 2 new tests in
+  `tests/commands_admin.rs`: `#setlootmod` success/negative-value/empty-
+  usage/non-god-gate coverage (byte-exact color message assertion), and
+  `#reloadloot` seeding a sentinel table id via `LootRegistry::load_str`
+  that cannot exist in the real on-disk `ugaris_data/loot` fixtures, then
+  asserting it is gone after reload (kept the message assertion tolerant
+  of either the success or the "root not found" text so the test doesn't
+  depend on the sandbox having the data symlink). `cargo fmt --all`,
+  `cargo test --workspace` (1985 ugaris-core + 55 db + 3 net + 40
+  protocol + 682 server [+2], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

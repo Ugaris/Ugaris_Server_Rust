@@ -2222,6 +2222,111 @@ fn game_settings_tuning_commands_are_god_only_and_resolve_ambiguous_abbreviation
 }
 
 #[test]
+fn god_setlootmod_command_validates_and_stores_modifier() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setlootmod rare_golem_chance 2.5",
+        1,
+    )
+    .expect("god setlootmod should be recognized");
+    assert_eq!(world.settings.get_loot_modifier("rare_golem_chance"), 2.5);
+    let mut expected = COL_LIGHT_GREEN.to_vec();
+    expected.extend_from_slice(b"Loot modifier");
+    expected.extend_from_slice(COL_RESET);
+    expected.extend_from_slice(b" rare_golem_chance = 2.500");
+    assert_eq!(result.message_bytes, vec![expected]);
+
+    // Negative values are rejected without touching the stored modifier
+    // (C: `modval < 0.0` guard before `loot_set_modifier` is called).
+    let invalid = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/setlootmod rare_golem_chance -1",
+        1,
+    )
+    .expect("invalid setlootmod should still be handled");
+    assert_eq!(world.settings.get_loot_modifier("rare_golem_chance"), 2.5);
+    assert_eq!(invalid.messages, vec!["Usage: #setlootmod <name> <value>"]);
+
+    // Missing name/value is rejected the same way (C: `!modname[0]` guard).
+    let missing = apply_admin_character_command(&mut world, &mut runtime, god_id, "/setlootmod", 1)
+        .expect("bare setlootmod should still be handled");
+    assert_eq!(missing.messages, vec!["Usage: #setlootmod <name> <value>"]);
+
+    // Non-god callers are gated out entirely, same as the other set*
+    // knobs.
+    let mut player = login_character(CharacterId(8), &login_block("Player"), 1, 11, 10);
+    player.flags.remove(CharacterFlags::GOD);
+    world.add_character(player);
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(8),
+        "/setlootmod foo 1.0",
+        1,
+    )
+    .is_none());
+}
+
+#[test]
+fn god_reloadloot_command_clears_and_rescans_from_disk() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    // Seed the registry with a sentinel table id that cannot exist in the
+    // real on-disk loot data, so a successful clear+rescan is observable
+    // regardless of the real `ugaris_data/loot` directory's contents.
+    world.loot_registry.load_str(
+        r#"{"id":"__test_reloadloot_sentinel__","groups":[{"entries":[{"nothing":true}]}]}"#,
+    );
+    assert!(world
+        .loot_registry
+        .find("__test_reloadloot_sentinel__")
+        .is_some());
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/reloadloot", 1)
+        .expect("god reloadloot should be recognized");
+    assert!(world
+        .loot_registry
+        .find("__test_reloadloot_sentinel__")
+        .is_none());
+    assert_eq!(result.message_bytes.len(), 1);
+    let text = String::from_utf8_lossy(&result.message_bytes[0]).into_owned();
+    let n = world.loot_registry.table_count();
+    assert!(
+        text.ends_with(&format!(" {n} active")) || text.contains("Loot reload failed"),
+        "unexpected reloadloot message: {text}"
+    );
+
+    // Non-god callers are gated out entirely.
+    let mut player = login_character(CharacterId(8), &login_block("Player"), 1, 11, 10);
+    player.flags.remove(CharacterFlags::GOD);
+    world.add_character(player);
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(8),
+        "/reloadloot",
+        1,
+    )
+    .is_none());
+}
+
+#[test]
 fn god_listchars_reports_active_players_and_npcs_like_c() {
     let mut world = World::default();
     let god_id = CharacterId(7);

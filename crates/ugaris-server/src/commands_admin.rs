@@ -1585,6 +1585,61 @@ fn apply_legacy_game_settings_tuning_command(
     ) {
         return Some(r);
     }
+    // command.c:8192 - `loot_reload()` clears the registry and rescans
+    // `LOOT_DATA_DIR` (`resolve_loot_root`/`load_loot_tables`, the same
+    // pair the startup path in `main.rs` uses), returning the resulting
+    // table count; C's `n < 0` failure branch has no direct Rust
+    // equivalent (per-file parse failures are warned-and-skipped, not a
+    // hard failure) so a missing loot-data root is the closest analogue.
+    if lower.len() >= 10 && "reloadloot".starts_with(lower) {
+        world.loot_registry.clear_tables();
+        if let Some(loot_root) = resolve_loot_root(None) {
+            load_loot_tables(&mut world.loot_registry, &loot_root);
+            let n = world.loot_registry.table_count();
+            let mut message = COL_LIGHT_GREEN.to_vec();
+            message.extend_from_slice(b"Loot tables reloaded:");
+            message.extend_from_slice(COL_RESET);
+            message.extend_from_slice(format!(" {n} active").as_bytes());
+            return Some(KeyringCommandResult {
+                message_bytes: vec![message],
+                ..Default::default()
+            });
+        }
+        let mut message = COL_LIGHT_RED.to_vec();
+        message.extend_from_slice("Loot reload failed — check server log.".as_bytes());
+        message.extend_from_slice(COL_RESET);
+        return Some(KeyringCommandResult {
+            message_bytes: vec![message],
+            ..Default::default()
+        });
+    }
+    // command.c:8203 - `#setlootmod <name> <value>`: `name` is the first
+    // whitespace-delimited token (up to 63 bytes, C `modname[64]`), value
+    // is `atof(ptr)` on whatever follows after skipping whitespace. C
+    // rejects an empty name or a negative value with a usage message
+    // without touching `loot_set_modifier` at all (the function itself
+    // has no range check - see `GameSettings::set_loot_modifier`).
+    if lower.len() >= 10 && "setlootmod".starts_with(lower) {
+        let ptr = rest.trim_start();
+        let (raw_name, remainder) = ptr.split_once(char::is_whitespace).unwrap_or((ptr, ""));
+        let modname: String = raw_name.chars().take(63).collect();
+        let modval = legacy_atof_prefix(remainder.trim_start());
+        if modname.is_empty() || modval < 0.0 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #setlootmod <name> <value>".to_string()],
+                ..Default::default()
+            });
+        }
+        world.settings.set_loot_modifier(&modname, modval);
+        let mut message = COL_LIGHT_GREEN.to_vec();
+        message.extend_from_slice(b"Loot modifier");
+        message.extend_from_slice(COL_RESET);
+        message.extend_from_slice(format!(" {modname} = {modval:.3}").as_bytes());
+        return Some(KeyringCommandResult {
+            message_bytes: vec![message],
+            ..Default::default()
+        });
+    }
 
     None
 }
@@ -1693,6 +1748,8 @@ pub(crate) fn apply_admin_character_command(
             | "setdropproblow"
             | "setdropprobmid"
             | "setdropprobhigh"
+            | "reloadloot"
+            | "setlootmod"
     ) {
         return None;
     }

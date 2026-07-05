@@ -6960,7 +6960,7 @@ startup log line unchanged.
   several commands: `i32`-knob success/invalid-range coverage
   (`setsplots`, `setdungeontime`'s tick/minute math, `setmaxjewelcount`,
   `setdropproblow`), `f64`/`f32`-knob success/invalid-range coverage
-  (`settunnelexpdivider`, `setexpsolve`, `setclanreflection`,
+  (  `settunnelexpdivider`, `setexpsolve`, `setclanreflection`,
   `setraredropmultiplier`), the `setspecialdropmult` truncating-`int`-
   assignment quirk, `setjaillocation`/`setastonlocation`'s triple-int
   parse and invalid-coordinate rejection, and a dedicated god-only/
@@ -6972,3 +6972,48 @@ startup log line unchanged.
   build -p ugaris-server`/`cargo build --workspace` clean with zero
   warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
   panic.
+
+- Iteration 165 ported the two remaining loot-admin commands the
+  iteration-164 slice had explicitly left unwired: `#reloadloot`
+  (`src/system/command.c:8192-8200`) and `#setlootmod <name> <value>`
+  (`command.c:8203-8221`), both `CF_GOD`-gated, added to
+  `apply_legacy_game_settings_tuning_command`
+  (`crates/ugaris-server/src/commands_admin.rs`) right after the
+  `setdropprobhigh` block, matching `command.c`'s own source order.
+  `#reloadloot` composes `LootRegistry::clear_tables` with the same
+  `resolve_loot_root`/`load_loot_tables` pair `main.rs`'s startup path
+  already uses (no separate Rust `loot_reload()` existed to extend - this
+  command handler *is* the reload path), reporting `world.loot_registry.
+  table_count()` as the "N active" count; C's `n < 0` hard-failure branch
+  has no direct Rust equivalent (per-file parse errors are warned-and-
+  skipped, not fatal), so a missing `ugaris_data/loot` root stands in as
+  the closest analogue, reusing the same "Loot reload failed" message
+  text. `#setlootmod` parses the first whitespace-delimited token
+  (truncated to 63 bytes, matching C's `modname[64]`) plus a trailing
+  `atof`-style value via the pre-existing `legacy_atof_prefix`, validates
+  non-empty name and `value >= 0.0` before calling the already-wired
+  `GameSettings::set_loot_modifier` (wired by an earlier iteration - only
+  the command handler was missing). Both commands' color-coded success
+  messages (`COL_LIGHT_GREEN`/`COL_LIGHT_RED` + `COL_RESET`, transcribed
+  letter-for-letter from `command.c`) needed the
+  `KeyringCommandResult::message_bytes` channel instead of plain
+  `messages`, which required also wiring `apply_admin_character_command`'s
+  `main.rs` call site to forward `result.message_bytes` into
+  `command_feedback_bytes` (mirroring the neighboring
+  `apply_achievement_command` call site) - no other admin command had
+  needed colored output before this. Added both new verbs to the non-GOD
+  exclusion `matches!` list. 2 new tests in
+  `crates/ugaris-server/src/tests/commands_admin.rs`: `#setlootmod`
+  success/negative-value/empty-usage/non-god-gate coverage with a
+  byte-exact color message assertion, and `#reloadloot` seeding a
+  sentinel table id via `LootRegistry::load_str` that cannot exist in the
+  real on-disk `ugaris_data/loot` fixtures, then asserting it is gone
+  after reload (the message assertion tolerates either the success or
+  the "root not found" text so the test doesn't depend on the sandbox
+  having the data symlink). `setclanjewels`/`global`/
+  `setweather`/`setareaweather`/`clearweather` remain unwired (tracked in
+  the P3 task note). `cargo fmt --all`, `cargo test --workspace` (1985
+  ugaris-core + 55 db + 3 net + 40 protocol + 682 server [+2], all green,
+  zero failures), `cargo build -p ugaris-server`/`cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic.
