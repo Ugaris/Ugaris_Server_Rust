@@ -319,6 +319,7 @@ pub struct World {
     pending_military_advisor_events: Vec<MilitaryAdvisorEvent>,
     pending_arena_master_events: Vec<ArenaMasterEvent>,
     pending_dungeon_raid_builds: Vec<DungeonRaidBuildRequest>,
+    pending_dungeon_jewel_steals: Vec<DungeonJewelStealEvent>,
 }
 
 impl Default for Tick {

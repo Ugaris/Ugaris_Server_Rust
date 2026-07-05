@@ -6007,6 +6007,26 @@ async fn main() -> anyhow::Result<()> {
                         "applied dungeon-raid catacomb build events"
                     );
                 }
+                // C `dungeondoor`'s `first_solve` jewel-steal clan-log
+                // writes (`area/13/dungeon.c:1855-1891` via `clan.c:1343-
+                // 1372`'s `'J'` chat-channel handler) - the economy
+                // mutation/messages/notify already happened synchronously
+                // in `World::resolve_dungeon_door_first_solve` whenever a
+                // catacomb door was solved this tick; only the DB-backed
+                // clan-log entries remain queued.
+                let dungeon_jewel_steal_events_applied = apply_dungeon_jewel_steal_events(
+                    &mut world,
+                    &clan_log_repository,
+                    current_unix_time(),
+                )
+                .await;
+                if dungeon_jewel_steal_events_applied != 0 {
+                    info!(
+                        dungeon_jewel_steal_events_applied,
+                        tick = world.tick.0,
+                        "applied dungeon catacomb jewel-steal clan-log events"
+                    );
+                }
                 // C `dungeonfighter`/`dungeon_potion`: the `CDR_DUNGEONFIGHTER`
                 // warrior/mage/seyan raid-guard NPCs' potion-drinking driver
                 // (`src/area/13/dungeon.c:1956-2161`).

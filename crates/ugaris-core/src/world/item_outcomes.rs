@@ -774,7 +774,16 @@ impl World {
                 }
                 outcome
             }
-            ItemDriverOutcome::DungeonDoorSolved { character_id, .. } => {
+            ItemDriverOutcome::DungeonDoorSolved {
+                character_id,
+                clan_number,
+                catacomb,
+                first_solve,
+                ..
+            } => {
+                if first_solve {
+                    self.resolve_dungeon_door_first_solve(character_id, clan_number, catacomb);
+                }
                 if [(245, 250), (240, 250), (235, 250), (230, 250)]
                     .into_iter()
                     .any(|(x, y)| self.teleport_character(character_id, x, y, false))

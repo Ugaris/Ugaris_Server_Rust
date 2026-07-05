@@ -190,10 +190,120 @@ pub struct DungeonRaidBuildRequest {
     pub key: i32,
 }
 
+/// A resolved (jewels-actually-changed-hands) catacomb raid, queued by
+/// [`World::resolve_dungeon_door_first_solve`] for `ugaris-server` to
+/// write the two `add_clanlog` entries (`clan.c:1368-1371`) that need a
+/// DB handle `World` doesn't have - same pure-decision/async-I/O split as
+/// [`DungeonRaidBuildRequest`]. Only queued when `stolen > 0` (C's own
+/// `add_clanlog` calls live inside the `if (cnt > 0)` block).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonJewelStealEvent {
+    /// The winning raider (C's own `cID`/`ch[cn].name` log-message
+    /// operand).
+    pub player_id: CharacterId,
+    /// The raided/defending clan (`cnr`).
+    pub defender_clan: u16,
+    /// The raider's own clan (`onr`).
+    pub attacker_clan: u16,
+    /// Jewels moved from the defender's to the attacker's treasury.
+    pub stolen: i32,
+}
+
 impl World {
     /// Drains every [`DungeonRaidBuildRequest`] queued this tick.
     pub fn drain_pending_dungeon_raid_builds(&mut self) -> Vec<DungeonRaidBuildRequest> {
         std::mem::take(&mut self.pending_dungeon_raid_builds)
+    }
+
+    /// Drains every [`DungeonJewelStealEvent`] queued this tick.
+    pub fn drain_pending_dungeon_jewel_steals(&mut self) -> Vec<DungeonJewelStealEvent> {
+        std::mem::take(&mut self.pending_dungeon_jewel_steals)
+    }
+
+    /// C `dungeondoor`'s `first_solve` block (`area/13/dungeon.c:1855-
+    /// 1891`): the jewel-steal economy mutation (via `clan.c:1343-1372`'s
+    /// `'J'` chat-channel handler, applied directly here since this is a
+    /// single-process-per-area server with no master/slave IPC split),
+    /// the winner's "You won..." feedback, the catacomb-collapsing
+    /// broadcast to every player still standing in the slot, and the
+    /// `NT_NPC`/`NTID_DUNGEON` notify to every live `CDR_DUNGEONMASTER`
+    /// NPC (consumed by [`World::process_dungeonmaster_messages`], which
+    /// resets that slot's tracking fields). `cnr` is the door's own
+    /// stored defending clan number; `nr` is the 0-based catacomb slot
+    /// (both already computed by `item_driver::area13_dungeon::
+    /// dungeon_door_driver`). Called once per catacomb, only when
+    /// `first_solve` is true.
+    ///
+    /// C's two early-return guards ("You're not supposed to be here." for
+    /// a non-clan-member winner; "You can't steal jewels while your own
+    /// clan has less than 12 of them.") skip the broadcast/notify loop
+    /// entirely (`dungeon.c:1857-1864` `return`s before reaching the
+    /// `for` loop at 1881); both are unreachable in practice since only
+    /// clan members can be inside a catacomb raid in the first place, but
+    /// are preserved verbatim for parity.
+    pub fn resolve_dungeon_door_first_solve(
+        &mut self,
+        character_id: CharacterId,
+        cnr: u32,
+        nr: u8,
+    ) {
+        let cnr = cnr as u16;
+        let onr = {
+            let Some(character) = self.characters.get_mut(&character_id) else {
+                return;
+            };
+            self.clan_registry.get_char_clan(character)
+        };
+        let Some(onr) = onr else {
+            self.queue_system_text(character_id, "You're not supposed to be here.");
+            return;
+        };
+        if self.clan_registry.jewel_count(onr) < 12 {
+            self.queue_system_text(
+                character_id,
+                "You can't steal jewels while your own clan has less than 12 of them.",
+            );
+            return;
+        }
+
+        let cnt = (self.clan_registry.jewel_count(cnr) - 11).min(3);
+        if cnt > 0 {
+            self.queue_system_text(
+                character_id,
+                format!("You won. You stole {cnt} jewels for your clan's storage."),
+            );
+            self.clan_registry.dungeon_jewel_steal(cnr, onr, cnt);
+            self.pending_dungeon_jewel_steals
+                .push(DungeonJewelStealEvent {
+                    player_id: character_id,
+                    defender_clan: cnr,
+                    attacker_clan: onr,
+                    stolen: cnt,
+                });
+        } else {
+            self.queue_system_text(
+                character_id,
+                "You won. Unfortunately there's nothing left to steal.",
+            );
+        }
+
+        let slot = nr as usize;
+        for id in self.characters_in_dungeon_slot(slot) {
+            self.queue_system_text(id, "This catacomb has been solved and will collapse.");
+        }
+
+        let dungeonmaster_ids: Vec<CharacterId> = self
+            .characters
+            .values()
+            .filter(|character| character.driver == CDR_DUNGEONMASTER)
+            .map(|character| character.id)
+            .collect();
+        let ticker = self.tick.0 as i32;
+        for dungeonmaster_id in dungeonmaster_ids {
+            if let Some(dungeonmaster) = self.characters.get_mut(&dungeonmaster_id) {
+                dungeonmaster.push_driver_message(NT_NPC, NTID_DUNGEON, nr as i32, ticker);
+            }
+        }
     }
     /// C `create_dungeon`'s validation and catacomb-slot-selection logic
     /// (`dungeon.c:1377-1500`), minus taking the fee, building the maze,

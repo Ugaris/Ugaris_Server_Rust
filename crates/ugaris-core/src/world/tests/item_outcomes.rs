@@ -1136,3 +1136,88 @@ fn lollipop_lick_grants_exp_through_give_exp_not_a_raw_mutation() {
     assert_eq!(owner.exp, 12);
     assert!(owner.flags.contains(CharacterFlags::UPDATE));
 }
+
+// C `dungeondoor` (`area/13/dungeon.c:1807-1897`): confirms
+// `apply_item_driver_outcome` wires `first_solve` into
+// `World::resolve_dungeon_door_first_solve` (see `world::tests::
+// dungeon_master` for that function's own detailed behavior coverage)
+// before running the existing safe-zone teleport chain.
+#[test]
+fn dungeon_door_solved_first_solve_steals_jewels_before_teleporting() {
+    let mut world = World::default();
+    let attacker_clan = world.clan_registry.found_clan("Attacker", 0).unwrap();
+    let defender_clan = world.clan_registry.found_clan("Defender", 0).unwrap();
+    for _ in 0..14 {
+        world.clan_registry.add_jewel(defender_clan).unwrap();
+    }
+    for _ in 0..12 {
+        world.clan_registry.add_jewel(attacker_clan).unwrap();
+    }
+
+    let mut winner = character(1);
+    winner.flags.insert(CharacterFlags::PLAYER);
+    winner.clan = attacker_clan;
+    winner.clan_serial = world.clan_registry.serial(attacker_clan);
+    assert!(world.spawn_character(winner, 10, 10));
+
+    let outcome = world.apply_item_driver_outcome(
+        ItemDriverOutcome::DungeonDoorSolved {
+            item_id: ItemId(9),
+            character_id: CharacterId(1),
+            clan_number: u32::from(defender_clan),
+            catacomb: 0,
+            first_solve: true,
+        },
+        0,
+    );
+
+    assert!(matches!(
+        outcome,
+        ItemDriverOutcome::DungeonDoorSolved { .. }
+    ));
+    // Stole `min(14-11,3) = 3` jewels.
+    assert_eq!(world.clan_registry.jewel_count(attacker_clan), 15);
+    assert_eq!(
+        world
+            .clan_registry
+            .identity(defender_clan)
+            .unwrap()
+            .economy
+            .training_score,
+        150
+    );
+    // The existing safe-zone teleport chain still ran afterwards.
+    let winner = &world.characters[&CharacterId(1)];
+    assert_eq!((winner.x, winner.y), (245, 250));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| text.message.starts_with("You won")));
+}
+
+#[test]
+fn dungeon_door_solved_skips_first_solve_side_effects_when_already_solved() {
+    let mut world = World::default();
+    let mut winner = character(1);
+    winner.flags.insert(CharacterFlags::PLAYER);
+    assert!(world.spawn_character(winner, 10, 10));
+
+    let outcome = world.apply_item_driver_outcome(
+        ItemDriverOutcome::DungeonDoorSolved {
+            item_id: ItemId(9),
+            character_id: CharacterId(1),
+            clan_number: 0,
+            catacomb: 0,
+            first_solve: false,
+        },
+        0,
+    );
+
+    assert!(matches!(
+        outcome,
+        ItemDriverOutcome::DungeonDoorSolved { .. }
+    ));
+    // No "You won"/catacomb-collapse feedback - only the teleport chain
+    // ran, exactly matching the pre-existing (non-first-solve) behavior.
+    assert!(world.drain_pending_system_texts().is_empty());
+    let winner = &world.characters[&CharacterId(1)];
+    assert_eq!((winner.x, winner.y), (245, 250));
+}

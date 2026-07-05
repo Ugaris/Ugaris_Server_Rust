@@ -1226,6 +1226,35 @@ impl ClanRegistry {
         self.dirty = true;
     }
 
+    /// C `dungeondoor`'s `first_solve` jewel-steal economy mutation
+    /// (`area/13/dungeon.c:1855-1891`, applied via the `server_chat(1028,
+    /// ...)` inter-process message and resolved in `clan.c:1343-1372`'s
+    /// `'J'` case of `clan_dungeon_chat`). Unlike [`Self::swap_jewels`]
+    /// (which only charges the loser debt and is used for the generic
+    /// `clan_can_attack_*` combat path), this is the catacomb-specific
+    /// formula: the defender (`cnr`) gets `training_score += 150` and
+    /// `treasure.debt += cnt * 1000 + 1000` (note the extra flat `1000`,
+    /// absent from `swap_jewels`'s plain `cnt * 1000`); the attacker
+    /// (`onr`) gets `treasure.jewels += cnt` directly, uncapped (`cnt` was
+    /// already derived from the defender's own jewel count by the
+    /// caller, so it can never exceed what the defender could lose). A
+    /// no-op for either clan number if it does not exist, or if `cnt <=
+    /// 0` (mirrors C's own `if (cnt > 0)` guard around this whole
+    /// mutation).
+    pub fn dungeon_jewel_steal(&mut self, cnr: u16, onr: u16, cnt: i32) {
+        if cnt <= 0 {
+            return;
+        }
+        if let Some(identity) = self.identity_mut(cnr) {
+            identity.economy.training_score += 150;
+            identity.economy.treasure.debt += cnt * 1000 + 1000;
+        }
+        if let Some(identity) = self.identity_mut(onr) {
+            identity.economy.treasure.jewels += cnt;
+        }
+        self.dirty = true;
+    }
+
     /// C `get_clan_bonus` (`clan.c:518-520`). Out-of-range clan numbers or
     /// bonus slots read as `0`.
     pub fn bonus_level(&self, cnr: u16, nr: usize) -> i32 {
@@ -2807,6 +2836,52 @@ mod tests {
         registry.swap_jewels(a, b, 10);
         assert_eq!(registry.identity(a).unwrap().economy.treasure.debt, 2000);
         assert_eq!(registry.jewel_count(b), 2);
+    }
+
+    #[test]
+    fn dungeon_jewel_steal_applies_defender_debt_and_training_and_attacker_jewels() {
+        let mut registry = ClanRegistry::new();
+        let cnr = registry.found_clan("Defender", 0).unwrap();
+        let onr = registry.found_clan("Attacker", 0).unwrap();
+
+        registry.dungeon_jewel_steal(cnr, onr, 3);
+
+        // C: `clan[cnr].dungeon.training_score += 150;
+        // clan[cnr].treasure.debt += cnt*1000+1000;
+        // clan[onr].treasure.jewels += cnt;` (`clan.c:1360-1365`) - note
+        // the extra flat `+1000` debt term that `swap_jewels` doesn't have.
+        assert_eq!(registry.identity(cnr).unwrap().economy.training_score, 150);
+        assert_eq!(registry.identity(cnr).unwrap().economy.treasure.debt, 4000);
+        assert_eq!(registry.jewel_count(onr), 3);
+        // The defender's own jewel count is untouched (jewels are never
+        // physically removed from the loser, same as `swap_jewels`).
+        assert_eq!(registry.jewel_count(cnr), 0);
+    }
+
+    #[test]
+    fn dungeon_jewel_steal_is_a_no_op_when_nothing_was_stolen() {
+        let mut registry = ClanRegistry::new();
+        let cnr = registry.found_clan("Defender", 0).unwrap();
+        let onr = registry.found_clan("Attacker", 0).unwrap();
+
+        registry.dungeon_jewel_steal(cnr, onr, 0);
+        registry.dungeon_jewel_steal(cnr, onr, -1);
+
+        assert_eq!(registry.identity(cnr).unwrap().economy.training_score, 0);
+        assert_eq!(registry.identity(cnr).unwrap().economy.treasure.debt, 0);
+        assert_eq!(registry.jewel_count(onr), 0);
+    }
+
+    #[test]
+    fn dungeon_jewel_steal_ignores_unknown_clan_numbers() {
+        let mut registry = ClanRegistry::new();
+        let cnr = registry.found_clan("Defender", 0).unwrap();
+        // Attacker clan number 9 doesn't exist: the defender side still
+        // mutates (matches C's per-field writes with no atomic rollback),
+        // the nonexistent attacker side is simply dropped.
+        registry.dungeon_jewel_steal(cnr, 9, 2);
+        assert_eq!(registry.identity(cnr).unwrap().economy.training_score, 150);
+        assert_eq!(registry.jewel_count(9), 0);
     }
 
     #[test]

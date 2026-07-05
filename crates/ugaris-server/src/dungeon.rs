@@ -981,3 +981,69 @@ pub(crate) async fn apply_dungeonmaster_events(
     }
     applied
 }
+
+/// Drains every queued [`ugaris_core::world::DungeonJewelStealEvent`]
+/// (from `World::resolve_dungeon_door_first_solve`, which has already
+/// applied the jewel/debt/training-score economy mutation and the
+/// winner/broadcast/notify messages) and writes the two `add_clanlog`
+/// entries C's `clan_dungeon_chat`'s `'J'` case appends
+/// (`clan.c:1368-1371`, one per clan, prio `5`).
+pub(crate) async fn apply_dungeon_jewel_steal_events(
+    world: &mut World,
+    clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    now_unix: i64,
+) -> usize {
+    let mut applied = 0;
+    for event in world.drain_pending_dungeon_jewel_steals() {
+        let Some(player_name) = world
+            .characters
+            .get(&event.player_id)
+            .map(|c| c.name.clone())
+        else {
+            applied += 1;
+            continue;
+        };
+        let defender_name = world
+            .clan_registry
+            .name(event.defender_clan)
+            .unwrap_or("")
+            .to_string();
+        let attacker_name = world
+            .clan_registry
+            .name(event.attacker_clan)
+            .unwrap_or("")
+            .to_string();
+        let defender_serial = world.clan_registry.serial(event.defender_clan);
+        let attacker_serial = world.clan_registry.serial(event.attacker_clan);
+
+        crate::clan_log::write_clan_log_entry(
+            clan_log_repository,
+            event.defender_clan,
+            defender_serial,
+            event.player_id,
+            5,
+            format!(
+                "Clan was raided by {player_name} of {attacker_name} ({}) for {} jewels",
+                event.attacker_clan, event.stolen
+            ),
+            now_unix,
+        )
+        .await;
+        crate::clan_log::write_clan_log_entry(
+            clan_log_repository,
+            event.attacker_clan,
+            attacker_serial,
+            event.player_id,
+            5,
+            format!(
+                "{player_name} raided clan {defender_name} ({}) for {} jewels",
+                event.defender_clan, event.stolen
+            ),
+            now_unix,
+        )
+        .await;
+
+        applied += 1;
+    }
+    applied
+}

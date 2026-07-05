@@ -3298,13 +3298,19 @@ Unlocks every quest NPC. Do these before any P4 area work.
   blobs for both drivers at once, `Character::driver_state` is a
   single-variant slot, so wiring this in is a real architecture change
   (either a second driver-state field on `Character`, or merging the
-  two structs), not a one-line fix - left for a future slice). Also
-  still open: `dungeondoor`'s own `first_solve` jewel-stealing/
-  `NTID_DUNGEON`-notify side effects
-  (`item_driver::area13_dungeon::dungeon_door_driver` already computes
-  `first_solve`/`catacomb` but `world::item_outcomes`'s
-  `DungeonDoorSolved` handler only teleports the winner today - a
-  pre-existing gap, not introduced this iteration). The potion
+  two structs), not a one-line fix - left for a future slice).
+  `dungeondoor`'s own `first_solve` jewel-stealing/`NTID_DUNGEON`-notify
+  side effects (`area/13/dungeon.c:1855-1891` plus `clan.c:1343-1372`'s
+  `'J'` chat-channel handler for the actual economy mutation) were
+  ported in iteration 147 as `ClanRegistry::dungeon_jewel_steal`
+  (`crates/ugaris-core/src/clan.rs`) and
+  `World::resolve_dungeon_door_first_solve`
+  (`crates/ugaris-core/src/world/dungeon_master.rs`), wired into
+  `world::item_outcomes`'s `DungeonDoorSolved` handler and a new
+  `DungeonJewelStealEvent`/`apply_dungeon_jewel_steal_events` clan-log
+  queue (`crates/ugaris-server/src/dungeon.rs`, called from the tick
+  loop right after `apply_dungeonmaster_events`) - see Progress Log. The
+  potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
   reachable slice, not blocked on anything, since the alchemy-potion
@@ -3379,6 +3385,52 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `key`) remain out of scope, unchanged from before.
 
   Progress Log:
+  - 2026-07-05 (iteration 147): ported `dungeondoor`'s `first_solve`
+    block (`area/13/dungeon.c:1855-1891`) - the previously-unwired gap
+    the last two iterations' notes flagged: `world::item_outcomes`'s
+    `DungeonDoorSolved` handler only ran the safe-zone teleport chain,
+    discarding `clan_number`/`catacomb`/`first_solve`. Added
+    `ClanRegistry::dungeon_jewel_steal` (`crates/ugaris-core/src/
+    clan.rs`) implementing the bespoke economy formula from `clan.c:1343-
+    1372`'s `'J'` chat-channel handler (defender `training_score += 150`,
+    `debt += cnt*1000+1000`; attacker `jewels += cnt` - deliberately not
+    `swap_jewels`, which has a different debt formula and no
+    training-score bump) plus 3 unit tests. Added
+    `World::resolve_dungeon_door_first_solve`
+    (`crates/ugaris-core/src/world/dungeon_master.rs`): computes the
+    winner's own clan, the two early-return guards ("You're not supposed
+    to be here."/"...less than 12 of them."), the stolen-jewel count and
+    "You won..." feedback, the catacomb-collapsing broadcast to every
+    player in the slot (reusing the already-ported
+    `characters_in_dungeon_slot`), and the `NT_NPC`/`NTID_DUNGEON`
+    `push_driver_message` to every live `CDR_DUNGEONMASTER` NPC - this
+    finally makes reachable the `NTID_DUNGEON` consumer in
+    `process_dungeonmaster_messages` that was ported in an earlier
+    iteration but never had anything enqueue it. Queues a new
+    `DungeonJewelStealEvent` (only when jewels actually moved, matching
+    C's `if (cnt > 0)` guard around its own `add_clanlog` calls), drained
+    by a new `apply_dungeon_jewel_steal_events` in `crates/ugaris-server/
+    src/dungeon.rs` (same pure-decision/async-I/O split as
+    `DungeonRaidBuildRequest`/`apply_dungeonmaster_events`) writing the
+    two prio-5 clan-log entries, wired into the tick loop in `main.rs`
+    right after `apply_dungeonmaster_events`. 4 new tests in
+    `world::tests::dungeon_master` cover jewel-steal/nothing-left-to-
+    steal/non-clan-member/own-clan-too-poor, and 2 new tests in
+    `world::tests::item_outcomes` confirm the `DungeonDoorSolved` wiring
+    (first_solve true vs. false) without regressing the pre-existing
+    teleport-only behavior. Known remaining gap (documented inline, not
+    fixed this iteration): C's two early-return guards happen *before*
+    `dungeondoor` clears the door's `drdata`/sets the solved flag
+    (`dungeon.c:1855-1879`), so a failed attempt leaves the door
+    re-triggerable; Rust's `dungeon_door_driver` unconditionally clears
+    that state before returning `first_solve: true` regardless of
+    outcome (a pre-existing item-driver-signature limitation, not
+    introduced this iteration, and unreachable in practice since only
+    clan members can be inside a catacomb raid to begin with). `cargo
+    fmt --all`, `cargo test --workspace` (1936 ugaris-core + 55 db + 3
+    net + 40 protocol + 602 server, all green, 0 failures), `cargo build
+    -p ugaris-server` clean with zero warnings, boot-smoke confirmed
+    "entering Rust game loop" with no panic.
   - 2026-07-04: ported the pure relation state machine as a first
     self-contained slice: `crates/ugaris-core/src/clan.rs` -
     `ClanRelation` (`CS_*` enum), `ClanRelations` (per-pair

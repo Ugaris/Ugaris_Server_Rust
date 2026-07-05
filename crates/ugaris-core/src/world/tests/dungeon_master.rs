@@ -1,5 +1,5 @@
 use super::*;
-use crate::character_driver::CDR_DUNGEONMASTER;
+use crate::character_driver::{CDR_DUNGEONMASTER, NTID_DUNGEON};
 use crate::clan::ClanRelation;
 use crate::world::dungeon_master::{DungeonEnterError, DungeonRaidError, DungeonmasterDriverData};
 
@@ -976,4 +976,178 @@ fn tick_destroys_expired_slot_and_resets_tracking_fields() {
     assert_eq!(dat.created_by_clan[0], 0);
     assert_eq!(dat.owner[0], 0);
     assert_eq!(dat.created[0], 0);
+}
+
+// C `dungeondoor`'s `first_solve` block (`area/13/dungeon.c:1855-1891`).
+#[test]
+fn resolve_dungeon_door_first_solve_steals_jewels_and_notifies_slot_and_dungeonmaster() {
+    let mut world = World::default();
+    let attacker_clan = found_clan(&mut world, "Attacker");
+    let defender_clan = found_clan(&mut world, "Defender");
+    give_jewels(&mut world, attacker_clan, 12);
+    give_jewels(&mut world, defender_clan, 14);
+
+    let mut winner = member(1, "Winner", &world, attacker_clan);
+    winner.x = 10;
+    winner.y = 10;
+    assert!(world.spawn_character(winner, 10, 10));
+    let mut bystander = player(2, "Bystander");
+    bystander.x = 20;
+    bystander.y = 20;
+    assert!(world.spawn_character(bystander, 20, 20));
+    assert!(world.spawn_character(dungeonmaster_npc(3), 250, 250));
+    world.tick = Tick(777);
+
+    world.resolve_dungeon_door_first_solve(CharacterId(1), u32::from(defender_clan), 0);
+
+    // `cnt = min(cnt_jewels(cnr)-11, 3) = min(3,3) = 3`.
+    assert_eq!(
+        world
+            .clan_registry
+            .identity(defender_clan)
+            .unwrap()
+            .economy
+            .training_score,
+        150
+    );
+    assert_eq!(
+        world
+            .clan_registry
+            .identity(defender_clan)
+            .unwrap()
+            .economy
+            .treasure
+            .debt,
+        4000
+    );
+    assert_eq!(world.clan_registry.jewel_count(attacker_clan), 15);
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.contains(&WorldSystemText {
+        character_id: CharacterId(1),
+        message: "You won. You stole 3 jewels for your clan's storage.".to_string(),
+    }));
+    assert!(texts.contains(&WorldSystemText {
+        character_id: CharacterId(1),
+        message: "This catacomb has been solved and will collapse.".to_string(),
+    }));
+    assert!(texts.contains(&WorldSystemText {
+        character_id: CharacterId(2),
+        message: "This catacomb has been solved and will collapse.".to_string(),
+    }));
+
+    let dungeonmaster = &world.characters[&CharacterId(3)];
+    assert_eq!(dungeonmaster.driver_messages.len(), 1);
+    assert_eq!(dungeonmaster.driver_messages[0].message_type, NT_NPC);
+    assert_eq!(dungeonmaster.driver_messages[0].dat1, NTID_DUNGEON);
+    assert_eq!(dungeonmaster.driver_messages[0].dat2, 0);
+    assert_eq!(dungeonmaster.driver_messages[0].dat3, 777);
+
+    let events = world.drain_pending_dungeon_jewel_steals();
+    assert_eq!(
+        events,
+        vec![DungeonJewelStealEvent {
+            player_id: CharacterId(1),
+            defender_clan,
+            attacker_clan,
+            stolen: 3,
+        }]
+    );
+}
+
+#[test]
+fn resolve_dungeon_door_first_solve_reports_nothing_left_to_steal_but_still_broadcasts() {
+    let mut world = World::default();
+    let attacker_clan = found_clan(&mut world, "Attacker");
+    let defender_clan = found_clan(&mut world, "Defender");
+    give_jewels(&mut world, attacker_clan, 12);
+    give_jewels(&mut world, defender_clan, 11); // cnt = min(11-11,3) = 0
+
+    let mut winner = member(1, "Winner", &world, attacker_clan);
+    winner.x = 10;
+    winner.y = 10;
+    assert!(world.spawn_character(winner, 10, 10));
+    assert!(world.spawn_character(dungeonmaster_npc(3), 250, 250));
+
+    world.resolve_dungeon_door_first_solve(CharacterId(1), u32::from(defender_clan), 0);
+
+    assert_eq!(
+        world
+            .clan_registry
+            .identity(defender_clan)
+            .unwrap()
+            .economy
+            .training_score,
+        0
+    );
+    assert_eq!(world.clan_registry.jewel_count(attacker_clan), 12);
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.contains(&WorldSystemText {
+        character_id: CharacterId(1),
+        message: "You won. Unfortunately there's nothing left to steal.".to_string(),
+    }));
+    assert!(texts.contains(&WorldSystemText {
+        character_id: CharacterId(1),
+        message: "This catacomb has been solved and will collapse.".to_string(),
+    }));
+    // No jewels moved, so no clan-log event is queued (matches C's
+    // `add_clanlog` calls living inside the `if (cnt > 0)` block only).
+    assert!(world.drain_pending_dungeon_jewel_steals().is_empty());
+    assert_eq!(world.characters[&CharacterId(3)].driver_messages.len(), 1);
+}
+
+#[test]
+fn resolve_dungeon_door_first_solve_rejects_a_non_clan_member_without_broadcast() {
+    let mut world = World::default();
+    let defender_clan = found_clan(&mut world, "Defender");
+    give_jewels(&mut world, defender_clan, 14);
+
+    let mut winner = player(1, "Winner");
+    winner.x = 10;
+    winner.y = 10;
+    assert!(world.spawn_character(winner, 10, 10));
+    assert!(world.spawn_character(dungeonmaster_npc(3), 250, 250));
+
+    world.resolve_dungeon_door_first_solve(CharacterId(1), u32::from(defender_clan), 0);
+
+    assert_eq!(
+        world.drain_pending_system_texts(),
+        vec![WorldSystemText {
+            character_id: CharacterId(1),
+            message: "You're not supposed to be here.".to_string(),
+        }]
+    );
+    assert!(world.drain_pending_dungeon_jewel_steals().is_empty());
+    // C returns before reaching the notify loop (`dungeon.c:1857-1859`).
+    assert!(world.characters[&CharacterId(3)].driver_messages.is_empty());
+}
+
+#[test]
+fn resolve_dungeon_door_first_solve_rejects_own_clan_with_too_few_jewels_without_broadcast() {
+    let mut world = World::default();
+    let attacker_clan = found_clan(&mut world, "Attacker");
+    let defender_clan = found_clan(&mut world, "Defender");
+    give_jewels(&mut world, attacker_clan, 11); // below the 12 threshold
+    give_jewels(&mut world, defender_clan, 14);
+
+    let mut winner = member(1, "Winner", &world, attacker_clan);
+    winner.x = 10;
+    winner.y = 10;
+    assert!(world.spawn_character(winner, 10, 10));
+    assert!(world.spawn_character(dungeonmaster_npc(3), 250, 250));
+
+    world.resolve_dungeon_door_first_solve(CharacterId(1), u32::from(defender_clan), 0);
+
+    assert_eq!(
+        world.drain_pending_system_texts(),
+        vec![WorldSystemText {
+            character_id: CharacterId(1),
+            message: "You can't steal jewels while your own clan has less than 12 of them."
+                .to_string(),
+        }]
+    );
+    assert_eq!(world.clan_registry.jewel_count(defender_clan), 14);
+    assert!(world.drain_pending_dungeon_jewel_steals().is_empty());
+    assert!(world.characters[&CharacterId(3)].driver_messages.is_empty());
 }
