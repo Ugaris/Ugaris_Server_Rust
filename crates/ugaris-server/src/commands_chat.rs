@@ -498,6 +498,42 @@ pub(crate) fn apply_notells_command(
     })
 }
 
+/// C `/thief` (`command.c:8756-8761`), `cmdcmp(ptr, "thief", 3)` so any
+/// prefix from `"thi"` up to the full word matches, case-insensitively, no
+/// permission gate (every player can use it). Toggles `CF_THIEFMODE`
+/// (`ch[cn].flags ^= CF_THIEFMODE`), reports the new state, then calls
+/// `update_char(cn)` - ported here as [`World::update_character`] - since
+/// `CF_THIEFMODE` changes the thief profession's Stealth/Percept bonus
+/// split in `recompute_character_values` (`world/character_values.rs`,
+/// mirroring C's own `update_char` reading `CF_THIEFMODE` at
+/// `create.c` around the profession bonus block).
+pub(crate) fn apply_thief_command(
+    world: &mut World,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 3 || !"thief".starts_with(&lower) {
+        return None;
+    }
+
+    let character = world.characters.get_mut(&character_id)?;
+    character.flags.toggle(CharacterFlags::THIEFMODE);
+    let enabled = character.flags.contains(CharacterFlags::THIEFMODE);
+    world.update_character(character_id);
+    Some(KeyringCommandResult {
+        messages: vec![format!(
+            "Turned thief mode {}.",
+            if enabled { "on" } else { "off" }
+        )],
+        ..Default::default()
+    })
+}
+
 pub(crate) fn chat_command_verb(command: &str) -> (&str, &str) {
     if !command.starts_with('/') && !command.starts_with('#') {
         return ("say", command);

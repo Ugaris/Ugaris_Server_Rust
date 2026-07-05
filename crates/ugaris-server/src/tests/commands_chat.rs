@@ -338,6 +338,35 @@ fn notells_blocks_non_staff_tells_until_timeout_feedback() {
 }
 
 #[test]
+fn thief_command_toggles_thiefmode_flag_with_min_prefix() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    world.add_character(login_character(
+        character_id,
+        &login_block("Alice"),
+        1,
+        10,
+        10,
+    ));
+
+    // Below the C `cmdcmp(ptr, "thief", 3)` minimum prefix length: not
+    // recognized as this command.
+    assert!(apply_thief_command(&mut world, character_id, "/th").is_none());
+
+    let toggle_on = apply_thief_command(&mut world, character_id, "/thi").unwrap();
+    assert_eq!(toggle_on.messages, vec!["Turned thief mode on."]);
+    assert!(world.characters[&character_id]
+        .flags
+        .contains(CharacterFlags::THIEFMODE));
+
+    let toggle_off = apply_thief_command(&mut world, character_id, "/thief").unwrap();
+    assert_eq!(toggle_off.messages, vec!["Turned thief mode off."]);
+    assert!(!world.characters[&character_id]
+        .flags
+        .contains(CharacterFlags::THIEFMODE));
+}
+
+#[test]
 fn channels_command_lists_legacy_channel_table() {
     let result = apply_channels_command("/chan").expect("channels prefix should be recognized");
 

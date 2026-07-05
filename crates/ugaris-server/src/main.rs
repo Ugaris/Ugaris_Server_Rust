@@ -1534,6 +1534,12 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
+                            if let Some(result) = apply_thief_command(&mut world, character_id, &command) {
+                                for message in result.messages {
+                                    command_feedback.push((character_id, message));
+                                }
+                                continue;
+                            }
                             if let Some(result) = apply_channels_command(&command) {
                                 for message in result.messages {
                                     command_feedback.push((character_id, message));

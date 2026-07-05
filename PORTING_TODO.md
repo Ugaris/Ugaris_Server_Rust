@@ -6948,15 +6948,16 @@ Unlocks every quest NPC. Do these before any P4 area work.
   command) done (see iteration 166), and the rest of the ~90 remaining
   `cmdcmp` entries in `command.c` (mostly `CF_GOD`-gated `ac*`
   anticheat, `macro*` macro-detection, plus one-off commands like
-  `/keyring`, `/depotsort`/`/accountdepotsort`, `/swap`, `/steal`,
-  `/thief`, `/logout`, `/complain`, `/kick`, `/punish`, `/shutdown`,
-  `/rename`, `/showppd`/`/showvalues`, `/orbs`/`/tunnels`/
-  `/treasures`/`/demonlords`, various pentagram `setpent*`/`resetpent`
-  admin commands, and clan/tunnel/shrine editors like `/changetunnel`/
-  `/settunnel`/`/cleartunnel`/`/setrd`/`/clearrd`/`/solverd`) not yet
-  cross-referenced (see the Progress Log entries below for what's been
-  checked off so far; a fresh cross-reference pass comparing every
-  `cmdcmp(ptr, "...")` name in `command.c` against
+  `/depotsort` (the character's own `DRD_DEPOT_PPD` depot, a whole
+  unported storage system - not the same as `/accountdepotsort`, which
+  is done), `/swap`, `/steal`, `/logout`, `/complain`, `/kick`,
+  `/punish`, `/shutdown`, `/rename`, `/showppd`/`/showvalues`,
+  `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
+  `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
+  like `/changetunnel`/`/settunnel`/`/cleartunnel`/`/setrd`/`/clearrd`/
+  `/solverd`) not yet cross-referenced (see the Progress Log entries
+  below for what's been checked off so far; a fresh cross-reference
+  pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
   drifted out of sync with actual progress more than once). `/showflags`/
@@ -7420,6 +7421,30 @@ Unlocks every quest NPC. Do these before any P4 area work.
   ugaris-core + 55 db + 3 net + 40 protocol + 694 server [+7], all
   green, zero failures), `cargo build -p ugaris-server` / `cargo build
   --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 169): ported `/thief` (`command.c:8756-8761`,
+  `cmdcmp(ptr, "thief", 3)`, no permission gate). Added
+  `apply_thief_command` in `commands_chat.rs` right after the
+  structurally identical `apply_notells_command`, toggling
+  `CF_THIEFMODE` and reporting "Turned thief mode on."/"...off.", then
+  calling `World::update_character` (the already-ported `update_char`
+  wrapper) since `recompute_character_values` reads `CF_THIEFMODE` to
+  split the thief profession's Stealth/Percept bonus
+  (`world/character_values.rs:548-556`) - without the explicit refresh
+  call the new split wouldn't take effect until some other stat-dirtying
+  event. Wired into the main command dispatch chain in `main.rs`
+  immediately after `apply_notells_command`. Also corrected two stale
+  entries in this task's "not yet cross-referenced" list: `/keyring` was
+  listed as unported but `apply_keyring_command`/`keyring.rs` already
+  exists and is wired (found while re-checking this note before adding
+  `/thief`); `/thief` itself is now removed from that list. 1 new test
+  in `tests/commands_chat.rs`: min-prefix-length gate (`/th` rejected,
+  `/thi` accepted) plus the full on/off toggle round trip verifying both
+  the message text and the `CF_THIEFMODE` flag state. `cargo fmt --all`,
+  `cargo test --workspace` (1986 ugaris-core + 55 db + 3 net + 40
+  protocol + 695 server [+1], all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every

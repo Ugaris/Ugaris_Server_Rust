@@ -7373,7 +7373,7 @@ mod tests {
         assert_eq!(read_u32(&encoded, 0), DRD_LOSTCON_PPD);
         assert_eq!(read_i32(&encoded, 8 + LOSTCON_PPD_NOBALL_OFFSET), 1);
 
-        let mut untouched = PlayerRuntime::connected(2, 0);
+        let untouched = PlayerRuntime::connected(2, 0);
         assert!(untouched.encode_legacy_ppd_blob(&[]).is_empty());
     }
 

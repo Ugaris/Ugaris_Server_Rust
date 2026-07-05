@@ -7097,8 +7097,42 @@ startup log line unchanged.
   order-not-insertion-order flag listing with `CF_SPY` proven absent,
   unknown-flag rejection (both a real bogus name and a missing
   argument) leaving flags untouched, and a case-insensitive on-then-off
-  round-trip. `cargo fmt --all`, `cargo test --workspace` (1986
-  ugaris-core + 55 db + 3 net + 40 protocol + 694 server [+7], all
-  green, zero failures), `cargo build -p ugaris-server`/`cargo build
-  --workspace` clean with zero warnings, 10s boot-smoke confirmed
-  "entering Rust game loop" with no panic.
+   round-trip. `cargo fmt --all`, `cargo test --workspace` (1986
+   ugaris-core + 55 db + 3 net + 40 protocol + 694 server [+7], all
+   green, zero failures), `cargo build -p ugaris-server`/`cargo build
+   --workspace` clean with zero warnings, 10s boot-smoke confirmed
+   "entering Rust game loop" with no panic.
+
+- Iteration 169 ported `/thief` (`src/system/command.c:8756-8761`,
+  `cmdcmp(ptr, "thief", 3)`, no permission gate - any player may toggle
+  it). Added `apply_thief_command` (`crates/ugaris-server/src/
+  commands_chat.rs`) immediately after the structurally identical
+  `apply_notells_command` it was modeled on: same verb-extraction +
+  case-insensitive-prefix-length gate, but toggling `CF_THIEFMODE`
+  instead of `CF_NOTELL` and reporting `"Turned thief mode on."`/
+  `"...off."` (letter-for-letter from C's `log_char` format string).
+  Unlike `/notells`, C's handler also calls `update_char(cn)`
+  unconditionally after the toggle; this port calls the already-ported
+  `World::update_character` wrapper for the same reason C does here -
+  `recompute_character_values` (`crates/ugaris-core/src/world/
+  character_values.rs:548-556`) reads `CF_THIEFMODE` to decide whether
+  the thief profession's bonus goes entirely to Stealth (mode on) or is
+  split between Stealth and Percept (mode off), so the derived stats
+  must be recomputed on every toggle, not just picked up lazily on the
+  next unrelated stat-dirtying event. Wired into the main command
+  dispatch chain (`main.rs`) directly after `apply_notells_command`.
+  While re-reading this task's "not yet cross-referenced" command list
+  before picking `/thief`, found and corrected a stale entry: `/keyring`
+  was listed as unported, but `apply_keyring_command`/`keyring.rs`
+  already exists and is wired into the dispatch chain - removed it (and
+  the now-done `/thief`) from that list, and clarified that
+  `/depotsort` (the character's own `DRD_DEPOT_PPD` depot storage,
+  `src/system/depot.c:150-158`) is a distinct, still-unported system
+  from the already-done `/accountdepotsort`. 1 new test in
+  `tests/commands_chat.rs`: the `cmdcmp` minimum-prefix-length gate
+  (`/th` rejected, `/thi` accepted) plus a full on/off round trip
+  asserting both the exact message text and the `CF_THIEFMODE` flag
+  state. `cargo fmt --all`, `cargo test --workspace` (1986 ugaris-core +
+  55 db + 3 net + 40 protocol + 695 server [+1], all green, zero
+  failures), `cargo build -p ugaris-server` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic.
