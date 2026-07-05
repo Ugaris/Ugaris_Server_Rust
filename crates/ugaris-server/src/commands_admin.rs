@@ -3382,6 +3382,29 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/shutdown` (`command.c:6068-6086`, `cmdcmp(ptr, "shutdown", 8)`,
+    // `CF_GOD`-gated). `minlen` equals the full word length, so unlike most
+    // commands here no abbreviation is accepted - only the exact word
+    // "shutdown" (case-insensitive) reaches this block.
+    if lower == "shutdown" {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        // C: `ptr += len; while (isspace(*ptr)) ptr++; diff = atoi(ptr);
+        // while (isdigit(*ptr)) ptr++; while (isspace(*ptr)) ptr++; down =
+        // atoi(ptr);` - note the `isdigit`-skip does not step over a
+        // leading `-` sign, so a negative `diff` leaves `down` parsed from
+        // the exact same substring (a real, reproducible C quirk).
+        let ptr = rest.trim_start();
+        let diff = legacy_atoi_prefix(ptr);
+        let after_digits = ptr
+            .trim_start_matches(|ch: char| ch.is_ascii_digit())
+            .trim_start();
+        let down = legacy_atoi_prefix(after_digits);
+        apply_shutdown_command(world, runtime, diff, down);
+        return Some(KeyringCommandResult::default());
+    }
+
     if lower == "sprite" {
         if !character.flags.contains(CharacterFlags::GOD) {
             return None;

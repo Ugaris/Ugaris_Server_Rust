@@ -35,6 +35,7 @@ mod military;
 mod player_actions;
 mod resource_sync;
 mod rng;
+mod shutdown;
 mod snapshots;
 mod spawns;
 mod stacks;
@@ -71,6 +72,7 @@ pub(crate) use military::*;
 pub(crate) use player_actions::*;
 pub(crate) use resource_sync::*;
 pub(crate) use rng::*;
+pub(crate) use shutdown::*;
 pub(crate) use snapshots::*;
 pub(crate) use spawns::*;
 pub(crate) use stacks::*;
@@ -280,6 +282,23 @@ struct ServerRuntime {
     /// documented simplification, not a behavioral requirement of the
     /// feature).
     backup_rotation_cursor: usize,
+    /// C `shutdown_at` (`server.c:112`): absolute wall-clock second
+    /// (`current_realtime_seconds`) the server should exit at, or `0` when
+    /// no shutdown is scheduled. Set by `/shutdown` (`shutdown::
+    /// apply_shutdown_command`), checked every tick by `shutdown::
+    /// tick_shutdown_scheduler`.
+    shutdown_at: i64,
+    /// C `shutdown_down` (`server.c:112`): the advertised downtime in
+    /// minutes, shown in every countdown broadcast.
+    shutdown_down_minutes: i64,
+    /// C `shutdown_warn`'s `static int shutdown_last` (`system/tool.c:
+    /// 3117`): the last remaining-minutes value that was broadcast, so
+    /// unchanged minutes don't re-broadcast every tick.
+    shutdown_warned_minutes: i64,
+    /// C `nologin` (`server.c:112`): blocks new logins (`LoginOutcome::
+    /// Shutdown`) once the countdown drops under 3 minutes, or forever
+    /// until `/shutdown` schedules or cancels again.
+    nologin: bool,
 }
 
 impl Default for ServerRuntime {
@@ -321,6 +340,10 @@ impl Default for ServerRuntime {
             recurring_events: events::RecurringEventsState::default(),
             easter_event: events::EasterEventState::default(),
             backup_rotation_cursor: 0,
+            shutdown_at: 0,
+            shutdown_down_minutes: 0,
+            shutdown_warned_minutes: 0,
+            nologin: false,
         }
     }
 }
@@ -6956,6 +6979,14 @@ async fn main() -> anyhow::Result<()> {
                     info!(pk_hate_updates, tick = world.tick.0, "applied PK hate updates from hurt events");
                 }
 
+                // C `monitor_20s_task`'s `shutdown_warn()` call
+                // (`server.c:216-222`), same ~20s cadence.
+                let shutdown_due = if world.tick.0 % (TICKS_PER_SECOND * 20) == 0 {
+                    tick_shutdown_scheduler(&mut world, &mut runtime)
+                } else {
+                    false
+                };
+
                 let area_text_sessions = send_pending_world_area_texts(&mut runtime, &mut world);
                 if area_text_sessions != 0 {
                     info!(area_text_sessions, tick = world.tick.0, "queued world area text feedback");
@@ -6994,6 +7025,15 @@ async fn main() -> anyhow::Result<()> {
                 // Exactly one legacy tick frame per session per tick: the
                 // lockstep client advances its clock per received frame.
                 runtime.flush_tick_frames(true);
+
+                // C `while (!quit)` (`server.c:612`): `shutdown_warn`
+                // setting the global `quit = 1` once the scheduled time
+                // arrives (`system/tool.c:3148`) ends the C main loop the
+                // same way `ctrl_c` does below.
+                if shutdown_due {
+                    info!("scheduled shutdown time reached");
+                    break;
+                }
             }
             Some(event) = events_rx.recv() => {
                 match event {
@@ -7021,7 +7061,13 @@ async fn main() -> anyhow::Result<()> {
                                 ip: login.his_ip,
                                 area_id: i32::from(config.area_id),
                                 mirror_id: i32::from(config.mirror_id),
-                                no_login: false,
+                                // C `nologin` (`server.c:112`), set by
+                                // `/shutdown`'s countdown crossing under 3
+                                // minutes (`shutdown::tick_shutdown_
+                                // scheduler`) or by an already-pending
+                                // shutdown - rejects new logins with
+                                // `LoginOutcome::Shutdown`.
+                                no_login: runtime.nologin,
                             };
                             match repository.begin_login(request).await {
                                 Ok(LoginOutcome::Ready { character_id: db_character_id, character_number, mirror, .. }) => {

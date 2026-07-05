@@ -6976,12 +6976,15 @@ Unlocks every quest NPC. Do these before any P4 area work.
    matching C's real `backup_players` behavior; its pentagram-record
    third of the C command is skipped, that feature has no Rust port at
    all yet),
-   `/punish`, `/shutdown`, `/rename`, `/showppd`/`/showvalues`,
-   `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
-  `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
-  like `/changetunnel`/`/settunnel`/`/cleartunnel`/`/setrd`/`/clearrd`/
-  `/solverd`) not yet cross-referenced (see the Progress Log entries
-  below for what's been checked off so far; a fresh cross-reference
+    `/punish`, `/rename`, `/showppd`/`/showvalues`,
+    `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
+   `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
+   like `/changetunnel`/`/settunnel`/`/cleartunnel`/`/setrd`/`/clearrd`/
+   `/solverd`) not yet cross-referenced (`/shutdown` done - see iteration
+   179, `start_shutdown`/`shutdown_bg`/`shutdown_warn`, new
+   `shutdown.rs`, which also wired the pre-existing but previously-dead
+   `LoginRequest::no_login`/`LoginOutcome::Shutdown` plumbing) (see the
+   Progress Log entries
   pass comparing every `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
@@ -7897,6 +7900,69 @@ Unlocks every quest NPC. Do these before any P4 area work.
   ugaris-core + 55 db + 3 net + 40 protocol + 732 server [+2], all green,
   zero failures), `cargo build -p ugaris-server` / `cargo build
   --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 179): ported `/shutdown` (`command.c:6068-6086`,
+  `cmdcmp(ptr, "shutdown", 8)` - full-word exact match, no abbreviation -
+  `CF_GOD`-gated) plus its two supporting C functions `start_shutdown`
+  (`command.c:541-557`) and `shutdown_warn`/`shutdown_bg` (`system/tool.c:
+  3117-3164`), new module `crates/ugaris-server/src/shutdown.rs`. Folded
+  `start_shutdown`+`shutdown_bg` into one direct call
+  (`shutdown::apply_shutdown_command`) instead of round-tripping through
+  the `server_chat(1033, ...)` cross-area relay, matching every other
+  `server_chat`-relayed admin command already ported this way
+  (`/setweather`/`clearweather`/`setareaweather`, `global`); this is a
+  standalone single-area server per `AGENTS.md`; new `ServerRuntime` fields
+  `shutdown_at`/`shutdown_down_minutes`/`shutdown_warned_minutes`/
+  `nologin` (server.c's four matching C globals). Reproduced the exact C
+  argument-parsing quirk in `commands_admin.rs`: `while (isdigit(*ptr))
+  ptr++;` does not step over a leading `-` sign, so a negative `diff`
+  argument leaves `down` parsed from the exact same substring instead of
+  the text after it (verified with a dedicated test). `shutdown_warn`
+  (C's `monitor_20s_task`, every 20s) ported as `tick_shutdown_scheduler`,
+  called both immediately on scheduling/cancelling (matching C's own
+  immediate `shutdown_bg` -> `shutdown_warn` call) and from the main tick
+  loop at the same ~20s cadence (`world.tick.0 % (TICKS_PER_SECOND * 20)
+  == 0`); returns whether the deadline has arrived, and the tick loop
+  `break`s out of `loop { tokio::select! {...} }` when it does (C's
+  `while (!quit)` with `shutdown_warn` setting the global `quit = 1`),
+  reusing the same final expired-auction cleanup the `ctrl_c` branch
+  already runs. Countdown/cancellation messages broadcast to every
+  connected player via `world.queue_system_text_bytes` +
+  `legacy_light_red_text_bytes` (C's `COL_LIGHT_RED` / `log_char` loop
+  over `CF_PLAYER` characters - C's in-memory `ch[]` only holds online
+  characters so that flag check already means "online", matched here by
+  iterating `runtime.players` instead). Discovered and wired the other
+  half of a feature that was already half-ported: `LoginRequest::
+  no_login`/`LoginOutcome::Shutdown`/`LOGIN_REJECT_SHUTDOWN` all already
+  existed in `ugaris-db`/`login.rs` (reject text already verified against
+  C's exact `player_client_exit(nr, "The server is being shut down...")`
+  string) but `no_login` was hardcoded to `false` at the `main.rs` login
+  call site - now wired to `runtime.nologin`, so `/shutdown`'s
+  countdown-under-3-minutes threshold (or an already-pending shutdown)
+  actually blocks new logins end to end. REMAINING/known gaps: C's
+  `nologin && sID != 1` admin-account bypass (`database_character.c:909`)
+  isn't replicated (no clear Rust equivalent of that legacy account-ID
+  check; noted, not fixed, pre-existing gap in the already-ported
+  `no_login` plumbing, not introduced by this iteration); a very negative
+  `diff` (immediate/quirky, not a realistic admin use case) sets
+  `shutdown_at` in the past and `tick_shutdown_scheduler` would return
+  `true` on the very next periodic check, but since the immediate call
+  inside `apply_shutdown_command` doesn't propagate its quit signal back
+  through `KeyringCommandResult` to the tick loop, the actual exit is
+  delayed up to ~20s instead of being instantaneous like C - acceptable
+  for a use case that shouldn't occur in practice, but documented here in
+  case a future iteration wants to close the gap. 9 new tests in new
+  `tests/shutdown.rs` (god-gate + exact-word-only dispatch, immediate
+  broadcast with correct text/color on scheduling, downtime defaulting to
+  15, both no-op and cancel branches of a bare `/shutdown`, the negative-
+  diff quirk, minute-change-gated rebroadcast + nologin engaging under 3
+  minutes, the deadline-reached "NOW" message + quit signal, and a no-op
+  check when nothing is scheduled). `cargo fmt --all`, `cargo test
+  --workspace` (2009 ugaris-core + 55 db + 3 net + 40 protocol + 741
+  server [+9], all green, zero failures), `cargo build -p ugaris-server` /
+  `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "legacy TCP listener ready", "loaded area zone map", and
   "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
