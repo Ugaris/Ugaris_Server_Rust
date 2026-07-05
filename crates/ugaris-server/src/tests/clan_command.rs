@@ -1,7 +1,7 @@
 use super::*;
 
 use crate::clan_command::apply_clan_command;
-use ugaris_core::clan::ClanRelation;
+use ugaris_core::clan::{ClanRelation, CLUB_OFFSET};
 
 const NOW: i64 = 1_000_000;
 
@@ -280,4 +280,83 @@ fn clanpots_abbreviation_needs_five_chars_like_c_cmdcmp() {
         feedback_lines(&result)[0],
         "Attack, Parry, Immunity+4: \u{e}0"
     );
+}
+
+fn club_tester(world: &mut World, club: u16, clan_rank: u8) -> CharacterId {
+    let character_id = CharacterId(9);
+    let mut character = login_character(character_id, &login_block("ClubTester"), 1, 10, 10);
+    if club != 0 {
+        character.clan = CLUB_OFFSET + club;
+        character.clan_serial = world.club_registry.serial(club);
+    }
+    character.clan_rank = clan_rank;
+    world.add_character(character);
+    character_id
+}
+
+#[test]
+fn club_non_member_gets_no_output() {
+    let mut world = World::default();
+    let character_id = club_tester(&mut world, 0, 0);
+
+    let result = apply_clan_command(&mut world, character_id, "/club", NOW).unwrap();
+    assert!(result.message_bytes.is_empty());
+}
+
+#[test]
+fn club_member_sees_membership_and_treasury_lines() {
+    let mut world = World::default();
+    let nr = world.club_registry.create_club("Rovers", NOW).unwrap();
+    world.club_registry.club_money_change(nr, 50_000);
+    let character_id = club_tester(&mut world, nr, 1);
+
+    let result = apply_clan_command(&mut world, character_id, "/club", NOW).unwrap();
+    let lines = feedback_lines(&result);
+    assert_eq!(
+        lines,
+        vec![
+            format!("You are a member of the club 'Rovers' ({nr}), your rank is Leader."),
+            "Your club has 500 gold, the next payment of 10000 gold is due in 168 hours."
+                .to_string(),
+        ]
+    );
+}
+
+#[test]
+fn club_out_of_range_rank_is_clamped_to_member() {
+    let mut world = World::default();
+    let nr = world.club_registry.create_club("Rovers", NOW).unwrap();
+    let character_id = club_tester(&mut world, nr, 200);
+
+    let result = apply_clan_command(&mut world, character_id, "/club", NOW).unwrap();
+    let lines = feedback_lines(&result);
+    assert!(lines[0].contains("your rank is Member."));
+}
+
+#[test]
+fn club_abbreviation_matches_at_three_chars() {
+    let mut world = World::default();
+    let nr = world.club_registry.create_club("Rovers", NOW).unwrap();
+    let character_id = club_tester(&mut world, nr, 2);
+
+    let result = apply_clan_command(&mut world, character_id, "/clu", NOW).unwrap();
+    assert!(feedback_lines(&result)[0].contains("your rank is Founder."));
+}
+
+#[test]
+fn club_stale_serial_is_self_healed_to_non_member() {
+    let mut world = World::default();
+    let nr = world.club_registry.create_club("Rovers", NOW).unwrap();
+    let character_id = club_tester(&mut world, nr, 1);
+    // Simulate the club having been re-created (serial bump) since this
+    // character last read it, exactly like `ClanRegistry`'s own stale-
+    // reference self-heal precedent.
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.clan_serial += 1;
+    }
+
+    let result = apply_clan_command(&mut world, character_id, "/club", NOW).unwrap();
+    assert!(result.message_bytes.is_empty());
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!(character.clan, 0);
 }

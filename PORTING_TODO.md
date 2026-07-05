@@ -6896,7 +6896,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/allow`/clan invite commands, admin teleports (`/goto`), `/mirror`,
   `/seen`, `/top`. REMAINING: admin teleports done (`/goto`, `/jump`,
   `/gotolist`, `/gotosearch`, `/summon`, `/summonall`, `/office`);
-  `/lastseen` done. Still unported: `/allow` (not a clan-invite command -
+  `/lastseen` done; `/club` done. Still unported: `/allow` (not a clan-invite command -
   see its Progress Log entry - it's `allow_body`, the cross-server
   corpse-loot-access grant, blocked on the unported `server_chat`
   cross-area DB chat relay), no standalone `/mirror` command actually
@@ -7060,6 +7060,42 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cargo build -p ugaris-server` / `cargo build --workspace` clean with
   zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
   no panic.
+
+  Progress Log (iteration 162): ported `/club` (`showclub`, `club.c:
+  114-131`, no permission gate), the last remaining member of the
+  `/clan`/`/clanpots`/`/relation` display-command family (all three
+  already ported in `crates/ugaris-server/src/clan_command.rs`, which
+  this extends rather than a new module). Added `showclub_lines`
+  (membership line with name/number/rank, treasury line with gold and
+  hours-until-next-payment) and wired a fourth dispatch branch into the
+  existing `apply_clan_command`; reused `ClubRegistry::get_char_club`
+  (already ported in iteration 136) unchanged. Matched C's genuine
+  quirk that `showclub`'s entire body is gated on `get_char_club`
+  succeeding, so a non-member typing `/club` gets *zero* output (unlike
+  `showclan`, which always prints the clan list, or `show_clan_pots`,
+  which prints an explicit "Only for clan members." message) - ported
+  as an empty `message_bytes` Vec, not a placeholder message. The
+  abbreviation threshold (`lower.len() >= 3`) intentionally matches the
+  pre-existing (already-approximate) `/clan`/`/relation` threshold
+  rather than C's true `cmdcmp(ptr, "club", 0)` minlen-0 (which would
+  accept a bare `/c`/`/cl`): loosening only `/club` to minlen-0 while
+  `/clan` still requires 3 would make a bare `/c`/`/cl` resolve to
+  `/club` in this codebase while real C always resolves it to `/clan`
+  (checked first) - a worse, newly-introduced deviation than extending
+  the existing shared approximation, documented inline in both the
+  module doc comment and the new dispatch branch. 5 new tests in
+  `tests/clan_command.rs` (non-member silent no-op, member sees both
+  lines with correct gold/hours arithmetic, out-of-range rank clamped to
+  Member, 3-char abbreviation match, stale-serial self-heal to
+  non-member). `cargo fmt --all`, `cargo test --workspace` (1979
+  ugaris-core + 55 db + 3 net + 40 protocol + 666 server [+5], all
+  green, zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic. REMAINING for this task,
+  updated: the ~250 remaining `cmdcmp` entries in `command.c` not yet
+  cross-referenced (mostly `CF_GOD`-gated tuning/anticheat/admin
+  commands) are unchanged from iteration 161's note; `/allow` is
+  unchanged (blocked on the unported cross-area `server_chat` relay).
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

@@ -1,10 +1,11 @@
-//! `/clan`, `/relation`, and `/clanpots` text commands: read-only clan
-//! status display.
+//! `/clan`, `/club`, `/relation`, and `/clanpots` text commands: read-only
+//! clan/club status display.
 //!
-//! Ports `showclan`/`show_clan_relation`/`show_clan_pots`
-//! (`src/system/clan.c:128-357,1426-1455`), dispatched from
-//! `command.c:5974-5980,6001-6011` (`cmdcmp(ptr, "clanpots", 5)`/
-//! `cmdcmp(ptr, "clan", 0)`/`cmdcmp(ptr, "relation", 0)`).
+//! Ports `showclan`/`showclub`/`show_clan_relation`/`show_clan_pots`
+//! (`src/system/clan.c:128-357,1426-1455`, `src/system/club.c:114-131`),
+//! dispatched from `command.c:5974-5987,6001-6011` (`cmdcmp(ptr,
+//! "clanpots", 5)`/`cmdcmp(ptr, "clan", 0)`/`cmdcmp(ptr, "club", 0)`/
+//! `cmdcmp(ptr, "relation", 0)`).
 //!
 //! `showclan`'s "--- Dungeon Guards ---" section and "Dungeon points: X /
 //! 400" line (`clan.c:169-197`) are still skipped - the guard counts
@@ -16,12 +17,24 @@
 //! though nothing feeds it yet (every clan reads all-zero until the
 //! alchemy-potion economy's `add_alc_potion`/`add_simple_potion` call
 //! sites are ported), same as a freshly-founded C clan would show.
+//!
+//! `/club`'s abbreviation threshold (`lower.len() >= 3`, like `/clan`'s
+//! and `/relation`'s own pre-existing approximation of C's true
+//! `cmdcmp(ptr, "club"/"clan"/"relation", 0)` minlen-0 - any nonempty
+//! prefix, even a single letter, should match in real C) is a deliberate
+//! match of that existing precedent rather than the literal C minlen:
+//! loosening only `/club` to accept single/double-letter prefixes while
+//! `/clan` still requires 3 would flip which command a bare `/c`/`/cl`
+//! resolves to relative to real C (which always resolves it to `/clan`,
+//! checked first), which is a worse deviation than the shared
+//! under-permissive approximation already in place.
 
 use super::*;
 
 use ugaris_core::clan::{
     bonus_name, score_to_level, ClanEconomy, ClanRegistry, MAX_BONUS, MAX_CLAN,
 };
+use ugaris_core::club::ClubRegistry;
 use ugaris_core::text::{COL_HEADING, COL_LINK};
 
 fn colored_line(color: &[u8], text: &str) -> Vec<u8> {
@@ -298,8 +311,41 @@ fn show_clan_pots_lines(registry: &ClanRegistry, character: &mut Character) -> V
     lines
 }
 
-/// Dispatches `/clan`, `/relation`, and `/clanpots`
-/// (`command.c:5974-5980,6001-6011`).
+/// C `club.c`'s rank name table (`club.c:60`).
+const CLUB_RANK_NAMES: [&str; 3] = ["Member", "Leader", "Founder"];
+
+/// C `showclub` (`club.c:114-131`), the `/club` command. Unlike
+/// `showclan`/`show_clan_pots`, C's `showclub` has no "not a member"
+/// message at all - the whole body is gated on `if ((cnr =
+/// get_char_club(cn)))`, so a non-member typing `/club` gets zero output
+/// (`Vec::new()` here, matching that silence exactly).
+fn showclub_lines(registry: &ClubRegistry, character: &mut Character, now: i64) -> Vec<Vec<u8>> {
+    let Some(cnr) = registry.get_char_club(character) else {
+        return Vec::new();
+    };
+    let rank = character.clan_rank as usize;
+    let rank = if rank > 2 { 0 } else { rank };
+    let identity = registry
+        .identity(cnr)
+        .expect("get_char_club already validated cnr exists");
+
+    vec![
+        format!(
+            "You are a member of the club '{}' ({cnr}), your rank is {}.",
+            identity.name, CLUB_RANK_NAMES[rank]
+        )
+        .into_bytes(),
+        format!(
+            "Your club has {} gold, the next payment of 10000 gold is due in {} hours.",
+            identity.money / 100,
+            (identity.paid - now) / 60 / 60
+        )
+        .into_bytes(),
+    ]
+}
+
+/// Dispatches `/clan`, `/club`, `/relation`, and `/clanpots`
+/// (`command.c:5974-5987,6001-6011`).
 pub(crate) fn apply_clan_command(
     world: &mut World,
     character_id: CharacterId,
@@ -342,6 +388,14 @@ pub(crate) fn apply_clan_command(
         let character = world.characters.get_mut(&character_id)?;
         return Some(KeyringCommandResult {
             message_bytes: showclan_lines(&world.clan_registry, character, now),
+            ..Default::default()
+        });
+    }
+
+    if lower.len() >= 3 && "club".starts_with(&lower) {
+        let character = world.characters.get_mut(&character_id)?;
+        return Some(KeyringCommandResult {
+            message_bytes: showclub_lines(&world.club_registry, character, now),
             ..Default::default()
         });
     }
