@@ -414,6 +414,24 @@ const TWOCITY_PPD_SKELLY_STATE_OFFSET: usize = 27 * 4;
 const TWOCITY_PPD_ALCHEMIST_STATE_OFFSET: usize = 28 * 4;
 const MISC_PPD_TREEDONE_OFFSET: usize = 24;
 const MISC_PPD_GIFT_YEAR_OFFSET: usize = 32;
+// `struct lostcon_ppd` field offsets (`src/module/lostcon.h:18-36`), in
+// declaration order (0-based `int` index * 4).
+const LOSTCON_PPD_AUTOBLESS_OFFSET: usize = 0 * 4;
+const LOSTCON_PPD_AUTOPULSE_OFFSET: usize = 1 * 4;
+const LOSTCON_PPD_NOBLESS_OFFSET: usize = 2 * 4;
+const LOSTCON_PPD_NOHEAL_OFFSET: usize = 3 * 4;
+const LOSTCON_PPD_NOFLASH_OFFSET: usize = 4 * 4;
+const LOSTCON_PPD_NOFIREBALL_OFFSET: usize = 5 * 4;
+const LOSTCON_PPD_NOBALL_OFFSET: usize = 6 * 4;
+const LOSTCON_PPD_NOSHIELD_OFFSET: usize = 7 * 4;
+const LOSTCON_PPD_NOWARCRY_OFFSET: usize = 8 * 4;
+const LOSTCON_PPD_NOFREEZE_OFFSET: usize = 9 * 4;
+const LOSTCON_PPD_NOMANA_OFFSET: usize = 10 * 4;
+const LOSTCON_PPD_NOLIFE_OFFSET: usize = 11 * 4;
+const LOSTCON_PPD_NOCOMBO_OFFSET: usize = 12 * 4;
+const LOSTCON_PPD_NOMOVE_OFFSET: usize = 13 * 4;
+const LOSTCON_PPD_NOPULSE_OFFSET: usize = 14 * 4;
+const LOSTCON_PPD_NORECALL_OFFSET: usize = 15 * 4;
 const LOSTCON_PPD_AUTOTURN_OFFSET: usize = 16 * 4;
 const LOSTCON_PPD_MAXLAG_OFFSET: usize = 17 * 4;
 const LOSTCON_PPD_HINTS_OFFSET: usize = 18 * 4;
@@ -755,6 +773,59 @@ pub struct PlayerRuntime {
     pub hints_disabled: bool,
     #[serde(default)]
     pub autoturn_enabled: bool,
+    /// C `lostcon_ppd.autobless` (`command.c`'s `/autobless` toggle,
+    /// `player_driver.c:1067`'s auto-rebless consumer - not yet wired,
+    /// see `PORTING_TODO.md`).
+    #[serde(default)]
+    pub autobless_enabled: bool,
+    /// C `lostcon_ppd.autopulse` (`command.c`'s `/autopulse` toggle,
+    /// `player_driver.c:1070`'s auto-pulse consumer - not yet wired).
+    #[serde(default)]
+    pub autopulse_enabled: bool,
+    /// C `lostcon_ppd.noball` (`command.c`'s `/noball` toggle): during the
+    /// `CDR_LOSTCON` lag-simulation autopilot (`lostcon.c`, not yet
+    /// ported), suppresses automatic Ball Lightning casting.
+    #[serde(default)]
+    pub no_ball: bool,
+    /// C `lostcon_ppd.nobless` (`/nobless`).
+    #[serde(default)]
+    pub no_bless: bool,
+    /// C `lostcon_ppd.nofireball` (`/nofireball`).
+    #[serde(default)]
+    pub no_fireball: bool,
+    /// C `lostcon_ppd.noflash` (`/noflash`).
+    #[serde(default)]
+    pub no_flash: bool,
+    /// C `lostcon_ppd.nofreeze` (`/nofreeze`).
+    #[serde(default)]
+    pub no_freeze: bool,
+    /// C `lostcon_ppd.noheal` (`/noheal`).
+    #[serde(default)]
+    pub no_heal: bool,
+    /// C `lostcon_ppd.noshield` (`/noshield`).
+    #[serde(default)]
+    pub no_shield: bool,
+    /// C `lostcon_ppd.nowarcry` (`/nowarcry`).
+    #[serde(default)]
+    pub no_warcry: bool,
+    /// C `lostcon_ppd.nolife` (`/nolife`).
+    #[serde(default)]
+    pub no_life: bool,
+    /// C `lostcon_ppd.nomana` (`/nomana`).
+    #[serde(default)]
+    pub no_mana: bool,
+    /// C `lostcon_ppd.nocombo` (`/nocombo`).
+    #[serde(default)]
+    pub no_combo: bool,
+    /// C `lostcon_ppd.nomove` (`/nomove`).
+    #[serde(default)]
+    pub no_move: bool,
+    /// C `lostcon_ppd.nopulse` (`/nopulse`).
+    #[serde(default)]
+    pub no_pulse: bool,
+    /// C `lostcon_ppd.norecall` (`/norecall`).
+    #[serde(default)]
+    pub no_recall: bool,
     #[serde(default)]
     pub shutup_until_seconds: u64,
     #[serde(default)]
@@ -886,6 +957,22 @@ impl PlayerRuntime {
             max_lag_seconds: 0,
             hints_disabled: false,
             autoturn_enabled: false,
+            autobless_enabled: false,
+            autopulse_enabled: false,
+            no_ball: false,
+            no_bless: false,
+            no_fireball: false,
+            no_flash: false,
+            no_freeze: false,
+            no_heal: false,
+            no_shield: false,
+            no_warcry: false,
+            no_life: false,
+            no_mana: false,
+            no_combo: false,
+            no_move: false,
+            no_pulse: false,
+            no_recall: false,
             shutup_until_seconds: 0,
             swear_ppd: Vec::new(),
             tell_data: TellData::default(),
@@ -1354,8 +1441,111 @@ impl PlayerRuntime {
         self.autoturn_enabled
     }
 
+    /// True if any of the 16 lag-control/automation toggles (everything
+    /// but `autoturn`/`maxlag`/`hints`, which each have their own
+    /// pre-existing "is this default" gate) is non-default, matching the
+    /// `!had_lostcon && ...` fresh-block-write condition below.
+    fn has_nondefault_lag_control_toggle(&self) -> bool {
+        self.autobless_enabled
+            || self.autopulse_enabled
+            || self.no_ball
+            || self.no_bless
+            || self.no_fireball
+            || self.no_flash
+            || self.no_freeze
+            || self.no_heal
+            || self.no_shield
+            || self.no_warcry
+            || self.no_life
+            || self.no_mana
+            || self.no_combo
+            || self.no_move
+            || self.no_pulse
+            || self.no_recall
+    }
+
     pub fn encode_legacy_lostcon_ppd(&self) -> Vec<u8> {
         let mut bytes = vec![0; LEGACY_LOSTCON_PPD_SIZE];
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_AUTOBLESS_OFFSET,
+            i32::from(self.autobless_enabled),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_AUTOPULSE_OFFSET,
+            i32::from(self.autopulse_enabled),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOBLESS_OFFSET,
+            i32::from(self.no_bless),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOHEAL_OFFSET,
+            i32::from(self.no_heal),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOFLASH_OFFSET,
+            i32::from(self.no_flash),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOFIREBALL_OFFSET,
+            i32::from(self.no_fireball),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOBALL_OFFSET,
+            i32::from(self.no_ball),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOSHIELD_OFFSET,
+            i32::from(self.no_shield),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOWARCRY_OFFSET,
+            i32::from(self.no_warcry),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOFREEZE_OFFSET,
+            i32::from(self.no_freeze),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOMANA_OFFSET,
+            i32::from(self.no_mana),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOLIFE_OFFSET,
+            i32::from(self.no_life),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOCOMBO_OFFSET,
+            i32::from(self.no_combo),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOMOVE_OFFSET,
+            i32::from(self.no_move),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NOPULSE_OFFSET,
+            i32::from(self.no_pulse),
+        );
+        write_i32(
+            &mut bytes,
+            LOSTCON_PPD_NORECALL_OFFSET,
+            i32::from(self.no_recall),
+        );
         write_i32(
             &mut bytes,
             LOSTCON_PPD_AUTOTURN_OFFSET,
@@ -1378,6 +1568,22 @@ impl PlayerRuntime {
         if bytes.len() < LEGACY_LOSTCON_PPD_SIZE {
             return false;
         }
+        self.autobless_enabled = read_i32(bytes, LOSTCON_PPD_AUTOBLESS_OFFSET) != 0;
+        self.autopulse_enabled = read_i32(bytes, LOSTCON_PPD_AUTOPULSE_OFFSET) != 0;
+        self.no_bless = read_i32(bytes, LOSTCON_PPD_NOBLESS_OFFSET) != 0;
+        self.no_heal = read_i32(bytes, LOSTCON_PPD_NOHEAL_OFFSET) != 0;
+        self.no_flash = read_i32(bytes, LOSTCON_PPD_NOFLASH_OFFSET) != 0;
+        self.no_fireball = read_i32(bytes, LOSTCON_PPD_NOFIREBALL_OFFSET) != 0;
+        self.no_ball = read_i32(bytes, LOSTCON_PPD_NOBALL_OFFSET) != 0;
+        self.no_shield = read_i32(bytes, LOSTCON_PPD_NOSHIELD_OFFSET) != 0;
+        self.no_warcry = read_i32(bytes, LOSTCON_PPD_NOWARCRY_OFFSET) != 0;
+        self.no_freeze = read_i32(bytes, LOSTCON_PPD_NOFREEZE_OFFSET) != 0;
+        self.no_mana = read_i32(bytes, LOSTCON_PPD_NOMANA_OFFSET) != 0;
+        self.no_life = read_i32(bytes, LOSTCON_PPD_NOLIFE_OFFSET) != 0;
+        self.no_combo = read_i32(bytes, LOSTCON_PPD_NOCOMBO_OFFSET) != 0;
+        self.no_move = read_i32(bytes, LOSTCON_PPD_NOMOVE_OFFSET) != 0;
+        self.no_pulse = read_i32(bytes, LOSTCON_PPD_NOPULSE_OFFSET) != 0;
+        self.no_recall = read_i32(bytes, LOSTCON_PPD_NORECALL_OFFSET) != 0;
         self.max_lag_seconds =
             read_i32(bytes, LOSTCON_PPD_MAXLAG_OFFSET).clamp(0, i32::from(u8::MAX)) as u8;
         self.hints_disabled = read_i32(bytes, LOSTCON_PPD_HINTS_OFFSET) != 0;
@@ -4587,7 +4793,10 @@ impl PlayerRuntime {
         }
         if !had_lostcon
             && (existing_was_valid || existing.is_empty())
-            && (self.max_lag_seconds != 0 || self.hints_disabled || self.autoturn_enabled)
+            && (self.max_lag_seconds != 0
+                || self.hints_disabled
+                || self.autoturn_enabled
+                || self.has_nondefault_lag_control_toggle())
         {
             write_ppd_block(
                 &mut encoded,
@@ -6709,15 +6918,48 @@ mod tests {
     #[test]
     fn lostcon_ppd_codec_matches_legacy_c_layout() {
         assert_eq!(LOSTCON_PPD_HINTS_OFFSET + 4, LEGACY_LOSTCON_PPD_SIZE);
+        assert_eq!(LOSTCON_PPD_AUTOBLESS_OFFSET, 0);
+        assert_eq!(LOSTCON_PPD_NORECALL_OFFSET + 4, LOSTCON_PPD_AUTOTURN_OFFSET);
 
         let mut player = PlayerRuntime::connected(1, 0);
         player.set_max_lag_seconds(17);
         player.hints_disabled = true;
         player.autoturn_enabled = true;
+        player.autobless_enabled = true;
+        player.autopulse_enabled = true;
+        player.no_ball = true;
+        player.no_bless = true;
+        player.no_fireball = true;
+        player.no_flash = true;
+        player.no_freeze = true;
+        player.no_heal = true;
+        player.no_shield = true;
+        player.no_warcry = true;
+        player.no_life = true;
+        player.no_mana = true;
+        player.no_combo = true;
+        player.no_move = true;
+        player.no_pulse = true;
+        player.no_recall = true;
 
         let encoded = player.encode_legacy_lostcon_ppd();
         assert_eq!(encoded.len(), LEGACY_LOSTCON_PPD_SIZE);
-        assert_eq!(read_i32(&encoded, 0), 0);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_AUTOBLESS_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_AUTOPULSE_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOBLESS_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOHEAL_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOFLASH_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOFIREBALL_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOBALL_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOSHIELD_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOWARCRY_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOFREEZE_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOMANA_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOLIFE_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOCOMBO_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOMOVE_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NOPULSE_OFFSET), 1);
+        assert_eq!(read_i32(&encoded, LOSTCON_PPD_NORECALL_OFFSET), 1);
         assert_eq!(read_i32(&encoded, LOSTCON_PPD_AUTOTURN_OFFSET), 1);
         assert_eq!(read_i32(&encoded, LOSTCON_PPD_MAXLAG_OFFSET), 17);
         assert_eq!(read_i32(&encoded, LOSTCON_PPD_HINTS_OFFSET), 1);
@@ -6727,6 +6969,22 @@ mod tests {
         assert_eq!(decoded.max_lag_seconds, 17);
         assert!(decoded.hints_disabled);
         assert!(decoded.autoturn_enabled);
+        assert!(decoded.autobless_enabled);
+        assert!(decoded.autopulse_enabled);
+        assert!(decoded.no_ball);
+        assert!(decoded.no_bless);
+        assert!(decoded.no_fireball);
+        assert!(decoded.no_flash);
+        assert!(decoded.no_freeze);
+        assert!(decoded.no_heal);
+        assert!(decoded.no_shield);
+        assert!(decoded.no_warcry);
+        assert!(decoded.no_life);
+        assert!(decoded.no_mana);
+        assert!(decoded.no_combo);
+        assert!(decoded.no_move);
+        assert!(decoded.no_pulse);
+        assert!(decoded.no_recall);
         assert!(!decoded.decode_legacy_lostcon_ppd(&encoded[..LEGACY_LOSTCON_PPD_SIZE - 1]));
     }
 
@@ -7101,6 +7359,22 @@ mod tests {
         assert_eq!(read_i32(&encoded, 8 + LOSTCON_PPD_AUTOTURN_OFFSET), 1);
         assert_eq!(read_i32(&encoded, 8 + LOSTCON_PPD_MAXLAG_OFFSET), 0);
         assert_eq!(read_i32(&encoded, 8 + LOSTCON_PPD_HINTS_OFFSET), 0);
+    }
+
+    #[test]
+    fn ppd_blob_appends_lostcon_for_a_lag_control_toggle_alone() {
+        // A lone `/noball`-style toggle (no `autoturn`/`maxlag`/`hints`
+        // touched) must still force a fresh `DRD_LOSTCON_PPD` block, not
+        // silently no-op like an all-default PPD would.
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.no_ball = true;
+
+        let encoded = player.encode_legacy_ppd_blob(&[]);
+        assert_eq!(read_u32(&encoded, 0), DRD_LOSTCON_PPD);
+        assert_eq!(read_i32(&encoded, 8 + LOSTCON_PPD_NOBALL_OFFSET), 1);
+
+        let mut untouched = PlayerRuntime::connected(2, 0);
+        assert!(untouched.encode_legacy_ppd_blob(&[]).is_empty());
     }
 
     #[test]

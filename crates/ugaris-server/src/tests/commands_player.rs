@@ -325,6 +325,106 @@ fn lag_command_blocks_enabling_in_arena_or_with_hate() {
     );
 }
 
+#[test]
+fn lag_control_toggle_command_flips_field_and_shows_status() {
+    let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    let enabled = apply_lag_control_toggle_command(&character, &mut player, "/noball")
+        .expect("noball command should be recognized");
+    assert!(player.no_ball);
+    assert_eq!(enabled.messages[0], "Lag Control Settings:");
+
+    let disabled = apply_lag_control_toggle_command(&character, &mut player, "/noball")
+        .expect("noball command should be recognized");
+    assert!(!player.no_ball);
+    let _ = disabled;
+}
+
+#[test]
+fn lag_control_toggle_command_covers_every_family_member_with_legacy_minlen() {
+    let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    let cases: &[(&str, fn(&PlayerRuntime) -> bool)] = &[
+        ("noball", |p| p.no_ball),
+        ("nobless", |p| p.no_bless),
+        ("nofireball", |p| p.no_fireball),
+        ("noflash", |p| p.no_flash),
+        ("nofreeze", |p| p.no_freeze),
+        ("noheal", |p| p.no_heal),
+        ("noshield", |p| p.no_shield),
+        ("nowarcry", |p| p.no_warcry),
+        ("nolife", |p| p.no_life),
+        ("nomana", |p| p.no_mana),
+        ("nocombo", |p| p.no_combo),
+        ("nomove", |p| p.no_move),
+        ("norecall", |p| p.no_recall),
+        ("nopulse", |p| p.no_pulse),
+        ("autobless", |p| p.autobless_enabled),
+        ("autopulse", |p| p.autopulse_enabled),
+    ];
+
+    for (command, field) in cases {
+        assert!(!field(&player), "{command} should start off");
+        let full = format!("/{command}");
+        apply_lag_control_toggle_command(&character, &mut player, &full)
+            .unwrap_or_else(|| panic!("{command} should be recognized"));
+        assert!(field(&player), "{command} should be toggled on");
+
+        // The legacy `minlen` for every member of this family is 5
+        // (`command.c:9397-9591`): a 5-char prefix must match, a 4-char
+        // (or shorter) prefix must not.
+        let short_prefix = &command[..4];
+        let short = format!("/{short_prefix}");
+        assert!(
+            apply_lag_control_toggle_command(&character, &mut player, &short).is_none(),
+            "{short} (4-char prefix) should not match"
+        );
+
+        // toggle back off via the full word for the next iteration.
+        apply_lag_control_toggle_command(&character, &mut player, &full)
+            .unwrap_or_else(|| panic!("{command} should be recognized"));
+        assert!(!field(&player), "{command} should be toggled back off");
+    }
+}
+
+#[test]
+fn allowbless_command_toggles_nobless_flag_and_shows_status() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+    let player = PlayerRuntime::connected(1, 0);
+
+    let result = apply_allowbless_command(&mut world, &player, character_id, "/allowbless")
+        .expect("allowbless command should be recognized");
+    assert!(world
+        .characters
+        .get(&character_id)
+        .unwrap()
+        .flags
+        .contains(CharacterFlags::NOBLESS));
+    assert!(result
+        .messages
+        .contains(&"Allow others to bless me [/ALLOWBLESS]: No.".to_string()));
+
+    let result = apply_allowbless_command(&mut world, &player, character_id, "/allowbless")
+        .expect("allowbless command should be recognized");
+    assert!(!world
+        .characters
+        .get(&character_id)
+        .unwrap()
+        .flags
+        .contains(CharacterFlags::NOBLESS));
+    assert!(result
+        .messages
+        .contains(&"Allow others to bless me [/ALLOWBLESS]: Yes.".to_string()));
+
+    assert!(apply_allowbless_command(&mut world, &player, character_id, "/allo").is_none());
+}
+
 /// C `cmdcmp(ptr, "lastseen", 4)`: any prefix from `"last"` up to the full
 /// word matches case-insensitively; anything shorter (or a different
 /// word entirely) is not recognized at all.

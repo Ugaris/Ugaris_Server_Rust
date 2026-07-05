@@ -468,48 +468,94 @@ pub(crate) fn apply_status_command(
         format!("Max. Lag [/MAXLAG]: {} sec.", player.max_lag_seconds),
     ];
 
+    let on_off = |flag: bool| if flag { "On" } else { "Off" };
     let has_spell = |value: CharacterValue| character.values[1][value as usize] > 0;
     if has_spell(CharacterValue::Flash) {
-        messages.push("Don't use Ball Lightning [/NOBALL]: Off.".to_string());
+        messages.push(format!(
+            "Don't use Ball Lightning [/NOBALL]: {}.",
+            on_off(player.no_ball)
+        ));
     }
     if has_spell(CharacterValue::Bless) {
-        messages.push("Don't use Bless [/NOBLESS]: Off.".to_string());
+        messages.push(format!(
+            "Don't use Bless [/NOBLESS]: {}.",
+            on_off(player.no_bless)
+        ));
     }
     if has_spell(CharacterValue::Fireball) {
-        messages.push("Don't use Fireball [/NOFIREBALL]: Off.".to_string());
+        messages.push(format!(
+            "Don't use Fireball [/NOFIREBALL]: {}.",
+            on_off(player.no_fireball)
+        ));
     }
     if has_spell(CharacterValue::Flash) {
-        messages.push("Don't use Lightning Flash [/NOFLASH]: Off.".to_string());
+        messages.push(format!(
+            "Don't use Lightning Flash [/NOFLASH]: {}.",
+            on_off(player.no_flash)
+        ));
     }
     if has_spell(CharacterValue::Freeze) {
-        messages.push("Don't use Freeze [/NOFREEZE]: Off.".to_string());
+        messages.push(format!(
+            "Don't use Freeze [/NOFREEZE]: {}.",
+            on_off(player.no_freeze)
+        ));
     }
     if has_spell(CharacterValue::Heal) {
-        messages.push("Don't use Heal [/NOHEAL]: Off.".to_string());
+        messages.push(format!(
+            "Don't use Heal [/NOHEAL]: {}.",
+            on_off(player.no_heal)
+        ));
     }
     if has_spell(CharacterValue::MagicShield) {
-        messages.push("Don't use Magic Shield [/NOSHIELD]: Off.".to_string());
+        messages.push(format!(
+            "Don't use Magic Shield [/NOSHIELD]: {}.",
+            on_off(player.no_shield)
+        ));
     }
     if has_spell(CharacterValue::Pulse) {
-        messages.push("Don't use Pulse [/NOPULSE]: Off.".to_string());
+        messages.push(format!(
+            "Don't use Pulse [/NOPULSE]: {}.",
+            on_off(player.no_pulse)
+        ));
     }
     if has_spell(CharacterValue::Warcry) {
-        messages.push("Don't use Warcry [/NOWARCRY]: Off.".to_string());
+        messages.push(format!(
+            "Don't use Warcry [/NOWARCRY]: {}.",
+            on_off(player.no_warcry)
+        ));
     }
 
     messages.extend([
-        "Don't use Healing Potions [/NOLIFE]: Off.".to_string(),
-        "Don't use Mana Potions [/NOMANA]: Off.".to_string(),
-        "Don't use Combo Potions [/NOCOMBO]: Off.".to_string(),
-        "Don't use Recall Scroll [/NORECALL]: Off.".to_string(),
-        "Don't Move [/NOMOVE]: Off.".to_string(),
+        format!(
+            "Don't use Healing Potions [/NOLIFE]: {}.",
+            on_off(player.no_life)
+        ),
+        format!(
+            "Don't use Mana Potions [/NOMANA]: {}.",
+            on_off(player.no_mana)
+        ),
+        format!(
+            "Don't use Combo Potions [/NOCOMBO]: {}.",
+            on_off(player.no_combo)
+        ),
+        format!(
+            "Don't use Recall Scroll [/NORECALL]: {}.",
+            on_off(player.no_recall)
+        ),
+        format!("Don't Move [/NOMOVE]: {}.", on_off(player.no_move)),
         "Automation Settings:".to_string(),
     ]);
     if has_spell(CharacterValue::Bless) {
-        messages.push("Automatic Re-Bless [/AUTOBLESS]: Off.".to_string());
+        messages.push(format!(
+            "Automatic Re-Bless [/AUTOBLESS]: {}.",
+            on_off(player.autobless_enabled)
+        ));
     }
     if has_spell(CharacterValue::Pulse) {
-        messages.push("Automatic Pulse [/AUTOPULSE]: Off.".to_string());
+        messages.push(format!(
+            "Automatic Pulse [/AUTOPULSE]: {}.",
+            on_off(player.autopulse_enabled)
+        ));
     }
     messages.extend([
         format!(

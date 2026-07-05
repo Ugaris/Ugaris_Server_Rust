@@ -341,6 +341,33 @@ fn status_command_shows_represented_lostcon_and_account_state() {
 }
 
 #[test]
+fn status_command_reflects_enabled_lag_control_toggles() {
+    let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
+    character.values[1][CharacterValue::Bless as usize] = 10;
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.no_bless = true;
+    player.no_life = true;
+    player.no_move = true;
+    player.autobless_enabled = true;
+
+    let result = apply_status_command(&character, &player, "/status")
+        .expect("status command should be recognized");
+
+    assert!(result
+        .messages
+        .contains(&"Don't use Bless [/NOBLESS]: On.".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Don't use Healing Potions [/NOLIFE]: On.".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Don't Move [/NOMOVE]: On.".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Automatic Re-Bless [/AUTOBLESS]: On.".to_string()));
+}
+
+#[test]
 fn status_command_preserves_cmdcmp_prefix_shape() {
     let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
     let player = PlayerRuntime::connected(1, 0);

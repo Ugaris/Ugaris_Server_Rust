@@ -647,6 +647,132 @@ pub(crate) fn apply_lag_command(
     })
 }
 
+/// One entry of the `/noball`, `/nobless`, ..., `/autobless`, `/autopulse`
+/// lag-control/automation toggle family (`command.c:9397-9591`): 16
+/// `cmdcmp(ptr, "<name>", 5)`-gated toggles of a `struct lostcon_ppd`
+/// (`src/module/lostcon.h:18-36`) boolean field, each followed by
+/// `show_lostconppd` (ported as [`apply_status_command`]). `/autoturn` is
+/// the 17th member of the same C family but already has its own
+/// [`apply_autoturn_command`] (pre-existing), so it's excluded here to
+/// avoid a duplicate dispatch entry.
+struct LagControlToggleSpec {
+    command: &'static str,
+    field: fn(&mut PlayerRuntime) -> &mut bool,
+}
+
+const LAG_CONTROL_TOGGLE_SPECS: &[LagControlToggleSpec] = &[
+    LagControlToggleSpec {
+        command: "noball",
+        field: |player| &mut player.no_ball,
+    },
+    LagControlToggleSpec {
+        command: "nobless",
+        field: |player| &mut player.no_bless,
+    },
+    LagControlToggleSpec {
+        command: "nofireball",
+        field: |player| &mut player.no_fireball,
+    },
+    LagControlToggleSpec {
+        command: "noflash",
+        field: |player| &mut player.no_flash,
+    },
+    LagControlToggleSpec {
+        command: "nofreeze",
+        field: |player| &mut player.no_freeze,
+    },
+    LagControlToggleSpec {
+        command: "noheal",
+        field: |player| &mut player.no_heal,
+    },
+    LagControlToggleSpec {
+        command: "noshield",
+        field: |player| &mut player.no_shield,
+    },
+    LagControlToggleSpec {
+        command: "nowarcry",
+        field: |player| &mut player.no_warcry,
+    },
+    LagControlToggleSpec {
+        command: "nolife",
+        field: |player| &mut player.no_life,
+    },
+    LagControlToggleSpec {
+        command: "nomana",
+        field: |player| &mut player.no_mana,
+    },
+    LagControlToggleSpec {
+        command: "nocombo",
+        field: |player| &mut player.no_combo,
+    },
+    LagControlToggleSpec {
+        command: "nomove",
+        field: |player| &mut player.no_move,
+    },
+    LagControlToggleSpec {
+        command: "norecall",
+        field: |player| &mut player.no_recall,
+    },
+    LagControlToggleSpec {
+        command: "nopulse",
+        field: |player| &mut player.no_pulse,
+    },
+    LagControlToggleSpec {
+        command: "autobless",
+        field: |player| &mut player.autobless_enabled,
+    },
+    LagControlToggleSpec {
+        command: "autopulse",
+        field: |player| &mut player.autopulse_enabled,
+    },
+];
+
+pub(crate) fn apply_lag_control_toggle_command(
+    character: &Character,
+    player: &mut PlayerRuntime,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 5 {
+        return None;
+    }
+
+    let spec = LAG_CONTROL_TOGGLE_SPECS
+        .iter()
+        .find(|spec| spec.command.starts_with(&lower))?;
+    let field = (spec.field)(player);
+    *field = !*field;
+    apply_status_command(character, player, "/status")
+}
+
+/// C `/allowbless` (`command.c:9595-9600`), `cmdcmp(ptr, "allowbless", 5)`:
+/// toggles `CF_NOBLESS` (inverted display: the flag means "don't allow",
+/// the command name means "allow") then re-shows the lag-control panel via
+/// `show_lostconppd`/[`apply_status_command`].
+pub(crate) fn apply_allowbless_command(
+    world: &mut World,
+    player: &PlayerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    let lower = verb.to_ascii_lowercase();
+    if lower.len() < 5 || !"allowbless".starts_with(&lower) {
+        return None;
+    }
+
+    let character = world.characters.get_mut(&character_id)?;
+    character.flags.toggle(CharacterFlags::NOBLESS);
+    apply_status_command(character, player, "/status")
+}
+
 /// C `/lastseen <name>` (`command.c:9027-9046`), `cmdcmp(ptr, "lastseen",
 /// 4)` so any prefix from `"last"` up to the full word matches, case-
 /// insensitively, no permission gate (every player can use it). Trims

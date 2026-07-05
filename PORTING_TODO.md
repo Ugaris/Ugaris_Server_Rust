@@ -6913,25 +6913,53 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `setexpsolve`, `setclanreflection`, `setmaxclanbonus`,
   `setjaillocation`, `setastonlocation`, `setspecialdropmult`,
   `setdropproblow`, `setdropprobmid`, `setdropprobhigh` (42 commands).
-  Still unported: `/allow` (not a clan-invite command -
-  see its Progress Log entry - it's `allow_body`, the cross-server
-  corpse-loot-access grant, blocked on the unported `server_chat`
-  cross-area DB chat relay), no standalone `/mirror` command actually
-  exists in `command.c` (only a `<mirror>` argument on `/goto`/`/jump`,
-  both already ported), no `/top` command exists in `command.c` either
-  (both were aspirational notes in an earlier iteration, not real
-  `cmdcmp` entries - verified by grepping `command.c` for `cmdcmp(ptr,
-  "top` / `"mirror"`), `setclanjewels` (`command.c:7563`, clan-treasure
-  struct + clan log, different storage than `GameSettings`, not part of
-  the just-closed knob family), `reloadloot`/`setlootmod` done (see
-  iteration 165); `global` (`command.c:8226-8322`, the "dump every
-  setting" admin display command) done (see iteration 166), and the rest
-  of the ~200 remaining `cmdcmp` entries in
-  `command.c` (mostly `CF_GOD`-gated `ac*` anticheat, `macro*`
-  macro-detection, `mil*` military-mission admin, item/skill/tunnel
-  editors, `setweather`/`setareaweather`/`clearweather`) not yet
+  Also done and previously miscategorized as unported by this note: the
+  `mil*` military-mission admin family (`milinfo`, `milpref`, `milreset`,
+  `milpoints`, `milrec`, `milstats`, `milsolve` - all in
+  `commands_admin.rs` with tests, see `apply_admin_character_command`),
+  `setweather`/`clearweather`/`setareaweather`/`/weather`
+  (`crates/ugaris-server/src/weather.rs`'s
+  `apply_weather_admin_command`/`apply_weather_command`, a whole
+  autonomous weather-cycle system, not just the commands), and the item-
+  editor commands `itemmod`/`itemname`/`itemdesc`
+  (`commands_admin.rs`) plus `tunnel`/`tunnels` (elsewhere in the
+  tunnel-progress display code) - none of these need further work. The
+  16-member lag-control/automation toggle family (`/noball`, `/nobless`,
+  `/nofireball`, `/noflash`, `/nofreeze`, `/noheal`, `/noshield`,
+  `/nowarcry`, `/nolife`, `/nomana`, `/nocombo`, `/nomove`, `/norecall`,
+  `/nopulse`, `/autobless`, `/autopulse`) plus `/allowbless` done (see
+  iteration 167) - storage/toggle/display only; the `CDR_LOSTCON`
+  autopilot behavior these flags gate (`src/module/lostcon.c`, plus the
+  auto-rebless/auto-pulse consumers in `player_driver.c:1067-1070`) is
+  NOT ported and has no dedicated task yet - add one before relying on
+  these toggles having gameplay effect. Still unported: `/allow` (not a
+  clan-invite command - see its Progress Log entry - it's `allow_body`,
+  the cross-server corpse-loot-access grant, blocked on the unported
+  `server_chat` cross-area DB chat relay), no standalone `/mirror`
+  command actually exists in `command.c` (only a `<mirror>` argument on
+  `/goto`/`/jump`, both already ported), no `/top` command exists in
+  `command.c` either (both were aspirational notes in an earlier
+  iteration, not real `cmdcmp` entries - verified by grepping
+  `command.c` for `cmdcmp(ptr, "top` / `"mirror"`), `setclanjewels`
+  (`command.c:7563`, clan-treasure struct + clan log, different storage
+  than `GameSettings`, not part of the just-closed knob family),
+  `reloadloot`/`setlootmod` done (see iteration 165); `global`
+  (`command.c:8226-8322`, the "dump every setting" admin display
+  command) done (see iteration 166), and the rest of the ~90 remaining
+  `cmdcmp` entries in `command.c` (mostly `CF_GOD`-gated `ac*`
+  anticheat, `macro*` macro-detection, plus one-off commands like
+  `/keyring`, `/depotsort`/`/accountdepotsort`, `/swap`, `/steal`,
+  `/thief`, `/logout`, `/complain`, `/kick`, `/punish`, `/shutdown`,
+  `/rename`, `/showppd`/`/showflags`/`/showvalues`, `/orbs`/`/tunnels`/
+  `/treasures`/`/demonlords`, various pentagram `setpent*`/`resetpent`
+  admin commands, and clan/tunnel/shrine editors like `/changetunnel`/
+  `/settunnel`/`/cleartunnel`/`/setrd`/`/clearrd`/`/solverd`) not yet
   cross-referenced (see the Progress Log entries below for what's been
-  checked off so far).
+  checked off so far; a fresh cross-reference pass comparing every
+  `cmdcmp(ptr, "...")` name in `command.c` against
+  `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
+  is recommended before picking the next slice, since this note has
+  drifted out of sync with actual progress more than once).
 
   Progress Log (iteration 158): ported the admin-teleport family -
   `/goto` (`command.c:8453-8567`, gated on `is_lqmaster`), `/jump`
@@ -7298,6 +7326,51 @@ Unlocks every quest NPC. Do these before any P4 area work.
   zero failures), `cargo build -p ugaris-server` / `cargo build
   --workspace` clean with zero warnings, 10s boot-smoke confirmed
   "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 167): ported the 16-member lag-control/
+  automation toggle family plus `/allowbless` - the `/noball`, `/nobless`,
+  `/nofireball`, `/noflash`, `/nofreeze`, `/noheal`, `/noshield`,
+  `/nowarcry`, `/nolife`, `/nomana`, `/nocombo`, `/nomove`, `/norecall`,
+  `/nopulse`, `/autobless`, `/autopulse` toggles of `struct lostcon_ppd`
+  (`src/module/lostcon.h:18-36`, `command.c:9397-9600`, all `minlen=5`,
+  no permission gate) into a new table-driven
+  `apply_lag_control_toggle_command` plus a standalone
+  `apply_allowbless_command` (both `commands_player.rs`), wired into
+  `main.rs`'s dispatch chain right after the pre-existing `/autoturn`.
+  `PlayerRuntime` gained the 16 corresponding bool fields (offsets 0-15
+  of the PPD, `autoturn`/`maxlag`/`hints` already occupied offsets
+  16-18); `encode_legacy_lostcon_ppd`/`decode_legacy_lostcon_ppd` extended
+  to cover all 19 ints (was 3), and the "only write a fresh PPD block if
+  non-default" gate on the no-existing-block save path extended to check
+  the new fields too (previously only checked `maxlag`/`hints`/
+  `autoturn`, which would have silently dropped a lone `/noball` toggle
+  on first save). `apply_status_command`'s (C `show_lostconppd`) 14
+  hardcoded "Off" lines now read the real per-field state, matching every
+  other already-ported toggle's on/save/read/display round-trip.
+  `/allowbless` (`command.c:9595-9600`) toggles `CF_NOBLESS` (already
+  displayed by `apply_status_command`, just previously unreachable) and
+  reuses the same `show_lostconppd`-equivalent re-display convention as
+  the rest of the family. Left the actual behavioral consumers of these
+  flags unported and noted inline: C's `CDR_LOSTCON` autopilot driver
+  (`src/module/lostcon.c`, the simulated-lag automatic
+  heal/shield/bless/attack logic these flags gate) and the auto-rebless/
+  auto-pulse consumers in `player_driver.c:1067-1070` don't exist in this
+  codebase yet - storing/displaying the toggle state is now
+  C-equivalent, but it has no gameplay effect until that autopilot
+  system is ported (separate, much larger task, not in scope here). 8
+  new tests: 2 in `player.rs` (full 16-field encode/decode round-trip
+  extending the pre-existing 3-field test, plus a fresh-block-write test
+  proving a lone `no_ball = true` with every other field default still
+  forces a `DRD_LOSTCON_PPD` block instead of silently no-opping), 2 in
+  `tests/commands_admin.rs` (`/status` reflects enabled toggles as "On"),
+  4 in `tests/commands_player.rs` (single-toggle round-trip, all 16
+  family members with the legacy `minlen=5` prefix boundary verified,
+  `/allowbless` toggling `CF_NOBLESS` both directions with correct Yes/No
+  text, abbreviation-too-short rejection). `cargo fmt --all`, `cargo test
+  --workspace` (1986 ugaris-core [+8] + 55 db + 3 net + 40 protocol + 687
+  server [+7], all green, zero failures), `cargo build -p ugaris-server`
+  / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
