@@ -831,3 +831,153 @@ pub(crate) fn build_cell(
         _ => {}
     }
 }
+
+/// C `create_dungeon`'s do-while retry loop plus `create_maze`'s own
+/// trailing `for (m = 0; m < xsize * ysize; m++) build_cell(...)` sweep
+/// (`dungeon.c:1500-1503,1327-1339`): regenerates the maze - tearing down
+/// the slot's previous map contents via [`World::destroy_dungeon`] before
+/// every attempt, including the first - until [`create_maze`]'s own
+/// quality `score` clears 350, dispatching every cell into [`build_cell`]
+/// on *every* attempt (matching C exactly: `create_maze` itself builds
+/// unconditionally before returning its score, so a low-scoring attempt's
+/// build is simply overwritten by the next attempt's
+/// `destroy_dungeon`+build pass; only the final, kept attempt's build
+/// survives). `request.target_clan` is C's own `cnr`/`maze_clan` (the
+/// *raided* clan, not the raider) - `dungeon.c`'s `create_maze(base,
+/// level, do_fake, keys, warrior, mage, seyan, teleport, cnr, show)`
+/// signature makes this explicit.
+pub(crate) fn build_dungeon_raid_maze(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    request: &DungeonRaidBuildRequest,
+) {
+    let do_fake = request.fake != 0;
+    let keys = request.key.clamp(0, 2);
+    let xoff = usize::from(request.xoff);
+    let yoff = usize::from(request.yoff);
+
+    loop {
+        world.destroy_dungeon(request.slot);
+        // C `RANDOM(12345678)`: a fresh maze seed for every attempt.
+        let base = runtime_random_below(12_345_678) as u32;
+        let maze = create_maze(
+            base,
+            do_fake,
+            keys,
+            &request.warrior,
+            &request.mage,
+            &request.seyan,
+            request.teleport,
+        );
+
+        for cy in 0..MAZE_YSIZE {
+            for cx in 0..MAZE_XSIZE {
+                let cell = &maze.cells[cx + cy * MAZE_XSIZE];
+                build_cell(
+                    world,
+                    loader,
+                    runtime,
+                    cx,
+                    cy,
+                    cell,
+                    xoff,
+                    yoff,
+                    i32::from(request.target_clan),
+                    base,
+                    request.level,
+                );
+            }
+        }
+
+        if maze.score >= 350 {
+            break;
+        }
+    }
+}
+
+/// Drains every queued [`DungeonRaidBuildRequest`] (from
+/// `World::dungeonmaster_handle_attack_command`, which has already
+/// charged the fee and updated the slot's tracking fields) and finishes
+/// C `create_dungeon`'s remaining side effects (`dungeon.c:1500-1512`):
+/// the do-while maze-build retry ([`build_dungeon_raid_maze`]), the
+/// "collapse in" confirmation, the raider's teleport into the fresh
+/// catacomb, and the two `add_clanlog` calls (one per clan).
+pub(crate) async fn apply_dungeonmaster_events(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    now_unix: i64,
+) -> usize {
+    let mut applied = 0;
+    for request in world.drain_pending_dungeon_raid_builds() {
+        build_dungeon_raid_maze(world, loader, runtime, &request);
+
+        let dungeon_time = f64::from(world.settings.dungeon_time);
+        world.npc_say(
+            request.dungeonmaster_id,
+            &format!(
+                "This catacomb will collapse in {:.2} minutes.",
+                dungeon_time / (TICKS_PER_SECOND as f64 * 60.0)
+            ),
+        );
+        world.teleport_character_same_area(
+            request.player_id,
+            request.xoff + 2,
+            request.yoff + 78,
+            false,
+        );
+
+        let Some(player_name) = world
+            .characters
+            .get(&request.player_id)
+            .map(|c| c.name.clone())
+        else {
+            applied += 1;
+            continue;
+        };
+        let own_clan_name = world
+            .clan_registry
+            .name(request.own_clan)
+            .unwrap_or("")
+            .to_string();
+        let target_clan_name = world
+            .clan_registry
+            .name(request.target_clan)
+            .unwrap_or("")
+            .to_string();
+        let target_serial = world.clan_registry.serial(request.target_clan);
+        let own_serial = world.clan_registry.serial(request.own_clan);
+
+        crate::clan_log::write_clan_log_entry(
+            clan_log_repository,
+            request.target_clan,
+            target_serial,
+            request.player_id,
+            20,
+            format!(
+                "Clan was attacked by {player_name} of {own_clan_name} ({})",
+                request.own_clan
+            ),
+            now_unix,
+        )
+        .await;
+        crate::clan_log::write_clan_log_entry(
+            clan_log_repository,
+            request.own_clan,
+            own_serial,
+            request.player_id,
+            20,
+            format!(
+                "{player_name} attacked clan {target_clan_name} ({})",
+                request.target_clan
+            ),
+            now_unix,
+        )
+        .await;
+
+        applied += 1;
+    }
+    applied
+}

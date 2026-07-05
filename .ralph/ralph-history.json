@@ -4619,15 +4619,52 @@
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 145,
+      "startedAt": "2026-07-05T08:16:38.383Z",
+      "endedAt": "2026-07-05T08:59:19.580Z",
+      "durationMs": 2560620,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/world/dungeon_master.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/npc_messages.rs",
+        "crates/ugaris-core/src/world/tests/dungeon_master.rs",
+        "crates/ugaris-core/src/zone.rs",
+        "crates/ugaris-server/src/dungeon.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 602 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "+                    DungeonRaidError::NoSuchClan => \"No clan by that number.\".to_string(),",
+        "+                    DungeonRaidError::LevelTooHigh => {",
+        "+                    DungeonRaidError::NotAtWar => \"You are not at war with that clan.\".to_string(),",
+        "+                    DungeonRaidError::TargetHasNoJewels => {",
+        "+                    DungeonRaidError::OwnClanLacksJewels => {",
+        "+                    DungeonRaidError::CatacombAlreadyExists { slot } => format!(",
+        "+                    DungeonRaidError::ClanAlreadyRaiding => {",
+        "+                    DungeonRaidError::PlayerAlreadyRaiding => {"
+      ]
     }
   ],
-  "totalDurationMs": 162594155,
+  "totalDurationMs": 165154775,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 144,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 145,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -5258,7 +5295,7 @@
       "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.00s": 1,
       "test result: ok. 601 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 2,
-      "test result: ok. 602 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 3,
+      "test result: ok. 602 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 4,
       "115:| `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`": 1,
       "-| `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`, `": 1,
       "+| `src/area/13/dungeon.c` dungeon item-driver boundary | `crates/ugaris-core/src/item_driver.rs`, `": 1,
@@ -5273,7 +5310,15 @@
       "test result: FAILED. 29 passed; 1 failed; 0 ignored; 0 measured; 1870 filtered out; finished in 0.01": 1,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 1870 filtered out; finished in 0.01s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 55 filtered out; finished in 0.00s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.00s": 1
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.00s": 1,
+      "+                    DungeonRaidError::NoSuchClan => \"No clan by that number.\".to_string(),": 1,
+      "+                    DungeonRaidError::LevelTooHigh => {": 1,
+      "+                    DungeonRaidError::NotAtWar => \"You are not at war with that clan.\".to_string(),": 1,
+      "+                    DungeonRaidError::TargetHasNoJewels => {": 1,
+      "+                    DungeonRaidError::OwnClanLacksJewels => {": 1,
+      "+                    DungeonRaidError::CatacombAlreadyExists { slot } => format!(": 1,
+      "+                    DungeonRaidError::ClanAlreadyRaiding => {": 1,
+      "+                    DungeonRaidError::PlayerAlreadyRaiding => {": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

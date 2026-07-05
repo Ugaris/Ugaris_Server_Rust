@@ -1,6 +1,28 @@
 use super::*;
+use crate::character_driver::CDR_DUNGEONMASTER;
 use crate::clan::ClanRelation;
 use crate::world::dungeon_master::{DungeonEnterError, DungeonRaidError, DungeonmasterDriverData};
+
+fn dungeonmaster_npc(id: u32) -> Character {
+    let mut dungeonmaster = character(id);
+    dungeonmaster.name = "Dungeonmaster".into();
+    dungeonmaster.driver = CDR_DUNGEONMASTER;
+    dungeonmaster.driver_state = Some(CharacterDriverState::Dungeonmaster(
+        DungeonmasterDriverData::default(),
+    ));
+    dungeonmaster
+}
+
+fn dungeonmaster_data(world: &World, dungeonmaster_id: CharacterId) -> DungeonmasterDriverData {
+    match world
+        .characters
+        .get(&dungeonmaster_id)
+        .and_then(|c| c.driver_state.clone())
+    {
+        Some(CharacterDriverState::Dungeonmaster(data)) => data,
+        _ => panic!("expected Dungeonmaster driver state"),
+    }
+}
 
 fn player(id: u32, name: &str) -> Character {
     let mut player = character(id);
@@ -657,4 +679,301 @@ fn characters_in_dungeon_slot_filters_by_area_block_and_player_flag() {
 
     let found = world.characters_in_dungeon_slot(0);
     assert_eq!(found, vec![CharacterId(1)]);
+}
+
+fn light_tile(world: &mut World, x: usize, y: usize) {
+    world.map.tile_mut(x, y).unwrap().light = 255;
+}
+
+// C `dungeonmaster`'s `NT_CHAR` greeting branch (`dungeon.c:1597-1620`).
+#[test]
+fn npc_char_message_greets_visible_nearby_player_once() {
+    let mut world = World::default();
+    light_tile(&mut world, 10, 10);
+    light_tile(&mut world, 15, 10);
+    assert!(world.spawn_character(dungeonmaster_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 15, 10));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        dungeonmaster.push_driver_message(NT_CHAR, 2, 0, 0);
+    }
+    world.process_dungeonmaster_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert!(texts[0].message.contains(
+        "Hello Godmode! Welcome to the clan catacombs. Be warned, there is a fee of 3500 \
+         gold for attacking now. Say help for details."
+    ));
+
+    // Same speaker again: the driver-memory slot suppresses the repeat.
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        dungeonmaster.push_driver_message(NT_CHAR, 2, 0, 0);
+    }
+    world.process_dungeonmaster_actions();
+    assert!(world.drain_pending_area_texts().is_empty());
+}
+
+#[test]
+fn npc_char_message_ignores_speaker_beyond_ten_tiles() {
+    let mut world = World::default();
+    light_tile(&mut world, 10, 10);
+    light_tile(&mut world, 25, 10);
+    assert!(world.spawn_character(dungeonmaster_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Faraway"), 25, 10));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        dungeonmaster.push_driver_message(NT_CHAR, 2, 0, 0);
+    }
+    world.process_dungeonmaster_actions();
+
+    assert!(world.drain_pending_area_texts().is_empty());
+}
+
+// C `dungeonmaster`'s `NT_TEXT` help/list small-talk (`dungeon.c:1636-
+// 1646`).
+#[test]
+fn text_help_and_list_reply_with_exact_c_wording() {
+    let mut world = World::default();
+    assert!(world.spawn_character(dungeonmaster_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 10, 10));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        dungeonmaster.push_driver_text_message(CharacterId(2), "help");
+    }
+    world.process_dungeonmaster_actions();
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains(
+        "Use: 'attack <nr>' to attack clan <nr>, 'enter <nr>' to enter catacomb <nr> or 'list' \
+         to get a listing of all catacombs."
+    )));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        dungeonmaster.push_driver_text_message(CharacterId(2), "list");
+    }
+    world.process_dungeonmaster_actions();
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains("No catacombs.")));
+}
+
+// C `dungeonmaster`'s `attack` handler, calling into `create_dungeon`
+// (`dungeon.c:1648`).
+#[test]
+fn attack_command_success_charges_fee_updates_slot_and_queues_build_request() {
+    let mut world = World::default();
+    assert!(world.spawn_character(dungeonmaster_npc(1), 10, 10));
+
+    let own_clan = found_clan(&mut world, "Raiders");
+    let target_clan = found_clan(&mut world, "Targets");
+    declare_war(&mut world, own_clan, target_clan);
+    give_jewels(&mut world, target_clan, 11);
+    give_jewels(&mut world, own_clan, 12);
+
+    let mut raider = member(2, "Raider", &world, own_clan);
+    raider.gold = 10_000_000;
+    assert!(world.spawn_character(raider, 10, 10));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        dungeonmaster.push_driver_text_message(CharacterId(2), &format!("attack {target_clan}"));
+    }
+    world.process_dungeonmaster_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t.message.contains(
+        "Very well, I have created the catacomb for you. Thank you for paying 3500 gold."
+    )));
+
+    let raider_gold = world.characters.get(&CharacterId(2)).unwrap().gold;
+    assert_eq!(raider_gold, 10_000_000 - 350_000);
+
+    let dat = dungeonmaster_data(&world, CharacterId(1));
+    assert_eq!(dat.target[0], target_clan);
+    assert_eq!(dat.created_by_clan[0], own_clan);
+    assert_eq!(dat.owner[0], 2);
+
+    let builds = world.drain_pending_dungeon_raid_builds();
+    assert_eq!(builds.len(), 1);
+    assert_eq!(builds[0].target_clan, target_clan);
+    assert_eq!(builds[0].own_clan, own_clan);
+    assert_eq!(builds[0].player_id, CharacterId(2));
+    assert_eq!(builds[0].dungeonmaster_id, CharacterId(1));
+    assert_eq!(builds[0].slot, 0);
+}
+
+#[test]
+fn attack_command_failure_says_error_and_never_charges_or_queues() {
+    let mut world = World::default();
+    assert!(world.spawn_character(dungeonmaster_npc(1), 10, 10));
+
+    let mut raider = player(2, "Raider");
+    raider.gold = 10_000_000;
+    assert!(world.spawn_character(raider, 10, 10));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        dungeonmaster.push_driver_text_message(CharacterId(2), "attack 5");
+    }
+    world.process_dungeonmaster_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("You are not at war with that clan.")));
+    assert_eq!(
+        world.characters.get(&CharacterId(2)).unwrap().gold,
+        10_000_000
+    );
+    assert!(world.drain_pending_dungeon_raid_builds().is_empty());
+}
+
+#[test]
+fn attack_command_says_cannot_afford_fee_without_charging_when_gold_is_short() {
+    let mut world = World::default();
+    assert!(world.spawn_character(dungeonmaster_npc(1), 10, 10));
+
+    let own_clan = found_clan(&mut world, "Raiders");
+    let target_clan = found_clan(&mut world, "Targets");
+    declare_war(&mut world, own_clan, target_clan);
+    give_jewels(&mut world, target_clan, 11);
+    give_jewels(&mut world, own_clan, 12);
+
+    let mut raider = member(2, "Raider", &world, own_clan);
+    raider.gold = 1;
+    assert!(world.spawn_character(raider, 10, 10));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        dungeonmaster.push_driver_text_message(CharacterId(2), &format!("attack {target_clan}"));
+    }
+    world.process_dungeonmaster_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("Sorry, you cannot afford the fee of 3500G.")));
+    assert_eq!(world.characters.get(&CharacterId(2)).unwrap().gold, 1);
+    assert!(world.drain_pending_dungeon_raid_builds().is_empty());
+    let dat = dungeonmaster_data(&world, CharacterId(1));
+    assert_eq!(dat.target[0], 0);
+}
+
+// C `dungeonmaster`'s `enter` handler, calling into `enter_dungeon`
+// (`dungeon.c:1655`).
+#[test]
+fn enter_command_success_teleports_and_says_collapse_time() {
+    let mut world = World::default();
+    assert!(world.spawn_character(dungeonmaster_npc(1), 250, 250));
+
+    let own_clan = found_clan(&mut world, "Raiders");
+    let target_clan = found_clan(&mut world, "Targets");
+    declare_war(&mut world, own_clan, target_clan);
+    let raider = member(2, "Raider", &world, own_clan);
+    assert!(world.spawn_character(raider, 250, 250));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        if let Some(CharacterDriverState::Dungeonmaster(data)) = dungeonmaster.driver_state.as_mut()
+        {
+            data.target[0] = target_clan;
+            data.level[0] = 30;
+            data.created[0] = 0;
+        }
+        dungeonmaster.push_driver_text_message(CharacterId(2), "enter 1");
+    }
+    world.process_dungeonmaster_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("This catacomb will collapse in")));
+    let raider = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!((raider.x, raider.y), (4, 80));
+}
+
+#[test]
+fn enter_command_out_of_bounds_says_exact_c_message() {
+    let mut world = World::default();
+    assert!(world.spawn_character(dungeonmaster_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Raider"), 10, 10));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        dungeonmaster.push_driver_text_message(CharacterId(2), "enter 99");
+    }
+    world.process_dungeonmaster_actions();
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|t| t.message.contains("Sorry, the target is out of bounds.")));
+}
+
+// C `dungeonmaster`'s GM-only `destroy` handler (`dungeon.c:1657-1668`).
+#[test]
+fn destroy_command_requires_god_flag() {
+    let mut world = World::default();
+    assert!(world.spawn_character(dungeonmaster_npc(1), 250, 250));
+    let mut mortal = player(2, "Mortal");
+    mortal.flags.remove(CharacterFlags::GOD);
+    assert!(world.spawn_character(mortal, 250, 250));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        if let Some(CharacterDriverState::Dungeonmaster(data)) = dungeonmaster.driver_state.as_mut()
+        {
+            data.target[0] = 5;
+        }
+        dungeonmaster.push_driver_text_message(CharacterId(2), "destroy 1");
+    }
+    world.process_dungeonmaster_actions();
+
+    let dat = dungeonmaster_data(&world, CharacterId(1));
+    assert_eq!(
+        dat.target[0], 5,
+        "non-GOD speaker must not destroy a catacomb"
+    );
+}
+
+#[test]
+fn destroy_command_resets_slot_for_god_speaker() {
+    let mut world = World::default();
+    assert!(world.spawn_character(dungeonmaster_npc(1), 250, 250));
+    let mut god = player(2, "Godmode");
+    god.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(god, 250, 250));
+
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        if let Some(CharacterDriverState::Dungeonmaster(data)) = dungeonmaster.driver_state.as_mut()
+        {
+            data.target[0] = 5;
+            data.created_by_clan[0] = 7;
+        }
+        dungeonmaster.push_driver_text_message(CharacterId(2), "destroy 1");
+    }
+    world.process_dungeonmaster_actions();
+
+    let dat = dungeonmaster_data(&world, CharacterId(1));
+    assert_eq!(dat.target[0], 0);
+    assert_eq!(dat.created_by_clan[0], 0);
+}
+
+// C `dungeonmaster`'s per-slot expiry tick (`dungeon.c:1706-1718`).
+#[test]
+fn tick_destroys_expired_slot_and_resets_tracking_fields() {
+    let mut world = World::default();
+    assert!(world.spawn_character(dungeonmaster_npc(1), 250, 250));
+    if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
+        if let Some(CharacterDriverState::Dungeonmaster(data)) = dungeonmaster.driver_state.as_mut()
+        {
+            data.target[0] = 5;
+            data.created_by_clan[0] = 7;
+            data.owner[0] = 2;
+            data.created[0] = 1;
+        }
+    }
+    // Past the default dungeon-collapse window.
+    world.tick = Tick(world.settings.dungeon_time as u64 + 2);
+
+    world.process_dungeonmaster_actions();
+
+    let dat = dungeonmaster_data(&world, CharacterId(1));
+    assert_eq!(dat.target[0], 0);
+    assert_eq!(dat.created_by_clan[0], 0);
+    assert_eq!(dat.owner[0], 0);
+    assert_eq!(dat.created[0], 0);
 }

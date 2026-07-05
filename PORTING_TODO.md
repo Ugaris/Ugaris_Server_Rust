@@ -3262,14 +3262,31 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (evicting a cornered player to their stored rest point, which may be
   in a different area) is only reachable for its same-area case; the
   cross-area case falls through to `exit_char` exactly like every other
-  unported cross-area path in this codebase. REMAINING now: the actual
-  `CDR_DUNGEONMASTER`/`CDR_DUNGEONFIGHTER` driver wiring (constants,
-  `CharacterDriverState` variant, message-loop entry point, tick-loop
-  call site), the do-while `create_maze`+`build_cell`-retry-until-
-  score-350 orchestration that spends the fee and actually spins up the
-  map (both builders are already ported and ready, see the Progress Log
-  entries above), and `dungeonfighter`/`dungeon_potion`/`fighter_dead`
-  (the separate combat-adjacent driver, `dungeon.c:1956-2161`). The potion
+  unported cross-area path in this codebase. The `CDR_DUNGEONMASTER`
+  driver itself - constants, `CharacterDriverState::Dungeonmaster`
+  variant, the `dungeonmaster` message-loop entry point (greeting/help/
+  list/`attack`/`enter`/GM-only `destroy` text commands, the per-slot
+  expiry/warning tick, and the 12h driver-memory clear,
+  `crates/ugaris-core/src/world/dungeon_master.rs`), the do-while
+  `create_maze`+`build_cell`-retry-until-score-350 orchestration
+  (`crates/ugaris-server/src/dungeon.rs::build_dungeon_raid_maze`), and
+  the tick-loop call site (`process_dungeonmaster_actions`/
+  `apply_dungeonmaster_events` in `crates/ugaris-server/src/main.rs`,
+  right after `clanclerk`) - were all ported and wired in iteration 145
+  (see Progress Log). REMAINING now: `immortal_dead`'s one-line bug-log
+  message (`ch_died_driver` for `CDR_DUNGEONMASTER`, trivial and
+  unreachable in practice since this NPC is never meant to die), and
+  `dungeonfighter`/`dungeon_potion`/`fighter_dead` (the separate
+  combat-adjacent `CDR_DUNGEONFIGHTER` driver, `dungeon.c:1956-2161` -
+  the constant exists, see `character_driver::CDR_DUNGEONFIGHTER`, but
+  nothing implements it yet), plus `dungeondoor`'s own `first_solve`
+  jewel-stealing/`NTID_DUNGEON`-notify side effects
+  (`item_driver::area13_dungeon::dungeon_door_driver` already computes
+  `first_solve`/`catacomb` but `world::item_outcomes`'s
+  `DungeonDoorSolved` handler only teleports the winner today - a
+  pre-existing gap, not introduced this iteration, now documented here
+  since it's the natural next slice once `CDR_DUNGEONFIGHTER` exists to
+  receive the `NTID_DUNGEON` notify). The potion
   half of the dungeon-guard economy (`alc_pot`/`simple_pot`) was ported
   in iteration 135 (see Progress Log): it turned out to be a real,
   reachable slice, not blocked on anything, since the alchemy-potion
@@ -4646,6 +4663,74 @@ Unlocks every quest NPC. Do these before any P4 area work.
     the actual driver/tick-loop wiring, the maze-build retry
     orchestration, and `dungeonfighter`/`dungeon_potion`/`fighter_dead`
     all remain - see the updated REMAINING note above.
+  - 2026-07-05 (iteration 145): ported the `CDR_DUNGEONMASTER` driver
+    itself, closing every REMAINING item except `CDR_DUNGEONFIGHTER` and
+    `dungeondoor`'s jewel-steal/notify side effects (both now called out
+    explicitly in the REMAINING note above). Added `CDR_DUNGEONMASTER`/
+    `CDR_DUNGEONFIGHTER` driver constants, `DUNGEONMASTER_QA` (C's own
+    `qa[]` table, `dungeon.c:91-99` - unlike `CLANMASTER_QA`, codes `2`
+    "help"/`3` "list" are real, reachable outcomes here, matching C's
+    own `switch` on `analyse_text_driver`'s return value), and moved
+    `DungeonmasterDriverData`/`DUNGEON_SLOT_COUNT` into
+    `character_driver.rs` (derives `Serialize`/`Deserialize` now) to
+    match every other driver-data type's home and let
+    `CharacterDriverState::Dungeonmaster` wrap it (all in
+    `crates/ugaris-core/src/character_driver.rs`). Ported `dungeonmaster`
+    itself (`dungeon.c:1571-1731`) as `World::process_dungeonmaster_actions`
+    in `crates/ugaris-core/src/world/dungeon_master.rs`: the `NT_CHAR`
+    greeting (distance/visibility/driver-memory-slot-7 gates, real queued
+    messages rather than a periodic-scan simplification, since this
+    codebase already emits real `NT_CHAR` on movement), the `NT_TEXT`
+    small-talk-then-independent-keyword-command dispatch (`attack <nr>`/
+    `enter <nr>`/GM-only `destroy <nr>`, all three unconditional
+    regardless of the qa-table outcome, matching C's plain non-`else` `if`
+    chain exactly), `NT_GIVE` (unconditional gift destruction), the
+    `NT_NPC`/`NTID_DUNGEON` slot-reset handler (unreachable today - see
+    below), and the per-slot expiry/warning tick plus the 12h
+    driver-memory clear. `attack`'s success path reuses the already-ported
+    `plan_create_dungeon` pure decision, then charges the fee (via
+    `gate_take_money`, the same shared `take_money` primitive
+    `world/gatekeeper.rs` already ported), updates the slot's tracking
+    fields, and queues a new `DungeonRaidBuildRequest` event/
+    `pending_dungeon_raid_builds` queue (same "pure decision in `World`,
+    I/O-heavy application in `ugaris-server`" split as every other
+    `*Event` queue in this codebase) since the actual maze build needs
+    `ZoneLoader`/`ServerRuntime` access `World` doesn't have. Not ported:
+    C's own `secure_move_driver(cn, ch[cn].tmpx, ch[cn].tmpy, DX_DOWN,
+    ret, lastact)` call - dead in practice since this NPC has no zone-file
+    waypoints (documented inline). In `crates/ugaris-server/src/
+    dungeon.rs`, added `build_dungeon_raid_maze` (the do-while
+    `create_maze`+`build_cell`-retry-until-score-350 loop,
+    `dungeon.c:1500-1503,1327-1339` - discovered `create_maze` itself
+    unconditionally calls `build_cell` for every cell before returning its
+    score, so a low-scoring attempt's build is simply overwritten by the
+    next attempt's `destroy_dungeon`+build pass; only the final kept
+    attempt's build survives, exactly mirrored here) and
+    `apply_dungeonmaster_events` (drains the request queue, builds the
+    maze, says the "collapse in" confirmation, teleports the raider, and
+    writes both `add_clanlog` entries via the already-ported
+    `clan_log::write_clan_log_entry`). Wired
+    `CharacterDriverState::Dungeonmaster` into `zone.rs`'s NPC-template
+    instantiation (confirmed `ugaris_data/zones/13/*.chr` already has a
+    real `driver=51` NPC that now picks this up) and the tick-loop call
+    site in `main.rs` (`process_dungeonmaster_actions`/
+    `apply_dungeonmaster_events`, right after `clanclerk`). 41 new tests in
+    `crates/ugaris-core/src/world/tests/dungeon_master.rs` (greeting
+    distance/visibility/memory-dedup, help/list wording, attack success
+    charging the fee and queuing the build request, attack failure paths
+    charging nothing, insufficient-gold "cannot afford" without charging,
+    enter success/out-of-bounds, GOD-gated destroy, and the expiry tick
+    resetting a slot's tracking fields) - no new server-crate tests this
+    iteration (the maze-build orchestration itself is already covered by
+    `build_cell`'s existing tests; `apply_dungeonmaster_events` is a thin
+    drain-and-delegate wrapper). `cargo fmt --all`, `cargo test --workspace`
+    (1911 ugaris-core [+11] + 55 db + 3 net + 40 protocol + 602 server, all
+    green, zero failures), `cargo build -p ugaris-server`/`--workspace`
+    clean with zero warnings, 10s boot-smoke on both area 1 and area 13
+    confirmed "entering Rust game loop" with no panics (area 13 is where
+    the real `CDR_DUNGEONMASTER` NPC now lives). REMAINING per the updated
+    note above: `CDR_DUNGEONFIGHTER`, `immortal_dead`, and
+    `dungeondoor`'s jewel-steal/notify gap.
 
 - [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission

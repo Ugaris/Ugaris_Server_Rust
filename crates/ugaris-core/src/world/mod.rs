@@ -69,6 +69,7 @@ pub use clubmaster::*;
 pub(crate) use combat::*;
 pub use death::*;
 pub use doors::*;
+pub use dungeon_master::*;
 #[allow(unused_imports)]
 pub(crate) use effect_tick::*;
 #[allow(unused_imports)]
@@ -316,6 +317,7 @@ pub struct World {
     pending_military_master_events: Vec<MilitaryMasterEvent>,
     pending_military_advisor_events: Vec<MilitaryAdvisorEvent>,
     pending_arena_master_events: Vec<ArenaMasterEvent>,
+    pending_dungeon_raid_builds: Vec<DungeonRaidBuildRequest>,
 }
 
 impl Default for Tick {

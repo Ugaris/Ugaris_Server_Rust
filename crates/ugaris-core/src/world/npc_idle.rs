@@ -479,7 +479,8 @@ impl World {
                 | CharacterDriverState::MilitaryAdvisor(_)
                 | CharacterDriverState::ArenaMaster(_)
                 | CharacterDriverState::ArenaFighter(_)
-                | CharacterDriverState::ArenaManager(_) => None,
+                | CharacterDriverState::ArenaManager(_)
+                | CharacterDriverState::Dungeonmaster(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

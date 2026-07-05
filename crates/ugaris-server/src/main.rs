@@ -114,7 +114,7 @@ use ugaris_core::{
         can_attack_in_area, can_attack_in_area_with_clan_policy, ClanAttackPolicy, ItemUseRequest,
     },
     drvlib::char_dist,
-    dungeon_maze::MazeCell,
+    dungeon_maze::{create_maze, MazeCell, MAZE_XSIZE, MAZE_YSIZE},
     effect::Effect,
     entity::{
         Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode,
@@ -167,10 +167,10 @@ use ugaris_core::{
     world::{
         army_rank_for_points, army_rank_name, exp2level, legacy_save_number, level2exp,
         level2maxitem, level_value, merchant_buy_price, merchant_sales_price, ArenaMasterEvent,
-        BankEvent, ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, FirstKillCheck,
-        GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest,
-        MerchantTradeResult, RaiseSkillOutcome, StoreWare, TraderEvent, WorldActionCompletion,
-        MERCHANT_STORE_SIZE,
+        BankEvent, ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest,
+        FirstKillCheck, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent,
+        LookMapRequest, MerchantTradeResult, RaiseSkillOutcome, StoreWare, TraderEvent,
+        WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -5987,6 +5987,26 @@ async fn main() -> anyhow::Result<()> {
                 let clanclerk_events_applied =
                     apply_clanclerk_events(&mut world, &clan_log_repository, current_unix_time())
                         .await;
+                // C `dungeonmaster`: the clan-raid catacomb reception NPC
+                // (`src/area/13/dungeon.c`) - `attack`/`enter`/`list`/
+                // (GM-only) `destroy` text commands, the per-slot expiry/
+                // warning tick, and the greeting.
+                world.process_dungeonmaster_actions();
+                let dungeonmaster_events_applied = apply_dungeonmaster_events(
+                    &mut world,
+                    &mut zone_loader,
+                    &mut runtime,
+                    &clan_log_repository,
+                    current_unix_time(),
+                )
+                .await;
+                if dungeonmaster_events_applied != 0 {
+                    info!(
+                        dungeonmaster_events_applied,
+                        tick = world.tick.0,
+                        "applied dungeon-raid catacomb build events"
+                    );
+                }
                 // C `clubmaster_driver`: the club foundations/
                 // administration NPC (`src/system/clubmaster.c`).
                 world.process_clubmaster_actions(config.area_id, current_unix_time());

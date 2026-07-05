@@ -84,6 +84,19 @@ pub const CDR_ARENAFIGHTER: u16 = 49;
 /// never touches gold at all). See `world/arena.rs`'s
 /// `process_arena_manager_actions`.
 pub const CDR_ARENAMANAGER: u16 = 50;
+/// C `#define CDR_DUNGEONMASTER 51` (`src/system/drvlib.h`): the clan-raid
+/// catacomb reception NPC (`src/area/13/dungeon.c::dungeonmaster`) -
+/// `attack <nr>`/`enter <nr>`/`list`/(GM-only) `destroy <nr>` text
+/// commands, the per-slot expiry/warning tick, and the greeting. See
+/// `world/dungeon_master.rs`'s `process_dungeonmaster_actions`.
+pub const CDR_DUNGEONMASTER: u16 = 51;
+/// C `#define CDR_DUNGEONFIGHTER 52` (`src/system/drvlib.h`): the
+/// autonomous raid-boss combat driver (`dungeon.c::dungeonfighter`/
+/// `dungeon_potion`/`fighter_dead`, `dungeon.c:1956-2161`) spawned inside
+/// a live catacomb. Not wired yet - see the "Clan system" task in
+/// `PORTING_TODO.md`'s REMAINING notes; kept here only so the numeric
+/// compatibility constant exists for whichever future slice ports it.
+pub const CDR_DUNGEONFIGHTER: u16 = 52;
 
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
@@ -163,6 +176,7 @@ pub enum CharacterDriverState {
     ArenaMaster(ArenaMasterDriverData),
     ArenaFighter(ArenaFighterDriverData),
     ArenaManager(ArenaManagerDriverData),
+    Dungeonmaster(DungeonmasterDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -711,6 +725,88 @@ pub fn parse_arena_manager_driver_args(args: &str) -> ArenaManagerDriverData {
     }
     data
 }
+
+/// C's fixed catacomb-grid size (`src/area/13/dungeon.c` implicitly
+/// assumes 9 81x81 catacomb slots laid out 3x3 across the area-13 map).
+pub const DUNGEON_SLOT_COUNT: usize = 9;
+
+/// C `struct master_data` (`src/area/13/dungeon.c:1366-1375`): the
+/// `CDR_DUNGEONMASTER` driver's per-slot catacomb-tracking arrays.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DungeonmasterDriverData {
+    /// C `target[9]`: the defending clan number for each occupied slot
+    /// (`0` = empty).
+    pub target: [u16; DUNGEON_SLOT_COUNT],
+    /// C `level[9]`: the guard level the catacomb was built at
+    /// (`56 + score_to_level(clan_get_training_score(target))`).
+    pub level: [i32; DUNGEON_SLOT_COUNT],
+    /// C `created[9]`: the tick the catacomb was created (`0` = empty).
+    pub created: [u64; DUNGEON_SLOT_COUNT],
+    /// C `warning[9]`: the next `warn_dungeon` threshold, in ticks-since-
+    /// creation.
+    pub warning: [u64; DUNGEON_SLOT_COUNT],
+    /// C `owner[9]`: the raider's `ch[].ID` (here, `CharacterId.0`) that
+    /// created the catacomb.
+    pub owner: [u32; DUNGEON_SLOT_COUNT],
+    /// C `created_by_clan[9]`: the raiding clan number.
+    pub created_by_clan: [u16; DUNGEON_SLOT_COUNT],
+    /// C `memcleartimer`.
+    pub memcleartimer: u64,
+}
+
+/// C `struct qa qa[]` (`src/area/13/dungeon.c:91-99`): `dungeonmaster`'s
+/// own small-talk table. Unlike `CLANMASTER_QA`, C's own caller *does*
+/// read `analyse_text_driver`'s return value here (`case 2:`/`case 3:`,
+/// `dungeon.c:1636-1645`), so codes `2` ("help") and `3` ("list") are
+/// both real, reachable outcomes - see
+/// `World::dungeonmaster_handle_text_message`.
+pub const DUNGEONMASTER_QA: &[TextQaEntry] = &[
+    TextQaEntry {
+        words: &["how", "are", "you"],
+        answer: Some("I'm fine!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hello"],
+        answer: Some("Hello, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hi"],
+        answer: Some("Hi, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["greetings"],
+        answer: Some("Greetings, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hail"],
+        answer: Some("And hail to you, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what", "is", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["help"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["list"],
+        answer: None,
+        answer_code: 3,
+    },
+];
 
 /// C `struct qa qa[]` (`src/system/arena.c:83-97`), shared verbatim by
 /// `master_driver`'s and `manager_driver`'s `analyse_text_driver` calls.
@@ -2327,7 +2423,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::MilitaryAdvisor(_)
             | CharacterDriverState::ArenaMaster(_)
             | CharacterDriverState::ArenaFighter(_)
-            | CharacterDriverState::ArenaManager(_),
+            | CharacterDriverState::ArenaManager(_)
+            | CharacterDriverState::Dungeonmaster(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

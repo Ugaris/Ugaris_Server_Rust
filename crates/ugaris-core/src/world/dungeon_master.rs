@@ -53,38 +53,15 @@
 //! on any `Character` yet (no `CharacterDriverState` variant exists for
 //! it in this slice).
 
+use super::clanclerk::parse_int_atoi;
 use super::*;
+use crate::character_driver::{
+    analyse_text_qa, mem_add_driver, mem_check_driver, mem_erase_driver, TextAnalysisOutcome,
+    CDR_DUNGEONMASTER, DUNGEONMASTER_QA, NTID_DUNGEON,
+};
 use crate::clan::score_to_level;
 
-/// C's fixed catacomb-grid size (`dungeon.c` implicitly assumes 9
-/// 81x81 catacomb slots laid out 3x3 across the area-13 map).
-pub const DUNGEON_SLOT_COUNT: usize = 9;
-
-/// C `struct master_data` (`dungeon.c:1366-1375`), minus `dungeonmaster`'s
-/// own driver-dispatch bookkeeping (`memcleartimer` is kept since
-/// `list_dungeon`/`warn_dungeon` callers may still want it, but nothing
-/// in this pure module reads it yet).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DungeonmasterDriverData {
-    /// C `target[9]`: the defending clan number for each occupied slot
-    /// (`0` = empty).
-    pub target: [u16; DUNGEON_SLOT_COUNT],
-    /// C `level[9]`: the guard level the catacomb was built at
-    /// (`56 + score_to_level(clan_get_training_score(target))`).
-    pub level: [i32; DUNGEON_SLOT_COUNT],
-    /// C `created[9]`: the tick the catacomb was created (`0` = empty).
-    pub created: [u64; DUNGEON_SLOT_COUNT],
-    /// C `warning[9]`: the next `warn_dungeon` threshold, in ticks-since-
-    /// creation.
-    pub warning: [u64; DUNGEON_SLOT_COUNT],
-    /// C `owner[9]`: the raider's `ch[].ID` (here, `CharacterId.0`) that
-    /// created the catacomb.
-    pub owner: [u32; DUNGEON_SLOT_COUNT],
-    /// C `created_by_clan[9]`: the raiding clan number.
-    pub created_by_clan: [u16; DUNGEON_SLOT_COUNT],
-    /// C `memcleartimer`.
-    pub memcleartimer: u64,
-}
+pub use crate::character_driver::{DungeonmasterDriverData, DUNGEON_SLOT_COUNT};
 
 /// C `create_dungeon`'s `say(...)` error branches (`dungeon.c:1384-
 /// 1448`), in the same order C checks them.
@@ -178,7 +155,46 @@ pub struct DungeonEnterPlan {
     pub remaining_ticks: i64,
 }
 
+/// A validated, fee-already-charged `create_dungeon` raid, queued by
+/// [`World::dungeonmaster_handle_attack_command`] for `ugaris-server` to
+/// resolve via the do-while `create_maze`+`build_cell` retry loop
+/// (`dungeon.c:1500-1503`, both builders live in `crates/ugaris-server/
+/// src/dungeon.rs`) since that needs `ZoneLoader`/`ServerRuntime` access
+/// `World` doesn't have - same "pure decision in `World`, I/O-heavy
+/// application in `ugaris-server`" split as every other `*Event`/
+/// `*Request` queue in this codebase (see `world::clanmaster::
+/// ClanmasterEvent`'s doc comment). By the time this is queued, the fee
+/// has already been taken and `DungeonmasterDriverData`'s slot fields
+/// have already been updated - only the actual map-building side effect
+/// (plus the final "collapse in" message, teleport, and the two
+/// `add_clanlog` calls) remains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonRaidBuildRequest {
+    /// The `CDR_DUNGEONMASTER` NPC that received the `attack` command -
+    /// C's own `say(cn, ...)` caller for the final "collapse in" message.
+    pub dungeonmaster_id: CharacterId,
+    pub player_id: CharacterId,
+    /// The defending clan number (C's own `target` parameter).
+    pub target_clan: u16,
+    /// The raiding player's own clan (`get_char_clan(co)`).
+    pub own_clan: u16,
+    pub slot: usize,
+    pub xoff: u16,
+    pub yoff: u16,
+    pub level: i32,
+    pub warrior: [i32; 6],
+    pub mage: [i32; 6],
+    pub seyan: [i32; 6],
+    pub teleport: i32,
+    pub fake: i32,
+    pub key: i32,
+}
+
 impl World {
+    /// Drains every [`DungeonRaidBuildRequest`] queued this tick.
+    pub fn drain_pending_dungeon_raid_builds(&mut self) -> Vec<DungeonRaidBuildRequest> {
+        std::mem::take(&mut self.pending_dungeon_raid_builds)
+    }
     /// C `create_dungeon`'s validation and catacomb-slot-selection logic
     /// (`dungeon.c:1377-1500`), minus taking the fee, building the maze,
     /// teleporting the raider, and the two `add_clanlog` calls - all real
@@ -526,6 +542,426 @@ impl World {
             for y in yf..yt {
                 self.build_empty_tile(x, y);
             }
+        }
+    }
+
+    /// C `dungeonmaster`'s top-level per-NPC dispatch (`dungeon.c:1571-
+    /// 1731`): iterates every live `CDR_DUNGEONMASTER` NPC, processes its
+    /// message queue, then its per-slot expiry/warning tick and 12h
+    /// driver-memory clear. C's own `secure_move_driver(cn, ch[cn].tmpx,
+    /// ch[cn].tmpy, DX_DOWN, ret, lastact)` call is not ported: the
+    /// dungeonmaster NPC has no zone-file waypoints in `ugaris_data`
+    /// (unlike `clanmaster`/`clanclerk`, which patrol back to a rest
+    /// tile), so it is a dead call in practice - it only ever resumes an
+    /// already-in-progress forced move, which nothing in this driver
+    /// ever starts.
+    pub fn process_dungeonmaster_actions(&mut self) {
+        let dungeonmaster_ids: Vec<CharacterId> = self
+            .characters
+            .values()
+            .filter(|character| {
+                character.driver == CDR_DUNGEONMASTER
+                    && character.flags.contains(CharacterFlags::USED)
+                    && !character.flags.contains(CharacterFlags::DEAD)
+            })
+            .map(|character| character.id)
+            .collect();
+
+        for dungeonmaster_id in dungeonmaster_ids {
+            self.process_dungeonmaster_messages(dungeonmaster_id);
+            self.dungeonmaster_tick(dungeonmaster_id);
+        }
+    }
+
+    /// C `dungeonmaster`'s message loop (`dungeon.c:1580-1725`).
+    fn process_dungeonmaster_messages(&mut self, dungeonmaster_id: CharacterId) {
+        let Some(dungeonmaster_name) = self
+            .characters
+            .get(&dungeonmaster_id)
+            .map(|c| c.name.clone())
+        else {
+            return;
+        };
+        let Some(CharacterDriverState::Dungeonmaster(mut dat)) = self
+            .characters
+            .get(&dungeonmaster_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return;
+        };
+
+        let messages = self
+            .characters
+            .get_mut(&dungeonmaster_id)
+            .map(|dungeonmaster| std::mem::take(&mut dungeonmaster.driver_messages))
+            .unwrap_or_default();
+
+        for message in &messages {
+            match message.message_type {
+                NT_CHAR => self.dungeonmaster_handle_char_message(dungeonmaster_id, message),
+                NT_TEXT => self.dungeonmaster_handle_text_message(
+                    dungeonmaster_id,
+                    &dungeonmaster_name,
+                    &mut dat,
+                    message,
+                ),
+                NT_GIVE => self.dungeonmaster_handle_give_message(dungeonmaster_id),
+                NT_NPC if message.dat1 == NTID_DUNGEON => {
+                    let slot = message.dat2.max(0) as usize;
+                    if slot < DUNGEON_SLOT_COUNT {
+                        self.destroy_dungeon(slot);
+                        dat.target[slot] = 0;
+                        dat.level[slot] = 0;
+                        dat.created[slot] = 0;
+                        dat.warning[slot] = 0;
+                        dat.owner[slot] = 0;
+                        dat.created_by_clan[slot] = 0;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(dungeonmaster) = self.characters.get_mut(&dungeonmaster_id) {
+            dungeonmaster.driver_state = Some(CharacterDriverState::Dungeonmaster(dat));
+        }
+    }
+
+    /// C `dungeonmaster`'s `NT_CHAR` greeting branch (`dungeon.c:1597-
+    /// 1620`): "don't talk to someone we can't see, or ourself", "don't
+    /// talk to someone far away" (10 tiles), "don't talk to the same
+    /// person twice" (`mem_check_driver(cn, co, 7)`).
+    fn dungeonmaster_handle_char_message(
+        &mut self,
+        dungeonmaster_id: CharacterId,
+        message: &CharacterDriverMessage,
+    ) {
+        let speaker_id = CharacterId(message.dat1.max(0) as u32);
+        if speaker_id == dungeonmaster_id {
+            return;
+        }
+        let Some(dungeonmaster) = self.characters.get(&dungeonmaster_id).cloned() else {
+            return;
+        };
+        let Some(speaker) = self.characters.get(&speaker_id).cloned() else {
+            return;
+        };
+        if !char_see_char(&dungeonmaster, &speaker, &self.map, self.date.daylight) {
+            return;
+        }
+        if char_dist(&dungeonmaster, &speaker) > 10 {
+            return;
+        }
+        if mem_check_driver(&dungeonmaster.driver_memory, 7, speaker_id.0) {
+            return;
+        }
+        self.npc_say(
+            dungeonmaster_id,
+            &format!(
+                "Hello {}! Welcome to the clan catacombs. Be warned, there is a fee of 3500 \
+                 gold for attacking now. Say help for details.",
+                speaker.name
+            ),
+        );
+        if let Some(dungeonmaster_mut) = self.characters.get_mut(&dungeonmaster_id) {
+            mem_add_driver(&mut dungeonmaster_mut.driver_memory, 7, speaker_id.0);
+        }
+    }
+
+    /// C `dungeonmaster`'s `NT_GIVE` branch (`dungeon.c:1670-1675`): any
+    /// gift is unconditionally destroyed (no jewel/item validation,
+    /// unlike `clanclerk`'s `NT_GIVE` handler).
+    fn dungeonmaster_handle_give_message(&mut self, dungeonmaster_id: CharacterId) {
+        if let Some(item_id) = self
+            .characters
+            .get_mut(&dungeonmaster_id)
+            .and_then(|dungeonmaster| dungeonmaster.cursor_item.take())
+        {
+            self.destroy_item(item_id);
+        }
+    }
+
+    /// C `dungeonmaster`'s `NT_TEXT` branch (`dungeon.c:1626-1668`): the
+    /// shared small-talk qa table (help/list), then the independent
+    /// `attack <nr>`/`enter <nr>`/(GM-only) `destroy <nr>` substring
+    /// commands - all four run unconditionally regardless of whether the
+    /// qa table matched anything, exactly like C's plain (non-`else`)
+    /// `if` chain.
+    fn dungeonmaster_handle_text_message(
+        &mut self,
+        dungeonmaster_id: CharacterId,
+        dungeonmaster_name: &str,
+        dat: &mut DungeonmasterDriverData,
+        message: &CharacterDriverMessage,
+    ) {
+        let speaker_id = CharacterId(message.dat3.max(0) as u32);
+        if speaker_id == dungeonmaster_id {
+            return;
+        }
+        let Some(speaker) = self.characters.get(&speaker_id).cloned() else {
+            return;
+        };
+        if !speaker.flags.contains(CharacterFlags::PLAYER) {
+            return;
+        }
+        let Some(text) = message.text.clone() else {
+            return;
+        };
+
+        let can_see =
+            self.characters
+                .get(&dungeonmaster_id)
+                .cloned()
+                .is_some_and(|dungeonmaster| {
+                    char_see_char(&dungeonmaster, &speaker, &self.map, self.date.daylight)
+                });
+        if can_see {
+            match analyse_text_qa(&text, dungeonmaster_name, &speaker.name, DUNGEONMASTER_QA) {
+                TextAnalysisOutcome::Said(reply) => {
+                    self.npc_say(dungeonmaster_id, &reply);
+                }
+                TextAnalysisOutcome::Matched(2) => {
+                    self.npc_say(
+                        dungeonmaster_id,
+                        "Use: 'attack <nr>' to attack clan <nr>, 'enter <nr>' to enter catacomb \
+                         <nr> or 'list' to get a listing of all catacombs.",
+                    );
+                }
+                TextAnalysisOutcome::Matched(3) => {
+                    let lines = self.list_dungeon_lines(dat);
+                    for line in lines {
+                        self.npc_say(dungeonmaster_id, &line);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let lower = text.to_ascii_lowercase();
+        if let Some(pos) = lower.find("attack") {
+            let target = parse_int_atoi(text.get(pos + 6..).unwrap_or(""));
+            self.dungeonmaster_handle_attack_command(dungeonmaster_id, dat, speaker_id, target);
+        }
+        if let Some(pos) = lower.find("enter") {
+            let target = parse_int_atoi(text.get(pos + 5..).unwrap_or(""));
+            self.dungeonmaster_handle_enter_command(dungeonmaster_id, dat, speaker_id, target);
+        }
+        if let Some(pos) = lower.find("destroy") {
+            if speaker.flags.contains(CharacterFlags::GOD) {
+                let target = parse_int_atoi(text.get(pos + 7..).unwrap_or(""));
+                self.dungeonmaster_handle_destroy_command(dat, target);
+            }
+        }
+    }
+
+    /// C `dungeonmaster`'s `attack` handler, calling into `create_dungeon`
+    /// (`dungeon.c:1648`): on success, charges the fee, updates the
+    /// slot's tracking fields, and queues a [`DungeonRaidBuildRequest`]
+    /// for `ugaris-server` to actually build the maze (see that type's
+    /// doc comment).
+    fn dungeonmaster_handle_attack_command(
+        &mut self,
+        dungeonmaster_id: CharacterId,
+        dat: &mut DungeonmasterDriverData,
+        speaker_id: CharacterId,
+        target: i32,
+    ) {
+        let target_clan = target.clamp(0, i32::from(u16::MAX)) as u16;
+        match self.plan_create_dungeon(speaker_id, target_clan, dat) {
+            Ok(plan) => {
+                // C `take_money(co, fee * 100)` - `gate_take_money` is the
+                // same shared `take_money(cn, val)` primitive, named for
+                // its first caller (`src/system/tool.c:3820-3826`).
+                if !self.gate_take_money(speaker_id, plan.fee.saturating_mul(100)) {
+                    self.npc_say(
+                        dungeonmaster_id,
+                        &format!("Sorry, you cannot afford the fee of {}G.", plan.fee),
+                    );
+                    return;
+                }
+                self.npc_say(
+                    dungeonmaster_id,
+                    &format!(
+                        "Very well, I have created the catacomb for you. Thank you for paying \
+                         {} gold.",
+                        plan.fee
+                    ),
+                );
+                dat.level[plan.slot] = plan.level;
+                dat.target[plan.slot] = target_clan;
+                dat.created[plan.slot] = self.tick.0;
+                dat.warning[plan.slot] = 0;
+                dat.owner[plan.slot] = speaker_id.0;
+                dat.created_by_clan[plan.slot] = plan.own_clan;
+                self.pending_dungeon_raid_builds
+                    .push(DungeonRaidBuildRequest {
+                        dungeonmaster_id,
+                        player_id: speaker_id,
+                        target_clan,
+                        own_clan: plan.own_clan,
+                        slot: plan.slot,
+                        xoff: plan.xoff,
+                        yoff: plan.yoff,
+                        level: plan.level,
+                        warrior: plan.warrior,
+                        mage: plan.mage,
+                        seyan: plan.seyan,
+                        teleport: plan.teleport,
+                        fake: plan.fake,
+                        key: plan.key,
+                    });
+            }
+            Err(err) => {
+                let message = match err {
+                    DungeonRaidError::NoSuchClan => "No clan by that number.".to_string(),
+                    DungeonRaidError::LevelTooHigh => {
+                        "You cannot create a clan catacomb, your level is too high (max 56)."
+                            .to_string()
+                    }
+                    DungeonRaidError::NotAtWar => "You are not at war with that clan.".to_string(),
+                    DungeonRaidError::TargetHasNoJewels => {
+                        "That clan does not have any jewels you could steal.".to_string()
+                    }
+                    DungeonRaidError::OwnClanLacksJewels => {
+                        "Your clan does not have enough jewels to mount a raid (your clan needs \
+                         to have at least 11 of them)."
+                            .to_string()
+                    }
+                    DungeonRaidError::CatacombAlreadyExists { slot } => {
+                        format!("This catacomb already exists, please use 'enter {slot}' instead.")
+                    }
+                    DungeonRaidError::ClanAlreadyRaiding => {
+                        "Your clan has created a catacomb already, you may not create another \
+                         one before the first one has collapsed."
+                            .to_string()
+                    }
+                    DungeonRaidError::PlayerAlreadyRaiding => {
+                        "You have created a catacomb already, you may not create another one \
+                         before the first one has collapsed."
+                            .to_string()
+                    }
+                    DungeonRaidError::AllCatacombsBusy { wait_ticks } => format!(
+                        "Sorry, all catacombs are busy. Please try again in {:.2} minutes",
+                        wait_ticks as f64 / (TICKS_PER_SECOND as f64 * 60.0)
+                    ),
+                };
+                self.npc_say(dungeonmaster_id, &message);
+            }
+        }
+    }
+
+    /// C `dungeonmaster`'s `enter` handler, calling into `enter_dungeon`
+    /// (`dungeon.c:1655`).
+    fn dungeonmaster_handle_enter_command(
+        &mut self,
+        dungeonmaster_id: CharacterId,
+        dat: &DungeonmasterDriverData,
+        speaker_id: CharacterId,
+        target: i32,
+    ) {
+        match self.plan_enter_dungeon(speaker_id, target, dat) {
+            Ok(plan) => {
+                self.npc_say(
+                    dungeonmaster_id,
+                    &format!(
+                        "This catacomb will collapse in {:.2} minutes,",
+                        plan.remaining_ticks as f64 / (TICKS_PER_SECOND as f64 * 60.0)
+                    ),
+                );
+                self.teleport_character_same_area(speaker_id, plan.x, plan.y, false);
+            }
+            Err(err) => {
+                let message = match err {
+                    DungeonEnterError::TargetOutOfBounds => {
+                        "Sorry, the target is out of bounds.".to_string()
+                    }
+                    DungeonEnterError::LevelTooHigh { max_level } => format!(
+                        "Sorry, you may not enter this catacomb, it was created for level \
+                         {max_level} and below."
+                    ),
+                    DungeonEnterError::NotAtWar => "You are not at war with that clan.".to_string(),
+                    DungeonEnterError::AboutToCollapse => {
+                        "Sorry, this catacomb is about to collapse.".to_string()
+                    }
+                };
+                self.npc_say(dungeonmaster_id, &message);
+            }
+        }
+    }
+
+    /// C `dungeonmaster`'s GM-only `destroy` handler (`dungeon.c:1657-
+    /// 1668`): the GOD-flag gate is checked by the caller
+    /// ([`Self::dungeonmaster_handle_text_message`]) since it inspects
+    /// the speaker, not this slot-reset logic.
+    fn dungeonmaster_handle_destroy_command(
+        &mut self,
+        dat: &mut DungeonmasterDriverData,
+        target: i32,
+    ) {
+        if target > 0 && target < 10 {
+            let slot = (target - 1) as usize;
+            self.destroy_dungeon(slot);
+            dat.target[slot] = 0;
+            dat.level[slot] = 0;
+            dat.created[slot] = 0;
+            dat.warning[slot] = 0;
+            dat.owner[slot] = 0;
+            dat.created_by_clan[slot] = 0;
+        }
+    }
+
+    /// C `dungeonmaster`'s per-slot expiry/warning tick plus the 12h
+    /// driver-memory clear (`dungeon.c:1706-1725`).
+    fn dungeonmaster_tick(&mut self, dungeonmaster_id: CharacterId) {
+        let Some(CharacterDriverState::Dungeonmaster(mut dat)) = self
+            .characters
+            .get(&dungeonmaster_id)
+            .and_then(|c| c.driver_state.clone())
+        else {
+            return;
+        };
+
+        let dungeon_time = i64::from(self.settings.dungeon_time);
+        let ticker = self.tick.0 as i64;
+
+        for slot in 0..DUNGEON_SLOT_COUNT {
+            if dat.created[slot] == 0 {
+                continue;
+            }
+            let tmp = ticker - dat.created[slot] as i64;
+            if tmp > dungeon_time {
+                self.destroy_dungeon(slot);
+                dat.target[slot] = 0;
+                dat.level[slot] = 0;
+                dat.created[slot] = 0;
+                dat.warning[slot] = 0;
+                dat.owner[slot] = 0;
+                dat.created_by_clan[slot] = 0;
+            }
+            if tmp > dat.warning[slot] as i64 {
+                self.warn_dungeon(slot, dungeon_time - tmp);
+                dat.warning[slot] = dat.warning[slot].saturating_add(TICKS_PER_SECOND * 60 * 5);
+            }
+        }
+
+        if ticker > dat.memcleartimer as i64 {
+            if let Some(dungeonmaster) = self.characters.get_mut(&dungeonmaster_id) {
+                mem_erase_driver(&mut dungeonmaster.driver_memory, 7);
+            }
+            dat.memcleartimer = (ticker as u64).saturating_add(TICKS_PER_SECOND * 60 * 60 * 12);
+        }
+
+        if let Some(dungeonmaster) = self.characters.get_mut(&dungeonmaster_id) {
+            dungeonmaster.driver_state = Some(CharacterDriverState::Dungeonmaster(dat));
+        }
+    }
+
+    /// C `warn_dungeon(nr, left)` (`dungeon.c:1559-1569`).
+    fn warn_dungeon(&mut self, slot: usize, left_ticks: i64) {
+        let minutes = left_ticks as f64 / (TICKS_PER_SECOND as f64 * 60.0);
+        let message = format!("This catacomb will collapse in {minutes:.2} minutes.");
+        for character_id in self.characters_in_dungeon_slot(slot) {
+            self.queue_system_text(character_id, message.clone());
         }
     }
 }
