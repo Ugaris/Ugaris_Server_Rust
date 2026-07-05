@@ -269,6 +269,17 @@ struct ServerRuntime {
     /// C `src/module/events/seasonal/easter_event.c`'s `easter_event`/
     /// `event_data` file-statics.
     easter_event: events::EasterEventState,
+    /// C `backup_players`'s static `int n` (`player.c:3707-3721`): a
+    /// round-robin cursor over currently-connected players, advanced by
+    /// one entry each time a backup save is triggered (`/saveall`,
+    /// `command.c:7460-7473`; also the periodic 85s `maintenance_60s_task`
+    /// sweep in C, not yet ported here - see `next_backup_rotation_target`).
+    /// C indexes into the raw `player[]` connection-slot array in
+    /// insertion order; Rust has no equivalent stable slot order, so this
+    /// walks a deterministic sort-by-`CharacterId` list instead (a
+    /// documented simplification, not a behavioral requirement of the
+    /// feature).
+    backup_rotation_cursor: usize,
 }
 
 impl Default for ServerRuntime {
@@ -309,6 +320,7 @@ impl Default for ServerRuntime {
             weather: WeatherState::default(),
             recurring_events: events::RecurringEventsState::default(),
             easter_event: events::EasterEventState::default(),
+            backup_rotation_cursor: 0,
         }
     }
 }
@@ -593,6 +605,30 @@ impl ServerRuntime {
 
     fn ensure_account_depot(&mut self, character_id: CharacterId) -> &mut AccountDepotState {
         self.account_depots.entry(character_id).or_default()
+    }
+
+    /// C `backup_players` (`player.c:3707-3721`): advances the round-robin
+    /// cursor by one and returns the next connected player to back up, or
+    /// `None` if nobody is currently connected (matching C's `while (n <
+    /// MAXPLAYER)` falling through without saving anyone). See the
+    /// `backup_rotation_cursor` field doc comment for the deterministic-
+    /// sort-order deviation from C's raw connection-slot order.
+    fn next_backup_rotation_target(&mut self) -> Option<CharacterId> {
+        let mut connected: Vec<CharacterId> = self
+            .players
+            .values()
+            .filter_map(|player| player.character_id)
+            .collect();
+        if connected.is_empty() {
+            return None;
+        }
+        connected.sort_unstable_by_key(|character_id| character_id.0);
+        if self.backup_rotation_cursor >= connected.len() {
+            self.backup_rotation_cursor = 0;
+        }
+        let target = connected[self.backup_rotation_cursor];
+        self.backup_rotation_cursor += 1;
+        Some(target)
     }
 }
 
@@ -1568,6 +1604,74 @@ async fn main() -> anyhow::Result<()> {
                                         current_unix_time(),
                                     )
                                     .await;
+                                }
+                                if result.save_all_requested {
+                                    // C `/saveall` (`command.c:7460-7473`):
+                                    // `backup_players()` saves exactly one
+                                    // online player per call (round-robin
+                                    // cursor, see
+                                    // `next_backup_rotation_target`'s doc
+                                    // comment), then `save_all_merchants()`
+                                    // resaves every live merchant store.
+                                    if let Some(target_id) =
+                                        runtime.next_backup_rotation_target()
+                                    {
+                                        if let Some(character) =
+                                            world.characters.get(&target_id)
+                                        {
+                                            if let Some(repository) = &character_repository {
+                                                if let Some(player) =
+                                                    runtime.player_for_character(target_id)
+                                                {
+                                                    let account_depot = runtime
+                                                        .account_depots
+                                                        .get(&target_id)
+                                                        .cloned();
+                                                    let request = character_backup_save_request(
+                                                        &world,
+                                                        player,
+                                                        character,
+                                                        account_depot.as_ref(),
+                                                        config.area_id,
+                                                        config.mirror_id,
+                                                    );
+                                                    match repository
+                                                        .save_character_snapshot(request)
+                                                        .await
+                                                    {
+                                                        Ok(true) => {
+                                                            info!(character_id = target_id.0, "saved DB-backed character snapshot on /saveall");
+                                                        }
+                                                        Ok(false) => {
+                                                            warn!(character_id = target_id.0, "DB character snapshot save was skipped by area guard on /saveall");
+                                                        }
+                                                        Err(err) => {
+                                                            warn!(character_id = target_id.0, error = %err, "failed to save DB-backed character snapshot on /saveall");
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if let Some(repository) = &merchant_repository {
+                                        let merchant_ids: Vec<CharacterId> =
+                                            world.merchant_stores.keys().copied().collect();
+                                        for merchant_id in merchant_ids {
+                                            if let Some(snapshot) =
+                                                merchant_store_snapshot(&world, merchant_id)
+                                            {
+                                                let name = snapshot.merchant_name.clone();
+                                                match repository.save_store(&snapshot).await {
+                                                    Ok(()) => {
+                                                        info!(merchant = %name, "saved merchant store on /saveall");
+                                                    }
+                                                    Err(err) => {
+                                                        warn!(merchant = %name, error = %err, "failed to save merchant store on /saveall");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 continue;
                             }

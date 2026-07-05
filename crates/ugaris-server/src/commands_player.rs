@@ -70,6 +70,25 @@ pub(crate) struct KeyringCommandResult {
     /// `/clanlog` itself is wired at the `main.rs` call site instead of
     /// here).
     pub(crate) clan_log_entry: Option<(u16, u32, u8, String)>,
+    /// Set by `/saveall` (C `command.c:7460-7473`, `CF_GOD`-gated). The
+    /// command layer has no DB handle of its own (same reason `/kick`'s
+    /// save and `/setclanjewels`'s clan-log write are both deferred to the
+    /// `main.rs` call site instead of here): the call site must (1) save
+    /// exactly one online player snapshot, advancing the round-robin
+    /// cursor (C `backup_players`'s static `n`, `player.c:3707-3721`, also
+    /// driven every 85s by `maintenance_60s_task` - unlike that periodic
+    /// sweep, this flag only advances the cursor once per `/saveall`
+    /// invocation, matching C exactly), and (2) save every live merchant
+    /// store (C `save_all_merchants`, `database_merchant.c:848-857`).
+    /// The messages below are pushed unconditionally up front, matching
+    /// C's own unconditional `log_char` calls (`backup_players`/
+    /// `save_all_merchants` return nothing C checks). C's third pair of
+    /// messages ("Forcing save of pentagram records..."/"Pentagram
+    /// records saved" around `save_pentagram_record_scheduled()`) is
+    /// deliberately omitted: the pentagram-record-tracking feature itself
+    /// isn't ported yet (see `PORTING_TODO.md`'s `/saveall` note), so
+    /// there is nothing to save and claiming otherwise would be dishonest.
+    pub(crate) save_all_requested: bool,
 }
 
 pub(crate) fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {

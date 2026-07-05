@@ -3358,6 +3358,30 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/saveall` (`command.c:7460-7473`, `cmdcmp(ptr, "saveall", 4)`,
+    // `CF_GOD`-gated). Must be checked after the `saves` block above
+    // (matching C's own line order, 6278 before 7460): `cmdcmp(ptr,
+    // "saves", 4)` matches the literal input "save" first in C, so
+    // "/save" is `saves` (a stat setter) not `saveall`, and only
+    // "/savea"/"/saveal"/"/saveall" reach this block. See the
+    // `save_all_requested` doc comment on `KeyringCommandResult` for what
+    // the `main.rs` call site does with the flag.
+    if lower.len() >= 4 && "saveall".starts_with(&lower) {
+        if !character.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "Forcing save of all players...".to_string(),
+                "Player data saved".to_string(),
+                "Forcing save of merchant inventories...".to_string(),
+                "Merchant data saved".to_string(),
+            ],
+            save_all_requested: true,
+            ..Default::default()
+        });
+    }
+
     if lower == "sprite" {
         if !character.flags.contains(CharacterFlags::GOD) {
             return None;

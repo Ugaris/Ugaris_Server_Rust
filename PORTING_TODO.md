@@ -6971,7 +6971,11 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/depotsort` (the character's own `DRD_DEPOT_PPD` depot, a whole
   unported storage system - not the same as `/accountdepotsort`, which
    is done), `/steal` done (see iteration 175), `/complain` done (see
-   iteration 177),
+   iteration 177), `/saveall` done (see iteration 178 - a full sweep for
+   merchants but only a single round-robin player per invocation,
+   matching C's real `backup_players` behavior; its pentagram-record
+   third of the C command is skipped, that feature has no Rust port at
+   all yet),
    `/punish`, `/shutdown`, `/rename`, `/showppd`/`/showvalues`,
    `/orbs`/`/tunnels`/`/treasures`/`/demonlords`, various pentagram
   `setpent*`/`resetpent` admin commands, and clan/tunnel/shrine editors
@@ -7842,6 +7846,58 @@ Unlocks every quest NPC. Do these before any P4 area work.
   anticheat/macro-detection systems, the per-character depot storage
   system) or genuinely out of scope (anti-cheat is explicitly deferred
   per this file's "Not Applicable / Deferred" section).
+
+  Progress Log (iteration 178): ported `/saveall` (`command.c:
+  7460-7473`, `cmdcmp(ptr, "saveall", 4)`, `CF_GOD`-gated) into
+  `apply_admin_character_command` (`commands_admin.rs`), placed right
+  after the pre-existing `saves` block to preserve C's own line-order
+  disambiguation - `cmdcmp(ptr, "saves", 4)` (`command.c:6278`) matches
+  the literal input "/save" before `cmdcmp(ptr, "saveall", 4)` is ever
+  reached, so "/save" stays the `saves` stat setter and only "/savea"/
+  "/saveal"/"/saveall" resolve to this new command. Investigated all
+  three pieces `backup_players()`/`save_all_merchants()`/
+  `save_pentagram_record_scheduled()` trigger: `backup_players`
+  (`player.c:3707-3721`) is a round-robin single-player-per-call saver
+  (a static cursor `n` that also advances every 85s via the already-
+  scheduled-in-C-but-not-Rust `maintenance_60s_task`), not a true "save
+  everyone" sweep despite the command's name and log text - ported that
+  exact quirk as `ServerRuntime::next_backup_rotation_target`
+  (`main.rs`, new `backup_rotation_cursor: usize` field), which walks a
+  deterministic sort-by-`CharacterId` list of currently-connected
+  players instead of C's raw `player[]` slot-index order (documented
+  deviation, not behaviorally load-bearing). `save_all_merchants`
+  (`database_merchant.c:848-857`) is a real full sweep and had no
+  existing "save every store" helper (each store only self-saves on
+  trade via `save_merchant_store_if_configured`), so `/saveall` loops
+  `world.merchant_stores.keys()` and calls the existing `PgMerchantRepository
+  ::save_store` per store directly. `save_pentagram_record_scheduled`
+  is skipped entirely (not even its log messages) because the pentagram-
+  record-tracking feature itself has no Rust port at all yet (confirmed
+  by grepping for `pentagram_record`/`PentagramRecord` across the whole
+  workspace - zero hits beyond unrelated pentagram-setting/quest naming) -
+  claiming to save it would be dishonest; a future iteration should treat
+  "port pentagram-record tracking + persistence" as its own task before
+  extending `/saveall` to cover it. Added `KeyringCommandResult::
+  save_all_requested` (new bool flag, `commands_player.rs`) and a new
+  `character_backup_save_request` (`snapshots.rs`) alongside the existing
+  `character_save_request`: unlike a logout save, C's `save_char(cn, 0)`
+  "backup" mode serializes the character's entire live state as-is
+  (citem included) with none of `character_logout_snapshot`'s item-
+  vanishing logic, since the character stays online and unmoved. Wired
+  at the `main.rs` call site (same shape as `/kick`'s deferred async
+  save): pushes the four unconditional C `log_char` messages up front
+  ("Forcing save of all players...", "Player data saved", "Forcing save
+  of merchant inventories...", "Merchant data saved" - matching C's own
+  fire-and-forget calls that don't check any return value), then
+  performs the one-player rotation save and the merchant sweep. 2 new
+  tests in `tests/commands_admin.rs` (permission gate + the "/save" vs
+  "/saveall" disambiguation across all four valid abbreviation lengths,
+  and the rotation cursor's deterministic cycle-and-skip-unset-character-
+  id behavior). `cargo fmt --all`, `cargo test --workspace` (2009
+  ugaris-core + 55 db + 3 net + 40 protocol + 732 server [+2], all green,
+  zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

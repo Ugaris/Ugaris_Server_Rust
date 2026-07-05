@@ -198,3 +198,45 @@ pub(crate) fn character_save_request(
         },
     }
 }
+
+/// C `save_char(cn, 0)` (`database_character.c:95-...`, the "backup" mode
+/// used by both `backup_players` and `/saveall`): unlike a logout save,
+/// this serializes the character's *entire* live state exactly as-is,
+/// including the currently-held cursor item (C's `if ((in = ch[cn].
+/// citem)) *itmp++ = it[in];`) and without running any of the item-
+/// vanishing logic `character_logout_snapshot` applies - the character
+/// stays online and unmoved, so nothing should disappear.
+pub(crate) fn character_backup_save_request(
+    world: &World,
+    player: &PlayerRuntime,
+    character: &Character,
+    account_depot: Option<&AccountDepotState>,
+    area_id: u16,
+    mirror_id: u16,
+) -> CharacterSaveRequest {
+    let save_mirror_id = if player.current_mirror_id == 0 {
+        mirror_id
+    } else {
+        player.current_mirror_id
+    };
+    CharacterSaveRequest {
+        character: character.clone(),
+        items: character_snapshot_items(world, character),
+        ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
+        subscriber_blob: encode_legacy_achievement_stats_subscriber_blob(
+            &encode_legacy_achievement_data_subscriber_blob(
+                &encode_legacy_account_depot_subscriber_blob(
+                    &player.subscriber_blob,
+                    account_depot,
+                ),
+                &player.achievement_data,
+            ),
+            &player.achievement_stats,
+        ),
+        mode: CharacterSaveMode::Backup {
+            expected_current_area: i32::from(area_id),
+            expected_current_mirror: i32::from(mirror_id),
+            mirror: i32::from(save_mirror_id),
+        },
+    }
+}

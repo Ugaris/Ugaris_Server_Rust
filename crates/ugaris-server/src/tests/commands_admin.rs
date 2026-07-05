@@ -412,6 +412,80 @@ fn saves_command_is_god_only_and_uses_legacy_prefix_parsing() {
 }
 
 #[test]
+fn saveall_command_is_god_only_and_disambiguated_from_saves() {
+    let mut world = World::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/saveall", 1)
+            .is_none()
+    );
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+
+    // Exactly "/save" (minlen 4) is claimed by the `saves` stat setter,
+    // matching C's `cmdcmp(ptr, "saves", 4)` appearing before `cmdcmp(ptr,
+    // "saveall", 4)` in `command.c` - it must not trigger `save_all_requested`.
+    let saves_result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/save 9", 1)
+            .expect("god saves command should still win on exact minlen-4 abbreviation");
+    assert!(!saves_result.save_all_requested);
+    assert_eq!(world.characters.get(&character_id).unwrap().saves, 9);
+
+    for command in ["/savea", "/saveal", "/saveall"] {
+        let result =
+            apply_admin_character_command(&mut world, &mut runtime, character_id, command, 1)
+                .unwrap_or_else(|| panic!("{command} should be recognized as /saveall"));
+        assert!(
+            result.save_all_requested,
+            "{command} should request save-all"
+        );
+        assert_eq!(
+            result.messages,
+            vec![
+                "Forcing save of all players...".to_string(),
+                "Player data saved".to_string(),
+                "Forcing save of merchant inventories...".to_string(),
+                "Merchant data saved".to_string(),
+            ]
+        );
+    }
+}
+
+#[test]
+fn backup_rotation_cursor_cycles_through_connected_players_deterministically() {
+    let mut runtime = ServerRuntime::default();
+    // No connected players yet.
+    assert_eq!(runtime.next_backup_rotation_target(), None);
+
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    runtime.players.get_mut(&1).unwrap().character_id = Some(CharacterId(5));
+    let (commands, _rx2) = mpsc::channel(16);
+    runtime.connect(2, commands, 0);
+    runtime.players.get_mut(&2).unwrap().character_id = Some(CharacterId(3));
+    let (commands, _rx3) = mpsc::channel(16);
+    runtime.connect(3, commands, 0);
+    runtime.players.get_mut(&3).unwrap().character_id = None;
+
+    // Sorted by CharacterId: 3, then 5. Session 3 has no character_id and
+    // is skipped, matching C's `player[n] && cn` guard.
+    assert_eq!(runtime.next_backup_rotation_target(), Some(CharacterId(3)));
+    assert_eq!(runtime.next_backup_rotation_target(), Some(CharacterId(5)));
+    // Cursor wraps back to the start once every connected player has been
+    // visited once, matching C's `n = 1;` reset at the end of the scan.
+    assert_eq!(runtime.next_backup_rotation_target(), Some(CharacterId(3)));
+}
+
+#[test]
 fn god_visibility_toggle_commands_preserve_legacy_feedback() {
     let mut world = World::default();
     let character_id = CharacterId(7);
