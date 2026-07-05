@@ -6943,6 +6943,12 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `command.c` for `cmdcmp(ptr, "top` / `"mirror"`), `setclanjewels`
   (`command.c:7563`, clan-treasure struct + clan log, different storage
   than `GameSettings`, not part of the just-closed knob family),
+  `/demonlords` done (see iteration 172 - player-facing, no permission
+  gate, `command.c:8938-8946`/`1394-1461`); the sibling `/orbs`/
+  `/tunnels`/`/treasures` display commands right next to it in
+  `command.c:8925-8954` are still unported (each needs its own backing
+  system - orb/tunnel/treasure state - so not bundled with the demon-lord
+  one, which only needed the already-ported `first_kill_ppd` bitmask);
   `reloadloot`/`setlootmod` done (see iteration 165); `global`
   (`command.c:8226-8322`, the "dump every setting" admin display
   command) done (see iteration 166), and the rest of the ~90 remaining
@@ -7525,12 +7531,57 @@ Unlocks every quest NPC. Do these before any P4 area work.
   disconnect wiring itself has no dedicated integration test (no existing
   precedent for driving the full net-session/DB-repository loop from a
   unit test in this codebase - every other command's session-level
-  effects, e.g. `/goto`'s mirror packet, are boot-smoke-verified only)
+   effects, e.g. `/goto`'s mirror packet, are boot-smoke-verified only)
   `cargo fmt --all`, `cargo test --workspace` (1987 ugaris-core + 55 db +
   3 net + 40 protocol + 700 server [+3], all green, zero failures),
   `cargo build -p ugaris-server` / `cargo build --workspace` clean with
   zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
   no panic.
+
+  Progress Log (iteration 172): ported `/demonlords` (C `cmd_demonlords`,
+  `command.c:1394-1461`, dispatched unconditionally - no permission flag -
+  from `command.c:8938-8946`), a player-facing command that lists the 48
+  demon-lord classes (`struct demon_lord demon_lords[]`,
+  `command.c:1358-1382`, transcribed digit-for-digit into a new
+  `DEMON_LORDS: &[DemonLordEntry]` table in `commands_player.rs`) the
+  caller has/hasn't first-killed, using the already-ported
+  `PlayerRuntime::first_kill_ppd` bitmask (no new gameplay system needed).
+  Added `PlayerRuntime::has_first_kill` (`ugaris-core/src/player.rs`), a
+  read-only single-class bit-test extracted out of (and now shared with)
+  `count_demon_lord_kills`, since the C command inlines the same
+  `ppd->kill[index] & mask` test `mark_first_kill` already encapsulates.
+  Ported the exact C output shape: "Thou hast not yet vanquished any demon
+  lords..." (`COL_LIGHT_RED`) if none killed; otherwise a `COL_ORANGE`
+  header line plus the level-ascending list capped at `player_level + 10`,
+  each name colored `COL_VIOLET` (killed) or `COL_LIGHT_RED` (not),
+  reproducing C's quirky 3-per-line grouping where every third entry's
+  line gets a trailing `\n` baked into the same message
+  (`strncat(demon_buf, "\n", ...)` before the flushing `log_char`) and any
+  leftover partial group is flushed afterward with no trailing newline.
+  Wired via a new `apply_demonlords_command` dispatched from `main.rs`
+  right after `apply_achievement_command` (first fresh dispatcher slot
+  after the async achievement block, ahead of `/shutup`). Investigated
+  `/pentinfo`/`/setpentcount`/`/setpentstatus`/`/setpentbonus`/`/resetpent`
+  (the other item still open in this task's REMAINING note) but found the
+  live per-player pentagram struct they debug (`struct
+  pentagram_player_data`, `pents.c:130-139`: `status`, `pent_it[6]`,
+  `pent_color[6]`, `pent_value[6]`, `pent_worth[6]`, `bonus`, `pent_cnt`,
+  `lucky_pents_this_solve`) has zero Rust port (confirmed against
+  `PORTING_LEDGER.md`'s existing pentagram-gap notes) - porting those
+  debug commands first would require inventing the whole live pentagram
+  run-state model ahead of the actual pentagram gameplay system itself, so
+  left them unported and out of scope for this slice; a dedicated
+  pentagram-system task (not just its debug commands) should be added/
+  found before attempting them. 5 new tests in `tests/commands_player.rs`:
+  exact-word-only `cmdcmp` matching (no abbreviations, since `minlen`
+  equals the full word length), the zero-kills message, the header +
+  grouped-by-3 output with one lord killed, a short final row (odd
+  eligible count) with no trailing newline, and the no-live-`PlayerRuntime`
+  fallthrough. `cargo fmt --all`, `cargo test --workspace` (1987 ugaris-
+  core + 55 db + 3 net + 40 protocol + 705 server [+5], all green, zero
+  failures), `cargo build -p ugaris-server` / `cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

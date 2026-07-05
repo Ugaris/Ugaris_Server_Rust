@@ -871,3 +871,132 @@ fn chest_helpers_decode_legacy_driver_data() {
     assert_eq!(chest_timeout_seconds(&chest), 2 * 60 * 60);
     assert_eq!(chest_required_deaths(&chest), 3);
 }
+
+/// Connects a level-`level` player under `character_id`, mirroring
+/// `achievement.rs` tests' `connected_god` helper minus the `CF_GOD` flag
+/// (`/demonlords` has no permission gate in C).
+fn connected_player_at_level(character_id: CharacterId, level: u32) -> (World, ServerRuntime) {
+    let mut world = World::default();
+    let mut character = login_character(character_id, &login_block("Hero"), 1, 10, 10);
+    character.level = level;
+    world.add_character(character);
+    let mut runtime = ServerRuntime::default();
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&1) {
+        player.character_id = Some(character_id);
+    }
+    (world, runtime)
+}
+
+/// C `cmdcmp(ptr, "demonlords", 10)`: since `minlen` equals the full word
+/// length, only the exact word (case-insensitively) matches - no
+/// abbreviation is accepted, unlike most other commands in this file.
+#[test]
+fn demonlords_command_requires_the_full_word_and_ignores_case() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 20);
+
+    assert!(apply_demonlords_command(&world, &runtime, CharacterId(1), "/demonlords").is_some());
+    assert!(apply_demonlords_command(&world, &runtime, CharacterId(1), "/DEMONLORDS").is_some());
+    assert!(apply_demonlords_command(&world, &runtime, CharacterId(1), "/demonlord").is_none());
+    assert!(apply_demonlords_command(&world, &runtime, CharacterId(1), "/demon").is_none());
+    assert!(apply_demonlords_command(&world, &runtime, CharacterId(1), "/time").is_none());
+}
+
+/// C `cmd_demonlords` (`command.c:1414-1423`): with zero demon lords ever
+/// killed, the only output is the light-red "not yet vanquished" line.
+#[test]
+fn demonlords_command_reports_no_kills_message() {
+    let (world, runtime) = connected_player_at_level(CharacterId(1), 20);
+
+    let result = apply_demonlords_command(&world, &runtime, CharacterId(1), "/demonlords")
+        .expect("demonlords command should be recognized");
+    assert_eq!(result.message_bytes.len(), 1);
+    let mut expected = Vec::new();
+    expected.extend_from_slice(COL_LIGHT_RED);
+    expected.extend_from_slice(b"Thou hast not yet vanquished any demon lords, brave adventurer.");
+    expected.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected);
+}
+
+/// C `cmd_demonlords` (`command.c:1425-1461`): once at least one demon
+/// lord is killed, the header line plus grouped-by-3 rows are shown, gated
+/// on `demon_lords[i].level <= player_level + 10`; killed lords render
+/// `COL_VIOLET`, unkilled render `COL_LIGHT_RED`, and every group of 3
+/// gets a trailing `\n` appended to the *same* line (`strncat(demon_buf,
+/// "\n", ...)` before the flushing `log_char`).
+#[test]
+fn demonlords_command_lists_killed_and_available_lords_grouped_by_three() {
+    let (world, mut runtime) = connected_player_at_level(CharacterId(1), 20);
+    // Level 20 -> shows lords with level <= 30: classes 258..=269 (12
+    // lords, levels 8..=30 step 2), grouped into 4 rows of 3.
+    runtime
+        .player_for_character_mut(CharacterId(1))
+        .unwrap()
+        .mark_first_kill(258); // Earth Demon Lord 8
+
+    let result = apply_demonlords_command(&world, &runtime, CharacterId(1), "/demonlords")
+        .expect("demonlords command should be recognized");
+
+    let mut expected_header = Vec::new();
+    expected_header.extend_from_slice(COL_ORANGE);
+    expected_header.extend_from_slice(b"Demon Lords status:");
+    expected_header.extend_from_slice(COL_RESET);
+    assert_eq!(result.message_bytes[0], expected_header);
+
+    // 12 eligible lords -> 4 full rows of 3, no leftover partial row.
+    assert_eq!(result.message_bytes.len(), 1 + 4);
+
+    let mut expected_row1 = Vec::new();
+    expected_row1.extend_from_slice(COL_VIOLET);
+    expected_row1.extend_from_slice(b"Earth Demon Lord 8");
+    expected_row1.extend_from_slice(COL_RESET);
+    expected_row1.push(b' ');
+    expected_row1.extend_from_slice(COL_LIGHT_RED);
+    expected_row1.extend_from_slice(b"Earth Demon Lord 10");
+    expected_row1.extend_from_slice(COL_RESET);
+    expected_row1.push(b' ');
+    expected_row1.extend_from_slice(COL_LIGHT_RED);
+    expected_row1.extend_from_slice(b"Earth Demon Lord 12");
+    expected_row1.extend_from_slice(COL_RESET);
+    expected_row1.push(b' ');
+    expected_row1.push(b'\n');
+    assert_eq!(result.message_bytes[1], expected_row1);
+
+    let last_row = result.message_bytes.last().unwrap();
+    assert!(last_row.ends_with(b"\n"));
+}
+
+/// C `cmd_demonlords`'s `if ((i + 1) % 3 == 0)` grouping leaves a shorter
+/// final row (no trailing `\n`) when the eligible-lord count isn't a
+/// multiple of 3.
+#[test]
+fn demonlords_command_flushes_a_short_final_row_without_trailing_newline() {
+    // Level 6 -> only lords with level <= 16 are eligible: classes
+    // 258..=262 (5 lords, levels 8/10/12/14/16) - not a multiple of 3, so
+    // the final row (2 entries) has no trailing newline.
+    let (world, mut runtime) = connected_player_at_level(CharacterId(1), 6);
+    runtime
+        .player_for_character_mut(CharacterId(1))
+        .unwrap()
+        .mark_first_kill(260);
+
+    let result = apply_demonlords_command(&world, &runtime, CharacterId(1), "/demonlords")
+        .expect("demonlords command should be recognized");
+
+    // 5 eligible lords -> 1 full row of 3 + 1 partial row of 2.
+    assert_eq!(result.message_bytes.len(), 1 + 2);
+    let last_row = result.message_bytes.last().unwrap();
+    assert!(!last_row.ends_with(b"\n"));
+    assert!(last_row.ends_with(b"\xb0c0 "));
+}
+
+/// A disconnected/never-logged-in character has no `PlayerRuntime`, so the
+/// command falls through (`None`) exactly like every other self-query
+/// command in this file when `runtime.player_for_character` misses.
+#[test]
+fn demonlords_command_falls_through_without_a_live_player_runtime() {
+    let world = World::default();
+    let runtime = ServerRuntime::default();
+    assert!(apply_demonlords_command(&world, &runtime, CharacterId(1), "/demonlords").is_none());
+}

@@ -2514,6 +2514,21 @@ impl PlayerRuntime {
         new_score
     }
 
+    /// C `ppd->kill[index] & mask` bit-test (`death.c:196-197`, also
+    /// inlined directly in `command.c:1193/1200` by `/pentinfo`'s sibling
+    /// `cmd_demonlords`), exposed as a query so callers other than
+    /// [`Self::mark_first_kill`] (which also sets the bit) can check
+    /// without mutating. Out-of-range classes (matching `mark_first_kill`'s
+    /// own guard) are always reported unkilled.
+    pub fn has_first_kill(&self, class: i32) -> bool {
+        if !(1..=1023).contains(&class) || self.first_kill_ppd.is_empty() {
+            return false;
+        }
+        let class = class as usize;
+        let byte = class / 8;
+        byte < self.first_kill_ppd.len() && self.first_kill_ppd[byte] & (1 << (class % 8)) != 0
+    }
+
     /// C `count_demon_lord_kills` (`death.c:169-190`): counts unique
     /// first-killed classes in `258..=305` (Earth/Fire/Ice demon lords) and
     /// `404..=411` (Hell demon lords).
@@ -2521,12 +2536,8 @@ impl PlayerRuntime {
         if self.first_kill_ppd.is_empty() {
             return 0;
         }
-        let is_set = |class: usize| -> bool {
-            let byte = class / 8;
-            byte < self.first_kill_ppd.len() && self.first_kill_ppd[byte] & (1 << (class % 8)) != 0
-        };
-        (258..=305).filter(|&c| is_set(c)).count() as u32
-            + (404..=411).filter(|&c| is_set(c)).count() as u32
+        (258..=305).filter(|&c| self.has_first_kill(c)).count() as u32
+            + (404..=411).filter(|&c| self.has_first_kill(c)).count() as u32
     }
 
     pub fn encode_legacy_military_ppd(&self) -> Vec<u8> {

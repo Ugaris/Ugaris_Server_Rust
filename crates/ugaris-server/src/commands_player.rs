@@ -1812,6 +1812,344 @@ fn legacy_achievement_unlock_congrats_lines(name: &str, description: &str) -> [V
     [line1, line2]
 }
 
+/// A single row of C's static `struct demon_lord demon_lords[]` table
+/// (`command.c:1358-1382`), copied digit-for-digit and letter-for-letter:
+/// 48 entries (`NUM_DEMON_LORDS`), `level` ascending, `class` the NPC class ID
+/// `PlayerRuntime::has_first_kill` bit-tests against, `name` the exact
+/// display string (`"Earth/Fire/Ice Demon Lord <level>"`).
+struct DemonLordEntry {
+    level: i32,
+    class: i32,
+    name: &'static str,
+}
+
+const DEMON_LORDS: &[DemonLordEntry] = &[
+    DemonLordEntry {
+        level: 8,
+        class: 258,
+        name: "Earth Demon Lord 8",
+    },
+    DemonLordEntry {
+        level: 10,
+        class: 259,
+        name: "Earth Demon Lord 10",
+    },
+    DemonLordEntry {
+        level: 12,
+        class: 260,
+        name: "Earth Demon Lord 12",
+    },
+    DemonLordEntry {
+        level: 14,
+        class: 261,
+        name: "Earth Demon Lord 14",
+    },
+    DemonLordEntry {
+        level: 16,
+        class: 262,
+        name: "Earth Demon Lord 16",
+    },
+    DemonLordEntry {
+        level: 18,
+        class: 263,
+        name: "Earth Demon Lord 18",
+    },
+    DemonLordEntry {
+        level: 20,
+        class: 264,
+        name: "Earth Demon Lord 20",
+    },
+    DemonLordEntry {
+        level: 22,
+        class: 265,
+        name: "Earth Demon Lord 22",
+    },
+    DemonLordEntry {
+        level: 24,
+        class: 266,
+        name: "Earth Demon Lord 24",
+    },
+    DemonLordEntry {
+        level: 26,
+        class: 267,
+        name: "Earth Demon Lord 26",
+    },
+    DemonLordEntry {
+        level: 28,
+        class: 268,
+        name: "Earth Demon Lord 28",
+    },
+    DemonLordEntry {
+        level: 30,
+        class: 269,
+        name: "Earth Demon Lord 30",
+    },
+    DemonLordEntry {
+        level: 32,
+        class: 270,
+        name: "Earth Demon Lord 32",
+    },
+    DemonLordEntry {
+        level: 34,
+        class: 271,
+        name: "Earth Demon Lord 34",
+    },
+    DemonLordEntry {
+        level: 36,
+        class: 272,
+        name: "Earth Demon Lord 36",
+    },
+    DemonLordEntry {
+        level: 38,
+        class: 273,
+        name: "Earth Demon Lord 38",
+    },
+    DemonLordEntry {
+        level: 40,
+        class: 274,
+        name: "Fire Demon Lord 40",
+    },
+    DemonLordEntry {
+        level: 42,
+        class: 275,
+        name: "Fire Demon Lord 42",
+    },
+    DemonLordEntry {
+        level: 44,
+        class: 276,
+        name: "Fire Demon Lord 44",
+    },
+    DemonLordEntry {
+        level: 46,
+        class: 277,
+        name: "Fire Demon Lord 46",
+    },
+    DemonLordEntry {
+        level: 48,
+        class: 278,
+        name: "Fire Demon Lord 48",
+    },
+    DemonLordEntry {
+        level: 50,
+        class: 279,
+        name: "Fire Demon Lord 50",
+    },
+    DemonLordEntry {
+        level: 52,
+        class: 280,
+        name: "Fire Demon Lord 52",
+    },
+    DemonLordEntry {
+        level: 54,
+        class: 281,
+        name: "Fire Demon Lord 54",
+    },
+    DemonLordEntry {
+        level: 56,
+        class: 282,
+        name: "Fire Demon Lord 56",
+    },
+    DemonLordEntry {
+        level: 58,
+        class: 283,
+        name: "Fire Demon Lord 58",
+    },
+    DemonLordEntry {
+        level: 60,
+        class: 284,
+        name: "Fire Demon Lord 60",
+    },
+    DemonLordEntry {
+        level: 62,
+        class: 285,
+        name: "Fire Demon Lord 62",
+    },
+    DemonLordEntry {
+        level: 64,
+        class: 286,
+        name: "Fire Demon Lord 64",
+    },
+    DemonLordEntry {
+        level: 66,
+        class: 287,
+        name: "Fire Demon Lord 66",
+    },
+    DemonLordEntry {
+        level: 68,
+        class: 288,
+        name: "Fire Demon Lord 68",
+    },
+    DemonLordEntry {
+        level: 70,
+        class: 289,
+        name: "Fire Demon Lord 70",
+    },
+    DemonLordEntry {
+        level: 72,
+        class: 290,
+        name: "Ice Demon Lord 72",
+    },
+    DemonLordEntry {
+        level: 74,
+        class: 291,
+        name: "Ice Demon Lord 74",
+    },
+    DemonLordEntry {
+        level: 76,
+        class: 292,
+        name: "Ice Demon Lord 76",
+    },
+    DemonLordEntry {
+        level: 78,
+        class: 293,
+        name: "Ice Demon Lord 78",
+    },
+    DemonLordEntry {
+        level: 80,
+        class: 294,
+        name: "Ice Demon Lord 80",
+    },
+    DemonLordEntry {
+        level: 82,
+        class: 295,
+        name: "Ice Demon Lord 82",
+    },
+    DemonLordEntry {
+        level: 84,
+        class: 296,
+        name: "Ice Demon Lord 84",
+    },
+    DemonLordEntry {
+        level: 86,
+        class: 297,
+        name: "Ice Demon Lord 86",
+    },
+    DemonLordEntry {
+        level: 88,
+        class: 298,
+        name: "Ice Demon Lord 88",
+    },
+    DemonLordEntry {
+        level: 90,
+        class: 299,
+        name: "Ice Demon Lord 90",
+    },
+    DemonLordEntry {
+        level: 92,
+        class: 300,
+        name: "Ice Demon Lord 92",
+    },
+    DemonLordEntry {
+        level: 94,
+        class: 301,
+        name: "Ice Demon Lord 94",
+    },
+    DemonLordEntry {
+        level: 96,
+        class: 302,
+        name: "Ice Demon Lord 96",
+    },
+    DemonLordEntry {
+        level: 98,
+        class: 303,
+        name: "Ice Demon Lord 98",
+    },
+    DemonLordEntry {
+        level: 100,
+        class: 304,
+        name: "Ice Demon Lord 100",
+    },
+    DemonLordEntry {
+        level: 102,
+        class: 305,
+        name: "Ice Demon Lord 102",
+    },
+];
+
+/// C `cmd_demonlords` (`command.c:1394-1461`, dispatched unconditionally -
+/// no permission flag gate - from `command.c:8938-8946`). Reports "Thou
+/// hast not yet vanquished any demon lords..." (`COL_LIGHT_RED`) if the
+/// caller's `first_kill_ppd` bitmask has none of the 48 demon-lord classes
+/// set; otherwise walks the level-ascending table, stopping once a lord's
+/// level exceeds `player_level + 10` (C: `if (demon_lords[i].level >
+/// player_level + 10) break;`), coloring each name `COL_VIOLET` if killed
+/// or `COL_LIGHT_RED` if not, and grouping three names per line - matching
+/// C's `demon_buf` accumulation, which appends a trailing `\n` *inside*
+/// the same message every third entry (`strncat(demon_buf, "\n", ...)`
+/// before the `log_char` that flushes the group) and, if the final group
+/// has fewer than three entries, flushes it after the loop with no
+/// trailing newline. Returns `None` (falls through, matching every other
+/// self-query command in this file) only if the caller has no live
+/// `PlayerRuntime` - never actually reachable since the command dispatcher
+/// only runs for connected players, mirroring C's `if (!ppd) { log_char(
+/// ...); return 1; }` guard, which is likewise practically unreachable
+/// (`set_data` on an always-valid `DRD_FIRSTKILL_PPD` slot).
+pub(crate) fn apply_demonlords_command(
+    world: &World,
+    runtime: &ServerRuntime,
+    character_id: CharacterId,
+    command: &str,
+) -> Option<KeyringCommandResult> {
+    let (verb, _) = command
+        .split_once(char::is_whitespace)
+        .unwrap_or((command, ""));
+    let verb = verb.trim_start_matches('/').trim_start_matches('#');
+    if !verb.eq_ignore_ascii_case("demonlords") {
+        return None;
+    }
+
+    let player = runtime.player_for_character(character_id)?;
+    let player_level = world.characters.get(&character_id)?.level as i32;
+
+    let any_killed = DEMON_LORDS
+        .iter()
+        .any(|lord| player.has_first_kill(lord.class));
+    if !any_killed {
+        return Some(KeyringCommandResult {
+            message_bytes: vec![legacy_achievement_colored_line(
+                COL_LIGHT_RED,
+                "Thou hast not yet vanquished any demon lords, brave adventurer.",
+            )],
+            ..Default::default()
+        });
+    }
+
+    let mut lines = vec![legacy_achievement_colored_line(
+        COL_ORANGE,
+        "Demon Lords status:",
+    )];
+    let mut row: Vec<u8> = Vec::new();
+    let mut shown_in_row = 0u32;
+    for lord in DEMON_LORDS {
+        if lord.level > player_level + 10 {
+            break;
+        }
+        let color = if player.has_first_kill(lord.class) {
+            COL_VIOLET
+        } else {
+            COL_LIGHT_RED
+        };
+        row.extend_from_slice(color);
+        row.extend_from_slice(lord.name.as_bytes());
+        row.extend_from_slice(COL_RESET);
+        row.push(b' ');
+        shown_in_row += 1;
+        if shown_in_row == 3 {
+            row.push(b'\n');
+            lines.push(std::mem::take(&mut row));
+            shown_in_row = 0;
+        }
+    }
+    if !row.is_empty() {
+        lines.push(row);
+    }
+
+    Some(KeyringCommandResult {
+        message_bytes: lines,
+        ..Default::default()
+    })
+}
+
 /// C `achievement_list`/`achievement_show_stats`/`achievement_fix_all`/
 /// `achievement_clear_all`/`achievement_sync_all` plus the `/achgive`
 /// admin-only give command (`achievement.c:1421-1810`, dispatched from
